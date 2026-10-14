@@ -78,15 +78,31 @@ export function install(rt) {
   }
 
   // One backup of the version-1 file, taken before the first version-2 write can
-  // replace it. A second read finds it already there and leaves it alone; a backup that
-  // cannot be written stops the migration rather than losing the pre-migration bytes.
+  // replace it. A backup already on disk counts only when it is a readable file holding
+  // a version-1 state; a directory, an unreadable, empty or truncated file, or anything
+  // else there stops the migration rather than risk losing the legacy state. The bytes
+  // may differ: another host on the same home rewrites state.json between reads, and a
+  // valid backup from an earlier read is still the home's pre-migration copy.
   const backUpLegacy = async () => {
     const backup = `${statePath}.v1`
     try {
       await copyFile(statePath, backup, constants.COPYFILE_EXCL)
     } catch (error) {
-      if (error?.code === 'EEXIST') return undefined
-      return `cannot back up the version-1 state (${error?.code ?? error?.message ?? error})`
+      if (error?.code !== 'EEXIST') return `cannot back up the version-1 state (${error?.code ?? error?.message ?? error})`
+      let kept
+      try {
+        kept = await readFile(backup, 'utf8')
+      } catch (readError) {
+        return `the existing backup ${backup} cannot be read (${readError?.code ?? readError?.message ?? readError})`
+      }
+      let parsed
+      try {
+        parsed = JSON.parse(kept)
+      } catch {
+        return `the existing backup ${backup} is not a usable version-1 backup`
+      }
+      if (parsed?.version !== 1) return `the existing backup ${backup} is not a usable version-1 backup`
+      return undefined
     }
     warn('ds-bot: backed up the version-1 Bot team as %s before the identity update', backup)
     return undefined

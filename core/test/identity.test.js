@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -127,6 +127,32 @@ test('re-reading a legacy file the host cannot save never duplicates or renames 
     assert.equal(rt.state.bots.w2.ownerId, 'owner-1')
     assert.equal(rt.state.members['owner-1'].designatedChiefId, 'm1')
   }
+})
+
+test('migration refuses when state.json.v1 is a directory, keeping the legacy bytes', async (t) => {
+  const { rt, home, statePath } = runtime(t, LEGACY)
+  const original = readFileSync(statePath, 'utf8')
+  mkdirSync(join(home, 'state.json.v1'))
+  await rt.load()
+  assert.match(rt.readOnly(), /could not be read/)
+  assert.match(rt.readOnly(), /state\.json\.v1/)
+  rt.state.prefs.marker = 'not saved'
+  await rt.save()
+  assert.equal(readFileSync(statePath, 'utf8'), original)
+  assert.equal(JSON.parse(original).version, 1)
+})
+
+test('migration refuses when the existing backup is a truncated, unusable copy', async (t) => {
+  const { rt, home, statePath } = runtime(t, LEGACY)
+  const original = readFileSync(statePath, 'utf8')
+  // An interrupted write left a partial file where the backup belongs.
+  writeFileSync(join(home, 'state.json.v1'), '{"version":1,"revision":')
+  await rt.load()
+  assert.match(rt.readOnly(), /could not be read/)
+  assert.match(rt.readOnly(), /state\.json\.v1/)
+  rt.state.prefs.marker = 'not saved'
+  await rt.save()
+  assert.equal(readFileSync(statePath, 'utf8'), original)
 })
 
 test('names grant nothing: one owner is made, and no Bot becomes Chief by name', async (t) => {

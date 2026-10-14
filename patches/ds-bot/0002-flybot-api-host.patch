@@ -829,7 +829,7 @@ index 2c95d08090930cb59c4cc47170685ceae63355b8..8c483d1c83613fb81c60d0931a45dd43
      // Same as deleteRoom: stopActivity removes the Session's armed scheduled tasks.
      // Past parts are archived too: a part move can leave tasks on the old Session,
 diff --git a/src/host/store.js b/src/host/store.js
-index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d759b5ec9 100644
+index 580ce7abbe24a8c94587745e8d23932d04bfd448..7a7bf05e7738ccab6df2ff3c092e8beddfad03c7 100644
 --- a/src/host/store.js
 +++ b/src/host/store.js
 @@ -1,18 +1,27 @@
@@ -863,7 +863,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
    let loaded = null
    let writing = Promise.resolve()
    const { warn } = rt
-@@ -56,6 +65,66 @@ export function install(rt) {
+@@ -56,6 +65,82 @@ export function install(rt) {
      return `The Bot team in ${home} is open in another dsh (Web or Desktop, ${where}). This window shows the team but cannot change it; close the other one and reload.`
    }
  
@@ -880,15 +880,31 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
 +  }
 +
 +  // One backup of the version-1 file, taken before the first version-2 write can
-+  // replace it. A second read finds it already there and leaves it alone; a backup that
-+  // cannot be written stops the migration rather than losing the pre-migration bytes.
++  // replace it. A backup already on disk counts only when it is a readable file holding
++  // a version-1 state; a directory, an unreadable, empty or truncated file, or anything
++  // else there stops the migration rather than risk losing the legacy state. The bytes
++  // may differ: another host on the same home rewrites state.json between reads, and a
++  // valid backup from an earlier read is still the home's pre-migration copy.
 +  const backUpLegacy = async () => {
 +    const backup = `${statePath}.v1`
 +    try {
 +      await copyFile(statePath, backup, constants.COPYFILE_EXCL)
 +    } catch (error) {
-+      if (error?.code === 'EEXIST') return undefined
-+      return `cannot back up the version-1 state (${error?.code ?? error?.message ?? error})`
++      if (error?.code !== 'EEXIST') return `cannot back up the version-1 state (${error?.code ?? error?.message ?? error})`
++      let kept
++      try {
++        kept = await readFile(backup, 'utf8')
++      } catch (readError) {
++        return `the existing backup ${backup} cannot be read (${readError?.code ?? readError?.message ?? readError})`
++      }
++      let parsed
++      try {
++        parsed = JSON.parse(kept)
++      } catch {
++        return `the existing backup ${backup} is not a usable version-1 backup`
++      }
++      if (parsed?.version !== 1) return `the existing backup ${backup} is not a usable version-1 backup`
++      return undefined
 +    }
 +    warn('ds-bot: backed up the version-1 Bot team as %s before the identity update', backup)
 +    return undefined
@@ -930,7 +946,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
    const readFileState = async () => {
      let contents
      try {
-@@ -87,6 +156,28 @@ export function install(rt) {
+@@ -87,6 +172,28 @@ export function install(rt) {
        return undefined
      }
      if (parsed?.version === 1) {
@@ -959,7 +975,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
        stuck = undefined
        return parsed
      }
-@@ -112,6 +203,11 @@ export function install(rt) {
+@@ -112,6 +219,11 @@ export function install(rt) {
        migrated = true
      }
      for (const bot of Object.values(state.bots)) {
@@ -971,7 +987,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
        if (!Array.isArray(bot.capabilities)) {
          bot.capabilities = []
          migrated = true
-@@ -120,6 +216,11 @@ export function install(rt) {
+@@ -120,6 +232,11 @@ export function install(rt) {
          bot.color = currentColor(bot.color)
          migrated = true
        }
@@ -983,7 +999,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -163,10 +264,69 @@ export function install(rt) {
+@@ -163,10 +280,69 @@ export function install(rt) {
      // Unnamed groups from before names followed their members may still list old names.
      const stale = Object.values(state.rooms).filter(room => !room.named && room.name !== rt.autoRoomName(room.members))
      for (const room of stale) room.name = rt.autoRoomName(room.members)
@@ -1053,7 +1069,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
-@@ -335,9 +495,10 @@ export function install(rt) {
+@@ -335,9 +511,10 @@ export function install(rt) {
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined
@@ -1066,7 +1082,7 @@ index 580ce7abbe24a8c94587745e8d23932d04bfd448..effadc34f5a197ce6fc2aaa2685a369d
    }
    // Every group chat whose id or name matches; callers refuse an ambiguous name.
    const findRooms = (ref) => {
-@@ -353,5 +514,6 @@ export function install(rt) {
+@@ -353,5 +530,6 @@ export function install(rt) {
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
