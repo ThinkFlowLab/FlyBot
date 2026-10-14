@@ -1,5 +1,6 @@
 {
   "0001-core-fixes": [
+    "src/host/diagnostics.js",
     "src/host/memory.js",
     "src/host/models.js",
     "src/host/prompt.js",

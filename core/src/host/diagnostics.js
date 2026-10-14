@@ -167,7 +167,9 @@ export function install(rt) {
     const error = args.find(arg => arg instanceof Error)
     const line = clean(format(template, ...args.map(arg => (arg instanceof Error ? errorText(arg) : arg))))
     const frames = typeof error?.stack === 'string' ? error.stack.split('\n').filter(item => /^\s+at /.test(item)).slice(0, STACK_LINES).map(item => item.trim()) : []
-    ctx.logger.warn('%s', line)
+    // DSH may export no ctx.logger at all (see the header); a host or test ctx can also
+    // carry a logger without warn. Either way stderr and the diagnostics log still get it.
+    if (typeof ctx?.logger?.warn === 'function') ctx.logger.warn('%s', line)
     console.error(`[ds-bot] ${line}${frames.length > 0 ? `\n${clean(frames.join('\n'))}` : ''}`)
     note({
       level: 'warn',

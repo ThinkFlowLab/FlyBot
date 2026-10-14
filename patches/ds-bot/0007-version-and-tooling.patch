@@ -480,7 +480,7 @@ index 0000000000000000000000000000000000000000..e756d65b6879c7e635695fb0f1501902
 +  assert.throws(() => hasDocsNotNeededTrailer(bad), /cannot diff against/);
 +});
 diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
-index 28dcf7bb970ecd3ae5dbb94b4445c1cc39cf50d2..392acd85785ede14f4defc4a03f210777d08fa3f 100644
+index 28dcf7bb970ecd3ae5dbb94b4445c1cc39cf50d2..a1cd27933429d8cd0c6992bbb13384c86b73f1f2 100644
 --- a/test/diagnostics.test.js
 +++ b/test/diagnostics.test.js
 @@ -63,7 +63,7 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
@@ -492,6 +492,30 @@ index 28dcf7bb970ecd3ae5dbb94b4445c1cc39cf50d2..392acd85785ede14f4defc4a03f21077
    assert.match(report.markdown, /\| Surface \| Web \|/)
    assert.match(report.markdown, /\| Models \| deepseek\/deepseek-chat \|/)
    assert.match(report.markdown, /WARN host \[EACCES\] state write failed/)
+@@ -108,6 +108,23 @@ test('warnings send only cleaned text to the logger and stderr', (t) => {
+   }
+ })
+ 
++test('warnings reach stderr and the log when ctx.logger is missing or has no warn', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const noWarn = host(home, { ctx: { logger: {} }, config: { diagnosticsFile: false } })
++  noWarn.warn('ds-bot: logger without warn: %s', 'state.json')
++  const noLogger = host(home, { ctx: {}, config: { diagnosticsFile: false } })
++  noLogger.warn('ds-bot: no logger at all: %s', 'state.json')
++  quiet.mock.restore()
++  assert.deepEqual((await noWarn.diagnostics.entries()).map(entry => [entry.level, entry.text]), [['warn', 'logger without warn: state.json']])
++  assert.deepEqual((await noLogger.diagnostics.entries()).map(entry => [entry.level, entry.text]), [['warn', 'no logger at all: state.json']])
++  assert.equal(stderr.length, 2)
++  assert.match(stderr.join('\n'), /logger without warn: state\.json/)
++  assert.match(stderr.join('\n'), /no logger at all: state\.json/)
++})
++
+ test('diagnostics append fallback redacts an error message', async (t) => {
+   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
 diff --git a/test/install-doctor.test.js b/test/install-doctor.test.js
 new file mode 100644
 index 0000000000000000000000000000000000000000..d801192093fafe7e2be507f036a83775f248c3eb

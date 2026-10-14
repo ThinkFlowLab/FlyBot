@@ -57,6 +57,7 @@ Patched upstream `ds-bot` that ships as `core/`. Never edit `ds-bot/` by hand; c
 3. `client.js` matches `core/src/client/`; `npm run build` + `--check`.
 4. Never touch the user's `~/.dsh`.
 5. The saved team (`state.json`) is versioned. Version 2 (#47) carries the identity schema — `members` records, a per-Bot `ownerId`, the owner's `designatedChiefId`. A legacy version-1 file is migrated on load with a one-time `state.json.v1` backup; an existing backup counts only when it is a readable file holding a parseable version-1 state, and anything else (or any malformed ownership) fails closed (read-only). An older binary refuses a newer version read-only. This is schema foundation only — team mode stays disabled, see [team](team.md).
+6. Host diagnostics never depend on `ctx.logger`: DSH may export no logger, and a test or plugin-local host may carry one without `warn`. `rt.warn` still writes stderr and the diagnostics log in that case (`src/host/diagnostics.js`).
 
 ## Tests
 

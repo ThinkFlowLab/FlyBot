@@ -108,6 +108,23 @@ test('warnings send only cleaned text to the logger and stderr', (t) => {
   }
 })
 
+test('warnings reach stderr and the log when ctx.logger is missing or has no warn', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const noWarn = host(home, { ctx: { logger: {} }, config: { diagnosticsFile: false } })
+  noWarn.warn('ds-bot: logger without warn: %s', 'state.json')
+  const noLogger = host(home, { ctx: {}, config: { diagnosticsFile: false } })
+  noLogger.warn('ds-bot: no logger at all: %s', 'state.json')
+  quiet.mock.restore()
+  assert.deepEqual((await noWarn.diagnostics.entries()).map(entry => [entry.level, entry.text]), [['warn', 'logger without warn: state.json']])
+  assert.deepEqual((await noLogger.diagnostics.entries()).map(entry => [entry.level, entry.text]), [['warn', 'no logger at all: state.json']])
+  assert.equal(stderr.length, 2)
+  assert.match(stderr.join('\n'), /logger without warn: state\.json/)
+  assert.match(stderr.join('\n'), /no logger at all: state\.json/)
+})
+
 test('diagnostics append fallback redacts an error message', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))

@@ -11,7 +11,7 @@ FlyBot's core is **pristine upstream ds-bot plus this ordered patch series** (#3
 
 | Patch | Topic |
 |---|---|
-| `0001-core-fixes` | Generic core fixes (memory, models, prompt, time context, turns, text, i18n, model menu); upstream candidates |
+| `0001-core-fixes` | Generic core fixes (diagnostics, memory, models, prompt, time context, turns, text, i18n, model menu); upstream candidates |
 | `0002-flybot-api-host` | The `flybot` Cordis service (`src/host/hooks.js`, send middleware with priority bands) and its hook-in points (`index.js`, store, roster, tools) |
 | `0003-flybot-api-client` | The browser `flybot` service and slots (`flybot-registry.js`, `flybot-slots.js`) and their render sites |
 | `0004-flybot-api-types` | `types/flybot.d.ts`, the plugin contract (host and browser) |
