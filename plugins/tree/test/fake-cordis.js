@@ -8,7 +8,7 @@ export function fakeCordis() {
   const registeredTools = new Map()
   const listeners = new Map()
   const scope = (cleanups) => ({
-    logger: () => ({ warn() {}, info() {}, debug() {}, error() {} }),
+    logger: { warn() {}, info() {}, debug() {}, error() {} },
     effect(execute) {
       const dispose = execute()
       if (typeof dispose === 'function') cleanups.push(dispose)
