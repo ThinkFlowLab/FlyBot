@@ -73,7 +73,7 @@ index cf729a43d0df36ed1a68eb7eed15521f600d7601..379f474573b1b31b91d7e27c855731be
  }
 diff --git a/scripts/install-doctor.mjs b/scripts/install-doctor.mjs
 new file mode 100644
-index 0000000000000000000000000000000000000000..9b927e1b325c519124ffa4ba83d88f6772c753e8
+index 0000000000000000000000000000000000000000..8b0c53b5576735b2fb5e12bb943377f34a42dd77
 --- /dev/null
 +++ b/scripts/install-doctor.mjs
 @@ -0,0 +1,111 @@
@@ -93,8 +93,8 @@ index 0000000000000000000000000000000000000000..9b927e1b325c519124ffa4ba83d88f67
 +
 +const PACKAGES = [
 +  ['core', 'ds-bot'],
-+  ['core/plugins/social', '@flybot/social'],
-+  ['core/plugins/tree', '@flybot/tree'],
++  ['plugins/social', '@flybot/social'],
++  ['plugins/tree', '@flybot/tree'],
 +]
 +
 +export function parseNodeVersion(versionString) {
@@ -152,7 +152,7 @@ index 0000000000000000000000000000000000000000..9b927e1b325c519124ffa4ba83d88f67
 +  profile = 'web',
 +  dshPackage = '@deepseek-ai/dsh@0.2.0-rc.2',
 +} = {}) {
-+  return ['/core', '/core/plugins/social', '/core/plugins/tree']
++  return ['/core', '/plugins/social', '/plugins/tree']
 +    .map(path => `npx -y ${dshPackage} plugin --profile ${profile} add "github:${repo}#${ref}&path:${path}"`)
 +}
 +
@@ -268,7 +268,7 @@ index 28dcf7bb970ecd3ae5dbb94b4445c1cc39cf50d2..392acd85785ede14f4defc4a03f21077
    assert.match(report.markdown, /WARN host \[EACCES\] state write failed/)
 diff --git a/test/install-doctor.test.js b/test/install-doctor.test.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..5f88a27f36331cc6a7665173dbbfd6c88f0a094f
+index 0000000000000000000000000000000000000000..d801192093fafe7e2be507f036a83775f248c3eb
 --- /dev/null
 +++ b/test/install-doctor.test.js
 @@ -0,0 +1,132 @@
@@ -376,8 +376,8 @@ index 0000000000000000000000000000000000000000..5f88a27f36331cc6a7665173dbbfd6c8
 +  assert.equal(commands.length, 3)
 +  assert.ok(commands.every(command => command.includes('0.2.0-rc.2')))
 +  assert.ok(commands[0].includes('path:/core'))
-+  assert.ok(commands[1].includes('path:/core/plugins/social'))
-+  assert.ok(commands[2].includes('path:/core/plugins/tree'))
++  assert.ok(commands[1].includes('path:/plugins/social'))
++  assert.ok(commands[2].includes('path:/plugins/tree'))
 +})
 +
 +test('runDoctor: the real repository passes on a Node version at the floor', () => {

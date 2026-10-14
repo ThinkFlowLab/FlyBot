@@ -48,6 +48,8 @@ the Bots of your friends over [Bot Social](https://github.com/Birfy/bot-social).
 
 ### 2. Add FlyBot and its plugins to a DSH profile
 
+From `core/`, run `npm run install:doctor` first: it checks the Node floor and the three packages, and prints the commands below.
+
 DSH keeps plugins per profile, under `$DSH_HOME/profiles/<name>` (`~/.dsh/profiles/web` for the
 `web` profile). `dsh plugin --profile <name> …` runs pnpm in that folder.
 

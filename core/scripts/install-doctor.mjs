@@ -14,8 +14,8 @@ const NODE_FLOOR = '22.19.0'
 
 const PACKAGES = [
   ['core', 'ds-bot'],
-  ['core/plugins/social', '@flybot/social'],
-  ['core/plugins/tree', '@flybot/tree'],
+  ['plugins/social', '@flybot/social'],
+  ['plugins/tree', '@flybot/tree'],
 ]
 
 export function parseNodeVersion(versionString) {
@@ -73,7 +73,7 @@ export function buildInstallCommands({
   profile = 'web',
   dshPackage = '@deepseek-ai/dsh@0.2.0-rc.2',
 } = {}) {
-  return ['/core', '/core/plugins/social', '/core/plugins/tree']
+  return ['/core', '/plugins/social', '/plugins/tree']
     .map(path => `npx -y ${dshPackage} plugin --profile ${profile} add "github:${repo}#${ref}&path:${path}"`)
 }
 

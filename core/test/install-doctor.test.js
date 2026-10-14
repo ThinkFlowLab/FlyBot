@@ -102,8 +102,8 @@ test('buildInstallCommands: three install commands covering the core and both pl
   assert.equal(commands.length, 3)
   assert.ok(commands.every(command => command.includes('0.2.0-rc.2')))
   assert.ok(commands[0].includes('path:/core'))
-  assert.ok(commands[1].includes('path:/core/plugins/social'))
-  assert.ok(commands[2].includes('path:/core/plugins/tree'))
+  assert.ok(commands[1].includes('path:/plugins/social'))
+  assert.ok(commands[2].includes('path:/plugins/tree'))
 })
 
 test('runDoctor: the real repository passes on a Node version at the floor', () => {
