@@ -49,7 +49,8 @@
     "lint": "node scripts/lint.mjs",
     "harness": "npm install --prefix dev/harness --legacy-peer-deps=false --no-package-lock --no-fund --no-audit",
     "check": "sh dev/check.sh",
-    "ci:local": "bash scripts/local-ci.sh"
+    "ci:local": "bash scripts/local-ci.sh",
+    "install:doctor": "node scripts/install-doctor.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",

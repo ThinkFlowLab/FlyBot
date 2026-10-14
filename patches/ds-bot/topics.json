@@ -53,8 +53,10 @@
   "0007-version-and-tooling": [
     "package.json",
     "scripts/local-ci.sh",
+    "scripts/install-doctor.mjs",
     "package-lock.json",
-    "test/diagnostics.test.js"
+    "test/diagnostics.test.js",
+    "test/install-doctor.test.js"
   ],
   "0008-client-bundle": [
     "client.js"
