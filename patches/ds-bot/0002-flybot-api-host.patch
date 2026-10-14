@@ -740,7 +740,7 @@ index 0000000000000000000000000000000000000000..6f1c6b4ed58224f6b77d6ebe97ce392d
 +  Object.assign(rt, { flybot, flybotReplyRemote: replyRemote, flybotEndpoint: endpoint, flybotRemoteMembers: remoteMembers.list, flybotSend: send, flybotIsRead: isReadEndpoint, flybotHideTools: hidePluginTools })
 +}
 diff --git a/src/host/roster.js b/src/host/roster.js
-index 2c95d08090930cb59c4cc47170685ceae63355b8..8c483d1c83613fb81c60d0931a45dd4304855c1f 100644
+index 2c95d08090930cb59c4cc47170685ceae63355b8..4c9088eb0156e46245c45aaa78227f79cd2868a5 100644
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
 @@ -58,16 +58,24 @@ export function install(rt) {
@@ -803,7 +803,16 @@ index 2c95d08090930cb59c4cc47170685ceae63355b8..8c483d1c83613fb81c60d0931a45dd43
        if (modelRef === undefined) {
          bot.kickoff = { text, from: createdBy ?? null, ...(main ? { main: true } : {}) }
          await rt.save()
-@@ -189,6 +210,8 @@ export function install(rt) {
+@@ -119,6 +140,8 @@ export function install(rt) {
+       delete state.bots[id]
+       state.mainBotIds = state.mainBotIds.filter(other => other !== id)
+       rt.chatOwners.delete(id)
++      // The Main role was rolled back too, so the owner's designated Chief follows.
++      rt.syncDesignatedChief()
+       // A save that another change queued meanwhile still carries this Bot; a later
+       // one writes the team without it.
+       void rt.save().catch(() => {})
+@@ -189,6 +212,8 @@ export function install(rt) {
        if (avatar) bot.avatar = avatar
        else delete bot.avatar
      }
@@ -812,7 +821,7 @@ index 2c95d08090930cb59c4cc47170685ceae63355b8..8c483d1c83613fb81c60d0931a45dd43
      if (patch.model !== undefined) {
        if (patch.model === null || patch.model === '') delete bot.model
        else bot.model = await rt.resolveModel(patch.model)
-@@ -422,6 +445,7 @@ export function install(rt) {
+@@ -422,6 +447,7 @@ export function install(rt) {
        if (rt.botOf(other)?.kickoff?.main) delete rt.botOf(other).kickoff
      }
      state.mainBotIds = next
@@ -820,7 +829,7 @@ index 2c95d08090930cb59c4cc47170685ceae63355b8..8c483d1c83613fb81c60d0931a45dd43
      await rt.save()
    }
  
-@@ -450,6 +474,7 @@ export function install(rt) {
+@@ -450,6 +476,7 @@ export function install(rt) {
      await followMemberNames(touched)
      await rt.forgetBotSecrets(id)
      await archived

@@ -526,3 +526,34 @@ test('a write that fails at save time archives the Session it made', async (t) =
   const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
   assert.equal(Object.values(saved.bots).some(bot => bot.name === 'Phantom'), false)
 })
+
+test('a failed Main Bot create does not leave a dangling designated Chief', async (t) => {
+  const { call, stop, home, ctx } = start({
+    version: 2,
+    mainBotIds: [],
+    revision: 1,
+    members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: null } },
+    bots: {},
+    rooms: {},
+    exchanges: [],
+    exchangeTurns: {},
+    questions: {},
+    prefs: {},
+  })
+  t.after(stop)
+  const create = ctx.sessionController.create
+  ctx.sessionController.create = async (...args) => {
+    const made = await create(...args)
+    mkdirSync(join(home, `state.json.${process.pid}.tmp`))
+    return made
+  }
+  const answer = await call('create-bot', { name: 'Phantom', main: true })
+  assert.equal(answer.ok, false)
+  // Remove the blocking tmp so a later save can flush the rolled-back pointer.
+  try { rmSync(join(home, `state.json.${process.pid}.tmp`), { recursive: true, force: true }) } catch {}
+  await settle()
+  await settle()
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  assert.equal(saved.members['owner-1'].designatedChiefId, null)
+  assert.equal(Object.keys(saved.bots || {}).length, 0)
+})

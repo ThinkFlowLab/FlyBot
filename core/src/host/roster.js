@@ -140,6 +140,8 @@ export function install(rt) {
       delete state.bots[id]
       state.mainBotIds = state.mainBotIds.filter(other => other !== id)
       rt.chatOwners.delete(id)
+      // The Main role was rolled back too, so the owner's designated Chief follows.
+      rt.syncDesignatedChief()
       // A save that another change queued meanwhile still carries this Bot; a later
       // one writes the team without it.
       void rt.save().catch(() => {})

@@ -66,6 +66,7 @@
     "client.js"
   ],
   "0009-identity-schema": [
-    "test/identity.test.js"
+    "test/identity.test.js",
+    "test/roster.test.js"
   ]
 }
