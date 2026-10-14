@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -39,4 +39,13 @@ test('empty diff passes', async () => {
   const r = filesNeedDocs({ ref: 'HEAD' });
   assert.equal(r.ok, true);
   assert.deepEqual(r.missing, []);
+});
+
+test('invalid base ref fails closed', async () => {
+  const { filesNeedDocs, hasDocsNotNeededTrailer } = await import(
+    '../scripts/check-arch-docs.mjs'
+  );
+  const bad = 'refs/heads/nonexistent-review-base';
+  assert.throws(() => filesNeedDocs({ ref: bad }), /cannot diff against/);
+  assert.throws(() => hasDocsNotNeededTrailer(bad), /cannot diff against/);
 });

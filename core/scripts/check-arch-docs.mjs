@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -70,46 +70,47 @@ function baseRef() {
   return process.env.ARCH_DOCS_BASE || 'origin/main';
 }
 
-function changedFiles(ref) {
+function assertBaseRef(ref) {
   try {
-    const out = execSync(`git diff --name-only ${ref}...HEAD`, {
+    execSync(`git rev-parse --verify ${ref}^{commit}`, {
       cwd: ROOT,
       encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return out.split(/\r?\n/).filter(Boolean);
   } catch {
-    return null;
+    throw new Error(`cannot diff against ${ref}`);
   }
+}
+
+function changedFiles(ref) {
+  const out = execSync(`git diff --name-only ${ref}...HEAD`, {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  return out.split(/\r?\n/).filter(Boolean);
 }
 
 function fileChangedIn(ref, file) {
-  try {
-    const out = execSync(`git diff --name-only ${ref}...HEAD -- ${file}`, {
-      cwd: ROOT,
-      encoding: 'utf8',
-    }).trim();
-    return out.length > 0;
-  } catch {
-    return false;
-  }
+  const out = execSync(`git diff --name-only ${ref}...HEAD -- ${file}`, {
+    cwd: ROOT,
+    encoding: 'utf8',
+  }).trim();
+  return out.length > 0;
 }
 
 export function hasDocsNotNeededTrailer(ref = baseRef()) {
-  try {
-    const out = execSync(`git log ${ref}..HEAD --pretty=%B`, {
-      cwd: ROOT,
-      encoding: 'utf8',
-    });
-    return /Docs-not-needed:/i.test(out);
-  } catch {
-    return false;
-  }
+  assertBaseRef(ref);
+  const out = execSync(`git log ${ref}..HEAD --pretty=%B`, {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  return /Docs-not-needed:/i.test(out);
 }
 
 export function filesNeedDocs({ ref = baseRef(), map = null } = {}) {
+  assertBaseRef(ref);
   const subsystemMap = map || loadSubsystemMap();
   const files = changedFiles(ref);
-  if (files === null) return { ok: true, missing: [], files: [] };
   if (files.length === 0) return { ok: true, missing: [], files: [] };
   if (hasDocsNotNeededTrailer(ref)) return { ok: true, missing: [], files };
   const missing = [];
@@ -123,7 +124,14 @@ export function filesNeedDocs({ ref = baseRef(), map = null } = {}) {
 }
 
 function main() {
-  const { ok, missing, files } = filesNeedDocs();
+  let result;
+  try {
+    result = filesNeedDocs();
+  } catch (err) {
+    console.error(`arch-docs: FAIL — ${err.message}`);
+    process.exit(1);
+  }
+  const { ok, missing, files } = result;
   if (ok) {
     console.log(`arch-docs: OK (${files.length} changed file(s))`);
     process.exit(0);

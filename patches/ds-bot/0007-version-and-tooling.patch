@@ -74,12 +74,12 @@ index cf729a43d0df36ed1a68eb7eed15521f600d7601..80caac50963a5b8f85e0955c42211946
  }
 diff --git a/scripts/check-arch-docs.mjs b/scripts/check-arch-docs.mjs
 new file mode 100644
-index 0000000000000000000000000000000000000000..a599f5774d3edb8c40d688967f135b0baf07ee0d
+index 0000000000000000000000000000000000000000..5f1fbc95b5b530dd2457da4d5bd56a33705a8426
 --- /dev/null
 +++ b/scripts/check-arch-docs.mjs
-@@ -0,0 +1,141 @@
+@@ -0,0 +1,149 @@
 +import { execSync } from 'node:child_process';
-+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
++import { readFileSync, readdirSync, existsSync } from 'node:fs';
 +import { join, relative, sep } from 'node:path';
 +import { fileURLToPath } from 'node:url';
 +
@@ -150,46 +150,47 @@ index 0000000000000000000000000000000000000000..a599f5774d3edb8c40d688967f135b0b
 +  return process.env.ARCH_DOCS_BASE || 'origin/main';
 +}
 +
-+function changedFiles(ref) {
++function assertBaseRef(ref) {
 +  try {
-+    const out = execSync(`git diff --name-only ${ref}...HEAD`, {
++    execSync(`git rev-parse --verify ${ref}^{commit}`, {
 +      cwd: ROOT,
 +      encoding: 'utf8',
++      stdio: ['ignore', 'pipe', 'pipe'],
 +    });
-+    return out.split(/\r?\n/).filter(Boolean);
 +  } catch {
-+    return null;
++    throw new Error(`cannot diff against ${ref}`);
 +  }
++}
++
++function changedFiles(ref) {
++  const out = execSync(`git diff --name-only ${ref}...HEAD`, {
++    cwd: ROOT,
++    encoding: 'utf8',
++  });
++  return out.split(/\r?\n/).filter(Boolean);
 +}
 +
 +function fileChangedIn(ref, file) {
-+  try {
-+    const out = execSync(`git diff --name-only ${ref}...HEAD -- ${file}`, {
-+      cwd: ROOT,
-+      encoding: 'utf8',
-+    }).trim();
-+    return out.length > 0;
-+  } catch {
-+    return false;
-+  }
++  const out = execSync(`git diff --name-only ${ref}...HEAD -- ${file}`, {
++    cwd: ROOT,
++    encoding: 'utf8',
++  }).trim();
++  return out.length > 0;
 +}
 +
 +export function hasDocsNotNeededTrailer(ref = baseRef()) {
-+  try {
-+    const out = execSync(`git log ${ref}..HEAD --pretty=%B`, {
-+      cwd: ROOT,
-+      encoding: 'utf8',
-+    });
-+    return /Docs-not-needed:/i.test(out);
-+  } catch {
-+    return false;
-+  }
++  assertBaseRef(ref);
++  const out = execSync(`git log ${ref}..HEAD --pretty=%B`, {
++    cwd: ROOT,
++    encoding: 'utf8',
++  });
++  return /Docs-not-needed:/i.test(out);
 +}
 +
 +export function filesNeedDocs({ ref = baseRef(), map = null } = {}) {
++  assertBaseRef(ref);
 +  const subsystemMap = map || loadSubsystemMap();
 +  const files = changedFiles(ref);
-+  if (files === null) return { ok: true, missing: [], files: [] };
 +  if (files.length === 0) return { ok: true, missing: [], files: [] };
 +  if (hasDocsNotNeededTrailer(ref)) return { ok: true, missing: [], files };
 +  const missing = [];
@@ -203,7 +204,14 @@ index 0000000000000000000000000000000000000000..a599f5774d3edb8c40d688967f135b0b
 +}
 +
 +function main() {
-+  const { ok, missing, files } = filesNeedDocs();
++  let result;
++  try {
++    result = filesNeedDocs();
++  } catch (err) {
++    console.error(`arch-docs: FAIL — ${err.message}`);
++    process.exit(1);
++  }
++  const { ok, missing, files } = result;
 +  if (ok) {
 +    console.log(`arch-docs: OK (${files.length} changed file(s))`);
 +    process.exit(0);
@@ -416,13 +424,13 @@ index 0000000000000000000000000000000000000000..cc835536427afd006f162a5818e958a1
 +(cd ../plugins/tree && npm test)
 diff --git a/test/check-arch-docs.test.js b/test/check-arch-docs.test.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..fc7564062e2198716274f40704dfe779983e7856
+index 0000000000000000000000000000000000000000..e756d65b6879c7e635695fb0f15019021fdad5ce
 --- /dev/null
 +++ b/test/check-arch-docs.test.js
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,51 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
-+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
++import { mkdtempSync, writeFileSync } from 'node:fs';
 +import { tmpdir } from 'node:os';
 +import { join } from 'node:path';
 +import {
@@ -461,6 +469,15 @@ index 0000000000000000000000000000000000000000..fc7564062e2198716274f40704dfe779
 +  const r = filesNeedDocs({ ref: 'HEAD' });
 +  assert.equal(r.ok, true);
 +  assert.deepEqual(r.missing, []);
++});
++
++test('invalid base ref fails closed', async () => {
++  const { filesNeedDocs, hasDocsNotNeededTrailer } = await import(
++    '../scripts/check-arch-docs.mjs'
++  );
++  const bad = 'refs/heads/nonexistent-review-base';
++  assert.throws(() => filesNeedDocs({ ref: bad }), /cannot diff against/);
++  assert.throws(() => hasDocsNotNeededTrailer(bad), /cannot diff against/);
 +});
 diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 index 28dcf7bb970ecd3ae5dbb94b4445c1cc39cf50d2..392acd85785ede14f4defc4a03f210777d08fa3f 100644

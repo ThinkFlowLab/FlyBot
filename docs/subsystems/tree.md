@@ -6,7 +6,7 @@ owned_paths:
 
 # tree (`@flybot/tree`)
 
-Knowledge-tree plugin lives entirely under `plugins/tree/`.
+Recursive Bot hierarchy plugin (Chief as root, children, send middleware `tree`) lives entirely under `plugins/tree/`.
 
 ## Owns
 

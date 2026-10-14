@@ -20,7 +20,7 @@ Tooling for setup checks and the architecture-docs gate.
 ## Does not own
 
 - `core/dev/` bench/smoke tooling → [ds-bot-core](ds-bot-core.md).
-- Patch scripts under `core/scripts/ds-bot-patches.mjs` parent path claims may longest-match to ds-bot-core; `core/scripts/` here covers install/doctor/arch tooling not owned by ds-bot-core's explicit file claim.
+- Repo-root `scripts/ds-bot-patches.mjs` (and other root `scripts/` patch tooling) → [ds-bot-core](ds-bot-core.md). This page's `core/scripts/` covers install/doctor/arch tooling only.
 
 ## Key files
 

@@ -6,7 +6,7 @@ owned_paths:
 
 # social (`@flybot/social`)
 
-Social-posting plugin lives entirely under `plugins/social/`.
+Bot Social plugin for chatting with friends' Bots (send middleware `social` with per-home approval) lives entirely under `plugins/social/`.
 
 ## Owns
 
