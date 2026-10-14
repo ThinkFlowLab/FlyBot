@@ -44,7 +44,16 @@ Shipped by the core store (`core/src/host/store.js`, owned by [ds-bot-core](ds-b
 - The saved team (`state.json`) is **version 2**. `members` holds records with an immutable `id`, `createdAt`, and `designatedChiefId`; every Bot carries an `ownerId` binding.
 - Loading a legacy **version-1** team runs one migration: it creates the single initial owner (`owner-1`), binds every existing Bot to it, sets the designated Chief from the **first Main Bot** (the shipped Main role — no name matching, no new Main rules), and writes version 2. Bot ids, Session parts and private histories are preserved. The pre-migration file is backed up once as `state.json.v1` before the first version-2 write; if a backup already exists it counts only when it is a readable file holding a parseable version-1 state — a directory, an empty or truncated file, or anything else there fails the load closed instead of migrating.
 - Malformed ownership **fails closed**: a Bot owner that names no member, duplicate or mismatched member ids, or a designated Chief that is not a Bot of its member makes the file read-only — it is never repaired by guessing. An older binary already refuses a newer version read-only, so it cannot overwrite the schema.
-- This is **not team mode**: there is no auth, no sign-in, no server-side owner scoping, no cross-owner routing, and no flag/config/env for any of them. The gates below are unchanged and unsatisfied. The schema resolves nothing about `create_child_bot` (#16 stays open) and defines no API, tool, config key or env var.
+- This is **not team mode**: the gates below are unchanged and unsatisfied. The schema resolves nothing about `create_child_bot` (#16 stays open) and defines no flag/config/env for team mode. The #48 member-auth foundation (invitations, sessions, whoami) is a sign-in surface only — it does not enable team mode or cross-owner routing.
+
+## Member auth foundation (landed, #48)
+
+A thin invitation-and-session layer on top of the #47 identity schema, in `core/src/host/member-auth.js`:
+
+- An invitation is a one-time random token; only its **sha256 hash** is stored. Redeeming a valid, unexpired, unredeemed invite creates a **member session** (also stored as a hash) and returns the session token once. The first redeem (no sessions yet) binds to the existing `owner-1` member; later redeems create the next human owner (`owner-2`, …). A member record stays the identity shape (`id`, `createdAt`, `designatedChiefId`); a display name is returned in the session response and is never written into the member record.
+- The channel resolves the actor once per request from the `x-flybot-member-session` header (`rt.authenticate`). `body.actorId` / `payload.actorId` grant nothing and are ignored. Endpoints: `auth-invite`, `auth-redeem`, `auth-revoke`, `auth-whoami`, `auth-remove-member`.
+- `removeMember` revokes that member's sessions and drops the record; the **last owner cannot be removed**. `revokeSession` kills one session. Only hashes live in `state.json`; plaintext tokens never reach disk.
+- This is still **not team mode**: no owner scoping, no cross-owner routing, no flag/config/env for any of them. The gates below remain unsatisfied; this is the sign-in surface those gates will need.
 
 ## Identity model
 
@@ -159,5 +168,7 @@ Planned rules (fail closed by default):
 ## Tests
 
 **Schema foundation (#47)** has store-level tests in `core/test/identity.test.js`: a fresh team and a representative legacy team load, migration idempotence and restart-safety, the `state.json.v1` backup (created once; a directory or a truncated/unusable file in its place fails closed), and malformed-ownership fail-closed cases (unknown owner, duplicate member ids, bad Chief references, version-1 files carrying ownership fields). They assert data records only — no routing, scoping or approvals, and no multi-human behavior.
+
+**Member auth foundation (#48)** has tests in `core/test/member-auth.test.js`: two members get distinct identities via invite→redeem, forged strings never authenticate (only a live session token does), invitation replay and expiry fail, `removeMember` / `revokeSession` invalidate sessions, the last owner cannot be removed, and tokens are stored only as hashes. These cover the sign-in surface only — no owner scoping or cross-owner behavior.
 
 The routing-matrix rows above remain untested because the behavior is not shipped. When enforcement work starts (#48+), each row becomes a test first, per [fail-without-change](../code-standards.md): same-owner delegation allowed (a), Chief-to-Chief allowed (b), cross-owner specialist denied (c), team-admin vs private-owner denied (d), forwarded approval rejected (e). Each must fail on the unbroken tip before implementation lands.

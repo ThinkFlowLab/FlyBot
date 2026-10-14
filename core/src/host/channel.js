@@ -83,7 +83,8 @@ export function install(rt) {
   })
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer'])
+  // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
 
   function setPrefs(body) {
     if (body.theme !== undefined) {
@@ -103,13 +104,16 @@ export function install(rt) {
     return rt.save()
   }
 
-  const handle = async (endpoint, payload, signal) => {
+  const handle = async (endpoint, payload, signal, sessionToken) => {
     try {
       const body = payload ?? {}
       await rt.refresh()
       const readOnly = rt.readOnly()
       const flybotRead = endpoint.startsWith('flybot/') && rt.flybotIsRead?.(endpoint.slice('flybot/'.length)) === true
       if (readOnly !== undefined && !READS.has(endpoint) && !flybotRead) return fail(readOnly, 'bot/read-only')
+      // Actor is resolved once from the member session token; body.actorId / payload.actorId
+      // grant nothing and are ignored (#48).
+      const actor = sessionToken ? await rt.authenticate(sessionToken) : null
       switch (endpoint) {
         case 'state':
           if (typeof body.locale === 'string' && /^[a-z]{2,3}(-[\w-]+)?$/i.test(body.locale)) uiLocale = body.locale
@@ -323,6 +327,28 @@ export function install(rt) {
         case 'diagnostics-clear':
           await rt.diagnostics.clear()
           return ok(true)
+        case 'auth-whoami':
+          return ok(actor)
+        case 'auth-invite': {
+          if (!actor) return fail('Sign in first', 'bot/unauthorized')
+          const invite = await rt.createInvitation({ createdByMemberId: actor.memberId })
+          return ok(invite)
+        }
+        case 'auth-redeem': {
+          const result = await rt.redeemInvitation(body.token, { displayName: typeof body.displayName === 'string' ? body.displayName : null })
+          if (!result.ok) return fail(result.error, 'bot/auth')
+          return ok(result)
+        }
+        case 'auth-revoke': {
+          if (!actor) return fail('Sign in first', 'bot/unauthorized')
+          return ok(await rt.revokeSession(sessionToken))
+        }
+        case 'auth-remove-member': {
+          if (!actor) return fail('Sign in first', 'bot/unauthorized')
+          const removed = await rt.removeMember(String(body.memberId ?? ''))
+          if (!removed.ok) return fail(removed.error, 'bot/auth')
+          return ok(removed)
+        }
         default:
           // FlyBot plugins' endpoints (src/host/hooks.js).
           if (endpoint.startsWith('flybot/')) return ok(await rt.flybotEndpoint(endpoint.slice('flybot/'.length), body))
@@ -344,7 +370,8 @@ export function install(rt) {
     fetch: async (request) => {
       let body
       try { body = await request.json() } catch { body = {} }
-      const result = await handle(String(body?.endpoint ?? ''), body?.payload, request.signal)
+      const sessionToken = request.headers.get('x-flybot-member-session')
+      const result = await handle(String(body?.endpoint ?? ''), body?.payload, request.signal, sessionToken)
       return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } })
     },
   }

@@ -20,8 +20,8 @@ const isRecord = value => value !== null && typeof value === 'object' && !Array.
 export function install(rt) {
   const { ctx, home, statePath } = rt
 
-  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
-  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0 }
+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>}} */
+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   const { warn } = rt
@@ -294,6 +294,15 @@ export function install(rt) {
     }
     if (!isRecord(state.members)) {
       state.members = {}
+      migrated = true
+    }
+    // Member auth (#48): invitations and session records; a missing map resets.
+    if (!isRecord(state.invitations)) {
+      state.invitations = {}
+      migrated = true
+    }
+    if (!isRecord(state.authSessions)) {
+      state.authSessions = {}
       migrated = true
     }
     if (ensureOwner()) migrated = true

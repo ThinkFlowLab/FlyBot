@@ -68,5 +68,12 @@
   "0009-identity-schema": [
     "test/identity.test.js",
     "test/roster.test.js"
+  ],
+  "0010-member-auth": [
+    "index.js",
+    "src/host/member-auth.js",
+    "src/host/channel.js",
+    "src/host/store.js",
+    "test/member-auth.test.js"
   ]
 }
