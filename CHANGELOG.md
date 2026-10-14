@@ -173,3 +173,4 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 [0.1.2]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ThinkFlowLab/FlyBot/releases/tag/v0.1.0
+[0.1.0-dsbot]: https://github.com/Fei2411/DeepSeek-Bot/releases/tag/v0.1.0
