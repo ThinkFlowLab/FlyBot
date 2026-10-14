@@ -63,5 +63,8 @@
   ],
   "0008-client-bundle": [
     "client.js"
+  ],
+  "0009-identity-schema": [
+    "test/identity.test.js"
   ]
 }

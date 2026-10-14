@@ -54,6 +54,7 @@ Patched upstream `ds-bot` that ships as `core/`. Never edit `ds-bot/` by hand; c
 2. `core/` == `ds-bot/` + `patches/ds-bot/`; regenerate after every `core/` change.
 3. `client.js` matches `core/src/client/`; `npm run build` + `--check`.
 4. Never touch the user's `~/.dsh`.
+5. The saved team (`state.json`) is versioned. Version 2 (#47) carries the identity schema — `members` records, a per-Bot `ownerId`, the owner's `designatedChiefId`. A legacy version-1 file is migrated on load with a one-time `state.json.v1` backup; malformed ownership fails closed (read-only); an older binary refuses a newer version read-only. This is schema foundation only — team mode stays disabled, see [team](team.md).
 
 ## Tests
 

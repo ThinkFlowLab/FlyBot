@@ -73,6 +73,9 @@ export function install(rt) {
     const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : await rt.defaultModel()
     const effortId = modelRef !== undefined && effort !== undefined ? await rt.resolveEffort(modelRef, effort) : undefined
     const dir = workDir === undefined || workDir === null ? undefined : await rt.cleanWorkDir(workDir)
+    // Every Bot binds to the team's one owner (#47), resolved before the Session exists
+    // so a failure here leaves nothing to clean up.
+    const ownerId = rt.initialOwnerId()
     const id = await createSession(cleanName, { dir })
     try {
       state.bots[id] = {
@@ -88,13 +91,17 @@ export function install(rt) {
         instructions: String(instructions).trim(),
         createdAt: Date.now(),
         createdBy: createdBy ?? null,
+        ownerId,
         capabilities: [],
         // FlyBot (hooks.js): extra system prompt text and per-plugin custom fields.
         ...(typeof systemPrompt === 'string' && systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
         ...(fields && typeof fields === 'object' && Object.keys(fields).length > 0 ? { fields: JSON.parse(JSON.stringify(fields)) } : {}),
         ...(isRemote ? { remote: JSON.parse(JSON.stringify(remote)) } : {}),
       }
-      if (main) state.mainBotIds.push(id)
+      if (main) {
+        state.mainBotIds.push(id)
+        rt.syncDesignatedChief()
+      }
       const creator = rt.botOf(createdBy)
       const original = rt.botOf(copyOf)
       const language = rt.uiLanguage?.()
@@ -438,6 +445,7 @@ export function install(rt) {
       if (rt.botOf(other)?.kickoff?.main) delete rt.botOf(other).kickoff
     }
     state.mainBotIds = next
+    rt.syncDesignatedChief()
     await rt.save()
   }
 
@@ -466,6 +474,7 @@ export function install(rt) {
     await followMemberNames(touched)
     await rt.forgetBotSecrets(id)
     await archived
+    rt.syncDesignatedChief()
     const failed = await saveForDelete()
     // Same as deleteRoom: stopActivity removes the Session's armed scheduled tasks.
     // Past parts are archived too: a part move can leave tasks on the old Session,

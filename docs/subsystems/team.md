@@ -8,7 +8,7 @@ owned_paths:
 
 Proposed ownership and authority contract for multi-human FlyBot: **human owner ↔ designated Chief ↔ specialists** (tree children).
 
-> **Status: planned, not shipped.** Multi-human ("team mode") does not exist in FlyBot today. This page is a contract for upcoming schema work (#47+), written so role and data-boundary decisions are explicit *before* code. **Team mode stays DISABLED until the [team mode gate](#team-mode-gate) passes.** No schema, API, tool, config key or env var is defined here — do not invent one.
+> **Status: planned, not shipped.** Multi-human ("team mode") does not exist in FlyBot today. This page is a contract for the remaining team work (#48+), written so role and data-boundary decisions are explicit *before* code. The #47 **schema foundation has landed** in the core store — data records only (see [Schema foundation](#schema-foundation-landed-47)). **Team mode stays DISABLED until the [team mode gate](#team-mode-gate) passes.** No API, tool, config key or env var enables it — do not invent one.
 
 Shipped behavior stays what [core/README.md](../../core/README.md) (roles: You / Main Bot / group admin / member) and [plugins/tree/README.md](../../plugins/tree/README.md) (Chief as tree root) already document.
 
@@ -36,6 +36,15 @@ Shipped behavior stays what [core/README.md](../../core/README.md) (roles: You /
 | Private owner authority | Rights over one owner's **private** scope. Never implied by team administration. | Planned. |
 | Approval | A human owner's consent for an action that spends that owner's authority. | Planned. |
 | Team mode | Multi-human operation: several owners in one deployment, cross-owner traffic, per-owner scoping. | **Disabled** (see gate). |
+
+## Schema foundation (landed, #47)
+
+Shipped by the core store (`core/src/host/store.js`, owned by [ds-bot-core](ds-bot-core.md)) as **data records only**. It replaces implicit single-user ownership with explicit stable identities while the product stays single-human:
+
+- The saved team (`state.json`) is **version 2**. `members` holds records with an immutable `id`, `createdAt`, and `designatedChiefId`; every Bot carries an `ownerId` binding.
+- Loading a legacy **version-1** team runs one migration: it creates the single initial owner (`owner-1`), binds every existing Bot to it, sets the designated Chief from the **first Main Bot** (the shipped Main role — no name matching, no new Main rules), and writes version 2. Bot ids, Session parts and private histories are preserved. The pre-migration file is backed up once as `state.json.v1` before the first version-2 write.
+- Malformed ownership **fails closed**: a Bot owner that names no member, duplicate or mismatched member ids, or a designated Chief that is not a Bot of its member makes the file read-only — it is never repaired by guessing. An older binary already refuses a newer version read-only, so it cannot overwrite the schema.
+- This is **not team mode**: there is no auth, no sign-in, no server-side owner scoping, no cross-owner routing, and no flag/config/env for any of them. The gates below are unchanged and unsatisfied. The schema resolves nothing about `create_child_bot` (#16 stays open) and defines no API, tool, config key or env var.
 
 ## Identity model
 
@@ -139,6 +148,7 @@ Planned rules (fail closed by default):
 ## Common mistakes
 
 - Reading this page as shipped behavior — multi-human is planned; team mode is disabled.
+- Reading the version-2 identity schema (`members`, `ownerId`, `designatedChiefId`) as team mode — it is data-record foundation; the gates below are unchanged, and nothing enforces them yet.
 - Treating team administration (shared groups, team memory) as private owner authority, or vice versa.
 - Letting a specialist "just relay" across owners — relaying is routing, and it is forbidden.
 - Treating a forwarded request or forwarded "approval" as owner approval.
@@ -148,6 +158,6 @@ Planned rules (fail closed by default):
 
 ## Tests
 
-**N/A — planned.** This is a doc-only contract (#46); nothing here runs.
+**Schema foundation (#47)** has store-level tests in `core/test/identity.test.js`: a fresh team and a representative legacy team load, migration idempotence and restart-safety, the `state.json.v1` backup, and malformed-ownership fail-closed cases (unknown owner, duplicate member ids, bad Chief references, version-1 files carrying ownership fields). They assert data records only — no routing, scoping or approvals, and no multi-human behavior.
 
-When schema work starts (#47+), the routing-matrix rows become tests first, per [fail-without-change](../code-standards.md): same-owner delegation allowed (a), Chief-to-Chief allowed (b), cross-owner specialist denied (c), team-admin vs private-owner denied (d), forwarded approval rejected (e). Each must fail on the unbroken tip before implementation lands.
+The routing-matrix rows above remain untested because the behavior is not shipped. When enforcement work starts (#48+), each row becomes a test first, per [fail-without-change](../code-standards.md): same-owner delegation allowed (a), Chief-to-Chief allowed (b), cross-owner specialist denied (c), team-admin vs private-owner denied (d), forwarded approval rejected (e). Each must fail on the unbroken tip before implementation lands.

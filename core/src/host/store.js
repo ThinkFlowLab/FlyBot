@@ -1,18 +1,27 @@
 // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
 // host on the same data from writing it, and the indexes that map a Session to the Bot
 // or group chat it belongs to.
-import { mkdirSync, statSync } from 'node:fs'
+import { constants, mkdirSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
 import { currentColor, normalize, unquote } from './text.js'
 
+// The saved team's format version. Version 2 (#47) adds the identity schema: member
+// records, a per-Bot owner binding, and the owner's designated Chief. A version-1 file
+// is migrated on load (after a one-time `state.json.v1` backup); a file written by a
+// newer DS Bot is refused read-only, so an older binary never overwrites this schema.
+const STATE_VERSION = 2
+// The immutable id of the one owner a fresh or legacy team starts with.
+const OWNER_ID = 'owner-1'
+const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+
 export function install(rt) {
   const { ctx, home, statePath } = rt
 
-  /** @type {{version:1, workspaceId?:string, mainBotIds:string[], bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
-  const state = { version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0 }
+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   const { warn } = rt
@@ -56,6 +65,66 @@ export function install(rt) {
     return `The Bot team in ${home} is open in another dsh (Web or Desktop, ${where}). This window shows the team but cannot change it; close the other one and reload.`
   }
 
+  // A version-1 team predates member records: it carries no `members` and no per-Bot
+  // `ownerId`. Ownership fields on it are not something the migration can trust, so the
+  // file is refused (fail closed) instead of being guessed at.
+  const legacyOwnershipProblem = (parsed) => {
+    if (parsed.members !== undefined) return 'the version-1 state carries member records'
+    if (!isRecord(parsed.bots)) return undefined
+    for (const [id, bot] of Object.entries(parsed.bots)) {
+      if (isRecord(bot) && bot.ownerId !== undefined) return `the version-1 Bot ${id} carries an owner binding`
+    }
+    return undefined
+  }
+
+  // One backup of the version-1 file, taken before the first version-2 write can
+  // replace it. A second read finds it already there and leaves it alone; a backup that
+  // cannot be written stops the migration rather than losing the pre-migration bytes.
+  const backUpLegacy = async () => {
+    const backup = `${statePath}.v1`
+    try {
+      await copyFile(statePath, backup, constants.COPYFILE_EXCL)
+    } catch (error) {
+      if (error?.code === 'EEXIST') return undefined
+      return `cannot back up the version-1 state (${error?.code ?? error?.message ?? error})`
+    }
+    warn('ds-bot: backed up the version-1 Bot team as %s before the identity update', backup)
+    return undefined
+  }
+
+  // The identity schema's invariants (#47): member ids are unique and match their
+  // records; every Bot binds to a member that exists; a designated Chief is a Bot of the
+  // member that designates it. A file that breaks any of this is refused read-only —
+  // malformed ownership never repairs itself, and a Bot's name grants nothing.
+  const ownershipProblem = (team) => {
+    if (!isRecord(team.members)) return 'member records are missing'
+    if (Object.hasOwn(team, 'bots') && !isRecord(team.bots)) return 'the Bot roster is missing or malformed'
+    const memberIds = new Set()
+    for (const [key, member] of Object.entries(team.members)) {
+      if (!isRecord(member)) return `member ${key} is not a record`
+      if (typeof member.id !== 'string' || member.id === '') return `member ${key} has no id`
+      if (memberIds.has(member.id)) return `duplicate member id ${member.id}`
+      memberIds.add(member.id)
+    }
+    for (const [key, member] of Object.entries(team.members)) {
+      if (member.id !== key) return `member id ${member.id} does not match its record key ${key}`
+    }
+    const bots = team.bots ?? {}
+    for (const [id, bot] of Object.entries(bots)) {
+      if (!isRecord(bot)) return `Bot ${id} is not a record`
+      if (typeof bot.ownerId !== 'string' || !memberIds.has(bot.ownerId)) return `Bot ${id} is not owned by a known member`
+    }
+    for (const [key, member] of Object.entries(team.members)) {
+      const chief = member.designatedChiefId
+      if (chief === undefined || chief === null) continue
+      if (typeof chief !== 'string' || chief === '') return `member ${key} has an invalid designated Chief`
+      const bot = bots[chief]
+      if (!isRecord(bot)) return `member ${key} designates unknown Bot ${chief} as Chief`
+      if (bot.ownerId !== member.id) return `member ${key} designates a Chief owned by ${bot.ownerId}`
+    }
+    return undefined
+  }
+
   const readFileState = async () => {
     let contents
     try {
@@ -87,6 +156,28 @@ export function install(rt) {
       return undefined
     }
     if (parsed?.version === 1) {
+      const problem = legacyOwnershipProblem(parsed)
+      if (problem !== undefined) {
+        stuck = `malformed ownership: ${problem}`
+        warn('ds-bot: state %s was refused: %s', statePath, problem)
+        return undefined
+      }
+      const backupProblem = await backUpLegacy()
+      if (backupProblem !== undefined) {
+        stuck = backupProblem
+        warn('ds-bot: unreadable state %s: %s', statePath, backupProblem)
+        return undefined
+      }
+      stuck = undefined
+      return parsed
+    }
+    if (parsed?.version === STATE_VERSION) {
+      const problem = ownershipProblem(parsed)
+      if (problem !== undefined) {
+        stuck = `malformed ownership: ${problem}`
+        warn('ds-bot: state %s was refused: %s', statePath, problem)
+        return undefined
+      }
       stuck = undefined
       return parsed
     }
@@ -173,8 +264,67 @@ export function install(rt) {
     // Unnamed groups from before names followed their members may still list old names.
     const stale = Object.values(state.rooms).filter(room => !room.named && room.name !== rt.autoRoomName(room.members))
     for (const room of stale) room.name = rt.autoRoomName(room.members)
+    // Identity schema (#47). A version-1 team had no member records — ownership was
+    // implicit in the single human — so it gets one initial owner and every Bot binds
+    // to it. readFileState already refused a legacy file that carries ownership fields
+    // and a version-2 file whose ownership does not check out, so what is here is
+    // either legacy or coherent. Bot ids, Session parts and histories are untouched.
+    const legacy = state.version !== STATE_VERSION
+    if (legacy) {
+      state.version = STATE_VERSION
+      // Ownership fields a version-1 file should not carry were refused on read.
+      state.members = {}
+      migrated = true
+    }
+    if (!isRecord(state.members)) {
+      state.members = {}
+      migrated = true
+    }
+    if (ensureOwner()) migrated = true
+    if (legacy) {
+      const ownerId = Object.keys(state.members)[0]
+      for (const bot of Object.values(state.bots)) {
+        if (bot.ownerId !== ownerId) {
+          bot.ownerId = ownerId
+          migrated = true
+        }
+      }
+    }
+    if (syncDesignatedChief()) migrated = true
     indexSessions()
     return { migrated: migrated || stale.length > 0, stale }
+  }
+
+  // The setup step (#47): a team with no member record gets the single owner a fresh or
+  // legacy install starts with. No shipped path makes a second member — team mode stays
+  // disabled until the gates in docs/subsystems/team.md pass.
+  const ensureOwner = () => {
+    if (Object.keys(state.members).length > 0) return false
+    state.members[OWNER_ID] = { id: OWNER_ID, createdAt: Date.now(), designatedChiefId: null }
+    return true
+  }
+
+  // The one human owner a new Bot binds to. The shipped product has a single owner; a
+  // file with any other count of member records is not something this runtime may
+  // choose between, so it fails closed.
+  const initialOwnerId = () => {
+    ensureOwner()
+    const ids = Object.keys(state.members)
+    if (ids.length !== 1) throw new Error(`The Bot team file lists ${ids.length} members; DS Bot runs one owner per team`)
+    return ids[0]
+  }
+
+  // The designated Chief of the single owner is its first Main Bot — the shipped Main
+  // role (#46), recorded on the member record, never a name. A team with any other
+  // number of member records is left as it is rather than guessed at.
+  const syncDesignatedChief = () => {
+    const ids = Object.keys(state.members)
+    if (ids.length !== 1) return false
+    const chief = state.mainBotIds[0] ?? null
+    const member = state.members[ids[0]]
+    if (member.designatedChiefId === chief) return false
+    member.designatedChiefId = chief
+    return true
   }
 
   const load = () => loaded ??= (async () => {
@@ -364,5 +514,6 @@ export function install(rt) {
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
+    initialOwnerId, syncDesignatedChief,
   })
 }
