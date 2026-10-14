@@ -3,6 +3,10 @@ name: Test
 on:
   push:
     branches: [main]
+    # Docs-only pushes do not need the shipgate.
+    # pull_request must NOT ignore docs: Test is a required check there, and a
+    # skipped required check would block docs-only pull requests.
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
   workflow_dispatch:
 
@@ -11,17 +15,18 @@ permissions:
 
 concurrency:
   group: test-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test:
     name: ${{ matrix.os }} · Node ${{ matrix.node }} · DSH ${{ matrix.dsh }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         # Slim PR/push shipgate: one cheap job.
-        # Dropped from the required matrix (restore later as nightly/manual if needed):
+        # The dropped legs run in the Compatibility workflow (nightly.yml):
         #   - windows-latest · Node 24 · DSH 0.2.0-rc.2
         #   - ubuntu-latest · Node 22 · DSH 0.2.0-rc.2
         #   - ubuntu-latest · Node 24 · DSH 0.2.1-alpha.1
@@ -33,14 +38,19 @@ jobs:
         working-directory: ds-bot
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: ds-bot/package-lock.json
-      - run: npm ci --no-fund --no-audit
+      - name: npm ci
+        run: npm ci --no-fund --no-audit
+        timeout-minutes: 5
       - name: Install DSH ${{ matrix.dsh }}
         run: npm run harness -- --no-save "@deepseek-ai/dsh@${{ matrix.dsh }}"
+        timeout-minutes: 5
       - run: npm test
       - name: Build (client bundle is up to date)
         run: node scripts/build-client.mjs --check

@@ -1,0 +1,156 @@
+# Compatibility matrix behind the slim PR gate (#31): the PR gate ships one job,
+# ubuntu · Node 24 · DSH 0.2.0-rc.2. This workflow restores Windows · Node 24 ·
+# DSH 0.2.0-rc.2, ubuntu · Node 22 · DSH 0.2.0-rc.2 and ubuntu · Node 24 ·
+# DSH 0.2.1-alpha.1 on schedule and dispatch, and supersedes the matrix/compat
+# parts of #29. A window in which main had no commits is skipped; a schedule only
+# fires on the default branch. macOS runs locally on a Mac with `npm run ci:local`
+# (ds-bot/scripts/local-ci.sh), never on a GitHub-hosted runner.
+
+name: Compatibility
+
+on:
+  schedule:
+    - cron: "0 16 * * *" # daily 00:00 Asia/Shanghai
+    - cron: "0 17 * * 6" # weekly Sunday 01:00 Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compat-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    name: Window check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Check out main with full history
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether the window has commits on main
+        id: gate
+        shell: bash
+        run: |
+          run=false
+          since=""
+          case "${{ github.event.schedule }}" in
+            "0 16 * * *") since="24 hours ago" ;;
+            "0 17 * * 6") since="7 days ago" ;;
+          esac
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run=true
+            reason="manual dispatch always runs"
+          elif [ -n "$since" ] && [ -n "$(git log --since="$since" --pretty=oneline)" ]; then
+            run=true
+            reason="main had commits in the last ${since}"
+          else
+            reason="main had no commits in the window (since ${since})"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Compatibility run decision"
+            echo ""
+            echo "- event: \`${{ github.event_name }}\`"
+            echo "- window: ${since:-n/a (dispatch)}"
+            echo "- run: \`${run}\`: ${reason}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  daily:
+    name: compat · ${{ matrix.os }} · Node ${{ matrix.node }} · DSH ${{ matrix.dsh }}
+    needs: changes
+    if: needs.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * *')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: 22, dsh: 0.2.0-rc.2 }
+          - { os: ubuntu-latest, node: 24, dsh: 0.2.1-alpha.1 }
+    defaults:
+      run:
+        shell: bash
+        working-directory: ds-bot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: ds-bot/package-lock.json
+      - name: npm ci
+        run: npm ci --no-fund --no-audit
+        timeout-minutes: 5
+      - name: Install DSH ${{ matrix.dsh }}
+        run: npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
+        timeout-minutes: 5
+        env:
+          DSH: ${{ matrix.dsh }}
+      - name: Lint
+        run: npm run lint
+      - name: Build (client bundle is up to date)
+        run: node scripts/build-client.mjs --check
+      - name: Tests
+        run: npm test
+      - name: Plugin tests (social)
+        working-directory: ds-bot/plugins/social
+        run: node --import ../../test/harness-resolve.mjs --test "test/*.test.js"
+      - name: Plugin tests (tree)
+        working-directory: ds-bot/plugins/tree
+        run: node --test "test/*.test.js"
+
+  weekly:
+    name: compat · ${{ matrix.os }} · Node ${{ matrix.node }} · DSH ${{ matrix.dsh }}
+    needs: changes
+    if: needs.changes.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 17 * * 6')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, node: 24, dsh: 0.2.0-rc.2 }
+    defaults:
+      run:
+        shell: bash
+        working-directory: ds-bot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: ds-bot/package-lock.json
+      - name: npm ci
+        run: npm ci --no-fund --no-audit
+        timeout-minutes: 5
+      - name: Install DSH ${{ matrix.dsh }}
+        run: npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
+        timeout-minutes: 5
+        env:
+          DSH: ${{ matrix.dsh }}
+      - name: Lint
+        run: npm run lint
+      - name: Build (client bundle is up to date)
+        run: node scripts/build-client.mjs --check
+      - name: Tests
+        run: npm test
+      - name: Plugin tests (social)
+        working-directory: ds-bot/plugins/social
+        run: node --import ../../test/harness-resolve.mjs --test "test/*.test.js"
+      - name: Plugin tests (tree)
+        working-directory: ds-bot/plugins/tree
+        run: node --test "test/*.test.js"
