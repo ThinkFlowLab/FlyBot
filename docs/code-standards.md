@@ -37,6 +37,12 @@ When you report status on a change:
   - Required checks in CONTRIBUTING (`npm test`, client `--check`, `npm run lint`; smoke when host changes) are green or honestly listed as not run with a maintainer waiver.
 - Do not merge on a newer unreviewed commit; re-run the Verifier on the new tip.
 
+## Architecture docs and owned paths
+
+- Each subsystem under [docs/subsystems/](subsystems/README.md) declares `owned_paths` in YAML front-matter.
+- Changing an owned file without updating that subsystem doc fails `npm run arch-docs` (also run at the end of `npm run lint`). Excuse with a `Docs-not-needed:` trailer in the commit message only when the change truly needs no doc update.
+- Reviewers: FAIL if an owned-path change ships without a subsystem doc update **and** without a `Docs-not-needed:` trailer. Load the latest `origin/main` rules before each review (`git fetch` + `git show origin/main:.claude/skills/review-pr/SKILL.md` or the equivalent), not a stale local copy.
+
 ## Tiny loops
 
 - One issue (or one tightly coupled pair) per worktree / session.

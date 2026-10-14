@@ -81,6 +81,7 @@ FlyBot 拥有群聊功能。群聊是非常好的多 bot 协作方式，但它�
 ## 开发
 
 插件源码在 [`core/`](core/)。配置项和内部结构见 [`core/README.md`](core/README.md)，开发和测试见 [CONTRIBUTING.md](CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+仓库结构、子系统归属和文档检查见 [docs/architecture.md](docs/architecture.md) 与 [docs/subsystems/](docs/subsystems/README.md)。
 
 ## 致谢
 

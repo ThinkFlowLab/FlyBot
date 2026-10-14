@@ -63,13 +63,17 @@ dev/bench.sh smoke 3096 8796 stop
 
 A change is done when `npm test`, the `--check` and `npm run lint` pass; CI runs them on every pull request. Run the smoke test as well for changes to `index.js` or `src/host/`. Use a free port for each bench, and stop every bench and process that you started.
 
+After oxlint, `npm run lint` also runs `npm run arch-docs`: if an owned file (see [docs/subsystems/](docs/subsystems/README.md)) changes without its subsystem doc in the same PR, the check fails—update the doc or add a `Docs-not-needed:` trailer.
+
 ## Layout
 
 - `core/index.js` and `core/src/host/`: the server side (roster and store, tools, turns and delivery, groups, conversation parts and the search index, images, the browser bridge, the `api/bot` channel).
 - `core/src/client/`: the browser side (sidebar, chat, panels, themes, characters, the Bot browser panel).
 - `core/web-search.js`: the `auto` web-search provider, independent of the Bot team code.
 - `core/test/`: unit tests and fixtures. `core/dev/`: the DSH packages for the tests (`harness/`), mock model, test bench, smoke test, character generator, Desktop scripts for Linux.
+- `plugins/social/` and `plugins/tree/`: peer plugins `@flybot/social` and `@flybot/tree`, not under `core/`.
 - `app/`: the desktop app (Electron main process and window, first-run setup and import, installer and updates).
+- Architecture and ownership: [docs/architecture.md](docs/architecture.md) and [docs/subsystems/](docs/subsystems/README.md).
 
 ## Style
 

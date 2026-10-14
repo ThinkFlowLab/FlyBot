@@ -199,6 +199,9 @@ for development, and [CHANGELOG.md](CHANGELOG.md) for history. CI
 ([`.github/workflows/test.yml`](.github/workflows/test.yml)) runs the tests of the core and every
 plugin, the client build check and lint on Ubuntu and Windows.
 
+Repository layout, subsystem ownership and the docs gate: [docs/architecture.md](docs/architecture.md)
+and [docs/subsystems/](docs/subsystems/README.md).
+
 ## Acknowledgments
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): FlyBot is built on the DSH plugin system. Every bot is a DSH session and uses the DSH tools and models.

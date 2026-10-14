@@ -22,4 +22,7 @@ if (!bin) {
 }
 const result = spawnSync(process.execPath, [bin, '-c', '.oxlintrc.json', ...process.argv.slice(2), 'index.js', 'web-search.js', 'src', 'dev', 'scripts', 'test'], { cwd: plugin, stdio: 'inherit' })
 if (result.error) console.error(`lint: ${result.error.message}`)
-process.exit(result.status ?? 1)
+if (result.status !== 0) process.exit(result.status ?? 1)
+const arch = spawnSync(process.execPath, [join(plugin, 'scripts', 'check-arch-docs.mjs')], { cwd: plugin, stdio: 'inherit' })
+if (arch.error) console.error(`lint: ${arch.error.message}`)
+process.exit(arch.status ?? 1)

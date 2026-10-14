@@ -54,9 +54,12 @@
     "package.json",
     "scripts/local-ci.sh",
     "scripts/install-doctor.mjs",
+    "scripts/lint.mjs",
+    "scripts/check-arch-docs.mjs",
     "package-lock.json",
     "test/diagnostics.test.js",
-    "test/install-doctor.test.js"
+    "test/install-doctor.test.js",
+    "test/check-arch-docs.test.js"
   ],
   "0008-client-bundle": [
     "client.js"

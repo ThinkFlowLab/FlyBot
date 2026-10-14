@@ -11,8 +11,15 @@ Use for local or PR tip reviews on `ThinkFlowLab/FlyBot`. Produce a Verifier rep
 
 1. Confirm repo identity (`ThinkFlowLab/FlyBot` or the agreed fork) and the commit under review.
 2. Record **tip SHA** (`git rev-parse HEAD` or the PR head SHA). If the tip moves, re-run from scratch.
-3. Read [LESSONS.md](../../../LESSONS.md), [docs/code-standards.md](../../../docs/code-standards.md), [AGENTS.md](../../../AGENTS.md), and the hard rules in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
-4. Inventory changed files vs the merge base. Do not treat author narrative as evidence.
+3. Load the **latest rules from `origin/main`** before each review: `git fetch origin && git show origin/main:.claude/skills/review-pr/SKILL.md` (and the same for `docs/code-standards.md` / `AGENTS.md` if the local tree is behind). Prefer the fetched rules over a stale local copy.
+4. Read [LESSONS.md](../../../LESSONS.md), [docs/code-standards.md](../../../docs/code-standards.md), [AGENTS.md](../../../AGENTS.md), and the hard rules in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
+5. Inventory changed files vs the merge base. Do not treat author narrative as evidence.
+
+## Architecture docs / owned paths (FAIL gate)
+
+- Subsystem pages under `docs/subsystems/` declare `owned_paths` (longest match wins).
+- **FAIL** if any file matching an `owned_paths` entry changed without a corresponding subsystem doc update in the same PR, unless the commit message carries a `Docs-not-needed:` trailer (or the arch-doc check is otherwise green).
+- Do not invent a `Docs-not-needed:` excuse for security, fence, or API-contract changes that change behavior documented in a subsystem page.
 
 ## Verdicts
 
