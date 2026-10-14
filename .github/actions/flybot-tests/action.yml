@@ -38,6 +38,9 @@ runs:
       env:
         DSH: ${{ inputs.dsh }}
       run: npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
+    - name: Fetch origin/main for arch-docs check
+      shell: bash
+      run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
     # Lint and the bundle check first: a slip fails in seconds instead of after the suite.
     - name: Lint
       shell: bash
