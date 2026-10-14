@@ -4,7 +4,31 @@ Thank you for helping. This file explains how to set up the plugin, how to test 
 
 ## Pull requests
 
-Thank you for your interest in improving DS Bot. The project is still changing quickly, so we are not accepting pull requests for now. If you find a problem, please open an issue (see [Report a problem](#report-a-problem)). For a question, idea or feature request, use [Discussions](https://github.com/Fei2411/DeepSeek-Bot/discussions). We hope to open pull requests again when the project is stable. Thank you for your understanding.
+**ThinkFlowLab/FlyBot** accepts pull requests for FlyBot plugin and docs work when they follow this file, [AGENTS.md](AGENTS.md), [LESSONS.md](LESSONS.md), and [docs/code-standards.md](docs/code-standards.md). Prefer small PRs: one issue or one tightly coupled fix per branch.
+
+Upstream **DS Bot** (`Fei2411/DeepSeek-Bot`) may still decline external PRs while that tree moves quickly—open an issue there (see [Report a problem](#report-a-problem)) or use [Discussions](https://github.com/Fei2411/DeepSeek-Bot/discussions) for product questions. Do not assume a FlyBot PR is automatically upstreamed.
+
+Security reports: use the repository **Security** tab, not a public PR description with exploit detail.
+
+## Maintainer / agent loop
+
+For agent-driven work on this repository (Grok Bot as the human’s unified entry):
+
+1. Read [LESSONS.md](LESSONS.md) and [docs/code-standards.md](docs/code-standards.md) before coding.
+2. **OpenCode** implements (default model `opencode/step-5-preview-free`); **Codex** reviews the tip until both **PASS and agree**.
+3. Security follow-ups from PR #2 first when open: issues #9 → #10 → #8, then other review bugs.
+4. One worktree / session per issue. Promote LESSONS into code-standards after ≥3 days when the rule stays true.
+5. Reviewers use [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md).
+
+### Verifier checklist (every agent or maintainer status report)
+
+- [ ] Tip SHA named (`git rev-parse HEAD`)
+- [ ] Commands **run** at that tip listed with pass/fail
+- [ ] Material checks **not run** listed (smoke / Desktop / real model / …)
+- [ ] New regression fails without the fix, then passes with it (when adding tests)
+- [ ] Fix covers the **class** (shared fence helper, sanitization), not only one sample
+- [ ] OpenCode and Codex agree PASS on the same tip before merge / “open PR”
+- [ ] `npm test`, `node scripts/build-client.mjs --check`, `npm run lint` green for code changes (or honestly waived)
 
 ## The rules that matter most
 
@@ -115,6 +139,16 @@ DS Bot removes API keys, tokens, saved secrets and your home folder from its dia
 For a security problem, do not open a public issue. Use **Report a vulnerability** on the repository's **Security** tab.
 
 Issues are for bug reports. Questions, ideas and feature requests belong in [Discussions](https://github.com/Fei2411/DeepSeek-Bot/discussions).
+
+
+## Agent docs map
+
+| Doc | Role |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Hard DSH rules + Magpie-style iteration loop |
+| [LESSONS.md](LESSONS.md) | Dated lessons (`Seen N×`); promote after ≥3 days |
+| [docs/code-standards.md](docs/code-standards.md) | Verifier honesty, fences, merge-only-reviewed-tip |
+| [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md) | PASS / FAIL / INC review report shape |
 
 ## License
 

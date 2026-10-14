@@ -2,6 +2,24 @@
 
 Instructions for AI coding agents that work on this repository. Human contributors: see [CONTRIBUTING.md](CONTRIBUTING.md), which has the same rules with more detail.
 
+## Before you code
+
+1. Read [LESSONS.md](LESSONS.md) (open lessons are constraints).
+2. Read [docs/code-standards.md](docs/code-standards.md) (Verifier honesty, fences, merge gate).
+3. Keep the **Hard rules** below; never patch DSH or commit secrets.
+
+## Iteration loop (Magpie-style)
+
+FlyBot agent work uses a small, visible loop. Adapt the *habits* below; do not copy another product’s proprietary docs.
+
+1. **Unified entry — Grok Bot.** Humans talk to Grok Bot only. Grok Bot schedules implementers and reviewers; do not expect ChatGPT Dots (or other closed products) to be driven from this repo’s tooling.
+2. **OpenCode implements.** Default coding agent: OpenCode with model `opencode/step-5-preview-free` (or the maintainer’s pinned equivalent). One issue per session; one git worktree per session.
+3. **Codex reviews until PASS + agree.** Codex reviews the **tip SHA**. Loop OpenCode → Codex until both report PASS and agree on that tip. Re-review if the tip moves.
+4. **Security first.** Prefer open security / delivery bugs in order: [#9](https://github.com/ThinkFlowLab/FlyBot/issues/9) (untrusted fence / display names) → [#10](https://github.com/ThinkFlowLab/FlyBot/issues/10) → [#8](https://github.com/ThinkFlowLab/FlyBot/issues/8), then other PR #2 review follow-ups. Large feature umbrellas wait until that debt shrinks.
+5. **LESSONS before code.** Skim LESSONS and code-standards before editing. When a class of bug repeats, date a lesson (`Seen N×`); after **≥3 days** promote the durable rule into `docs/code-standards.md` / CONTRIBUTING.
+6. **Tiny loops.** Fail-without-change tests; fix the class; list what you ran and what you **not run** at the tip SHA. Merge only a reviewed tip (see code-standards).
+7. **Review skill.** Use [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md) for the Verifier report shape (PASS / FAIL / INC).
+
 ## What this project is
 
 DS Bot is a team of long-lived Bots, built on DeepSeek Harness (DSH). It has two parts:
