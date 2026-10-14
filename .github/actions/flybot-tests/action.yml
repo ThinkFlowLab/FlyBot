@@ -40,7 +40,21 @@ runs:
       run: npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
     - name: Fetch origin/main for arch-docs check
       shell: bash
-      run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      run: |
+        set -euo pipefail
+        git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+        for n in 50 200 1000 5000; do
+          if git merge-base origin/main HEAD >/dev/null 2>&1; then
+            break
+          fi
+          git fetch --no-tags --deepen="$n" origin main 2>/dev/null || true
+          git fetch --no-tags --deepen="$n" origin HEAD 2>/dev/null || true
+        done
+        if ! git merge-base origin/main HEAD >/dev/null 2>&1; then
+          git fetch --unshallow 2>/dev/null || git fetch --no-tags origin main
+        fi
+        git merge-base origin/main HEAD >/dev/null
+        git rev-parse --verify origin/main^{commit}
     # Lint and the bundle check first: a slip fails in seconds instead of after the suite.
     - name: Lint
       shell: bash
