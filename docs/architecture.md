@@ -22,6 +22,11 @@ Each subsystem has a detail page under [docs/subsystems/](subsystems/README.md) 
 - [tree](subsystems/tree.md) — `@flybot/tree`
 - [social](subsystems/social.md) — `@flybot/social`
 - [install](subsystems/install.md) — scripts and install doctor
+- [team](subsystems/team.md) — planned human/Chief/specialist authority contract (not shipped)
+
+## Team authority (planned, not shipped)
+
+Multi-human ownership is **planned, not shipped**. The proposed contract — human owner ↔ designated Chief ↔ specialists, owner-scoped management, Chief-only cross-owner traffic, approval authority and the routing matrix — lives in [docs/subsystems/team.md](subsystems/team.md). **Team mode stays disabled** until that page's authorization gates pass, and the child-creation decision (#16) remains an open maintainer decision recorded there.
 
 ## Integrating
 

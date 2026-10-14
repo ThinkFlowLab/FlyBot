@@ -43,6 +43,12 @@ When you report status on a change:
 - Changing an owned file without updating that subsystem doc fails `npm run arch-docs` (also run at the end of `npm run lint`). Excuse with a `Docs-not-needed:` trailer in the commit message only when the change truly needs no doc update.
 - Reviewers: FAIL if an owned-path change ships without a subsystem doc update **and** without a `Docs-not-needed:` trailer. Load the latest `origin/main` rules before each review (`git fetch` + `git show origin/main:.claude/skills/review-pr/SKILL.md` or the equivalent), not a stale local copy.
 
+## Team authority contract (planned)
+
+- The human ↔ Chief ↔ specialist ownership contract lives in [docs/subsystems/team.md](subsystems/team.md). It is a **planned** contract: multi-human is not shipped, and **team mode stays disabled** until that page's authorization gates pass.
+- Issue #16 (who may call `create_child_bot`) is **open**; both options are documented there. Do not implement, review or merge work that assumes either answer, and do not encode one in a test.
+- Main/Chief creation rights stay exactly as [AGENTS.md](../AGENTS.md) states them until #16 is decided.
+
 ## Tiny loops
 
 - One issue (or one tightly coupled pair) per worktree / session.

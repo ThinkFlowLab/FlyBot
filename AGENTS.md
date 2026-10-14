@@ -34,6 +34,7 @@ The Bot team:
 - Every Bot is a DSH Session and runs through the normal DSH agent loop, tools and model routes.
 - The team works together: Bots message each other, share group chats and can see what the other Bots are doing. Each Bot still runs on its own and does not disturb the others.
 - Bots have clear, different roles. A Main Bot has the highest rights: it creates, changes and removes other Bots. Other Bots do not get these rights. There can be more than one Main Bot.
+- The multi-human authority contract (human owner ↔ designated Chief ↔ specialists) is documented in [docs/subsystems/team.md](docs/subsystems/team.md) as **planned, not shipped**: team mode stays disabled until its authorization gates pass, and the `create_child_bot` decision (#16) is still open—do not assume either option in code, schema or tests.
 - Users customize each Bot (name, role label, instructions, model, character).
 - Behavior must be reliable: a Bot acts on evidence, stays inside its goal, and its results can be checked.
 

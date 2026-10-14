@@ -16,6 +16,7 @@ Everything in `plugins/tree/` (entry `plugins/tree/index.js` and any helpers).
 
 - Plugin runtime hooks/slots → [plugin-runtime](plugin-runtime.md).
 - Core server/client → [ds-bot-core](ds-bot-core.md).
+- Cross-owner authority policy → [team](team.md). Chief as tree root is the identity anchor for that contract; tree ownership itself stays on this page.
 
 ## Key files
 
