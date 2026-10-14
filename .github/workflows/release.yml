@@ -1,8 +1,11 @@
 name: Release
 
-# Pushing a v* tag (matching ds-bot/package.json's version) publishes a GitHub Release with
-# the packed ds-bot, social and tree tarballs and that version's CHANGELOG.md section. It
-# waits for the Test run on the tagged commit to pass first. Only GITHUB_TOKEN is used.
+# Pushing a v* tag publishes a GitHub Release with the packed ds-bot, social and tree
+# tarballs and that version's CHANGELOG.md section. It waits for the Test run on the tagged
+# commit to pass first. Only GITHUB_TOKEN is used.
+# Normally the tag must match core/package.json's version; an allowlisted product tag may
+# differ when CHANGELOG.md documents the current core pin. Packing still uses each package's
+# own package.json version, and the release notes come from CHANGELOG's [VERSION] section.
 
 on:
   push:
@@ -49,12 +52,10 @@ jobs:
           node-version: 24
           # No cache in a job that publishes: nothing restored from a cache goes into a release.
           package-manager-cache: false
-      - name: Tag matches core/package.json
+      - name: Tag matches core/package.json (or is an allowlisted product tag)
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          have=$(node -p "require('./core/package.json').version")
-          [ "$have" = "$VERSION" ] || { echo "core/package.json is $have, tag is v$VERSION" >&2; exit 1; }
+        run: node .github/scripts/check-release-version.mjs "$VERSION"
       - name: Wait for a green Test run on this commit
         run: |
           sha=$(git rev-parse HEAD)
