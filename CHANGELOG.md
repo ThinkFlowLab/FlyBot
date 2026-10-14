@@ -1,10 +1,22 @@
 # Changelog
 
-All notable changes to DS Bot are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow [Semantic Versioning](https://semver.org/). Before 1.0, a minor version can contain breaking changes.
+All notable changes to FlyBot (earlier: DS Bot) are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow [Semantic Versioning](https://semver.org/). Before 1.0, a minor version can contain breaking changes. Entries from the historical `0.1.0-dsbot` preview and earlier describe the pre-FlyBot DS Bot lineage.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-14
+
+First public FlyBot-branded cut (core package remains `0.1.5-flybot.1`).
+
+### Highlights
+
+- Peer plugins `@flybot/tree` and `@flybot/social` under `plugins/`
+- Pristine ds-bot + FlyBot patches → `core/` at `0.1.5-flybot.1`
+- Send middleware priorities ROUTING / DEFAULT / APPROVAL
+- `types/flybot.d.ts` documents the browser `flybot` service
+
 ### Changed
+
 - The core is now pristine upstream ds-bot (`ds-bot/`, pinned at Fei2411/DeepSeek-Bot@2b10c70) plus FlyBot's ordered patch series (`patches/ds-bot/`), applied into the committed `core/` (#34). Install paths move from `path:/ds-bot` to `path:/core` and `path:/plugins/{social,tree}`. The core's version is `0.1.5-flybot.1`.
 - Send middleware can set a `priority` (`ROUTING` 100, `DEFAULT` 500, `APPROVAL` 900; `flybot.bot.send.priority`); names in `before`/`after` still work and win over priority. `@flybot/social` runs at `APPROVAL`.
 - `types/flybot.d.ts` documents the browser `flybot` service and its slots.
@@ -112,7 +124,9 @@ Tested with DeepSeek Harness `0.2.1-alpha.1` (DSH Desktop and DSH Web).
 - A turn with many steps shows one "Thought it through" row instead of one per step. The row holds the thinking of every step in order.
 - The Usage page counts the calls of subagent Sessions too. Before, each scan skipped them and wrote one warning per subagent Session to the terminal.
 
-## [0.1.0] - 2026-10-10
+## [0.1.0-dsbot] - 2026-10-10
+
+The pre-FlyBot DS Bot preview lineage, retitled so its version anchor does not collide with FlyBot's `0.1.0`.
 
 The first public preview. Tested with DeepSeek Harness `0.2.1-alpha.1` (DSH Desktop and DSH Web).
 
@@ -152,7 +166,7 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.0...HEAD
 [0.1.5]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.1.2...v0.1.3
