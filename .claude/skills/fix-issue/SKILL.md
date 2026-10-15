@@ -37,7 +37,7 @@ node scripts/ds-bot-patches.mjs generate && node scripts/ds-bot-patches.mjs chec
 ```
 
 - An owned file ([docs/subsystems/](../../../docs/subsystems/README.md)) changed → update that subsystem doc in the same PR; `Docs-not-needed:` only when the doc truly says nothing about the change.
-- A `core/` file changed for the first time must join a topic in `patches/ds-bot/topics.json` before `generate`.
+- An upstream file (one that `ds-bot/` has) edited in `core/` for the first time must join a topic in `patches/ds-bot/topics.json` before `generate`. A new file needs no entry; `generate` stores it whole in `patches/ds-bot/files/`.
 - Compare lint warnings against base: new warnings are findings.
 - `index.js`/`src/host/` changes → run the smoke test as well.
 

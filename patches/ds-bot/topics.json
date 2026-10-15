@@ -12,24 +12,18 @@
     "src/client/model-menu.js",
     "test/memory.test.js",
     "test/model-menu.test.js",
-    "test/fence.test.js",
     "test/home-lock.test.js",
     "test/client-bundle.test.js",
     "test/install.test.js"
   ],
   "0002-flybot-api-host": [
-    "src/host/hooks.js",
     "index.js",
     "src/host/store.js",
     "src/host/roster.js",
     "src/host/tools.js",
-    "test/flybot.test.js",
-    "test/api-route.test.js",
     "test/fake-ctx.js"
   ],
   "0003-flybot-api-client": [
-    "src/client/flybot-registry.js",
-    "src/client/flybot-slots.js",
     "src/client/index.js",
     "src/client/sidebar.js",
     "src/client/cells.js",
@@ -41,69 +35,34 @@
     "src/client/icons.js",
     "src/client/new-chat.js",
     "src/client/palette.js",
-    "test/flybot-client.test.js",
-    "test/new-chat.test.js",
-    "test/mention-rule.test.js",
-    "test/bot-tree.test.js"
-  ],
-  "0004-flybot-api-types": [
-    "types/flybot.d.ts"
+    "test/mention-rule.test.js"
   ],
   "0005-social-seams": [
-    "src/host/remote-chat.js",
     "src/host/channel.js",
     "src/host/delivery.js",
     "src/client/characters.js",
-    "src/client/mark.js",
-    "test/remote-chat.test.js",
-    "test/inbound-ui.test.js"
+    "src/client/mark.js"
   ],
   "0007-version-and-tooling": [
     "package.json",
-    "scripts/local-ci.sh",
-    "scripts/install-doctor.mjs",
     "scripts/lint.mjs",
-    "scripts/check-arch-docs.mjs",
     "package-lock.json",
-    "test/diagnostics.test.js",
-    "test/install-doctor.test.js",
-    "test/check-arch-docs.test.js"
+    "test/diagnostics.test.js"
   ],
   "0008-client-bundle": [
     "client.js"
   ],
   "0009-identity-schema": [
-    "test/identity.test.js",
     "test/roster.test.js"
   ],
-  "0010-member-auth": [
-    "index.js",
-    "src/host/member-auth.js",
-    "src/host/channel.js",
-    "src/host/store.js",
-    "test/member-auth.test.js"
-  ],
-  "0011-owner-scoped-access": [
-    "src/host/authz.js",
-    "src/host/roster.js",
-    "test/authz.test.js"
-  ],
   "0012-room-membership": [
-    "src/host/room-membership.js",
     "src/host/groups.js",
-    "src/shared/remote-label.js",
     "src/client/group-settings.js",
     "src/client/details-drawer.js",
     "src/client/composer.js",
     "src/client/header.js",
     "src/client/sources.js",
     "src/client/api.js",
-    "test/room-membership.test.js",
-    "test/at-menu.test.js",
-    "test/remote-room.test.js"
-  ],
-  "0013-published-reach": [
-    "src/host/reach.js",
-    "test/reach-policy.test.js"
+    "test/at-menu.test.js"
   ]
 }

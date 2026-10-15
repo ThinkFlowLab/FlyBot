@@ -26,12 +26,12 @@ When a class of bug repeats, date a lesson in LESSONS.md (`Seen NÃ—`); after **â
 
 ### Conflict recipe (generated files)
 
-`core/` is the source of truth; `patches/ds-bot/*.patch` and `core/client.js` are generated from it. Never hand-merge them.
+`core/` is the source of truth; `patches/ds-bot/` (`*.patch` and `files/`) and `core/client.js` are generated from it. Never hand-merge them. The patch format is merge-friendly (no `index` lines, no counts that depend on other edits, new files stored whole in `files/`), so two PRs that touch different parts of one core file usually merge without a conflict in `patches/`; the steps below are for when they do not.
 
 ```sh
 git fetch origin && git merge origin/main        # or rebase
 # 1. Resolve conflicts in real sources by hand (core/src/**, core/index.js, tests, docs).
-# 2. Take main's version of the generated patch files:
+# 2. Take main's version of the generated patch files (generate rewrites patches/ds-bot/ entirely):
 git checkout origin/main -- patches/ds-bot
 # 3. Regenerate from the merged core/, then check:
 (cd core && npm run build)                       # client.js, carried by patch 0008
@@ -40,7 +40,7 @@ node scripts/ds-bot-patches.mjs check
 npm run verify
 ```
 
-If `topics.json` conflicts, keep both sides' entries (one patch per file).
+If `topics.json` conflicts, keep both sides' entries (one patch per edited upstream file; a new file needs none).
 
 ## What this project is
 
