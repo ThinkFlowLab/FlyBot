@@ -43,6 +43,7 @@ change the client; that is a known follow-up (build the bundle instead of patchi
 | `0008-client-bundle` | The generated `client.js` (rebuild with `npm run build` in `core/`) |
 | `0009-identity-schema` | The state identity schema tests (team members, owner-bound Bots, #47) |
 | `0013-published-reach` | `src/host/reach.js`, the owner policy that decides which Bots other owners and friends can reach (per-Bot grants, #90; the `published` flag is gone), and its tests |
+| `0014-flybot-branding` | User-visible FlyBot chrome on upstream files (About, settings, diagnostics paste notes, update/secrets/parts/browser host copy). New files (`src/client/brand.js`, `test/branding.test.js`) live in `files/`. Header mark/name and i18n live in `0003` / `0001`. |
 
 Topics that only add files (`0004`, `0010`, `0011`, `0013`, parts of `0002`, `0003`, `0005`, `0007`, `0009`, `0012`) have no `.patch` any more: their files are in `files/`. The table keeps the topic names as a map of what each change set is.
 

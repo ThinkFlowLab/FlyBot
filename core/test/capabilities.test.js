@@ -173,7 +173,7 @@ test('capability tool descriptions and attach results explain approval', async t
     { name: 'blocked' },
     { agent: { id: 'worker' } },
   )
-  assert.ok(attached.endsWith(' The user must allow blocked in DS Bot settings before it can work.'))
+  assert.ok(attached.endsWith(' The user must allow blocked in FlyBot settings before it can work.'))
 })
 
 test('read-only secret reload does not requeue capability reconciliation', async t => {

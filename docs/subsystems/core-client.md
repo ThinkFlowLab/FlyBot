@@ -45,6 +45,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 - A remote Bot's generated look is seeded by its handle (`remoteSeed` in `src/client/characters.js`), never by its session id: the chat record (`src/host/remote-chat.js`) carries no look, and every consumer funnels through `lookOf`/`colorOf`, so the record and `remoteSpeaker`'s no-record fallback (`src/client/cells.js`) render one stable look per handle — across surfaces, after a delete/re-add, and identically in the friend's home. A stored `color`/`avatar` on the record still wins. Carrying the friend side's real look over the wire needs Bot Social member-profile fields (#84).
 - A friend's Bot the owner hid, a remote chat marked `gone`/`hidden`, and a home-level handle (`@friend.home`, not `@bot.friend.home`) must not reappear in the sidebar, the **发给 / 和谁聊…** picker, `@` mentions, or `list_bots` friends lines (`isListedRemoteChat`). `flybot.remote.publish` skips those handles so remote-chat sync marks the persisted session gone/hidden instead of opening it again; history is kept. Handle comparison is case-insensitive (`normRemoteHandle`).
 
+### FlyBot product chrome
+
+- User-visible chrome says **FlyBot** (header mark + name, About, settings title, tab title, favicon, zh copy). The mark is the existing FlyBot logo (`docs/images/logo.svg`), inlined as `FlyBotMark` from `src/client/brand.js`. Update popups say **FlyBot core {version}**. The npm package remains `ds-bot`; plugin id, localStorage keys, and `console.warn('[ds-bot]')` stay upstream.
+
 ### New-chat menu
 
 - Slot `flybot.new-chat.action` (`0003-flybot-api-client`, types in `flybot.d.ts`) is a row on the sidebar **+** new-chat menu, next to Create group chat. Plugins register `{ id, order, label, hint?, visible?, run }`; the picker looks `label` / `hint` up with `t()` like the neighbouring rows. The social plugin's Face-to-face group row is the first consumer; see [plugin-runtime](plugin-runtime.md) and [social](social.md).

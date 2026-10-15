@@ -59,7 +59,7 @@ export function install(rt) {
     }
   }
   const readOnly = () => {
-    if (stuck !== undefined) return `The Bot team file ${statePath} could not be read (${stuck}). DS Bot does not change it; fix or move the file and reload.`
+    if (stuck !== undefined) return `The Bot team file ${statePath} could not be read (${stuck}). FlyBot does not change it; fix or move the file and reload.`
     if (holder === undefined) return undefined
     const where = holder.pid ? `pid ${holder.pid}${holder.host ? ` on ${holder.host}` : ''}` : 'unknown process'
     return `The Bot team in ${home} is open in another dsh (Web or Desktop, ${where}). This window shows the team but cannot change it; close the other one and reload.`
@@ -197,7 +197,7 @@ export function install(rt) {
       stuck = undefined
       return parsed
     }
-    stuck = 'saved by a newer DS Bot; update DS Bot'
+    stuck = 'saved by a newer FlyBot; update FlyBot'
     return undefined
   }
 
@@ -335,7 +335,7 @@ export function install(rt) {
   const initialOwnerId = () => {
     ensureOwner()
     const ids = Object.keys(state.members)
-    if (ids.length !== 1) throw new Error(`The Bot team file lists ${ids.length} members; DS Bot runs one owner per team`)
+    if (ids.length !== 1) throw new Error(`The Bot team file lists ${ids.length} members; FlyBot runs one owner per team`)
     return ids[0]
   }
 

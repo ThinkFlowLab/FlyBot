@@ -15,7 +15,7 @@ export function install(rt) {
     if (state.workspaceId && ctx.workspaceRegistry.get(state.workspaceId)) return state.workspaceId
     const path = config.workspace ?? join(home, 'workspace')
     await mkdir(path, { recursive: true })
-    const workspace = await ctx.workspaceRegistry.resolveByPath(path) ?? await ctx.workspaceRegistry.create(path, 'DS Bot')
+    const workspace = await ctx.workspaceRegistry.resolveByPath(path) ?? await ctx.workspaceRegistry.create(path, 'FlyBot')
     state.workspaceId = workspace.id
     await rt.save()
     return workspace.id

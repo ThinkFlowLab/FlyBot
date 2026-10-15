@@ -126,7 +126,7 @@ Without a `server`, the social plugin stays idle by design. Tree works without B
 
 ## Built on
 
-FlyBot keeps the upstream DS Bot core byte-identical (`ds-bot/`, pinned in `ds-bot.pin.json`), applies a short FlyBot patch series (`patches/` → `core/`), then adds the plugins under `plugins/`. See [#34](https://github.com/ThinkFlowLab/FlyBot/issues/34). The core UI may still say "DS Bot" in places — that is upstream.
+FlyBot keeps the upstream DS Bot core byte-identical (`ds-bot/`, pinned in `ds-bot.pin.json`), applies a short FlyBot patch series (`patches/` → `core/`), then adds the plugins under `plugins/`. See [#34](https://github.com/ThinkFlowLab/FlyBot/issues/34). The web UI (header, About, settings, update popups) says FlyBot; the npm package and update-check still use the upstream `ds-bot` name and repository.
 
 ## More
 

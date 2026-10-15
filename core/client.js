@@ -181,7 +181,8 @@ var ZH = {
   "Sign in to DeepSeek": "登录 DeepSeek 账号",
   "Enter a DeepSeek API key": "填入 DeepSeek API key",
   "Open settings to set up a custom model": "打开设置配置自定义模型",
-  "DS Bot": "DS Bot",
+  "FlyBot": "FlyBot",
+  "FlyBot core": "FlyBot 核心",
   // Header
   "Message {name}": "给 {name} 发消息",
   Message: "发消息",
@@ -404,7 +405,7 @@ var ZH = {
   "No group chats yet.": "还没有群聊。",
   "A group chat lets several Bots work on one thing with you.": "在群聊里，几个 Bot 和你一起做一件事。",
   "Back to group chats": "返回群聊列表",
-  "DS Bot settings": "DS Bot 设置",
+  "FlyBot settings": "FlyBot 设置",
   "Settings pages": "设置页面",
   "Models, providers, and the rest of DeepSeek Harness": "模型、服务商和 DeepSeek Harness 的其他设置",
   "Harness settings": "Harness 设置",
@@ -434,13 +435,13 @@ var ZH = {
   "{n} h": "{n} 小时",
   "{n} d": "{n} 天",
   // Plugin updates
-  "DS Bot {version} is available": "DS Bot {version} 可以更新",
-  "Updating DS Bot…": "正在更新 DS Bot…",
-  "DS Bot {version} is installed. Restart DSH to use it.": "DS Bot {version} 已安装，重启 DSH 后生效",
-  "DS Bot update": "DS Bot 更新",
-  "DS Bot {version}": "DS Bot {version}",
+  "FlyBot core {version} is available": "FlyBot 核心 {version} 可以更新",
+  "Updating FlyBot core…": "正在更新 FlyBot 核心…",
+  "FlyBot core {version} is installed. Restart DSH to use it.": "FlyBot 核心 {version} 已安装，重启 DSH 后生效",
+  "FlyBot core update": "FlyBot 核心更新",
+  "FlyBot core {version}": "FlyBot 核心 {version}",
   "Update installed": "更新已安装",
-  "Restart DSH to start using DS Bot {version}.": "重启 DSH 后开始使用 DS Bot {version}。",
+  "Restart DSH to start using FlyBot core {version}.": "重启 DSH 后开始使用 FlyBot 核心 {version}。",
   "You have {version}.": "当前版本 {version}。",
   "The update did not finish: {reason}": "更新没有完成：{reason}",
   "What's new": "更新说明",
@@ -450,7 +451,7 @@ var ZH = {
   "DSH update": "DSH 更新",
   "DSH {version}": "DSH {version}",
   "Restart DSH to start using DSH {version}.": "重启 DSH 后开始使用 DSH {version}。",
-  "Update DS Bot {version} first.": "先更新 DS Bot {version}。",
+  "Update FlyBot core {version} first.": "先更新 FlyBot 核心 {version}。",
   "Open updates": "打开更新",
   // Command palette
   Messages: "消息",
@@ -780,11 +781,11 @@ var ZH = {
   "Compared with the {count} days before": "与再往前 {count} 天相比",
   "{share}% of all usage from {span}": "占 {span} 全部用量的 {share}%",
   // About
-  "About DS Bot": "关于 DS Bot",
+  "About FlyBot": "关于 FlyBot",
   "Version {version}": "版本 {version}",
-  "Star DS Bot on GitHub": "在 GitHub 上给 DS Bot 点 Star",
+  "Star FlyBot on GitHub": "在 GitHub 上给 FlyBot 点 Star",
   "{count} stars": "{count} 个 Star",
-  "If DS Bot helps you, a star on GitHub helps more people find it.": "如果 DS Bot 对你有用，欢迎在 GitHub 上点个 Star，让更多人看到它。",
+  "If FlyBot helps you, a star on GitHub helps more people find it.": "如果 FlyBot 对你有用，欢迎在 GitHub 上点个 Star，让更多人看到它。",
   Updates: "更新",
   "Check for updates": "检查更新",
   "Checking…": "正在检查…",
@@ -809,7 +810,7 @@ var ZH = {
   Show: "查看",
   Hide: "收起",
   "GitHub issue": "GitHub issue",
-  "Opens a new issue in the DS Bot repository with all of this filled in. Nothing is sent until you submit it there.": "在 DS Bot 仓库新建一个 issue，并填好以上内容。你在 GitHub 上提交之前，什么都不会发出。",
+  "Opens a new issue in the FlyBot repository with all of this filled in. Nothing is sent until you submit it there.": "在 FlyBot 仓库新建一个 issue，并填好以上内容。你在 GitHub 上提交之前，什么都不会发出。",
   "Report on GitHub": "在 GitHub 上报告",
   "Copied the diagnostics.": "已复制诊断信息。",
   "Could not copy. Select the text below and copy it.": "无法复制。请选中下面的文字手动复制。",
@@ -821,7 +822,7 @@ var ZH = {
   "Recent errors": "最近的错误",
   "Recent errors · {count}": "最近的错误 · {count}",
   "No errors recorded.": "没有错误记录。",
-  "Failed model calls and DS Bot problems show here, newest first.": "模型调用失败和 DS Bot 的问题会显示在这里，最新的在前。",
+  "Failed model calls and FlyBot problems show here, newest first.": "模型调用失败和 FlyBot 的问题会显示在这里，最新的在前。",
   "Model call": "模型调用",
   "This window": "这个窗口",
   "Error log": "错误日志",
@@ -935,6 +936,8 @@ var HOST_ERRORS = [
   [/^A key can have at most (\d+) characters$/, "密钥最多 $1 个字符"],
   [/^(.+) is not saved yet$/, "$1 还没有保存"],
   [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, "$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。"],
+  [/^The Bot team file (.+) could not be read \((.+)\)\. FlyBot does not change it; fix or move the file and reload\.$/, "$1 里的 Bot 团队文件读不出来（$2）。FlyBot 不会改它；修好或移走文件后刷新。"],
+  [/^The Bot team file lists (\d+) members; FlyBot runs one owner per team$/, "团队文件列出了 $1 个成员；FlyBot 每个团队只运行一位主人"],
   [/^HTTP (\d+)$/, "请求失败（HTTP $1）"],
   [/^GitHub answered (\d+)$/, "GitHub 返回了 $1"],
   [/^Keep the name under (\d+) characters$/, "名字不能超过 $1 个字"],
@@ -998,7 +1001,9 @@ var HOST_ZH = {
   "The model wrote nothing": "模型没有输出内容",
   "Write the entry to save.": "请写下要保存的内容。",
   "This DeepSeek Harness has no folder chooser": "这个 DeepSeek Harness 没有文件夹选择窗口",
-  "This DeepSeek Harness cannot list folders": "这个 DeepSeek Harness 不能列出文件夹"
+  "This DeepSeek Harness cannot list folders": "这个 DeepSeek Harness 不能列出文件夹",
+  "No FlyBot core update is available": "没有可用的 FlyBot 核心更新",
+  "saved by a newer FlyBot; update FlyBot": "由更新的 FlyBot 保存；请更新 FlyBot"
 };
 Object.assign(ZH, HOST_ZH);
 var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;
@@ -1093,8 +1098,8 @@ function failureLabel(code, message) {
 }
 var URL_LIMIT = 7e3;
 var WHAT_MAX = 2e3;
-var PASTE_NOTE = "DS Bot copied the diagnostics to the clipboard. Paste them here.";
-var REST_NOTE = "The recent errors do not fit in the link. DS Bot copied the diagnostics to the clipboard: paste them below this line.";
+var PASTE_NOTE = "FlyBot copied the diagnostics to the clipboard. Paste them here.";
+var REST_NOTE = "The recent errors do not fit in the link. FlyBot copied the diagnostics to the clipboard: paste them below this line.";
 function issueUrl(base, { what = "", diagnostics }) {
   const text = what.trim().slice(0, WHAT_MAX);
   const title = text.split("\n")[0].slice(0, 80);
@@ -2582,7 +2587,14 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-side{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;gap:2px;padding:0 12px 8px 0;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .bt-side-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 5px 0 0}
 .bt-brand{display:inline-flex;align-items:center;gap:6px;margin-right:auto;padding:4px 8px 4px 4px;border:0;border-radius:8px;background:none;cursor:pointer;font-family:inherit;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:var(--bt-ink);white-space:nowrap}
-.bt-brand-whale{display:inline-flex;color:var(--bt-accent)}
+.bt-brand-mark{display:inline-flex;line-height:0}
+.bt-flybot-mark{display:block;flex:none}
+.bt-flybot-mark .bt-flybot-wing{fill:#8FB2FF}
+.bt-flybot-mark .bt-flybot-body{fill:#3B5BFD}
+.bt-flybot-mark .bt-flybot-eye{fill:#fff}
+[data-ds-dark-theme] .bt-flybot-mark .bt-flybot-wing{fill:#A9C2FF}
+[data-ds-dark-theme] .bt-flybot-mark .bt-flybot-body{fill:#6E87FF}
+[data-ds-dark-theme] .bt-flybot-mark .bt-flybot-eye{fill:#0F1530}
 .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
 .bt-round:hover{background:var(--bt-hover)}
 .bt-round:active{transform:scale(.94)}
@@ -3507,6 +3519,47 @@ function installCompiledStyles(text, tag) {
   };
 }
 
+// src/client/brand.js
+var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
+var FLYBOT_WING_LOW = "M150 318 C 104 300, 62 306, 54 322 C 48 338, 84 352, 150 352 Z";
+var FLYBOT_BODY = "M196 132 H316 A80 80 0 0 1 396 212 V300 A80 80 0 0 1 316 380 H250 L188 432 V374 A80 80 0 0 1 116 300 V212 A80 80 0 0 1 196 132 Z";
+function flybotMarkSvg({ wing = "#8FB2FF", brand = "#3B5BFD", face = "#FFFFFF" } = {}) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32"><g fill="${wing}"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><g fill="${wing}" transform="translate(512 0) scale(-1 1)"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><path d="${FLYBOT_BODY}" fill="${brand}"/><rect x="196" y="222" width="34" height="58" rx="17" fill="${face}"/><rect x="282" y="222" width="34" height="58" rx="17" fill="${face}"/><circle cx="256" cy="100" r="22" fill="${brand}"/><rect x="248" y="104" width="16" height="34" fill="${brand}"/></svg>`;
+}
+function brandTitle(title) {
+  const text = String(title ?? "");
+  if (text === "DeepSeek Harness" || text === "DS Bot") return "FlyBot";
+  if (text.endsWith(" — DeepSeek Harness")) return `${text.slice(0, -" — DeepSeek Harness".length)} — FlyBot`;
+  if (/\bDS Bot\b/.test(text)) return text.replace(/\bDS Bot\b/g, "FlyBot");
+  return text;
+}
+function installBrandChrome() {
+  if (typeof document === "undefined") return () => {
+  };
+  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
+  let link = document.getElementById("flybot-favicon");
+  if (!link) {
+    link = document.createElement("link");
+    link.id = "flybot-favicon";
+    link.rel = "icon";
+    link.type = "image/svg+xml";
+    document.head.appendChild(link);
+  }
+  link.href = href;
+  const retitle = () => {
+    const next = brandTitle(document.title);
+    if (next !== document.title) document.title = next;
+  };
+  retitle();
+  const observer = typeof MutationObserver === "function" ? new MutationObserver(retitle) : null;
+  const node = document.querySelector("title") ?? document.head;
+  observer?.observe(node, { childList: true, characterData: true, subtree: true });
+  return () => {
+    observer?.disconnect();
+    link.remove();
+  };
+}
+
 // src/client/icons.js
 var import_react4 = require("react");
 function PlusIcon() {
@@ -3611,6 +3664,29 @@ var MemoryIcon = lineIcon(["M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1
 var FolderIcon = lineIcon(["M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"]);
 var ChatsIcon = lineIcon(["M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z", "M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13"]);
 var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
+function FlyBotMark({ size = 24 }) {
+  return (0, import_react4.createElement)(
+    "svg",
+    { className: "bt-flybot-mark", width: size, height: size, viewBox: "0 0 512 512", "aria-hidden": true },
+    (0, import_react4.createElement)(
+      "g",
+      { className: "bt-flybot-wing" },
+      (0, import_react4.createElement)("path", { d: FLYBOT_WING }),
+      (0, import_react4.createElement)("path", { d: FLYBOT_WING_LOW })
+    ),
+    (0, import_react4.createElement)(
+      "g",
+      { className: "bt-flybot-wing", transform: "translate(512 0) scale(-1 1)" },
+      (0, import_react4.createElement)("path", { d: FLYBOT_WING }),
+      (0, import_react4.createElement)("path", { d: FLYBOT_WING_LOW })
+    ),
+    (0, import_react4.createElement)("path", { className: "bt-flybot-body", d: FLYBOT_BODY }),
+    (0, import_react4.createElement)("rect", { className: "bt-flybot-eye", x: 196, y: 222, width: 34, height: 58, rx: 17 }),
+    (0, import_react4.createElement)("rect", { className: "bt-flybot-eye", x: 282, y: 222, width: 34, height: 58, rx: 17 }),
+    (0, import_react4.createElement)("circle", { className: "bt-flybot-body", cx: 256, cy: 100, r: 22 }),
+    (0, import_react4.createElement)("rect", { className: "bt-flybot-body", x: 248, y: 104, width: 16, height: 34 })
+  );
+}
 
 // src/client/questions.js
 var import_react5 = require("react");
@@ -5761,10 +5837,10 @@ function UpdateButton({ useUpdate, actions }) {
     setDshError("");
     void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
   };
-  const label = phase === "installing" ? t("Updating DS Bot…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("DS Bot {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("DS Bot {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
+  const label = phase === "installing" ? t("Updating FlyBot core…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("FlyBot core {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("FlyBot core {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
   const message = error || (phase === "failed" ? update.error : "");
   const dshMessage = dshError || (dshPhase === "failed" ? dsh?.error : "");
-  const dshText = dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : dsh?.available === false && dsh?.blockedBy ? t("Update DS Bot {version} first.", { version: dsh.blockedBy }) : t("You have {version}.", { version: dsh?.current });
+  const dshText = dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : dsh?.available === false && dsh?.blockedBy ? t("Update FlyBot core {version} first.", { version: dsh.blockedBy }) : t("You have {version}.", { version: dsh?.current });
   return (0, import_react9.createElement)(
     import_react9.Fragment,
     null,
@@ -5781,12 +5857,12 @@ function UpdateButton({ useUpdate, actions }) {
     }, (0, import_react9.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react9.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
     open && box ? (0, import_react_dom3.createPortal)((0, import_react9.createElement)(
       "div",
-      { className: "bt-update-pop", role: "dialog", "aria-label": update?.available || phase !== "idle" ? t("DS Bot update") : t("DSH update"), style: box },
+      { className: "bt-update-pop", role: "dialog", "aria-label": update?.available || phase !== "idle" ? t("FlyBot core update") : t("DSH update"), style: box },
       update?.available || phase !== "idle" ? (0, import_react9.createElement)(
         import_react9.Fragment,
         null,
-        (0, import_react9.createElement)("div", { className: "bt-update-title" }, phase === "installed" ? t("Update installed") : t("DS Bot {version}", { version: update.latest })),
-        (0, import_react9.createElement)("div", { className: "bt-update-text" }, phase === "installed" ? t("Restart DSH to start using DS Bot {version}.", { version: update.installed ?? update.latest }) : t("You have {version}.", { version: update.current })),
+        (0, import_react9.createElement)("div", { className: "bt-update-title" }, phase === "installed" ? t("Update installed") : t("FlyBot core {version}", { version: update.latest })),
+        (0, import_react9.createElement)("div", { className: "bt-update-text" }, phase === "installed" ? t("Restart DSH to start using FlyBot core {version}.", { version: update.installed ?? update.latest }) : t("You have {version}.", { version: update.current })),
         message ? (0, import_react9.createElement)("div", { className: "bt-update-error", role: "alert" }, t("The update did not finish: {reason}", { reason: message })) : null,
         (0, import_react9.createElement)(
           "div",
@@ -6020,26 +6096,26 @@ function BotReturn({ wide, useSurface, actions }) {
   if (mode !== "agent") return null;
   return (0, import_react9.createElement)(
     "button",
-    { type: "button", className: "bt-return", "aria-label": t("DS Bot"), title: t("DS Bot"), onClick: () => actions.setSurface("bot") },
-    (0, import_react9.createElement)(BotMark, { look: MAIN_LOOK, size: 20 }),
-    wide ? (0, import_react9.createElement)("span", { className: "bt-return-name" }, t("DS Bot")) : null
+    { type: "button", className: "bt-return", "aria-label": t("FlyBot"), title: t("FlyBot"), onClick: () => actions.setSurface("bot") },
+    (0, import_react9.createElement)(FlyBotMark, { size: 20 }),
+    wide ? (0, import_react9.createElement)("span", { className: "bt-return-name" }, t("FlyBot")) : null
   );
 }
 var RETURN_CSS = `
 .bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
 .bt-return:hover{background:rgba(127,127,127,.14)}
 .bt-return:active{transform:scale(.96)}
-.bt-return .bt-mark{display:inline-flex;flex:none;line-height:0}
-.bt-return .bt-mark svg{width:100%;height:100%;overflow:visible}
+.bt-return .bt-mark,.bt-return .bt-flybot-mark{display:inline-flex;flex:none;line-height:0}
+.bt-return .bt-mark svg,.bt-return .bt-flybot-mark{width:20px;height:20px;overflow:visible}
 /* Shell styles carry --bt-ink-deepseek and Agent mode withdraws them; pin it here. */
 .bt-return .bt-mark{--bt-ink-deepseek:#4D6BFE}
 .bt-return-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 `;
 function BrandMark({ size = 24 }) {
-  return (0, import_react9.createElement)("span", { className: "bt-brand-whale" }, (0, import_react9.createElement)(BotMark, { look: MAIN_LOOK, size }));
+  return (0, import_react9.createElement)("span", { className: "bt-brand-mark" }, (0, import_react9.createElement)(FlyBotMark, { size }));
 }
 function BrandName() {
-  return (0, import_react9.createElement)("span", { style: { fontWeight: 600, fontSize: 14 } }, "DS Bot");
+  return (0, import_react9.createElement)("span", { style: { fontWeight: 600, fontSize: 14 } }, t("FlyBot"));
 }
 var SIDEBAR_CSS = `
 .bt-side-top .bt-brand{cursor:default;padding-left:6px}
@@ -11002,7 +11078,7 @@ function entrySummary(entry) {
   if (entry.source === "turn") return failureLabel(entry.code, entry.text);
   return entry.text;
 }
-var SOURCES = { turn: "Model call", host: "DS Bot", api: "DS Bot", browser: "This window" };
+var SOURCES = { turn: "Model call", host: "FlyBot", api: "FlyBot", browser: "This window" };
 function FeedbackPage({ actions, run, Section, Row: Row3 }) {
   const [what, setWhat] = (0, import_react27.useState)("");
   const [report, setReport] = (0, import_react27.useState)(null);
@@ -11072,7 +11148,7 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
       preview ? (0, import_react27.createElement)("div", { className: "bt-set-row bt-fb-preview" }, (0, import_react27.createElement)("pre", { tabIndex: 0, "aria-label": t("Diagnostics") }, report?.markdown || t("Loading…"))) : null,
       (0, import_react27.createElement)(
         Row3,
-        { label: t("GitHub issue"), hint: t("Opens a new issue in the DS Bot repository with all of this filled in. Nothing is sent until you submit it there.") },
+        { label: t("GitHub issue"), hint: t("Opens a new issue in the FlyBot repository with all of this filled in. Nothing is sent until you submit it there.") },
         (0, import_react27.createElement)("button", { type: "button", className: "bt-fb-primary", onClick: openIssue }, t("Report on GitHub"))
       )
     ),
@@ -11085,7 +11161,7 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
     (0, import_react27.createElement)(
       Section,
       { key: "errors", title: report ? t("Recent errors · {count}", { count: total }) : t("Recent errors") },
-      shown.length === 0 ? (0, import_react27.createElement)(Row3, { label: t("No errors recorded."), hint: t("Failed model calls and DS Bot problems show here, newest first.") }) : shown.map((entry, index) => (0, import_react27.createElement)(
+      shown.length === 0 ? (0, import_react27.createElement)(Row3, { label: t("No errors recorded."), hint: t("Failed model calls and FlyBot problems show here, newest first.") }) : shown.map((entry, index) => (0, import_react27.createElement)(
         "div",
         { key: `${entry.time}-${index}`, className: "bt-set-row bt-fb-entry", title: entry.text },
         (0, import_react27.createElement)("span", { className: "bt-fb-dot", "data-level": entry.level, "aria-hidden": true }),
@@ -11093,7 +11169,7 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
           "div",
           { className: "bt-set-copy" },
           (0, import_react27.createElement)("span", { className: "bt-fb-text" }, entrySummary(entry)),
-          (0, import_react27.createElement)("span", { className: "bt-set-hint" }, [whenText(entry.time), entry.bot, entry.where, t(SOURCES[entry.source] ?? "DS Bot")].filter(Boolean).join(" · "))
+          (0, import_react27.createElement)("span", { className: "bt-set-hint" }, [whenText(entry.time), entry.bot, entry.where, t(SOURCES[entry.source] ?? "FlyBot")].filter(Boolean).join(" · "))
         ),
         entry.code ? (0, import_react27.createElement)("span", { className: "bt-tag bt-fb-code" }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null
       )),
@@ -11162,13 +11238,12 @@ var FEEDBACK_CSS = `
 
 // src/client/about.js
 var import_react28 = require("react");
-var CHEER_MS = 1800;
 var starCount = (count) => new Intl.NumberFormat(dateLocale(), { notation: "compact", maximumFractionDigits: 1 }).format(count);
 function botHint(update) {
-  if (update.phase === "installing") return t("Updating DS Bot…");
-  if (update.phase === "installed") return t("Restart DSH to start using DS Bot {version}.", { version: update.installed ?? update.latest });
+  if (update.phase === "installing") return t("Updating FlyBot core…");
+  if (update.phase === "installed") return t("Restart DSH to start using FlyBot core {version}.", { version: update.installed ?? update.latest });
   if (update.phase === "failed") return t("The update did not finish: {reason}", { reason: hostText(update.error ?? "") });
-  if (update.available) return t("DS Bot {version} is available", { version: update.latest });
+  if (update.available) return t("FlyBot core {version} is available", { version: update.latest });
   if (update.enabled === false) return t("Update checks are off.");
   if (update.source === "path") return t("Installed from a local folder; update it there.");
   if (!update.checkedAt) return null;
@@ -11180,7 +11255,7 @@ function dshHint(dsh, shown) {
   if (dsh.phase === "installing") return t("Updating DSH…");
   if (dsh.phase === "installed") return t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified });
   if (dsh.phase === "failed") return t("The update did not finish: {reason}", { reason: hostText(dsh.error ?? "") });
-  if (dsh.available === false && dsh.blockedBy) return t("Update DS Bot {version} first.", { version: dsh.blockedBy });
+  if (dsh.available === false && dsh.blockedBy) return t("Update FlyBot core {version} first.", { version: dsh.blockedBy });
   if (shown) return t("DSH {version} is available", { version: dsh.verified });
   return t("Version {version}", { version: dsh.current });
 }
@@ -11199,26 +11274,15 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
       live = false;
     };
   }, []);
-  const [cheer, setCheer] = (0, import_react28.useState)(true);
-  (0, import_react28.useEffect)(() => {
-    if (!cheer) return void 0;
-    const timer = setTimeout(() => setCheer(false), CHEER_MS);
-    return () => clearTimeout(timer);
-  }, [cheer]);
   const check = () => {
     setChecking(true);
-    void run(actions.checkUpdate()).then((done) => {
+    void run(actions.checkUpdate()).then(() => {
       setChecking(false);
-      if (done) setCheer(true);
     });
   };
   const phase = update.phase ?? "idle";
   const dsh = update.dsh;
   const dshPhase = dsh?.phase ?? "idle";
-  (0, import_react28.useEffect)(() => {
-    if (phase === "installed" || dshPhase === "installed") setCheer(true);
-  }, [phase, dshPhase]);
-  const markState = checking ? "searching" : phase === "installing" || dshPhase === "installing" ? "working" : cheer ? "done" : "idle";
   const dshNew = showsDshRow(dsh, update.app);
   const dshShown = dshNew && dsh.available;
   const botControl = phase === "installed" ? null : update.available || phase === "installing" ? (0, import_react28.createElement)(
@@ -11236,11 +11300,11 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
     (0, import_react28.createElement)(
       "div",
       { key: "hero", className: "bt-about-hero" },
-      (0, import_react28.createElement)("span", { className: "bt-about-mark" }, (0, import_react28.createElement)(BotMark, { look: MAIN_LOOK, bot: { id: "about" }, size: 52, state: markState, live: true, gaze: true, pokeable: true })),
+      (0, import_react28.createElement)("span", { className: "bt-about-mark" }, (0, import_react28.createElement)(FlyBotMark, { size: 52 })),
       (0, import_react28.createElement)(
         "div",
         { className: "bt-about-copy" },
-        (0, import_react28.createElement)("span", { className: "bt-about-name" }, "DS Bot"),
+        (0, import_react28.createElement)("span", { className: "bt-about-name" }, t("FlyBot")),
         update.current ? (0, import_react28.createElement)("span", { className: "bt-about-version" }, t("Version {version}", { version: update.current })) : null
       ),
       repo ? (0, import_react28.createElement)(
@@ -11250,18 +11314,18 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
           href: repo,
           target: "_blank",
           rel: "noopener noreferrer",
-          title: t("Star DS Bot on GitHub"),
-          "aria-label": stars === null ? t("Star DS Bot on GitHub") : `${t("Star DS Bot on GitHub")} · ${t("{count} stars", { count: stars })}`
+          title: t("Star FlyBot on GitHub"),
+          "aria-label": stars === null ? t("Star FlyBot on GitHub") : `${t("Star FlyBot on GitHub")} · ${t("{count} stars", { count: stars })}`
         },
         (0, import_react28.createElement)("span", { className: "bt-star-main" }, (0, import_react28.createElement)("span", { className: "bt-star-icon" }, (0, import_react28.createElement)(StarLineIcon)), "Star"),
         stars === null ? null : (0, import_react28.createElement)("span", { className: "bt-star-count" }, starCount(stars))
       ) : null
     ),
-    repo ? (0, import_react28.createElement)("p", { key: "ask", className: "bt-about-ask" }, t("If DS Bot helps you, a star on GitHub helps more people find it.")) : null,
+    repo ? (0, import_react28.createElement)("p", { key: "ask", className: "bt-about-ask" }, t("If FlyBot helps you, a star on GitHub helps more people find it.")) : null,
     (0, import_react28.createElement)(
       Section,
       { key: "updates", title: t("Updates") },
-      (0, import_react28.createElement)(Row3, { label: "DS Bot", hint: botHint(update) }, botControl, update.available && update.notesUrl ? (0, import_react28.createElement)("a", linkProps(update.notesUrl), t("What's new")) : null),
+      (0, import_react28.createElement)(Row3, { label: t("FlyBot core"), hint: botHint(update) }, botControl, update.available && update.notesUrl ? (0, import_react28.createElement)("a", linkProps(update.notesUrl), t("What's new")) : null),
       dsh?.current ? (0, import_react28.createElement)(Row3, { label: "DeepSeek Harness", hint: dshHint(dsh, dshShown) }, dshControl) : null
     ),
     (0, import_react28.createElement)(
@@ -11275,11 +11339,7 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
 }
 var ABOUT_CSS = `
 .bt-about-hero{display:flex;align-items:center;gap:14px;padding:16px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
-.bt-about-mark{flex:none;display:inline-flex;position:relative}
-.bt-about-mark::before{content:'';position:absolute;inset:-20%;border-radius:50%}
-body:not([data-bt-motion=quiet]) .bt-about-mark:hover .bt-mark[data-live][data-state=idle]:not(.bt-mark-poke) .bt-b{rotate:8deg;translate:5% -1%;animation:bt-nuzzle .78s ease-in-out .32s infinite}
-body:not([data-bt-motion=quiet]) .bt-about-mark:hover .bt-mark[data-live][data-state=idle] .bt-eye{scale:1 0;animation:none}
-body:not([data-bt-motion=quiet]) .bt-about-mark:hover .bt-mark[data-live][data-state=idle] .bt-eye-happy{opacity:1;transition-delay:.1s}
+.bt-about-mark{flex:none;display:inline-flex}
 .bt-about-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .bt-about-name{font-size:16px;line-height:22px;font-weight:600}
 .bt-about-version{font-size:12px;line-height:16px;color:var(--bt-ink-2);font-variant-numeric:tabular-nums}
@@ -11304,7 +11364,7 @@ body:not([data-bt-motion=quiet]) .bt-about-mark:hover .bt-mark[data-live][data-s
 // src/client/settings.js
 var import_react29 = require("react");
 var capitalize2 = (word) => word[0].toUpperCase() + word.slice(1);
-var SETTINGS_PAGES = [["general", "General"], ["bots", "Bots"], ["groups", "Group chats"], ["connectors", "Connectors"], ["capabilities", "Capabilities"], ["schedules", "Scheduled tasks"], ["usage", "Usage"], ["secrets", "Secrets"], ["feedback", "Feedback"], ["about", "About DS Bot"]];
+var SETTINGS_PAGES = [["general", "General"], ["bots", "Bots"], ["groups", "Group chats"], ["connectors", "Connectors"], ["capabilities", "Capabilities"], ["schedules", "Scheduled tasks"], ["usage", "Usage"], ["secrets", "Secrets"], ["feedback", "Feedback"], ["about", "About FlyBot"]];
 var PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon };
 function SetSection({ title, children }) {
   return (0, import_react29.createElement)("section", { className: "bt-set-section" }, (0, import_react29.createElement)("h3", null, title), (0, import_react29.createElement)("div", { className: "bt-set-card" }, children));
@@ -11532,7 +11592,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
     (0, import_react29.createElement)("div", { className: "bt-scrim", onMouseDown: close }),
     (0, import_react29.createElement)(
       "div",
-      { className: "bt-settings", role: "dialog", "aria-modal": true, "aria-label": t("DS Bot settings"), "data-wide": shown === "usage" ? "" : void 0 },
+      { className: "bt-settings", role: "dialog", "aria-modal": true, "aria-label": t("FlyBot settings"), "data-wide": shown === "usage" ? "" : void 0 },
       (0, import_react29.createElement)(
         "nav",
         { ref: nav.box, className: "bt-settings-nav", "aria-label": t("Settings pages") },
@@ -14136,6 +14196,7 @@ function apply(ctx) {
   } catch {
   }
   ctx.effect(() => installLocale(ctx.get("locale")), "ds-bot: interface copy");
+  ctx.effect(() => installBrandChrome(), "ds-bot: brand chrome");
   const roster = createSource(EMPTY_ROSTER);
   migrateStorage();
   const UNREAD_KEY = STORAGE.unread;

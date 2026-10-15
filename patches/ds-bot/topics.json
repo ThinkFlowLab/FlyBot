@@ -64,5 +64,18 @@
     "src/client/sources.js",
     "src/client/api.js",
     "test/at-menu.test.js"
+  ],
+  "0014-flybot-branding": [
+    "src/client/about.js",
+    "src/client/settings.js",
+    "src/client/diagnostics.js",
+    "src/host/update.js",
+    "src/host/parts.js",
+    "src/host/browser.js",
+    "src/host/secrets.js",
+    "test/update.test.js",
+    "test/store.test.js",
+    "test/secrets.test.js",
+    "test/capabilities.test.js"
   ]
 }

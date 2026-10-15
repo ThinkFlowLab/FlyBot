@@ -45,7 +45,7 @@ export function install(rt) {
     if (bot !== undefined) {
       return [
         '# Your identity',
-        `You are ${bot.name}, a Bot on the user's team in DS Bot.${bot.role ? ` Your role: ${bot.role}.` : ''}`,
+        `You are ${bot.name}, a Bot on the user's team in FlyBot.${bot.role ? ` Your role: ${bot.role}.` : ''}`,
         bot.instructions ? `\n${bot.instructions}` : '',
         // FlyBot plugins' prompt text for this Bot (flybot.bot.setSystemPrompt).
         bot.systemPrompt ? `\n${bot.systemPrompt}` : '',

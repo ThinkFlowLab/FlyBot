@@ -499,7 +499,7 @@ export function install(rt) {
       try {
         unregister = sub.shellEnv.register({
           name: 'ds-bot-secrets',
-          variables: Object.fromEntries(list.map(secret => [envName(secret.name), { description: `DS Bot secret ${secret.name}${secret.purpose ? `: ${secret.purpose}` : ''}` }])),
+          variables: Object.fromEntries(list.map(secret => [envName(secret.name), { description: `FlyBot secret ${secret.name}${secret.purpose ? `: ${secret.purpose}` : ''}` }])),
           resolve: resolveEnv,
         })
       } catch (error) {

@@ -63,7 +63,7 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
   assert.equal(second.code, 'RATE_LIMIT')
 
   const report = await rt.diagnostics.report({ client: { surface: 'Web', language: 'zh-CN', userAgent: 'Test/1' }, clientErrors: [{ time: 1, text: 'state: HTTP 502' }] })
-  assert.match(report.markdown, /\| DS Bot \| \d+\.\d+\.\d+(?:-[\w.]+)? \|/)
+  assert.match(report.markdown, /\| FlyBot \| \d+\.\d+\.\d+(?:-[\w.]+)? \|/)
   assert.match(report.markdown, /\| Surface \| Web \|/)
   assert.match(report.markdown, /\| Models \| deepseek\/deepseek-chat \|/)
   assert.match(report.markdown, /WARN host \[EACCES\] state write failed/)

@@ -173,7 +173,7 @@ test('a card saves a key the Bot never sees, and the shell gets it', async (t) =
   const live = bench.contributors.filter(entry => entry.live)
   assert.equal(live.length, 1)
   assert.deepEqual(Object.keys(live[0].variables), ['DSH_SECRET_DEMO_TOKEN'])
-  assert.equal(live[0].variables.DSH_SECRET_DEMO_TOKEN.description, 'DS Bot secret DEMO_TOKEN: 测试')
+  assert.equal(live[0].variables.DSH_SECRET_DEMO_TOKEN.description, 'FlyBot secret DEMO_TOKEN: 测试')
 
   // Asking again only names the variable.
   const again = await bench.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'x' }, 'b2')

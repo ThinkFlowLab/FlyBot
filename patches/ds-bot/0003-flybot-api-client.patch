@@ -300,6 +300,12 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 diff --git a/src/client/icons.js b/src/client/icons.js
 --- a/src/client/icons.js
 +++ b/src/client/icons.js
+@@ -1,4 +1,5 @@
+ import { createElement as h } from 'react'
++import { FLYBOT_BODY, FLYBOT_WING, FLYBOT_WING_LOW } from './brand.js'
+ 
+ export function PlusIcon() {
+   return h('svg', { width: 18, height: 18, viewBox: '0 0 20 20', 'aria-hidden': true }, h('path', { d: 'M10 3.5v13M3.5 10h13', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' }))
 @@ -81,6 +81,7 @@ export const CopyIcon = lineIcon(['M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1
  export const HideIcon = lineIcon(['M3 3l14 14', 'M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4', 'M8.5 8.5a2 2 0 0 0 3 3'])
  export const TrashIcon = lineIcon(['M3.5 5.5h13', 'M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5', 'M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10', 'M8.5 9v4.5M11.5 9v4.5'])
@@ -308,6 +314,25 @@ diff --git a/src/client/icons.js b/src/client/icons.js
  export const SlidersIcon = lineIcon(['M4 6.5h5M12.5 6.5H16M4 13.5h4M11.5 13.5H16', 'M10.5 4.5v4M9.5 11.5v4'])
  // A notebook with a ribbon: what a Bot remembers.
  export const MemoryIcon = lineIcon(['M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1.5h-8z', 'M5.5 3.5v13', 'M8.5 7.5h3.5M8.5 10.5h2.5', 'M12 3.5v4l1-.8 1 .8'])
+@@ -89,3 +89,18 @@ export const FolderIcon = lineIcon(['M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5
+ // Two speech bubbles, the back one peeking out: a group chat.
+ export const ChatsIcon = lineIcon(['M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z', 'M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13'])
+ export const SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon }
++
++export function FlyBotMark({ size = 24 }) {
++  return h('svg', { className: 'bt-flybot-mark', width: size, height: size, viewBox: '0 0 512 512', 'aria-hidden': true },
++    h('g', { className: 'bt-flybot-wing' },
++      h('path', { d: FLYBOT_WING }),
++      h('path', { d: FLYBOT_WING_LOW })),
++    h('g', { className: 'bt-flybot-wing', transform: 'translate(512 0) scale(-1 1)' },
++      h('path', { d: FLYBOT_WING }),
++      h('path', { d: FLYBOT_WING_LOW })),
++    h('path', { className: 'bt-flybot-body', d: FLYBOT_BODY }),
++    h('rect', { className: 'bt-flybot-eye', x: 196, y: 222, width: 34, height: 58, rx: 17 }),
++    h('rect', { className: 'bt-flybot-eye', x: 282, y: 222, width: 34, height: 58, rx: 17 }),
++    h('circle', { className: 'bt-flybot-body', cx: 256, cy: 100, r: 22 }),
++    h('rect', { className: 'bt-flybot-body', x: 248, y: 104, width: 16, height: 34 }))
++}
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
@@ -316,7 +341,11 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
  import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
-@@ -8,7 +8,7 @@ import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } fro
+@@ -5,10 +5,11 @@ import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } f
+ import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
+ import { MENTION_ORIGIN, currentPart } from './text.js'
+ import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
++import { installBrandChrome } from './brand.js'
  import { lookOf } from './mark.js'
  import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
  import { HeaderPill } from './header.js'
@@ -325,7 +354,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { CHATS_SOURCE, atSources } from './at-menu.js'
  import { VOICE_BUNDLE } from './speech.js'
  import { sameVersion } from './dsh-offer.js'
-@@ -37,6 +37,14 @@ import { noticeApprovals } from './approval-notices.js'
+@@ -37,7 +37,16 @@ import { noticeApprovals } from './approval-notices.js'
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
  export function apply(ctx) {
@@ -338,8 +367,10 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    else if (typeof ctx.set === 'function') ctx.set('flybot', flybot)
 +  } catch {}
    ctx.effect(() => installLocale(ctx.get('locale')), 'ds-bot: interface copy')
++  ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
    const roster = createSource(EMPTY_ROSTER)
    migrateStorage()
+   const UNREAD_KEY = STORAGE.unread
 @@ -566,6 +566,8 @@ export function apply(ctx) {
        noteClientError(where, error)
        ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
@@ -463,7 +494,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
-@@ -1,8 +1,9 @@
+@@ -1,15 +1,17 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 +import { FlyBotSections, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -471,11 +502,12 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
  import { isMainOf } from './sources.js'
 -import { currentPart, previewOf, relativeShort } from './text.js'
+-import { PlusIcon, SearchIcon, GaugeIcon, PlugIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon } from './icons.js'
 +import { currentPart, nameMentions, previewOf, relativeShort } from './text.js'
- import { PlusIcon, SearchIcon, GaugeIcon, PlugIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon } from './icons.js'
++import { PlusIcon, SearchIcon, GaugeIcon, PlugIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, FlyBotMark } from './icons.js'
  import { MAIN_LOOK } from './characters.js'
  import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
-@@ -10,6 +10,7 @@ import { reducedMotion } from './activity-row.js'
+ import { reducedMotion } from './activity-row.js'
  import { Shimmer, workPhrase } from './cells.js'
  import { springEasing, SPRING_SHAPE } from './motion.js'
  import { hostText, t } from './i18n.js'
@@ -648,6 +680,43 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // The update button at the sidebar's top right: a cloud while a newer DS Bot —
+@@ -327,29 +327,29 @@ function UpdateButton({ useUpdate, actions }) {
+     setDshError('')
+     void actions.installDshUpdate().catch(failure => setDshError(hostText(failure?.message ?? String(failure))))
+   }
+-  const label = phase === 'installing' ? t('Updating DS Bot…')
++  const label = phase === 'installing' ? t('Updating FlyBot core…')
+     : dshPhase === 'installing' ? t('Updating DSH…')
+-      : phase === 'installed' ? t('DS Bot {version} is installed. Restart DSH to use it.', { version: update.installed ?? update.latest })
++      : phase === 'installed' ? t('FlyBot core {version} is installed. Restart DSH to use it.', { version: update.installed ?? update.latest })
+         : dshPhase === 'installed' ? t('Restart DSH to start using DSH {version}.', { version: dsh.installed ?? dsh.verified })
+-          : update?.available ? t('DS Bot {version} is available', { version: update.latest })
++          : update?.available ? t('FlyBot core {version} is available', { version: update.latest })
+             : t('DSH {version} is available', { version: dsh?.verified })
+   const message = error || (phase === 'failed' ? update.error : '')
+   const dshMessage = dshError || (dshPhase === 'failed' ? dsh?.error : '')
+   const dshText = dshPhase === 'installed'
+     ? t('Restart DSH to start using DSH {version}.', { version: dsh.installed ?? dsh.verified })
+     : dsh?.available === false && dsh?.blockedBy
+-      ? t('Update DS Bot {version} first.', { version: dsh.blockedBy })
++      ? t('Update FlyBot core {version} first.', { version: dsh.blockedBy })
+       : t('You have {version}.', { version: dsh?.current })
+   return h(Fragment, null,
+     h('button', {
+       ref: button, type: 'button', className: 'bt-round bt-update', 'data-phase': cloudPhase, 'aria-label': label, title: label,
+       'aria-haspopup': 'dialog', 'aria-expanded': open, onClick: toggle,
+     }, h(CloudDownloadIcon, { done: phase === 'installed' }), phase === 'failed' || dshPhase === 'failed' ? h('span', { className: 'bt-update-dot', 'aria-hidden': true }) : null),
+-    open && box ? createPortal(h('div', { className: 'bt-update-pop', role: 'dialog', 'aria-label': update?.available || phase !== 'idle' ? t('DS Bot update') : t('DSH update'), style: box },
++    open && box ? createPortal(h('div', { className: 'bt-update-pop', role: 'dialog', 'aria-label': update?.available || phase !== 'idle' ? t('FlyBot core update') : t('DSH update'), style: box },
+       update?.available || phase !== 'idle' ? h(Fragment, null,
+-        h('div', { className: 'bt-update-title' }, phase === 'installed' ? t('Update installed') : t('DS Bot {version}', { version: update.latest })),
++        h('div', { className: 'bt-update-title' }, phase === 'installed' ? t('Update installed') : t('FlyBot core {version}', { version: update.latest })),
+         h('div', { className: 'bt-update-text' }, phase === 'installed'
+-          ? t('Restart DSH to start using DS Bot {version}.', { version: update.installed ?? update.latest })
++          ? t('Restart DSH to start using FlyBot core {version}.', { version: update.installed ?? update.latest })
+           : t('You have {version}.', { version: update.current })),
+         message ? h('div', { className: 'bt-update-error', role: 'alert' }, t('The update did not finish: {reason}', { reason: message })) : null,
+         h('div', { className: 'bt-update-actions' },
 @@ -375,33 +375,10 @@ function UpdateButton({ useUpdate, actions }) {
  // The footer entry to the shell's plugin panel, marked as not yet adapted: the red
  // badge and a hover tip explain that plugin support lands step by step.
@@ -684,6 +753,42 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
+@@ -572,9 +572,9 @@ export function FooterAccount(props) {
+ export function BotReturn({ wide, useSurface, actions }) {
+   const mode = useSurface(value => value.mode)
+   if (mode !== 'agent') return null
+-  return h('button', { type: 'button', className: 'bt-return', 'aria-label': t('DS Bot'), title: t('DS Bot'), onClick: () => actions.setSurface('bot') },
+-    h(BotMark, { look: MAIN_LOOK, size: 20 }),
+-    wide ? h('span', { className: 'bt-return-name' }, t('DS Bot')) : null)
++  return h('button', { type: 'button', className: 'bt-return', 'aria-label': t('FlyBot'), title: t('FlyBot'), onClick: () => actions.setSurface('bot') },
++    h(FlyBotMark, { size: 20 }),
++    wide ? h('span', { className: 'bt-return-name' }, t('FlyBot')) : null)
+ }
+ 
+ // Agent mode has none of the shell-group styles, so the return button carries its own.
+@@ -582,18 +582,18 @@ export const RETURN_CSS = `
+ .bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
+ .bt-return:hover{background:rgba(127,127,127,.14)}
+ .bt-return:active{transform:scale(.96)}
+-.bt-return .bt-mark{display:inline-flex;flex:none;line-height:0}
+-.bt-return .bt-mark svg{width:100%;height:100%;overflow:visible}
++.bt-return .bt-mark,.bt-return .bt-flybot-mark{display:inline-flex;flex:none;line-height:0}
++.bt-return .bt-mark svg,.bt-return .bt-flybot-mark{width:20px;height:20px;overflow:visible}
+ /* Shell styles carry --bt-ink-deepseek and Agent mode withdraws them; pin it here. */
+ .bt-return .bt-mark{--bt-ink-deepseek:#4D6BFE}
+ .bt-return-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ `
+ 
+ export function BrandMark({ size = 24 }) {
+-  return h('span', { className: 'bt-brand-whale' }, h(BotMark, { look: MAIN_LOOK, size }))
++  return h('span', { className: 'bt-brand-mark' }, h(FlyBotMark, { size }))
+ }
+ export function BrandName() {
+-  return h('span', { style: { fontWeight: 600, fontSize: 14 } }, 'DS Bot')
++  return h('span', { style: { fontWeight: 600, fontSize: 14 } }, t('FlyBot'))
+ }
+ 
+ // With the whale holding the settings seat, the footer row is just the account menu
 diff --git a/src/client/styles.js b/src/client/styles.js
 --- a/src/client/styles.js
 +++ b/src/client/styles.js
@@ -699,6 +804,22 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
  /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
     size wide), a resting mark leans into the pointer and keeps nuzzling it, its eyes
+@@ -115,7 +115,14 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+ .bt-side{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;gap:2px;padding:0 12px 8px 0;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+ .bt-side-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 5px 0 0}
+ .bt-brand{display:inline-flex;align-items:center;gap:6px;margin-right:auto;padding:4px 8px 4px 4px;border:0;border-radius:8px;background:none;cursor:pointer;font-family:inherit;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:var(--bt-ink);white-space:nowrap}
+-.bt-brand-whale{display:inline-flex;color:var(--bt-accent)}
++.bt-brand-mark{display:inline-flex;line-height:0}
++.bt-flybot-mark{display:block;flex:none}
++.bt-flybot-mark .bt-flybot-wing{fill:#8FB2FF}
++.bt-flybot-mark .bt-flybot-body{fill:#3B5BFD}
++.bt-flybot-mark .bt-flybot-eye{fill:#fff}
++[data-ds-dark-theme] .bt-flybot-mark .bt-flybot-wing{fill:#A9C2FF}
++[data-ds-dark-theme] .bt-flybot-mark .bt-flybot-body{fill:#6E87FF}
++[data-ds-dark-theme] .bt-flybot-mark .bt-flybot-eye{fill:#0F1530}
+ .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
+ .bt-round:hover{background:var(--bt-hover)}
+ .bt-round:active{transform:scale(.94)}
 @@ -132,21 +132,21 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}

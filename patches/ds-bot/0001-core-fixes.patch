@@ -3,6 +3,38 @@ FlyBot patch 0001-core-fixes on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Generate
 diff --git a/src/client/feedback.js b/src/client/feedback.js
 --- a/src/client/feedback.js
 +++ b/src/client/feedback.js
+@@ -37,7 +37,7 @@ function entrySummary(entry) {
+   return entry.text
+ }
+ 
+-const SOURCES = { turn: 'Model call', host: 'DS Bot', api: 'DS Bot', browser: 'This window' }
++const SOURCES = { turn: 'Model call', host: 'FlyBot', api: 'FlyBot', browser: 'This window' }
+ 
+ export function FeedbackPage({ actions, run, Section, Row }) {
+   const [what, setWhat] = useState('')
+@@ -99,19 +99,19 @@ export function FeedbackPage({ actions, run, Section, Row }) {
+         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setPreview(!preview), 'aria-expanded': preview }, preview ? t('Hide') : t('Show')),
+         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: copyReport }, t('Copy'))),
+       preview ? h('div', { className: 'bt-set-row bt-fb-preview' }, h('pre', { tabIndex: 0, 'aria-label': t('Diagnostics') }, report?.markdown || t('Loading…'))) : null,
+-      h(Row, { label: t('GitHub issue'), hint: t('Opens a new issue in the DS Bot repository with all of this filled in. Nothing is sent until you submit it there.') },
++      h(Row, { label: t('GitHub issue'), hint: t('Opens a new issue in the FlyBot repository with all of this filled in. Nothing is sent until you submit it there.') },
+         h('button', { type: 'button', className: 'bt-fb-primary', onClick: openIssue }, t('Report on GitHub')))),
+     note ? h('div', { key: 'note', className: 'bt-note bt-fb-note', role: 'status' },
+       note,
+       issueLink ? [' ', h('a', { key: 'link', href: issueLink, target: '_blank', rel: 'noopener noreferrer' }, t('Open the issue'))] : null) : null,
+     h(Section, { key: 'errors', title: report ? t('Recent errors · {count}', { count: total }) : t('Recent errors') },
+       shown.length === 0
+-        ? h(Row, { label: t('No errors recorded.'), hint: t('Failed model calls and DS Bot problems show here, newest first.') })
++        ? h(Row, { label: t('No errors recorded.'), hint: t('Failed model calls and FlyBot problems show here, newest first.') })
+         : shown.map((entry, index) => h('div', { key: `${entry.time}-${index}`, className: 'bt-set-row bt-fb-entry', title: entry.text },
+             h('span', { className: 'bt-fb-dot', 'data-level': entry.level, 'aria-hidden': true }),
+             h('div', { className: 'bt-set-copy' },
+               h('span', { className: 'bt-fb-text' }, entrySummary(entry)),
+-              h('span', { className: 'bt-set-hint' }, [whenText(entry.time), entry.bot, entry.where, t(SOURCES[entry.source] ?? 'DS Bot')].filter(Boolean).join(' · '))),
++              h('span', { className: 'bt-set-hint' }, [whenText(entry.time), entry.bot, entry.where, t(SOURCES[entry.source] ?? 'FlyBot')].filter(Boolean).join(' · '))),
+             entry.code ? h('span', { className: 'bt-tag bt-fb-code' }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null)),
+       h(Row, { label: t('Error log'), hint: t('Kept on this computer across restarts, up to about 1 MB.') },
+         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: downloadLog }, t('Download')),
 @@ -133,9 +133,10 @@ export function ErrorToast({ useUi, actions }) {
      return () => { clearTimeout(fade); clearTimeout(gone) }
    }, [toast?.token])
@@ -72,7 +104,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Automation tasks': '自动化任务',
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
-@@ -109,6 +109,7 @@ const ZH = {
+@@ -109,13 +109,15 @@ const ZH = {
    'Switch': '切换',
    'Switch to classic Agent mode': '切换经典 Agent 模式',
    '{model} is not available anymore. Pick another model for me.': '{model} 已经不可用了。给我换一个模型吧。',
@@ -80,6 +112,53 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Hi, I'm {name}. I don't have a model yet. How do you want to set one up?": '你好，我是 {name}。我还没有可用的模型。你想怎么配置？',
    "Hi, I'm {name}. Pick a model for me first. You can change it later in my details.": '你好，我是 {name}。先给我选一个模型吧，以后可以在我的详情里换。',
    'Mode': '模式',
+   'Sign in to DeepSeek': '登录 DeepSeek 账号',
+   'Enter a DeepSeek API key': '填入 DeepSeek API key',
+   'Open settings to set up a custom model': '打开设置配置自定义模型',
+-  'DS Bot': 'DS Bot',
++  'FlyBot': 'FlyBot',
++  'FlyBot core': 'FlyBot 核心',
+ 
+   // Header
+   'Message {name}': '给 {name} 发消息',
+@@ -312,7 +312,7 @@ const ZH = {
+   'No group chats yet.': '还没有群聊。',
+   'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
+   'Back to group chats': '返回群聊列表',
+-  'DS Bot settings': 'DS Bot 设置',
++  'FlyBot settings': 'FlyBot 设置',
+   'Settings pages': '设置页面',
+   'Models, providers, and the rest of DeepSeek Harness': '模型、服务商和 DeepSeek Harness 的其他设置',
+   'Harness settings': 'Harness 设置',
+@@ -344,13 +344,13 @@ const ZH = {
+   '{n} d': '{n} 天',
+ 
+   // Plugin updates
+-  'DS Bot {version} is available': 'DS Bot {version} 可以更新',
+-  'Updating DS Bot…': '正在更新 DS Bot…',
+-  'DS Bot {version} is installed. Restart DSH to use it.': 'DS Bot {version} 已安装，重启 DSH 后生效',
+-  'DS Bot update': 'DS Bot 更新',
+-  'DS Bot {version}': 'DS Bot {version}',
++  'FlyBot core {version} is available': 'FlyBot 核心 {version} 可以更新',
++  'Updating FlyBot core…': '正在更新 FlyBot 核心…',
++  'FlyBot core {version} is installed. Restart DSH to use it.': 'FlyBot 核心 {version} 已安装，重启 DSH 后生效',
++  'FlyBot core update': 'FlyBot 核心更新',
++  'FlyBot core {version}': 'FlyBot 核心 {version}',
+   'Update installed': '更新已安装',
+-  'Restart DSH to start using DS Bot {version}.': '重启 DSH 后开始使用 DS Bot {version}。',
++  'Restart DSH to start using FlyBot core {version}.': '重启 DSH 后开始使用 FlyBot 核心 {version}。',
+   'You have {version}.': '当前版本 {version}。',
+   'The update did not finish: {reason}': '更新没有完成：{reason}',
+   "What's new": '更新说明',
+@@ -360,7 +360,7 @@ const ZH = {
+   'DSH update': 'DSH 更新',
+   'DSH {version}': 'DSH {version}',
+   'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
+-  'Update DS Bot {version} first.': '先更新 DS Bot {version}。',
++  'Update FlyBot core {version} first.': '先更新 FlyBot 核心 {version}。',
+   'Open updates': '打开更新',
+ 
+   // Command palette
 @@ -453,6 +453,9 @@ const ZH = {
    '{first} and {second} are waiting for your approval': '{first}、{second} 等你批准',
    '{first}, {second} and {count} more are waiting for your approval': '{first}、{second} 等 {total} 个等你批准',
@@ -90,6 +169,48 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in its own chat': '在自己的对话里',
    Reject: '拒绝',
    'Allow once': '允许一次',
+@@ -697,11 +697,11 @@ const ZH = {
+   'Compared with the {count} days before': '与再往前 {count} 天相比',
+   '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
+   // About
+-  'About DS Bot': '关于 DS Bot',
++  'About FlyBot': '关于 FlyBot',
+   'Version {version}': '版本 {version}',
+-  'Star DS Bot on GitHub': '在 GitHub 上给 DS Bot 点 Star',
++  'Star FlyBot on GitHub': '在 GitHub 上给 FlyBot 点 Star',
+   '{count} stars': '{count} 个 Star',
+-  'If DS Bot helps you, a star on GitHub helps more people find it.': '如果 DS Bot 对你有用，欢迎在 GitHub 上点个 Star，让更多人看到它。',
++  'If FlyBot helps you, a star on GitHub helps more people find it.': '如果 FlyBot 对你有用，欢迎在 GitHub 上点个 Star，让更多人看到它。',
+   Updates: '更新',
+   'Check for updates': '检查更新',
+   'Checking…': '正在检查…',
+@@ -726,7 +726,7 @@ const ZH = {
+   Show: '查看',
+   Hide: '收起',
+   'GitHub issue': 'GitHub issue',
+-  'Opens a new issue in the DS Bot repository with all of this filled in. Nothing is sent until you submit it there.': '在 DS Bot 仓库新建一个 issue，并填好以上内容。你在 GitHub 上提交之前，什么都不会发出。',
++  'Opens a new issue in the FlyBot repository with all of this filled in. Nothing is sent until you submit it there.': '在 FlyBot 仓库新建一个 issue，并填好以上内容。你在 GitHub 上提交之前，什么都不会发出。',
+   'Report on GitHub': '在 GitHub 上报告',
+   'Copied the diagnostics.': '已复制诊断信息。',
+   'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
+@@ -738,7 +738,7 @@ const ZH = {
+   'Recent errors': '最近的错误',
+   'Recent errors · {count}': '最近的错误 · {count}',
+   'No errors recorded.': '没有错误记录。',
+-  'Failed model calls and DS Bot problems show here, newest first.': '模型调用失败和 DS Bot 的问题会显示在这里，最新的在前。',
++  'Failed model calls and FlyBot problems show here, newest first.': '模型调用失败和 FlyBot 的问题会显示在这里，最新的在前。',
+   'Model call': '模型调用',
+   'This window': '这个窗口',
+   'Error log': '错误日志',
+@@ -855,6 +855,8 @@ const HOST_ERRORS = [
+   [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
+   [/^(.+) is not saved yet$/, '$1 还没有保存'],
+   [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, '$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。'],
++  [/^The Bot team file (.+) could not be read \((.+)\)\. FlyBot does not change it; fix or move the file and reload\.$/, '$1 里的 Bot 团队文件读不出来（$2）。FlyBot 不会改它；修好或移走文件后刷新。'],
++  [/^The Bot team file lists (\d+) members; FlyBot runs one owner per team$/, '团队文件列出了 $1 个成员；FlyBot 每个团队只运行一位主人'],
+   [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
+   [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
+   [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
 @@ -883,6 +883,20 @@ const HOST_ZH = {
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
@@ -111,6 +232,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
+@@ -905,6 +905,8 @@ const HOST_ZH = {
+   'Write the entry to save.': '请写下要保存的内容。',
+   'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
+   'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
++  'No FlyBot core update is available': '没有可用的 FlyBot 核心更新',
++  'saved by a newer FlyBot; update FlyBot': '由更新的 FlyBot 保存；请更新 FlyBot',
+ }
+ Object.assign(ZH, HOST_ZH)
+ 
 diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 --- a/src/client/model-menu.js
 +++ b/src/client/model-menu.js
@@ -208,6 +338,15 @@ diff --git a/src/client/text.js b/src/client/text.js
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
+@@ -66,7 +66,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
+   const lines = [
+     '| | |',
+     '|---|---|',
+-    row('DS Bot', facts.botVersion),
++    row('FlyBot', facts.botVersion),
+     row('DSH', facts.dshVersion),
+     row('Surface', client.surface),
+     row('OS', facts.os),
 @@ -167,7 +167,9 @@ export function install(rt) {
      const error = args.find(arg => arg instanceof Error)
      const line = clean(format(template, ...args.map(arg => (arg instanceof Error ? errorText(arg) : arg))))
@@ -222,6 +361,33 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
+@@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
+     ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
+     : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
+ 
+-const SUMMARY_SYSTEM = 'You write the memory summary that a user reads in the memory panel of DS Bot, an app where a team of AI Bots works for the user. You only restate saved memory entries; you never add to them.'
++const SUMMARY_SYSTEM = 'You write the memory summary that a user reads in the memory panel of FlyBot, an app where a team of AI Bots works for the user. You only restate saved memory entries; you never add to them.'
+ 
+ const summaryRequest = ({ name, own, team, language }) => [
+   `Here is everything ${name} remembers: its own memory, then the team memory that every Bot shares. Each line is one entry; [[name]] is a topic.`,
+@@ -327,7 +327,7 @@ const summaryRequest = ({ name, own, team, language }) => [
+ ].join('\n')
+ 
+ const ASK_SYSTEM = [
+-  'You keep the memory of one Bot in DS Bot, an app where a team of AI Bots works for the user. The user is talking to you in the memory panel. You see every saved entry, numbered. Answer the user from the entries only, or change them as the user asks.',
++  'You keep the memory of one Bot in FlyBot, an app where a team of AI Bots works for the user. The user is talking to you in the memory panel. You see every saved entry, numbered. Answer the user from the entries only, or change them as the user asks.',
+   'Reply with one JSON object and nothing else: {"reply": "…", "changes": […]}',
+   '- reply: one to three short sentences to the user. Say what you changed, or answer the question; when the entries do not say, say so. The user does not see the entry numbers, so never mention them.',
+   '- changes: empty unless the user asks to add, correct, or remove something. Each change is one of',
+@@ -338,7 +338,7 @@ const ASK_SYSTEM = [
+ ].join('\n')
+ 
+ const reviewSystem = teamWrites => [
+-  'You keep the long-term memory of one Bot in DS Bot, an app where a team of AI Bots works for the user. After each turn of a conversation you read the new messages and decide what the Bot should still know in its later conversations, which will not have these messages. Most turns hold nothing worth keeping.',
++  'You keep the long-term memory of one Bot in FlyBot, an app where a team of AI Bots works for the user. After each turn of a conversation you read the new messages and decide what the Bot should still know in its later conversations, which will not have these messages. Most turns hold nothing worth keeping.',
+   'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
+   `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
+   'Keep, as a new entry:',
 @@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
@@ -265,9 +431,12 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -47,6 +47,8 @@ export function install(rt) {
+@@ -45,8 +45,10 @@ export function install(rt) {
+     if (bot !== undefined) {
+       return [
          '# Your identity',
-         `You are ${bot.name}, a Bot on the user's team in DS Bot.${bot.role ? ` Your role: ${bot.role}.` : ''}`,
+-        `You are ${bot.name}, a Bot on the user's team in DS Bot.${bot.role ? ` Your role: ${bot.role}.` : ''}`,
++        `You are ${bot.name}, a Bot on the user's team in FlyBot.${bot.role ? ` Your role: ${bot.role}.` : ''}`,
          bot.instructions ? `\n${bot.instructions}` : '',
 +        // FlyBot plugins' prompt text for this Bot (flybot.bot.setSystemPrompt).
 +        bot.systemPrompt ? `\n${bot.systemPrompt}` : '',

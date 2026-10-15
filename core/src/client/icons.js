@@ -1,4 +1,5 @@
 import { createElement as h } from 'react'
+import { FLYBOT_BODY, FLYBOT_WING, FLYBOT_WING_LOW } from './brand.js'
 
 export function PlusIcon() {
   return h('svg', { width: 18, height: 18, viewBox: '0 0 20 20', 'aria-hidden': true }, h('path', { d: 'M10 3.5v13M3.5 10h13', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' }))
@@ -90,3 +91,18 @@ export const FolderIcon = lineIcon(['M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 
 // Two speech bubbles, the back one peeking out: a group chat.
 export const ChatsIcon = lineIcon(['M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z', 'M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13'])
 export const SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon }
+
+export function FlyBotMark({ size = 24 }) {
+  return h('svg', { className: 'bt-flybot-mark', width: size, height: size, viewBox: '0 0 512 512', 'aria-hidden': true },
+    h('g', { className: 'bt-flybot-wing' },
+      h('path', { d: FLYBOT_WING }),
+      h('path', { d: FLYBOT_WING_LOW })),
+    h('g', { className: 'bt-flybot-wing', transform: 'translate(512 0) scale(-1 1)' },
+      h('path', { d: FLYBOT_WING }),
+      h('path', { d: FLYBOT_WING_LOW })),
+    h('path', { className: 'bt-flybot-body', d: FLYBOT_BODY }),
+    h('rect', { className: 'bt-flybot-eye', x: 196, y: 222, width: 34, height: 58, rx: 17 }),
+    h('rect', { className: 'bt-flybot-eye', x: 282, y: 222, width: 34, height: 58, rx: 17 }),
+    h('circle', { className: 'bt-flybot-body', cx: 256, cy: 100, r: 22 }),
+    h('rect', { className: 'bt-flybot-body', x: 248, y: 104, width: 16, height: 34 }))
+}

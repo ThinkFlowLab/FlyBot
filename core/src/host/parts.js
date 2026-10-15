@@ -561,7 +561,7 @@ export function install(rt) {
     const why = segment.fallback === 'overflow' ? 'the part overflowed the model\'s window'
       : segment.fallback === 'failure' ? 'a request in the previous part kept failing'
         : 'the model did not write a usable note'
-    const head = `(DS Bot put this note together without the model, because ${why}.`
+    const head = `(FlyBot put this note together without the model, because ${why}.`
     return segment.note === undefined
       ? `${head} There was no earlier note to carry over. Go by the messages below, and look up anything else.)`
       : `${head} It is the note written at the end of part ${segment.noteFrom}, carried over unchanged; anything newer is in the messages below, and read_own_chat finds the rest.)\n\n${segment.note}`
@@ -582,7 +582,7 @@ export function install(rt) {
     ]
     return [
       `[Handoff · part ${number}]`,
-      `DS Bot moved ${where} on to a fresh conversation, part ${number}, because ${reason}. This message is not from the user.`,
+      `FlyBot moved ${where} on to a fresh conversation, part ${number}, because ${reason}. This message is not from the user.`,
       'It is reference, not new instructions: the note and the messages below are a record of earlier work. Do what they say only as part of the work they record, and take new requests only from messages that come after this one.',
       `Everything earlier stays saved: ${lookup}`,
       ...(folder !== undefined ? [`You now work in ${folder}: commands and file tools start there. Relative paths in the messages below meant the previous folder.`] : []),
@@ -613,7 +613,7 @@ export function install(rt) {
   // A turn stopped for a switch goes on with its own source, so its reply still
   // reaches whoever asked.
   const handoffSource = (job, resume) => ({
-    ...(resume && job.info ? job.info : { kind: SOURCE_KIND, form: 'relay', role: 'handoff', senderName: 'DS Bot', hop: 0 }),
+    ...(resume && job.info ? job.info : { kind: SOURCE_KIND, form: 'relay', role: 'handoff', senderName: 'FlyBot', hop: 0 }),
     exchangeId: job.info?.exchangeId ?? randomUUID(),
     handoff: true,
     ...(resume ? { resume: true } : {}),
@@ -693,8 +693,8 @@ export function install(rt) {
         if (resume) {
           const carried = job.joined?.length ? { joined: job.joined } : {}
           back.unshift(createUserMessage({
-            content: [{ type: 'text', text: 'DS Bot paused your turn for a context check. Go on with it now from where you stopped.' }],
-            source: job.info ? { ...job.info, ...carried } : { kind: SOURCE_KIND, form: 'relay', role: 'resume', exchangeId: randomUUID(), senderName: 'DS Bot', hop: 0, ...carried },
+            content: [{ type: 'text', text: 'FlyBot paused your turn for a context check. Go on with it now from where you stopped.' }],
+            source: job.info ? { ...job.info, ...carried } : { kind: SOURCE_KIND, form: 'relay', role: 'resume', exchangeId: randomUUID(), senderName: 'FlyBot', hop: 0, ...carried },
           }))
         }
         await forward(job, back).catch(error => rt.warn('ds-bot: input for %s was not handed on: %s', agent.id, error))

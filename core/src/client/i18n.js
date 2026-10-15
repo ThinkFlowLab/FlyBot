@@ -145,7 +145,8 @@ const ZH = {
   'Sign in to DeepSeek': '登录 DeepSeek 账号',
   'Enter a DeepSeek API key': '填入 DeepSeek API key',
   'Open settings to set up a custom model': '打开设置配置自定义模型',
-  'DS Bot': 'DS Bot',
+  'FlyBot': 'FlyBot',
+  'FlyBot core': 'FlyBot 核心',
 
   // Header
   'Message {name}': '给 {name} 发消息',
@@ -342,7 +343,7 @@ const ZH = {
   'No group chats yet.': '还没有群聊。',
   'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
   'Back to group chats': '返回群聊列表',
-  'DS Bot settings': 'DS Bot 设置',
+  'FlyBot settings': 'FlyBot 设置',
   'Settings pages': '设置页面',
   'Models, providers, and the rest of DeepSeek Harness': '模型、服务商和 DeepSeek Harness 的其他设置',
   'Harness settings': 'Harness 设置',
@@ -374,13 +375,13 @@ const ZH = {
   '{n} d': '{n} 天',
 
   // Plugin updates
-  'DS Bot {version} is available': 'DS Bot {version} 可以更新',
-  'Updating DS Bot…': '正在更新 DS Bot…',
-  'DS Bot {version} is installed. Restart DSH to use it.': 'DS Bot {version} 已安装，重启 DSH 后生效',
-  'DS Bot update': 'DS Bot 更新',
-  'DS Bot {version}': 'DS Bot {version}',
+  'FlyBot core {version} is available': 'FlyBot 核心 {version} 可以更新',
+  'Updating FlyBot core…': '正在更新 FlyBot 核心…',
+  'FlyBot core {version} is installed. Restart DSH to use it.': 'FlyBot 核心 {version} 已安装，重启 DSH 后生效',
+  'FlyBot core update': 'FlyBot 核心更新',
+  'FlyBot core {version}': 'FlyBot 核心 {version}',
   'Update installed': '更新已安装',
-  'Restart DSH to start using DS Bot {version}.': '重启 DSH 后开始使用 DS Bot {version}。',
+  'Restart DSH to start using FlyBot core {version}.': '重启 DSH 后开始使用 FlyBot 核心 {version}。',
   'You have {version}.': '当前版本 {version}。',
   'The update did not finish: {reason}': '更新没有完成：{reason}',
   "What's new": '更新说明',
@@ -390,7 +391,7 @@ const ZH = {
   'DSH update': 'DSH 更新',
   'DSH {version}': 'DSH {version}',
   'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
-  'Update DS Bot {version} first.': '先更新 DS Bot {version}。',
+  'Update FlyBot core {version} first.': '先更新 FlyBot 核心 {version}。',
   'Open updates': '打开更新',
 
   // Command palette
@@ -730,11 +731,11 @@ const ZH = {
   'Compared with the {count} days before': '与再往前 {count} 天相比',
   '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
   // About
-  'About DS Bot': '关于 DS Bot',
+  'About FlyBot': '关于 FlyBot',
   'Version {version}': '版本 {version}',
-  'Star DS Bot on GitHub': '在 GitHub 上给 DS Bot 点 Star',
+  'Star FlyBot on GitHub': '在 GitHub 上给 FlyBot 点 Star',
   '{count} stars': '{count} 个 Star',
-  'If DS Bot helps you, a star on GitHub helps more people find it.': '如果 DS Bot 对你有用，欢迎在 GitHub 上点个 Star，让更多人看到它。',
+  'If FlyBot helps you, a star on GitHub helps more people find it.': '如果 FlyBot 对你有用，欢迎在 GitHub 上点个 Star，让更多人看到它。',
   Updates: '更新',
   'Check for updates': '检查更新',
   'Checking…': '正在检查…',
@@ -759,7 +760,7 @@ const ZH = {
   Show: '查看',
   Hide: '收起',
   'GitHub issue': 'GitHub issue',
-  'Opens a new issue in the DS Bot repository with all of this filled in. Nothing is sent until you submit it there.': '在 DS Bot 仓库新建一个 issue，并填好以上内容。你在 GitHub 上提交之前，什么都不会发出。',
+  'Opens a new issue in the FlyBot repository with all of this filled in. Nothing is sent until you submit it there.': '在 FlyBot 仓库新建一个 issue，并填好以上内容。你在 GitHub 上提交之前，什么都不会发出。',
   'Report on GitHub': '在 GitHub 上报告',
   'Copied the diagnostics.': '已复制诊断信息。',
   'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
@@ -771,7 +772,7 @@ const ZH = {
   'Recent errors': '最近的错误',
   'Recent errors · {count}': '最近的错误 · {count}',
   'No errors recorded.': '没有错误记录。',
-  'Failed model calls and DS Bot problems show here, newest first.': '模型调用失败和 DS Bot 的问题会显示在这里，最新的在前。',
+  'Failed model calls and FlyBot problems show here, newest first.': '模型调用失败和 FlyBot 的问题会显示在这里，最新的在前。',
   'Model call': '模型调用',
   'This window': '这个窗口',
   'Error log': '错误日志',
@@ -888,6 +889,8 @@ const HOST_ERRORS = [
   [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
   [/^(.+) is not saved yet$/, '$1 还没有保存'],
   [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, '$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。'],
+  [/^The Bot team file (.+) could not be read \((.+)\)\. FlyBot does not change it; fix or move the file and reload\.$/, '$1 里的 Bot 团队文件读不出来（$2）。FlyBot 不会改它；修好或移走文件后刷新。'],
+  [/^The Bot team file lists (\d+) members; FlyBot runs one owner per team$/, '团队文件列出了 $1 个成员；FlyBot 每个团队只运行一位主人'],
   [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
   [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
   [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
@@ -952,6 +955,8 @@ const HOST_ZH = {
   'Write the entry to save.': '请写下要保存的内容。',
   'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
   'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
+  'No FlyBot core update is available': '没有可用的 FlyBot 核心更新',
+  'saved by a newer FlyBot; update FlyBot': '由更新的 FlyBot 保存；请更新 FlyBot',
 }
 Object.assign(ZH, HOST_ZH)
 

@@ -46,6 +46,10 @@ This page covers the pin, the patch format and the core's dev tooling. The gener
 1. `ds-bot/` stays pristine; CI fails if it differs from the pin.
 2. `core/` == `ds-bot/` + `patches/ds-bot/files/` + `patches/ds-bot/*.patch`; regenerate after every `core/` change. A new file under `core/` (for example `test/new-chat.test.js`) is stored whole in `patches/ds-bot/files/` by `generate` and needs no `topics.json` entry; an upstream file edited for the first time must be listed in `patches/ds-bot/topics.json`. Otherwise `scripts/ds-bot-patches.mjs check` fails with “committed but not produced by the patches”. The format has no `index` lines or cross-hunk line numbers so parallel PRs merge cleanly (see `patches/ds-bot/README.md`).
 3. `client.js` matches `core/src/client/`; `npm run build` + `--check`.
+
+### FlyBot branding topic
+
+- Topic `0014-flybot-branding` holds edits to upstream About / settings / diagnostics / update / parts / browser / secrets files. New files (`src/client/brand.js`, `test/branding.test.js`) are stored whole in `files/`. The npm package, plugin id, localStorage keys, `console.warn('[ds-bot]')`, and `update.js` repository URLs stay upstream.
 4. Never touch the user's `~/.dsh`.
 
 ## Tests
