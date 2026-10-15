@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "note": "Phase 0: these rules only REPORT a tier (see docs/autonomous-dev.md). Nothing reads them to block or merge. Editing this file is itself T3.",
+  "tiers": {
+    "T3": {
+      "meaning": "high risk: a human one-click approval at the current head; never auto-merged",
+      "paths": [
+        ".github/**", ".claude/**", ".agents/**", "scripts/**", "core/scripts/**",
+        "AGENTS.md", "CONTRIBUTING.md", "LESSONS.md", "docs/code-standards.md", "docs/autonomous-dev.md",
+        "LICENSE", "NOTICE", "SECURITY.md",
+        "ds-bot/**", "ds-bot.pin.json", "**/package.json", "**/package-lock.json",
+        "core/src/host/{authz,approvals,reach,member-auth,room-membership,channel,delivery,remote-chat,secrets,permissions}.js",
+        "core/src/shared/**", "plugins/social/index.js", "plugins/social/src/**", "plugins/social/cordis.patch.yml"
+      ],
+      "codeExt": "\\.(js|mjs|cjs|ts|yml|yaml|json|sh)$",
+      "diffPatterns": [
+        "\\bchild_process\\b", "\\beval\\(", "new Function\\(",
+        "process\\.env\\.[A-Za-z_]*(TOKEN|KEY|SECRET)", "\\.dsh(?![-\\w])|DSH_HOME",
+        "\\.(only|skip)\\(", "(eslint|oxlint)-disable"
+      ],
+      "diffPatternsNotInTests": [
+        "https?://(?!(localhost|127\\.0\\.0\\.1|example\\.(com|org)|github\\.com/(ThinkFlowLab|Birfy)|registry\\.npmjs\\.org))",
+        "untrusted-(message|file)|\\bfence|sanitiz|displayName|display name"
+      ],
+      "testPaths": ["**/test/**", "**/*.test.{js,mjs,cjs,ts}"],
+      "topics": ["create_child_bot"]
+    },
+    "T2": {
+      "meaning": "medium risk: host/plugin code, and any path no rule names (never silently T0/T1); a later phase may auto-merge it behind a smoke gate",
+      "paths": ["core/index.js", "core/src/host/**", "core/types/**", "plugins/**"]
+    },
+    "T1": {
+      "meaning": "low risk: client code, tests, generated files",
+      "paths": ["core/src/client/**", "core/client.js", "patches/**", "core/test/**", "plugins/*/test/**", "CHANGELOG.md"]
+    },
+    "T0": {
+      "meaning": "lowest risk: documentation",
+      "paths": ["docs/**", "README.md", "README.zh.md"]
+    }
+  },
+  "unknownPathTier": "T2",
+  "generatedPaths": ["core/client.js", "patches/**"],
+  "limits": {"T0": {"lines": 300, "files": 15}, "T1": {"lines": 400, "files": 20}, "T2": {"lines": 250, "files": 12}}
+}

@@ -100,6 +100,8 @@ jobs:
       - name: Typecheck the plugin API (types/*.d.ts, strict)
         working-directory: core
         run: npx --yes -p typescript@5.9.3 tsc --noEmit --strict --skipLibCheck types/*.d.ts
+      - name: Tests of the repo scripts (risk tier, labels)
+        run: node --test ".github/scripts/*.test.mjs"
       - name: Changelog has an Unreleased section
         run: grep -q '^## \[Unreleased\]' CHANGELOG.md
       - name: Lint the workflows (actionlint)

@@ -1,0 +1,53 @@
+name: Risk tier (report only)
+
+# Phase 0 of docs/autonomous-dev.md. Computes the risk tier (T0-T3) of a pull request and writes
+# it to the job summary. It is NOT a required check, never blocks, labels, comments or merges.
+# Keep it out of the branch protection's required checks and out of the `tests-ok` needs list.
+#
+# Safety: `pull_request` (not pull_request_target), read-only token, no secrets. The script and
+# its rules come from the BASE commit and read the PR only through the API; PR code is never run.
+# The one exception is the pull request that introduces the script: the base has no copy yet,
+# so that single run falls back to the copy in the PR (still read-only, no secrets).
+on:
+  pull_request:
+
+concurrency:
+  group: risk-tier-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  report:
+    name: risk tier (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: hashFiles('base/.github/scripts/risk-gate.mjs') == ''
+        with:
+          path: pr
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      - name: Compute the tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          dir=base
+          if [ ! -f base/.github/scripts/risk-gate.mjs ]; then
+            echo "::notice::The base commit has no risk-gate script yet; using the copy in this pull request."
+            dir=pr
+          fi
+          node "$dir/.github/scripts/risk-gate.mjs"

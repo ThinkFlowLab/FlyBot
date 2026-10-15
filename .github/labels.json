@@ -1,0 +1,9 @@
+[
+  {"name": "agent-task", "color": "5319E7", "description": "Written with the agent-task form; not approval for agents (that is agent-ready)"},
+  {"name": "agent-ready", "color": "0E8A16", "description": "Maintainer-approved spec: an agent may take it. Only maintainers set this; never in a template"},
+  {"name": "agent-working", "color": "1D76DB", "description": "An agent has claimed this issue (the claim comment names the branch)"},
+  {"name": "agent-pr", "color": "5319E7", "description": "Pull request opened by an agent"},
+  {"name": "needs-info", "color": "D4C5F9", "description": "Waiting for the reporter or a maintainer decision"},
+  {"name": "needs-human", "color": "B60205", "description": "The agent loop stopped; a person must decide (reason in the last comment)"},
+  {"name": "hold", "color": "000000", "description": "A person froze this issue or PR; agents and automation leave it alone"}
+]
