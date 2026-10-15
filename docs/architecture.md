@@ -17,7 +17,7 @@ FlyBot is a team of long-lived Bots built on DeepSeek Harness (DSH). Two parts s
 
 Each subsystem has a detail page under [docs/subsystems/](subsystems/README.md) with owned paths, invariants and tests:
 
-- [ds-bot-core](subsystems/ds-bot-core.md) — patched core runtime
+- [ds-bot-core](subsystems/ds-bot-core.md) — pin, patch format and dev tooling of the patched core; [core-host](subsystems/core-host.md) and [core-client](subsystems/core-client.md) — its server and browser code
 - [plugin-runtime](subsystems/plugin-runtime.md) — FlyBot plugin hooks
 - [tree](subsystems/tree.md) — `@flybot/tree`
 - [social](subsystems/social.md) — `@flybot/social`

@@ -1,19 +1,11 @@
 ---
 subsystem: ds-bot-core
 owned_paths:
-  - core/index.js
-  - core/src/
-  - core/client.js
-  - core/web-search.js
   - core/dev/
   - core/types/
-  - core/test/identity.test.js
-  - core/test/room-membership.test.js
-  - core/test/remote-room.test.js
-  - core/test/reach-policy.test.js
   - ds-bot/
   - ds-bot.pin.json
-  - patches/ds-bot/
+  - patches/ds-bot/README.md
   - scripts/ds-bot-patches.mjs
 ---
 
@@ -21,20 +13,16 @@ owned_paths:
 
 Patched upstream `ds-bot` that ships as `core/`. Never edit `ds-bot/` by hand; change `core/` and regenerate patches.
 
+This page covers the pin, the patch format and the core's dev tooling. The generated output (`patches/ds-bot/*.patch`, `files/`, `topics.json`) is not owned: it follows from `core/`, so a core change need not edit this page for it; `patches/ds-bot/README.md` (the format) and `scripts/ds-bot-patches.mjs` are owned. The code itself is described by two pages: [core-host](core-host.md) (server: `core/index.js`, `core/src/host/`, `core/src/shared/`, `core/web-search.js`) and [core-client](core-client.md) (browser: `core/src/client/`, `core/client.js`).
+
 ## Owns
 
-- Core server: roster/store, tools, turns/delivery, groups, conversation parts, search index, images, browser bridge, `api/bot` channel.
-- Browser client: sidebar, chat, panels, themes, characters, Bot browser panel (`core/client.js` generated from `core/src/client/`). The sidebar **+** new-chat picker (`core/src/client/new-chat.js`) takes extra rows from slot `flybot.new-chat.action` (next to Create group chat; `label` / `hint` go through the same `t()` map) and lists only `listedChatBots` (gone, hidden, and home-level remotes stay out; owner labels match the sidebar). Covered by `core/test/new-chat.test.js` in patch `0003-flybot-api-client`.
-- `core/web-search.js` — standalone `auto` web-search provider.
 - `core/dev/` — harness packages, mock model, test bench, smoke test.
-- `core/test/identity.test.js` — the state identity schema tests (store `state.json` v2, #47).
-- `core/test/room-membership.test.js` — typed room participants, authorship and the membership-window history rule (#50).
-- `core/test/remote-room.test.js` — granted remote participants, per-viewer presentation and ungranted-Bot refusal; #90 room rules (a room with friends' Bots takes granted local Bots only, revoke evicts, fanout checks author and recipient, room-code Bots).
-- `core/test/reach-policy.test.js` — #90 reach policy: per-Bot grants (default deny, Chief included), the allow/deny matrix per direction, no bypass, hold release and flagged deliveries re-checked, setGrants and `bot.grants`.
-- Pin (`ds-bot.pin.json`) and ordered patches (`patches/ds-bot/`).
+- Pin (`ds-bot.pin.json`), ordered patches and whole added files (`patches/ds-bot/`).
 
 ## Does not own
 
+- Server and browser code of the core → [core-host](core-host.md), [core-client](core-client.md).
 - FlyBot plugin API surface → [plugin-runtime](plugin-runtime.md) (except `core/types/` which this page claims for now).
 - `plugins/tree/`, `plugins/social/` → their own pages.
 - `core/scripts/`, arch-doc checks → [install](install.md).
@@ -43,17 +31,9 @@ Patched upstream `ds-bot` that ships as `core/`. Never edit `ds-bot/` by hand; c
 
 | File | Role |
 | --- | --- |
-| `core/index.js` | Server entry. |
-| `core/src/client/` | Client sources → build to `core/client.js`. |
-| `core/src/host/` | Host-side helpers (non-hooks). |
 | `ds-bot.pin.json` | Upstream pin. |
 | `patches/ds-bot/` | Ordered patch topics. |
 | `scripts/ds-bot-patches.mjs` | generate / check patches. |
-| `core/src/host/room-membership.js` | Typed room participants (human / local bot / granted remote), authorship, membership-window history (#50); rooms with friends' Bots or other owners take granted local Bots only and evict a Bot that stops qualifying (#90). Face-to-face rooms (#83) reuse this model (`origin: 'face-to-face'`, room-only remotes without a person-grant, `upsertFaceRoom` / `syncFaceParticipants` / `applyFaceRoomLine`). |
-| `core/src/host/reach.js` | Per-Bot grants and the owner-policy `reach()` check that hooks.js runs outside the plugin chain (#90); `rt.setGrants`, `rt.hasGrant`, `rt.hasAnyGrant`. |
-| `core/src/shared/remote-label.js` | Owner-badge labels for a friend's Bot and “Shared room from …” titles. `isListedRemoteChat` / `listedChatBots` keep gone, hidden, and home-level (`@something.home`) remotes out of the sidebar, the **发给** picker, mentions, and `list_bots` friends lines; history stays on disk. |
-| `core/src/client/new-chat.js` | Sidebar **+** picker. Plugin rows via `flybot.new-chat.action` (`newChatActionRows` in `flybot-registry.js`); Face-to-face group is the social plugin's row. |
-| `core/test/new-chat.test.js` | Picker filters and the **+** menu order (Create group chat, then plugin actions, then Add DSH Agent). |
 
 ## Entry points
 
@@ -64,18 +44,9 @@ Patched upstream `ds-bot` that ships as `core/`. Never edit `ds-bot/` by hand; c
 ## Invariants
 
 1. `ds-bot/` stays pristine; CI fails if it differs from the pin.
-2. `core/` == `ds-bot/` + `patches/ds-bot/`; regenerate after every `core/` change. A new file under `core/` (for example `test/new-chat.test.js`) must be listed in `patches/ds-bot/topics.json` and present in the generated patch, or `scripts/ds-bot-patches.mjs check` fails with “committed but not produced by the patches”.
+2. `core/` == `ds-bot/` + `patches/ds-bot/files/` + `patches/ds-bot/*.patch`; regenerate after every `core/` change. A new file under `core/` (for example `test/new-chat.test.js`) is stored whole in `patches/ds-bot/files/` by `generate` and needs no `topics.json` entry; an upstream file edited for the first time must be listed in `patches/ds-bot/topics.json`. Otherwise `scripts/ds-bot-patches.mjs check` fails with “committed but not produced by the patches”. The format has no `index` lines or cross-hunk line numbers so parallel PRs merge cleanly (see `patches/ds-bot/README.md`).
 3. `client.js` matches `core/src/client/`; `npm run build` + `--check`.
 4. Never touch the user's `~/.dsh`.
-5. The saved team (`state.json`) is versioned. Version 2 (#47) carries the identity schema — `members` records, a per-Bot `ownerId`, the owner's `designatedChiefId`. A legacy version-1 file is migrated on load with a one-time `state.json.v1` backup; an existing backup counts only when it is a readable file holding a parseable version-1 state, and anything else (or any malformed ownership) fails closed (read-only). An older binary refuses a newer version read-only. This is schema foundation only — team mode stays disabled, see [team](team.md). On top of it, member auth (#48) adds host module `src/host/member-auth.js`, installed after `store` in `MODULES` (`core/index.js`): `invitations` and `authSessions` maps live on state (no `STATE_VERSION` bump), the channel resolves the actor from the `x-flybot-member-session` header, and endpoints are `auth-invite` / `auth-redeem` / `auth-revoke` / `auth-whoami` / `auth-remove-member` / `auth-revoke-invite` with `body.actorId` ignored; `auth-invite` alone also opens for an anonymous caller on a host with no sessions yet (bootstrap first invite), `auth-revoke-invite` kills an unredeemed invitation (redeeming it afterwards fails with `revoked`), `removeMember` refuses a member that still owns a Bot (`has_bots`), and the auth mutations are serialized behind an in-process lock so concurrent `removeMember` calls cannot both pass the last-owner check. Sign-in surface only — still not team mode; details in [team](team.md). On top of it, owner-scoped access (#49) adds host module `src/host/authz.js`, installed after member-auth: when any `authSessions` exist, the channel `authorize()` default-denies cross-owner Bot/room/session access, blocks shared non-isolatable resources (secrets, connectors, folder picks, browser bridge, update-install, diagnostics, set-prefs, `add-agent` — the DSH Agent is one per deployment and carries no owner) with `bot/blocked-shared` when more than one member exists, stamps `create-bot` with `actor.memberId`, and filters `view()`/`live()` to the actor; with no sessions the single-human behavior is unchanged. Session targets resolve through the store's owner maps — a Bot id via `botOf`, current chats and group Sessions and earlier parts via `selfOf`/`groupOwners`/`pastOwners` (a shared room Session also resolves for its current participants, #50) — and unresolvable ids deny. `approval-answer` gates on the approval's own Bot or room (resolved by approval id), never on caller-supplied session fields. `flybot/*` plugin endpoints (src/host/hooks.js) reach any signed-in actor for reads; plugin writes follow the shared rule. `view()`/`live()` narrowing (`rt.ownedView`/`rt.ownedLive` in authz.js) keeps per-session entries (`questions`, `exchangeTurns`) the actor owns, and deployment-wide surfaces (agents, secrets, connectors, memory reviews) only while a single member exists — the same rule as the shared writes; rooms the actor belongs to and the Bots in them (#50) stay visible. `create-room` refuses a request with neither a member Bot nor any participant. On top of it, room membership (#50) adds host module `src/host/room-membership.js`, installed after groups: a room may carry typed `participants` (`human` / local `bot` / granted remote `bot` with `handle` + owner fields, roles `admin` / `member`, `joinedSeq` / `leftSeq`); log lines carry `authorId` + `authorKind`; history is the membership window (current members and the owner of an invited Bot see `seq >=` their interval; leave withdraws access; rejoin starts a new interval); local cross-owner rooms accept each side's *granted* Bots (#90: default deny, Chief included); a friend's Bot from `social/remote-bots` (`cleanRemote`) may be added and ungranted Bots stay private, and a room with a friend's Bot holds only granted local Bots (a Bot that joined by room code, `viaCode`, only for that room); `view()` labels remotes with an owner badge and shows an invited owner **Shared room from \<inviter\>**. Face-to-face rooms (#83) reuse the same `participants` / membership-window / owner-badge presentation with `origin: 'face-to-face'`: room-only remotes may sit in the room without a person-grant or a friendship, `presentRoom` treats the viewer as a member (not Shared room from), leave skips the two-Bot floor, and `fanoutRoomLine` goes to `rt.faceRoomFanout` instead of friend `flybotSend`. Still not team mode — see [team](team.md). Per-Bot grants (#90) add host module `src/host/reach.js`, installed after room-membership: `state.grants[botId]` is the list of independent grants (one Bot → one grantee, optionally room-scoped); default deny, Chief included; a Bot whose owner is not a member has none. Grants are set with `rt.setGrants`, exposed as `BotView.granted`, `flybot.bot.hasGrant` / `hasAnyGrant`, `flybot.grants` and the `bot.grants` event. `reach()` is the owner policy: a friend's Bot may reach only local Bots granted to that sender, only a granted Bot (or one code-joined in that room) may message a friend's Bot, another owner's Bot is reached only if both sides have matching grants or both are members of the room the message belongs to. It is not a middleware: hooks.js runs it before the `bot.send` chain, again on approval release, and on every deliver with a sender or remote origin (resumed, retried, deferred, re-sent), so no verdict or `bypass` can skip it and a queued message is judged by what is true when it is delivered. Revoking a grant, or replacing its Chief, removes it from rooms that have friends' Bots or several owners at once (`rt.evictUnshared`).
-6. Host diagnostics never depend on `ctx.logger`: DSH may export no logger, and a test or plugin-local host may carry one without `warn`. `rt.warn` still writes stderr and the diagnostics log in that case (`src/host/diagnostics.js`). Plugins reach the same log through `flybot.warn` (#68); see [plugin-runtime](plugin-runtime.md).
-7. `remoteTurn` (`src/host/remote-chat.js`) finds what the user typed on a friend's remote chat by skipping host-appended `role:'user'` context: forms `snapshot`, `instructions` (the AGENTS.md baseline on a chat's first turn) and `notice`, and the time-context kinds. Match by form, not by a whitelist of senders, or the first message of a new chat is dropped (#66).
-8. A friend's remote Bot is stored and delivered by its handle (`@<bot>.<home>` — what the @ menu inserts and `sendUserMentions` matches). Where the user reads it — mention chips (`src/client/user-message.js`) and sidebar previews (`nameMentions` in `src/client/text.js`) — the client rewrites the handle to the display name taken from the local roster (`roster.bots[].remote`, `roster.remoteBots`), never from message text, so a remote-controlled name reaches the UI only through the sanitized roster records (#71; display names, #9).
-9. `0002-flybot-api-host` `cleanRemote` sanitizes those peer-controlled `name` / `homeName` / `owner` labels (strip `@` and controls/newlines, 60-char cap) before they are stored. Details in [plugin-runtime](plugin-runtime.md) (#75).
-10. A remote Bot's generated look is seeded by its handle (`remoteSeed` in `src/client/characters.js`), never by its session id: the chat record (`src/host/remote-chat.js`) carries no look, and every consumer funnels through `lookOf`/`colorOf`, so the record and `remoteSpeaker`'s no-record fallback (`src/client/cells.js`) render one stable look per handle — across surfaces, after a delete/re-add, and identically in the friend's home. A stored `color`/`avatar` on the record still wins. Carrying the friend side's real look over the wire needs Bot Social member-profile fields (#84).
-11. A friend's Bot @-mentioned in a group never has its reply delivered back into that group (it lands in the friend's Bot's own chat), so the host posts one receipt line into the room per mention (`src/host/hooks.js` `mentionReceipt`, source role `mention`) and the client renders it as a muted event line (`src/client/cells.js`) (#80, #81). The role stays outside the room's round trigger (`groups.js` `opens`) and outside `RELAY_ROLES`, so the receipt opens no round and folds no turns.
-12. Slot `flybot.new-chat.action` (`0003-flybot-api-client`, types in `flybot.d.ts`) is a row on the sidebar **+** new-chat menu, next to Create group chat. Plugins register `{ id, order, label, hint?, visible?, run }`; the picker looks `label` / `hint` up with `t()` like the neighbouring rows. The social plugin's Face-to-face group row is the first consumer; see [plugin-runtime](plugin-runtime.md) and [social](social.md).
-13. A friend's Bot the owner hid, a remote chat marked `gone`/`hidden`, and a home-level handle (`@friend.home`, not `@bot.friend.home`) must not reappear in the sidebar, the **发给 / 和谁聊…** picker, `@` mentions, or `list_bots` friends lines (`isListedRemoteChat`). `flybot.remote.publish` skips those handles so remote-chat sync marks the persisted session gone/hidden instead of opening it again; history is kept. Handle comparison is case-insensitive (`normRemoteHandle`).
 
 ## Tests
 

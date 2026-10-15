@@ -20,7 +20,7 @@ Use documented plugin APIs only. Never patch DSH or depend on files inside a DSH
 
 | Layer | Owned paths | Edit rule |
 | --- | --- | --- |
-| ds-bot-core | `core/index.js`, `core/src/`, `core/client.js`, … | Change `core/`, regenerate patches. |
+| ds-bot-core, core-host, core-client | `core/index.js`, `core/src/`, `core/client.js`, `patches/ds-bot/`, … | Change `core/`, regenerate patches. |
 | plugin-runtime | `core/src/host/hooks.js`, slots, registry | FlyBot plugin API surface. |
 | tree / social | `plugins/tree/`, `plugins/social/` | Independent plugins. |
 | install | `core/scripts/`, arch-doc checks | Tooling only. |
