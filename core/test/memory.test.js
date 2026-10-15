@@ -1085,3 +1085,70 @@ test('a memory call names the current part of the Bot chat', async (t) => {
   assert.equal(answer.ok, true)
   assert.equal(requests[0].sessionId, 'b2-part2')
 })
+
+// A cross-owner shared room (#53): "the user" of a member Bot's review is its own
+// owner, and another owner's room is not the place to publish team memory.
+const SHARED_ROOM_TEAM = {
+  version: 2,
+  revision: 1,
+  mainBotIds: ['m1'],
+  members: {
+    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'm1' },
+    'owner-2': { id: 'owner-2', createdAt: 2, designatedChiefId: 'x1' },
+  },
+  bots: {
+    m1: { id: 'm1', sessionId: 'm1', name: 'Chief', role: 'Chief of Staff', instructions: '', createdAt: 1, ownerId: 'owner-1' },
+    b3: { id: 'b3', sessionId: 'b3', name: 'Coder', role: 'Code', instructions: '', createdAt: 3, ownerId: 'owner-1' },
+    x1: { id: 'x1', sessionId: 'x1', name: 'Guest', role: 'Visit', instructions: '', createdAt: 4, ownerId: 'owner-2' },
+  },
+  rooms: {
+    r2: {
+      id: 'r2', name: 'Shared', named: true, members: ['b3', 'x1'], admin: 'b3', mode: 'everyone', notice: '', sessions: { b3: 'g3' },
+      seq: 3, seen: {},
+      participants: [
+        { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'Alice', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'human', id: 'owner-2', role: 'member', displayName: 'Bob', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', id: 'b3', role: 'admin', displayName: 'Coder', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', id: 'x1', role: 'member', displayName: 'Guest', joinedSeq: 0, joinedAt: 1 },
+      ],
+      log: [
+        { who: 'Alice', authorKind: 'human', authorId: 'owner-1', text: 'Keep the launch on Friday', seq: 1 },
+        { who: 'Bob', authorKind: 'human', authorId: 'owner-2', text: 'Bob prefers Sundays', seq: 2 },
+        { who: 'Coder', botId: 'b3', text: 'Will do.', seq: 3 },
+      ],
+    },
+  },
+  exchanges: [], exchangeTurns: {}, questions: {},
+}
+
+test('in a cross-owner room, the review reads its own owner as the user and the other owner as a peer', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(SHARED_ROOM_TEAM))
+  const replies = [JSON.stringify({ changes: [{ op: 'add', text: 'The launch stays on Friday' }] })]
+  const { ctx, call, requests, stop } = start({ home, replies, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  ctx.emit('agent/status', { agent: { id: 'g3' }, status: 'idle' })
+  for (let tries = 0; tries < 200 && requests.length === 0; tries += 1) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(requests.length, 1)
+  const batch = requests[0].messages[0].content[0].text
+  assert.match(batch, /User: Keep the launch on Friday/, 'the owner speaks as the user')
+  assert.match(batch, /Bob: Bob prefers Sundays/, 'the other owner is a named peer')
+  assert.doesNotMatch(batch, /User: Bob prefers Sundays/)
+})
+
+test('a review out of a cross-owner room keeps entries out of the team memory', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(SHARED_ROOM_TEAM))
+  const replies = [JSON.stringify({ changes: [{ op: 'add', text: 'The launch stays on Friday', team: true }] })]
+  const { ctx, call, stop } = start({ home, replies, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  ctx.emit('agent/status', { agent: { id: 'g3' }, status: 'idle' })
+  for (let tries = 0; tries < 200; tries += 1) {
+    if (existsSync(join(home, 'memory', 'bots', 'b3', 'MEMORY.md'))) break
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.equal(existsSync(join(home, 'memory', 'team', 'MEMORY.md')), false, 'no team write from another owner\'s room')
+  assert.match(readFileSync(join(home, 'memory', 'bots', 'b3', 'MEMORY.md'), 'utf8'), /The launch stays on Friday/)
+})

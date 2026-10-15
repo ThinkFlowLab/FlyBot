@@ -22,6 +22,7 @@ import { escapeRegExp, splitRef, textOf } from './text.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
 import { failureLine } from './turns.js'
+import { currentParticipants } from './room-membership.js'
 
 const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
@@ -124,6 +125,23 @@ export function install(rt) {
   // A member's group Session, created on its first turn there. A new one starts with
   // a fresh look at the log and a brief of the member's own chat; the brief is the
   // first message, so it stays fixed and the prefix stays cacheable.
+  // The brief is the member's owner's private chat with the Bot. In a room where
+  // another owner sits it stays out unless that owner shared it with this room (#53).
+  const briefAllowed = (room, member) => {
+    if (!rt.authzEnforced?.()) return true
+    const participants = currentParticipants(room)
+    const owners = new Set([rt.botOf(member.id)?.ownerId])
+    for (const p of participants) {
+      if (p.kind === 'human') owners.add(p.id)
+      // A granted remote Bot speaks for another home; its handle stands for that owner.
+      else if (p.remote) owners.add(p.handle)
+      else owners.add(rt.botOf(p.id)?.ownerId)
+    }
+    owners.delete(undefined)
+    if (owners.size <= 1) return true
+    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
+  }
+
   async function groupSessionFor(room, member) {
     room.sessions ??= {}
     const known = room.sessions[member.id]
@@ -144,7 +162,7 @@ export function install(rt) {
       .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))
     await rt.save()
     await rt.ensureCapabilities(id)
-    return { id, brief: await rt.ownChatBrief(member) }
+    return { id, brief: briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
   }
 
   // Lines from before the round's opening message are kept apart from this round, so

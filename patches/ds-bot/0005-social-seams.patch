@@ -111,7 +111,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,30 @@ export function install(rt) {
+@@ -65,22 +65,40 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -149,6 +149,16 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 -  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer'])
 +  // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
 +  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
++
++  // A chat reference chip names a Session whose snapshot rides to every recipient of
++  // the message, so the author must be able to read what they share (#53).
++  const unshareableReference = (actor, text) => {
++    if (!actor || !rt.authzEnforced?.() || typeof text !== 'string') return undefined
++    for (const match of text.matchAll(/dsh-session:([A-Za-z0-9_-]+)/g)) {
++      if (!rt.sessionOwnedBy?.(actor, match[1])) return match[1]
++    }
++    return undefined
++  }
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
@@ -206,7 +216,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
            return ok(room)
          }
-@@ -175,8 +175,24 @@ export function install(rt) {
+@@ -175,8 +175,26 @@ export function install(rt) {
              add: Array.isArray(body.add) ? body.add : undefined,
              remove: Array.isArray(body.remove) ? body.remove : undefined,
              workDir: body.workDir,
@@ -223,6 +233,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        }
 +        case 'room-post': {
 +          await rt.load()
++          const leaked = unshareableReference(actor, body.text)
++          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
 +          const line = await rt.postRoomMessage(String(body.roomId ?? body.id ?? ''), {
 +            text: body.text,
 +            authorId: body.authorId,
@@ -233,7 +245,12 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          }
          case 'folders':
          case 'folder-pick':
-@@ -281,6 +281,18 @@ export function install(rt) {
+@@ -278,9 +278,23 @@ export function install(rt) {
+           const text = String(body.text ?? '').trim()
+           if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
+           await rt.load()
++          const leaked = unshareableReference(actor, text)
++          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
            // A Bot id or an earlier part of its own chat means the current part.
            const past = rt.pastOwners.get(body.sessionId)
            const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
@@ -252,10 +269,14 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,7 +319,38 @@ export function install(rt) {
+@@ -319,7 +319,42 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
++        case 'share-brief':
++          await rt.load()
++          await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)
++          return ok(true)
 +        case 'auth-whoami':
 +          return ok(actor)
 +        case 'auth-invite': {

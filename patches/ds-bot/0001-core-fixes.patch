@@ -363,6 +363,14 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
+@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
+ import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
+ import { dirname, join } from 'node:path'
+ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
++import { currentParticipants } from './room-membership.js'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
+ import { splitRef, unquote } from './text.js'
+ import { output } from './tools.js'
 @@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
@@ -390,6 +398,29 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
    `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
    'Keep, as a new entry:',
+@@ -488,6 +488,22 @@ export function install(rt) {
+ 
+   const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId)
+ 
++  // Team memory is one team's. A review that reads a room where another owner sits
++  // keeps entries in the Bot's own memory only (#53); ownership, not the admin role,
++  // decides whose memory "team" refers to there.
++  const teamAllowedFrom = (room, bot) => {
++    if (room === undefined) return true
++    const owners = new Set([bot.ownerId])
++    for (const p of currentParticipants(room)) {
++      if (p.kind === 'human') owners.add(p.id)
++      // A granted remote Bot speaks for another home; its handle stands for that owner.
++      else if (p.remote) owners.add(p.handle)
++      else owners.add(state.bots?.[p.id]?.ownerId)
++    }
++    owners.delete(undefined)
++    return owners.size <= 1
++  }
++
+   // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
+   function namedScope(raw, botId) {
+     const value = unquote(raw)
 @@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
@@ -408,6 +439,59 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return {
        botId: bot.id,
        entries,
+@@ -1123,17 +1123,23 @@ export function install(rt) {
+ 
+   // What is new in a group, from its log: the member's Session holds the same
+   // messages wrapped in turn prompts.
++  // "The user" of a group review is the member Bot's owner; a line another human
++  // wrote is a peer's, however it is attributed (#53).
++  const isUserLine = (bot, entry) => (entry.authorKind === 'human'
++    ? entry.authorId !== undefined && entry.authorId === bot.ownerId
++    : entry.who === 'User')
++
+   function groupBatch(room, bot, since) {
+     const log = (room.log ?? []).filter(line => line.kind === undefined && typeof line.text === 'string' && line.text.trim() !== '')
+     // A first review reads back at least to the user's latest line, which a round of
+     // replies from many members can push out of the last few.
+-    const lastUser = log.findLastIndex(line => line.who === 'User')
++    const lastUser = log.findLastIndex(line => isUserLine(bot, line))
+     let start = since === undefined ? Math.max(0, Math.min(log.length - REVIEW_FIRST_LINES, lastUser === -1 ? log.length : lastUser)) : log.findIndex(line => line.seq > since)
+     const oldest = room.log?.[0]?.seq
+     if (since !== undefined && oldest !== undefined && oldest > since + 1) rt.warn('ds-bot: %d lines of group "%s" left its log before %s reviewed them', oldest - since - 1, room.name, bot.name)
+     if (start === -1) start = log.length
+     const line = (entry) => {
+-      const who = entry.who === 'User' ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
++      const who = isUserLine(bot, entry) ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
+       return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
+     }
+     return {
+@@ -1158,7 +1158,7 @@ export function install(rt) {
+     return { texts: kept, count: kept.length }
+   }
+ 
+-  async function applyReview(bot, sessionId, numbered, changes, source) {
++  async function applyReview(bot, sessionId, numbered, changes, source, { teamAllowed = true } = {}) {
+     const actor = { id: bot.id, name: bot.name, session: sessionId, auto: true }
+     const done = []
+     let failed
+@@ -1166,7 +1166,7 @@ export function install(rt) {
+       // A Bot deleted mid-review keeps no more changes, its team ones included.
+       if (rt.botOf(bot.id) === undefined) return 0
+       // Its role may change mid-review too, so each change asks again.
+-      const teamWrites = writesTeam(bot.id)
++      const teamWrites = teamAllowed && writesTeam(bot.id)
+       const op = String(change?.op ?? '')
+       const topic = op === 'add' && change?.topic !== undefined ? cleanTopic(String(change.topic)) : undefined
+       const target = numbered[Number(change?.entry) - 1]
+@@ -1272,7 +1272,7 @@ export function install(rt) {
+       const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
+       if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
+       if (rt.botOf(bot.id) === undefined) return
+-      const changed = await applyReview(bot, sessionId, numbered, applied, batch.source(read))
++      const changed = await applyReview(bot, sessionId, numbered, applied, batch.source(read), { teamAllowed: teamAllowedFrom(live, bot) })
+       if (rt.botOf(bot.id) === undefined) return
+       // An answer at the limit may have left some out, so the same lines are read
+       // again, a few times at most, while each pass still changes something.
 diff --git a/src/host/models.js b/src/host/models.js
 --- a/src/host/models.js
 +++ b/src/host/models.js
@@ -705,6 +789,77 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
+@@ -1076,3 +1076,70 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+   assert.equal(answer.ok, true)
+   assert.equal(requests[0].sessionId, 'b2-part2')
+ })
++
++// A cross-owner shared room (#53): "the user" of a member Bot's review is its own
++// owner, and another owner's room is not the place to publish team memory.
++const SHARED_ROOM_TEAM = {
++  version: 2,
++  revision: 1,
++  mainBotIds: ['m1'],
++  members: {
++    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'm1' },
++    'owner-2': { id: 'owner-2', createdAt: 2, designatedChiefId: 'x1' },
++  },
++  bots: {
++    m1: { id: 'm1', sessionId: 'm1', name: 'Chief', role: 'Chief of Staff', instructions: '', createdAt: 1, ownerId: 'owner-1' },
++    b3: { id: 'b3', sessionId: 'b3', name: 'Coder', role: 'Code', instructions: '', createdAt: 3, ownerId: 'owner-1' },
++    x1: { id: 'x1', sessionId: 'x1', name: 'Guest', role: 'Visit', instructions: '', createdAt: 4, ownerId: 'owner-2' },
++  },
++  rooms: {
++    r2: {
++      id: 'r2', name: 'Shared', named: true, members: ['b3', 'x1'], admin: 'b3', mode: 'everyone', notice: '', sessions: { b3: 'g3' },
++      seq: 3, seen: {},
++      participants: [
++        { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'Alice', joinedSeq: 0, joinedAt: 1 },
++        { kind: 'human', id: 'owner-2', role: 'member', displayName: 'Bob', joinedSeq: 0, joinedAt: 1 },
++        { kind: 'bot', id: 'b3', role: 'admin', displayName: 'Coder', joinedSeq: 0, joinedAt: 1 },
++        { kind: 'bot', id: 'x1', role: 'member', displayName: 'Guest', joinedSeq: 0, joinedAt: 1 },
++      ],
++      log: [
++        { who: 'Alice', authorKind: 'human', authorId: 'owner-1', text: 'Keep the launch on Friday', seq: 1 },
++        { who: 'Bob', authorKind: 'human', authorId: 'owner-2', text: 'Bob prefers Sundays', seq: 2 },
++        { who: 'Coder', botId: 'b3', text: 'Will do.', seq: 3 },
++      ],
++    },
++  },
++  exchanges: [], exchangeTurns: {}, questions: {},
++}
++
++test('in a cross-owner room, the review reads its own owner as the user and the other owner as a peer', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  writeFileSync(join(home, 'state.json'), JSON.stringify(SHARED_ROOM_TEAM))
++  const replies = [JSON.stringify({ changes: [{ op: 'add', text: 'The launch stays on Friday' }] })]
++  const { ctx, call, requests, stop } = start({ home, replies, config: { memoryReviewDelayMs: 0 } })
++  t.after(() => stop())
++  await call('state', {})
++  ctx.emit('agent/status', { agent: { id: 'g3' }, status: 'idle' })
++  for (let tries = 0; tries < 200 && requests.length === 0; tries += 1) await new Promise(resolve => setTimeout(resolve, 20))
++  assert.equal(requests.length, 1)
++  const batch = requests[0].messages[0].content[0].text
++  assert.match(batch, /User: Keep the launch on Friday/, 'the owner speaks as the user')
++  assert.match(batch, /Bob: Bob prefers Sundays/, 'the other owner is a named peer')
++  assert.doesNotMatch(batch, /User: Bob prefers Sundays/)
++})
++
++test('a review out of a cross-owner room keeps entries out of the team memory', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  writeFileSync(join(home, 'state.json'), JSON.stringify(SHARED_ROOM_TEAM))
++  const replies = [JSON.stringify({ changes: [{ op: 'add', text: 'The launch stays on Friday', team: true }] })]
++  const { ctx, call, stop } = start({ home, replies, config: { memoryReviewDelayMs: 0 } })
++  t.after(() => stop())
++  await call('state', {})
++  ctx.emit('agent/status', { agent: { id: 'g3' }, status: 'idle' })
++  for (let tries = 0; tries < 200; tries += 1) {
++    if (existsSync(join(home, 'memory', 'bots', 'b3', 'MEMORY.md'))) break
++    await new Promise(resolve => setTimeout(resolve, 20))
++  }
++  assert.equal(existsSync(join(home, 'memory', 'team', 'MEMORY.md')), false, 'no team write from another owner\'s room')
++  assert.match(readFileSync(join(home, 'memory', 'bots', 'b3', 'MEMORY.md'), 'utf8'), /The launch stays on Friday/)
++})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
 +++ b/test/model-menu.test.js
