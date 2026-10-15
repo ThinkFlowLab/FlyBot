@@ -31,7 +31,7 @@
     },
     "T1": {
       "meaning": "low risk: client code, tests, generated files",
-      "paths": ["core/src/client/**", "core/client.js", "patches/**", "core/test/**", "plugins/*/test/**", "CHANGELOG.md"]
+      "paths": ["core/src/client/**", "core/client.js", "patches/**", "core/test/**", "plugins/*/test/**", "CHANGELOG.md", "changelog.d/**"]
     },
     "T0": {
       "meaning": "lowest risk: documentation",

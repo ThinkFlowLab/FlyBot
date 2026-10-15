@@ -2,6 +2,8 @@
 
 All notable changes to FlyBot (earlier: DS Bot) are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow [Semantic Versioning](https://semver.org/). Before 1.0, a minor version can contain breaking changes. Entries from the historical `0.1.0-dsbot` preview and earlier describe the pre-FlyBot DS Bot lineage.
 
+New entries are written as one fragment file per change in [changelog.d/](changelog.d/README.md) and folded into a release section at release time; `[Unreleased]` below holds entries written before that.
+
 ## [Unreleased]
 
 ### Changed
