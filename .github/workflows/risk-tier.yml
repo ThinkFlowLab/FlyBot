@@ -45,9 +45,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          dir=base
+          dir="base"
           if [ ! -f base/.github/scripts/risk-gate.mjs ]; then
             echo "::notice::The base commit has no risk-gate script yet; using the copy in this pull request."
-            dir=pr
+            dir="pr"
           fi
           node "$dir/.github/scripts/risk-gate.mjs"
