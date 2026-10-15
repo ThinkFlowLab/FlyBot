@@ -60,8 +60,8 @@ window.__ModuleLoader__.load({
 .fs-row:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-avatar{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;font-weight:600;overflow:hidden}
 .fs-avatar img{width:100%;height:100%;object-fit:cover;display:block}
-.fs-face-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px}
-.fs-face-mark .bt-mark{width:24px;height:24px}
+.fs-face-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:var(--fs-face-size,24px);height:var(--fs-face-size,24px)}
+.fs-face-mark .bt-mark,.fs-face-mark .fs-avatar{width:100%;height:100%;font-size:calc(var(--fs-face-size,24px)*.5)}
 .fs-text{display:flex;flex-direction:column;flex:1 1 auto;min-width:0}
 .fs-name{font-size:14px;line-height:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fs-sub{font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -113,17 +113,20 @@ window.__ModuleLoader__.load({
 .fs-dialog-head{display:flex;align-items:center;gap:8px;flex:none}
 .fs-dialog-head .fs-name{flex:1 1 auto}
 .fs-dialog > form{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
-.fs-pick{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto}
-.fs-pick li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}
-.fs-pick li:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
-.fs-pick label{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;cursor:pointer;font:inherit}
+.fs-tiles{margin:0;padding:4px 0 0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:10px 6px;align-content:start}
+.fs-pick{max-height:220px;overflow:auto}
+.fs-tile{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:6px 2px;border-radius:10px}
+.fs-tile-hit{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;width:100%;margin:0;cursor:pointer;font:inherit;position:relative}
+.fs-tile-hit:hover,.fs-tile-on{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-tile-mark{position:relative;flex:none;display:inline-flex}
+.fs-tile-name{display:block;width:100%;font-size:12px;line-height:16px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink,#141414)}
+.fs-tile-mine{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px var(--bt-card,#fff);pointer-events:none}
+.fs-tile-on .fs-face-mark{border-radius:50%;box-shadow:0 0 0 2px var(--bt-accent,#4d6bfe)}
+.fs-tile-check{position:absolute;right:-2px;bottom:-2px;width:16px;height:16px;border-radius:50%;background:var(--bt-accent,#4d6bfe);color:#fff;font-size:11px;line-height:16px;text-align:center;pointer-events:none;box-shadow:0 0 0 2px var(--bt-card,#fff)}
+.fs-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .fs-wait{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;overflow:hidden}
 .fs-wait-count{flex:none;padding:0}
 .fs-wait-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
-.fs-wait-roster{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
-.fs-wait-roster li{display:flex;align-items:center;gap:8px;padding:4px 2px;border-radius:8px;min-width:0}
-.fs-wait-name{flex:1 1 auto;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fs-wait-hint{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3,rgba(20,20,20,.36));white-space:nowrap}
 .fs-wait-foot{display:flex;align-items:stretch;gap:8px;flex:none}
 .fs-wait-foot .fs-btn{height:36px}
 .fs-wait-foot .fs-btn-primary{flex:1 1 auto;width:auto;min-width:0}
@@ -222,8 +225,42 @@ window.__ModuleLoader__.load({
         'data-bot-id': bot?.id,
         'data-handle': bot?.remote?.handle || bot?.handle,
         'data-color': color,
+        'data-size': size,
         'aria-hidden': true,
+        style: { width: size, height: size, '--fs-face-size': `${size}px` },
       }, inner)
+    }
+
+    function FaceTile({ bot, name, handle, mine, pick, selected, onToggle } = {}) {
+      const mark = h('span', { className: 'fs-tile-mark' },
+        h(FaceAvatar, { bot, size: 48 }),
+        mine
+          ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: 'mine', 'aria-label': 'mine' })
+          : null,
+        pick && selected
+          ? h('span', { className: 'fs-tile-check', 'data-flybot': 'face-pick-check', 'aria-hidden': true }, '✓')
+          : null)
+      const caption = h('span', { className: 'fs-tile-name', title: name }, name)
+      if (pick) {
+        return h('li', { className: selected ? 'fs-tile fs-tile-on' : 'fs-tile' },
+          h('label', { className: 'fs-tile-hit' },
+            h('input', {
+              type: 'checkbox',
+              className: 'fs-sr',
+              checked: !!selected,
+              'aria-label': name,
+              onChange: onToggle,
+            }),
+            mark,
+            caption))
+      }
+      return h('li', {
+        className: 'fs-tile',
+        'data-flybot': 'face-member',
+        'data-mine': mine || undefined,
+        'data-handle': handle,
+        title: name,
+      }, mark, caption)
     }
 
     const AUTO_SEND_NOTE = 'When this is on, your Bots post in face-to-face rooms without asking each time.'
@@ -476,17 +513,14 @@ window.__ModuleLoader__.load({
               ? (room.expiresAt ? countdown(room.expiresAt) : 'Matching window open. Anyone with the number can still join.')
               : 'The room is open. The number is no longer valid.'),
             h('div', { className: 'fs-wait-body' },
-              h('ul', { className: 'fs-wait-roster', 'aria-label': 'Who has joined' },
-                members.map(member => {
-                  const mine = memberIsMine(member, bots, room)
-                  const name = member.displayName || member.label || member.handle
-                  return h('li', { key: member.handle || member.id, 'data-flybot': 'face-member', 'data-mine': mine || undefined, 'data-handle': member.handle },
-                    h(FaceAvatar, { bot: faceLook({ roster, remoteChats, bots, member }) }),
-                    h('span', { className: 'fs-wait-name' }, name),
-                    mine
-                      ? h('span', { className: 'fs-wait-hint', 'data-flybot': 'face-mine' }, 'mine')
-                      : (member.ownerName ? h('span', { className: 'fs-wait-hint', 'data-flybot': 'face-owner' }, member.ownerName) : null))
-                })),
+              h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
+                members.map(member => h(FaceTile, {
+                  key: member.handle || member.id,
+                  bot: faceLook({ roster, remoteChats, bots, member }),
+                  name: member.displayName || member.label || member.handle,
+                  handle: member.handle,
+                  mine: memberIsMine(member, bots, room),
+                }))),
               members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
               failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
                 failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
@@ -498,18 +532,15 @@ window.__ModuleLoader__.load({
                 disabled: !!busy || !room.roomId, onClick: enter,
               }, 'Enter chat'))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
             h('div', { className: 'fs-hint' }, 'Choose which of your Bots to bring, then type the same 6-digit number as the people next to you. You join at once — there is no preview.'),
-            h('ul', { className: 'fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
-              bots.map(bot => h('li', { key: bot.id },
-                h('label', null,
-                  h('input', {
-                    type: 'checkbox', checked: selected.includes(bot.id),
-                    'aria-label': bot.name,
-                    onChange: () => toggle(bot.id),
-                  }),
-                  h(FaceAvatar, { bot: faceLook({ roster, local: bot }) }),
-                  h('span', { className: 'fs-text' },
-                    h('span', { className: 'fs-name' }, bot.name),
-                    bot.isMain ? h('span', { className: 'fs-sub' }, 'Main Bot') : null))))),
+            h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
+              bots.map(bot => h(FaceTile, {
+                key: bot.id,
+                bot: faceLook({ roster, local: bot }),
+                name: bot.name,
+                pick: true,
+                selected: selected.includes(bot.id),
+                onToggle: () => toggle(bot.id),
+              }))),
             bots.length === 0 ? h('div', { className: 'fs-hint' }, 'Loading your Bots…') : null,
             h('div', { className: 'fs-hint', 'data-flybot': 'face-join-room' },
               'Available to this room only. Friends cannot see these Bots unless you invite them.'),
