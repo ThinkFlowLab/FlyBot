@@ -1,0 +1,9 @@
+{
+  "note": "Read by .github/scripts/controller.mjs from the default branch. Editing this file is T3. Maintainers listed here are the only people whose edits keep an issue agent-ready.",
+  "maintainers": ["Birfy", "hsliuustc0106"],
+  "agentBranchPrefixes": ["agent/"],
+  "agentAuthors": [],
+  "claimTtlHours": 6,
+  "maxPrsPerRun": 50,
+  "maxIssuesPerRun": 50
+}

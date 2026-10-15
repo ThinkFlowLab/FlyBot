@@ -5,5 +5,9 @@
   {"name": "agent-pr", "color": "5319E7", "description": "Pull request opened by an agent"},
   {"name": "needs-info", "color": "D4C5F9", "description": "Waiting for the reporter or a maintainer decision"},
   {"name": "needs-human", "color": "B60205", "description": "The agent loop stopped; a person must decide (reason in the last comment)"},
-  {"name": "hold", "color": "000000", "description": "A person froze this issue or PR; agents and automation leave it alone"}
+  {"name": "hold", "color": "000000", "description": "A person froze this issue or PR; agents and automation leave it alone"},
+  {"name": "risk:T0", "color": "C2E0C6", "description": "Risk tier T0 (docs only), set by the controller from the diff; never by hand"},
+  {"name": "risk:T1", "color": "BFD4F2", "description": "Risk tier T1 (client, tests, generated files), set by the controller from the diff"},
+  {"name": "risk:T2", "color": "FBCA04", "description": "Risk tier T2 (host/plugin code or an unnamed path), set by the controller from the diff"},
+  {"name": "risk:T3", "color": "D93F0B", "description": "Risk tier T3 (needs a human approval), set by the controller from the diff"}
 ]

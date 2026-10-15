@@ -67,7 +67,8 @@ approval is enforced (Phase 2).
 1. A maintainer files the **Agent task** form (label `agent-task`). The form cannot add `agent-ready`:
    GitHub applies template labels whatever the author's permissions.
 2. A maintainer reads it and adds `agent-ready`. That label is the only permission an agent has.
-   Setting it again after someone else edits the issue is a manual rule now; a controller will enforce it later.
+   Setting it again after someone else edits the issue is a manual rule now; the [label-only controller](controller.md)
+   enforces it (dry run until `CONTROLLER_LIVE` is set).
 3. The agent claims it (`agent-working`), opens a PR with `Fixes #N` (`agent-pr`), and stops at
    `needs-human` when stuck. `hold` freezes an issue or PR for agents and automation.
 
