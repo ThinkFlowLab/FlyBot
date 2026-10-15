@@ -39,13 +39,13 @@ Nothing in this repo creates tokens or secrets.
 | Limit | Consequence | Workaround |
 | --- | --- | --- |
 | Events it causes do not start workflows (except `workflow_dispatch` and `repository_dispatch`) | a label, comment, push or PR made by an Action does not trigger other workflows; chains of "label, then workflow" do not work | do the whole decision in one job; poll on `schedule`; chain explicitly with `gh workflow run` (dispatch) |
-| A merge or tag made with it may not start `push` workflows (the `Test` run on `main`, `release.yml`) | unverified for auto-merge: test it before relying on it | keep `release.yml` waiting for a green run on the tagged commit, and start `Test` by `workflow_dispatch` if needed |
+| A merge or tag made with it may not start `push` workflows (the `Test` run on `main`, `release.yml`) | documented rule, not tested here (see [Merge plumbing](#merge-plumbing-merge_group-merge-queue-auto-merge)): an auto-merge **enabled** with `GITHUB_TOKEN` is reported to merge silently | enable auto-merge with the agent's own credential, never with `GITHUB_TOKEN`; keep `release.yml` waiting for a green run on the tagged commit, and start `Test` by `workflow_dispatch` on `main` if the push run is missing |
 | Read-only and no secrets on `pull_request` from forks | a `pull_request` job cannot label or enable auto-merge for a fork PR | run writers from `schedule` or `pull_request_target` with **base-branch code that never checks out or runs PR code** and reads the PR through the API only |
 | Cannot approve PRs (`can_approve_pull_request_reviews` is off here) | the controller can never approve T3 | intended: a human approves |
 | Cannot change `.github/workflows/**` | an Action cannot edit workflows | intended |
 | About 1,000 API requests per hour per repository | a chatty controller stalls | few calls per tick, filter by label |
 | `schedule` can lag by minutes and public repos' schedules stop after 60 days without activity | polling is not instant | acceptable; `workflow_dispatch` to run now |
-| Merge queue needs a ruleset and the plan to allow it | unverified for this org | auto-merge works without it; the queue is a later phase |
+| Merge queue needs a ruleset and the plan to allow it | docs say available (public, org-owned repo); not enabled or tested | `test.yml` already has `merge_group`; auto-merge works without the queue |
 
 ## What Phase 0 adds
 
@@ -119,10 +119,62 @@ deleted once the script is on `main`. The workflow must stay out of branch prote
 
 To switch the report off: disable the workflow in the Actions tab, or delete `.github/workflows/risk-tier.yml`.
 
+## Merge plumbing: `merge_group`, merge queue, auto-merge
+
+`test.yml` has a `merge_group:` trigger. Nothing is enabled: with no merge queue it never fires.
+
+**What the trigger does.** A merge queue builds each entry on a `gh-readonly-queue/main/pr-N-<sha>` branch (a merge of
+the PR onto the current `main`, plus the entries ahead of it) and merges only when the required checks pass on that
+commit. Required checks are matched by name on that commit, so `Test` must run on `merge_group`; otherwise `tests-ok`
+and the `test` job never report there and the entry waits until the queue's timeout. With the trigger:
+
+- `test`, `plugins (tree)`, `plugins (social)`, `package` and `tests-ok` run unchanged. Nothing in `test.yml` reads the
+  `pull_request` event, no job has an `if:` that would skip it, and `tests-ok` keeps `if: always()` and needs all three,
+  so a skipped or failed job still makes it red (`.github/scripts/test-workflow.test.mjs` checks all of this).
+- `merge_group` takes no path filters, so a docs-only entry runs in full. That is also why `paths-ignore` stays on `push` only.
+- `push` stays limited to `main`, so a queue branch does not run twice. The concurrency group is per ref, so entries do
+  not cancel each other, and every non-`main` ref (queue branches included) cancels its own earlier run.
+- `risk-tier.yml` is `pull_request` only and report only: it does not run on queue entries and must stay out of the required checks.
+- The `arch-docs` step fetches `origin/main` and deepens until `git merge-base origin/main HEAD` works. Emulated on a
+  one-commit shallow checkout of a merge-queue-shaped commit (local bare remote): it falls back to deepening and
+  `arch-docs: OK`. With a group size above 1, `arch-docs` sees the union of the grouped PRs; keep the group size at 1.
+- A GitHub `merge_group` run itself could not be produced without enabling a queue (a ruleset change), so that part is untested.
+
+**Read-only checks of the live repository (2026-10-15, `gh api` GET with a maintainer login):**
+
+| Fact | Value |
+| --- | --- |
+| Repo | public, owned by an Organization |
+| Merge methods | squash only; `delete_branch_on_merge: true`; `allow_auto_merge: true`; `allow_update_branch: true` |
+| Branch protection on `main` | required checks: the `test` job and `tests-ok`; `strict: false`; no required reviews; `enforce_admins: false`; no force pushes |
+| Rulesets | none at repo level (`[]`); the organization-level list needs the `admin:org` scope (not available, so unknown) |
+| Org plan | not readable: `plan` is `null` without `admin:org` |
+| Workflow token | default `read`; Actions cannot approve PRs |
+
+**Merge queue availability.** GitHub's docs: "Pull request merge queues are available in any public repository owned by
+an organization, or in private repositories owned by organizations using GitHub Enterprise Cloud". This repository is
+public and org-owned, so it should qualify on any plan. Not verified here: the plan itself, and whether the setting
+shows up for this repository (that needs an admin to open Settings, Rules; creating a ruleset was out of scope).
+Enabling it later means a ruleset (or branch protection) with "Require merge queue" on `main`, squash, group size 1,
+and the required checks `tests-ok` (and `test`). Keep `tests-ok` the single aggregate.
+
+**Does an auto-merge by `GITHUB_TOKEN` start the `push` workflows? Unverified here; assume no.** GitHub documents that
+events caused by `GITHUB_TOKEN` (except `workflow_dispatch` and `repository_dispatch`) create no workflow runs. Several
+independent public reports say the same for `gh pr merge --auto` run with `GITHUB_TOKEN`: the merge is attributed to
+`github-actions[bot]` and the `push` run on `main` never starts. A real test needs a PR that actually merges into
+`main` (or a scratch base branch with its own protection), which was out of scope. Consequences and the safe design:
+
+- The controller must **not** enable auto-merge (it is label-only anyway). Agents enable it with their own credential.
+- If a merge ever lands without a `Test` run on `main`, start one with `gh workflow run Test --ref main`
+  (`workflow_dispatch` is exempt from the rule; needs `actions: write`), so `release.yml` has a green run to wait for.
+- Whether merges made by the merge queue itself start `push` workflows is also unverified.
+- To check it once, with the maintainers' consent: merge one trivial PR with auto-merge enabled by the intended
+  credential, then `gh run list --workflow Test --branch main --limit 3` should show a `push` run on the merge commit.
+
 ## Next phases (not built)
 
-1. **Merge plumbing.** `merge_group` in `test.yml` and a merge queue if the plan allows it; test that an auto-merge
-   by `GITHUB_TOKEN` starts the `main` workflows. Conflict-proofing for generated files.
+1. **Merge plumbing.** The `merge_group` trigger is in `test.yml` (above). Still to do: enable the queue if wanted, and test the
+   auto-merge push behavior. Conflict-proofing for generated files is a separate PR (patch format, changelog fragments, split core pages).
 2. **Controller, label-only** (`schedule` plus `workflow_dispatch`, `GITHUB_TOKEN`): demote `agent-ready` after a
    non-maintainer edit, set `agent-pr` and `risk:T*`, expire stale claims, a pause variable and a kill-switch drill.
    Enforce the tier with a required check and CODEOWNERS for T3 approval.

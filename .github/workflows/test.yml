@@ -8,6 +8,11 @@ on:
     # skipped required check would block docs-only pull requests.
     paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+  # A merge queue (not enabled; see docs/autonomous-dev.md) runs the required checks on each queue entry,
+  # a gh-readonly-queue/* branch. Without this trigger they would never report there and the queue would
+  # wait for them until it times out. merge_group takes no path filters, so a docs-only entry runs in full
+  # (as a docs-only pull request does), and `push` above is limited to main, so an entry does not run twice.
+  merge_group:
   workflow_dispatch:
 
 # On main a run finishes: a release waits for a green run on its commit, and one cancelled
