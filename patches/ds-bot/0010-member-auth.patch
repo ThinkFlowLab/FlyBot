@@ -195,7 +195,7 @@ index 0000000000000000000000000000000000000000..58352bbb8a9600bd2d0ba98ee837be84
 +export { hashToken }
 diff --git a/test/member-auth.test.js b/test/member-auth.test.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..51f97217f17429ea39eb880288463a6bf28931aa
+index 0000000000000000000000000000000000000000..9efd4107014ccc8a18e60c1ec01b67f5eb2b69e0
 --- /dev/null
 +++ b/test/member-auth.test.js
 @@ -0,0 +1,277 @@
@@ -312,7 +312,7 @@ index 0000000000000000000000000000000000000000..51f97217f17429ea39eb880288463a6b
 +test('an invitation token cannot be replayed and an expired one fails', async (t) => {
 +  const { rt } = runtime(t, TEAM)
 +  await rt.load()
-+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1', ttlMs: 1 })
++  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
 +  assert.equal((await rt.redeemInvitation(invite.token)).ok, true)
 +  const replay = await rt.redeemInvitation(invite.token)
 +  assert.equal(replay.ok, false)

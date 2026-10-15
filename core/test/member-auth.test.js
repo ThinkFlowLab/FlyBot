@@ -111,7 +111,7 @@ test('authenticate ignores forged strings; only a live session token works', asy
 test('an invitation token cannot be replayed and an expired one fails', async (t) => {
   const { rt } = runtime(t, TEAM)
   await rt.load()
-  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1', ttlMs: 1 })
+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
   assert.equal((await rt.redeemInvitation(invite.token)).ok, true)
   const replay = await rt.redeemInvitation(invite.token)
   assert.equal(replay.ok, false)
