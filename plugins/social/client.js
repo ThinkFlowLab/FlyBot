@@ -109,15 +109,24 @@ window.__ModuleLoader__.load({
 .fs-menu button:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-chat-approval{margin:4px 0 8px}
 .fs-dialog-back{position:fixed;inset:0;z-index:40;background:rgba(20,20,20,.4);display:flex;align-items:center;justify-content:center;padding:12px}
-.fs-dialog{width:min(420px,100%);max-height:min(640px,92vh);overflow:auto;margin:0;padding:14px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
-.fs-dialog-head{display:flex;align-items:center;gap:8px}
+.fs-dialog{width:min(420px,100%);max-height:min(640px,92vh);overflow:hidden;margin:0;padding:14px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+.fs-dialog-head{display:flex;align-items:center;gap:8px;flex:none}
 .fs-dialog-head .fs-name{flex:1 1 auto}
+.fs-dialog > form{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .fs-pick{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto}
 .fs-pick li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}
 .fs-pick li:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-pick label{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;cursor:pointer;font:inherit}
-.fs-wait-roster{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto}
-.fs-wait-roster li{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:8px}
+.fs-wait{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;overflow:hidden}
+.fs-wait-count{flex:none;padding:0}
+.fs-wait-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.fs-wait-roster{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
+.fs-wait-roster li{display:flex;align-items:center;gap:8px;padding:4px 2px;border-radius:8px;min-width:0}
+.fs-wait-name{flex:1 1 auto;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-wait-hint{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3,rgba(20,20,20,.36));white-space:nowrap}
+.fs-wait-foot{display:flex;align-items:stretch;gap:8px;flex:none}
+.fs-wait-foot .fs-btn{height:36px}
+.fs-wait-foot .fs-btn-primary{flex:1 1 auto;width:auto;min-width:0}
 .fs-fail{padding:0}
 `
     function useStyles() {
@@ -462,30 +471,32 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-dialog-head' },
             h('div', { className: 'fs-name' }, 'Face-to-face group'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: () => onClose?.() }, 'Close')),
-          waiting ? h('div', { 'data-flybot': 'face-wait' },
-            h('div', { className: 'fs-hint', 'data-tick': tick }, candidate
+          waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
+            h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
               ? (room.expiresAt ? countdown(room.expiresAt) : 'Matching window open. Anyone with the number can still join.')
               : 'The room is open. The number is no longer valid.'),
-            h('ul', { className: 'fs-wait-roster', 'aria-label': 'Who has joined' },
-              members.map(member => {
-                const mine = memberIsMine(member, bots, room)
-                return h('li', { key: member.handle || member.id, 'data-flybot': 'face-member', 'data-mine': mine || undefined, 'data-handle': member.handle },
-                  h(FaceAvatar, { bot: faceLook({ roster, remoteChats, bots, member }) }),
-                  h('span', { className: 'fs-text' },
-                    h('span', { className: 'fs-name' }, member.displayName || member.label || member.handle),
-                    member.ownerName ? h('span', { className: 'fs-sub' }, member.ownerName) : null),
-                  mine ? h('span', { className: 'fs-tag', 'data-flybot': 'face-mine' }, 'mine') : null)
-              })),
-            members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
-            failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
-              failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
-            status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null,
-            h('div', { className: 'fs-face-actions' },
+            h('div', { className: 'fs-wait-body' },
+              h('ul', { className: 'fs-wait-roster', 'aria-label': 'Who has joined' },
+                members.map(member => {
+                  const mine = memberIsMine(member, bots, room)
+                  const name = member.displayName || member.label || member.handle
+                  return h('li', { key: member.handle || member.id, 'data-flybot': 'face-member', 'data-mine': mine || undefined, 'data-handle': member.handle },
+                    h(FaceAvatar, { bot: faceLook({ roster, remoteChats, bots, member }) }),
+                    h('span', { className: 'fs-wait-name' }, name),
+                    mine
+                      ? h('span', { className: 'fs-wait-hint', 'data-flybot': 'face-mine' }, 'mine')
+                      : (member.ownerName ? h('span', { className: 'fs-wait-hint', 'data-flybot': 'face-owner' }, member.ownerName) : null))
+                })),
+              members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
+              failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
+                failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
+              status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null),
+            h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
+              h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-leave', disabled: !!busy, onClick: leave }, 'Leave'),
               h('button', {
                 type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter',
                 disabled: !!busy || !room.roomId, onClick: enter,
-              }, 'Enter chat'),
-              h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-leave', disabled: !!busy, onClick: leave }, 'Leave'))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
+              }, 'Enter chat'))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
             h('div', { className: 'fs-hint' }, 'Choose which of your Bots to bring, then type the same 6-digit number as the people next to you. You join at once — there is no preview.'),
             h('ul', { className: 'fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
               bots.map(bot => h('li', { key: bot.id },
