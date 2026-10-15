@@ -10,6 +10,8 @@ import {
   faceUntrustedText,
   viewFaceEvent,
   viewFaceRoom,
+  viewFaceMember,
+  faceMemberLook,
   viewMe,
   renderFaceEvent,
   rememberEvent,
@@ -286,6 +288,20 @@ test('failed join never includes members or events', () => {
 test('viewFaceRoom ignores a missing id', () => {
   assert.equal(viewFaceRoom({}), undefined)
   assert.equal(viewFaceRoom({ room_id: 'frm_1', status: 'candidate', members: [] }).roomId, 'frm_1')
+})
+
+test('viewFaceMember keeps a friend Bot avatar when the payload has one', () => {
+  const plain = viewFaceMember({ handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob' })
+  assert.equal(plain.avatar, undefined)
+  assert.equal(plain.color, undefined)
+  const pictured = viewFaceMember({
+    handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob',
+    avatar: { image: 'https://example.test/coder.png', shape: 'star' }, color: 'green',
+  })
+  assert.deepEqual(pictured.avatar, { image: 'https://example.test/coder.png', shape: 'star' })
+  assert.equal(pictured.color, 'green')
+  assert.equal(faceMemberLook({ image: 'https://example.test/x.png' }).avatar.image, 'https://example.test/x.png')
+  assert.equal(faceMemberLook({ avatar: { image: 'javascript:alert(1)' } }).avatar, undefined)
 })
 
 test('GET/PATCH /v1/me auto_approve_face_rooms, including in-place confirmation', async () => {

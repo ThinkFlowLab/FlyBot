@@ -1413,149 +1413,6 @@ function pluginItems(structure, bot, actions) {
   }]);
 }
 
-// src/client/flybot-slots.js
-var import_react = require("react");
-var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
-function registry2() {
-  const slots = registry();
-  globalThis.__flybot__.call ??= call2;
-  return slots;
-}
-var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
-function useSlot(name) {
-  const slots = registry2();
-  const [, setVersion] = (0, import_react.useState)(0);
-  (0, import_react.useEffect)(() => slots.subscribe(() => setVersion(slots.version())), [slots]);
-  return slots.entries(name);
-}
-var SlotBoundary = class extends import_react.Component {
-  constructor(props) {
-    super(props);
-    this.state = { failed: false };
-  }
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  componentDidCatch(error) {
-    console.error(`flybot: ${this.props.id} failed`, error);
-  }
-  render() {
-    return this.state.failed ? null : this.props.children;
-  }
-};
-function Safe({ entry, props }) {
-  return (0, import_react.createElement)(SlotBoundary, { id: entry.id }, (0, import_react.createElement)(entry.component, props));
-}
-function useSidebarStructure() {
-  return useSlot("flybot.sidebar.structure")[0];
-}
-function FlyBotSections({ roster, actions, renderBot }) {
-  const shell = (actions.flybotSlotEntries?.("flybot.sidebar.section") ?? []).map((entry, index) => ({ id: entry.id ?? `slot-${index}`, order: entry.order ?? 0, component: entry.component }));
-  const entries2 = [...useSlot("flybot.sidebar.section"), ...shell].sort((a, b) => a.order - b.order);
-  const remoteChats = (roster.bots ?? []).filter((bot) => bot.remote && isListedRemoteChat(bot));
-  return (0, import_react.createElement)(import_react.Fragment, null, entries2.map((entry) => (0, import_react.createElement)(
-    "div",
-    { key: entry.id, className: "bt-flybot-section", "data-flybot": entry.id },
-    (0, import_react.createElement)(Safe, { entry, props: { roster, actions, call: call2, renderBot, remoteChats } })
-  )));
-}
-function FlyBotSessionDock({ sessionId, useRoster, actions }) {
-  const entries2 = useSlot("flybot.session.dock");
-  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
-  if (entries2.length === 0) return null;
-  const room2 = roster?.roomsById?.[sessionId];
-  const bot = room2 ? void 0 : roster?.byId?.[sessionId];
-  return (0, import_react.createElement)(import_react.Fragment, null, entries2.map((entry) => (0, import_react.createElement)(
-    "div",
-    { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
-    (0, import_react.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2 } })
-  )));
-}
-function FlyBotRoomOverview({ room: room2, roster, actions }) {
-  const entries2 = useSlot("flybot.room.overview");
-  if (entries2.length === 0) return null;
-  return (0, import_react.createElement)(import_react.Fragment, null, entries2.map((entry) => (0, import_react.createElement)(
-    "div",
-    { key: entry.id, className: "bt-flybot-room-overview", "data-flybot": entry.id },
-    (0, import_react.createElement)(Safe, { entry, props: { room: room2, roster, actions, call: call2 } })
-  )));
-}
-function FlyBotDetails({ bot, roster }) {
-  const entries2 = useSlot("flybot.bot.details");
-  if (entries2.length === 0) return null;
-  return (0, import_react.createElement)(import_react.Fragment, null, entries2.map((entry) => (0, import_react.createElement)(
-    "div",
-    { key: entry.id, className: "bt-flybot-details", "data-flybot": entry.id },
-    (0, import_react.createElement)(Safe, { entry, props: { bot, roster, call: call2 } })
-  )));
-}
-var POLL_MS = 5e3;
-function FlyBotApprovals() {
-  const entries2 = useSlot("flybot.approvals");
-  const [pending, setPending] = (0, import_react.useState)([]);
-  const [busy, setBusy] = (0, import_react.useState)("");
-  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
-  });
-  (0, import_react.useEffect)(() => {
-    void refresh();
-    const timer = setInterval(refresh, POLL_MS);
-    return () => clearInterval(timer);
-  }, []);
-  if (pending.length === 0) return null;
-  const [error, setError] = (0, import_react.useState)("");
-  const decide = async (id, decision) => {
-    setBusy(id);
-    setError("");
-    try {
-      await call2("decide", { id, decision });
-    } catch (failure) {
-      setError(failure?.message ?? String(failure));
-    } finally {
-      setBusy("");
-      await refresh();
-    }
-  };
-  return (0, import_react.createElement)(
-    "div",
-    { className: "bt-flybot-approvals", role: "region", "aria-label": t("Messages waiting for your approval") },
-    pending.map((approval) => {
-      const custom = entries2.find((entry) => entry.policy === void 0 || entry.policy === approval.by);
-      if (custom) return (0, import_react.createElement)("div", { key: approval.id }, (0, import_react.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
-      const to = typeof approval.request.to === "object" ? approval.request.to.handle : approval.request.to;
-      return (0, import_react.createElement)(
-        "div",
-        { key: approval.id, className: "bt-flybot-approval" },
-        (0, import_react.createElement)("div", { className: "bt-flybot-approval-head" }, approval.status === "failed" ? t("Not sent to {to} · {reason}", { to, reason: approval.error ?? t("failed") }) : t("Message to {to} · {reason}", { to, reason: approval.reason })),
-        (0, import_react.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
-        approval.request.attachments?.length ? (0, import_react.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
-        (0, import_react.createElement)(
-          "div",
-          { className: "bt-flybot-approval-actions" },
-          approval.status === "failed" ? (0, import_react.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
-          approval.status === "failed" ? null : (0, import_react.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")),
-          approval.status === "failed" ? null : (0, import_react.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject"))
-        )
-      );
-    }),
-    error ? (0, import_react.createElement)("div", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
-  );
-}
-var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
-var FLYBOT_CSS = `
-.bt-flybot-approval-files { margin: 0 0 8px; padding-left: 18px; font-size: 12px; }
-.bt-file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0 30px; }
-.bt-file-chip { font-size: 12px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--bt-line, rgba(0,0,0,.15)); background: transparent; cursor: pointer; }
-
-.bt-flybot-section { margin-top: 8px; border-top: 1px solid var(--bt-line, rgba(0,0,0,.08)); padding-top: 6px; }
-.bt-flybot-approvals { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; max-width: 360px; max-height: calc(100vh - 32px); overflow-y: auto; }
-.bt-flybot-approval-error { color: var(--bt-danger, #d33); font-size: 12px; }
-.bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
-.bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
-.bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
-.bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
-.bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }
-`;
-
 // src/client/inks.js
 var INKS = {
   deepseek: ["#4D6BFE", "#6A84FF"],
@@ -1703,6 +1560,311 @@ function maskOf(shape) {
   return mask;
 }
 var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
+
+// src/client/mark.js
+var import_react = require("react");
+var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
+var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
+var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
+function useGaze(ref, enabled) {
+  (0, import_react.useEffect)(() => {
+    if (!enabled) return void 0;
+    let frame = 0;
+    let point = null;
+    const place = () => {
+      frame = 0;
+      const node = ref.current;
+      if (!node || !point) return;
+      const box = node.getBoundingClientRect();
+      const clamp = (value) => Math.max(-1, Math.min(1, value));
+      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
+      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
+    };
+    const onMove = (event) => {
+      point = { x: event.clientX, y: event.clientY };
+      if (!frame) frame = requestAnimationFrame(place);
+    };
+    const onLeave = () => {
+      point = null;
+      ref.current?.style.setProperty("--bt-gx", "0");
+      ref.current?.style.setProperty("--bt-gy", "0");
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    document.documentElement.addEventListener("pointerleave", onLeave);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", onMove);
+      document.documentElement.removeEventListener("pointerleave", onLeave);
+    };
+  }, [enabled]);
+}
+var FIDGETS = ["hop", "sway", "stretch", "look"];
+function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
+  const look = given ?? lookOf(bot);
+  const ref = (0, import_react.useRef)(null);
+  const maskId = (0, import_react.useRef)("");
+  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
+  const [poked, setPoked] = (0, import_react.useState)(false);
+  useGaze(ref, gaze);
+  const common = {
+    ref,
+    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
+    "data-shape": look.image ? "image" : shapeId(look.shape),
+    "data-state": STATES.includes(state) ? state : "idle",
+    "data-live": live ? "" : void 0,
+    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
+    "data-gaze": gaze ? "" : void 0,
+    "data-poke": pokeable ? "" : void 0,
+    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
+    role: label ? "img" : void 0,
+    "aria-label": label,
+    "aria-hidden": label ? void 0 : true,
+    onClick: pokeable ? () => setPoked(true) : void 0,
+    onAnimationEnd: poked ? (event) => {
+      if (/^bt-poke/.test(event.animationName)) setPoked(false);
+    } : void 0
+  };
+  if (look.image) return (0, import_react.createElement)("span", common, (0, import_react.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+  const box = shapeOf(look.shape).size;
+  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
+}
+function StarIcon({ size = 8 }) {
+  return (0, import_react.createElement)(
+    "svg",
+    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
+  );
+}
+function AdminStar() {
+  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
+}
+function MainStar() {
+  return (0, import_react.createElement)(
+    "svg",
+    { viewBox: "0 0 20 20", "aria-hidden": true },
+    (0, import_react.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
+  );
+}
+function useSettled(state) {
+  const prev = (0, import_react.useRef)(state);
+  const [settled, setSettled] = (0, import_react.useState)(false);
+  (0, import_react.useEffect)(() => {
+    const was = prev.current;
+    prev.current = state;
+    if (state !== "idle") {
+      setSettled(false);
+      return void 0;
+    }
+    if (was === "idle" || was === "alert") return void 0;
+    setSettled(true);
+    const timer = setTimeout(() => setSettled(false), 1800);
+    return () => clearTimeout(timer);
+  }, [state]);
+  return settled;
+}
+function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+  const settled = useSettled(state);
+  if (bot === void 0) return (0, import_react.createElement)(BotMark, { size });
+  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+  return (0, import_react.createElement)(
+    "span",
+    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+    (0, import_react.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+    badgeKind === "working" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+    badgeKind === "alert" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+    badgeKind === "admin" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react.createElement)(StarIcon)) : null,
+    badgeKind === "main" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react.createElement)(MainStar)) : null
+  );
+}
+function clusterSeats(count, frame) {
+  if (count === 1) return [[0, 0, frame]];
+  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+  if (count === 3) {
+    const size = frame * 5 / 9;
+    const rest = frame - size;
+    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+  }
+  const half = frame / 2;
+  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
+}
+function RoomAvatar({ room: room2, roster, size = 36 }) {
+  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+  const people = members.length === 1 ? [members[0], null] : members;
+  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+  if (people.length === 0) return (0, import_react.createElement)(BotMark, { size });
+  if (size <= 20 && people.length > 1) {
+    return (0, import_react.createElement)(
+      "span",
+      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+      people.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+    );
+  }
+  const seats = clusterSeats(Math.min(people.length, 4), size);
+  const overflow = people.length > 4 ? people.length - 3 : 0;
+  const gap = size / 14;
+  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
+  return (0, import_react.createElement)(
+    "span",
+    { className: "bt-cluster", style: { width: size, height: size } },
+    seats.map(([x, y, s], index) => {
+      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+      const style = { left: x, top: y, width: s, height: s };
+      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+      if (overflow > 0 && index === 3) {
+        return (0, import_react.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+      }
+      const bot = people[index];
+      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+    })
+  );
+}
+
+// src/client/flybot-slots.js
+var import_react2 = require("react");
+var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
+function registry2() {
+  const slots = registry();
+  globalThis.__flybot__.call ??= call2;
+  globalThis.__flybot__.BotMark ??= BotMark;
+  globalThis.__flybot__.BotAvatar ??= BotAvatar;
+  globalThis.__flybot__.lookOf ??= lookOf;
+  return slots;
+}
+var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
+function useSlot(name) {
+  const slots = registry2();
+  const [, setVersion] = (0, import_react2.useState)(0);
+  (0, import_react2.useEffect)(() => slots.subscribe(() => setVersion(slots.version())), [slots]);
+  return slots.entries(name);
+}
+var SlotBoundary = class extends import_react2.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error) {
+    console.error(`flybot: ${this.props.id} failed`, error);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+};
+function Safe({ entry, props }) {
+  return (0, import_react2.createElement)(SlotBoundary, { id: entry.id }, (0, import_react2.createElement)(entry.component, props));
+}
+function useSidebarStructure() {
+  return useSlot("flybot.sidebar.structure")[0];
+}
+function FlyBotSections({ roster, actions, renderBot }) {
+  const shell = (actions.flybotSlotEntries?.("flybot.sidebar.section") ?? []).map((entry, index) => ({ id: entry.id ?? `slot-${index}`, order: entry.order ?? 0, component: entry.component }));
+  const entries2 = [...useSlot("flybot.sidebar.section"), ...shell].sort((a, b) => a.order - b.order);
+  const remoteChats = (roster.bots ?? []).filter((bot) => bot.remote && isListedRemoteChat(bot));
+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+    "div",
+    { key: entry.id, className: "bt-flybot-section", "data-flybot": entry.id },
+    (0, import_react2.createElement)(Safe, { entry, props: { roster, actions, call: call2, renderBot, remoteChats } })
+  )));
+}
+function FlyBotSessionDock({ sessionId, useRoster, actions }) {
+  const entries2 = useSlot("flybot.session.dock");
+  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
+  if (entries2.length === 0) return null;
+  const room2 = roster?.roomsById?.[sessionId];
+  const bot = room2 ? void 0 : roster?.byId?.[sessionId];
+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+    "div",
+    { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
+    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2 } })
+  )));
+}
+function FlyBotRoomOverview({ room: room2, roster, actions }) {
+  const entries2 = useSlot("flybot.room.overview");
+  if (entries2.length === 0) return null;
+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+    "div",
+    { key: entry.id, className: "bt-flybot-room-overview", "data-flybot": entry.id },
+    (0, import_react2.createElement)(Safe, { entry, props: { room: room2, roster, actions, call: call2 } })
+  )));
+}
+function FlyBotDetails({ bot, roster }) {
+  const entries2 = useSlot("flybot.bot.details");
+  if (entries2.length === 0) return null;
+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+    "div",
+    { key: entry.id, className: "bt-flybot-details", "data-flybot": entry.id },
+    (0, import_react2.createElement)(Safe, { entry, props: { bot, roster, call: call2 } })
+  )));
+}
+var POLL_MS = 5e3;
+function FlyBotApprovals() {
+  const entries2 = useSlot("flybot.approvals");
+  const [pending, setPending] = (0, import_react2.useState)([]);
+  const [busy, setBusy] = (0, import_react2.useState)("");
+  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
+  });
+  (0, import_react2.useEffect)(() => {
+    void refresh();
+    const timer = setInterval(refresh, POLL_MS);
+    return () => clearInterval(timer);
+  }, []);
+  if (pending.length === 0) return null;
+  const [error, setError] = (0, import_react2.useState)("");
+  const decide = async (id, decision) => {
+    setBusy(id);
+    setError("");
+    try {
+      await call2("decide", { id, decision });
+    } catch (failure) {
+      setError(failure?.message ?? String(failure));
+    } finally {
+      setBusy("");
+      await refresh();
+    }
+  };
+  return (0, import_react2.createElement)(
+    "div",
+    { className: "bt-flybot-approvals", role: "region", "aria-label": t("Messages waiting for your approval") },
+    pending.map((approval) => {
+      const custom = entries2.find((entry) => entry.policy === void 0 || entry.policy === approval.by);
+      if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
+      const to = typeof approval.request.to === "object" ? approval.request.to.handle : approval.request.to;
+      return (0, import_react2.createElement)(
+        "div",
+        { key: approval.id, className: "bt-flybot-approval" },
+        (0, import_react2.createElement)("div", { className: "bt-flybot-approval-head" }, approval.status === "failed" ? t("Not sent to {to} · {reason}", { to, reason: approval.error ?? t("failed") }) : t("Message to {to} · {reason}", { to, reason: approval.reason })),
+        (0, import_react2.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
+        approval.request.attachments?.length ? (0, import_react2.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react2.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
+        (0, import_react2.createElement)(
+          "div",
+          { className: "bt-flybot-approval-actions" },
+          approval.status === "failed" ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
+          approval.status === "failed" ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")),
+          approval.status === "failed" ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject"))
+        )
+      );
+    }),
+    error ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
+  );
+}
+var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+var FLYBOT_CSS = `
+.bt-flybot-approval-files { margin: 0 0 8px; padding-left: 18px; font-size: 12px; }
+.bt-file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0 30px; }
+.bt-file-chip { font-size: 12px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--bt-line, rgba(0,0,0,.15)); background: transparent; cursor: pointer; }
+
+.bt-flybot-section { margin-top: 8px; border-top: 1px solid var(--bt-line, rgba(0,0,0,.08)); padding-top: 6px; }
+.bt-flybot-approvals { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; max-width: 360px; max-height: calc(100vh - 32px); overflow-y: auto; }
+.bt-flybot-approval-error { color: var(--bt-danger, #d33); font-size: 12px; }
+.bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
+.bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
+.bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
+.bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
+.bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }
+`;
 
 // src/client/sources.js
 function createSource(initial) {
@@ -2108,7 +2270,7 @@ function usageOf(list, ids) {
 }
 
 // src/client/motion.js
-var import_react2 = require("react");
+var import_react3 = require("react");
 var reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 function springEasing(stiffness, damping) {
   const w0 = Math.sqrt(stiffness);
@@ -2181,10 +2343,10 @@ function liveSprings(apply2) {
 }
 var CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]';
 function useGlide(key, { axis = "x", selector = CHOSEN, lead = SPRING_LEAD, trail = SPRING_TRAIL, box: given } = {}) {
-  const ownBox = (0, import_react2.useRef)(null);
+  const ownBox = (0, import_react3.useRef)(null);
   const box = given ?? ownBox;
-  const thumb = (0, import_react2.useRef)(null);
-  const own = (0, import_react2.useRef)(null);
+  const thumb = (0, import_react3.useRef)(null);
+  const own = (0, import_react3.useRef)(null);
   if (own.current === null) {
     own.current = {
       key: void 0,
@@ -2218,7 +2380,7 @@ function useGlide(key, { axis = "x", selector = CHOSEN, lead = SPRING_LEAD, trai
     springs.set({ start, end }, forward ? { start: trail, end: lead } : { start: lead, end: trail }, jump || hidden || before === null || reducedMotion());
     container.dataset.glide = "";
   };
-  (0, import_react2.useLayoutEffect)(() => {
+  (0, import_react3.useLayoutEffect)(() => {
     const state = own.current;
     const node = box.current;
     if (node === state.node && key === state.key) return;
@@ -2232,7 +2394,7 @@ function useGlide(key, { axis = "x", selector = CHOSEN, lead = SPRING_LEAD, trai
     }
     place(fresh);
   });
-  (0, import_react2.useEffect)(() => () => {
+  (0, import_react3.useEffect)(() => () => {
     own.current.observer?.disconnect();
     own.current.springs.stop();
   }, []);
@@ -2240,16 +2402,16 @@ function useGlide(key, { axis = "x", selector = CHOSEN, lead = SPRING_LEAD, trai
 }
 function Segmented({ label, value, className, children }) {
   const glide = useGlide(value);
-  return (0, import_react2.createElement)(
+  return (0, import_react3.createElement)(
     "div",
     { ref: glide.box, className: className ? `bt-seg ${className}` : "bt-seg", role: "group", "aria-label": label },
-    (0, import_react2.createElement)("span", { ref: glide.thumb, className: "bt-thumb", "aria-hidden": true }),
+    (0, import_react3.createElement)("span", { ref: glide.thumb, className: "bt-thumb", "aria-hidden": true }),
     children
   );
 }
 function useFlip(list, key, selector, id = (node) => node.dataset.flip) {
-  const tops = (0, import_react2.useRef)(null);
-  (0, import_react2.useLayoutEffect)(() => {
+  const tops = (0, import_react3.useRef)(null);
+  (0, import_react3.useLayoutEffect)(() => {
     const container = list.current;
     if (!container) return;
     const next = /* @__PURE__ */ new Map();
@@ -2270,8 +2432,8 @@ function useFlip(list, key, selector, id = (node) => node.dataset.flip) {
   }, [key]);
 }
 function useMorph(box, key) {
-  const last = (0, import_react2.useRef)({ key, height: null });
-  (0, import_react2.useLayoutEffect)(() => {
+  const last = (0, import_react3.useRef)({ key, height: null });
+  (0, import_react3.useLayoutEffect)(() => {
     const node = box.current;
     const state = last.current;
     if (!node) {
@@ -2299,8 +2461,8 @@ function useMorph(box, key) {
   });
 }
 function useLinger(value, ms) {
-  const [kept, setKept] = (0, import_react2.useState)(value);
-  (0, import_react2.useEffect)(() => {
+  const [kept, setKept] = (0, import_react3.useState)(value);
+  (0, import_react3.useEffect)(() => {
     if (value) {
       setKept(value);
       return void 0;
@@ -3343,165 +3505,6 @@ function installCompiledStyles(text, tag) {
     clearTimeout(timer);
     style.remove();
   };
-}
-
-// src/client/mark.js
-var import_react3 = require("react");
-var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
-var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
-var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
-function useGaze(ref, enabled) {
-  (0, import_react3.useEffect)(() => {
-    if (!enabled) return void 0;
-    let frame = 0;
-    let point = null;
-    const place = () => {
-      frame = 0;
-      const node = ref.current;
-      if (!node || !point) return;
-      const box = node.getBoundingClientRect();
-      const clamp = (value) => Math.max(-1, Math.min(1, value));
-      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
-      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
-    };
-    const onMove = (event) => {
-      point = { x: event.clientX, y: event.clientY };
-      if (!frame) frame = requestAnimationFrame(place);
-    };
-    const onLeave = () => {
-      point = null;
-      ref.current?.style.setProperty("--bt-gx", "0");
-      ref.current?.style.setProperty("--bt-gy", "0");
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    document.documentElement.addEventListener("pointerleave", onLeave);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("pointermove", onMove);
-      document.documentElement.removeEventListener("pointerleave", onLeave);
-    };
-  }, [enabled]);
-}
-var FIDGETS = ["hop", "sway", "stretch", "look"];
-function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
-  const look = given ?? lookOf(bot);
-  const ref = (0, import_react3.useRef)(null);
-  const maskId = (0, import_react3.useRef)("");
-  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
-  const [poked, setPoked] = (0, import_react3.useState)(false);
-  useGaze(ref, gaze);
-  const common = {
-    ref,
-    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
-    "data-shape": look.image ? "image" : shapeId(look.shape),
-    "data-state": STATES.includes(state) ? state : "idle",
-    "data-live": live ? "" : void 0,
-    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
-    "data-gaze": gaze ? "" : void 0,
-    "data-poke": pokeable ? "" : void 0,
-    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
-    role: label ? "img" : void 0,
-    "aria-label": label,
-    "aria-hidden": label ? void 0 : true,
-    onClick: pokeable ? () => setPoked(true) : void 0,
-    onAnimationEnd: poked ? (event) => {
-      if (/^bt-poke/.test(event.animationName)) setPoked(false);
-    } : void 0
-  };
-  if (look.image) return (0, import_react3.createElement)("span", common, (0, import_react3.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
-  const box = shapeOf(look.shape).size;
-  return (0, import_react3.createElement)("span", common, (0, import_react3.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
-}
-function StarIcon({ size = 8 }) {
-  return (0, import_react3.createElement)(
-    "svg",
-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
-    (0, import_react3.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
-  );
-}
-function AdminStar() {
-  return (0, import_react3.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react3.createElement)(StarIcon, { size: 7 }));
-}
-function MainStar() {
-  return (0, import_react3.createElement)(
-    "svg",
-    { viewBox: "0 0 20 20", "aria-hidden": true },
-    (0, import_react3.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
-  );
-}
-function useSettled(state) {
-  const prev = (0, import_react3.useRef)(state);
-  const [settled, setSettled] = (0, import_react3.useState)(false);
-  (0, import_react3.useEffect)(() => {
-    const was = prev.current;
-    prev.current = state;
-    if (state !== "idle") {
-      setSettled(false);
-      return void 0;
-    }
-    if (was === "idle" || was === "alert") return void 0;
-    setSettled(true);
-    const timer = setTimeout(() => setSettled(false), 1800);
-    return () => clearTimeout(timer);
-  }, [state]);
-  return settled;
-}
-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
-  const settled = useSettled(state);
-  if (bot === void 0) return (0, import_react3.createElement)(BotMark, { size });
-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
-  return (0, import_react3.createElement)(
-    "span",
-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
-    (0, import_react3.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
-    badgeKind === "working" ? (0, import_react3.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
-    badgeKind === "alert" ? (0, import_react3.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
-    badgeKind === "admin" ? (0, import_react3.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react3.createElement)(StarIcon)) : null,
-    badgeKind === "main" ? (0, import_react3.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react3.createElement)(MainStar)) : null
-  );
-}
-function clusterSeats(count, frame) {
-  if (count === 1) return [[0, 0, frame]];
-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
-  if (count === 3) {
-    const size = frame * 5 / 9;
-    const rest = frame - size;
-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-  }
-  const half = frame / 2;
-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-}
-function RoomAvatar({ room: room2, roster, size = 36 }) {
-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
-  const people = members.length === 1 ? [members[0], null] : members;
-  const seat = (bot, seatSize, key) => bot ? (0, import_react3.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react3.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
-  if (people.length === 0) return (0, import_react3.createElement)(BotMark, { size });
-  if (size <= 20 && people.length > 1) {
-    return (0, import_react3.createElement)(
-      "span",
-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
-      people.length > 3 ? (0, import_react3.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
-    );
-  }
-  const seats = clusterSeats(Math.min(people.length, 4), size);
-  const overflow = people.length > 4 ? people.length - 3 : 0;
-  const gap = size / 14;
-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
-  return (0, import_react3.createElement)(
-    "span",
-    { className: "bt-cluster", style: { width: size, height: size } },
-    seats.map(([x, y, s], index) => {
-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
-      const style = { left: x, top: y, width: s, height: s };
-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
-      if (overflow > 0 && index === 3) {
-        return (0, import_react3.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
-      }
-      const bot = people[index];
-      return (0, import_react3.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
-    })
-  );
 }
 
 // src/client/icons.js

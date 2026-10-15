@@ -58,7 +58,10 @@ window.__ModuleLoader__.load({
 .bt-social-rows{display:flex;flex-direction:column}
 .fs-row{display:flex;align-items:center;gap:8px;min-width:0;padding:5px 8px 5px 10px;border-radius:8px;transition:background-color .12s ease}
 .fs-row:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
-.fs-avatar{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;font-weight:600}
+.fs-avatar{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;font-weight:600;overflow:hidden}
+.fs-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.fs-face-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px}
+.fs-face-mark .bt-mark{width:24px;height:24px}
 .fs-text{display:flex;flex-direction:column;flex:1 1 auto;min-width:0}
 .fs-name{font-size:14px;line-height:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fs-sub{font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -127,6 +130,92 @@ window.__ModuleLoader__.load({
       }, [])
     }
     const initial = name => (String(name ?? '?').replace(/^@/, '').trim()[0] ?? '?').toUpperCase()
+
+    // Same FNV-1a as core lookOf, so a missing host BotMark still paints a stable per-Bot
+    // color (never the shared gray letter badge) and two ids do not collide.
+    const FACE_INKS = ['#e5484d', '#e54666', '#f76b15', '#ffc53d', '#46a758', '#12a594', '#0090ff', '#3e63dd', '#5b5bd6', '#8e4ec6']
+    function inkOf(seed) {
+      const text = String(seed ?? '')
+      let value = 2166136261
+      for (let i = 0; i < text.length; i++) value = Math.imul(value ^ text.charCodeAt(i), 16777619)
+      return FACE_INKS[(value >>> 0) % FACE_INKS.length]
+    }
+    function faceSeed(bot) {
+      const handle = typeof bot?.remote?.handle === 'string' && bot.remote.handle.trim()
+        ? bot.remote.handle
+        : typeof bot?.handle === 'string' && bot.handle.trim() && bot.remote
+          ? bot.handle
+          : ''
+      if (handle) return `remote:${handle.trim().replace(/^@+/, '').toLowerCase()}`
+      if (bot?.id !== undefined) return String(bot.id)
+      if (typeof bot?.handle === 'string' && bot.handle.trim()) return `remote:${bot.handle.trim().replace(/^@+/, '').toLowerCase()}`
+      return String(bot?.name ?? '')
+    }
+    function rosterBot(roster, id) {
+      if (!id) return undefined
+      return roster?.byId?.[id] ?? (roster?.bots ?? []).find(bot => bot.id === id)
+    }
+    function chatByHandle(remoteChats, handle) {
+      if (!handle) return undefined
+      return (remoteChats ?? []).find(chat => chat.remote?.handle === handle)
+    }
+    // Local picker rows use the team roster record (configured image / shape / color).
+    // Waiting-room "mine" matches the same local Bot; a friend's Bot uses its chat
+    // record or a handle-seeded remote look, plus any avatar the member payload carries.
+    function faceLook({ roster, remoteChats, bots, local, member } = {}) {
+      if (local) {
+        const full = rosterBot(roster, local.id)
+        return full ? { ...local, ...full } : local
+      }
+      if (!member) return undefined
+      const mine = (bots ?? []).find(bot => bot.handle && bot.handle === member.handle)
+      if (mine) return faceLook({ roster, bots, local: mine })
+      const extra = {}
+      if (member.color) extra.color = member.color
+      if (member.avatar) extra.avatar = member.avatar
+      const chat = chatByHandle(remoteChats, member.handle)
+      if (chat) {
+        return {
+          ...chat,
+          name: member.displayName || chat.name,
+          remote: chat.remote ?? { handle: member.handle },
+          ...extra,
+        }
+      }
+      return {
+        id: member.botId || member.handle,
+        name: member.displayName || member.label || member.handle,
+        handle: member.handle,
+        remote: member.handle ? { handle: member.handle } : undefined,
+        ...extra,
+      }
+    }
+    function FaceAvatar({ bot, size = 24 } = {}) {
+      const Avatar = globalThis.__flybot__?.BotAvatar
+      const Mark = globalThis.__flybot__?.BotMark
+      const seed = faceSeed(bot)
+      const color = typeof bot?.color === 'string' && bot.color.startsWith('#') ? bot.color : inkOf(seed)
+      let inner
+      if (typeof Avatar === 'function' && bot) inner = h(Avatar, { bot, size, badge: false, live: false })
+      else if (typeof Mark === 'function' && bot) inner = h(Mark, { bot, size })
+      else {
+        const image = bot?.avatar?.image
+        const emoji = bot?.avatar?.emoji
+        inner = h('span', {
+          className: 'fs-avatar',
+          'data-color': color,
+          style: image ? undefined : { background: color, color: '#fff' },
+        }, image ? h('img', { src: image, alt: '' }) : (emoji || initial(bot?.name)))
+      }
+      return h('span', {
+        className: 'fs-face-mark',
+        'data-flybot': 'face-avatar',
+        'data-bot-id': bot?.id,
+        'data-handle': bot?.remote?.handle || bot?.handle,
+        'data-color': color,
+        'aria-hidden': true,
+      }, inner)
+    }
 
     const AUTO_SEND_NOTE = 'When this is on, your Bots post in face-to-face rooms without asking each time.'
 
@@ -235,7 +324,7 @@ window.__ModuleLoader__.load({
     }
 
     // Separate Face-to-face group screen (#92): pick Bots, join by number, live waiting room.
-    function FaceToFaceGroup({ actions, onClose } = {}) {
+    function FaceToFaceGroup({ actions, onClose, roster, remoteChats } = {}) {
       const [step, setStep] = useState('setup')
       const [bots, setBots] = useState([])
       const [selected, setSelected] = useState([])
@@ -381,7 +470,7 @@ window.__ModuleLoader__.load({
               members.map(member => {
                 const mine = memberIsMine(member, bots, room)
                 return h('li', { key: member.handle || member.id, 'data-flybot': 'face-member', 'data-mine': mine || undefined, 'data-handle': member.handle },
-                  h('span', { className: 'fs-avatar', 'aria-hidden': true }, initial(member.displayName || member.label || member.handle)),
+                  h(FaceAvatar, { bot: faceLook({ roster, remoteChats, bots, member }) }),
                   h('span', { className: 'fs-text' },
                     h('span', { className: 'fs-name' }, member.displayName || member.label || member.handle),
                     member.ownerName ? h('span', { className: 'fs-sub' }, member.ownerName) : null),
@@ -406,7 +495,7 @@ window.__ModuleLoader__.load({
                     'aria-label': bot.name,
                     onChange: () => toggle(bot.id),
                   }),
-                  h('span', { className: 'fs-avatar', 'aria-hidden': true }, initial(bot.name)),
+                  h(FaceAvatar, { bot: faceLook({ roster, local: bot }) }),
                   h('span', { className: 'fs-text' },
                     h('span', { className: 'fs-name' }, bot.name),
                     bot.isMain ? h('span', { className: 'fs-sub' }, 'Main Bot') : null))))),
@@ -682,7 +771,7 @@ window.__ModuleLoader__.load({
       return () => { if (faceOpenHandler === fn) faceOpenHandler = null }
     }
 
-    function FriendsBots({ renderBot, remoteChats, actions } = {}) {
+    function FriendsBots({ renderBot, remoteChats, actions, roster } = {}) {
       useStyles()
       const [data, setData] = useState(() => readCachedRoster())
       const [error, setError] = useState('')
@@ -785,7 +874,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-group-open', onClick: () => setFaceOpen(true) }, 'Face-to-face group'),
             h('div', { className: 'fs-hint' }, 'Meet the people next to you. Pick your Bots and type the same 6-digit number.')) : null,
           adding && !unavailable ? h(AddFriend, { onChange: () => load().then(loadSettings) }) : null,
-          faceOpen && !unavailable ? h(FaceToFaceGroup, { actions, onClose: () => setFaceOpen(false) }) : null,
+          faceOpen && !unavailable ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null,
           unavailable ? h('div', { className: 'fs-empty', 'data-flybot': 'social-unavailable' }, error) : error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
           homes.map(entry => {
             const shut = closed[entry.home] === true
@@ -1012,6 +1101,7 @@ window.__ModuleLoader__.load({
       ChatApprovalDock,
       FriendBotRow,
       FaceToFaceGroup,
+      FaceAvatar,
       FaceRoomOverview,
       FaceAutoSend,
       apply(ctx) {

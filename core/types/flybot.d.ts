@@ -301,7 +301,8 @@ export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
  * How a client plugin gets it: a DSH web client bundle (`window.__ModuleLoader__.load({ id,
  * inject: ['flybot'], ... })`, see plugins/tree/client.js) receives the browser service as
  * `ctx.flybot` (a {@link FlyBotClient}). The same registry is also on `globalThis.__flybot__`
- * for code without a Cordis context. Slots below are FlyBot's own registry: register them
+ * for code without a Cordis context (`BotAvatar` / `BotMark` / `lookOf` are the host Bot
+ * look, set when the client registry() runs). Slots below are FlyBot's own registry: register them
  * with `ctx.flybot.slots.register(name, entry)`, NOT the shell's `ctx.slots` (which throws
  * `slot "flybot.…" is not declared`). Every `register` returns a disposer; call it from
  * `ctx.effect` so a reload or uninstall removes the entry. Entries are sorted by `order`
@@ -367,9 +368,23 @@ export interface FlyBotClientRegistry {
   subscribe(listener: () => void): () => void
 }
 
+/** Host Bot look: same component the sidebar / session list / chat header render. */
+export type FlyBotBotMark = (props: { bot?: any; look?: { shape?: string; color?: string; image?: string }; size?: number; [key: string]: unknown }) => any
+export type FlyBotBotAvatar = (props: { bot?: any; size?: number; badge?: boolean; live?: boolean; [key: string]: unknown }) => any
+export type FlyBotLookOf = (bot?: any) => { shape: string; color: string; image?: string }
+
 declare global {
   // eslint-disable-next-line no-var
-  var __flybot__: { slots: FlyBotClientRegistry; call?: FlyBotCall; api?: FlyBotClient } | undefined
+  var __flybot__: {
+    slots: FlyBotClientRegistry
+    call?: FlyBotCall
+    api?: FlyBotClient
+    /** Same character mark as the sidebar / chat header. Set by the host client registry(). */
+    BotMark?: FlyBotBotMark
+    /** Sidebar avatar (mark plus optional badges). Prefer this at 24px with badge: false. */
+    BotAvatar?: FlyBotBotAvatar
+    lookOf?: FlyBotLookOf
+  } | undefined
 }
 
 declare module 'cordis' {

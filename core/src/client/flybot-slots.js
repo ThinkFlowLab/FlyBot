@@ -15,11 +15,15 @@
 //   flybot.session.dock     { id, order, component({ sessionId, roster, room, bot, actions, call }) }  above the composer
 //   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat)
 //
+// The same registry object also carries the host Bot look so a plugin can draw a Bot
+// exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf (set in registry()).
+//
 // Types: ds-bot/types/flybot.d.ts (FlyBotClientRegistry).
 import { Component, createElement as h, Fragment, useEffect, useState } from 'react'
 import { call as callHost } from './api.js'
 import { isListedRemoteChat } from '../shared/remote-label.js'
 import { registry as baseRegistry } from './flybot-registry.js'
+import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { t } from './i18n.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
@@ -32,6 +36,11 @@ export const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payloa
 export function registry() {
   const slots = baseRegistry()
   globalThis.__flybot__.call ??= call
+  // Classic-script plugins cannot import mark.js; they render the same Bot look
+  // the sidebar / session list / chat header use via these host components.
+  globalThis.__flybot__.BotMark ??= BotMark
+  globalThis.__flybot__.BotAvatar ??= BotAvatar
+  globalThis.__flybot__.lookOf ??= lookOf
   return slots
 }
 

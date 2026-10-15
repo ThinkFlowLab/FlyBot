@@ -211,6 +211,25 @@ export function platformStartedText(reason) {
   return 'The room is now open. The number is no longer valid.'
 }
 
+// Peer look is optional: only pass through a stored color / avatar when the payload
+// actually has one. Image URLs stay one line, no markup; a missing look is fine — the
+// client then uses the host BotMark seeded by handle.
+export function faceMemberLook(member) {
+  if (!member || typeof member !== 'object') return {}
+  const out = {}
+  const color = typeof member.color === 'string' ? member.color.trim().slice(0, 32) : ''
+  if (color && !/[\n<>]/.test(color)) out.color = color
+  const src = member.avatar && typeof member.avatar === 'object' ? member.avatar : {}
+  const avatar = {}
+  if (typeof src.shape === 'string' && /^[a-z][\w-]{0,31}$/.test(src.shape)) avatar.shape = src.shape
+  const image = typeof src.image === 'string' ? src.image.trim() : (typeof member.image === 'string' ? member.image.trim() : '')
+  if (image && image.length < 2048 && /^(https?:\/\/|data:image\/)/i.test(image) && !/[\s<>]/.test(image)) avatar.image = image
+  const emoji = typeof src.emoji === 'string' ? src.emoji.trim() : (typeof member.emoji === 'string' ? member.emoji.trim() : '')
+  if (emoji && !/[\n<>]/.test(emoji)) avatar.emoji = emoji.slice(0, 8)
+  if (Object.keys(avatar).length) out.avatar = avatar
+  return out
+}
+
 export function viewFaceMember(member) {
   if (!member || typeof member !== 'object') return undefined
   const handle = normHandle(member.handle)
@@ -221,6 +240,7 @@ export function viewFaceMember(member) {
     ownerName: cleanFaceName(member.owner_name || member.ownerName, ''),
     roomOnly: member.roomOnly === true || member.published !== true,
     label: cleanFaceName(member.label, '') || faceMemberLabel(member),
+    ...faceMemberLook(member),
   }
 }
 
