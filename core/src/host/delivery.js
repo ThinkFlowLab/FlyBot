@@ -12,13 +12,22 @@ export const stripMarkers = (text, tag = 'untrusted-message') => {
   for (let previous; previous !== out;) { previous = out; out = out.replace(pattern, '') }
   return out
 }
+// Both untrusted tags in one fixed-point pass: stripping one tag can let fragments
+// the other pass joined back survive it, so a closing fence must never be reachable
+// by any order (#98 review).
+export const stripUntrusted = text => {
+  let out = String(text)
+  const pattern = /<\/?\s*(?:untrusted-message|untrusted-file)/gi
+  for (let previous; previous !== out;) { previous = out; out = out.replace(pattern, '') }
+  return out
+}
 // A name from outside the team, safe on one line of trusted text: no control characters,
 // newlines, brackets or quotes, at most 60 characters.
 export const cleanName = (name, fallback = 'a remote Bot') => {
   const text = String(name ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60)
   return text || fallback
 }
-export const fenceUntrusted = (name, text) => `<untrusted-message from="${cleanName(name)}">\n${stripMarkers(stripMarkers(text), 'untrusted-file')}\n</untrusted-message>`
+export const fenceUntrusted = (name, text) => `<untrusted-message from="${cleanName(name)}">\n${stripUntrusted(stripMarkers(text ?? '', 'untrusted-file'))}\n</untrusted-message>`
 
 export function install(rt) {
   const { ctx, state } = rt

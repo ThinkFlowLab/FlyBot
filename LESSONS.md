@@ -21,6 +21,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 - **Right:** Neutralize markers until stable (or escape `<` / reject `untrusted-` fragments); share one helper with the client parser. Sanitize remote strings (strip controls/newlines, cap length); fence where possible. Negative tests required (see #9 acceptance).
 - **Promote path:** After ≥3 days and green tests → harden as a rule in [docs/code-standards.md](docs/code-standards.md#security-fences-and-remote-strings).
 
+### 2026-10-15 — Generated gates run after the last edit
+
+- **Seen:** 2× (#94 fe8eef2, #99 85b1247) — both FAILed independent review on packaging only.
+- **Trigger:** any edit to `core/` after the last `ds-bot-patches generate`, or before a `check-arch-docs` run.
+- **Wrong:** trusting an earlier green `check`/`arch-docs`; `check-arch-docs` diffs `origin/main...HEAD` and answers "0 changed" on uncommitted work — a false pass.
+- **Right:** the commit sequence is fixed: final `core/` edit → `node scripts/ds-bot-patches.mjs generate` (repo root) → commit → `node core/scripts/check-arch-docs.mjs` (committed HEAD only) → push. New `core/test/` files join `patches/ds-bot/topics.json` before generate.
+- **Promote path:** after ≥3 days → docs/code-standards.md (merge gate section).
+
 ### 2026-10-14 — Claim honesty (Verifier)
 
 - **Seen:** 1× (PR #2 review / agent claim patterns)

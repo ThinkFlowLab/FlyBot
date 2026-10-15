@@ -395,17 +395,22 @@ export function install(rt) {
   }
 
   rt.authoredRoomLine = (room, line) => {
-    if (line.authorId && line.authorKind) {
-      return { ...line, who: line.who || (line.authorKind === 'bot' ? state.bots?.[line.authorId]?.name : displayNameFor(state, line.authorId)) || line.authorId }
-    }
-    if (line.botId) {
-      const remote = currentParticipants(room).find(p => p.remote && (p.id === line.botId || p.handle === line.botId))
-      const name = remote ? remoteBotTitle(remote) : (line.who || state.bots?.[line.botId]?.name || 'Bot')
-      const faceRemote = isFaceRoom(room) && (remote || !state.bots?.[line.botId])
-      const text = faceRemote && line.text && !String(line.text).includes('<untrusted-message')
+    const botId = line.botId ?? (line.authorKind === 'bot' ? line.authorId : undefined)
+    if (botId) {
+      const remote = currentParticipants(room).find(p => p.remote && (p.id === botId || p.handle === botId))
+      const name = remote ? remoteBotTitle(remote) : (line.who || state.bots?.[botId]?.name || 'Bot')
+      // Peer-controlled text stays data in every shared room, not only face-to-face
+      // ones (#98): the fence is keyed on the line's origin, never on the room kind,
+      // and always runs — a marker in the text must not opt the line out (fenceUntrusted
+      // strips every marker fragment, so re-fencing cannot nest).
+      const remoteLine = remote || !state.bots?.[botId]
+      const text = remoteLine && line.text
         ? fenceUntrusted(name, line.text)
         : line.text
-      return { ...line, who: name, text, authorId: line.botId, authorKind: 'bot', ...(remote ? { remote: true, ownerName: ownerNameSafe(remote) } : {}) }
+      return { ...line, who: name, text, authorId: botId, authorKind: 'bot', ...(remote ? { remote: true, ownerName: ownerNameSafe(remote) } : {}) }
+    }
+    if (line.authorId && line.authorKind) {
+      return { ...line, who: line.who || displayNameFor(state, line.authorId) || line.authorId }
     }
     const humans = currentParticipants(room).filter(p => p.kind === 'human')
     const id = line.authorId || (humans.length === 1 ? humans[0].id : undefined)

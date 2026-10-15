@@ -35,6 +35,7 @@ This page covers the pin, the patch format and the core's dev tooling. The gener
 | `patches/ds-bot/` | Ordered patch topics. |
 | `scripts/ds-bot-patches.mjs` | generate / check patches. |
 | `core/src/host/hooks.js` (approvals) | Held sends bound to their owner — provenance, owner-bound decisions, stale revalidation. The authority contract lives in [team](team.md) (#52). |
+| `core/src/host/delivery.js` (fences) | `fenceUntrusted` wraps peer-controlled text as data wherever it reaches a model — remote deliveries, room lines from remote participants in **every** shared room (keyed on the line's origin, never the room kind, #98), outbound fanout. The strip is one fixed-point pass over both `untrusted-message` and `untrusted-file` tags (`stripUntrusted`), so no strip order can reassemble a closing fence. |
 
 ## Entry points
 
