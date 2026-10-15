@@ -642,6 +642,22 @@ export function install(rt) {
     return linesVisibleTo(room, actor, state)
   }
 
+  // The owner of a member Bot lets its brief — their own chat with it — ride into
+  // this one room, or takes it back (#53). Bot ownership decides, not room admin;
+  // the flag lives on the participant, so leaving the room drops it.
+  rt.setBriefShare = function setBriefShare(roomId, botId, shared, actor) {
+    const room = rt.roomOf(roomId)
+    if (room === undefined) throw invalid('Unknown group chat')
+    const bot = state.bots?.[String(botId ?? '')]
+    if (bot === undefined || bot.remote !== undefined) throw forbidden('No such Bot')
+    if (rt.authzEnforced?.() && bot.ownerId !== actor?.memberId) throw forbidden("Only the Bot's owner may share its brief")
+    const entry = currentParticipants(room).find(p => p.kind === 'bot' && p.id === botId)
+    if (entry === undefined) throw forbidden('That Bot is not in this room')
+    if (shared) entry.briefShared = true
+    else delete entry.briefShared
+    return rt.save()
+  }
+
   rt.applyParticipants = function applyParticipants(room, drafts, actor) {
     if (!Array.isArray(drafts) || drafts.length === 0) return room
     room.participants = []

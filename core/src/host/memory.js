@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
 import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+import { currentParticipants } from './room-membership.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { splitRef, unquote } from './text.js'
 import { output } from './tools.js'
@@ -487,6 +488,22 @@ export function install(rt) {
   // write every Bot's. The user may do everything from the memory panel.
 
   const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId)
+
+  // Team memory is one team's. A review that reads a room where another owner sits
+  // keeps entries in the Bot's own memory only (#53); ownership, not the admin role,
+  // decides whose memory "team" refers to there.
+  const teamAllowedFrom = (room, bot) => {
+    if (room === undefined) return true
+    const owners = new Set([bot.ownerId])
+    for (const p of currentParticipants(room)) {
+      if (p.kind === 'human') owners.add(p.id)
+      // A granted remote Bot speaks for another home; its handle stands for that owner.
+      else if (p.remote) owners.add(p.handle)
+      else owners.add(state.bots?.[p.id]?.ownerId)
+    }
+    owners.delete(undefined)
+    return owners.size <= 1
+  }
 
   // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
   function namedScope(raw, botId) {
@@ -1125,17 +1142,23 @@ export function install(rt) {
 
   // What is new in a group, from its log: the member's Session holds the same
   // messages wrapped in turn prompts.
+  // "The user" of a group review is the member Bot's owner; a line another human
+  // wrote is a peer's, however it is attributed (#53).
+  const isUserLine = (bot, entry) => (entry.authorKind === 'human'
+    ? entry.authorId !== undefined && entry.authorId === bot.ownerId
+    : entry.who === 'User')
+
   function groupBatch(room, bot, since) {
     const log = (room.log ?? []).filter(line => line.kind === undefined && typeof line.text === 'string' && line.text.trim() !== '')
     // A first review reads back at least to the user's latest line, which a round of
     // replies from many members can push out of the last few.
-    const lastUser = log.findLastIndex(line => line.who === 'User')
+    const lastUser = log.findLastIndex(line => isUserLine(bot, line))
     let start = since === undefined ? Math.max(0, Math.min(log.length - REVIEW_FIRST_LINES, lastUser === -1 ? log.length : lastUser)) : log.findIndex(line => line.seq > since)
     const oldest = room.log?.[0]?.seq
     if (since !== undefined && oldest !== undefined && oldest > since + 1) rt.warn('ds-bot: %d lines of group "%s" left its log before %s reviewed them', oldest - since - 1, room.name, bot.name)
     if (start === -1) start = log.length
     const line = (entry) => {
-      const who = entry.who === 'User' ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
+      const who = isUserLine(bot, entry) ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
       return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
     }
     return {
@@ -1160,7 +1183,7 @@ export function install(rt) {
     return { texts: kept, count: kept.length }
   }
 
-  async function applyReview(bot, sessionId, numbered, changes, source) {
+  async function applyReview(bot, sessionId, numbered, changes, source, { teamAllowed = true } = {}) {
     const actor = { id: bot.id, name: bot.name, session: sessionId, auto: true }
     const done = []
     let failed
@@ -1168,7 +1191,7 @@ export function install(rt) {
       // A Bot deleted mid-review keeps no more changes, its team ones included.
       if (rt.botOf(bot.id) === undefined) return 0
       // Its role may change mid-review too, so each change asks again.
-      const teamWrites = writesTeam(bot.id)
+      const teamWrites = teamAllowed && writesTeam(bot.id)
       const op = String(change?.op ?? '')
       const topic = op === 'add' && change?.topic !== undefined ? cleanTopic(String(change.topic)) : undefined
       const target = numbered[Number(change?.entry) - 1]
@@ -1274,7 +1297,7 @@ export function install(rt) {
       const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
       if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
       if (rt.botOf(bot.id) === undefined) return
-      const changed = await applyReview(bot, sessionId, numbered, applied, batch.source(read))
+      const changed = await applyReview(bot, sessionId, numbered, applied, batch.source(read), { teamAllowed: teamAllowedFrom(live, bot) })
       if (rt.botOf(bot.id) === undefined) return
       // An answer at the limit may have left some out, so the same lines are read
       // again, a few times at most, while each pass still changes something.

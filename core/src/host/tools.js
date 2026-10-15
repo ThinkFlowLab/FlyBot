@@ -58,10 +58,14 @@ export function install(rt) {
     async execute(_args, exec) {
       await rt.load()
       const self = rt.selfOf(exec.agent?.id)
+      const selfOwner = rt.botOf(self)?.ownerId
+      // Another owner's Bot lists by name and role only: its folder and instructions
+      // are its owner's private setup (#53).
+      const foreign = bot => rt.authzEnforced?.() && selfOwner !== undefined && bot.ownerId !== undefined && bot.ownerId !== selfOwner
       const lines = Object.values(state.bots).filter(bot => bot.remote === undefined).map(bot => {
         const model = bot.appliedModel ?? bot.model
-        const tags = [bot.role, model ? `model ${model}` : '', bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
-        const job = bot.instructions ? ` — ${bot.instructions.split('\n')[0].slice(0, 120)}` : ''
+        const tags = [bot.role, model ? `model ${model}` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
+        const job = !foreign(bot) && bot.instructions ? ` — ${bot.instructions.split('\n')[0].slice(0, 120)}` : ''
         return `- ${bot.name}${tags ? ` (${tags})` : ''}${job}`
       })
       if (lines.length === 0) return 'No Bots yet.'

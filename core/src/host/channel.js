@@ -106,6 +106,16 @@ export function install(rt) {
   // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
   const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
 
+  // A chat reference chip names a Session whose snapshot rides to every recipient of
+  // the message, so the author must be able to read what they share (#53).
+  const unshareableReference = (actor, text) => {
+    if (!actor || !rt.authzEnforced?.() || typeof text !== 'string') return undefined
+    for (const match of text.matchAll(/dsh-session:([A-Za-z0-9_-]+)/g)) {
+      if (!rt.sessionOwnedBy?.(actor, match[1])) return match[1]
+    }
+    return undefined
+  }
+
   function setPrefs(body) {
     if (body.theme !== undefined) {
       if (typeof body.theme !== 'string' || !/^[a-z][\w-]{0,31}$/.test(body.theme)) throw invalid('Unknown theme')
@@ -221,6 +231,8 @@ export function install(rt) {
         }
         case 'room-post': {
           await rt.load()
+          const leaked = unshareableReference(actor, body.text)
+          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
           const line = await rt.postRoomMessage(String(body.roomId ?? body.id ?? ''), {
             text: body.text,
             authorId: body.authorId,
@@ -329,6 +341,8 @@ export function install(rt) {
           const text = String(body.text ?? '').trim()
           if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
           await rt.load()
+          const leaked = unshareableReference(actor, text)
+          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
           // A Bot id or an earlier part of its own chat means the current part.
           const past = rt.pastOwners.get(body.sessionId)
           const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
@@ -381,6 +395,10 @@ export function install(rt) {
           return ok(await rt.diagnostics.logText())
         case 'diagnostics-clear':
           await rt.diagnostics.clear()
+          return ok(true)
+        case 'share-brief':
+          await rt.load()
+          await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)
           return ok(true)
         case 'auth-whoami':
           return ok(actor)

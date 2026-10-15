@@ -322,6 +322,10 @@ export function install(rt) {
 
     if (ep === 'create-bot') return ALLOW
 
+    // Sharing a member Bot's brief is the Bot owner's decision, checked on the record
+    // in room-membership (#53); the endpoint itself only needs a signed-in actor.
+    if (ep === 'share-brief') return ALLOW
+
     // Anything not in the table and not a known auth/read endpoint is denied.
     if (NO_ACTOR_ALLOWED.has(ep) || ep.startsWith('auth-')) return ALLOW
     if (ep === 'state' || ep === 'models' || ep === 'efforts' || ep === 'repo-stars' || ep === 'update-check'

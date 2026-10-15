@@ -97,6 +97,16 @@ The held-send approval (`state.flybot.approvals` in `core/src/host/hooks.js`) no
 - **Legacy records keep working.** Holds saved before this change have no `version`; they skip only the tamper check, and their owner is derived at decide time.
 - **Not done here:** the social plugin's server-side approval holds (`social/decide-approval`) stay a deployment-wide plugin write (blocked while more than one member exists); the in-chat approval cards and task-level approvals are #90/#54 work. Gate 3 is satisfied for held sends only.
 
+## Context sharing foundation (landed, #53)
+
+Private context crosses owners only through an explicit, owner-granted share; room membership never widens what a Bot carries or reads. Only the #48/#49/#50 foundations are assumed; team mode stays disabled.
+
+- **The own-chat brief is share-gated.** A member's group Session starts with its owner's own-chat brief only when the room has a single owner, or that owner called `share-brief` for this room (the `briefShared` flag lives on the room participant, so leaving drops it; `rt.setBriefShare` in `core/src/host/room-membership.js` owner-checks, the endpoint only needs a signed-in actor). A group Session created after the share is taken back carries no brief. A granted remote Bot in the room counts as another owner (its handle stands for its home), so a friend's Bot's presence also suppresses the brief. A brief already delivered is not retroactively unseen — document that to owners.
+- **Memory review is owner-aware.** In `core/src/host/memory.js`, "the user" of a group review is the member Bot's owner (`isUserLine`); another owner's human is a named peer and does not get user-line retention. A review that reads a room with more than one owner cannot write the team scope (`teamAllowedFrom`) — entries land in the Bot's own memory. Entries already written are not retroactively unseen.
+- **Roster disclosure narrows.** `list_bots` shows another owner's Bot by name, role and model; its folder and instructions are its owner's private setup.
+- **Chat references stay owner-scoped.** A `dsh-session:` reference chip in `send` or `room-post` must name a Session the author may read (`sessionOwnedBy`); the snapshot rides to every recipient, so authorship is the gate.
+- **Not done here:** reference chips are author-checked on `send` and `room-post` only — whether DSH resolves chips in `answer-question`/`schedule-create` texts and in Bot-authored messages is an open DSH-side question (tracked follow-up); the secrets surface stays `SHARED_BLOCKED` for >1 member; previously received messages cannot be retroactively unseen (stated, not engineered); no per-owner file-sandbox changes — a room `workDir` remains readable by its member Bots under DSH's own policy.
+
 ## Identity model
 
 | Relation | Rule |
@@ -219,5 +229,7 @@ Owner-scoped access (#49) tests in `core/test/authz.test.js`: cross-owner denial
 **Room membership foundation (#50)** has tests in `core/test/room-membership.test.js`: Alice, Bob and both Chiefs keep distinct authorship; concurrent posts keep order and identity; unauthorized history reads fail; join/leave follows the membership-window rule; non-members cannot inject (forged `authorId` is ignored); existing single-owner groups still display and accept posts; a specialist cannot join a cross-owner room.
 
 **Approval binding (#52)** has tests in `core/test/approval-binding.test.js`: the hold stamps server-derived provenance and a request-content hash while forged `meta` claims stay data; only the sender Bot's owner's session may decide (another member gets `bot/forbidden`, no session gets `bot/unauthorized`, a body `actorId` grants nothing); the pending list is per-actor; a request that changed after it was held goes `stale` and never dispatches; same-owner deciding survives a restart; deleting a sender or target Bot or replacing the Chief invalidates pending holds; and a record whose sender Bot and owner are both gone stays in state with its attribution but in no member's list.
+
+**Context sharing (#53)** has tests in `core/test/context-sharing.test.js` (brief gate per room ownership, the owner-only `share-brief` round trip, the single-owner guard, `list_bots` narrowing, reference-chip authorization) and in `core/test/memory.test.js` (owner-as-user classification, the team-write gate out of a cross-owner room).
 
 The routing-matrix rows above remain untested because the behavior is not shipped. When enforcement work starts (#48+), each row becomes a test first, per [fail-without-change](../code-standards.md): same-owner delegation allowed (a), Chief-to-Chief allowed (b), cross-owner specialist denied (c), team-admin vs private-owner denied (d), forwarded approval rejected (e). Each must fail on the unbroken tip before implementation lands.
