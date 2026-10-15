@@ -1,7 +1,7 @@
 import { createElement as h, useEffect, useState } from 'react'
 import { isMainOf } from './sources.js'
 import { PlusIcon, ChevronRightIcon } from './icons.js'
-import { AdminStar, BotAvatar, BotMark, RoomAvatar } from './mark.js'
+import { AdminStar, BotAvatar, BotMark, RoomAvatar, lookBotForRemote } from './mark.js'
 import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
@@ -102,6 +102,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
       }),
       remotes.map((person) => h('div', { key: person.handle || person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
         h('span', { className: 'bt-gs-who' },
+          h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
           h('span', { className: 'bt-row-title' }, person.label || remoteBotTitle(person)),
           room.origin === 'face-to-face' ? null : h('span', { className: 'bt-tag' }, t('Friend\'s Bot'))),
         room.origin === 'face-to-face' || members.length + remotes.length <= 2
@@ -116,6 +117,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
             h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, bot.name)),
             h('span', { className: 'bt-set-hint' }, t('Add')))),
           ...outsideRemotes.map(bot => h('button', { key: bot.handle, type: 'button', className: 'bt-set-row bt-bs-row bt-gs-pick', onClick: () => { setAdding(false); void update({ addParticipants: [{ kind: 'bot', remote: true, handle: bot.handle }] }) } },
+            h(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
             h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
             h('span', { className: 'bt-set-hint' }, t('Add friend\'s Bot')))),
           h('button', { key: 'cancel', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(false) }, t('Cancel'))]

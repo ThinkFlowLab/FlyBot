@@ -41,6 +41,7 @@ import {
   FaceRoomError,
   roomOnlyForJoin,
   faceMemberLabel,
+  viewMe,
 } from './face-rooms.js'
 import {
   hideRemoteInSettings,
@@ -223,22 +224,43 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   const warn = (...args) => console.warn('flybot-social:', ...args)
   let faceAutoCache = { at: 0, on: false, known: false }
   async function faceAutoApprove({ fresh = false } = {}) {
-    if (!faceApi) return false
+    if (!config.server || !token) return false
     if (!fresh && faceAutoCache.known && now() - faceAutoCache.at < 5_000) return faceAutoCache.on
     try {
-      const me = await faceApi.me()
-      faceAutoCache = { at: now(), on: me?.autoApproveFaceRooms === true, known: true }
+      const me = await client.callTool('whoami')
+      faceAutoCache = { at: now(), on: viewMe(me)?.autoApproveFaceRooms === true, known: true }
       return faceAutoCache.on
     } catch (error) {
       warn('face auto-approve status failed', error)
       return faceAutoCache.known ? faceAutoCache.on : false
     }
   }
+  function mapFaceAutoError(error) {
+    if (error instanceof FaceRoomError) return error
+    const code = String(error?.code ?? '')
+    const msg = String(error?.message ?? error ?? '')
+    if (code === 'unknown' || /unknown tool|no tool|not found|unrecognized/i.test(msg)) {
+      return new Error('This Bot Social server cannot save Auto-send yet. Update Bot Social and try again.')
+    }
+    if (code === 'http_401' || code === 'unauthorized' || /401|unauthori/i.test(code + msg)) {
+      return new FaceRoomError('Bot Social signed you out. Reconnect in Friends\' Bots, or restart FlyBot.', 'unauthorized', { status: 401 })
+    }
+    const raw = msg.replace(/^Bot Social\s+\S+:\s*/, '').replace(/\s+/g, ' ').trim().slice(0, 200)
+    if (/connector_token_rest_forbidden/.test(code + raw)) {
+      return new Error('Could not save Auto-send. Try again.')
+    }
+    return new Error(raw && !/^[a-z_]+$/.test(raw) ? raw : 'Could not save Auto-send. Try again.')
+  }
   async function setFaceAutoApprove(on) {
-    if (!faceApi) throw new Error('Bot Social is not connected')
-    const result = await faceApi.setAutoApproveFaceRooms(on)
-    faceAutoCache = { at: now(), on: result?.autoApproveFaceRooms === true, known: true }
-    return { autoApproveFaceRooms: faceAutoCache.on }
+    if (!config.server || !token) throw new Error('Bot Social is not connected')
+    try {
+      const result = await confirmedCall('set_auto_approve', { auto_approve_face_rooms: Boolean(on) })
+      const next = viewMe(result)?.autoApproveFaceRooms === true
+      faceAutoCache = { at: now(), on: next, known: true }
+      return { autoApproveFaceRooms: next }
+    } catch (error) {
+      throw mapFaceAutoError(error)
+    }
   }
   const maxFileBytes = config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
   const filesDir = config.filesDir ?? join(config.credentialsPath ? dirname(config.credentialsPath) : tmpdir(), 'flybot-social-files')
@@ -1303,6 +1325,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         remote: p.remote === true,
         roomOnly: p.roomOnly === true || p.published !== true,
         label: faceMemberLabel({ displayName: p.displayName, ownerName: p.ownerName, handle: p.handle }) || p.displayName || p.id,
+        ...(p.color ? { color: p.color } : {}),
+        ...(p.avatar ? { avatar: p.avatar } : {}),
       })),
       ...extra,
     }
@@ -1321,6 +1345,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         displayName: m.displayName,
         ownerName: m.ownerName,
         roomOnly: m.roomOnly === true || m.published !== true,
+        ...(m.color ? { color: m.color } : {}),
+        ...(m.avatar ? { avatar: m.avatar } : {}),
       })),
       localBots: locals,
     })

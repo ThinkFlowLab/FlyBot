@@ -47,6 +47,15 @@ diff --git a/src/client/composer.js b/src/client/composer.js
 diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 --- a/src/client/details-drawer.js
 +++ b/src/client/details-drawer.js
+@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useRef, useState } from 'react
+ import { isMainOf } from './sources.js'
+ import { HEADER, currentPart, stripHeader, usageOf } from './text.js'
+ import { PlusIcon, ShareIcon, CloseIcon, ChevronLeftIcon, GearIcon } from './icons.js'
+-import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
++import { botState, BotMark, BotAvatar, RoomAvatar, lookBotForRemote } from './mark.js'
+ import { GlobeIcon, Favicon } from './browser-pane.js'
+ import { useEscape } from './overlay-hooks.js'
+ import { BotSettingsForm } from './bot-settings.js'
 @@ -14,6 +14,9 @@ import { ScheduleSummary } from './schedules.js'
  import { Segmented, useGlide, useMorph } from './motion.js'
  import { MemberWork, useMemberWork } from './member-status.js'
@@ -57,7 +66,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  
  function transcriptOf(list, id, name, hiddenTurns = []) {
    const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
-@@ -113,16 +113,101 @@ function About({ text, title = 'About' }) {
+@@ -113,16 +113,103 @@ function About({ text, title = 'About' }) {
  
  // A group's overview: what members read, who is in it, and who answers. Changes are
  // made in its settings.
@@ -158,7 +167,9 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +            person.role === 'admin' ? h('span', { className: 'bt-chip bt-chip-admin' }, t('Admin')) : null))),
 +        ...remotes.map(person => h('div', { key: person.handle || person.id, role: 'listitem' },
 +          h('div', { className: 'bt-member' },
-+            h('span', { className: 'bt-member-name' }, h('span', null, person.label || remoteBotTitle(person))),
++            h('span', { className: 'bt-member-name' },
++              h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
++              h('span', null, person.label || remoteBotTitle(person))),
 +            face ? null : h('span', { className: 'bt-chip' }, t('Friend\'s Bot'))))),
 +        ...members.map((member) => {
          const entry = entries.find(item => item.id === member.id)
@@ -176,7 +187,13 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 --- a/src/client/group-settings.js
 +++ b/src/client/group-settings.js
-@@ -6,6 +6,7 @@ import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
+@@ -1,11 +1,12 @@
+ import { createElement as h, useEffect, useState } from 'react'
+ import { isMainOf } from './sources.js'
+ import { PlusIcon, ChevronRightIcon } from './icons.js'
+-import { AdminStar, BotAvatar, BotMark, RoomAvatar } from './mark.js'
++import { AdminStar, BotAvatar, BotMark, RoomAvatar, lookBotForRemote } from './mark.js'
+ import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
  import { Segmented } from './motion.js'
  import { FolderMenu } from './folder-menu.js'
  import { t } from './i18n.js'
@@ -206,7 +223,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    const mode = shownMode(room, roster)
    const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
-@@ -65,26 +65,48 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+@@ -65,26 +65,50 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
        h('div', { className: 'bt-set-row bt-bs-row' },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
@@ -238,6 +255,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 -        ? [...outside.map(bot => h('button', { key: bot.id, type: 'button', className: 'bt-set-row bt-bs-row bt-gs-pick', onClick: () => { setAdding(false); void update({ add: [bot.id] }) } },
 +      remotes.map((person) => h('div', { key: person.handle || person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
 +        h('span', { className: 'bt-gs-who' },
++          h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
 +          h('span', { className: 'bt-row-title' }, person.label || remoteBotTitle(person)),
 +          room.origin === 'face-to-face' ? null : h('span', { className: 'bt-tag' }, t('Friend\'s Bot'))),
 +        room.origin === 'face-to-face' || members.length + remotes.length <= 2
@@ -252,6 +270,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
              h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, bot.name)),
              h('span', { className: 'bt-set-hint' }, t('Add')))),
 +          ...outsideRemotes.map(bot => h('button', { key: bot.handle, type: 'button', className: 'bt-set-row bt-bs-row bt-gs-pick', onClick: () => { setAdding(false); void update({ addParticipants: [{ kind: 'bot', remote: true, handle: bot.handle }] }) } },
++            h(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
 +            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
 +            h('span', { className: 'bt-set-hint' }, t('Add friend\'s Bot')))),
            h('button', { key: 'cancel', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(false) }, t('Cancel'))]

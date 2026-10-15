@@ -2,7 +2,7 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
 import { fnv1a, lookOf, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
 import { t } from './i18n.js'
 
-export { colorOf, lookOf, remoteSeed } from './characters.js'
+export { colorOf, lookOf, remoteSeed, lookBotForRemote } from './characters.js'
 
 // -------------------------------------------------------------------------
 // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.

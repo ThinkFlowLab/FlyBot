@@ -1,7 +1,10 @@
 // Face-to-face rooms (#83): join by a 6-digit number on Bot Social. This module is the
-// client contract — REST against docs/FACE_ROOMS.md — plus error mapping, event rendering
-// and sanitization of peer-controlled strings. The host (social.js) calls the server with
-// the connector token; the browser shows the friendly copy these helpers return.
+// client contract — REST against docs/FACE_ROOMS.md for room join/list/get/start/leave/
+// messages (those routes accept the connector token) — plus error mapping, event rendering
+// and sanitization of peer-controlled strings. Owner settings (`auto_approve_face_rooms`)
+// go through MCP `whoami` / `set_auto_approve` in social.js: REST GET/PATCH /v1/me rejects
+// connector tokens with 403 `connector_token_rest_forbidden`. The host (social.js) calls
+// the server with the connector token; the browser shows the friendly copy these helpers return.
 //
 // Peer text is untrusted: fence it before anything model-visible. Platform system copy
 // (joined / left / started) is sanitized the same way as a display name.
@@ -95,7 +98,7 @@ const FRIENDLY = {
   room_closed: 'This room has closed.',
   not_a_member: 'You are no longer in this room.',
   dlp_blocked: 'That message was blocked and was not sent.',
-  connector_token_rest_forbidden: 'Bot Social would not save that setting with this connection. Restart FlyBot or reconnect in Friends\' Bots.',
+  connector_token_rest_forbidden: 'This Bot Social connection cannot use that request. Try again, or reconnect in Friends\' Bots.',
   confirmation_required: 'Bot Social asked for a confirmation. Try the toggle again.',
   handle_taken: 'That Bot Social handle is already taken. Rename the Bot and try again.',
 }
@@ -158,19 +161,6 @@ export function mapFaceError(data, status) {
 export function viewMe(body) {
   if (!body || typeof body !== 'object') return undefined
   return { autoApproveFaceRooms: body.auto_approve_face_rooms === true }
-}
-
-function confirmationCode(value) {
-  if (!value || typeof value !== 'object') return ''
-  if (value instanceof FaceRoomError) return String(value.confirmCode || '')
-  if (value.status === 'confirmation_required' || value.code === 'confirmation_required') {
-    return String(value.confirm_code || value.confirmCode || '')
-  }
-  const err = value.error
-  if (err && typeof err === 'object' && err.code === 'confirmation_required') {
-    return String(err.confirm_code || err.confirmCode || value.confirm_code || '')
-  }
-  return ''
 }
 
 // Face join of my own Bot is a room-scoped grant. True when this Bot has no person-grant.
@@ -398,10 +388,6 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     return callHttp(method, `${base}${path}`, body)
   }
 
-  async function patchMe(payload) {
-    return callHttp('PATCH', `${origin}/v1/me`, payload)
-  }
-
   return {
     async join({ code, bots } = {}) {
       const digits = String(code ?? '').trim()
@@ -445,28 +431,6 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
         autoApproved: body.auto_approved === true,
         from: viewFaceMember(body.from),
       }
-    },
-    async me() {
-      return viewMe(await callHttp('GET', `${origin}/v1/me`)) ?? { autoApproveFaceRooms: false }
-    },
-    // Owner click is the consent. If Bot Social answers confirmation_required, the
-    // confirm_code is requested and used in this same call — the UI never asks for it.
-    async setAutoApproveFaceRooms(on) {
-      const payload = { auto_approve_face_rooms: Boolean(on) }
-      let body
-      try {
-        body = await patchMe(payload)
-      } catch (error) {
-        const code = confirmationCode(error)
-        if (!code) throw error
-        body = await patchMe({ ...payload, confirm_code: code })
-      }
-      const retry = confirmationCode(body)
-      if (retry) body = await patchMe({ ...payload, confirm_code: retry })
-      if (confirmationCode(body)) {
-        throw new FaceRoomError(FRIENDLY.confirmation_required, 'confirmation_required')
-      }
-      return viewMe(body) ?? { autoApproveFaceRooms: Boolean(on) }
     },
   }
 }

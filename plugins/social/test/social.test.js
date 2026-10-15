@@ -64,6 +64,16 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
       ] }),
     start_conversation: a => ({ conversation: { conversation_id: 'legacy-c' }, message: { message_id: `m-${a.friend}` } }),
     send_message: a => ({ message_id: `m-${a.conversation_id}` }),
+    whoami: () => ({ kind: 'owner', auto_approve_face_rooms: me.autoApproveFaceRooms }),
+    set_auto_approve: a => {
+      if (typeof a.auto_approve_face_rooms === 'boolean') {
+        if (me.confirm && a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'MECODE' }
+        me.autoApproveFaceRooms = a.auto_approve_face_rooms
+        return { auto_approve_face_rooms: me.autoApproveFaceRooms }
+      }
+      if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE03' }
+      return { relationship_id: a.relationship_id, auto_approve_chat: a.auto_approve_chat }
+    },
   }
   const fetch = async (url, init) => {
     if (url.endsWith('/v1/onboard/flybot')) {
@@ -80,17 +90,7 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
     if (String(url).includes('/v1/me')) {
       const meBody = init.body ? JSON.parse(init.body) : {}
       calls.push({ url, name: `REST ${init.method} /v1/me`, args: meBody })
-      if (init.headers.authorization !== `Bearer ${token}`) return new Response(JSON.stringify({ error: { code: 'unauthorized' } }), { status: 401 })
-      if (init.method === 'GET') {
-        return new Response(JSON.stringify({ auto_approve_face_rooms: me.autoApproveFaceRooms }), { status: 200 })
-      }
-      if (init.method === 'PATCH') {
-        if (me.confirm && meBody.confirm_code === undefined) {
-          return new Response(JSON.stringify({ status: 'confirmation_required', confirm_code: 'MECODE' }), { status: 200 })
-        }
-        if (typeof meBody.auto_approve_face_rooms === 'boolean') me.autoApproveFaceRooms = meBody.auto_approve_face_rooms
-        return new Response(JSON.stringify({ auto_approve_face_rooms: me.autoApproveFaceRooms }), { status: 200 })
-      }
+      return new Response(JSON.stringify({ error: { code: 'connector_token_rest_forbidden', message: 'connector tokens only work at /mcp' } }), { status: 403 })
     }
     if (init.headers.authorization !== `Bearer ${token}`) return new Response('{}', { status: 401 })
     const body = JSON.parse(init.body)
@@ -1381,7 +1381,7 @@ test('the sidebar + menu gets a Face-to-face group action from social', () => {
   assert.equal(typeof row[1].run, 'function')
 })
 
-test('face-to-face auto-send maps to PATCH /v1/me and swallows confirmation', async (t) => {
+test('face-to-face auto-send uses MCP whoami / set_auto_approve and ignores REST 403 /v1/me', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
   const server = withFaceRooms(mockServer())
@@ -1396,18 +1396,38 @@ test('face-to-face auto-send maps to PATCH /v1/me and swallows confirmation', as
   await social.registerAll()
   const status = (await call('flybot/social/status', {})).value
   assert.equal(status.autoApproveFaceRooms, false)
+  assert.equal(server.calls.some(c => c.name === 'whoami'), true)
   const on = (await call('flybot/social/face-auto', { on: true })).value
   assert.equal(on.autoApproveFaceRooms, true)
-  const patches = server.calls.filter(c => c.name === 'REST PATCH /v1/me')
-  assert.equal(patches[0].args.auto_approve_face_rooms, true)
-  assert.equal(patches[0].args.confirm_code, undefined)
-  assert.equal(patches[1].args.confirm_code, 'MECODE')
+  const restMe = server.calls.filter(c => String(c.name).includes('REST') && String(c.name).includes('/v1/me'))
+  assert.equal(restMe.length, 0)
+  const writes = server.calls.filter(c => c.name === 'set_auto_approve' && typeof c.args.auto_approve_face_rooms === 'boolean')
+  assert.equal(writes[0].args.auto_approve_face_rooms, true)
+  assert.equal(writes[0].args.confirm_code, undefined)
+  assert.equal(writes[1].args.confirm_code, 'MECODE')
   assert.equal((await call('flybot/social/status', {})).value.autoApproveFaceRooms, true)
   server.me.confirm = false
   const off = (await call('flybot/social/face-auto', { on: false })).value
   assert.equal(off.autoApproveFaceRooms, false)
   const listed = (await call('flybot/social/face-rooms', {})).value
   assert.equal(listed.autoApproveFaceRooms, false)
+})
+
+test('face-to-face auto-send shows a clear error when MCP write fails', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  delete server.tools.set_auto_approve
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  const failed = await call('flybot/social/face-auto', { on: true })
+  assert.equal(failed.ok, false)
+  assert.match(failed.error.message, /cannot save Auto-send yet/)
+  assert.equal(server.calls.filter(c => String(c.name).includes('REST') && String(c.name).includes('/v1/me')).length, 0)
 })
 
 test('Friends\' Bots (#83): auto-send toggle in the room header and pending-approval state', async () => {
@@ -1470,6 +1490,41 @@ test('Friends\' Bots (#83): auto-send toggle in the room header and pending-appr
   await always.props.onClick()
   assert.equal(toggled.at(-1).on, true)
   assert.deepEqual(decided, [['apr-face-1', 'approve']])
+})
+
+test('Face-to-face room card members use host avatars, not a shared letter badge', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const roster = {
+    byId: { a: { id: 'a', name: 'Chief', color: 'blue', avatar: { shape: 'whale' } } },
+    bots: [{ id: 'a', name: 'Chief', color: 'blue', avatar: { shape: 'whale' } }],
+  }
+  const remoteChats = [{
+    id: 'r-coder', name: 'Coder', remote: { handle: '@coder.bob.home' },
+    color: 'green', avatar: { image: 'https://example.test/coder.png' },
+  }]
+  const plugin = pluginOf([])
+  const tree = walk(plugin.FaceRoomCard({
+    room: {
+      name: 'Face-to-face room', status: 'open',
+      members: [
+        { id: 'a', handle: '@a.me.home', displayName: 'Chief', ownerName: 'Me', remote: false, label: "Me's Chief" },
+        { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', remote: true, label: "Coder · Bob's Bot" },
+        { handle: '@bot.friend.home', displayName: '助手', ownerName: 'Friend', remote: true, label: "助手 · Friend's Bot" },
+      ],
+    },
+    roster, remoteChats,
+  }))
+  const rows = tree.filter(n => n.props['data-flybot'] === 'face-card-member')
+  assert.equal(rows.length, 3)
+  const mine = tree.find(n => n.props['data-flybot'] === 'bot-avatar' && n.props['data-bot-id'] === 'a')
+  const friendChat = tree.find(n => n.props['data-flybot'] === 'bot-avatar' && n.props['data-handle'] === '@coder.bob.home')
+  const friendSeed = tree.find(n => n.props['data-flybot'] === 'bot-avatar' && n.props['data-handle'] === '@bot.friend.home')
+  assert.ok(mine)
+  assert.equal(mine.props['data-shape'], 'whale')
+  assert.ok(friendChat)
+  assert.equal(friendChat.props['data-image'], 'https://example.test/coder.png')
+  assert.ok(friendSeed, "a friend's Bot without a chat still gets a handle-seeded avatar")
+  assert.equal(tree.filter(n => n.props.className === 'fs-avatar' && n.props['data-flybot'] === undefined).length, 0)
 })
 
 test('Bot settings: Manage access lists grants and revokes one', async () => {

@@ -3,7 +3,7 @@ FlyBot patch 0005-social-seams on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Genera
 diff --git a/src/client/characters.js b/src/client/characters.js
 --- a/src/client/characters.js
 +++ b/src/client/characters.js
-@@ -63,12 +63,22 @@ export function defaultShape(id) {
+@@ -63,12 +63,36 @@ export function defaultShape(id) {
    return DEFAULT_SHAPES[((value ^ (value >>> 16)) >>> 0) % DEFAULT_SHAPES.length]
  }
  
@@ -16,6 +16,20 @@ diff --git a/src/client/characters.js b/src/client/characters.js
 +const lookSeed = bot => (typeof bot?.remote?.handle === 'string' && bot.remote.handle.trim() !== ''
 +  ? remoteSeed(bot.remote.handle)
 +  : bot?.id !== undefined ? String(bot.id) : undefined)
++
++// A friend's Bot as a look record: its sidebar chat when we have one, else a synthetic
++// Bot whose lookOf seed is the handle (never a shared generic gumdrop / first letter).
++export function lookBotForRemote(person, roster) {
++  const handle = String(person?.handle || person?.remote?.handle || '').trim()
++  const chat = handle ? (roster?.bots ?? []).find(bot => bot.remote?.handle === handle) : undefined
++  if (chat) return chat
++  const extra = {}
++  if (typeof person?.color === 'string') extra.color = person.color
++  if (person?.avatar && typeof person.avatar === 'object') extra.avatar = person.avatar
++  const name = person?.label || person?.displayName || person?.name || handle || 'Bot'
++  if (handle) return { id: remoteSeed(handle), name, remote: { handle }, ...extra }
++  return { id: person?.id || 'remote', name, ...extra }
++}
 +
 +// A stored shape or color wins; then the seed (a remote Bot's handle, else its id).
 +// With no Bot it is a black gumdrop.
@@ -37,7 +51,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  import { t } from './i18n.js'
  
 -export { colorOf, lookOf } from './characters.js'
-+export { colorOf, lookOf, remoteSeed } from './characters.js'
++export { colorOf, lookOf, remoteSeed, lookBotForRemote } from './characters.js'
  
  // -------------------------------------------------------------------------
  // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.

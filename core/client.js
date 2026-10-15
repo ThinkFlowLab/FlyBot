@@ -1500,6 +1500,17 @@ function defaultShape(id) {
 }
 var remoteSeed = (handle) => `remote:${String(handle ?? "").trim().replace(/^@+/, "").toLowerCase()}`;
 var lookSeed = (bot) => typeof bot?.remote?.handle === "string" && bot.remote.handle.trim() !== "" ? remoteSeed(bot.remote.handle) : bot?.id !== void 0 ? String(bot.id) : void 0;
+function lookBotForRemote(person, roster) {
+  const handle = String(person?.handle || person?.remote?.handle || "").trim();
+  const chat = handle ? (roster?.bots ?? []).find((bot) => bot.remote?.handle === handle) : void 0;
+  if (chat) return chat;
+  const extra = {};
+  if (typeof person?.color === "string") extra.color = person.color;
+  if (person?.avatar && typeof person.avatar === "object") extra.avatar = person.avatar;
+  const name = person?.label || person?.displayName || person?.name || handle || "Bot";
+  if (handle) return { id: remoteSeed(handle), name, remote: { handle }, ...extra };
+  return { id: person?.id || "remote", name, ...extra };
+}
 var colorOf = (bot) => isColor(bot?.color) ? bot.color : lookSeed(bot) !== void 0 ? defaultColor(lookSeed(bot)) : "black";
 function lookOf(bot) {
   const avatar = bot?.avatar ?? {};
@@ -4570,7 +4581,12 @@ function remoteSpeaker(source, roster) {
     handle,
     isChief: member?.isChief ?? chat?.remote?.isChief
   });
-  const bot = chat ?? { id: remoteSeed(handle), name, color: member?.color, shape: member?.shape };
+  const bot = chat ?? lookBotForRemote({
+    handle,
+    displayName: name,
+    color: member?.color,
+    avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : void 0)
+  }, roster);
   return { bot, member, name, handle, chatId: chat ? currentPart(chat) : void 0 };
 }
 function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
@@ -9816,6 +9832,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
         (0, import_react24.createElement)(
           "span",
           { className: "bt-gs-who" },
+          (0, import_react24.createElement)(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
           (0, import_react24.createElement)("span", { className: "bt-row-title" }, person.label || remoteBotTitle(person)),
           room2.origin === "face-to-face" ? null : (0, import_react24.createElement)("span", { className: "bt-tag" }, t("Friend's Bot"))
         ),
@@ -9847,6 +9864,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
             setAdding(false);
             void update({ addParticipants: [{ kind: "bot", remote: true, handle: bot.handle }] });
           } },
+          (0, import_react24.createElement)(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
           (0, import_react24.createElement)("span", { className: "bt-set-copy" }, (0, import_react24.createElement)("span", { className: "bt-bs-label" }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
           (0, import_react24.createElement)("span", { className: "bt-set-hint" }, t("Add friend's Bot"))
         )),
@@ -12301,7 +12319,12 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
           (0, import_react32.createElement)(
             "div",
             { className: "bt-member" },
-            (0, import_react32.createElement)("span", { className: "bt-member-name" }, (0, import_react32.createElement)("span", null, person.label || remoteBotTitle(person))),
+            (0, import_react32.createElement)(
+              "span",
+              { className: "bt-member-name" },
+              (0, import_react32.createElement)(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
+              (0, import_react32.createElement)("span", null, person.label || remoteBotTitle(person))
+            ),
             face ? null : (0, import_react32.createElement)("span", { className: "bt-chip" }, t("Friend's Bot"))
           )
         )),

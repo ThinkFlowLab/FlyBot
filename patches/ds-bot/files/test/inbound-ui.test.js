@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker } from './src/client/cells.js'\nexport { lookOf } from './src/client/characters.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, lookOf } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, lookOf, lookBotForRemote, remoteSeed } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -59,7 +59,8 @@ test("an inbound friend's message uses the friend's sidebar Bot (avatar, name), 
   assert.equal(got.chatId, 'session-x')
   const other = remoteSpeaker({ remote: { handle: '@x.home' }, senderName: 'X' }, { bots: [], remoteBots: [] })
   assert.equal(other.name, "X · x's Bot")
-  assert.notEqual(other.bot.color, 'gray')
+  assert.equal(other.bot.remote.handle, '@x.home')
+  assert.notEqual(lookOf(other.bot).color, 'gray')
   assert.equal(other.chatId, undefined)
 })
 
@@ -92,6 +93,26 @@ test("a friend Bot's generated look is seeded by its handle: with or without its
   const fallback = lookOf(without.bot)
   assert.equal(kept.shape, fallback.shape)
   assert.equal(kept.color, fallback.color)
+})
+
+test('lookBotForRemote seeds a distinct look from the handle when there is no chat record', () => {
+  const person = { handle: '@bot.friend.home', displayName: '助手', label: "助手 · Friend's Bot" }
+  const synthetic = lookBotForRemote(person, { bots: [] })
+  assert.equal(synthetic.remote.handle, '@bot.friend.home')
+  assert.equal(synthetic.id, remoteSeed('@bot.friend.home'))
+  const look = lookOf(synthetic)
+  assert.notEqual(look.shape, undefined)
+  assert.notEqual(look.color, 'gray')
+  assert.notEqual(look.color, 'black')
+  const other = lookOf(lookBotForRemote({ handle: '@other.friend.home', displayName: 'Other' }, { bots: [] }))
+  assert.notEqual(look.shape + look.color, other.shape + other.color)
+  const pictured = lookBotForRemote({
+    handle: '@bot.friend.home', displayName: '助手',
+    avatar: { image: 'https://example.test/friend.png' },
+  }, { bots: [] })
+  assert.equal(lookOf(pictured).image, 'https://example.test/friend.png')
+  const chat = { id: 'session-f', name: '助手', remote: { handle: '@bot.friend.home' }, color: 'green' }
+  assert.equal(lookBotForRemote(person, { bots: [chat] }), chat)
 })
 
 test('handles equal modulo @ and case share one look; a stored look still wins', () => {

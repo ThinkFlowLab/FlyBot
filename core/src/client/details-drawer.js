@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useRef, useState } from 'react
 import { isMainOf } from './sources.js'
 import { HEADER, currentPart, stripHeader, usageOf } from './text.js'
 import { PlusIcon, ShareIcon, CloseIcon, ChevronLeftIcon, GearIcon } from './icons.js'
-import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
+import { botState, BotMark, BotAvatar, RoomAvatar, lookBotForRemote } from './mark.js'
 import { GlobeIcon, Favicon } from './browser-pane.js'
 import { useEscape } from './overlay-hooks.js'
 import { BotSettingsForm } from './bot-settings.js'
@@ -208,7 +208,9 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
             person.role === 'admin' ? h('span', { className: 'bt-chip bt-chip-admin' }, t('Admin')) : null))),
         ...remotes.map(person => h('div', { key: person.handle || person.id, role: 'listitem' },
           h('div', { className: 'bt-member' },
-            h('span', { className: 'bt-member-name' }, h('span', null, person.label || remoteBotTitle(person))),
+            h('span', { className: 'bt-member-name' },
+              h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
+              h('span', null, person.label || remoteBotTitle(person))),
             face ? null : h('span', { className: 'bt-chip' }, t('Friend\'s Bot'))))),
         ...members.map((member) => {
         const entry = entries.find(item => item.id === member.id)

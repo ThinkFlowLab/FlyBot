@@ -92,7 +92,8 @@ window.__ModuleLoader__.load({
 .fs-digits:focus{border-color:var(--bt-accent,#4d6bfe)}
 .fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px}
 .fs-face-members{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
-.fs-face-members li{font-size:13px;line-height:18px;padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fs-face-members li{display:flex;align-items:center;gap:8px;font-size:13px;line-height:18px;padding:2px 0;min-width:0}
+.fs-face-members .fs-member-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fs-face-actions{display:flex;gap:6px;flex-wrap:wrap}
 .fs-face-auto-wrap{display:flex;flex-direction:column;gap:2px;padding:2px 0}
 .fs-face-auto{white-space:normal;font-size:13px;line-height:18px;color:var(--bt-ink,#141414);align-items:flex-start}
@@ -336,7 +337,7 @@ window.__ModuleLoader__.load({
         hasFace && !autoSend ? h('div', { className: 'fs-face-actions' },
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-auto-send-on', disabled: locked, onClick: () => setAuto(true) }, 'Turn on auto-send')) : null,
         items.map(item => h('div', { key: item.id, className: 'fs-row', 'data-flybot': 'pending-item' },
-          h('span', { className: 'fs-avatar', 'aria-hidden': true }, initial(item.from ?? item.toName ?? item.to)),
+          h(FaceAvatar, { bot: faceLook({ member: { handle: item.to, displayName: item.from || item.toName || item.to } }), size: 24 }),
           h('span', { className: 'fs-text' },
             h('span', { className: 'fs-name' }, item.from ? `${item.from} → ${item.toName || item.to || 'friend'}` : (item.toName || item.to || 'Outbound reply')),
             item.text ? h('span', { className: 'fs-draft' }, item.text) : (item.summary ? h('span', { className: 'fs-sub fs-msg' }, item.summary) : null),
@@ -559,7 +560,7 @@ window.__ModuleLoader__.load({
             status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone }, status.text) : null)))
     }
 
-    function FaceRoomCard({ room, actions, onChange, autoSend, autoBusy, autoError, onAutoSend }) {
+    function FaceRoomCard({ room, actions, onChange, autoSend, autoBusy, autoError, onAutoSend, roster, remoteChats } = {}) {
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
       const run = async (label, fn) => {
@@ -577,7 +578,14 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-name' }, room.name || 'Face-to-face room'),
         candidate && room.expiresAt ? h('div', { className: 'fs-sub' }, countdown(room.expiresAt)) : h('div', { className: 'fs-sub' }, 'The number is no longer valid.'),
         h('ul', { className: 'fs-face-members', 'aria-label': 'Members' },
-          members.map(m => h('li', { key: m.handle || m.id }, m.label || m.displayName || m.handle))),
+          members.map(m => h('li', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
+            h(FaceAvatar, {
+              bot: m.remote === false || m.id && roster?.byId?.[m.id]
+                ? faceLook({ roster, local: roster?.byId?.[m.id] || { id: m.id, name: m.displayName } })
+                : faceLook({ roster, remoteChats, member: m }),
+              size: 24,
+            }),
+            h('span', { className: 'fs-member-name' }, m.label || m.displayName || m.handle)))),
         h(FaceAutoSend, { on: autoSend, busy: autoBusy, onChange: onAutoSend, error: autoError }),
         h('div', { className: 'fs-face-actions' },
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => { if (room.roomId) actions?.openSession?.(room.roomId) } }, 'Open'),
@@ -691,7 +699,9 @@ window.__ModuleLoader__.load({
       },
         chat && typeof renderBot === 'function'
           ? renderBot(chat)
-          : h('div', { className: 'fs-hint', title: bot.handle }, `${bot.name} · opening its chat…`),
+          : h('div', { className: 'fs-row', title: bot.handle },
+            h(FaceAvatar, { bot: faceLook({ member: { handle: bot.handle, displayName: bot.name } }), size: 24 }),
+            h('span', { className: 'fs-text' }, h('span', { className: 'fs-name' }, bot.name), h('span', { className: 'fs-sub' }, bot.handle))),
         h('button', {
           type: 'button',
           className: 'fs-remove',
@@ -717,7 +727,7 @@ window.__ModuleLoader__.load({
       return seconds === 1 ? '1 second left to join' : `${seconds} seconds left to join`
     }
 
-    function FaceRooms({ actions, enabled = true } = {}) {
+    function FaceRooms({ actions, enabled = true, roster, remoteChats } = {}) {
       const [rooms, setRooms] = useState([])
       const [autoSend, setAutoSend] = useState(false)
       const [autoBusy, setAutoBusy] = useState(false)
@@ -753,7 +763,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-label' }, 'Face-to-face rooms'),
         rooms.map(room => h(FaceRoomCard, {
           key: room.faceRoomId || room.roomId, room, actions, onChange: load,
-          autoSend, autoBusy, autoError, onAutoSend: toggle,
+          autoSend, autoBusy, autoError, onAutoSend: toggle, roster, remoteChats,
         })))
     }
 
@@ -911,7 +921,7 @@ window.__ModuleLoader__.load({
           unavailable ? null : h('button', { type: 'button', className: 'fs-icon', 'aria-expanded': adding, title: 'Add a friend', onClick: () => { setAdding(!adding); setOpen(true) } }, adding ? 'Done' : '+ Add')),
         open ? h('div', { className: 'fs-body' },
           h(PendingApprovals, { items: pending, busy: saving, onDecide: decide }),
-          unavailable ? null : h(FaceRooms, { actions, enabled: open }),
+          unavailable ? null : h(FaceRooms, { actions, enabled: open, roster, remoteChats }),
           adding && !unavailable ? h('div', { className: 'fs-card', 'data-flybot': 'face-group-entry' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-group-open', onClick: () => setFaceOpen(true) }, 'Face-to-face group'),
             h('div', { className: 'fs-hint' }, 'Meet the people next to you. Pick your Bots and type the same 6-digit number.')) : null,
@@ -1002,7 +1012,7 @@ window.__ModuleLoader__.load({
         incoming.length ? h('div', { className: 'bt-social-requests' },
           h('div', { className: 'fs-label' }, 'Friend requests', h('span', { className: 'fs-count' }, String(incoming.length))),
           incoming.map(item => h('div', { key: item.relationshipId, className: 'fs-row bt-social-row' },
-            h('span', { className: 'fs-avatar', 'aria-hidden': true }, initial(item.name ?? item.handle)),
+            h(FaceAvatar, { bot: faceLook({ member: { handle: item.handle, displayName: item.name } }), size: 24 }),
             h('span', { className: 'fs-text' },
               h('span', { className: 'fs-name' }, item.name ?? item.handle),
               h('span', { className: 'fs-sub' }, item.handle),
@@ -1013,7 +1023,7 @@ window.__ModuleLoader__.load({
         outgoing.length ? h('div', { className: 'bt-social-outgoing' },
           h('div', { className: 'fs-label' }, 'Waiting for them to accept'),
           outgoing.map(item => h('div', { key: item.relationshipId ?? item.handle, className: 'fs-row' },
-            h('span', { className: 'fs-avatar', 'aria-hidden': true }, initial(item.name ?? item.handle)),
+            h(FaceAvatar, { bot: faceLook({ member: { handle: item.handle, displayName: item.name } }), size: 24 }),
             h('span', { className: 'fs-text' },
               h('span', { className: 'fs-name' }, item.name ?? item.handle),
               item.name ? h('span', { className: 'fs-sub' }, item.handle) : null),
@@ -1145,6 +1155,7 @@ window.__ModuleLoader__.load({
       FaceToFaceGroup,
       FaceAvatar,
       FaceRoomOverview,
+      FaceRoomCard,
       FaceAutoSend,
       apply(ctx) {
         let offs = []

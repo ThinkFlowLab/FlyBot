@@ -71,6 +71,20 @@ const lookSeed = bot => (typeof bot?.remote?.handle === 'string' && bot.remote.h
   ? remoteSeed(bot.remote.handle)
   : bot?.id !== undefined ? String(bot.id) : undefined)
 
+// A friend's Bot as a look record: its sidebar chat when we have one, else a synthetic
+// Bot whose lookOf seed is the handle (never a shared generic gumdrop / first letter).
+export function lookBotForRemote(person, roster) {
+  const handle = String(person?.handle || person?.remote?.handle || '').trim()
+  const chat = handle ? (roster?.bots ?? []).find(bot => bot.remote?.handle === handle) : undefined
+  if (chat) return chat
+  const extra = {}
+  if (typeof person?.color === 'string') extra.color = person.color
+  if (person?.avatar && typeof person.avatar === 'object') extra.avatar = person.avatar
+  const name = person?.label || person?.displayName || person?.name || handle || 'Bot'
+  if (handle) return { id: remoteSeed(handle), name, remote: { handle }, ...extra }
+  return { id: person?.id || 'remote', name, ...extra }
+}
+
 // A stored shape or color wins; then the seed (a remote Bot's handle, else its id).
 // With no Bot it is a black gumdrop.
 export const colorOf = bot => (isColor(bot?.color) ? bot.color : lookSeed(bot) !== undefined ? defaultColor(lookSeed(bot)) : 'black')

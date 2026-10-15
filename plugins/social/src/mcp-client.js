@@ -207,6 +207,9 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     let data
     try { data = text ? JSON.parse(text) : {} } catch { data = { message: text } }
     if (!response.ok) throw new BotSocialError(`Bot Social ${method} ${path}: HTTP ${response.status}`, `http_${response.status}`)
+    // Grant REST is a last resort when the MCP tool is missing. Connector tokens are
+    // forbidden on those /v1 routes (403 connector_token_rest_forbidden); callers catch
+    // and fall through. Face-room REST lives in face-rooms.js and is allowed.
     return data
   }
 
@@ -265,6 +268,7 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     removeFriend: args => mcp.callTool('remove_friend', args),
     listApprovals: args => mcp.callTool('list_approvals', args),
     decideApproval: args => mcp.callTool('decide_approval', args),
+    whoami: args => mcp.callTool('whoami', args ?? {}),
     setAutoApprove: args => mcp.callTool('set_auto_approve', args),
     addHomeMember: args => mcp.callTool('add_home_member', args),
     removeHomeMember: args => mcp.callTool('remove_home_member', args),

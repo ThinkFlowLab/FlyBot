@@ -493,13 +493,24 @@ diff --git a/client.js b/client.js
  // src/client/inks.js
  var INKS = {
    deepseek: ["#4D6BFE", "#6A84FF"],
-@@ -1177,11 +1177,14 @@ function defaultShape(id) {
+@@ -1177,11 +1177,25 @@ function defaultShape(id) {
    value = Math.imul(value ^ value >>> 13, 3266489909);
    return DEFAULT_SHAPES[((value ^ value >>> 16) >>> 0) % DEFAULT_SHAPES.length];
  }
 -var colorOf = (bot) => isColor(bot?.color) ? bot.color : bot?.id ? defaultColor(String(bot.id)) : "black";
 +var remoteSeed = (handle) => `remote:${String(handle ?? "").trim().replace(/^@+/, "").toLowerCase()}`;
 +var lookSeed = (bot) => typeof bot?.remote?.handle === "string" && bot.remote.handle.trim() !== "" ? remoteSeed(bot.remote.handle) : bot?.id !== void 0 ? String(bot.id) : void 0;
++function lookBotForRemote(person, roster) {
++  const handle = String(person?.handle || person?.remote?.handle || "").trim();
++  const chat = handle ? (roster?.bots ?? []).find((bot) => bot.remote?.handle === handle) : void 0;
++  if (chat) return chat;
++  const extra = {};
++  if (typeof person?.color === "string") extra.color = person.color;
++  if (person?.avatar && typeof person.avatar === "object") extra.avatar = person.avatar;
++  const name = person?.label || person?.displayName || person?.name || handle || "Bot";
++  if (handle) return { id: remoteSeed(handle), name, remote: { handle }, ...extra };
++  return { id: person?.id || "remote", name, ...extra };
++}
 +var colorOf = (bot) => isColor(bot?.color) ? bot.color : lookSeed(bot) !== void 0 ? defaultColor(lookSeed(bot)) : "black";
  function lookOf(bot) {
    const avatar = bot?.avatar ?? {};
@@ -1081,11 +1092,10 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2826,255 +2826,137 @@ function installCompiledStyles(text, tag) {
-     for (const sheet of document.styleSheets) {
+@@ -2827,254 +2827,136 @@ function installCompiledStyles(text, tag) {
        if (sheet.ownerNode?.dataset?.dshBot) continue;
        let list = cache.get(sheet);
--      if (!list) {
+       if (!list) {
 -        list = sheetClassNames(sheet);
 -        cache.set(sheet, list);
 -      }
@@ -1239,7 +1249,6 @@ diff --git a/client.js b/client.js
 -  }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+      if (!list) {
 +        list = sheetClassNames(sheet);
 +        cache.set(sheet, list);
 +      }
@@ -2279,7 +2288,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,131 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,136 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -2359,7 +2368,12 @@ diff --git a/client.js b/client.js
 +    handle,
 +    isChief: member?.isChief ?? chat?.remote?.isChief
 +  });
-+  const bot = chat ?? { id: remoteSeed(handle), name, color: member?.color, shape: member?.shape };
++  const bot = chat ?? lookBotForRemote({
++    handle,
++    displayName: name,
++    color: member?.color,
++    avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : void 0)
++  }, roster);
 +  return { bot, member, name, handle, chatId: chat ? currentPart(chat) : void 0 };
 +}
 +function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
@@ -6739,7 +6753,7 @@ diff --git a/client.js b/client.js
            key: id,
            type: "button",
            "aria-pressed": mode === id,
-@@ -8999,86 +8999,128 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
+@@ -8999,86 +8999,130 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
              if (mode !== id) void update({ mode: id });
            }
          }, t(label)))),
@@ -6810,6 +6824,7 @@ diff --git a/client.js b/client.js
 +        (0, import_react24.createElement)(
 +          "span",
 +          { className: "bt-gs-who" },
++          (0, import_react24.createElement)(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
 +          (0, import_react24.createElement)("span", { className: "bt-row-title" }, person.label || remoteBotTitle(person)),
 +          room2.origin === "face-to-face" ? null : (0, import_react24.createElement)("span", { className: "bt-tag" }, t("Friend's Bot"))
 +        ),
@@ -6844,6 +6859,7 @@ diff --git a/client.js b/client.js
 +            setAdding(false);
 +            void update({ addParticipants: [{ kind: "bot", remote: true, handle: bot.handle }] });
 +          } },
++          (0, import_react24.createElement)(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
 +          (0, import_react24.createElement)("span", { className: "bt-set-copy" }, (0, import_react24.createElement)("span", { className: "bt-bs-label" }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
 +          (0, import_react24.createElement)("span", { className: "bt-set-hint" }, t("Add friend's Bot"))
          )),
@@ -8807,7 +8823,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,71 +11367,181 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,71 +11367,186 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -8974,7 +8990,17 @@ diff --git a/client.js b/client.js
 +          (0, import_react32.createElement)(
 +            "div",
 +            { className: "bt-member" },
-+            (0, import_react32.createElement)("span", { className: "bt-member-name" }, (0, import_react32.createElement)("span", null, person.label || remoteBotTitle(person))),
++            (0, import_react32.createElement)(
++              "span",
++              { className: "bt-member-name" },
++              (0, import_react32.createElement)(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
++              (0, import_react32.createElement)("span", null, person.label || remoteBotTitle(person))
+             ),
+-            room2.admin === member.id ? (0, import_react31.createElement)("span", { className: "bt-chip bt-chip-admin" }, t("Admin")) : null
+-          ),
+-          entry ? (0, import_react31.createElement)(MemberWork, { entry, bot: member, room: room2, roster, actions, now }) : null
+-        );
+-      }))
 +            face ? null : (0, import_react32.createElement)("span", { className: "bt-chip" }, t("Friend's Bot"))
 +          )
 +        )),
@@ -8993,12 +9019,7 @@ diff --git a/client.js b/client.js
 +                (0, import_react32.createElement)("span", null, member.name)
 +              ),
 +              room2.admin === member.id ? (0, import_react32.createElement)("span", { className: "bt-chip bt-chip-admin" }, t("Admin")) : null
-             ),
--            room2.admin === member.id ? (0, import_react31.createElement)("span", { className: "bt-chip bt-chip-admin" }, t("Admin")) : null
--          ),
--          entry ? (0, import_react31.createElement)(MemberWork, { entry, bot: member, room: room2, roster, actions, now }) : null
--        );
--      }))
++            ),
 +            entry ? (0, import_react32.createElement)(MemberWork, { entry, bot: member, room: room2, roster, actions, now }) : null
 +          );
 +        })

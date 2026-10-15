@@ -259,7 +259,7 @@ test('face-to-face room hosts room-only remotes and skips friend fanout', async 
     expiresAt: '2026-10-15T10:10:00.000Z',
     members: [
       { handle: '@writer.alice.home', displayName: 'Writer', ownerName: 'Alice', published: false },
-      { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
+      { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false, color: 'green', avatar: { image: 'https://example.test/coder.png' } },
     ],
     localBots: [{ id: 'spec-a', handle: '@writer.alice.home', name: 'Writer A' }],
   })
@@ -270,6 +270,8 @@ test('face-to-face room hosts room-only remotes and skips friend fanout', async 
   const remote = live.find(p => p.handle === '@coder.bob.home')
   assert.equal(remote.remote, true)
   assert.equal(remote.roomOnly, true)
+  assert.equal(remote.color, 'green')
+  assert.equal(remote.avatar.image, 'https://example.test/coder.png')
   const shown = presentRoom(room, { memberId: 'owner-1' }, rt.state)
   assert.equal(shown.viewerRole, 'member')
   assert.doesNotMatch(shown.displayName || '', /Shared room/)

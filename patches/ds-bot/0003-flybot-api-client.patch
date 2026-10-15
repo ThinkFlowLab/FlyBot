@@ -94,7 +94,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
  import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
-+import { colorOf, remoteSeed, toolState, BotMark, RoomAvatar } from './mark.js'
++import { colorOf, lookBotForRemote, toolState, BotMark, RoomAvatar } from './mark.js'
  import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
  import { SecretToolCell } from './secret-card.js'
  import { dateLocale, t } from './i18n.js'
@@ -126,7 +126,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const running = data.status === 'running'
    // A streaming reply stands in for the activity row.
    useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts.length > 0 ? { text: true } : null)
-@@ -180,6 +180,72 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
+@@ -180,6 +180,75 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
      h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
  }
  
@@ -145,7 +145,10 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  })
 +  // The sidebar's Bot record when there is one; else a synthetic one whose id seeds the
 +  // same handle-derived look the record would get (characters.js remoteSeed).
-+  const bot = chat ?? { id: remoteSeed(handle), name, color: member?.color, shape: member?.shape }
++  const bot = chat ?? lookBotForRemote({
++    handle, displayName: name, color: member?.color,
++    avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : undefined),
++  }, roster)
 +  return { bot, member, name, handle, chatId: chat ? currentPart(chat) : undefined }
 +}
 +

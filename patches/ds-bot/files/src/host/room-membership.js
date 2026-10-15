@@ -864,6 +864,13 @@ export function install(rt) {
     return bot?.fields?.social?.member?.handle || p?.handle
   }
 
+  function faceLookFields(member) {
+    const out = {}
+    if (typeof member?.color === 'string' && member.color.trim()) out.color = member.color.trim().slice(0, 32)
+    if (member?.avatar && typeof member.avatar === 'object') out.avatar = member.avatar
+    return out
+  }
+
   function faceRemoteRecord(member, joinedSeq, at) {
     const handle = String(member.handle || member.id || '')
     const displayName = cleanPeerName(member.displayName || member.name, handle)
@@ -881,6 +888,7 @@ export function install(rt) {
       role: 'member',
       joinedSeq,
       joinedAt: at,
+      ...faceLookFields(member),
     }
   }
 
@@ -920,6 +928,9 @@ export function install(rt) {
           existing.displayName = cleanPeerName(member.displayName || member.name, existing.displayName)
           existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
           existing.roomOnly = member.roomOnly === true || member.published !== true
+          const look = faceLookFields(member)
+          if (look.color) existing.color = look.color
+          if (look.avatar) existing.avatar = look.avatar
         } else if (member.ownerName) {
           existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
         }

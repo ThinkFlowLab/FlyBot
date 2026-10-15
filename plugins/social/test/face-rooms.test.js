@@ -54,7 +54,7 @@ test('error mapping covers the FACE_ROOMS.md codes', () => {
   const lock = mapFaceError({ error: { code: 'locked_out', retry_after: 900 } }, 429)
   assert.equal(lock.message, 'Too many failed attempts. Try again in 15 minutes.')
   assert.doesNotMatch(mapFaceError({ error: { code: 'nope', message: 'raw_sql' } }, 500).message, /raw_sql/)
-  assert.match(mapFaceError({ error: { code: 'connector_token_rest_forbidden' } }, 403).message, /would not save that setting/)
+  assert.match(mapFaceError({ error: { code: 'connector_token_rest_forbidden' } }, 403).message, /cannot use that request/)
   assert.equal(mapFaceError({ error: { code: 'confirmation_required', confirm_code: 'AB12CD' } }, 403).confirmCode, 'AB12CD')
   assert.equal(mapFaceError({ error: { code: 'handle_taken' } }, 409).message, 'That Bot Social handle is already taken. Rename the Bot and try again.')
   const taken = mapRegisterError(Object.assign(new Error('handle taken'), { code: 'handle_taken' }), { name: 'Writer' })
@@ -148,28 +148,13 @@ function faceServer() {
   const rooms = new Map()
   const codes = new Map()
   const calls = []
-  const me = { auto_approve_face_rooms: false, confirm: false, confirmError: false, forbidden: false }
   const fetch = async (url, init) => {
     calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : undefined, auth: init.headers.authorization })
     if (init.headers.authorization !== 'Bearer otk_test') {
       return new Response(JSON.stringify({ error: { code: 'unauthorized' } }), { status: 401 })
     }
     if (String(url).includes('/v1/me')) {
-      if (me.forbidden) {
-        return new Response(JSON.stringify({ error: { code: 'connector_token_rest_forbidden' } }), { status: 403 })
-      }
-      if (init.method === 'GET') {
-        return new Response(JSON.stringify({ auto_approve_face_rooms: me.auto_approve_face_rooms }), { status: 200 })
-      }
-      const body = init.body ? JSON.parse(init.body) : {}
-      if (me.confirm && body.confirm_code === undefined) {
-        return new Response(JSON.stringify({ status: 'confirmation_required', confirm_code: 'MECODE' }), { status: 200 })
-      }
-      if (me.confirmError && body.confirm_code === undefined) {
-        return new Response(JSON.stringify({ error: { code: 'confirmation_required', confirm_code: 'MEERR' } }), { status: 403 })
-      }
-      if (typeof body.auto_approve_face_rooms === 'boolean') me.auto_approve_face_rooms = body.auto_approve_face_rooms
-      return new Response(JSON.stringify({ auto_approve_face_rooms: me.auto_approve_face_rooms }), { status: 200 })
+      return new Response(JSON.stringify({ error: { code: 'connector_token_rest_forbidden', message: 'connector tokens only work at /mcp' } }), { status: 403 })
     }
     const path = url.replace(/^https:\/\/s\/v1\/face-rooms/, '') || ''
     if (init.method === 'POST' && path === '/join') {
@@ -250,7 +235,7 @@ function faceServer() {
     }
     return new Response(JSON.stringify({ error: { code: 'invalid_request' } }), { status: 400 })
   }
-  return { fetch, calls, rooms, me }
+  return { fetch, calls, rooms }
 }
 
 test('REST join, poll, start, leave, and pending_approval send', async () => {
@@ -304,30 +289,15 @@ test('viewFaceMember keeps a friend Bot avatar when the payload has one', () => 
   assert.equal(faceMemberLook({ avatar: { image: 'javascript:alert(1)' } }).avatar, undefined)
 })
 
-test('GET/PATCH /v1/me auto_approve_face_rooms, including in-place confirmation', async () => {
-  const server = faceServer()
-  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch: server.fetch })
+test('viewMe maps auto_approve_face_rooms; face-room REST still works when /v1/me is 403', async () => {
   assert.equal(viewMe({ auto_approve_face_rooms: true }).autoApproveFaceRooms, true)
   assert.equal(viewMe({}).autoApproveFaceRooms, false)
-  assert.equal((await api.me()).autoApproveFaceRooms, false)
-  const on = await api.setAutoApproveFaceRooms(true)
-  assert.equal(on.autoApproveFaceRooms, true)
-  assert.equal((await api.me()).autoApproveFaceRooms, true)
-  assert.equal((await api.setAutoApproveFaceRooms(false)).autoApproveFaceRooms, false)
-  server.me.confirm = true
-  const confirmed = await api.setAutoApproveFaceRooms(true)
-  assert.equal(confirmed.autoApproveFaceRooms, true)
-  const patches = server.calls.filter(c => c.method === 'PATCH' && String(c.url).endsWith('/v1/me'))
-  assert.equal(patches.at(-2).body.confirm_code, undefined)
-  assert.equal(patches.at(-1).body.confirm_code, 'MECODE')
-  assert.equal(patches.at(-1).body.auto_approve_face_rooms, true)
-  server.me.confirm = false
-  server.me.confirmError = true
-  const viaError = await api.setAutoApproveFaceRooms(false)
-  assert.equal(viaError.autoApproveFaceRooms, false)
-  const errPatch = server.calls.filter(c => c.method === 'PATCH' && String(c.url).endsWith('/v1/me')).at(-1)
-  assert.equal(errPatch.body.confirm_code, 'MEERR')
-  server.me.confirmError = false
-  server.me.forbidden = true
-  await assert.rejects(() => api.setAutoApproveFaceRooms(true), (e) => e instanceof FaceRoomError && e.code === 'connector_token_rest_forbidden' && /would not save that setting/.test(e.message))
+  const server = faceServer()
+  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch: server.fetch })
+  assert.equal(typeof api.me, 'undefined')
+  assert.equal(typeof api.setAutoApproveFaceRooms, 'undefined')
+  const room = await api.join({ code: '123456', bots: ['@chief.me.home'] })
+  assert.equal(room.roomId, 'frm_123456')
+  assert.equal(server.calls.some(c => String(c.url).includes('/v1/me')), false)
+  assert.equal(server.calls.some(c => c.method === 'POST' && String(c.url).includes('/v1/face-rooms/join')), true)
 })
