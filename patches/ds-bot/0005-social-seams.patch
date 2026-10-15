@@ -238,7 +238,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,7 +319,37 @@ export function install(rt) {
+@@ -319,7 +319,38 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -271,8 +271,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +          return ok(removed)
 +        }
          default:
-+          // FlyBot plugins' endpoints (src/host/hooks.js).
-+          if (endpoint.startsWith('flybot/')) return ok(await rt.flybotEndpoint(endpoint.slice('flybot/'.length), body))
++          // FlyBot plugins' endpoints (src/host/hooks.js). The actor rides along so
++          // owner-checked endpoints (held-send decisions) can bind it (#52).
++          if (endpoint.startsWith('flybot/')) return ok(await rt.flybotEndpoint(endpoint.slice('flybot/'.length), body, { actor }))
            return fail(`Unknown endpoint ${endpoint}`, 'bot/not-found')
        }
      } catch (error) {

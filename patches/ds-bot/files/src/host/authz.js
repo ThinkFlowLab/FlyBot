@@ -203,6 +203,9 @@ export function install(rt) {
     // owners, so they follow the shared rule.
     if (ep.startsWith('flybot/')) {
       if (rt.flybotIsRead?.(ep.slice('flybot/'.length)) === true) return ALLOW
+      // Held-send decisions are per-owner enforced in hooks.js — the approval belongs
+      // to the sender Bot's owner — so deciding does not follow the shared rule (#52).
+      if (ep === 'flybot/decide') return ALLOW
       if (!alone()) return deny('bot/blocked-shared', 'This plugin endpoint cannot be scoped per owner yet, so it is unavailable while the team has more than one member')
       return ALLOW
     }

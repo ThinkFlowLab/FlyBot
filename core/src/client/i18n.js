@@ -74,6 +74,8 @@ const ZH = {
   'Bot tree': 'Bot 树',
   'no longer shared': '已不再共享',
   'Messages waiting for your approval': '等你批准的消息',
+  'Sent by {sender}': '由 {sender} 发送',
+  'Sent by {sender} · delegated': '由 {sender} 发送 · 委托转达',
   'Not sent to {to} · {reason}': '未发给 {to} · {reason}',
   'Message to {to} · {reason}': '发给 {to} 的消息 · {reason}',
   failed: '失败',

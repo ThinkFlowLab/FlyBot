@@ -149,7 +149,7 @@ export type SendResult =
 
 export interface Approval {
   id: string
-  status: 'pending' | 'approved' | 'rejected' | 'failed'
+  status: 'pending' | 'approved' | 'rejected' | 'denied' | 'failed' | 'stale'
   reason: string
   /** Middleware that held it. */
   by: string
@@ -158,7 +158,18 @@ export interface Approval {
   note?: string
   error?: string
   exchangeId?: string
+  /** The held send's own exchange id (#52). */
+  requestId?: string
+  /** sha256 over the request content; a changed request is stale, never dispatched (#52). */
+  version?: string
+  /** Server-derived: the sender Bot's owner, who alone may decide (#52). */
+  ownerId?: string
+  /** Where the request came from: which plugin relayed it and how many hops (#52). */
+  origin?: { via: string; hop: number; audience?: string }
   request: SendMessage
+  /** List-view context, resolved server-side: sender and target names (#52). */
+  senderName?: string
+  targetName?: string
 }
 
 export interface Transport {

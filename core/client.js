@@ -110,6 +110,8 @@ var ZH = {
   "Bot tree": "Bot 树",
   "no longer shared": "已不再共享",
   "Messages waiting for your approval": "等你批准的消息",
+  "Sent by {sender}": "由 {sender} 发送",
+  "Sent by {sender} · delegated": "由 {sender} 发送 · 委托转达",
   "Not sent to {to} · {reason}": "未发给 {to} · {reason}",
   "Message to {to} · {reason}": "发给 {to} 的消息 · {reason}",
   failed: "失败",
@@ -1831,11 +1833,17 @@ function FlyBotApprovals() {
     pending.map((approval) => {
       const custom = entries2.find((entry) => entry.policy === void 0 || entry.policy === approval.by);
       if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
-      const to = typeof approval.request.to === "object" ? approval.request.to.handle : approval.request.to;
+      const to = approval.targetName ?? (typeof approval.request.to === "object" ? approval.request.to.handle : approval.request.to);
       return (0, import_react2.createElement)(
         "div",
         { key: approval.id, className: "bt-flybot-approval" },
         (0, import_react2.createElement)("div", { className: "bt-flybot-approval-head" }, approval.status === "failed" ? t("Not sent to {to} · {reason}", { to, reason: approval.error ?? t("failed") }) : t("Message to {to} · {reason}", { to, reason: approval.reason })),
+        // Where the request came from (#52): the sending Bot, and when it was relayed.
+        approval.senderName !== void 0 ? (0, import_react2.createElement)(
+          "div",
+          { className: "bt-flybot-approval-origin" },
+          approval.request.hop > 0 ? t("Sent by {sender} · delegated", { sender: approval.senderName }) : t("Sent by {sender}", { sender: approval.senderName })
+        ) : null,
         (0, import_react2.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
         approval.request.attachments?.length ? (0, import_react2.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react2.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
         (0, import_react2.createElement)(
@@ -1861,6 +1869,7 @@ var FLYBOT_CSS = `
 .bt-flybot-approval-error { color: var(--bt-danger, #d33); font-size: 12px; }
 .bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
 .bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
+.bt-flybot-approval-origin { font-size: 12px; opacity: .7; margin-bottom: 4px; }
 .bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
 .bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 .bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }

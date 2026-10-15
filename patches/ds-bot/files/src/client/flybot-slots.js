@@ -144,9 +144,12 @@ export function FlyBotApprovals() {
     pending.map((approval) => {
       const custom = entries.find(entry => entry.policy === undefined || entry.policy === approval.by)
       if (custom) return h('div', { key: approval.id }, h(Safe, { entry: custom, props: { approval, decide: decision => decide(approval.id, decision), call } }))
-      const to = typeof approval.request.to === 'object' ? approval.request.to.handle : approval.request.to
+      const to = approval.targetName ?? (typeof approval.request.to === 'object' ? approval.request.to.handle : approval.request.to)
       return h('div', { key: approval.id, className: 'bt-flybot-approval' },
         h('div', { className: 'bt-flybot-approval-head' }, approval.status === 'failed' ? t('Not sent to {to} · {reason}', { to, reason: approval.error ?? t('failed') }) : t('Message to {to} · {reason}', { to, reason: approval.reason })),
+        // Where the request came from (#52): the sending Bot, and when it was relayed.
+        approval.senderName !== undefined ? h('div', { className: 'bt-flybot-approval-origin' },
+          approval.request.hop > 0 ? t('Sent by {sender} · delegated', { sender: approval.senderName }) : t('Sent by {sender}', { sender: approval.senderName })) : null,
         h('div', { className: 'bt-flybot-approval-text' }, approval.request.text),
         approval.request.attachments?.length
           ? h('ul', { className: 'bt-flybot-approval-files', 'aria-label': t('Attached files') }, approval.request.attachments.map((file, index) =>
@@ -172,6 +175,7 @@ export const FLYBOT_CSS = `
 .bt-flybot-approval-error { color: var(--bt-danger, #d33); font-size: 12px; }
 .bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
 .bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
+.bt-flybot-approval-origin { font-size: 12px; opacity: .7; margin-bottom: 4px; }
 .bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
 .bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 .bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }

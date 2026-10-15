@@ -411,8 +411,9 @@ export function install(rt) {
           return ok(removed)
         }
         default:
-          // FlyBot plugins' endpoints (src/host/hooks.js).
-          if (endpoint.startsWith('flybot/')) return ok(await rt.flybotEndpoint(endpoint.slice('flybot/'.length), body))
+          // FlyBot plugins' endpoints (src/host/hooks.js). The actor rides along so
+          // owner-checked endpoints (held-send decisions) can bind it (#52).
+          if (endpoint.startsWith('flybot/')) return ok(await rt.flybotEndpoint(endpoint.slice('flybot/'.length), body, { actor }))
           return fail(`Unknown endpoint ${endpoint}`, 'bot/not-found')
       }
     } catch (error) {

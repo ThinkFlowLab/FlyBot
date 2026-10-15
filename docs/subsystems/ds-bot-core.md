@@ -34,6 +34,7 @@ This page covers the pin, the patch format and the core's dev tooling. The gener
 | `ds-bot.pin.json` | Upstream pin. |
 | `patches/ds-bot/` | Ordered patch topics. |
 | `scripts/ds-bot-patches.mjs` | generate / check patches. |
+| `core/src/host/hooks.js` (approvals) | Held sends bound to their owner — provenance, owner-bound decisions, stale revalidation. The authority contract lives in [team](team.md) (#52). |
 
 ## Entry points
 

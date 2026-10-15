@@ -225,13 +225,16 @@ test('flybot plugin endpoints follow the read/shared rules', async (t) => {
   const actorA = await rt.authenticate(sessionA.sessionToken)
   // Reads reach the plugin layer for the signed-in actor.
   assert.equal(rt.authorize(actorA, 'flybot/changes', {}).ok, true)
-  // Alone on the deployment, writes do too; with two members they are blocked like
-  // the other shared resources.
+  // Alone on the deployment, writes do too. Deciding a held send stays reachable with
+  // two members: hooks.js binds it to the sender Bot's owner (#52); other plugin
+  // writes are blocked like the other shared resources.
   assert.equal(rt.authorize(actorA, 'flybot/decide', { id: 'x' }).ok, true)
   await redeemOwner(rt)
   assert.equal(rt.authorize(actorA, 'flybot/changes', {}).ok, true)
-  assert.equal(rt.authorize(actorA, 'flybot/decide', { id: 'x' }).code, 'bot/blocked-shared')
+  assert.equal(rt.authorize(actorA, 'flybot/decide', { id: 'x' }).ok, true)
+  assert.equal(rt.authorize(actorA, 'flybot/social/decide-approval', {}).code, 'bot/blocked-shared')
   assert.equal(rt.authorize(null, 'flybot/changes', {}).code, 'bot/unauthorized')
+  assert.equal(rt.authorize(null, 'flybot/decide', { id: 'x' }).code, 'bot/unauthorized')
 })
 
 test('add-agent is a shared deployment resource', async (t) => {

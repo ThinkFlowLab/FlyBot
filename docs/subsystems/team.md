@@ -87,6 +87,16 @@ Typed participants on a native room, in `core/src/host/room-membership.js`, inst
 | Remote owner (owns an invited Bot, not a human member) / inbound share | Sidebar **Shared room from \<inviter\>** | Current participants with owner badges; who invited their Bot and when; lines from the Bot's `joinedSeq`; pending social approvals in this view | Remove their Bot (leave closes the interval); approve/reject held replies; cannot inject as themselves |
 | Remote Bot | Only the room lines fenced as untrusted data, from its join seq | No inviter private rooms, no ungranted specialists | Reply through Bot Social (held unless the owner auto-approves) |
 
+## Approval binding foundation (landed, #52)
+
+The held-send approval (`state.flybot.approvals` in `core/src/host/hooks.js`) now binds each decision to the owner whose authority is spent, as [invariant 5](#invariants) and gate 3 require. Only the sign-in foundation of #48/#49 is assumed; team mode stays disabled.
+
+- **Provenance is server-derived.** A hold stamps `requestId` (the send's `exchangeId`), a sha256 `version` over the request content (from/to/text/role/attachment names), `origin` (`via`, `hop`, room audience when known), and `ownerId` — the sender Bot's owner, resolved from the team state. Claims inside the message (`meta`, body text such as "my owner approved") are data on the record, never authority.
+- **Decisions are owner-bound.** `flybot/decide` passes authz for any signed-in actor; hooks.js then requires the deciding session to belong to the sender Bot's owner (`bot/forbidden` otherwise, `bot/unauthorized` with no session). One owner cannot approve, reject or retry another owner's held send, and the pending list shows a member only their own holds.
+- **Revalidation at approve/execute time.** Releasing a hold re-checks the record: a changed request content, a deleted sender or target Bot, a Bot that changed owners, or a demoted Chief marks the record `stale` — it is never dispatched. `deleteBot` and Chief replacement (`setMain`) invalidate affected pending holds eagerly; a removed member's sessions cannot decide, and their holds were already stale when their last Bot was deleted (`removeMember` refuses a member that still owns one).
+- **Legacy records keep working.** Holds saved before this change have no `version`; they skip only the tamper check, and their owner is derived at decide time.
+- **Not done here:** the social plugin's server-side approval holds (`social/decide-approval`) stay a deployment-wide plugin write (blocked while more than one member exists); the in-chat approval cards and task-level approvals are #90/#54 work. Gate 3 is satisfied for held sends only.
+
 ## Identity model
 
 | Relation | Rule |
@@ -207,5 +217,7 @@ Planned rules (fail closed by default):
 Owner-scoped access (#49) tests in `core/test/authz.test.js`: cross-owner denials, and the positive paths that keep an owner working — their own Bots' sessions (Bot id, current chat, group Session, schedule), plugin-endpoint reads, approval answering by id, and the `view()`/`live()` narrowing rules for one and for several members.
 
 **Room membership foundation (#50)** has tests in `core/test/room-membership.test.js`: Alice, Bob and both Chiefs keep distinct authorship; concurrent posts keep order and identity; unauthorized history reads fail; join/leave follows the membership-window rule; non-members cannot inject (forged `authorId` is ignored); existing single-owner groups still display and accept posts; a specialist cannot join a cross-owner room.
+
+**Approval binding (#52)** has tests in `core/test/approval-binding.test.js`: the hold stamps server-derived provenance and a request-content hash while forged `meta` claims stay data; only the sender Bot's owner's session may decide (another member gets `bot/forbidden`, no session gets `bot/unauthorized`, a body `actorId` grants nothing); the pending list is per-actor; a request that changed after it was held goes `stale` and never dispatches; same-owner deciding survives a restart; deleting a sender or target Bot or replacing the Chief invalidates pending holds; and a record whose sender Bot and owner are both gone stays in state with its attribution but in no member's list.
 
 The routing-matrix rows above remain untested because the behavior is not shipped. When enforcement work starts (#48+), each row becomes a test first, per [fail-without-change](../code-standards.md): same-owner delegation allowed (a), Chief-to-Chief allowed (b), cross-owner specialist denied (c), team-admin vs private-owner denied (d), forwarded approval rejected (e). Each must fail on the unbroken tip before implementation lands.

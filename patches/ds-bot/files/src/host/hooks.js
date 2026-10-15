@@ -9,7 +9,7 @@
 //   state.flybot.approvals[id]           sends held for the owner's decision
 // Types: ds-bot/types/flybot.d.ts. Plugins call flybot.scope('<plugin>') to get the
 // same API with their own field namespace; the unscoped API uses namespace 'shared'.
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
@@ -172,11 +172,14 @@ export function install(rt) {
       const remote = rt.botOf(id)?.remote
       const remoteChat = remote !== undefined
       const result = await deleteBot(id, ...rest)
-      if (!remoteChat) fire('bot.removed', { ...last, botId: id, bot: last })
+      if (!remoteChat) {
+        fire('bot.removed', { ...last, botId: id, bot: last })
+        // A hold naming this Bot as sender or target can no longer be spent (#52).
+        await invalidateFor([id], 'the Bot was deleted')
       // Deleting a friend's Bot's chat clears it; the friend's Bot is still there, so it gets a
       // fresh, empty chat at once. Otherwise its row waits ("opening its chat…") until the
       // plugin next publishes its roster, which may be hours or the next restart.
-      else if (typeof remote?.handle === 'string' && typeof remote.plugin === 'string') {
+      } else if (typeof remote?.handle === 'string' && typeof remote.plugin === 'string') {
         const published = (state.flybot?.remote?.[remote.plugin] ?? []).find(bot => bot.handle === remote.handle)
         if (published !== undefined) {
           await rt.remoteChats?.open({ handle: published.handle, name: published.name, home: published.home, homeName: published.homeName, plugin: remote.plugin })
@@ -186,7 +189,18 @@ export function install(rt) {
       return result
     }
   }
-
+  // A demoted Main Bot's holds were queued under its Chief authority; they die with the
+  // role (docs/subsystems/team.md, replaced Chiefs) (#52).
+  const setMain = rt.setMain
+  if (typeof setMain === 'function') {
+    rt.setMain = async (id, main, opts = {}) => {
+      const before = [...state.mainBotIds]
+      const result = await setMain(id, main, opts)
+      const demoted = before.filter(other => !state.mainBotIds.includes(other))
+      if (demoted.length > 0) await invalidateFor(demoted, 'the Chief that held this was replaced', 'from')
+      return result
+    }
+  }
   // ---------------------------------------------------------------- fields (synchronous)
   const fieldsFor = (plugin) => {
     checkName('plugin', plugin)
@@ -276,12 +290,56 @@ export function install(rt) {
     state.flybot.approvals ??= {}
     return state.flybot.approvals
   }
+  // The version hash binds a decision to the exact request content: a record whose
+  // request changed after it was held (or across owners) is stale, never dispatched (#52).
+  const requestVersion = (msg) => createHash('sha256').update(JSON.stringify([
+    msg?.from, msg?.to, msg?.text, msg?.role,
+    (Array.isArray(msg?.attachments) ? msg.attachments : []).map(({ name, size, sha256 }) => ({ name, size, sha256 })),
+  ])).digest('hex')
+  // The owner a held send belongs to is the sender Bot's owner, derived from the team
+  // state at the moment it matters — never from a claim inside the message (#52).
+  const ownerOfRequest = (request) => {
+    const bot = typeof request?.from === 'string' ? rt.botOf(request.from) : undefined
+    return bot?.ownerId ?? null
+  }
+  const nameOf = (ref) => (isRemote(ref) ? toRemote(ref)?.handle : rt.botOf(ref)?.name) ?? String(ref ?? '')
+  // Why a held send may no longer be spent; undefined when it still can. Old records
+  // from before the version stamp keep working (they only miss the tamper check).
+  const staleReason = (approval) => {
+    const request = approval?.request
+    if (request === undefined || request === null) return 'the held request is missing'
+    if (approval.version !== undefined && requestVersion(request) !== approval.version) return 'the request changed after it was held'
+    if (!isRemote(request.from) && (typeof request.from !== 'string' || rt.botOf(request.from) === undefined)) return 'the sender Bot no longer exists'
+    const owner = ownerOfRequest(request)
+    if (owner === null) return 'the sender Bot has no owner on this team'
+    if (approval.ownerId !== undefined && approval.ownerId !== owner) return 'the sender Bot changed owners after it was held'
+    if (!isRemote(request.to) && rt.botOf(request.to) === undefined) return 'the target Bot no longer exists'
+    return undefined
+  }
   const approvalListeners = new Set()
   const approvalsChanged = (approval) => {
     for (const fn of [...approvalListeners]) {
       try { fn(clone(approval)) } catch (error) { warn('flybot: approval listener failed: %s', error) }
     }
     emit('flybot/approval', clone(approval))
+  }
+  // Queued work whose authority is gone does not wait forever: a hold naming one of
+  // these Bots as sender or target is marked stale (still listed for the audit view).
+  // `field` narrows the match ('from': sender-side only, e.g. a demoted Chief).
+  const invalidateFor = async (botIds, reason, field) => {
+    await rt.load()
+    const ids = new Set(botIds)
+    const hit = Object.values(store()).filter(a => a.status === 'pending'
+      && (ids.has(a.request?.from) && (field === undefined || field === 'from')
+        || ids.has(a.request?.to) && field === undefined))
+    if (hit.length === 0) return
+    for (const approval of hit) {
+      approval.status = 'stale'
+      approval.error = reason
+      approval.decidedAt = Date.now()
+    }
+    await rt.save()
+    for (const approval of hit) approvalsChanged(approval)
   }
 
   let innerDeliver
@@ -303,7 +361,18 @@ export function install(rt) {
     if (Object.values(all).filter(a => a.status === 'pending').length >= PENDING_MAX) {
       throw new HoldFull(`${PENDING_MAX} messages already wait for approval; decide those first`)
     }
-    const approval = { id: randomUUID(), status: 'pending', reason: verdict.reason, by: verdict.by, createdAt: Date.now(), request: clone(msg) }
+    const audience = rt.roomOf?.(msg?.meta?.sessionId)?.id
+    const ownerId = ownerOfRequest(msg)
+    const approval = {
+      id: randomUUID(), status: 'pending', reason: verdict.reason, by: verdict.by, createdAt: Date.now(),
+      request: clone(msg),
+      // Server-derived provenance (#52): what was held, who owns the decision, where it
+      // came from. Fields of msg itself (meta especially) are data, never authority.
+      requestId: msg.exchangeId,
+      version: requestVersion(msg),
+      origin: { via: msg.via, hop: msg.hop ?? 0, ...(audience ? { audience } : {}) },
+      ...(ownerId !== null ? { ownerId } : {}),
+    }
     all[approval.id] = approval
     const done = Object.values(all).filter(a => a.status !== 'pending').sort((a, b) => a.createdAt - b.createdAt)
     for (const old of done.slice(0, Math.max(0, Object.keys(all).length - APPROVALS_KEPT))) delete all[old.id]
@@ -313,8 +382,15 @@ export function install(rt) {
   }
 
   // An approved hold: the rest of the chain decides (a later deny or hold still counts),
-  // then it is dispatched; a failed dispatch stays visible for Retry.
+  // then it is dispatched; a failed dispatch stays visible for Retry. The hold is
+  // revalidated first: hours may have passed since the decision (#52).
   const release = async (approval) => {
+    const stale = staleReason(approval)
+    if (stale !== undefined) {
+      approval.status = 'stale'
+      approval.error = stale
+      return
+    }
     let verdict
     // Approved or not, the owner policy is asked again: the hold may be hours old.
     const owner = ownerPolicy(approval.request)
@@ -344,15 +420,35 @@ export function install(rt) {
   }
 
   const approvals = {
-    list: ({ status = 'pending' } = {}) => Object.values(store()).filter(a => status === 'all' || (Array.isArray(status) ? status.includes(a.status) : a.status === status)).sort((a, b) => a.createdAt - b.createdAt).map(clone),
+    // Under member enforcement a member sees only the holds of their own Bots; the
+    // decision on each stays owner-checked in decide() (#52).
+    list: ({ status = 'pending', actor } = {}) => {
+      const enforced = rt.authzEnforced()
+      return Object.values(store())
+        .filter(a => status === 'all' || (Array.isArray(status) ? status.includes(a.status) : a.status === status))
+        .filter(a => {
+          if (!enforced || actor === undefined) return true
+          const owner = ownerOfRequest(a.request)
+          return owner !== null && owner === actor.memberId
+        })
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .map(a => ({ ...clone(a), ownerId: ownerOfRequest(a.request) ?? undefined, senderName: nameOf(a.request?.from), targetName: nameOf(a.request?.to) }))
+    },
     get: id => clone(store()[id]),
-    // Owner only: reachable from the UI route, never a model tool.
-    async decide(id, decision, { note } = {}) {
+    // Owner only: the decision is bound to the session of the member who owns the sender
+    // Bot, resolved from the member-session header — a body actorId grants nothing.
+    // Without member sessions the single-human host decides as before (#52).
+    async decide(id, decision, { note, actor } = {}) {
       await rt.load()
       const approval = store()[id]
       if (approval === undefined) throw new Error(`flybot: no approval ${id}`)
+      const ownerId = ownerOfRequest(approval.request)
+      if (rt.authzEnforced()) {
+        if (actor === null || actor === undefined) throw Object.assign(new Error('Sign in first'), { code: 'bot/unauthorized' })
+        if (ownerId === null || ownerId !== actor.memberId) throw Object.assign(new Error('You do not own that approval'), { code: 'bot/forbidden' })
+      }
       if (decision === 'retry') {
-        if (approval.status !== 'failed') throw new Error(`flybot: only a failed send can be retried (${id} is ${approval.status})`)
+        if (approval.status !== 'failed') throw Object.assign(new Error(`flybot: only a failed send can be retried (${id} is ${approval.status})`), { code: 'bot/stale' })
         approval.status = 'approved'
         delete approval.error
         await release(approval)
@@ -360,7 +456,7 @@ export function install(rt) {
         approvalsChanged(approval)
         return clone(approval)
       }
-      if (approval.status !== 'pending') throw new Error(`flybot: approval ${id} is already ${approval.status}`)
+      if (approval.status !== 'pending') throw Object.assign(new Error(`flybot: approval ${id} is already ${approval.status}`), { code: 'bot/stale' })
       if (decision !== 'approve' && decision !== 'reject') throw new Error('flybot: decision is approve or reject')
       approval.status = decision === 'approve' ? 'approved' : 'rejected'
       approval.decidedAt = Date.now()
@@ -674,7 +770,7 @@ export function install(rt) {
     },
   }
   const isReadEndpoint = name => READ_ENDPOINTS.has(name) || readHandlers.has(name)
-  async function endpoint(name, payload) {
+  async function endpoint(name, payload, { actor } = {}) {
     await rt.load()
     const body = payload ?? {}
     switch (name) {
@@ -684,8 +780,8 @@ export function install(rt) {
         const since = body.epoch === changeEpoch ? Number(body.since ?? 0) : 0
         return { epoch: changeEpoch, seq: changeSeq, changes: changes.filter(change => change.seq > since).map(change => structuredClone(change)) }
       }
-      case 'approvals': return approvals.list(body)
-      case 'decide': return approvals.decide(String(body.id ?? ''), body.decision, body)
+      case 'approvals': return approvals.list({ ...body, actor })
+      case 'decide': return approvals.decide(String(body.id ?? ''), body.decision, { note: body.note, actor })
       default: {
         const handler = handlers.get(name)
         if (handler === undefined) throw Object.assign(new Error(`Unknown FlyBot endpoint ${name}`), { code: 'bot/not-found' })
