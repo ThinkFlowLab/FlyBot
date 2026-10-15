@@ -107,6 +107,10 @@ Private context crosses owners only through an explicit, owner-granted share; ro
 - **Chat references stay owner-scoped.** A `dsh-session:` reference chip in `send` or `room-post` must name a Session the author may read (`sessionOwnedBy`); the snapshot rides to every recipient, so authorship is the gate.
 - **Not done here:** reference chips are author-checked on `send` and `room-post` only — whether DSH resolves chips in `answer-question`/`schedule-create` texts and in Bot-authored messages is an open DSH-side question (tracked follow-up); the secrets surface stays `SHARED_BLOCKED` for >1 member; previously received messages cannot be retroactively unseen (stated, not engineered); no per-owner file-sandbox changes — a room `workDir` remains readable by its member Bots under DSH's own policy.
 
+## Task lifecycle foundation (landed, #54)
+
+`state.tasks` (`core/src/host/tasks.js`): a request becomes a tracked task — `open → claimed → working → blocked ⇄ working → result-ready → accepted`, `cancelled`/`failed` terminal, `accepted` only from `result-ready`. Only the requester's session moves their task (`bot/forbidden` otherwise); a held send (#52) blocks the task until the owner decides. Records carry per-status actor entries, pointers to the originating conversation, and a summary — never private transcripts. The in-room task view and audit trail are #57's; team mode stays disabled.
+
 ## Identity model
 
 | Relation | Rule |

@@ -3,7 +3,7 @@ FlyBot patch 0002-flybot-api-host on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gen
 diff --git a/index.js b/index.js
 --- a/index.js
 +++ b/index.js
-@@ -4,6 +4,10 @@
+@@ -4,6 +4,11 @@
  import { join } from 'node:path'
  import * as diagnostics from './src/host/diagnostics.js'
  import * as store from './src/host/store.js'
@@ -11,6 +11,7 @@ diff --git a/index.js b/index.js
 +import * as authz from './src/host/authz.js'
 +import * as roomMembership from './src/host/room-membership.js'
 +import * as reach from './src/host/reach.js'
++import * as tasks from './src/host/tasks.js'
  import * as models from './src/host/models.js'
  import * as permissions from './src/host/permissions.js'
  import * as turns from './src/host/turns.js'
@@ -28,7 +29,7 @@ diff --git a/index.js b/index.js
  // install. Listeners run and tools are listed in registration order, so this order holds:
  // usage meters model requests after every listener that rewrites them.
 -const MODULES = [diagnostics, store, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
-+const MODULES = [diagnostics, store, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, roomMembership, reach, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, hooks, remoteChat, channel]
++const MODULES = [diagnostics, store, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, roomMembership, reach, tasks, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, hooks, remoteChat, channel]
  
  export function apply(ctx, config = {}) {
 -  createRuntime(ctx, config)
@@ -300,8 +301,8 @@ diff --git a/src/host/store.js b/src/host/store.js
  
 -  /** @type {{version:1, workspaceId?:string, mainBotIds:string[], bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
 -  const state = { version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0 }
-+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>}} */
-+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, revision: 0 }
++  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>}} */
++  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, revision: 0 }
    let loaded = null
    let writing = Promise.resolve()
    const { warn } = rt
@@ -441,7 +442,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,80 @@ export function install(rt) {
+@@ -161,12 +161,84 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -471,6 +472,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    }
 +    if (!isRecord(state.authSessions)) {
 +      state.authSessions = {}
++      migrated = true
++    }
++    if (!isRecord(state.tasks)) {
++      state.tasks = {}
 +      migrated = true
 +    }
 +    if (ensureOwner()) migrated = true
