@@ -35,6 +35,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 - `client.js` matches `core/src/client/`; `npm run build` + `--check` (also invariant 3 of [ds-bot-core](ds-bot-core.md)).
 
+### Host Bot look in the bundle
+
+- The committed bundle includes `flybot-slots.js` `registry()`, which exposes `BotAvatar` / `BotMark` / `lookOf` on `globalThis.__flybot__` for classic-script plugins. Behavior is specified on [plugin-runtime](plugin-runtime.md).
+
 ### Remote Bot display
 
 - A friend's remote Bot is stored and delivered by its handle (`@<bot>.<home>` — what the @ menu inserts and `sendUserMentions` matches). Where the user reads it — mention chips (`src/client/user-message.js`) and sidebar previews (`nameMentions` in `src/client/text.js`) — the client rewrites the handle to the display name taken from the local roster (`roster.bots[].remote`, `roster.remoteBots`), never from message text, so a remote-controlled name reaches the UI only through the sanitized roster records (#71; display names, #9).
