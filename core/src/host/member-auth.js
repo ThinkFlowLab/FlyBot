@@ -31,64 +31,91 @@ function displayNameOf(member, displayName) {
 export function install(rt) {
   const state = ensureState(rt.state)
 
+  // One mutation at a time: a check like last_owner or has_bots must not race another
+  // mutation that would invalidate it between the check and the save.
+  let authGate = Promise.resolve()
+  const withAuthLock = fn => {
+    const run = authGate.then(fn, fn)
+    authGate = run.then(() => {}, () => {})
+    return run
+  }
+
   rt.createInvitation = async function createInvitation({ ttlMs = DEFAULT_TTL_MS, createdByMemberId = null } = {}) {
-    const token = randomBytes(32).toString('base64url')
-    const tokenHash = hashToken(token)
-    const id = `inv-${randomBytes(8).toString('hex')}`
-    const now = Date.now()
-    state.invitations[id] = {
-      id,
-      tokenHash,
-      createdByMemberId,
-      createdAt: now,
-      expiresAt: now + ttlMs,
-      redeemedAt: null,
-      redeemedByMemberId: null,
-    }
-    await rt.save()
-    return { id, token, expiresAt: now + ttlMs }
+    return withAuthLock(async () => {
+      const token = randomBytes(32).toString('base64url')
+      const tokenHash = hashToken(token)
+      const id = `inv-${randomBytes(8).toString('hex')}`
+      const now = Date.now()
+      state.invitations[id] = {
+        id,
+        tokenHash,
+        createdByMemberId,
+        createdAt: now,
+        expiresAt: now + ttlMs,
+        redeemedAt: null,
+        redeemedByMemberId: null,
+        revokedAt: null,
+      }
+      await rt.save()
+      return { id, token, expiresAt: now + ttlMs }
+    })
+  }
+
+  rt.revokeInvitation = async function revokeInvitation(invitationId) {
+    return withAuthLock(async () => {
+      const inv = state.invitations[invitationId]
+      if (!inv) return { ok: false, error: 'not_found' }
+      if (inv.redeemedAt) return { ok: false, error: 'already_redeemed' }
+      if (inv.revokedAt) return { ok: false, error: 'already_revoked' }
+      inv.revokedAt = Date.now()
+      await rt.save()
+      return { ok: true }
+    })
   }
 
   rt.redeemInvitation = async function redeemInvitation(token, { displayName = null } = {}) {
     if (typeof token !== 'string' || !token) return { ok: false, error: 'invalid_token' }
     const tokenHash = hashToken(token)
     const now = Date.now()
-    const invitation = Object.values(state.invitations).find(inv => inv.tokenHash === tokenHash)
-    if (!invitation) return { ok: false, error: 'invalid_token' }
-    if (invitation.redeemedAt) return { ok: false, error: 'already_redeemed' }
-    if (now > invitation.expiresAt) return { ok: false, error: 'expired' }
+    return withAuthLock(async () => {
+      const invitation = Object.values(state.invitations).find(inv => inv.tokenHash === tokenHash)
+      if (!invitation) return { ok: false, error: 'invalid_token' }
+      if (invitation.revokedAt) return { ok: false, error: 'revoked' }
+      if (invitation.redeemedAt) return { ok: false, error: 'already_redeemed' }
+      if (now > invitation.expiresAt) return { ok: false, error: 'expired' }
 
-    if (!rt.state.members) rt.state.members = {}
-    const members = rt.state.members
-    // Bootstrap: the first redeem binds to the existing single owner (owner-1) when one
-    // is there, so the human who installed FlyBot claims the session without a second
-    // member record. Only a later redeem creates the next owner.
-    let member
-    if (Object.keys(state.authSessions).length === 0) {
-      member = members['owner-1'] ?? null
-    }
-    if (!member) {
-      let n = 1
-      while (members[`owner-${n}`]) n += 1
-      const memberId = `owner-${n}`
-      // Persisted member is the identity schema only; displayName is returned in the
-      // session response, not written into the member record.
-      member = { id: memberId, createdAt: now, designatedChiefId: null }
-      members[memberId] = member
-    }
-    const sessionToken = randomBytes(32).toString('base64url')
-    const sessionId = `as-${randomBytes(8).toString('hex')}`
-    state.authSessions[sessionId] = {
-      id: sessionId,
-      tokenHash: hashToken(sessionToken),
-      memberId: member.id,
-      createdAt: now,
-      revokedAt: null,
-    }
-    invitation.redeemedAt = now
-    invitation.redeemedByMemberId = member.id
-    await rt.save()
-    return { ok: true, sessionToken, memberId: member.id, displayName: displayNameOf(member, displayName) }
+      if (!rt.state.members) rt.state.members = {}
+      const members = rt.state.members
+      // Bootstrap: the first redeem binds to the existing single owner (owner-1) when one
+      // is there, so the human who installed FlyBot claims the session without a second
+      // member record. Only a later redeem creates the next owner.
+      let member
+      if (Object.keys(state.authSessions).length === 0) {
+        member = members['owner-1'] ?? null
+      }
+      if (!member) {
+        let n = 1
+        while (members[`owner-${n}`]) n += 1
+        const memberId = `owner-${n}`
+        // Persisted member is the identity schema only; displayName is returned in the
+        // session response, not written into the member record.
+        member = { id: memberId, createdAt: now, designatedChiefId: null }
+        members[memberId] = member
+      }
+      const sessionToken = randomBytes(32).toString('base64url')
+      const sessionId = `as-${randomBytes(8).toString('hex')}`
+      state.authSessions[sessionId] = {
+        id: sessionId,
+        tokenHash: hashToken(sessionToken),
+        memberId: member.id,
+        createdAt: now,
+        revokedAt: null,
+      }
+      invitation.redeemedAt = now
+      invitation.redeemedByMemberId = member.id
+      await rt.save()
+      return { ok: true, sessionToken, memberId: member.id, displayName: displayNameOf(member, displayName) }
+    })
   }
 
   rt.authenticate = async function authenticate(sessionToken) {
@@ -104,14 +131,16 @@ export function install(rt) {
   rt.revokeSession = async function revokeSession(sessionToken) {
     if (typeof sessionToken !== 'string' || !sessionToken) return false
     const tokenHash = hashToken(sessionToken)
-    const session = Object.values(state.authSessions).find(s => s.tokenHash === tokenHash)
-    if (!session || session.revokedAt) return false
-    session.revokedAt = Date.now()
-    await rt.save()
-    return true
+    return withAuthLock(async () => {
+      const session = Object.values(state.authSessions).find(s => s.tokenHash === tokenHash)
+      if (!session || session.revokedAt) return false
+      session.revokedAt = Date.now()
+      await rt.save()
+      return true
+    })
   }
 
-  rt.revokeMemberSessions = async function revokeMemberSessions(memberId) {
+  const revokeMemberSessionsNow = async memberId => {
     const now = Date.now()
     let count = 0
     for (const session of Object.values(state.authSessions)) {
@@ -124,16 +153,29 @@ export function install(rt) {
     return count
   }
 
-  rt.removeMember = async function removeMember(memberId) {
-    const members = rt.state.members || {}
-    const member = members[memberId]
-    if (!member) return { ok: false, error: 'not_found' }
-    if (lastOwner(members)) return { ok: false, error: 'last_owner' }
-    await rt.revokeMemberSessions(memberId)
-    delete members[memberId]
-    await rt.save()
-    return { ok: true }
+  rt.revokeMemberSessions = async function revokeMemberSessions(memberId) {
+    return withAuthLock(() => revokeMemberSessionsNow(memberId))
   }
+
+  rt.removeMember = async function removeMember(memberId) {
+    return withAuthLock(async () => {
+      const members = rt.state.members || {}
+      const member = members[memberId]
+      if (!member) return { ok: false, error: 'not_found' }
+      if (lastOwner(members)) return { ok: false, error: 'last_owner' }
+      const bots = Object.values(rt.state.bots || {})
+      if (bots.some(b => b.ownerId === memberId)) return { ok: false, error: 'has_bots' }
+      await revokeMemberSessionsNow(memberId)
+      delete members[memberId]
+      await rt.save()
+      return { ok: true }
+    })
+  }
+
+  // Channel bootstrap: an invitation needs a signed-in member, except on a host that has
+  // never had a session — the first invite is how the installing human signs in.
+  rt.authInviteAllowed = actor => !!actor || Object.keys(state.authSessions).length === 0
+  rt.authBootstrapOpen = () => Object.keys(state.authSessions).length === 0
 
   rt.whoami = async function whoami(sessionToken) {
     return rt.authenticate(sessionToken)

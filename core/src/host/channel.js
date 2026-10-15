@@ -330,9 +330,15 @@ export function install(rt) {
         case 'auth-whoami':
           return ok(actor)
         case 'auth-invite': {
-          if (!actor) return fail('Sign in first', 'bot/unauthorized')
-          const invite = await rt.createInvitation({ createdByMemberId: actor.memberId })
+          if (!rt.authInviteAllowed(actor)) return fail('Sign in first', 'bot/unauthorized')
+          const invite = await rt.createInvitation({ createdByMemberId: actor?.memberId ?? null })
           return ok(invite)
+        }
+        case 'auth-revoke-invite': {
+          if (!actor) return fail('Sign in first', 'bot/unauthorized')
+          const result = await rt.revokeInvitation(String(body.invitationId ?? ''))
+          if (!result.ok) return fail(result.error, 'bot/auth')
+          return ok(result)
         }
         case 'auth-redeem': {
           const result = await rt.redeemInvitation(body.token, { displayName: typeof body.displayName === 'string' ? body.displayName : null })

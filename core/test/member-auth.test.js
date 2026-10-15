@@ -138,6 +138,12 @@ test('removeMember and revokeSession invalidate authenticate; last owner stays',
   assert.equal(await rt.authenticate(b.sessionToken), null)
   assert.equal((await rt.authenticate(a.sessionToken)).memberId, 'owner-1')
   // removeMember revokes that member's remaining sessions and drops the record.
+  // owner-1 still owns the Main Bot m1, so the refusal comes first (has_bots).
+  const owned = await rt.removeMember('owner-1')
+  assert.equal(owned.ok, false)
+  assert.equal(owned.error, 'has_bots')
+  // Drop the Bot binding and the same remove succeeds.
+  delete rt.state.bots.m1
   const removed = await rt.removeMember('owner-1')
   assert.equal(removed.ok, true)
   assert.equal(await rt.authenticate(a.sessionToken), null)
@@ -165,4 +171,107 @@ test('tokens are stored only as hashes; plaintext never reaches state.json', asy
   assert.equal(saved.includes(session.sessionToken), false)
   assert.ok(saved.includes('"tokenHash"'))
   assert.ok(saved.includes('"authSessions"'))
+})
+
+// Two owners and nothing else: no Bot roster, no designated Chief, so a removeMember
+// race is visible as member count rather than a has_bots refusal.
+const FLAT = {
+  version: 2,
+  revision: 1,
+  mainBotIds: [],
+  members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: null } },
+  bots: {},
+  rooms: {},
+  exchanges: [],
+  exchangeTurns: {},
+  questions: {},
+}
+
+async function twoMembers(rt) {
+  const first = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const a = await rt.redeemInvitation(first.token)
+  const second = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const b = await rt.redeemInvitation(second.token)
+  assert.equal(a.ok, true)
+  assert.equal(b.ok, true)
+  return { a, b }
+}
+
+test('removeMember refuses while the member still owns a Bot; has_bots after delete', async (t) => {
+  const { rt, statePath } = runtime(t, TEAM)
+  await rt.load()
+  const { b } = await twoMembers(rt)
+  assert.ok(rt.state.members['owner-2'])
+  rt.state.bots['b1'] = { id: 'b1', sessionId: 'b1', name: 'X', instructions: '', createdAt: 2, ownerId: 'owner-2' }
+  await rt.save()
+  const refused = await rt.removeMember('owner-2')
+  assert.equal(refused.ok, false)
+  assert.equal(refused.error, 'has_bots')
+  assert.ok(rt.state.members['owner-2'])
+  // The refusal does not touch the member's live session.
+  assert.equal((await rt.authenticate(b.sessionToken))?.memberId, 'owner-2')
+  // The owner-2 member and its Bot survive a reload, and the refusal is not sticky:
+  // drop the Bot and the same remove succeeds.
+  delete rt.state.bots['b1']
+  await rt.save()
+  const removed = await rt.removeMember('owner-2')
+  assert.equal(removed.ok, true)
+  assert.equal(rt.state.members['owner-2'], undefined)
+  // Restart: the saved file loads and the ownership invariants still hold.
+  const restart = runtime(t, readFileSync(statePath, 'utf8'))
+  await restart.rt.load()
+  assert.equal(restart.rt.state.members['owner-2'], undefined)
+  assert.ok(restart.rt.state.members['owner-1'])
+  assert.equal(restart.rt.state.bots.m1.ownerId, 'owner-1')
+})
+
+test('concurrent removeMember calls cannot both pass the last-owner check', async (t) => {
+  const { rt, statePath } = runtime(t, FLAT)
+  await rt.load()
+  await twoMembers(rt)
+  assert.equal(Object.keys(rt.state.members).length, 2)
+  const results = await Promise.all([rt.removeMember('owner-1'), rt.removeMember('owner-2')])
+  const okCount = results.filter(r => r.ok).length
+  assert.equal(okCount, 1)
+  const refusal = results.find(r => !r.ok)
+  assert.ok(['last_owner', 'not_found'].includes(refusal.error))
+  assert.equal(Object.keys(rt.state.members).length, 1)
+  const restart = runtime(t, readFileSync(statePath, 'utf8'))
+  await restart.rt.load()
+  assert.equal(Object.keys(restart.rt.state.members).length, 1)
+})
+
+test('a revoked invitation cannot be redeemed or revoked twice', async (t) => {
+  const { rt } = runtime(t, FLAT)
+  await rt.load()
+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const revoked = await rt.revokeInvitation(invite.id)
+  assert.deepEqual(revoked, { ok: true })
+  assert.equal(await rt.revokeInvitation(invite.id).then(r => r.error), 'already_revoked')
+  assert.equal(await rt.revokeInvitation('inv-nope').then(r => r.error), 'not_found')
+  const redeem = await rt.redeemInvitation(invite.token)
+  assert.equal(redeem.ok, false)
+  assert.equal(redeem.error, 'revoked')
+  // An invitation already redeemed cannot be revoked after the fact.
+  const live = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  assert.equal((await rt.redeemInvitation(live.token)).ok, true)
+  assert.equal(await rt.revokeInvitation(live.id).then(r => r.error), 'already_redeemed')
+})
+
+test('authInviteAllowed: bootstrap opens the first invite, then a session is required', async (t) => {
+  const { rt } = runtime(t, FLAT)
+  await rt.load()
+  // Never signed in: the channel lets an anonymous caller create the first invitation.
+  assert.equal(Object.keys(rt.state.authSessions).length, 0)
+  assert.equal(rt.authBootstrapOpen(), true)
+  assert.equal(rt.authInviteAllowed(null), true)
+  assert.equal(rt.authInviteAllowed(undefined), true)
+  const invite = await rt.createInvitation({ createdByMemberId: null })
+  assert.equal(typeof invite.token, 'string')
+  // After the first session exists, bootstrap closes: an actor is required.
+  const session = await rt.redeemInvitation(invite.token)
+  assert.equal(session.ok, true)
+  assert.equal(rt.authBootstrapOpen(), false)
+  assert.equal(rt.authInviteAllowed(null), false)
+  assert.equal(rt.authInviteAllowed({ memberId: 'owner-1', sessionId: session.sessionId, displayName: null }), true)
 })
