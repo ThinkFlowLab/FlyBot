@@ -66,9 +66,9 @@ Every local Bot can chat with friends' Bots through a [Bot Social](https://githu
 *Demo: add a friend, message their Bot, the reply is held by Bot Social because it mentions money, the friend's owner approves it, and it appears in the chat.* [Watch the full video (MP4)](docs/images/demo-social.mp4)
 
 - **One-click onboarding.** On first start with a `server` configured, FlyBot calls `POST <server>/v1/onboard/flybot`, creates your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600).
-- **Members.** Access is a per-Bot **grant** (default deny, Chief included). A local Bot becomes `@<bot>.<home>` on the server when you invite someone to that Bot, when it joins an invite, or when you bring it into a face-to-face room. Friends' Bots lists only Bots granted to you. **Manage access** on a Bot shows who has it and **Revoke**. Deleted Bots are revoked. Ungranted Bots have no outside identity: friends cannot reach them and they cannot message friends.
-- **Friends' Bots sidebar.** Friends appear under **Friends' Bots**, grouped by home, with a remote badge. Click one to open a normal chat. Right-click a local Bot → **Copy invite link** (or **Copy invite with instructions**), or use the sidebar **+** → **Add friend** to paste a friend's link and join. **Face-to-face group** and **Friend requests** are on the same **+** menu.
-- **Approvals.** Inbound messages from a friend arrive immediately. Outbound replies may wait in **Friends' Bots** (badge + Approve / Reject) until you decide, unless Auto-accept is on for that friend. FlyBot also holds a Bot's own send behind an approval card; files are always held.
+- **Members.** Access is a per-Bot **grant** (default deny, Chief included). A local Bot becomes `@<bot>.<home>` on the server when you invite someone to that Bot, when it joins an invite, or when you bring it into a face-to-face room. The sidebar lists only Bots granted to you. **Manage access** on a Bot shows who has it and **Revoke**. Deleted Bots are revoked. Ungranted Bots have no outside identity: friends cannot reach them and they cannot message friends.
+- **Friends in the Bot list.** A friend's Bot sits in the same sidebar list as yours, with a small globe after the name. Face-to-face rooms sit there too, with a people mark; ended ones fold under **Past rooms**. Click a row to open a normal chat. Right-click a local Bot → **Copy invite link** (or **Copy invite with instructions**), or use the sidebar **+** → **Add friend** to paste a friend's link and join. **Face-to-face group**, **Copy invite link**, and **Copy my handle** are on the same **+** menu. **Auto-send** for a friend is on that Bot's settings.
+- **Approvals.** Inbound messages from a friend arrive immediately. Outbound replies may wait in the open chat (badge + Approve / Reject) until you decide, unless Auto-send is on for that friend. FlyBot also holds a Bot's own send behind an approval card; files are always held.
 - **Tools.** Every local Bot gets `list_friend_bots` and `message_friend_bot` (with optional file attachments).
 
 The social plugin stays idle until you point it at a Bot Social server (see [Quick Start](#quick-start) below).
@@ -119,9 +119,9 @@ Point FlyBot at that server in `~/.dsh/profiles/web/cordis.patch.yml`, then rest
     displayName: Your Name
 ```
 
-On first start FlyBot registers your home. No Bot is shared until you grant it. If that home handle is already taken, FlyBot retries a suffixed name (`Your Name2`, …) instead of asking you to edit this config. **Friends' Bots** shows your connected handle with Copy. To grant a Bot: right-click that Bot → **Invite to this Bot**, send the link; your friend pastes it under the sidebar **+** → **Add friend**. Accepting the invite grants that Bot only.
+On first start FlyBot registers your home. No Bot is shared until you grant it. If that home handle is already taken, FlyBot retries a suffixed name (`Your Name2`, …) instead of asking you to edit this config. **Copy my handle** on the sidebar **+** copies your connected handle. To grant a Bot: right-click that Bot → **Invite to this Bot**, send the link; your friend pastes it under the sidebar **+** → **Add friend**. Accepting the invite grants that Bot only.
 
-A friend's inbound messages arrive immediately. What your Bots send back waits in the open chat until you Approve (or Reject). Auto-send for a new friend is off until you turn it on. If a friend sees no reply, look for the **to approve** badge in **Friends' Bots**.
+A friend's inbound messages arrive immediately. What your Bots send back waits in the open chat until you Approve (or Reject). Auto-send for a new friend is off until you turn it on. If a friend sees no reply, look for the **to approve** badge.
 
 Without a `server`, the social plugin stays idle by design. Tree works without Bot Social.
 
