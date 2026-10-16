@@ -30,7 +30,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 | File | Role |
 | --- | --- |
-| `core/src/host/hooks.js` | Host hook points: send middleware, transports, grants, and the owner-bound held-send approvals (#52). |
+| `core/src/host/hooks.js` | Host hook points: send middleware, transports, grants, the owner-bound held-send approvals (#52), and task hold/decide/delete seams (#54). |
 | `core/src/client/flybot-slots.js` | Client slots, including the approval card queue (`flybot.approvals`, `flybot/decide`). |
 | `core/src/client/flybot-registry.js` | Registry. |
 | `core/types/flybot.d.ts` | Types. |
@@ -52,6 +52,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 8. A user's @ of a friend's Bot in a group gets a receipt line in that group (`hooks.js` `mentionReceipt`, relay role `mention`): where the reply lands, or why the send was denied, held, or failed. The receipt's role stays outside the room round trigger (`groups.js` `opens`), so it never opens a round; peer names go through `cleanName`.
 9. `flybot.rooms` hosts a Bot Social face-to-face matching room as a native room (`upsertFace` / `applyFaceLine` / `ofFace` / `dropFace` / `onFaceLine` / `postNotice` / `postRemote`). Slot `flybot.room.overview` is a block at the top of a group's overview (Leave / Start chat / Auto-send for origin `face-to-face`). Slot `flybot.new-chat.action` adds a row to the sidebar **+** new-chat menu (next to Create group chat; `label` / `hint` go through the same `t()` map). Still not team mode.
 10. Held sends are owner-bound (#52): a hold stamps server-derived provenance on the record — `requestId`, a sha256 `version` over the request content, `origin` (`via`/`hop`/audience) and the sender Bot's `ownerId`; message claims (`meta`, text) never confer authority. `flybot/decide` passes authz for any signed-in actor and hooks binds the decision to the sender Bot's owner's session; `release` revalidates and marks records `stale` (changed request, deleted sender/target Bot, changed owner, demoted Chief — `deleteBot`/`setMain` also invalidate eagerly), and the pending list is filtered per actor under member enforcement. The default approval card shows `senderName`/`targetName` and a delegated marker (`Approval.origin`).
+11. Task lifecycle (#54): a working task's held send calls `rt.taskHeld` (blocks on that approval); the owner's `flybot/decide` calls `rt.taskDecided` (approve resumes, reject cancels); `deleteBot` of a local Bot calls `rt.taskBotDeleted` (open tasks fail). Incoming holds stay the owner's. The state machine lives in `tasks.js`; hooks only fire those three seams.
 
 ### Chat-row pending badge
 
