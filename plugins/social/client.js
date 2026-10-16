@@ -818,17 +818,25 @@ window.__ModuleLoader__.load({
       try { globalThis.sessionStorage?.setItem?.(ROSTER_CACHE_KEY, JSON.stringify({ homes: value?.homes ?? [] })) } catch {}
     }
 
-    let faceOpenHandler = null
-    let pendingFaceOpen = false
-    function openFaceToFace() {
-      if (faceOpenHandler) faceOpenHandler()
-      else pendingFaceOpen = true
+    function makeOpener() {
+      let handler = null
+      let pending = false
+      return {
+        open() {
+          if (handler) handler()
+          else pending = true
+        },
+        bind(fn) {
+          handler = fn
+          if (pending) { pending = false; fn() }
+          return () => { if (handler === fn) handler = null }
+        },
+      }
     }
-    function bindFaceOpen(fn) {
-      faceOpenHandler = fn
-      if (pendingFaceOpen) { pendingFaceOpen = false; fn() }
-      return () => { if (faceOpenHandler === fn) faceOpenHandler = null }
-    }
+    const facePanel = makeOpener()
+    const addFriendPanel = makeOpener()
+    const openFaceToFace = () => facePanel.open()
+    const openAddFriend = () => addFriendPanel.open()
 
     function FriendsBots({ renderBot, remoteChats, actions, roster } = {}) {
       useStyles()
@@ -872,7 +880,8 @@ window.__ModuleLoader__.load({
         timer?.unref?.()
         return () => clearInterval(timer)
       }, [])
-      useEffect(() => bindFaceOpen(() => { setFaceOpen(true); setOpen(true) }), [])
+      useEffect(() => facePanel.bind(() => { setFaceOpen(true); setOpen(true) }), [])
+      useEffect(() => addFriendPanel.bind(() => { setAdding(true); setOpen(true) }), [])
       const homes = data?.homes ?? []
       const count = homes.reduce((n, entry) => n + entry.bots.length, 0)
       const chats = remoteChats ?? []
@@ -926,15 +935,11 @@ window.__ModuleLoader__.load({
             h('span', { className: 'fs-title' }, 'Friends\' Bots'),
             data ? h('span', { className: 'fs-count', title: `${count} ${count === 1 ? 'Bot' : 'Bots'}` }, String(count)) : null),
           pending.length ? h('button', { type: 'button', className: 'fs-tag fs-pending-tag', 'data-flybot': 'pending-badge', title: `${pending.length} outbound ${pending.length === 1 ? 'reply' : 'replies'} waiting for your approval. Opens that chat.`, onClick: openPending }, `${pending.length} to approve`) : null,
-          refreshing ? h('span', { className: 'fs-refresh', 'data-flybot': 'roster-refreshing' }, 'Refreshing…') : null,
-          unavailable ? null : h('button', { type: 'button', className: 'fs-icon', 'aria-expanded': adding, title: 'Add a friend', onClick: () => { setAdding(!adding); setOpen(true) } }, adding ? 'Done' : '+ Add')),
+          refreshing ? h('span', { className: 'fs-refresh', 'data-flybot': 'roster-refreshing' }, 'Refreshing…') : null),
         open ? h('div', { className: 'fs-body' },
           h(PendingApprovals, { items: pending, onOpen: openItem }),
           unavailable ? null : h(FaceRooms, { actions, enabled: open, roster, remoteChats }),
-          adding && !unavailable ? h('div', { className: 'fs-card', 'data-flybot': 'face-group-entry' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-group-open', onClick: () => setFaceOpen(true) }, 'Face-to-face group'),
-            h('div', { className: 'fs-hint' }, 'Meet the people next to you. Pick your Bots and type the same 6-digit number.')) : null,
-          adding && !unavailable ? h(AddFriend, { onChange: () => load().then(loadSettings) }) : null,
+          adding && !unavailable ? h(AddFriend, { onChange: () => load().then(loadSettings), onDone: () => setAdding(false) }) : null,
           faceOpen && !unavailable ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null,
           unavailable ? h('div', { className: 'fs-empty', 'data-flybot': 'social-unavailable' }, error) : error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
           homes.map(entry => {
@@ -955,12 +960,12 @@ window.__ModuleLoader__.load({
               }))))
           }),
           data && homes.length === 0 && !adding
-            ? h('div', { className: 'fs-empty' }, 'No friends yet. Right-click one of your Bots and choose ', h('b', null, 'Copy invite link'), ' (or ', h('b', null, 'Copy invite with instructions'), '), or use ', h('b', null, '+ Add'), ' to join a friend\'s invite.')
+            ? h('div', { className: 'fs-empty' }, 'No friends yet. Right-click one of your Bots and choose ', h('b', null, 'Copy invite link'), ' (or ', h('b', null, 'Copy invite with instructions'), '), or use the ', h('b', null, '+'), ' menu → ', h('b', null, 'Add friend'), ' to join a friend\'s invite.')
             : null) : null)
     }
 
     // Add friend: join a friend's link and answer requests (invites are made from a Bot's right-click menu).
-    function AddFriend({ onChange }) {
+    function AddFriend({ onChange, onDone } = {}) {
       const [overview, setOverview] = useState(null)
       const [code, setCode] = useState('')
       const [status, setStatus] = useState(null)
@@ -1007,6 +1012,9 @@ window.__ModuleLoader__.load({
       const incoming = overview?.incoming ?? []
       const outgoing = overview?.outgoing ?? []
       return h('div', { className: 'bt-social-add', 'data-flybot': 'add-friend' },
+        h('div', { className: 'fs-face-head' },
+          h('div', { className: 'fs-label' }, 'Add friend'),
+          onDone ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, 'Done') : null),
         h('div', { className: 'fs-hint', 'data-flybot': 'invite-hint' }, 'To invite a friend to one of your Bots, right-click it in the Bot list and choose ', h('b', null, 'Copy invite link'), ' for the bare link, or ', h('b', null, 'Copy invite with instructions'), ' for the link with how to join.'),
         h('form', { onSubmit: join, className: 'fs-card bt-social-join' },
           h('div', { className: 'fs-hint' }, 'Got a link from a friend?'),
@@ -1157,6 +1165,7 @@ window.__ModuleLoader__.load({
       InviteToBot,
       ManageAccess,
       BotSocialDetails,
+      AddFriend,
       PendingApprovals,
       ChatApproval,
       ChatApprovalDock,
@@ -1186,6 +1195,20 @@ window.__ModuleLoader__.load({
               hint: 'Meet the people next to you. Pick your Bots and type the same 6-digit number.',
               run: ({ close } = {}) => { openFaceToFace(); close?.() },
             }),
+            slots().register('flybot.new-chat.action', {
+              id: 'social-add-friend',
+              order: 16,
+              label: 'Add friend',
+              hint: 'Paste an invite link or code.',
+              run: ({ close } = {}) => { openAddFriend(); close?.() },
+            }),
+            slots().register('flybot.new-chat.action', {
+              id: 'social-friend-requests',
+              order: 17,
+              label: 'Friend requests',
+              hint: 'Accept or decline incoming requests.',
+              run: ({ close } = {}) => { openAddFriend(); close?.() },
+            }),
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
@@ -1193,7 +1216,7 @@ window.__ModuleLoader__.load({
           ]
           // For other plugins (the tree's per-node "Copy invite link"): ctx.flybot.social.canInvite(botId)
           // is synchronous; flybot.call('social.createInvite', { botId }) returns { link, text, ... }.
-          const social = { canInvite, onChange: onStatusChange, createInvite: botId => call('social.createInvite', { botId }), openFaceToFace }
+          const social = { canInvite, onChange: onStatusChange, createInvite: botId => call('social.createInvite', { botId }), openFaceToFace, openAddFriend }
           globalThis.__flybot__.social = social
           if (globalThis.__flybot__.api) globalThis.__flybot__.api.social = social
           offs.push(() => {

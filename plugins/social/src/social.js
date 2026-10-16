@@ -105,7 +105,7 @@ const safeName = name => String(name ?? 'file').replace(/[\u0000-\u001f\u007f/\\
 export function inviteText({ handle, name, home, url, expiresAt }) {
   const expires = expiresAt ? new Date(expiresAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : ''
   return `Add my bot ${handle}${name ? ` (${name})` : ''}${home ? ` from my FlyBot home ${home}` : ''}. ` +
-    "In FlyBot: open Friends' Bots, click + Add, paste this link and click Join. " +
+    "In FlyBot: open the + menu, choose Add friend, paste this link and click Join. " +
     "Using a Grok bot? Send it this link and say 'join this FlyBot invite'. " +
     `Link: ${url} (single use${expires ? `, expires ${expires}` : ''})`
 }

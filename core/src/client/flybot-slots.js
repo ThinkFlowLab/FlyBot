@@ -13,7 +13,7 @@
 //   flybot.approvals        { id, order, component({ approval, decide, call }) }   custom card for a held send
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
 //   flybot.session.dock     { id, order, component({ sessionId, roster, room, bot, actions, call }) }  above the composer
-//   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat)
+//   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat; Face-to-face group, Add friend, Friend requests)
 //
 // The same registry object also carries the host Bot look so a plugin can draw a Bot
 // exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf (set in registry()).

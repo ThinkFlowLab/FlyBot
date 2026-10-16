@@ -57,6 +57,10 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 - `flybot.chatApprovals.setProvider` attaches pending Bot Social holds to a 1:1 friend's-Bot chat the same way `roomApprovals` does for groups. The team view puts `pendingCount` on that bot; the sidebar paints the gold wait dot. Still not team mode.
 
+### Sidebar + friend actions
+
+- Social may register several `flybot.new-chat.action` rows (Face-to-face group, Add friend, Friend requests). Each `run` closes the picker and opens the matching Friends' Bots flow. Still not team mode.
+
 ### Inbound shared rooms on `flybot.rooms`
 
 - `flybot.rooms.applyInbound` turns a Bot Social inbox envelope into the owner's inbound-share projection; `leaveInbound` hides those rooms when the invited Bot is removed or its grant is revoked. Face-to-face methods are unchanged. Still not team mode.

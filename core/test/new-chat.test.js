@@ -57,4 +57,7 @@ test('the sidebar + menu wires plugin actions in after Create group chat', () =>
   assert.equal(DICTIONARY.zh['Face-to-face group'], '面对面建群')
   assert.equal(DICTIONARY.zh['Create group chat'], '新建群聊')
   assert.match(DICTIONARY.zh['Meet the people next to you. Pick your Bots and type the same 6-digit number.'], /身边/)
+  assert.equal(DICTIONARY.zh['Add friend'], '添加好友')
+  assert.equal(DICTIONARY.zh['Friend requests'], '好友请求')
+  assert.match(DICTIONARY.zh['Paste an invite link or code.'], /邀请/)
 })

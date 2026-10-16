@@ -433,7 +433,7 @@ test('add friend from the UI: invite link, join by link, and answer requests (ow
   assert.notEqual(made.bot_id, 'h1') // the member, never the home
   assert.deepEqual([made.max_uses, made.auto_accept, made.offered_capabilities], [1, true, ['chat.public']])
   assert.deepEqual([invite.botId, invite.botName, invite.handle, invite.home, invite.link, invite.url, invite.code, invite.expiresAt], ['a', 'Chief', '@chief.danyang.home', '@danyang.home', 'https://s/i/INV123', 'https://s/i/INV123', 'INV123', '2026-10-21T00:00:00Z'])
-  assert.match(invite.text, /^Add my bot @chief\.danyang\.home \(Chief\) from my FlyBot home @danyang\.home\. In FlyBot: open Friends' Bots, click \+ Add, paste this link and click Join\. Using a Grok bot\? Send it this link and say 'join this FlyBot invite'\. Link: https:\/\/s\/i\/INV123 \(single use, expires Oct 2\d, 2026/)
+  assert.match(invite.text, /^Add my bot @chief\.danyang\.home \(Chief\) from my FlyBot home @danyang\.home\. In FlyBot: open the \+ menu, choose Add friend, paste this link and click Join\. Using a Grok bot\? Send it this link and say 'join this FlyBot invite'\. Link: https:\/\/s\/i\/INV123 \(single use, expires Oct 2\d, 2026/)
   // The same call under the name the tree sidebar uses, and the status the browser reads.
   assert.equal((await call('flybot/social.createInvite', { botId: 'b' })).value.handle, '@writer.danyang.home')
   const status = (await call('flybot/social/status', {})).value
@@ -493,7 +493,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.new-chat.action#social-friend-requests', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -1300,7 +1300,7 @@ test('mapPool runs work concurrently up to the cap', async () => {
   assert.equal(max, 2)
 })
 
-test('Friends\' Bots (#92): Face-to-face group is under + Add; the inline join form is gone', () => {
+test('Friends\' Bots header has no + Add; Add friend and Face-to-face group live on the sidebar + menu', () => {
   const sidebar = (adding) => {
     const { entries, walk, pluginOf } = loadSocialClient(async () => ({ connected: true, bots: [{ id: 'a', name: 'Chief', isMain: true }], homes: [], rooms: [] }))
     const plugin = pluginOf([{ homes: [] }, '', true, adding, {}, {}, '', [], '', false])
@@ -1309,15 +1309,20 @@ test('Friends\' Bots (#92): Face-to-face group is under + Add; the inline join f
     return { nodes: walk(entry[1].component({})), entries }
   }
   const closed = sidebar(false)
+  assert.equal(closed.nodes.some(n => n.type === 'button' && n.children.includes('+ Add')), false)
   assert.equal(closed.nodes.some(n => n.type === 'button' && n.children.includes('Join with a number')), false)
   assert.equal(closed.nodes.some(n => n.props['data-flybot'] === 'face-join' || n.props['data-flybot'] === 'face-group-entry'), false)
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.room.overview' && entry.id === 'social-face'))
+  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group'))
+  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend'))
+  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-friend-requests'))
 
   const opened = sidebar(true)
-  assert.ok(opened.nodes.some(n => n.props['data-flybot'] === 'face-group-entry'))
-  assert.ok(opened.nodes.some(n => n.type === 'button' && n.props['data-flybot'] === 'face-group-open' && n.children.includes('Face-to-face group')))
+  assert.ok(opened.nodes.some(n => n.props['data-flybot'] === 'add-friend'))
+  assert.ok(opened.nodes.some(n => n.type === 'button' && n.children.includes('Join')))
+  assert.equal(opened.nodes.some(n => n.props['data-flybot'] === 'face-group-entry'), false)
+  assert.equal(opened.nodes.some(n => n.type === 'button' && n.children.includes('+ Add')), false)
   assert.equal(opened.nodes.some(n => n.type === 'button' && n.children.includes('Join with a number')), false)
-  assert.equal(opened.nodes.some(n => n.props['data-flybot'] === 'face-join'), false)
 
   const loading = (() => {
     const { entries, walk, pluginOf } = loadSocialClient(async () => ({ connected: true, bots: [], homes: [], rooms: [] }))
@@ -1326,8 +1331,8 @@ test('Friends\' Bots (#92): Face-to-face group is under + Add; the inline join f
     const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
     return walk(entry[1].component({}))
   })()
-  assert.ok(loading.some(n => n.props['data-flybot'] === 'face-group-entry'), 'Face-to-face group must show while the roster is still loading')
-  assert.ok(loading.some(n => n.type === 'button' && n.children.includes('+ Add') || n.children.includes('Done')))
+  assert.ok(loading.some(n => n.props['data-flybot'] === 'add-friend'), 'Add friend must show while the roster is still loading')
+  assert.equal(loading.some(n => n.type === 'button' && n.children.includes('+ Add')), false)
   assert.equal(loading.some(n => n.type === 'div' && n.children.includes('Loading…')), false)
 })
 
@@ -1379,6 +1384,51 @@ test('the sidebar + menu gets a Face-to-face group action from social', () => {
   assert.match(row[1].hint, /6-digit/)
   assert.equal(row[1].order, 15)
   assert.equal(typeof row[1].run, 'function')
+})
+
+test('sidebar + Add friend opens the join panel in Friends\' Bots; header stays without + Add', () => {
+  const { registered, entries, walk, sandbox } = loadSocialClient(async (endpoint) => {
+    if (endpoint === 'social/remote-bots') return { homes: [] }
+    if (endpoint === 'social/settings') return { autoAccept: {} }
+    if (endpoint === 'social/status') return { connected: true, bots: [{ id: 'a', name: 'Chief', isMain: true }], approvals: [] }
+    if (endpoint === 'social/overview') return { incoming: [], outgoing: [] }
+    if (endpoint === 'social/face-rooms') return { rooms: [] }
+    return {}
+  })
+  const hooks = []
+  let hookI = 0
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect: fn => { fn?.() },
+    useState: (init) => {
+      const i = hookI++
+      if (hooks[i] === undefined) hooks[i] = typeof init === 'function' ? init() : init
+      return [hooks[i], (value) => { hooks[i] = typeof value === 'function' ? value(hooks[i]) : value }]
+    },
+    useRef: v => ({ current: v }),
+    useMemo: f => f(),
+  }))
+  plugin.apply({})
+  const section = entries.find(([slot]) => slot === 'flybot.sidebar.section')[1]
+  hookI = 0
+  const before = walk(section.component({}))
+  assert.equal(before.some(n => n.type === 'button' && n.children.includes('+ Add')), false)
+  assert.equal(before.some(n => n.props['data-flybot'] === 'add-friend'), false)
+  const add = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
+  assert.equal(add[1].label, 'Add friend')
+  assert.equal(add[1].order, 16)
+  const closed = []
+  add[1].run({ close: () => closed.push(true) })
+  assert.deepEqual(closed, [true])
+  hookI = 0
+  const after = walk(section.component({}))
+  assert.ok(after.some(n => n.props['data-flybot'] === 'add-friend'))
+  assert.ok(after.some(n => n.type === 'button' && n.children.includes('Join')))
+  assert.equal(after.some(n => n.type === 'button' && n.children.includes('+ Add')), false)
+  const requests = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-friend-requests')
+  assert.equal(requests[1].label, 'Friend requests')
+  assert.equal(typeof sandbox.__flybot__.social.openAddFriend, 'function')
 })
 
 test('face-to-face auto-send uses MCP whoami / set_auto_approve and ignores REST 403 /v1/me', async (t) => {

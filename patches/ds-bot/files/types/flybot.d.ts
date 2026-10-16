@@ -348,7 +348,7 @@ export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
  * - `flybot.session.dock`: a card above the composer in a Bot or group chat (held Bot
  *   Social replies waiting for approval).
  * - `flybot.new-chat.action`: a row in the sidebar '+' new-chat menu, next to
- *   Create group chat (e.g. Face-to-face group). `label` / `hint` are English keys
+ *   Create group chat (e.g. Face-to-face group, Add friend). `label` / `hint` are English keys
  *   looked up with the same `t()` map as the neighbouring rows.
  */
 export interface FlyBotSlots {
