@@ -30,9 +30,10 @@ FlyBot 是在固定版本的 [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) �
 ![树插件：Chief 把杭州行程拆给 Travel、Food、Budget](docs/images/demo-tree.gif)
 
 - **一个根。** 树的根是主 Bot（Chief），不会再新建一个根。只有团队里有 Bot、却没有主 Bot 时，才会单独建一个 `Root`。已有的本地 Bot 会挂到根下面作子节点，数量不超过 `maxChildren`。
-- **按需生子。** 树中的 Bot 调用 `create_child_bot(name, role_description)`，在**自己**下面直接建子 Bot；工具没有 parent 参数。同一父节点的调用串行处理，避免超限或重名。规则：
+- **按需生子。** 树中的任意 Bot（不只是主 Bot / 根）调用 `create_child_bot(name, role_description)`，在**自己**下面直接建子 Bot；工具没有 parent 参数。同一父节点的调用串行处理，避免超限或重名。规则：
   - 名称 1–40 个字符；同级重名会被拒绝（忽略大小写和空格）；
-  - 深度最多 5（根算第 1 层），每个 Bot 最多 8 个子节点（见 `limits.json` 或插件配置）。
+  - 深度最多 5（根算第 1 层），每个 Bot 最多 8 个子节点（见 `limits.json` 或插件配置）；
+  - 新建的子 Bot 默认只给创建者的主人用；分享给别人仍需对该 Bot 单独授权（默认拒绝，没有发布机制）。
 - **按层委托。** 每个 Bot 只能看到直接子节点（`list_children()`），看不到更深。
   - 有子节点的 Bot 当协调者：拆任务，把每块发给职责匹配的子节点，等待，再汇总给父节点。
   - 没有子节点的 Bot 自己干活。

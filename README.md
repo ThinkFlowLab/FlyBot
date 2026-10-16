@@ -34,9 +34,10 @@ Turns your Bots into one recursive tree that splits a request into parts, sends 
 ![Tree plugin: Chief splits a Hangzhou trip across Travel, Food, and Budget](docs/images/demo-tree.gif)
 
 - **One root.** The tree's root is the Main Bot (Chief); no new bot is created for it. A separate `Root` bot is created only if the team has Bots but no Main Bot. Existing local Bots join under the root as its children, up to `maxChildren`.
-- **Children on demand.** A tree Bot calls `create_child_bot(name, role_description)` to make a child directly under *itself*; the tool takes no parent argument. Calls are handled one at a time per parent, so parallel calls never go over the limits or create two siblings with the same name. The rules:
+- **Children on demand.** Any tree Bot (not only the Main/root) calls `create_child_bot(name, role_description)` to make a child directly under *itself*; the tool takes no parent argument. Calls are handled one at a time per parent, so parallel calls never go over the limits or create two siblings with the same name. The rules:
   - names are 1–40 characters, and duplicate sibling names are rejected (case and spaces ignored);
-  - depth is at most 5 (the root counts as 1), with at most 8 children per Bot (set in `limits.json` or the plugin config).
+  - depth is at most 5 (the root counts as 1), with at most 8 children per Bot (set in `limits.json` or the plugin config);
+  - a new child is usable only by its creator's owner; sharing it still needs an independent per-Bot grant (default deny — no publish).
 - **Level-by-level delegation.** Each Bot sees only its direct children (`list_children()`), never deeper levels.
   - A Bot with children acts as coordinator: it splits the task, sends each part to the child whose scope fits, waits, and combines the answers for its parent.
   - A Bot with no children does the work itself.

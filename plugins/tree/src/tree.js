@@ -154,7 +154,8 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     const reason = checkCreate({ parentName: parent.name, parentDepth: depthOf(nodes, parentId), siblings: childrenOf(nodes, parentId), name: clean, limits })
     if (reason) throw new Error(reason)
     const prompt = systemPrompt({ name: clean, role, trace: `${traceOf(nodes, parentId)} → ${clean}`, children: [] })
-    const id = await fb.createBot({ name: clean, systemPrompt: withTreeBlock('', prompt), fields: { parent: parentId, treeRole: role } })
+    // createdBy is the parent Bot. Do not copy its grants: a child starts owner-private (#16).
+    const id = await fb.createBot({ name: clean, systemPrompt: withTreeBlock('', prompt), fields: { parent: parentId, treeRole: role }, createdBy: parentId })
     refreshPrompt(parentId) // the parent now lists the new child
     return { id, name: clean, depth: depthOf(nodes, parentId) + 1 }
   }

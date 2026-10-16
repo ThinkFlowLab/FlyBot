@@ -20,7 +20,7 @@ Grok Bot is the single entry point for humans; it schedules OpenCode (implements
 4. **PR** to `main`. Imperative English title, `Fixes #N` in the body, and what you ran and did **not** run at the tip SHA. A user-visible change adds one fragment `changelog.d/<issue-or-slug>.<kind>.md` ([changelog.d/README.md](changelog.d/README.md)); never edit `CHANGELOG.md` in a feature PR. Squash is the only merge method; the PR title and body become the commit message, so keep the body short.
 5. **CI.** The required check is `tests-ok`. It is green only when `test`, `plugins (tree)`, `plugins (social)` and `package` all pass. Never merge around a red check.
 6. **Review and merge.** Review the **tip SHA** with [`review-pr`](.claude/skills/review-pr/SKILL.md) (PASS / FAIL / INC); a tip move voids the PASS. Once the tip has its PASS and the maintainer has delegated the merge, enable auto-merge with `gh pr merge --auto --squash --match-head-commit <sha>`. Without that delegation, the maintainer merges. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
-7. **Stop** and hand over to the maintainer on a security-sensitive change, an open decision such as #16, or when you cannot get a green tip.
+7. **Stop** and hand over to the maintainer on a security-sensitive change, an unresolved maintainer decision, or when you cannot get a green tip.
 
 When a class of bug repeats, date a lesson in LESSONS.md (`Seen N×`); after **≥3 days** promote the durable rule into `docs/code-standards.md` / CONTRIBUTING.
 
@@ -55,8 +55,9 @@ The Bot team:
 
 - Every Bot is a DSH Session and runs through the normal DSH agent loop, tools and model routes.
 - The team works together: Bots message each other, share group chats and can see what the other Bots are doing. Each Bot still runs on its own and does not disturb the others.
-- Bots have clear, different roles. A Main Bot has the highest rights: it creates, changes and removes other Bots. Other Bots do not get these rights. There can be more than one Main Bot.
-- The multi-human authority contract (human owner ↔ designated Chief ↔ specialists) is documented in [docs/subsystems/team.md](docs/subsystems/team.md) as **planned, not shipped**: team mode stays disabled until its authorization gates pass, and the `create_child_bot` decision (#16) is still open—do not assume either option in code, schema or tests.
+- Bots have clear, different roles. A Main Bot has the highest rights: it changes and removes other Bots, and can create them. Other Bots do not get those management rights. There can be more than one Main Bot.
+- **Tree child creation (#16, Option B).** A tree Bot (not only the Main/root) may call `create_child_bot` to create a child directly under itself. The tool takes no parent argument; `maxChildren` and depth limits stay in force. The new child is usable only by its creator's owner; sharing it with another person still requires an independent per-Bot grant (default deny). There is no publish mechanism. See [docs/subsystems/tree.md](docs/subsystems/tree.md).
+- The multi-human authority contract (human owner ↔ designated Chief ↔ specialists) is documented in [docs/subsystems/team.md](docs/subsystems/team.md) as **planned, not shipped**: team mode stays disabled until its authorization gates pass. Issue #16 is resolved (Option B); do not re-open Main-only child creation.
 - Users customize each Bot (name, role label, instructions, model, character).
 - Behavior must be reliable: a Bot acts on evidence, stays inside its goal, and its results can be checked.
 

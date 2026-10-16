@@ -19,10 +19,10 @@ Shipped behavior stays what [core/README.md](../../core/README.md) (roles: You /
 
 ## Does not own
 
-- Tree shape, root adoption, `maxChildren`/depth limits → [tree](tree.md).
+- Tree shape, root adoption, `maxChildren`/depth limits, and shipped `create_child_bot` (#16 Option B) → [tree](tree.md).
 - Core runtime, shipped single-human roles and tools → [ds-bot-core](ds-bot-core.md) (`core/README.md`).
 - Plugin runtime surface → [plugin-runtime](plugin-runtime.md).
-- The open `create_child_bot` decision itself → issue #16 (this page only records it as open).
+- Per-Bot grants / default deny (#90) → core reach + [tree](tree.md); this page does not invent a publish path.
 
 ## Key concepts
 
@@ -44,7 +44,7 @@ Shipped by the core store (`core/src/host/store.js`, owned by [ds-bot-core](ds-b
 - The saved team (`state.json`) is **version 2**. `members` holds records with an immutable `id`, `createdAt`, and `designatedChiefId`; every Bot carries an `ownerId` binding.
 - Loading a legacy **version-1** team runs one migration: it creates the single initial owner (`owner-1`), binds every existing Bot to it, sets the designated Chief from the **first Main Bot** (the shipped Main role — no name matching, no new Main rules), and writes version 2. Bot ids, Session parts and private histories are preserved. The pre-migration file is backed up once as `state.json.v1` before the first version-2 write; if a backup already exists it counts only when it is a readable file holding a parseable version-1 state — a directory, an empty or truncated file, or anything else there fails the load closed instead of migrating.
 - Malformed ownership **fails closed**: a Bot owner that names no member, duplicate or mismatched member ids, or a designated Chief that is not a Bot of its member makes the file read-only — it is never repaired by guessing. An older binary already refuses a newer version read-only, so it cannot overwrite the schema.
-- This is **not team mode**: the gates below are unchanged and unsatisfied. The schema resolves nothing about `create_child_bot` (#16 stays open) and defines no flag/config/env for team mode. The #48 member-auth foundation (invitations, sessions, whoami) is a sign-in surface only — it does not enable team mode or cross-owner routing.
+- This is **not team mode**: the gates below are unchanged and unsatisfied except #16 (resolved Option B on the tree plugin). The schema does not encode child-creation policy and defines no flag/config/env for team mode. The #48 member-auth foundation (invitations, sessions, whoami) is a sign-in surface only — it does not enable team mode or cross-owner routing.
 
 ## Member auth foundation (landed, #48)
 
@@ -63,8 +63,8 @@ Central authorization in `core/src/host/authz.js`, installed after member-auth:
 - When enforced, every Bot / room / session an endpoint touches must belong to the signed-in actor (`bot/forbidden` otherwise). `body.actorId` still grants nothing. Session targets resolve through the store's owner maps (`botOf` for a Bot id; `selfOf` / `groupOwners` / `pastOwners` for a current chat, group Session or earlier part); unresolvable ids deny. `approval-answer` is judged by the approval's own Bot or room, resolved by approval id — caller-supplied session fields grant nothing.
 - Shared resources that cannot yet be isolated per owner (secrets, connectors, folder picks, browser bridge, update-install, diagnostics, set-prefs, capability library writes, `add-agent` — the DSH Agent is one per deployment with no owner) are **explicitly blocked** with `bot/blocked-shared` while more than one member exists — not hidden only in the UI. `flybot/*` plugin endpoints follow the same split: plugin reads reach any signed-in actor, plugin writes are shared-blocked.
 - `create-bot` stamps `ownerId` from the actor; `view()` and `live()` narrow to the actor — per-session entries (`questions`, `exchangeTurns`) keep the actor's own, deployment-wide surfaces (agents, secrets, connectors, memory reviews) stay visible while a single member exists and hide with more than one, the same rule as the shared writes. `create-room` refuses a request with neither a member Bot nor any participant (a room with nothing in it would belong to nobody); view() also keeps the shared rooms the actor belongs to and the Bots in them (#50).
-- Watch item: `set-main` lets an owner promote their own Bot to a Main Bot. Main rights inside the Bot team are a shipped product concept, but how they compose with multi-human authority is exactly what #16 owns — revisit there before team mode turns on.
-- **Not done here:** cross-owner task execution and filesystem sandbox redesign (reach is #51, below). Team mode stays disabled; #16 stays open.
+- Watch item: `set-main` lets an owner promote their own Bot to a Main Bot. Main rights inside the Bot team are a shipped product concept; how they compose with multi-human authority is still a team-mode question (not #16 — that issue decided tree child creation). Revisit before team mode turns on.
+- **Not done here:** cross-owner task execution and filesystem sandbox redesign (reach is #51, below). Team mode stays disabled.
 
 ## Room membership foundation (landed, #50)
 
@@ -136,7 +136,7 @@ Shipped room privacy (a group never reads a Bot's private chat) is unchanged; th
 5. **No forwarding to owner approval.** No route may turn another human's request into owner approval by forwarding it. An approval is created only by the owner whose authority is spent, for the exact action; receipt, relay, or a Chief's word never becomes approval.
 6. **Approval authority stays with the human.** A Chief may ask its own owner, present options, and act on an approval it actually received from that owner. It cannot mint an approval, replay another owner's approval, or treat silence as consent.
 7. **Team mode is disabled** until every gate below passes.
-8. **#16 is open.** Neither option may be assumed by schema or implementation work (see [Open decisions](#open-decisions-16-unresolved)).
+8. **#16 is resolved (Option B).** Tree Bots may create children under themselves within `maxChildren` and depth limits. A new child is usable only by its creator's owner; sharing still needs an independent per-Bot grant (default deny). The shipped rule lives in [tree](tree.md), not here.
 9. **Contract honesty.** Nothing on this page describes shipped behavior; shipped behavior is [core/README.md](../../core/README.md) and [plugins/tree/README.md](../../plugins/tree/README.md).
 
 ## Routing matrix
@@ -173,18 +173,13 @@ Planned rules for team mode. Default is **deny**: a route is allowed only if a r
 | Action touching a second owner's scope | Each affected owner, for their own scope only | Chief → Chief may negotiate; neither Chief can approve for the other's owner. |
 | Anything forwarded from another human | Nobody, by forwarding alone | Reject the forwarded "approval"; it is a request, not consent. |
 
-## Open decisions (#16, unresolved)
+## Resolved decision (#16, Option B)
 
-Issue **#16** (who may call `create_child_bot`) is an **OPEN maintainer decision** since the PR #2 review. Both options, recorded without preference:
+Issue **#16** (who may call `create_child_bot`) is **resolved**. The owner chose **Option B**:
 
-| Option | Statement |
-| --- | --- |
-| **A** | Restrict `create_child_bot` to the root/Main/Chief Bots (or require owner approval for each creation). |
-| **B** | Amend AGENTS.md so specialists / tree Bots may create children under themselves within owner limits (`maxChildren`, depth limits). |
+Tree Bots (not only Main/root/Chief) may call `create_child_bot` to create a child directly under themselves. `maxChildren` and depth limits stay. A newly created child is usable only by its creator's owner; sharing with another person still requires an independent per-Bot grant (default deny). There is no publish mechanism.
 
-- Status: **open** — this contract picks neither side.
-- Schema and team-mode work (#47+) **must not assume either answer**, and no test may encode one.
-- The gate below requires #16 to be *resolved* before team mode can be enabled; resolving it is a maintainer act outside this page.
+Shipped enforcement and tests live in [tree](tree.md) (`plugins/tree/`). This contract does not re-open Main-only creation. Remaining team-mode gates below are unchanged.
 
 ## Team mode gate
 
@@ -193,7 +188,7 @@ Issue **#16** (who may call `create_child_bot`) is an **OPEN maintainer decision
 1. **Owner identity enforced server-side** on every management call (create/update/delete Bot, group administration, memory writes) — not prompt-level, not client-side only.
 2. **Room/Bot scoping enforced server-side**: a request from outside an owner's scope fails closed, for reads and writes alike.
 3. **Approval binding**: an approval names the owner whose authority is spent and the exact action; forwarded or replayed approvals never satisfy it (invariant 5).
-4. **#16 resolved** by a maintainer, with a test asserting who may create Bots.
+4. **#16 resolved** (Option B): tree Bots may create children under themselves; `plugins/tree/test` asserts who may create, that limits still bind, and that a new child is not auto-granted. This item is satisfied; the others are not.
 5. **Chief lifecycle fails closed**: a disabled, missing or replaced Chief leaves no path for specialists to reach cross-owner traffic or approvals (next section).
 
 Until every gate passes, team mode is off and the shipped single-human model is the only supported one.
@@ -214,7 +209,7 @@ Planned rules (fail closed by default):
 - Treating team administration (shared groups, team memory) as private owner authority, or vice versa.
 - Letting a specialist "just relay" across owners — relaying is routing, and it is forbidden.
 - Treating a forwarded request or forwarded "approval" as owner approval.
-- Assuming #16 Option A or Option B has been decided, in schema drafts, code or tests.
+- Treating #16 as still open, or restricting `create_child_bot` to Main/root after Option B.
 - Adding a team-mode flag, config key or env var before the gates pass.
 - Rewriting tree ownership here instead of in [tree](tree.md).
 

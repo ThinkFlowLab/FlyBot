@@ -87,6 +87,27 @@ test('tree plugin on the real host: Chief adopted as root, create_child_bot, sco
   }
 })
 
+test('#16 Option B on the real host: a non-Main tree Bot creates a child that stays ungranted', async () => {
+  const h = await start()
+  try {
+    const fork = h.ctx.plugin(tree, {})
+    await waitFor(() => h.fb.scope('flybot-tree').fields.get('b', 'parent') === 'a')
+    assert.equal(h.fb.bot.get('a').isMain, true)
+    assert.equal(h.fb.bot.get('b').isMain, false)
+    await h.fb.grants.set('b', [{ grantee: '@bob.home' }])
+    const created = JSON.parse(await h.tool('create_child_bot', { name: 'Work', role_description: 'work' }, 'b')).created
+    assert.ok(created.id)
+    assert.equal(h.fb.scope('flybot-tree').fields.get(created.id, 'parent'), 'b')
+    assert.equal(h.fb.bot.get(created.id).isMain, false)
+    assert.equal(h.fb.bot.get(created.id).granted, false)
+    assert.equal(h.fb.bot.hasAnyGrant(created.id), false)
+    assert.deepEqual(h.fb.grants.of(created.id), [])
+    fork.dispose()
+  } finally {
+    await h.stop()
+  }
+})
+
 test('#90 on the real host: a friend reaches a granted tree Bot directly, never an ungranted one, and nothing goes through the root', async () => {
   const h = await start()
   try {

@@ -74,6 +74,35 @@ test('tools: configurable limits and hidden from non-tree bots', async () => {
   await assert.rejects(m.call(o, 'list_children'), /not visible/)
 })
 
+test('#16 Option B: a non-Main tree Bot may create a child under itself; limits still bind; the child is not auto-granted', async () => {
+  const m = await setup({ maxDepth: 3, maxChildren: 2 })
+  assert.equal(m.flybot.bot.get(m.root).isMain, true)
+  const specialist = await make(m, m.root, 'Work')
+  assert.equal(m.flybot.bot.get(specialist).isMain, false)
+  // A grant on the parent (or the Chief) must not follow the new child.
+  m.setGrants(m.root, [{ grantee: '@alice.home' }])
+  m.setGrants(specialist, [{ grantee: '@alice.home' }])
+  const child = await make(m, specialist, 'Dev')
+  assert.ok(child)
+  assert.equal(f(m, child, 'parent'), specialist)
+  assert.equal(m.flybot.bot.get(child).isMain, false)
+  assert.equal(m.flybot.bot.hasAnyGrant(child), false)
+  assert.deepEqual(m.flybot.grants.of(child), [])
+  const toward = to => m.middlewares[0].handle({ from: { kind: 'remote', handle: '@alice.home' }, to, target: { remote: false, id: to } })
+  assert.equal(toward(child)?.action, 'deny')
+  assert.match(toward(child)?.reason, /has not been granted/)
+  // Sharing still takes an independent grant on that Bot.
+  m.setGrants(child, [{ grantee: '@alice.home' }])
+  assert.equal(m.flybot.bot.hasAnyGrant(child), true)
+  m.setGrants(child, [])
+  assert.equal(m.flybot.bot.hasAnyGrant(child), false)
+  assert.ok(await make(m, specialist, 'QA'))
+  assert.match((await m.call(specialist, 'create_child_bot', { name: 'Extra', role_description: 'x' })).error, /maxChildren=2/)
+  assert.match((await m.call(child, 'create_child_bot', { name: 'TooDeep', role_description: 'x' })).error, /maxDepth=3/)
+  const o = await outsider(m)
+  await assert.rejects(m.call(o, 'create_child_bot', { name: 'X', role_description: 'x' }), /not visible/)
+})
+
 test('fix 1: fields are written under fields["flybot-tree"] via flybot.scope, never shared', async () => {
   const m = await setup()
   assert.ok(m.scopes.includes('flybot-tree'))

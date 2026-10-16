@@ -1,6 +1,7 @@
 import { MAX_NAME_LENGTH } from './limits.js' // = ds-bot roster's 40-character name truncation
 // Model tools. The caller comes from the tool context ({ botId }), never from arguments,
-// so a bot can only create children under itself. Visible only to tree members.
+// so a bot can only create children under itself. Visible to every tree member (#16 Option B:
+// not Main/root-only). maxChildren and depth stay in createChild; a new child is not granted.
 // tools.register keeps only type/description/enum/items from JSON Schema (minLength/maxLength
 // are dropped), so every execute() validates its own arguments with validateArgs().
 
@@ -55,7 +56,7 @@ export function registerTreeTools(fb, tree) {
     }),
     fb.registerTool({
       name: 'create_child_bot',
-      description: 'Create a NEW child bot directly under yourself, then delegate to it. Only when none of your children fits; never a duplicate.',
+      description: 'Create a NEW child bot directly under yourself, then delegate to it. Any tree bot may call this (not only the root). Only when none of your children fits; never a duplicate.',
       parameters: CREATE_CHILD_SCHEMA,
       visibleTo: inTree,
       async execute(args, { botId }) {

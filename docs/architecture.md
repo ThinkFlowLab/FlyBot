@@ -26,7 +26,7 @@ Each subsystem has a detail page under [docs/subsystems/](subsystems/README.md) 
 
 ## Team authority (planned, not shipped)
 
-Multi-human ownership is **planned, not shipped**. The proposed contract — human owner ↔ designated Chief ↔ specialists, owner-scoped management, Chief-only cross-owner traffic, approval authority and the routing matrix — lives in [docs/subsystems/team.md](subsystems/team.md). Schema (#47), member sign-in (#48), owner-scoped access (#49) and typed room membership (#50) are foundations on that page; **team mode stays disabled** until that page's authorization gates pass, and the child-creation decision (#16) remains an open maintainer decision recorded there.
+Multi-human ownership is **planned, not shipped**. The proposed contract — human owner ↔ designated Chief ↔ specialists, owner-scoped management, Chief-only cross-owner traffic, approval authority and the routing matrix — lives in [docs/subsystems/team.md](subsystems/team.md). Schema (#47), member sign-in (#48), owner-scoped access (#49) and typed room membership (#50) are foundations on that page; **team mode stays disabled** until that page's authorization gates pass. Issue #16 is resolved: tree Bots may create children under themselves (Option B; see [tree](subsystems/tree.md)).
 
 ## Integrating
 

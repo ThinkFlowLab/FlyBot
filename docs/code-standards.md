@@ -46,8 +46,7 @@ When you report status on a change:
 ## Team authority contract (planned)
 
 - The human ↔ Chief ↔ specialist ownership contract lives in [docs/subsystems/team.md](subsystems/team.md). It is a **planned** contract: multi-human is not shipped, and **team mode stays disabled** until that page's authorization gates pass.
-- Issue #16 (who may call `create_child_bot`) is **open**; both options are documented there. Do not implement, review or merge work that assumes either answer, and do not encode one in a test.
-- Main/Chief creation rights stay exactly as [AGENTS.md](../AGENTS.md) states them until #16 is decided.
+- Issue #16 is **resolved (Option B)**: a tree Bot (not only Main/root) may call `create_child_bot` under itself, within `maxChildren` and depth limits. A newly created child is not auto-granted; sharing still needs an independent per-Bot grant. See [AGENTS.md](../AGENTS.md) and [docs/subsystems/tree.md](subsystems/tree.md). Do not re-open Main-only child creation.
 
 ## Tiny loops
 
