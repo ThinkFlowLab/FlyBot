@@ -1,1 +1,0 @@
-Removing a friend's Bot asks once, and joining again after a hide unhides that Bot with English errors instead of raw `relationship_exists` / `invite is used`. ([#139](https://github.com/ThinkFlowLab/FlyBot/issues/139))

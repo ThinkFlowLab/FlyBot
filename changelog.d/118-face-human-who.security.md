@@ -1,1 +1,0 @@
-A face-to-face human line no longer shows a name the sending client chose. The room labels the authenticated Bot Social `from` member (home / handle / display name). A spoofed `FLYBOT-FACE-HUMAN` `who` is ignored; old events without `from` fall back to that peer's home label, not another member. ([#118](https://github.com/ThinkFlowLab/FlyBot/pull/118))

@@ -1,1 +1,0 @@
-The raw **Tool removed: ask_user_question** line no longer appears in Bot chats. FlyBot already takes that DSH tool off Bot sessions; the leftover context row is hidden. Other tool cells are unchanged. ([#140](https://github.com/ThinkFlowLab/FlyBot/issues/140))

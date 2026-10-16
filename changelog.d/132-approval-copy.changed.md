@@ -1,1 +1,0 @@
-Held face-room drafts say **Chief → the room** (the real Bot name). Face-to-face titles include the people, else the room code or time. Auto-send is the one hold label, and Friends' Bots shows either the Bot count or **N to approve**, not both. ([#132](https://github.com/ThinkFlowLab/FlyBot/issues/132))

@@ -1,1 +1,0 @@
-Owner-chosen Bot avatar and color sync to Bot Social (`update_bot_profile`) and show on friends' Bots, groups, and face-to-face rooms. Peers without a look keep the handle-seeded palette. ([#137](https://github.com/ThinkFlowLab/FlyBot/issues/137))

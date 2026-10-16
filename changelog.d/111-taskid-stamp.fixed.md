@@ -1,1 +1,0 @@
-A working Bot's send stamps `meta.taskId` (the matching origin, or the latest working task) so a hold with two tasks in flight blocks the right one. ([#111](https://github.com/ThinkFlowLab/FlyBot/issues/111))

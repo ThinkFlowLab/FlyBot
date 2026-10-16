@@ -1,1 +1,0 @@
-Bot-to-Bot sends and own-chat followups drop `dsh-session:` chips, including a granted Bot of another owner, so a private chat cannot ride into the other Bot's Session. ([#106](https://github.com/ThinkFlowLab/FlyBot/issues/106))

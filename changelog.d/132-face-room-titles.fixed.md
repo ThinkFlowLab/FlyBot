@@ -1,1 +1,0 @@
-Face-to-face room titles include the people and a distinguisher (`Face-to-face · Alice, Bob · 482913`, or `Oct 16 21:40` when there is no code), so two rooms with the same people are not both named Face-to-face room. ([#132](https://github.com/ThinkFlowLab/FlyBot/issues/132))
