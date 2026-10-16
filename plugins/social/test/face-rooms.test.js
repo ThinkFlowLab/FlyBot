@@ -302,6 +302,27 @@ test('viewFaceRoom ignores a missing id', () => {
   assert.equal(viewFaceRoom({ room_id: 'frm_1', status: 'candidate', members: [] }).roomId, 'frm_1')
 })
 
+test('#122: empty and "@" handles stay empty; GET omits as=@', async () => {
+  assert.equal(viewFaceMember({ handle: '', display_name: 'Bot' }).handle, '')
+  assert.equal(viewFaceMember({ handle: '@', display_name: 'Bot' }).handle, '')
+  assert.equal(viewFaceMember({ handle: '@@', display_name: 'Bot' }).handle, '')
+  const server = faceServer()
+  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch: server.fetch })
+  await api.join({ code: '123456', bots: ['@writer.alice.home'] })
+  const before = server.calls.length
+  await api.get('frm_123456', { as: '@' })
+  await api.get('frm_123456', { as: '' })
+  await api.get('frm_123456', { as: undefined })
+  const gets = server.calls.slice(before).filter(c => c.method === 'GET')
+  assert.equal(gets.length, 3)
+  for (const call of gets) {
+    assert.equal(new URL(call.url).searchParams.get('as'), null, call.url)
+  }
+  await api.get('frm_123456', { as: '@writer.alice.home' })
+  const withAs = server.calls.at(-1)
+  assert.equal(new URL(withAs.url).searchParams.get('as'), '@writer.alice.home')
+})
+
 test('viewFaceMember keeps a friend Bot avatar when the payload has one', () => {
   const plain = viewFaceMember({ handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob' })
   assert.equal(plain.avatar, undefined)

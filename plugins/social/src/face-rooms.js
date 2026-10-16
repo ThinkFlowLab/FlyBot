@@ -401,9 +401,8 @@ export function rememberEvent(seen, eventId) {
 }
 
 const normHandle = (handle) => {
-  const raw = String(handle ?? '').trim()
-  if (!raw) return ''
-  return `@${raw.replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)}`
+  const body = String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
+  return body ? `@${body}` : ''
 }
 
 export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetch, timeoutMs = CALL_TIMEOUT_MS } = {}) {
@@ -460,7 +459,8 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
       const id = encodeURIComponent(String(roomId ?? ''))
       const query = new URLSearchParams()
       if (after !== undefined && after !== null && after !== '') query.set('after', String(after))
-      if (as) query.set('as', String(as))
+      const asHandle = normHandle(as)
+      if (asHandle) query.set('as', asHandle)
       const suffix = query.size ? `?${query}` : ''
       const body = await request('GET', `/${id}${suffix}`)
       return viewFaceRoom(body)

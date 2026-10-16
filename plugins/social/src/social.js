@@ -58,7 +58,12 @@ import {
 
 export const NS = 'social'
 const REMOTE_TTL_MS = 30_000
-const norm = handle => `@${String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)}`
+// Empty / missing / "@" stay empty. Prefixing '@' before the body is stripped
+// used to persist the literal "@" as a face-room `as` handle (#122).
+const norm = (handle) => {
+  const body = String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
+  return body ? `@${body}` : ''
+}
 const MAX_FILES = 5
 const DEFAULT_MAX_FILE_BYTES = 20 * 1024 * 1024
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -533,6 +538,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   const remoteBot = async handle => (await remoteBots()).homes.flatMap(entry => entry.bots).find(bot => bot.handle === norm(handle))
   const friendEntry = async friendHome => (await remoteBots()).homes.find(entry => entry.home === norm(friendHome))
+  const homeOfPeer = (peerHandle) => {
+    const key = norm(peerHandle)
+    const parts = key.slice(1).split('.')
+    return parts.length > 2 ? `@${parts.slice(1).join('.')}` : key
+  }
   // Hide a friend's Bot on this install only: persist, leave every room it is in, do not unfriend.
   // It stays hidden across refresh while it remains granted. If the owner revokes the grant, the
   // hide is forgotten; an explicit re-grant (it appears on list_remote_bots again) shows it.
@@ -1161,13 +1171,62 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     return rooms
   }
+  function listedBotsForPeer(handle) {
+    const key = norm(handle)
+    if (!key) return []
+    const listed = listedRemoteBots()
+    const exact = listed.filter(bot => bot.handle === key)
+    if (exact.length) return exact
+    const home = isHomeLevelHandle(key) ? key : homeOfPeer(key)
+    if (!home) return []
+    return listed.filter(bot => bot.handle && (norm(bot.home) === home || homeOfPeer(bot.handle) === home))
+  }
+  async function resolveApprovalChat(item, chats) {
+    const want = norm(item?.to)
+    if (!want || !chats) return undefined
+    const of = (handle) => {
+      try { return chats.of?.(handle) } catch { return undefined }
+    }
+    let listed = listedBotsForPeer(want)
+    if (!listed.length) {
+      try { await remoteBots() } catch { /* roster is optional for the notice */ }
+      listed = listedBotsForPeer(want)
+    }
+    const pick = (bot) => ({ handle: bot.handle, name: bot.name || item.toName, home: bot.home })
+    if (!isHomeLevelHandle(want) && of(want)) {
+      const known = listed.find(bot => bot.handle === want)
+      return known ? pick(known) : { handle: want, name: item.toName, home: homeOfPeer(want) }
+    }
+    for (const bot of listed) {
+      if (of(bot.handle)) return pick(bot)
+    }
+    const openable = listed[0] || (!isHomeLevelHandle(want) ? { handle: want, name: item.toName, home: homeOfPeer(want) } : undefined)
+    if (!openable?.handle || isHomeLevelHandle(openable.handle)) return undefined
+    if (typeof chats.open === 'function' && !of(openable.handle)) {
+      try {
+        await chats.open({ handle: openable.handle, name: openable.name || openable.handle, home: openable.home })
+      } catch (error) {
+        warn('approval chat note: could not open 1:1 for', openable.handle, error)
+      }
+    }
+    return pick(openable)
+  }
   async function postChatNote(item, text) {
     for (const room of roomsForApproval(item)) {
       try { flybot.rooms.postNotice?.(room.id, text) } catch (error) { warn('approval notice not posted', error) }
     }
-    const deliver = service.remote?.chats?.deliver ?? flybot.remote?.chats?.deliver
-    if (item?.to && deliver) {
-      try { await deliver({ handle: item.to, text, name: 'Room' }) } catch (error) { warn('approval chat note failed', error) }
+    const chats = service.remote?.chats ?? flybot.remote?.chats
+    const deliver = chats?.deliver
+    if (!item?.to || !deliver) return
+    const target = await resolveApprovalChat(item, chats)
+    if (!target?.handle) {
+      warn('approval chat note skipped: no 1:1 chat for', item.to)
+      return
+    }
+    try {
+      await deliver({ handle: target.handle, text, name: target.name || 'Room', ...(target.home ? { home: target.home } : {}) })
+    } catch (error) {
+      warn('approval chat note failed', error)
     }
   }
   async function syncApprovalNotices(items) {
@@ -1204,14 +1263,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         .map(item => approvalView(item, { localName: localNameOf }))
         .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message') && (item.status === 'pending' || item.status === 'pending_approval'))
       pendingCache = { at: now(), items }
-      void syncApprovalNotices(items).catch(error => warn('approval notice failed', error))
+      await syncApprovalNotices(items).catch(error => warn('approval notice failed', error))
       return items
     } catch (error) {
       warn('list_approvals failed', error)
       return pendingCache.items
     }
   }
-  const homeOfPeer = peerHandle => { const parts = norm(peerHandle).slice(1).split('.'); return parts.length > 2 ? `@${parts.slice(1).join('.')}` : norm(peerHandle) }
   async function setAutoAccept(friendHome, on) {
     const key = norm(friendHome)
     settings.autoAccept[key] = Boolean(on)
@@ -1274,6 +1332,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // ------------------------------------------------------------ face-to-face rooms (#83)
   // Join by 6-digit number on Bot Social; host the result as a native room (#82 membership).
   settings.faceRooms ??= {}
+  {
+    let healed = false
+    for (const [id, meta] of Object.entries(settings.faceRooms)) {
+      const next = rememberAsBot(meta, '')
+      if (next.asBot !== meta?.asBot || JSON.stringify(next.asBots) !== JSON.stringify(meta?.asBots ?? [])) {
+        settings.faceRooms[id] = next
+        healed = true
+      }
+    }
+    if (healed) saveSettings()
+  }
   const faceNeed = () => {
     if (!faceApi) throw new Error('Bot Social is not connected')
     return faceApi
@@ -1322,7 +1391,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   function rememberAsBot(meta, handle) {
     const key = handle ? norm(handle) : ''
     const asBots = asBotsOf({ asBots: [...asBotsOf(meta), key] })
-    return { ...meta, asBot: key || meta?.asBot || asBots[0], asBots }
+    const prev = norm(meta?.asBot)
+    const asBot = key || (prev && asBots.includes(prev) ? prev : asBots[0]) || undefined
+    return { ...meta, asBot, asBots }
+  }
+  function listedAsBot(snapshot) {
+    const mine = (snapshot?.myBots ?? []).map(bot => norm(bot.handle)).find(Boolean)
+    if (mine) return mine
+    const locals = new Set(bringable().map(bot => bot.handle).filter(Boolean))
+    return (snapshot?.members ?? []).map(bot => norm(bot.handle)).find(handle => locals.has(handle)) || ''
+  }
+  function pollAsHandle(meta, snapshot) {
+    return asBotsOf(meta)[0] || listedAsBot(snapshot) || ''
   }
   function faceRoomsUsing(handle) {
     const key = norm(handle)
@@ -1450,10 +1530,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     saveSettings()
     return flybot.rooms.ofFace?.(snapshot.roomId) ?? room
   }
-  async function pollOneFace(serverId, meta) {
+  async function pollOneFace(serverId, meta, listed) {
     const after = meta?.cursor ?? 0
-    const snapshot = await faceNeed().get(serverId, { after, as: meta?.asBot })
-    return applyFaceSnapshot(snapshot, { asBot: meta?.asBot })
+    const as = pollAsHandle(meta, listed)
+    const snapshot = await faceNeed().get(serverId, { after, ...(as ? { as } : {}) })
+    return applyFaceSnapshot(snapshot, { asBot: as || listedAsBot(snapshot) || listedAsBot(listed) })
   }
   let facePolling
   async function pollFaceRooms() {
@@ -1466,10 +1547,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         const known = new Set(listed.map(item => item.roomId))
         const got = await mapPool(listed, GRANT_CONCURRENCY, async (snapshot) => {
           try {
-            const meta = settings.faceRooms[snapshot.roomId]
-            await pollOneFace(snapshot.roomId, meta)
+            await pollOneFace(snapshot.roomId, settings.faceRooms[snapshot.roomId], snapshot)
             return 1
           } catch (error) {
+            if (error?.code === 'face_room_not_found') {
+              const prev = settings.faceRooms[snapshot.roomId]
+              const repaired = rememberAsBot({ ...(prev ?? {}), asBot: undefined, asBots: [] }, listedAsBot(snapshot))
+              settings.faceRooms[snapshot.roomId] = repaired
+              try {
+                await pollOneFace(snapshot.roomId, repaired, snapshot)
+                saveSettings()
+                return 1
+              } catch (retryError) {
+                warn('face-room get failed', retryError)
+                return 0
+              }
+            }
             warn('face-room get failed', error)
             return 0
           }

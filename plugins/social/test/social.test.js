@@ -1130,13 +1130,24 @@ function withFaceRooms(server) {
         return new Response(JSON.stringify({ ...room, events: room.events.slice(-1) }), { status: 200 })
       }
       if (init.method === 'GET' && (path === '' || path === '/')) {
-        return new Response(JSON.stringify({ rooms: [...rooms.values()].map(r => ({ room_id: r.room_id, status: r.status, expires_at: r.expires_at, member_count: r.members.length })) }), { status: 200 })
+        return new Response(JSON.stringify({
+          rooms: [...rooms.values()].map(r => ({
+            room_id: r.room_id, status: r.status, expires_at: r.expires_at, member_count: r.members.length,
+            ...(r.my_bots ? { my_bots: r.my_bots } : {}),
+            ...(r.members ? { members: r.members } : {}),
+          })),
+        }), { status: 200 })
       }
       const id = decodeURIComponent((path.split('?')[0] || '').replace(/^\//, '').split('/')[0])
       const room = rooms.get(id)
       if (!room) return new Response(JSON.stringify({ error: { code: 'face_room_not_found' } }), { status: 404 })
       if (init.method === 'GET') {
-        const after = Number(new URL(url).searchParams.get('after') || 0)
+        const parsed = new URL(url)
+        const as = parsed.searchParams.get('as')
+        if (as === '@' || as === '') {
+          return new Response(JSON.stringify({ error: { code: 'face_room_not_found' } }), { status: 404 })
+        }
+        const after = Number(parsed.searchParams.get('after') || 0)
         return new Response(JSON.stringify({ ...room, events: room.events.filter(e => e.event_cursor > after) }), { status: 200 })
       }
       if (init.method === 'POST' && path.endsWith('/start')) {
@@ -2716,5 +2727,144 @@ test('inbox room-share join appears as an inbound-share room for the Bot\'s owne
     ? shared
     : ctx.flybot.rooms.list().find(room => room.id === shared.id)
   assert.ok(from)
+})
+
+test('#122: face-room poll omits as=@, heals stored "@", and seeds asBot from my_bots', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({
+    autoAccept: {}, via: {}, hiddenRemotes: {},
+    faceRooms: { frm_555555: { asBot: '@', asBots: ['@'], cursor: 0, seen: [] } },
+  }))
+  server.face.rooms.set('frm_555555', {
+    room_id: 'frm_555555',
+    status: 'candidate',
+    expires_at: '2026-10-15T10:10:00.000Z',
+    members: [
+      { bot_id: 'bot_chief', handle: '@chief.danyang.home', display_name: 'Chief', owner_name: 'Danyang', published: false },
+    ],
+    my_bots: [
+      { bot_id: 'bot_chief', handle: '@chief.danyang.home', display_name: 'Chief', owner_name: 'Danyang', published: false },
+    ],
+    events: [],
+    event_cursor: 0,
+  })
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  assert.equal(listed.rooms.some(room => room.faceRoomId === 'frm_555555'), true)
+  for (const callRow of server.calls) {
+    const href = String(callRow.url ?? '')
+    if (!href.includes('/v1/face-rooms/frm_555555')) continue
+    const as = new URL(href).searchParams.get('as')
+    assert.notEqual(as, '@', href)
+    assert.notEqual(as, '')
+  }
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.notEqual(saved.faceRooms.frm_555555.asBot, '@')
+  assert.equal((saved.faceRooms.frm_555555.asBots ?? []).includes('@'), false)
+  assert.equal(saved.faceRooms.frm_555555.asBot, '@chief.danyang.home')
+  assert.ok(ctx.flybot.rooms.ofFace('frm_555555'))
+})
+
+test('#123: approval waiting notice opens a friend Bot 1:1 instead of delivering to a home handle', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r-boxb',
+      home: { bot_id: 'h2', handle: '@boxb.home', display_name: 'BoxB' },
+      bots: [{ bot_id: 'x1', handle: '@chief.boxb.home', display_name: 'Chief' }],
+    }],
+  })
+  server.tools.list_approvals = () => ({
+    approvals: [{
+      approval_id: 'apr-home-1',
+      kind: 'outbound_message',
+      status: 'pending',
+      bot_id: 'm1',
+      message: {
+        to: { handle: '@boxb.home', display_name: 'BoxB' },
+        payload: { text: 'hello from MCP' },
+        status: 'pending_approval',
+      },
+    }],
+  })
+  const notes = []
+  const opened = []
+  const sessions = new Map()
+  ctx.flybot.remote.chats.of = handle => sessions.get(handle)
+  ctx.flybot.remote.chats.open = async (member) => {
+    opened.push(member)
+    const parts = String(member.handle ?? '').replace(/^@/, '').split('.')
+    if (parts.length === 2 && parts[1] === 'home') return undefined
+    sessions.set(member.handle, 'sess-1')
+    return 'sess-1'
+  }
+  ctx.flybot.remote.chats.deliver = async (msg) => {
+    if (!sessions.has(msg.handle)) throw new Error('resume failed for session "undefined"')
+    notes.push(msg)
+    return sessions.get(msg.handle)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot, '@boxb.home')
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const items = await social.pendingApprovals({ fresh: true })
+  assert.equal(items.length, 1)
+  assert.equal(items[0].to, '@boxb.home')
+  assert.equal(notes.length, 1)
+  assert.equal(notes[0].handle, '@chief.boxb.home')
+  assert.equal(notes[0].text, WAITING_OTHERS)
+  assert.equal(opened.some(member => member.handle === '@chief.boxb.home'), true)
+  assert.equal(notes.some(note => note.handle === '@boxb.home'), false)
+})
+
+test('#123: approval waiting notice skips a home handle with no friend Bot and does not throw', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer({ friends: false })
+  server.tools.list_approvals = () => ({
+    approvals: [{
+      approval_id: 'apr-home-2',
+      kind: 'outbound_message',
+      status: 'pending',
+      bot_id: 'm1',
+      message: {
+        to: { handle: '@boxb.home', display_name: 'BoxB' },
+        payload: { text: 'hello' },
+        status: 'pending_approval',
+      },
+    }],
+  })
+  const notes = []
+  ctx.flybot.remote.chats.of = () => undefined
+  ctx.flybot.remote.chats.open = async () => undefined
+  ctx.flybot.remote.chats.deliver = async (msg) => {
+    notes.push(msg)
+    throw new Error('resume failed for session "undefined"')
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot, '@boxb.home')
+  await social.registerAll()
+  const items = await social.pendingApprovals({ fresh: true })
+  assert.equal(items.length, 1)
+  assert.equal(notes.length, 0)
 })
 

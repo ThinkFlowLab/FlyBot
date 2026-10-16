@@ -4,7 +4,8 @@
 export const HIDE_GONE_FETCHES = 2
 
 export function normHiddenHandle(handle) {
-  return `@${String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)}`
+  const body = String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
+  return body ? `@${body}` : ''
 }
 
 // A home identity (@bob.home), not a Bot (@coder.bob.home) and not a legacy per-bot
