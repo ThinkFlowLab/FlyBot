@@ -1244,7 +1244,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function FriendChatSettings({ bot, roster, actions } = {}) {
+    function FriendChatSettings({ bot } = {}) {
       const remote = bot?.remote
       const home = remote?.home
       const handle = remote?.handle
@@ -1277,13 +1277,9 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setError('')
         try {
+          // social/hide-remote already leaves every room holding this Bot; a second
+          // removal from here would race it and show "not in the room" after a good Remove.
           await call('social/hide-remote', { handle })
-          if (typeof actions?.updateRoom === 'function') {
-            void Promise.all((actions.roster?.rooms ?? roster?.rooms ?? []).flatMap(room => {
-              const hit = (room.participants ?? []).find(p => p.remote && p.handle === handle && p.leftSeq === undefined)
-              return hit ? [actions.updateRoom(room.id, { removeParticipants: [{ kind: 'bot', id: hit.handle || hit.id, remote: true }] })] : []
-            })).catch(e => setError(errorText(e)))
-          }
         } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
       }
       return h('div', { className: 'fs fs-card', 'data-flybot': 'friend-chat-settings' },
@@ -1305,11 +1301,11 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function BotSocialDetails({ bot, roster, actions } = {}) {
+    function BotSocialDetails({ bot } = {}) {
       useStyles()
       if (bot?.remote) {
         return h('div', { 'data-flybot': 'bot-social-details' },
-          h(FriendChatSettings, { bot, roster, actions }))
+          h(FriendChatSettings, { bot }))
       }
       return h('div', { 'data-flybot': 'bot-social-details' },
         h(InviteToBot, { bot }),

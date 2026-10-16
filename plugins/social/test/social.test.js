@@ -3038,6 +3038,42 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   assert.ok(doneNodes.some(n => n.children?.includes?.('Approved') || (Array.isArray(n.children) && n.children.includes('Approved'))))
 })
 
+test('Remove this Bot leaves rooms only through social/hide-remote, not a second client-side removal', async () => {
+  const registered = []
+  const hidden = []
+  const updates = []
+  const flybot = {
+    slots: { register: () => () => {} },
+    call: async (endpoint, payload) => {
+      if (endpoint === 'social/hide-remote') { hidden.push(payload); return { handle: payload.handle, hidden: true, leftRooms: [{ id: 'g1', origin: 'group' }], homes: [] } }
+      if (endpoint === 'social/settings') return { autoAccept: {} }
+      return {}
+    },
+  }
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = flybot
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+  plugin.apply({})
+  const roster = { rooms: [{ id: 'g1', participants: [{ kind: 'bot', id: '@hsliu.bot', handle: '@hsliu.bot', remote: true }] }] }
+  const actions = { roster, updateRoom: async (id, change) => { updates.push([id, change]) } }
+  const all = []
+  const walk = node => {
+    if (!node || typeof node !== 'object') return
+    if (typeof node.type === 'function') { walk(node.type(node.props)); return }
+    all.push(node)
+    ;(node.children ?? []).forEach(walk)
+  }
+  walk(plugin.BotSocialDetails({ bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } }, roster, actions }))
+  const remove = all.find(n => n.props['data-flybot'] === 'remove-friend-bot')
+  remove.props.onClick({ stopPropagation() {} })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(hidden.map(p => p.handle), ['@hsliu.bot'])
+  assert.equal(updates.length, 0)
+})
+
 test('#90: Remove on a friend\'s Bot stays busy until hide-remote finishes', async () => {
   const registered = []
   let release

@@ -67,7 +67,7 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 
 ### One sidebar list
 
-- `TeamSidebar` lists local Bots, listed remote chats (`isListedRemoteChat`), live face-to-face rooms, and shared rooms in one `bt-list`. Own chats sort before foreign ones (a remote Bot, a face room, or `sharedFrom`); pinned and recency still win. A friend's Bot keeps the globe `RemoteMark`; a live face room gets a small people `FaceMark`. Past/ended face rooms stay out of this list (`isPastFaceRoom`) so the social section can fold them under **Past rooms**.
+- `TeamSidebar` lists local Bots, listed remote chats (`isListedRemoteChat`), live face-to-face rooms, and shared rooms in one `bt-list`. Own chats sort before foreign ones (a remote Bot, a face room, or `sharedFrom`); pinned and recency still win. A friend's Bot keeps the globe `RemoteMark`; a live face room gets a small people `FaceMark`. Past/ended face rooms stay out of this list (`isPastFaceRoom`) so the social section can fold them under **Past rooms**. With `@flybot/tree` on, only own Bots are tree nodes under Main; a friend's Bot stays in the flat ordered list (not hidden when Main is collapsed).
 
 ### Approval wait badge on chat rows
 

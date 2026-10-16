@@ -5910,7 +5910,8 @@ function TeamSidebar(props) {
   const structure = useSidebarStructure();
   const [collapsed, setCollapsed] = (0, import_react9.useState)({});
   const toggle = (id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }));
-  const tree = structure && wide && main ? botTree([main, ...order.filter((entry) => entry.kind === "bot").map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
+  const inTree = (entry) => entry.kind === "bot" && !entry.item.remote;
+  const tree = structure && wide && main ? botTree([main, ...order.filter(inTree).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
   useListGlide(listRef, wide, order.map((entry) => entry.item.id).join(","));
   useLandOnMainBot(roster, useSessions, actions);
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide };
@@ -5941,7 +5942,7 @@ function TeamSidebar(props) {
       "div",
       { ref: listRef, className: "bt-list", role: "region", "aria-label": t("Bot list") },
       tree ? (0, import_react9.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react9.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : main ? (0, import_react9.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react9.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
-      order.filter((entry) => !(tree && entry.kind === "bot")).map((entry) => entry.kind === "bot" ? (0, import_react9.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react9.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react9.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
+      order.filter((entry) => !(tree && inTree(entry))).map((entry) => entry.kind === "bot" ? (0, import_react9.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react9.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react9.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
       wide ? (0, import_react9.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react9.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
     )
   );
