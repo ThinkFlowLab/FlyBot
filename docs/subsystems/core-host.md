@@ -69,6 +69,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 - Host diagnostics never depend on `ctx.logger`: DSH may export no logger, and a test or plugin-local host may carry one without `warn`. `rt.warn` still writes stderr and the diagnostics log in that case (`src/host/diagnostics.js`). Plugins reach the same log through `flybot.warn` (#68); see [plugin-runtime](plugin-runtime.md).
 
+### Untrusted fences in every shared room
+
+- `authoredRoomLine` fences peer-controlled text by the line's origin, not the room kind (#98): a remote participant, a local remote-chat record (`state.bots[id].remote`), a botId that is no team Bot, or `line.remote`. A friend's Bot speaking in a non-face group is fenced the same way as in a face room. A complete wrap is left as-is so outbound fanout does not nest residue; a mention of the marker in the body still fences. `stripUntrusted` is one fixed-point pass over both `untrusted-message` and `untrusted-file`. Inbound-share lines from the other instance are `remote: true` so owner-typed text is fenced too. Face join/leave notices stay unfenced platform copy.
+
 ### Remote chats and mentions
 
 - Channel `view()` puts `pendingCount` on a friend's chat (`bot.remote`) from `rt.listChatApprovals`, the same gold wait badge rooms already use. Local team Bots stay at 0. The social plugin supplies the list via `flybot.chatApprovals.setProvider` ([plugin-runtime](plugin-runtime.md)). Still not team mode.

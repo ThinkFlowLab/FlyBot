@@ -51,6 +51,10 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 
 - `RoomAvatar` (`src/client/mark.js` `roomAvatarPeople`) seats current local `room.members` and live remote `participants` (handle-seeded via `lookBotForRemote`). A face-to-face room with only remotes no longer falls back to the grey placeholder in the sidebar row or chat header.
 
+### Room remote bubbles unwrap the fence
+
+- Group `RemoteMessage` (`cells.js`) shows `remoteMessageText(reply.text)`, the same unwrap the 1:1 friend chat already uses. Stored room lines stay fenced for the model; the bubble shows the inner words, not the `<untrusted-message>` wrapper (#98).
+
 ### Remote Bot display
 
 - A friend's remote Bot is stored and delivered by its handle (`@<bot>.<home>` — what the @ menu inserts and `sendUserMentions` matches). Where the user reads it — mention chips (`src/client/user-message.js`) and sidebar previews (`nameMentions` in `src/client/text.js`) — the client rewrites the handle to the display name taken from the local roster (`roster.bots[].remote`, `roster.remoteBots`), never from message text, so a remote-controlled name reaches the UI only through the sanitized roster records (#71; display names, #9).

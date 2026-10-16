@@ -1260,7 +1260,9 @@ test('face-to-face: an owner-typed line is fanned out and shown as a human on th
   })
   await call('flybot/social/face-rooms', { poll: true })
   const hosted = ctx.flybot.rooms.ofFace('frm_123456')
-  assert.ok((hosted.log ?? []).some(line => line.authorKind === 'human' && line.text === 'hello from the owner' && /BoxA/.test(line.who)))
+  const human = (hosted.log ?? []).find(line => line.authorKind === 'human' && /BoxA/.test(line.who) && /hello from the owner/.test(line.text || ''))
+  assert.ok(human, 'the other side stores the owner line as human')
+  assert.match(String(human.text), /^<untrusted-message from="/)
 })
 
 test('face-to-face send pending_approval uses decide_approval', async (t) => {

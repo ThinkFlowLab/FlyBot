@@ -35,7 +35,7 @@
 
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { encodeRoomShare, parseRoomShare } from '../shared/room-share.js'
-import { cleanName, fenceUntrusted } from './delivery.js'
+import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
 
 const KINDS = new Set(['human', 'bot'])
@@ -404,18 +404,38 @@ export function install(rt) {
     return false
   }
 
+  const fenceRemoteText = (name, text) => {
+    if (!text) return text
+    if (isFencedUntrusted(text)) return text
+    return fenceUntrusted(name, text)
+  }
+
   rt.authoredRoomLine = (room, line) => {
-    if (line.authorId && line.authorKind) {
-      return { ...line, who: line.who || (line.authorKind === 'bot' ? state.bots?.[line.authorId]?.name : displayNameFor(state, line.authorId)) || line.authorId }
+    const botId = line.botId ?? (line.authorKind === 'bot' ? line.authorId : undefined)
+    const remote = botId
+      ? currentParticipants(room).find(p => p.remote && (p.id === botId || p.handle === botId))
+      : undefined
+    const record = botId ? state.bots?.[botId] : undefined
+    // Peer-controlled text stays data in every shared room, not only face-to-face
+    // (#98). Origin is a remote participant, a remote-chat record in state.bots
+    // (bot.remote set), a botId that is no local team Bot, or line.remote.
+    const remoteLine = Boolean(remote || line.remote || (record && record.remote !== undefined) || (botId && !record))
+    if (botId) {
+      const name = remote ? remoteBotTitle(remote) : (line.who || record?.name || 'Bot')
+      const text = remoteLine && line.text ? fenceRemoteText(name, line.text) : line.text
+      return {
+        ...line,
+        who: name,
+        text,
+        authorId: botId,
+        authorKind: 'bot',
+        ...(remote || line.remote ? { remote: true, ownerName: remote ? ownerNameSafe(remote) : line.ownerName } : {}),
+      }
     }
-    if (line.botId) {
-      const remote = currentParticipants(room).find(p => p.remote && (p.id === line.botId || p.handle === line.botId))
-      const name = remote ? remoteBotTitle(remote) : (line.who || state.bots?.[line.botId]?.name || 'Bot')
-      const faceRemote = isFaceRoom(room) && (remote || !state.bots?.[line.botId])
-      const text = faceRemote && line.text && !String(line.text).includes('<untrusted-message')
-        ? fenceUntrusted(name, line.text)
-        : line.text
-      return { ...line, who: name, text, authorId: line.botId, authorKind: 'bot', ...(remote ? { remote: true, ownerName: ownerNameSafe(remote) } : {}) }
+    if (line.authorId && line.authorKind) {
+      const name = line.who || (line.authorKind === 'bot' ? state.bots?.[line.authorId]?.name : displayNameFor(state, line.authorId)) || line.authorId
+      const text = remoteLine && line.text ? fenceRemoteText(name, line.text) : line.text
+      return { ...line, who: name, text }
     }
     const humans = currentParticipants(room).filter(p => p.kind === 'human')
     const id = line.authorId || (humans.length === 1 ? humans[0].id : undefined)
@@ -815,7 +835,9 @@ export function install(rt) {
     if (localAuthor !== undefined && !mayShareRoom(state, room, localAuthor)) return
     if (!shareSpeaker(room)) return
     const who = cleanName(line.who || 'member')
-    const body = line.text ? fenceUntrusted(who, line.text) : `[${cleanName(line.kind || 'event')}]`
+    const body = !line.text
+      ? `[${cleanName(line.kind || 'event')}]`
+      : isFencedUntrusted(line.text) ? line.text : fenceUntrusted(who, line.text)
     const from = shareInviter(room)
     for (const remote of remotes) {
       if (line.authorId === remote.id || line.authorId === remote.handle) continue
@@ -979,7 +1001,8 @@ export function install(rt) {
         text: data.text || '',
         authorId: data.authorId || fromHandle,
         authorKind: data.authorKind || 'human',
-        remote: data.authorKind === 'bot',
+        remote: true,
+        ...(data.authorKind === 'bot' ? { botId: data.authorId || fromHandle } : {}),
         kind: data.kind === 'message' ? undefined : data.kind,
       }))
     }
@@ -1230,15 +1253,16 @@ export function install(rt) {
       if (room.face.seenEvents.length > 200) room.face.seenEvents = room.face.seenEvents.slice(-200)
     }
     if (line?.eventCursor) room.face.eventCursor = Math.max(Number(room.face.eventCursor) || 0, Number(line.eventCursor) || 0)
-    const stamped = append(room, {
+    const drafted = {
       kind: line.kind,
       who: line.who,
       text: line.text ?? '',
       authorId: line.authorId,
       authorKind: line.authorKind,
-      ...(line.remote ? { remote: true, ownerName: line.ownerName, botId: line.authorId } : {}),
+      ...(line.remote ? { remote: true, ownerName: line.ownerName, ...(line.authorKind === 'bot' ? { botId: line.authorId } : {}) } : {}),
       ...(line.eventId ? { eventId: line.eventId } : {}),
-    })
+    }
+    const stamped = append(room, (line.kind && line.kind !== 'message') ? drafted : rt.authoredRoomLine(room, drafted))
     return stamped
   }
 

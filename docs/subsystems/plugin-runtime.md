@@ -67,7 +67,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 ### Face-to-face owner lines
 
-- `onFaceLine` receives every appended room line, including the owner's typed human lines. The social plugin sends those through Bot Social as the owner's local room Bot with a `FLYBOT-FACE-HUMAN` envelope so every human in the matching room sees the text; incoming envelopes apply as `authorKind: 'human'`. Bot replies stay bot-authored. Still not team mode.
+- `onFaceLine` receives every appended room line, including the owner's typed human lines. The social plugin sends those through Bot Social as the owner's local room Bot with a `FLYBOT-FACE-HUMAN` envelope so every human in the matching room sees the text; incoming envelopes apply as `authorKind: 'human'` and the stored body is fenced (#98). Bot replies stay bot-authored. The envelope `who` is still taken from the JSON (a follow-up should bind the display name to the sending member record). Still not team mode.
 
 ### Host Bot look for classic-script plugins
 

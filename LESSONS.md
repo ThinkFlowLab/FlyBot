@@ -15,11 +15,19 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ### 2026-10-14 — Untrusted fence escape and remote display names
 
-- **Seen:** 1× (from PR #2 review → issue #9)
+- **Seen:** 2× (from PR #2 review → issue #9; #98 non-face room ingest)
 - **Trigger:** Remote message or file body, or a peer display name / handle, reaches model-visible text.
 - **Wrong:** One-shot `replaceAll('</untrusted-…>', '')`; put peer-controlled names in trusted headers outside the fence.
 - **Right:** Neutralize markers until stable (or escape `<` / reject `untrusted-` fragments); share one helper with the client parser. Sanitize remote strings (strip controls/newlines, cap length); fence where possible. Negative tests required (see #9 acceptance).
 - **Promote path:** After ≥3 days and green tests → harden as a rule in [docs/code-standards.md](docs/code-standards.md#security-fences-and-remote-strings).
+
+### 2026-10-15 — Generated gates run after the last edit
+
+- **Seen:** 2× (#94, #99) — both failed independent review on packaging only.
+- **Trigger:** any edit to `core/` after the last `ds-bot-patches generate`, or before a `check-arch-docs` run.
+- **Wrong:** trusting an earlier green `check`/`arch-docs`; `check-arch-docs` diffs the base...HEAD and answers "0 changed" on uncommitted work.
+- **Right:** final `core/` edit → `npm run build` in `core/` when `src/client/` changed → `node scripts/ds-bot-patches.mjs generate` (repo root) → commit → `ARCH_DOCS_BASE=upstream/main npm run verify`. New files under `core/` land whole in `patches/ds-bot/files/` (no `topics.json` row).
+- **Promote path:** after ≥3 days → docs/code-standards.md (merge gate section).
 
 ### 2026-10-14 — Claim honesty (Verifier)
 

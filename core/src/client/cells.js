@@ -695,7 +695,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
         return h(RemoteMessage, {
           key: `${reply.botId || reply.handle}-${index}`,
           source: { remote: { handle: reply.handle || reply.botId }, senderName: reply.name || reply.who, senderSessionId: reply.botId },
-          text: reply.text,
+          text: remoteMessageText(reply.text),
           roster,
           actions,
           sessionId,
