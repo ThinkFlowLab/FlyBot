@@ -185,6 +185,14 @@ export function isFaceRoom(room) {
   return room?.origin === 'face-to-face'
 }
 
+function faceStatusFrom(spec, current) {
+  const status = spec?.status
+  if (status === 'open' || status === 'closed' || status === 'left') return status
+  if (spec?.startedAt) return 'open'
+  if (status) return status
+  return current || 'candidate'
+}
+
 export function presentRoom(room, actor, state) {
   if (!room) return room
   const role = viewerRole(room, actor, state)
@@ -1062,6 +1070,7 @@ export function install(rt) {
     const handle = String(member.handle || member.id || '')
     const displayName = cleanPeerName(member.displayName || member.name, handle)
     const ownerName = cleanPeerName(member.ownerName || member.ownerHome, '')
+    const label = cleanPeerName(member.label, '')
     return {
       kind: 'bot',
       remote: true,
@@ -1070,6 +1079,7 @@ export function install(rt) {
       ownerHome: member.ownerHome,
       ownerName,
       displayName,
+      ...(label ? { label } : {}),
       // Face-to-face: the matching room is the scope. No person-grant is implied.
       roomOnly: member.roomOnly === true || member.published !== true,
       role: 'member',
@@ -1080,6 +1090,7 @@ export function install(rt) {
   }
 
   function faceLocalRecord(bot, joinedSeq, at, member) {
+    const label = cleanPeerName(member?.label, '')
     return {
       kind: 'bot',
       id: bot.id,
@@ -1087,8 +1098,38 @@ export function install(rt) {
       displayName: bot.name ?? bot.id,
       handle: bot.handle,
       ownerName: cleanPeerName(member?.ownerName, ''),
+      ...(label ? { label } : {}),
       joinedSeq,
       joinedAt: at,
+    }
+  }
+
+  function faceSameBot(p, { local, handle }) {
+    if (local) return p.kind === 'bot' && !p.remote && p.id === local.id
+    return p.remote && (p.handle === handle || p.id === handle)
+  }
+
+  function faceLiveKey(p, byHandle) {
+    const key = p.remote
+      ? (p.handle || p.id)
+      : (byHandle.get(String(p.handle || '').toLowerCase())?.handle || faceHandleOf(p) || p.id)
+    return String(key || '').toLowerCase()
+  }
+
+  function applyFaceMemberFields(existing, member) {
+    if (existing.remote) {
+      existing.displayName = cleanPeerName(member.displayName || member.name, existing.displayName)
+      existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
+      existing.roomOnly = member.roomOnly === true || member.published !== true
+      const label = cleanPeerName(member.label, '')
+      if (label) existing.label = label
+      const look = faceLookFields(member)
+      if (look.color) existing.color = look.color
+      if (look.avatar) existing.avatar = look.avatar
+    } else {
+      if (member.ownerName) existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
+      const label = cleanPeerName(member.label, '')
+      if (label) existing.label = label
     }
   }
 
@@ -1106,21 +1147,16 @@ export function install(rt) {
       if (!handle) continue
       liveKeys.add(handle.toLowerCase())
       const local = byHandle.get(handle.toLowerCase())
-      const existing = currentParticipants(room).find(p => {
-        if (local) return p.kind === 'bot' && !p.remote && p.id === local.id
-        return p.remote && (p.handle === handle || p.id === handle)
-      })
+      const matches = (room.participants ?? []).filter(p => faceSameBot(p, { local, handle }))
+      const existing = matches.find(p => p.leftSeq === undefined) || matches.at(-1)
       if (existing) {
-        if (existing.remote) {
-          existing.displayName = cleanPeerName(member.displayName || member.name, existing.displayName)
-          existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
-          existing.roomOnly = member.roomOnly === true || member.published !== true
-          const look = faceLookFields(member)
-          if (look.color) existing.color = look.color
-          if (look.avatar) existing.avatar = look.avatar
-        } else if (member.ownerName) {
-          existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
+        if (existing.leftSeq !== undefined) {
+          delete existing.leftSeq
+          delete existing.leftAt
+          existing.joinedSeq = seq
+          existing.joinedAt = at
         }
+        applyFaceMemberFields(existing, member)
         continue
       }
       const record = local
@@ -1128,14 +1164,16 @@ export function install(rt) {
         : faceRemoteRecord(member, seq, at)
       room.participants.push(record)
     }
+    const seenLive = new Set()
     for (const p of currentParticipants(room)) {
-      const key = (p.remote ? (p.handle || p.id) : (byHandle.get(String(p.handle || '').toLowerCase())?.handle || faceHandleOf(p) || p.id) || '')
-      const match = String(key).toLowerCase()
+      const match = faceLiveKey(p, byHandle)
       const still = [...liveKeys].some(h => h === match || h === String(p.id).toLowerCase() || (p.handle && h === String(p.handle).toLowerCase()))
-      if (!still) {
+      if (!still || (match && seenLive.has(match))) {
         p.leftSeq = seq
         p.leftAt = at
+        continue
       }
+      if (match) seenLive.add(match)
     }
     syncMembers(room)
     return room
@@ -1163,13 +1201,13 @@ export function install(rt) {
         seq: 0,
         seen: {},
         participants: [],
-        face: { roomId: serverId, status: spec.status || 'candidate', expiresAt: spec.expiresAt || null, eventCursor: 0, seenEvents: [] },
+        face: { roomId: serverId, status: faceStatusFrom(spec, 'candidate'), expiresAt: spec.expiresAt || null, eventCursor: 0, seenEvents: [] },
       }
       state.rooms[id] = room
     }
     room.face = {
       roomId: serverId,
-      status: spec.status || room.face.status || 'candidate',
+      status: faceStatusFrom(spec, room.face?.status),
       expiresAt: spec.expiresAt ?? room.face.expiresAt ?? null,
       startedAt: spec.startedAt ?? room.face.startedAt ?? null,
       eventCursor: Math.max(Number(room.face.eventCursor) || 0, Number(spec.eventCursor) || 0),

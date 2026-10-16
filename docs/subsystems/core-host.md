@@ -59,6 +59,7 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 ### Face-to-face participant look
 
 - `syncFaceParticipants` / `faceRemoteRecord` keep optional `color` / `avatar` from the Bot Social member payload on the remote participant. The client seeds a distinct generated look from the handle when those fields are absent (see [core-client](core-client.md)). Face-room REST still does not require a person-grant.
+- A member that left and joins again is the same participant record with `leftSeq` cleared and a new `joinedSeq` — not a second live row. `upsertFaceRoom` treats `startedAt` (or an explicit `open`) as an open room so the Friends' Bots card does not stay on the matching countdown after **Enter chat**.
 
 ### FlyBot display copy
 

@@ -1728,9 +1728,41 @@ function clusterSeats(count, frame) {
   const half = frame / 2;
   return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 }
+function roomAvatarPeople(room2, roster) {
+  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
+  const seen = new Set(members.map((bot) => bot.id));
+  const remotes = [];
+  for (const p of room2?.participants ?? []) {
+    if (p.leftSeq !== void 0) continue;
+    if (p.kind === "human") continue;
+    if (!p.remote && p.id && seen.has(p.id)) continue;
+    if (!p.remote && p.id && roster?.byId?.[p.id]) {
+      if (!seen.has(p.id)) {
+        members.push(roster.byId[p.id]);
+        seen.add(p.id);
+      }
+      continue;
+    }
+    const handle = p.handle || (p.remote ? p.id : "");
+    if (!handle) continue;
+    if (members.some((bot) => bot.remote?.handle === handle || bot.handle === handle)) continue;
+    const key = `h:${handle}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    remotes.push(lookBotForRemote({
+      handle,
+      displayName: p.displayName,
+      name: p.displayName,
+      label: p.label,
+      color: p.color,
+      avatar: p.avatar
+    }, roster));
+  }
+  if (members.length === 1 && remotes.length === 0) return [members[0], null];
+  return [...members, ...remotes];
+}
 function RoomAvatar({ room: room2, roster, size = 36 }) {
-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
-  const people = members.length === 1 ? [members[0], null] : members;
+  const people = roomAvatarPeople(room2, roster);
   const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
   if (people.length === 0) return (0, import_react.createElement)(BotMark, { size });
   if (size <= 20 && people.length > 1) {

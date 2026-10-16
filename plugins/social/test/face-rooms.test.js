@@ -24,6 +24,10 @@ import {
   createFaceRoomApi,
   FaceRoomError,
   mapRegisterError,
+  encodeFaceHuman,
+  parseFaceHuman,
+  faceOutbound,
+  FACE_HUMAN_MARK,
 } from '../src/face-rooms.js'
 
 test('join code is exactly six digits', () => {
@@ -92,6 +96,29 @@ test('peer names and system copy are sanitized', () => {
   assert.match(platformStartedText('expired'), /matching window ended/)
   assert.equal(faceMemberLabel({ display_name: 'Writer', owner_name: 'Alice' }), "Writer · Alice's Bot")
   assert.equal(faceMemberLabel({ display_name: 'Chief', owner_name: 'Alice' }), "Alice's Chief")
+})
+
+test('owner-typed face-room lines encode as a human envelope', () => {
+  const packed = encodeFaceHuman({ who: 'BoxA', text: 'hello from the owner' })
+  assert.match(packed, new RegExp(FACE_HUMAN_MARK))
+  assert.deepEqual(parseFaceHuman(packed), { who: 'BoxA', text: 'hello from the owner' })
+  const locals = [{ id: 'a', handle: '@chief.boxa.home', botId: 'bot_a' }]
+  assert.equal(faceOutbound({ kind: 'joined', text: 'x' }, { locals }), undefined)
+  assert.equal(faceOutbound({ authorKind: 'human', who: 'BoxA', text: 'hi', remote: true }, { locals }), undefined)
+  const bot = faceOutbound({ authorId: 'a', text: 'bot says' }, { locals })
+  assert.deepEqual(bot, { text: 'bot says', botId: 'bot_a', human: false })
+  const human = faceOutbound({ authorKind: 'human', who: 'BoxA', text: 'hi', authorId: 'owner-1' }, { locals, asBots: ['@chief.boxa.home'] })
+  assert.equal(human.human, true)
+  assert.equal(human.botId, 'bot_a')
+  assert.deepEqual(parseFaceHuman(human.text), { who: 'BoxA', text: 'hi' })
+  const rendered = renderFaceEvent({
+    event_id: 'fev_h', event_cursor: 9, type: 'room.message',
+    from: { handle: '@chief.boxa.home', display_name: 'Chief', owner_name: 'BoxA' },
+    untrusted_content: { text: packed },
+  })
+  assert.equal(rendered.authorKind, 'human')
+  assert.equal(rendered.who, 'BoxA')
+  assert.equal(rendered.text, 'hello from the owner')
 })
 
 test('peer room.message text is fenced and cannot rebuild a closing marker', () => {

@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, lookOf, lookBotForRemote, remoteSeed } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -113,6 +113,35 @@ test('lookBotForRemote seeds a distinct look from the handle when there is no ch
   assert.equal(lookOf(pictured).image, 'https://example.test/friend.png')
   const chat = { id: 'session-f', name: '助手', remote: { handle: '@bot.friend.home' }, color: 'green' }
   assert.equal(lookBotForRemote(person, { bots: [chat] }), chat)
+})
+
+test('room avatars include live remote face-to-face members', () => {
+  const roster = {
+    byId: { a: { id: 'a', name: 'Chief', color: 'blue', avatar: { shape: 'whale' } } },
+    bots: [{ id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' }, color: 'green' }],
+  }
+  assert.equal(typeof roomAvatarPeople, 'function')
+  const empty = roomAvatarPeople({ members: [], participants: [] }, roster)
+  assert.ok(Array.isArray(empty))
+  assert.equal(empty.length, 0)
+  const face = roomAvatarPeople({
+    members: ['a'],
+    participants: [
+      { kind: 'bot', id: 'a', handle: '@a.me.home' },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home', displayName: 'Coder', leftSeq: undefined },
+      { kind: 'bot', remote: true, handle: '@gone.bob.home', displayName: 'Gone', leftSeq: 3 },
+    ],
+  }, roster)
+  assert.equal(face[0].id, 'a')
+  assert.equal(face[1].remote.handle, '@coder.bob.home')
+  assert.equal(face.length, 2)
+  const onlyRemote = roomAvatarPeople({
+    members: [],
+    participants: [{ kind: 'bot', remote: true, handle: '@bot.friend.home', displayName: '助手' }],
+  }, { byId: {}, bots: [] })
+  assert.equal(onlyRemote.length, 1)
+  assert.equal(onlyRemote[0].remote.handle, '@bot.friend.home')
+  assert.notEqual(onlyRemote[0].id, undefined)
 })
 
 test('handles equal modulo @ and case share one look; a stored look still wins', () => {

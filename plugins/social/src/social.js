@@ -42,6 +42,8 @@ import {
   roomOnlyForJoin,
   faceMemberLabel,
   viewMe,
+  faceOutbound,
+  platformJoinText,
 } from './face-rooms.js'
 import {
   hideRemoteInSettings,
@@ -1365,7 +1367,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         ownerName: p.ownerName,
         remote: p.remote === true,
         roomOnly: p.roomOnly === true || p.published !== true,
-        label: faceMemberLabel({ displayName: p.displayName, ownerName: p.ownerName, handle: p.handle }) || p.displayName || p.id,
+        label: p.label || faceMemberLabel({ displayName: p.displayName, ownerName: p.ownerName, handle: p.handle }) || p.displayName || p.id,
         ...(p.color ? { color: p.color } : {}),
         ...(p.avatar ? { avatar: p.avatar } : {}),
       })),
@@ -1375,6 +1377,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   async function applyFaceSnapshot(snapshot, { asBot } = {}) {
     if (!snapshot?.roomId || !flybot.rooms?.upsertFace) return undefined
     const locals = bringable()
+    const hosted = flybot.rooms.ofFace?.(snapshot.roomId)
+    const previousLive = new Set((hosted?.participants ?? [])
+      .filter(p => p.leftSeq === undefined)
+      .map(p => norm(p.handle || p.id))
+      .filter(Boolean))
     const room = await flybot.rooms.upsertFace({
       roomId: snapshot.roomId,
       status: snapshot.status,
@@ -1385,6 +1392,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         handle: m.handle,
         displayName: m.displayName,
         ownerName: m.ownerName,
+        label: m.label,
         roomOnly: m.roomOnly === true || m.published !== true,
         ...(m.color ? { color: m.color } : {}),
         ...(m.avatar ? { avatar: m.avatar } : {}),
@@ -1401,20 +1409,42 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       seen: prev?.seen ?? [],
     }, asBot)
     let seen = settings.faceRooms[snapshot.roomId].seen
+    const joinedFromEvents = new Set()
     for (const event of snapshot.events ?? []) {
       if (event.eventId && seen.includes(event.eventId)) continue
       const line = renderFaceEvent(event)
       if (!line) continue
       seen = rememberEvent(seen, event.eventId)
       if (line.system) {
+        if (line.kind === 'joined' && event.member?.handle) {
+          const handle = norm(event.member.handle)
+          const key = `join:${handle}`
+          joinedFromEvents.add(handle)
+          if (seen.includes(key)) continue
+          seen = rememberEvent(seen, key)
+        }
         flybot.rooms.applyFaceLine?.(room.id, line)
         void flybot.rooms.postNotice?.(room.id, line.text)
+      } else if (line.human || line.authorKind === 'human') {
+        const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
+        if (local) continue
+        flybot.rooms.applyFaceLine?.(room.id, { ...line, remote: true, authorKind: 'human' })
+        void flybot.rooms.postNotice?.(room.id, `${line.who}: ${line.text}`)
       } else {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
         if (local) continue
         void flybot.rooms.postRemote?.(room.id, { handle: line.authorId, name: line.who, text: line.text })
       }
       if (event.eventCursor) settings.faceRooms[snapshot.roomId].cursor = Math.max(settings.faceRooms[snapshot.roomId].cursor, event.eventCursor)
+    }
+    for (const member of snapshot.members ?? []) {
+      const handle = norm(member.handle)
+      const key = `join:${handle}`
+      if (!handle || previousLive.has(handle) || joinedFromEvents.has(handle) || seen.includes(key)) continue
+      seen = rememberEvent(seen, key)
+      const text = platformJoinText(member)
+      flybot.rooms.applyFaceLine?.(room.id, { kind: 'joined', who: 'Room', text, authorKind: 'system' })
+      void flybot.rooms.postNotice?.(room.id, text)
     }
     settings.faceRooms[snapshot.roomId].seen = seen
     saveSettings()
@@ -1523,20 +1553,31 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
     if (!id) throw new Error('which room?')
     const snapshot = await faceNeed().start(id)
-    const room = await applyFaceSnapshot(snapshot)
+    const room = await applyFaceSnapshot({
+      ...snapshot,
+      status: snapshot.status === 'closed' ? 'closed' : 'open',
+      startedAt: snapshot.startedAt || new Date().toISOString(),
+    })
     return viewHostedFace(room, { status: 'open' })
   }
   if (flybot.rooms?.onFaceLine) {
     disposers.push(flybot.rooms.onFaceLine(async (room, line) => {
-      if (line?.kind) return
       const serverId = room?.face?.roomId
       if (!serverId || !faceApi) return
-      const author = line?.authorId || line?.botId
-      const local = bringable().find(bot => bot.id === author || bot.handle === author)
-      if (!local) return
+      const outbound = faceOutbound(line, {
+        locals: bringable(),
+        asBots: asBotsOf(settings.faceRooms[serverId]),
+      })
+      if (!outbound) return
       try {
-        const sent = await faceApi.send(serverId, { text: String(line.text ?? ''), botId: local.botId })
-        if (sent?.status === 'pending_approval') pendingCache.at = 0
+        const sent = await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
+        if (sent?.status === 'pending_approval') {
+          pendingCache.at = 0
+          if (outbound.human && sent.approvalId) {
+            await confirmedCall('decide_approval', { approval_id: sent.approvalId, decision: 'approved' })
+              .catch(error => warn('face-room owner line not auto-approved', error))
+          }
+        }
       } catch (error) {
         warn('face-room send failed', error)
         throw error

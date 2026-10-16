@@ -182,6 +182,59 @@ export function faceMemberLabel(member) {
   return `${name} · ${owner}'s Bot`
 }
 
+export const FACE_HUMAN_MARK = 'FLYBOT-FACE-HUMAN'
+
+export function encodeFaceHuman(payload = {}) {
+  const who = cleanFaceName(payload.who, 'Someone')
+  const text = String(payload.text ?? '').slice(0, 18_000)
+  return `${FACE_HUMAN_MARK}\n${JSON.stringify({ v: 1, who, text })}`
+}
+
+export function parseFaceHuman(text) {
+  const raw = String(text ?? '')
+  const at = raw.indexOf(FACE_HUMAN_MARK)
+  if (at < 0) return undefined
+  const start = raw.indexOf('{', at)
+  if (start < 0) return undefined
+  let depth = 0
+  let end = -1
+  for (let i = start; i < raw.length; i += 1) {
+    const ch = raw[i]
+    if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) { end = i; break }
+    }
+  }
+  if (end < 0) return undefined
+  try {
+    const data = JSON.parse(raw.slice(start, end + 1))
+    if (data?.v !== 1 || typeof data.text !== 'string') return undefined
+    return { who: cleanFaceName(data.who, 'Someone'), text: String(data.text) }
+  } catch {
+    return undefined
+  }
+}
+
+export function faceOutbound(line, { locals = [], asBots = [] } = {}) {
+  if (!line || line.kind) return undefined
+  if (line.remote === true) return undefined
+  const author = line.authorId || line.botId
+  const local = locals.find(bot => bot.id === author || bot.handle === author)
+  if (local?.botId) return { text: String(line.text ?? ''), botId: local.botId, human: false }
+  if (line.authorKind === 'human') {
+    const speaker = asBots.map(handle => locals.find(bot => bot.handle === handle)).find(Boolean)
+      || locals.find(bot => bot.botId)
+    if (!speaker?.botId) return undefined
+    return {
+      text: encodeFaceHuman({ who: line.who, text: line.text }),
+      botId: speaker.botId,
+      human: true,
+    }
+  }
+  return undefined
+}
+
 export function platformJoinText(member) {
   const name = cleanFaceName(member?.display_name || member?.displayName, 'Bot')
   const owner = cleanFaceName(member?.owner_name || member?.ownerName, 'Someone')
@@ -305,17 +358,20 @@ export function renderFaceEvent(event) {
   if (!viewed) return undefined
   if (viewed.type === 'room.message') {
     const from = viewed.from || {}
-    const label = from.label || faceMemberLabel(from)
     const body = viewed.untrustedText ?? ''
+    const human = parseFaceHuman(body)
+    const label = human?.who || from.label || faceMemberLabel(from)
+    const text = human ? human.text : body
     return {
       kind: undefined,
       system: false,
       who: label,
-      text: body,
-      fenced: fenceFaceText(label, body),
-      authorId: from.handle,
-      authorKind: 'bot',
+      text,
+      fenced: fenceFaceText(label, text),
+      authorId: human ? (from.handle || 'human') : from.handle,
+      authorKind: human ? 'human' : 'bot',
       remote: true,
+      human: Boolean(human),
       ownerName: from.ownerName,
       trust: 'peer_untrusted',
       eventId: viewed.eventId,

@@ -285,6 +285,34 @@ test('face-to-face room hosts room-only remotes and skips friend fanout', async 
   assert.equal(rt.applyFaceRoomLine(room, { eventId: 'fev_1', text: 'dup' }), undefined)
 })
 
+test('face-to-face rejoin revives a left participant instead of duplicating', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const spec = {
+    roomId: 'frm_rejoin',
+    localId: 'face-rejoin',
+    status: 'open',
+    localBots: [{ id: 'spec-a', handle: '@writer.alice.home', name: 'Writer A' }],
+  }
+  const both = [
+    { handle: '@writer.alice.home', displayName: 'Writer', ownerName: 'Alice', published: false },
+    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false, label: 'Coder · Bob' },
+  ]
+  await rt.upsertFaceRoom({ ...spec, members: both })
+  const room = rt.state.rooms['face-rejoin']
+  await rt.upsertFaceRoom({ ...spec, members: [both[0]] })
+  const left = room.participants.filter(p => p.handle === '@coder.bob.home')
+  assert.equal(left.length, 1)
+  assert.ok(left[0].leftSeq !== undefined)
+  await rt.upsertFaceRoom({ ...spec, members: both })
+  const again = room.participants.filter(p => p.handle === '@coder.bob.home')
+  assert.equal(again.length, 1)
+  assert.equal(again[0].leftSeq, undefined)
+  assert.equal(again[0].label, 'Coder · Bob')
+  await rt.upsertFaceRoom({ ...spec, status: 'open', startedAt: '2026-10-16T10:00:00.000Z', members: both })
+  assert.equal(room.face.status, 'open')
+})
+
 test('fanout to remotes fences peer text and never names unpublished specialists', async (t) => {
   const { rt, sent } = host(t, TEAM)
   await rt.load()

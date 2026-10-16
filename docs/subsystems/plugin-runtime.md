@@ -65,6 +65,10 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 - `flybot.rooms.applyInbound` turns a Bot Social inbox envelope into the owner's inbound-share projection; `leaveInbound` hides those rooms when the invited Bot is removed or its grant is revoked. Face-to-face methods are unchanged. Still not team mode.
 
+### Face-to-face owner lines
+
+- `onFaceLine` receives every appended room line, including the owner's typed human lines. The social plugin sends those through Bot Social as the owner's local room Bot with a `FLYBOT-FACE-HUMAN` envelope so every human in the matching room sees the text; incoming envelopes apply as `authorKind: 'human'`. Bot replies stay bot-authored. Still not team mode.
+
 ### Host Bot look for classic-script plugins
 
 - Classic-script plugins cannot import `src/client/mark.js`. The host client `registry()` therefore also sets `globalThis.__flybot__.BotAvatar`, `BotMark` and `lookOf` to the same components the sidebar / session list / chat header use (configured image / shape / color, else a stable look from the Bot id or a remote handle). Plugins typically render `BotAvatar` at 24px with `badge: false`; face-to-face tiles pass 48. A stored `color` / `avatar` on the record still wins; a remote Bot without one is seeded by `remoteSeed(handle)`.

@@ -47,6 +47,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 The default card (`flybot-slots.js`) shows where a held request came from: `senderName` / `targetName` resolved server-side, plus a delegated marker when the send was relayed (`hop > 0`). The strings live in `i18n.js` (`Sent by {sender}`, `Sent by {sender} · delegated`). The decision itself is owner-bound in the host (#52); see [core-host](core-host.md).
 
+### Room avatars in face-to-face chats
+
+- `RoomAvatar` (`src/client/mark.js` `roomAvatarPeople`) seats current local `room.members` and live remote `participants` (handle-seeded via `lookBotForRemote`). A face-to-face room with only remotes no longer falls back to the grey placeholder in the sidebar row or chat header.
+
 ### Remote Bot display
 
 - A friend's remote Bot is stored and delivered by its handle (`@<bot>.<home>` — what the @ menu inserts and `sendUserMentions` matches). Where the user reads it — mention chips (`src/client/user-message.js`) and sidebar previews (`nameMentions` in `src/client/text.js`) — the client rewrites the handle to the display name taken from the local roster (`roster.bots[].remote`, `roster.remoteBots`), never from message text, so a remote-controlled name reaches the UI only through the sanitized roster records (#71; display names, #9).

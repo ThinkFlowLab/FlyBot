@@ -96,8 +96,10 @@ window.__ModuleLoader__.load({
 .fs-digits{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:16px;letter-spacing:.24em;font-variant-numeric:tabular-nums;outline:none;text-align:center}
 .fs-digits:focus{border-color:var(--bt-accent,#4d6bfe)}
 .fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
+.fs-face-item{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%}
 .fs-face-row{display:flex;align-items:center;gap:6px;min-width:0;width:100%;padding:2px 0;flex-wrap:nowrap}
-.fs-face-row .fs-name{flex:1 1 auto;min-width:0}
+.fs-face-row .fs-name{flex:1 1 0;min-width:0}
+.fs-face-actions .fs-btn-sm{height:22px;padding:0 6px;font-size:11px}
 .fs-stack{display:flex;flex-direction:row;align-items:center;flex:none}
 .fs-stack .fs-face-mark,.fs-stack [data-flybot=face-card-member]{margin-left:-6px}
 .fs-stack .fs-face-mark:first-child,.fs-stack [data-flybot=face-card-member]:first-child{margin-left:0}
@@ -247,6 +249,15 @@ window.__ModuleLoader__.load({
         'aria-hidden': true,
         style: { width: size, height: size, '--fs-face-size': `${size}px` },
       }, inner)
+    }
+
+    function faceTileName(member) {
+      const label = String(member?.label ?? '').trim()
+      if (label) return label
+      const name = String(member?.displayName || member?.name || member?.handle || 'Bot').trim()
+      const owner = String(member?.ownerName ?? '').trim()
+      if (owner && name) return `${name} · ${owner}`
+      return name
     }
 
     function FaceTile({ bot, name, handle, mine, pick, selected, onToggle } = {}) {
@@ -498,7 +509,7 @@ window.__ModuleLoader__.load({
                 members.map(member => h(FaceTile, {
                   key: member.handle || member.id,
                   bot: faceLook({ roster, remoteChats, bots, member }),
-                  name: member.displayName || member.label || member.handle,
+                  name: faceTileName(member),
                   handle: member.handle,
                   mine: memberIsMine(member, bots, room),
                 }))),
@@ -543,7 +554,16 @@ window.__ModuleLoader__.load({
     function faceChip(room) {
       if (room.status === 'closed') return 'closed'
       if (room.status === 'left') return 'left'
-      if (room.status === 'candidate') return room.expiresAt ? countdown(room.expiresAt) : 'joining'
+      if (room.status === 'candidate') {
+        if (!room.expiresAt) return 'joining'
+        const at = Date.parse(room.expiresAt)
+        if (!Number.isFinite(at)) return 'joining'
+        const left = Math.max(0, at - Date.now())
+        if (left <= 0) return 'ended'
+        const minutes = Math.ceil(left / 60_000)
+        if (minutes >= 1) return `${minutes}m`
+        return `${Math.max(1, Math.ceil(left / 1000))}s`
+      }
       return 'open'
     }
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats } = {}) {
@@ -565,17 +585,18 @@ window.__ModuleLoader__.load({
       const look = (m) => (m.remote === false || m.id && roster?.byId?.[m.id]
         ? faceLook({ roster, local: roster?.byId?.[m.id] || { id: m.id, name: m.displayName } })
         : faceLook({ roster, remoteChats, member: m }))
-      return h('div', { className: 'fs-face-row', 'data-flybot': 'face-room', 'data-status': room.status },
-        h('span', { className: 'fs-stack', 'aria-label': 'Members' },
-          shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
-            h(FaceAvatar, { bot: look(m), size: 20 }))),
-          extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
-        h('span', { className: 'fs-name' }, room.name || 'Face-to-face room'),
-        h('span', { className: 'fs-chip', 'data-flybot': 'face-status' }, faceChip(room)),
-        h('span', { className: 'fs-face-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy || !room.roomId, onClick: () => { if (room.roomId) actions?.openSession?.(room.roomId) } }, 'Open'),
-          candidate ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('start', () => call('social/face-start', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Start') : null,
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Leave')),
+      return h('div', { className: 'fs-face-item', 'data-flybot': 'face-room', 'data-status': room.status },
+        h('div', { className: 'fs-face-row' },
+          h('span', { className: 'fs-stack', 'aria-label': 'Members' },
+            shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
+              h(FaceAvatar, { bot: look(m), size: 20 }))),
+            extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
+          h('span', { className: 'fs-name' }, room.name || 'Face-to-face room'),
+          h('span', { className: 'fs-chip', 'data-flybot': 'face-status' }, faceChip(room)),
+          h('span', { className: 'fs-face-actions' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy || !room.roomId, onClick: () => { if (room.roomId) actions?.openSession?.(room.roomId) } }, 'Open'),
+            candidate ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('start', () => call('social/face-start', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Start') : null,
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Leave'))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
@@ -733,23 +754,22 @@ window.__ModuleLoader__.load({
       const [pastOpen, setPastOpen] = useState(false)
       const live = rooms.filter(room => !isPastFace(room))
       const past = rooms.filter(isPastFace)
-      const candidate = live.some(room => room.status === 'candidate')
-      const load = (poll) => call('social/face-rooms', { poll }).then(value => {
+      const load = (poll = true) => call('social/face-rooms', { poll }).then(value => {
         setRooms(Array.isArray(value?.rooms) ? value.rooms : [])
         if (typeof value?.autoApproveFaceRooms === 'boolean') setAutoSend(value.autoApproveFaceRooms)
       }, () => {})
       useEffect(() => {
         if (!enabled) return undefined
-        load(false)
+        load(true)
         if (typeof setInterval !== 'function') return undefined
         const tick = () => {
           if (typeof document !== 'undefined' && document.hidden) return
-          load(candidate)
+          load(true)
         }
-        const timer = setInterval(tick, candidate ? 5000 : 30_000)
+        const timer = setInterval(tick, 5000)
         timer?.unref?.()
         return () => clearInterval(timer)
-      }, [enabled, candidate])
+      }, [enabled])
       const toggle = async (next) => {
         setAutoBusy(true)
         setAutoError('')
@@ -761,19 +781,20 @@ window.__ModuleLoader__.load({
       }
       if (!rooms.length) return null
       const card = (room) => h(FaceRoomCard, {
-        key: room.faceRoomId || room.roomId, room, actions, onChange: load, roster, remoteChats,
+        key: room.faceRoomId || room.roomId, room, actions, onChange: () => load(true), roster, remoteChats,
       })
+      const pastFold = past.length ? h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
+        h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
+          h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
+          'Past rooms',
+          h('span', { className: 'fs-count' }, String(past.length))),
+        pastOpen ? past.map(card) : null) : null
       return h('div', { 'data-flybot': 'face-rooms' },
-        h('div', { className: 'fs-label fs-face-head' },
+        live.length ? h('div', { className: 'fs-label fs-face-head' },
           'Face-to-face rooms',
-          h(FaceAutoSend, { on: autoSend, busy: autoBusy, onChange: toggle, error: autoError })),
+          h(FaceAutoSend, { on: autoSend, busy: autoBusy, onChange: toggle, error: autoError })) : null,
         live.map(card),
-        past.length ? h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
-          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
-            h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
-            'Past rooms',
-            h('span', { className: 'fs-count' }, String(past.length))),
-          pastOpen ? past.map(card) : null) : null)
+        pastFold)
     }
 
     function FaceRoomOverview({ room } = {}) {
@@ -875,6 +896,7 @@ window.__ModuleLoader__.load({
           if (!openRef.current) return
           if (typeof document !== 'undefined' && document.hidden) return
           loadApprovals()
+          load()
         }
         const timer = setInterval(tick, 15_000)
         timer?.unref?.()

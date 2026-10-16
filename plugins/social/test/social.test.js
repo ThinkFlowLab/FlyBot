@@ -11,6 +11,7 @@ import { apply as applySocial, inject, name } from '../index.js'
 import { approvalView, createSocial, draftText, homeHandleOf, onboard, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions } from '../src/mcp-client.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
+import { encodeFaceHuman } from '../src/face-rooms.js'
 import {
   hideRemoteInSettings, forgetHiddenIfGone, filterHiddenHomes, presentRemoteHandles,
   HIDE_GONE_FETCHES, isHomeLevelHandle, isHiddenRemote, clearHiddenRemote, homeOfHiddenHandle,
@@ -1192,9 +1193,74 @@ test('face-to-face join hosts a native room, maps errors, starts and leaves', as
   assert.equal(started.status, 'open')
   const listed = (await call('flybot/social/face-rooms', {})).value
   assert.equal(listed.rooms.length, 1)
+  assert.equal(listed.rooms[0].status, 'open')
   const left = (await call('flybot/social/face-leave', { faceRoomId: 'frm_123456' })).value
   assert.equal(left.status, 'closed')
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456'), undefined)
+})
+
+test('face-to-face: a member already in the snapshot gets a join line when the event is missing', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  server.face.rooms.get('frm_123456').members.push({
+    bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob',
+  })
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.ok((hosted.log ?? []).some(line => /Bob's Coder joined/.test(line.text)))
+  const live = (hosted.participants ?? []).filter(p => p.leftSeq === undefined && p.handle === '@coder.bob.home')
+  assert.equal(live.length, 1)
+})
+
+test('face-to-face: an owner-typed line is fanned out and shown as a human on the other side', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  let fanout
+  const origScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = origScope(name)
+    const origOn = scoped.rooms.onFaceLine.bind(scoped.rooms)
+    scoped.rooms.onFaceLine = (fn) => {
+      fanout = fn
+      return origOn(fn)
+    }
+    return scoped
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  const room = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.equal(typeof fanout, 'function')
+  await fanout(room, { authorKind: 'human', who: 'Danyang', text: 'hello from the owner', authorId: 'owner-1' })
+  const sent = server.calls.find(c => String(c.name).includes('/messages'))
+  assert.ok(sent, 'owner line POSTs to the face-room messages route')
+  assert.match(String(sent.args?.text ?? ''), /FLYBOT-FACE-HUMAN/)
+  assert.match(String(sent.args?.text ?? ''), /hello from the owner/)
+  const body = server.face.rooms.get('frm_123456')
+  body.event_cursor += 1
+  body.events.push({
+    event_id: `fev_${body.event_cursor}`, event_cursor: body.event_cursor, type: 'room.message',
+    from: { handle: '@chief.boxa.home', display_name: 'Chief', owner_name: 'BoxA', published: false, label: 'Chief · BoxA' },
+    trust: 'peer_untrusted', untrusted_content: { text: encodeFaceHuman({ who: 'BoxA', text: 'hello from the owner' }) },
+  })
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.ok((hosted.log ?? []).some(line => line.authorKind === 'human' && line.text === 'hello from the owner' && /BoxA/.test(line.who)))
 })
 
 test('face-to-face send pending_approval uses decide_approval', async (t) => {
@@ -1588,7 +1654,8 @@ test('Face-to-face room card is one compact row with a status chip and no invali
     },
     actions: { openSession() {} },
   }))
-  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-room' && n.props.className === 'fs-face-row'))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-room' && n.props.className === 'fs-face-item'))
+  assert.ok(tree.some(n => n.props.className === 'fs-face-row'))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('open')))
   assert.ok(tree.some(n => n.props.className === 'fs-stack-more' && n.children.includes('+1')))
   assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Open')))
@@ -1617,6 +1684,44 @@ test('Face-to-face past rooms sit under a Past rooms fold; Auto-send is once in 
   const opened = walk(pluginOpen.FaceRooms({}))
   assert.ok(opened.some(n => n.props['data-status'] === 'closed'))
   assert.ok(opened.some(n => n.props['data-status'] === 'left'))
+
+  const pastOnly = walk(pluginOf([
+    [{ faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] }],
+    false, false, '', false,
+  ]).FaceRooms({}))
+  assert.equal(pastOnly.some(n => n.props.className === 'fs-face-head' || (Array.isArray(n.children) && n.children.includes('Face-to-face rooms'))), false)
+  assert.equal(pastOnly.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
+  assert.ok(pastOnly.some(n => n.props['data-flybot'] === 'face-past'))
+})
+
+test('Face-to-face room card uses a short status chip so Start is not clipped', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([])
+  const tree = walk(plugin.FaceRoomCard({
+    room: {
+      name: 'Face-to-face room', status: 'candidate', roomId: 'g1',
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      members: [{ handle: '@a', displayName: 'Chief' }],
+    },
+    actions: { openSession() {} },
+  }))
+  const chip = tree.find(n => n.props['data-flybot'] === 'face-status')
+  assert.ok(chip)
+  assert.match(String(chip.children.join('')), /^\d+m$/)
+  assert.equal(tree.some(n => typeof n.children?.[0] === 'string' && /minutes left/.test(n.children[0])), false)
+  assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Start')))
+  assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Open')))
+})
+
+test('Face-to-face rooms list polls Bot Social while Friends\' Bots is open', () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/face-rooms') return { rooms: [], autoApproveFaceRooms: false }
+    return {}
+  })
+  walk(pluginOf([], true).FaceRooms({ enabled: true }))
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-rooms' && payload?.poll === true))
 })
 
 test('#114: in-chat dock lists drafts with Approve all; others see a waiting line', () => {
@@ -1823,8 +1928,8 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
   assert.equal(peerMark.props['data-image'], 'https://example.test/coder.png')
   assert.equal(peerMark.props['data-size'], 48)
   assert.notEqual(mineMark.props['data-bot-id'], peerMark.props['data-bot-id'])
-  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief')))
-  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Coder')))
+  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief · Me')))
+  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Coder · Bob')))
   assert.equal(mine.children.some(n => n.props?.className === 'fs-sub' || (typeof n.props?.className === 'string' && n.props.className.includes('fs-tag'))), false)
   assert.equal(peer.children.some(n => n.props?.className === 'fs-sub'), false)
   assert.equal(wait.some(n => n.props['data-flybot'] === 'face-owner'), false)
@@ -1883,7 +1988,7 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
   cursor = 0
   const liveNodes = liveClient.walk(livePlugin.FaceToFaceGroup({ actions: {} }))
   assert.ok(liveNodes.some(n => n.props['data-flybot'] === 'face-member' && n.props['data-handle'] === '@writer.alice.home'))
-  assert.ok(liveNodes.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Writer')))
+  assert.ok(liveNodes.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Writer · Alice')))
   assert.equal(liveNodes.some(n => n.props['data-flybot'] === 'face-owner'), false)
   assert.equal(liveNodes.some(n => Array.isArray(n.children) && n.children.includes('Alice')), false)
 

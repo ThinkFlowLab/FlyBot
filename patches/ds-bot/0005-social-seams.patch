@@ -46,8 +46,10 @@ diff --git a/src/client/characters.js b/src/client/characters.js
 diff --git a/src/client/mark.js b/src/client/mark.js
 --- a/src/client/mark.js
 +++ b/src/client/mark.js
-@@ -2,7 +2,7 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
- import { fnv1a, lookOf, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
+@@ -1,8 +1,8 @@
+ import { createElement as h, useEffect, useRef, useState } from 'react'
+-import { fnv1a, lookOf, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
++import { fnv1a, lookOf, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
  import { t } from './i18n.js'
  
 -export { colorOf, lookOf } from './characters.js'
@@ -55,6 +57,52 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  
  // -------------------------------------------------------------------------
  // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.
+@@ -130,10 +130,42 @@ function clusterSeats(count, frame) {
+   return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]]
+ }
+ 
++export function roomAvatarPeople(room, roster) {
++  const members = (room?.members ?? []).map(id => roster?.byId?.[id]).filter(Boolean)
++  const seen = new Set(members.map(bot => bot.id))
++  const remotes = []
++  for (const p of room?.participants ?? []) {
++    if (p.leftSeq !== undefined) continue
++    if (p.kind === 'human') continue
++    if (!p.remote && p.id && seen.has(p.id)) continue
++    if (!p.remote && p.id && roster?.byId?.[p.id]) {
++      if (!seen.has(p.id)) {
++        members.push(roster.byId[p.id])
++        seen.add(p.id)
++      }
++      continue
++    }
++    const handle = p.handle || (p.remote ? p.id : '')
++    if (!handle) continue
++    if (members.some(bot => bot.remote?.handle === handle || bot.handle === handle)) continue
++    const key = `h:${handle}`
++    if (seen.has(key)) continue
++    seen.add(key)
++    remotes.push(lookBotForRemote({
++      handle,
++      displayName: p.displayName,
++      name: p.displayName,
++      label: p.label,
++      color: p.color,
++      avatar: p.avatar,
++    }, roster))
++  }
++  if (members.length === 1 && remotes.length === 0) return [members[0], null]
++  return [...members, ...remotes]
++}
++
+ export function RoomAvatar({ room, roster, size = 36 }) {
+-  const members = room.members.map(id => roster.byId[id]).filter(Boolean)
+-  // A group with one Bot left shows the user beside it.
+-  const people = members.length === 1 ? [members[0], null] : members
++  const people = roomAvatarPeople(room, roster)
+   const seat = (bot, seatSize, key) => (bot
+     ? h(BotMark, { key, bot, size: seatSize })
+     : h('span', { key, className: 'bt-cluster-you', style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } }))
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
