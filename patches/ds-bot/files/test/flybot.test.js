@@ -378,16 +378,26 @@ test('mentions in a group (#80, #81): the room gets a receipt — sent points to
   fb.transports.add('bot-social', { send: async msg => { out.push(msg); return { exchangeId: `r${out.length}` } } })
   fb.scope('social').remote.publish([{ handle: '@helper.friend.home', name: '助手', home: '@friend.home' }])
   let seq = 0
-  const say = async text => {
-    ctx.emitArgs('session/event', { id: 'room-1' }, { type: 'user/message', seq: ++seq, data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } })
-    await delay(30)
-  }
   const receipts = () => (agents.get('room-1')?.calls ?? []).map(([, m]) => m.content.map(b => b.text).join('\n'))
-  await say('@helper.friend.home 你好')
+  // Hold persists the approval (load/save + taskHeld) and can race remote-chat open
+  // after publish; wait for the receipt instead of a fixed 30 ms.
+  const until = async (check) => {
+    const end = Date.now() + 2000
+    while (!check()) {
+      if (Date.now() > end) throw new Error('until: the condition did not hold within 2 s')
+      await delay(10)
+    }
+  }
+  const say = async (text, n) => {
+    ctx.emitArgs('session/event', { id: 'room-1' }, { type: 'user/message', seq: ++seq, data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } })
+    if (n === undefined) await delay(30)
+    else await until(() => receipts().length >= n)
+  }
+  await say('@helper.friend.home 你好', 1)
   assert.equal(out.length, 1)
   // One receipt, where the reply lands (#80): a friend's Bot's answer never re-enters the group.
   assert.equal(receipts().length, 1)
-  assert.match(receipts()[0], /助手: sent — its replies appear in its own chat under Friends' Bots, not in this group/)
+  assert.match(receipts()[0], /助手: sent — its replies appear in its own chat, not in this group/)
   const posted = agents.get('room-1').calls[0][1]
   assert.equal(posted.source.kind, 'bot')
   assert.equal(posted.source.role, 'mention')
@@ -396,13 +406,14 @@ test('mentions in a group (#80, #81): the room gets a receipt — sent points to
   // A plain message gets no receipt.
   await say('no mentions here')
   assert.equal(receipts().length, 1)
-  // A hold (#81) says what is waiting and where.
+  // A hold (#81) says what is waiting and where. Friend is not a room participant, so
+  // #143/#144's in-room skip does not apply: the 1:1 send still runs and the room hears why.
   fb.bot.send.use({ name: 'deny-some', handle: m => (m.target?.remote === true && /no/.test(m.text) ? { action: 'deny', reason: 'no friendship' } : undefined) })
   fb.bot.send.use({ name: 'hold-remote', handle: m => (m.target?.remote === true ? { action: 'hold', reason: 'check with the user' } : undefined) })
-  await say('@helper.friend.home say no')
+  await say('@helper.friend.home say no', 2)
   assert.equal(out.length, 1)
   assert.match(receipts()[1], /助手: not sent — no friendship/)
-  await say('@helper.friend.home say yes')
+  await say('@helper.friend.home say yes', 3)
   assert.equal(out.length, 1)
   assert.match(receipts()[2], /助手: held for your approval — check with the user/)
   // A mention from a Bot's own chat stays as it was: no receipt outside a group.
