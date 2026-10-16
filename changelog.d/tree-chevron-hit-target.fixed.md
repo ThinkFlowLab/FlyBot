@@ -1,0 +1,1 @@
+The Bot tree collapse/expand chevron in the sidebar is a 16px glyph on a 28×28 hit target, vertically centered in the row, with a hover background and a keyboard focus ring. Collapse still rotates the chevron; Expand/Collapse labels and `aria-expanded` are unchanged.

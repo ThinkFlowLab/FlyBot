@@ -1056,14 +1056,17 @@ diff --git a/client.js b/client.js
      if (value) {
        setKept(value);
        return void 0;
-@@ -1856,6 +1856,11 @@ body[data-bt-motion=lively] .bt-mark[data-live][data-state=idle][data-fidget=loo
+@@ -1856,6 +1856,14 @@ body[data-bt-motion=lively] .bt-mark[data-live][data-state=idle][data-fidget=loo
  @keyframes bt-fidget-look{0%,22%,100%{transform:none}3%,9%{transform:translateX(-14%)}12%,19%{transform:translateX(14%)}}
  body[data-bt-motion=lively] .bt-badge-alert{right:auto;bottom:auto;left:50%;top:calc(var(--bt-size,36px) * -.14);translate:-50% 0;animation:bt-q-ride 1.3s cubic-bezier(.3,.7,.4,1) infinite}
  body[data-bt-motion=lively] :is(.bt-row,.bt-tile)>.bt-mark:hover .bt-badge-alert{animation:none}
 +.bt-tree-item{position:relative;display:flex;align-items:center;min-width:0}
 +.bt-tree-item>.bt-row{flex:1 1 auto;min-width:0}
-+.bt-tree-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:36px;padding:0;border:0;background:transparent;color:var(--bt-ink-3);font-size:10px;cursor:pointer;transition:transform .12s ease}
-+.bt-tree-toggle[aria-expanded=false]{transform:rotate(-90deg)}
++.bt-tree-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);font-size:16px;line-height:1;cursor:pointer}
++.bt-tree-toggle:not(.bt-tree-leaf):hover{background:var(--bt-hover)}
++.bt-tree-toggle:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
++.bt-tree-chev{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;font-size:16px;line-height:1;transition:transform .12s ease}
++.bt-tree-toggle[aria-expanded=false] .bt-tree-chev{transform:rotate(-90deg)}
 +.bt-tree-leaf{cursor:default}
  @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
  /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
@@ -1120,11 +1123,10 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2829,252 +2829,134 @@ function installCompiledStyles(text, tag) {
-       if (!list) {
+@@ -2830,251 +2830,133 @@ function installCompiledStyles(text, tag) {
          list = sheetClassNames(sheet);
          cache.set(sheet, list);
--      }
+       }
 -      for (const name of list) names.add(name);
 -    }
 -    const next = compileFragmentSelectors(text, names);
@@ -1275,7 +1277,6 @@ diff --git a/client.js b/client.js
 -  }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+      }
 +      for (const name of list) names.add(name);
 +    }
 +    const next = compileFragmentSelectors(text, names);
@@ -2803,8 +2804,7 @@ diff --git a/client.js b/client.js
 +      }
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, reply.text);
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -2817,7 +2817,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -3357,7 +3358,7 @@ diff --git a/client.js b/client.js
      const list = listRef.current;
      if (!list) return;
      const next = /* @__PURE__ */ new Map();
-@@ -5014,9 +5014,40 @@ function useListGlide(listRef, layout, key) {
+@@ -5014,9 +5014,44 @@ function useListGlide(listRef, layout, key) {
      tops.current = { layout, map: next };
    }, [layout, key]);
  }
@@ -3385,7 +3386,11 @@ diff --git a/client.js b/client.js
 +    (0, import_react9.createElement)(
 +      "div",
 +      { className: "bt-tree-item", "data-depth": depth, style: { paddingLeft: `${depth * 16}px` } },
-+      children.length ? (0, import_react9.createElement)("button", { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) }, "▾") : (0, import_react9.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
++      children.length ? (0, import_react9.createElement)(
++        "button",
++        { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) },
++        (0, import_react9.createElement)("span", { className: "bt-tree-chev", "aria-hidden": true }, "▾")
++      ) : (0, import_react9.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
 +      (0, import_react9.createElement)(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
 +      typeof actions === "function" ? (0, import_react9.createElement)(NodeActions, { component: actions, bot }) : null
 +    ),

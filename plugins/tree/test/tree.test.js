@@ -398,6 +398,12 @@ test('sidebar: header shows the node count; nodes render name, one-line role, gu
   assert.match(mod.CSS, /\.flybot-tree-kids::before\{[^}]*border-left/)
   assert.match(mod.CSS, /var\(--bt-ink-2/) // ds-bot sidebar tokens, dark theme follows
   assert.doesNotMatch(mod.CSS, /overflow:(auto|scroll)/) // no stray scrollbars
+  assert.match(mod.CSS, /\.flybot-tree-toggle\{[^}]*width:28px;height:28px/)
+  assert.match(mod.CSS, /\.flybot-tree-caret\{[^}]*font-size:16px/)
+  assert.match(mod.CSS, /\.flybot-tree-toggle:hover\{background:var\(--bt-hover/)
+  assert.match(mod.CSS, /\.flybot-tree-toggle:focus-visible\{outline:2px solid var\(--bt-accent/)
+  assert.match(mod.CSS, /\.flybot-tree-toggle\[aria-expanded=false\] \.flybot-tree-caret\{transform:rotate\(-90deg\)\}/)
+  assert.match(html, /class="flybot-tree-caret"/)
   assert.equal(mod.countNodes(sample(mod)), 4)
 })
 

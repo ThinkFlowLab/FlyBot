@@ -2546,8 +2546,11 @@ body[data-bt-motion=lively] .bt-badge-alert{right:auto;bottom:auto;left:50%;top:
 body[data-bt-motion=lively] :is(.bt-row,.bt-tile)>.bt-mark:hover .bt-badge-alert{animation:none}
 .bt-tree-item{position:relative;display:flex;align-items:center;min-width:0}
 .bt-tree-item>.bt-row{flex:1 1 auto;min-width:0}
-.bt-tree-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:36px;padding:0;border:0;background:transparent;color:var(--bt-ink-3);font-size:10px;cursor:pointer;transition:transform .12s ease}
-.bt-tree-toggle[aria-expanded=false]{transform:rotate(-90deg)}
+.bt-tree-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);font-size:16px;line-height:1;cursor:pointer}
+.bt-tree-toggle:not(.bt-tree-leaf):hover{background:var(--bt-hover)}
+.bt-tree-toggle:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
+.bt-tree-chev{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;font-size:16px;line-height:1;transition:transform .12s ease}
+.bt-tree-toggle[aria-expanded=false] .bt-tree-chev{transform:rotate(-90deg)}
 .bt-tree-leaf{cursor:default}
 @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
 /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
@@ -5766,7 +5769,11 @@ function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) 
     (0, import_react9.createElement)(
       "div",
       { className: "bt-tree-item", "data-depth": depth, style: { paddingLeft: `${depth * 16}px` } },
-      children.length ? (0, import_react9.createElement)("button", { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) }, "▾") : (0, import_react9.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
+      children.length ? (0, import_react9.createElement)(
+        "button",
+        { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) },
+        (0, import_react9.createElement)("span", { className: "bt-tree-chev", "aria-hidden": true }, "▾")
+      ) : (0, import_react9.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
       (0, import_react9.createElement)(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
       typeof actions === "function" ? (0, import_react9.createElement)(NodeActions, { component: actions, bot }) : null
     ),

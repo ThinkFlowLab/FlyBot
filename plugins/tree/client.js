@@ -54,11 +54,14 @@ window.__ModuleLoader__.load({
 .flybot-tree-kids::before{content:'';position:absolute;left:0;top:0;bottom:12px;border-left:1px solid var(--bt-line-2,rgba(20,20,20,.15))}
 .flybot-tree-kids>.flybot-tree-node{position:relative}
 .flybot-tree-kids>.flybot-tree-node::before{content:'';position:absolute;left:-6px;top:18px;width:6px;border-top:1px solid var(--bt-line-2,rgba(20,20,20,.15))}
-.flybot-tree-row{display:flex;align-items:flex-start;gap:4px;min-width:0;border-radius:8px;transition:background-color .12s ease}
+.flybot-tree-row{display:flex;align-items:center;gap:4px;min-width:0;border-radius:8px;transition:background-color .12s ease}
 .flybot-tree-row:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
-.flybot-tree-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:36px;padding:0;border:0;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font-size:10px;cursor:pointer}
-.flybot-tree-toggle[aria-expanded=false]{transform:rotate(-90deg)}
-.flybot-tree-dot{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:36px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-size:8px}
+.flybot-tree-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font-size:16px;line-height:1;cursor:pointer}
+.flybot-tree-toggle:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.flybot-tree-toggle:focus-visible{outline:2px solid var(--bt-accent,#4d6bfe);outline-offset:1px}
+.flybot-tree-caret{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;font-size:16px;line-height:1;transition:transform .12s ease}
+.flybot-tree-toggle[aria-expanded=false] .flybot-tree-caret{transform:rotate(-90deg)}
+.flybot-tree-dot{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-size:8px}
 .flybot-tree-open{display:flex;flex-direction:column;min-width:0;flex:1 1 auto;padding:4px 6px 4px 0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .flybot-tree-open:disabled{cursor:default}
 .flybot-tree-name{font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -81,7 +84,8 @@ window.__ModuleLoader__.load({
       return h('li', { className: 'flybot-tree-node', 'data-bot-id': node.id },
         h('div', { className: 'flybot-tree-row' },
           has
-            ? h('button', { type: 'button', className: 'flybot-tree-toggle', 'aria-expanded': open, 'aria-label': open ? `Collapse ${node.name}` : `Expand ${node.name}`, onClick: () => setOpen(o => !o) }, '▾')
+            ? h('button', { type: 'button', className: 'flybot-tree-toggle', 'aria-expanded': open, 'aria-label': open ? `Collapse ${node.name}` : `Expand ${node.name}`, onClick: () => setOpen(o => !o) },
+                h('span', { className: 'flybot-tree-caret', 'aria-hidden': true }, '▾'))
             : h('span', { className: 'flybot-tree-dot', 'aria-hidden': true }, '●'),
           h('button', { type: 'button', className: 'flybot-tree-open', title: role ? `${node.name} · ${role}` : node.name, disabled: !openBot, onClick: () => openBot?.(node.id) },
             h('span', { className: 'flybot-tree-name' }, node.name),

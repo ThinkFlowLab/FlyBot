@@ -20,6 +20,23 @@ test('botTree: Chief is the root; Bots without a known parent go under it; cycle
   assert.deepEqual(botTree(bots, 'missing', () => undefined), [])
 })
 
+test('sidebar tree toggle is a 28px hit target with a 16px chevron, hover, and focus ring', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8')
+  assert.match(src, /className: 'bt-tree-toggle'/)
+  assert.match(src, /'aria-expanded': !closed/)
+  assert.match(src, /'aria-label': `\$\{closed \? t\('Expand'\) : t\('Collapse'\)\} \$\{bot\.name\}`/)
+  assert.match(src, /className: 'bt-tree-chev'/)
+  assert.match(src, /className: 'bt-tree-toggle bt-tree-leaf'/)
+  assert.match(css, /\.bt-tree-toggle\{[^}]*width:28px;height:28px/)
+  assert.match(css, /\.bt-tree-chev\{[^}]*font-size:16px/)
+  assert.match(css, /\.bt-tree-toggle:not\(\.bt-tree-leaf\):hover\{background:var\(--bt-hover\)\}/)
+  assert.match(css, /\.bt-tree-toggle:focus-visible\{outline:2px solid var\(--bt-accent\)/)
+  assert.match(css, /\.bt-tree-toggle\[aria-expanded=false\] \.bt-tree-chev\{transform:rotate\(-90deg\)\}/)
+  assert.doesNotMatch(css, /\.bt-tree-toggle\[aria-expanded=false\]\{transform:rotate/)
+})
+
 test('sidebar tree draws the structure entry\'s nodeActions after each row', async () => {
   const { readFileSync } = await import('node:fs')
   const src = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8')

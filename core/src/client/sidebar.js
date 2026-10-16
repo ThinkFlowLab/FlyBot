@@ -264,7 +264,8 @@ function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) 
   return h(Fragment, null,
     h('div', { className: 'bt-tree-item', 'data-depth': depth, style: { paddingLeft: `${depth * 16}px` } },
       children.length
-        ? h('button', { type: 'button', className: 'bt-tree-toggle', 'aria-expanded': !closed, 'aria-label': `${closed ? t('Expand') : t('Collapse')} ${bot.name}`, onClick: () => toggle(bot.id) }, '▾')
+        ? h('button', { type: 'button', className: 'bt-tree-toggle', 'aria-expanded': !closed, 'aria-label': `${closed ? t('Expand') : t('Collapse')} ${bot.name}`, onClick: () => toggle(bot.id) },
+            h('span', { className: 'bt-tree-chev', 'aria-hidden': true }, '▾'))
         : h('span', { className: 'bt-tree-toggle bt-tree-leaf', 'aria-hidden': true }),
       h(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
       typeof actions === 'function' ? h(NodeActions, { component: actions, bot }) : null),
