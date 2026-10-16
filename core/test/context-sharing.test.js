@@ -263,6 +263,32 @@ test('answer-question and schedule-create chips must name a chat the author may 
   void bob
 })
 
+test('answer-question and schedule-create accept menu-encoded session chips the author owns', async (t) => {
+  // Menu chips encode JSON.stringify(sessionId) as base64url (`a` → ImEi).
+  const ownEncoded = 'ImEi'
+  const foreignEncoded = Buffer.from(JSON.stringify('d')).toString('base64url')
+  const state = team()
+  state.questions.a = { id: 'q1', question: 'What next?', options: [{ label: 'Go' }], callId: 'c1' }
+  const { call, signIn } = await start(t, { state })
+  const alice = await signIn('Alice')
+  const ownAnswer = await call('answer-question', {
+    sessionId: 'a', questionId: 'q1',
+    answer: { custom: `look at @[this](dsh-session:${ownEncoded}) please` },
+  }, alice.sessionToken)
+  assert.equal(ownAnswer.ok, true, JSON.stringify(ownAnswer))
+  const foreignSchedule = await call('schedule-create', {
+    target: 'a', title: 'Ping', prompt: `look at @[that](dsh-session:${foreignEncoded})`,
+    when: { kind: 'every', minutes: 30 },
+  }, alice.sessionToken)
+  assert.equal(foreignSchedule.ok, false, JSON.stringify(foreignSchedule))
+  assert.equal(foreignSchedule.error.code, 'bot/forbidden')
+  const ownSchedule = await call('schedule-create', {
+    target: 'a', title: 'Ping', prompt: `look at @[this](dsh-session:${ownEncoded})`,
+    when: { kind: 'every', minutes: 30 },
+  }, alice.sessionToken)
+  if (ownSchedule.ok === false) assert.notEqual(ownSchedule.error.code, 'bot/forbidden', JSON.stringify(ownSchedule))
+})
+
 test('a Bot post into a group drops chat-reference chips so they cannot tunnel a private chat', async (t) => {
   const { tool, agentOf, signIn } = await start(t)
   const alice = await signIn('Alice')
@@ -272,6 +298,12 @@ test('a Bot post into a group drops chat-reference chips so they cannot tunnel a
   const text = agentOf('war').calls.map(message => (message.content ?? []).map(block => block.text ?? '').join('\n')).join('\n')
   assert.ok(text.includes('see @secret'), 'the rest of the post still lands')
   assert.ok(!text.includes('dsh-session:'), 'chips do not enter the group Session as user text')
+  // Nested marker must not reconstitute a valid chip after one strip pass.
+  const nested = await tool('post_to_group', { group: 'War', message: 'nested @[secret](dsh-sessiondsh-session:x:ImQi) end' }, 'a')
+  assert.match(String(nested), /Posted/, String(nested))
+  const again = agentOf('war').calls.map(message => (message.content ?? []).map(block => block.text ?? '').join('\n')).join('\n')
+  assert.ok(!again.includes('dsh-session:'), 'nested chips do not reconstitute')
+  assert.ok(!/@\[secret\]\(dsh-session:/.test(again), 'no valid reconstituted chip')
   void alice
 })
 

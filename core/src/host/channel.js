@@ -122,10 +122,15 @@ export function install(rt) {
   // the message, so the author must be able to read what they share (#53, #106).
   // Actor-authored text that becomes a session user message: send, room-post,
   // answer-question, schedule-create. Bot-authored room posts strip chips in groups.js.
+  // Menu chips encode the session id as base64url(JSON); raw ids still appear in tests.
+  const decodeSessionChip = (payload) => {
+    try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) } catch { return undefined }
+  }
   const unshareableReference = (actor, text) => {
     if (!actor || !rt.authzEnforced?.() || typeof text !== 'string') return undefined
     for (const match of text.matchAll(/dsh-session:([A-Za-z0-9_-]+)/g)) {
-      if (!rt.sessionOwnedBy?.(actor, match[1])) return match[1]
+      const id = decodeSessionChip(match[1]) ?? match[1]
+      if (!rt.sessionOwnedBy?.(actor, id)) return id
     }
     return undefined
   }

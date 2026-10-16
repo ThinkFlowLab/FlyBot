@@ -33,9 +33,17 @@ const ROOM_EARLIER_MAX = 8
 // Bot cannot tunnel a private chat into the room (#106). Authorship stays the gate.
 function stripSessionChips(text) {
   if (typeof text !== 'string' || !text.includes('dsh-session:')) return text
-  return text
-    .replace(/@\[((?:\\.|[^\]\\])*)\]\(dsh-session:[A-Za-z0-9_-]+\)/g, (_, label) => `@${String(label).replace(/\\([\\\]])/g, '$1')}`)
-    .replace(/dsh-session:[A-Za-z0-9_-]+/g, '')
+  // Loop until stable: a nested marker like dsh-sessiondsh-session:x:ImQi must not
+  // reconstitute a valid chip after one pass (#106 Codex review).
+  let out = text
+  for (let previous; previous !== out;) {
+    previous = out
+    out = out
+      .replace(/@\[((?:\\.|[^\]\\])*)\]\(dsh-session:[A-Za-z0-9_-]+\)/g, (_, label) => `@${String(label).replace(/\\([\\\]])/g, '$1')}`)
+      .replace(/dsh-session:[A-Za-z0-9_-]+/g, '')
+  }
+  if (out.includes('dsh-session:')) out = out.replace(/dsh-session:/g, '')
+  return out
 }
 const ROOM_EXTRA_TURNS = 4
 const ROOM_ADMIN_EXTRA_TURNS = 4
