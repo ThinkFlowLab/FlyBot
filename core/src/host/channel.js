@@ -405,6 +405,15 @@ export function install(rt) {
         case 'diagnostics-clear':
           await rt.diagnostics.clear()
           return ok(true)
+        case 'tasks':
+        case 'task-create':
+        case 'task-accept':
+        case 'task-start':
+        case 'task-return':
+        case 'task-accept-result':
+        case 'task-cancel':
+          await rt.load()
+          return ok(await rt.taskEndpoint(endpoint, body, actor))
         case 'share-brief':
           await rt.load()
           await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)

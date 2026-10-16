@@ -176,6 +176,8 @@ export function install(rt) {
         fire('bot.removed', { ...last, botId: id, bot: last })
         // A hold naming this Bot as sender or target can no longer be spent (#52).
         await invalidateFor([id], 'the Bot was deleted')
+        // Its open tasks fail rather than wait forever (#54).
+        await rt.taskBotDeleted?.(id)
       // Deleting a friend's Bot's chat clears it; the friend's Bot is still there, so it gets a
       // fresh, empty chat at once. Otherwise its row waits ("opening its chat…") until the
       // plugin next publishes its roster, which may be hours or the next restart.
@@ -378,6 +380,8 @@ export function install(rt) {
     for (const old of done.slice(0, Math.max(0, Object.keys(all).length - APPROVALS_KEPT))) delete all[old.id]
     await rt.save()
     approvalsChanged(approval)
+    // A working task's consequential send is held: the task blocks on this card (#54).
+    try { await rt.taskHeld?.(msg, approval) } catch (error) { warn('flybot: task hold failed: %s', error) }
     return approval
   }
 
@@ -462,6 +466,8 @@ export function install(rt) {
       approval.decidedAt = Date.now()
       if (note) approval.note = String(note)
       if (decision === 'approve') await release(approval)
+      // The blocked task resumes on approve, or ends on reject (#54).
+      try { await rt.taskDecided?.(approval, decision) } catch (error) { warn('flybot: task decision failed: %s', error) }
       await rt.save()
       approvalsChanged(approval)
       return clone(approval)

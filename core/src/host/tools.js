@@ -5,6 +5,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_BOT_ROUNDS, ROOM_MODES, SOURCE_KIND } from './constants.js'
 import { unquote } from './text.js'
 import { isListedRemoteChat } from '../shared/remote-label.js'
+import { currentParticipants } from './room-membership.js'
 
 export const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] }
 export const GROUP_REF = { type: 'string', required: true, description: 'Exact group chat name from list_bots' }
@@ -52,17 +53,63 @@ export function install(rt) {
 
   ctx.tools.register(defineTool({
     name: 'list_bots',
-    description: 'List every Bot on the user\'s team with its role and what it does, and the group chats you can see.',
+    description: 'List the Bots you may see — your owner\'s, those granted to your owner, and those in this room — with role and what they do, and the group chats you can see.',
     parameters: {},
     output,
     async execute(_args, exec) {
       await rt.load()
       const self = rt.selfOf(exec.agent?.id)
       const selfOwner = rt.botOf(self)?.ownerId
-      // Another owner's Bot lists by name and role only: its folder and instructions
-      // are its owner's private setup (#53).
-      const foreign = bot => rt.authzEnforced?.() && selfOwner !== undefined && bot.ownerId !== undefined && bot.ownerId !== selfOwner
-      const lines = Object.values(state.bots).filter(bot => bot.remote === undefined).map(bot => {
+      const fromRoomId = rt.groupOwners.get(exec.agent?.id)?.roomId
+      // Walk createdBy toward the root: a granted child only manages its own downstream.
+      const inSubtree = (rootId, botId) => {
+        if (botId === rootId) return true
+        const seen = new Set()
+        let id = botId
+        while (id && !seen.has(id)) {
+          seen.add(id)
+          const parent = state.bots?.[id]?.createdBy
+          if (parent === rootId) return true
+          id = parent
+        }
+        return false
+      }
+      const grantedToNonOwner = (botId, ownerId) => {
+        if (!ownerId) return false
+        return (rt.grantsOf?.(botId) ?? []).some(grant => {
+          const grantee = String(grant?.grantee ?? '')
+          return grantee !== '' && grantee !== String(ownerId)
+        })
+      }
+      const subtreeOnly = rt.authzEnforced?.() && grantedToNonOwner(self, selfOwner)
+      const inRoom = new Set()
+      if (fromRoomId) {
+        const room = state.rooms?.[fromRoomId]
+        if (room) {
+          for (const p of currentParticipants(room)) {
+            if (p.kind === 'bot' && !p.remote && p.id) inRoom.add(p.id)
+          }
+        }
+      }
+      // Own Bots (or this child's subtree when it is granted), Bots granted to the
+      // same owner, and Bots in the current room. Nobody browses others' Bots (#53).
+      const listed = bot => {
+        if (bot.remote !== undefined) return false
+        if (!rt.authzEnforced?.()) return true
+        if (inRoom.has(bot.id)) return true
+        if (selfOwner && (rt.hasGrant?.(bot.id, selfOwner, fromRoomId) || rt.hasGrant?.(bot.id, selfOwner))) return true
+        if (selfOwner && bot.ownerId === selfOwner) return subtreeOnly ? inSubtree(self, bot.id) : true
+        return false
+      }
+      // Another owner's setup stays private. A granted child also withholds siblings'
+      // folder and instructions — those are not this child's to dump.
+      const foreign = bot => {
+        if (!rt.authzEnforced?.()) return false
+        if (selfOwner !== undefined && bot.ownerId !== undefined && bot.ownerId !== selfOwner) return true
+        if (subtreeOnly && !inSubtree(self, bot.id)) return true
+        return false
+      }
+      const lines = Object.values(state.bots).filter(listed).map(bot => {
         const model = bot.appliedModel ?? bot.model
         const tags = [bot.role, model ? `model ${model}` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
         const job = !foreign(bot) && bot.instructions ? ` — ${bot.instructions.split('\n')[0].slice(0, 120)}` : ''

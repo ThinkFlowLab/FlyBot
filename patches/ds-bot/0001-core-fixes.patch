@@ -443,7 +443,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return {
        botId: bot.id,
        entries,
-@@ -1123,17 +1123,23 @@ export function install(rt) {
+@@ -1123,17 +1123,28 @@ export function install(rt) {
  
    // What is new in a group, from its log: the member's Session holds the same
    // messages wrapped in turn prompts.
@@ -465,7 +465,12 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      if (start === -1) start = log.length
      const line = (entry) => {
 -      const who = entry.who === 'User' ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
-+      const who = isUserLine(bot, entry) ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
++      // A grantee's human lines are a peer's, never another Bot's (#53 follow-up).
++      const who = isUserLine(bot, entry)
++        ? 'user'
++        : (entry.botId === bot.id || entry.authorId === bot.id)
++          ? 'you'
++          : (entry.authorKind === 'human' ? 'peer' : 'bot')
        return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
      }
      return {

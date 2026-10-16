@@ -22,6 +22,9 @@ const team = () => ({
   bots: {
     a: { id: 'a', name: 'ChiefA', role: 'Boss', sessionId: 'a', createdAt: 1, ownerId: 'owner-1', workDir: '/tmp/alice-private', instructions: 'Alice secret instructions' },
     d: { id: 'd', name: 'ChiefB', role: 'Boss', sessionId: 'd', createdAt: 2, ownerId: 'owner-2', workDir: '/tmp/bob-private', instructions: 'Bob secret instructions' },
+    s: { id: 's', name: 'Writer', role: 'Write', sessionId: 's', createdAt: 3, ownerId: 'owner-1', createdBy: 'a', workDir: '/tmp/writer-private', instructions: 'Writer secret instructions' },
+    r: { id: 'r', name: 'Researcher', role: 'Research', sessionId: 'r', createdAt: 4, ownerId: 'owner-1', createdBy: 'a', workDir: '/tmp/research-private', instructions: 'Research secret instructions' },
+    e: { id: 'e', name: 'PrivateB', role: 'Hide', sessionId: 'e', createdAt: 5, ownerId: 'owner-2', workDir: '/tmp/bob-hidden', instructions: 'Bob hidden instructions' },
   },
   rooms: {
     war: {
@@ -41,7 +44,7 @@ const team = () => ({
       ],
     },
   },
-  grants: { a: [{ id: 'g1', grantee: 'owner-2' }], d: [{ id: 'g2', grantee: 'owner-1' }] },
+  grants: { a: [{ id: 'g1', grantee: 'owner-2' }], d: [{ id: 'g2', grantee: 'owner-1' }], s: [{ id: 'g3', grantee: 'owner-2' }] },
   agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {},
 })
 
@@ -189,11 +192,30 @@ test('list_bots hides another owner\'s folder and instructions', async (t) => {
   const alice = await signIn('Alice')
   await signIn('Bob', alice.sessionToken)
   const seen = await tool('list_bots', {}, 'a')
-  assert.ok(seen.includes('ChiefB'), 'the other owner\'s Bot is still listed')
+  assert.ok(seen.includes('ChiefB'), 'a Bot granted to this owner is still listed')
+  assert.ok(!seen.includes('PrivateB'), 'an ungranted Bot of another owner is hidden')
   assert.ok(!seen.includes('/tmp/bob-private'), 'no folder disclosure')
+  assert.ok(!seen.includes('/tmp/bob-hidden'), 'no hidden-bot folder disclosure')
   assert.ok(!seen.includes('Bob secret instructions'), 'no instructions disclosure')
+  assert.ok(!seen.includes('Bob hidden instructions'), 'no hidden-bot instructions disclosure')
   assert.ok(seen.includes('/tmp/alice-private'), 'own folder still shows')
   assert.ok(seen.includes('Alice secret instructions'), 'own instructions still show')
+})
+
+test('a granted child does not dump its owner\'s roster or siblings\' setup', async (t) => {
+  const { tool, signIn } = await start(t)
+  const alice = await signIn('Alice')
+  await signIn('Bob', alice.sessionToken)
+  const seen = await tool('list_bots', {}, 's')
+  assert.ok(seen.includes('Writer'), 'the granted child lists itself')
+  assert.ok(!seen.includes('Researcher'), 'a sibling outside the child\'s subtree stays off the list')
+  assert.ok(!seen.includes('ChiefA'), 'the owner\'s Chief is not this child\'s to list')
+  assert.ok(!seen.includes('/tmp/research-private'), 'sibling folder stays private')
+  assert.ok(!seen.includes('Research secret instructions'), 'sibling instructions stay private')
+  assert.ok(!seen.includes('/tmp/alice-private'), 'the Chief\'s folder stays private')
+  assert.ok(seen.includes('/tmp/writer-private'), 'the child\'s own folder still shows')
+  assert.ok(seen.includes('Writer secret instructions'), 'the child\'s own instructions still show')
+  void alice
 })
 
 test('a chat reference chip must name a chat the author may read', async (t) => {

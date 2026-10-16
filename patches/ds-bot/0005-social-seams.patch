@@ -329,10 +329,19 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,7 +319,42 @@ export function install(rt) {
+@@ -319,7 +319,51 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
++        case 'tasks':
++        case 'task-create':
++        case 'task-accept':
++        case 'task-start':
++        case 'task-return':
++        case 'task-accept-result':
++        case 'task-cancel':
++          await rt.load()
++          return ok(await rt.taskEndpoint(endpoint, body, actor))
 +        case 'share-brief':
 +          await rt.load()
 +          await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)

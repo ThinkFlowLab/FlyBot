@@ -325,6 +325,10 @@ export function install(rt) {
     // Sharing a member Bot's brief is the Bot owner's decision, checked on the record
     // in room-membership (#53); the endpoint itself only needs a signed-in actor.
     if (ep === 'share-brief') return ALLOW
+    // Task transitions are requester-checked on the record in tasks.js (#54) — the
+    // endpoint only needs a signed-in actor, like held-send decisions. Create is
+    // grant-aware there (owner, matching grant, or the named room).
+    if (ep === 'tasks' || ep.startsWith('task-')) return ALLOW
 
     // Anything not in the table and not a known auth/read endpoint is denied.
     if (NO_ACTOR_ALLOWED.has(ep) || ep.startsWith('auth-')) return ALLOW

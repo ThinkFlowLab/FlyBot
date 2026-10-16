@@ -1,0 +1,1 @@
+**list_bots stays inside the grant.** It lists your owner's Bots, Bots granted to that owner, and Bots in the current room — not every other owner's Bot by name. A granted child only sees its own subtree, not the owner's whole roster with folders and instructions. ([#53](https://github.com/ThinkFlowLab/FlyBot/issues/53) follow-up)

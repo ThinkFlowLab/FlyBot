@@ -1158,7 +1158,12 @@ export function install(rt) {
     if (since !== undefined && oldest !== undefined && oldest > since + 1) rt.warn('ds-bot: %d lines of group "%s" left its log before %s reviewed them', oldest - since - 1, room.name, bot.name)
     if (start === -1) start = log.length
     const line = (entry) => {
-      const who = isUserLine(bot, entry) ? 'user' : entry.botId === bot.id ? 'you' : 'bot'
+      // A grantee's human lines are a peer's, never another Bot's (#53 follow-up).
+      const who = isUserLine(bot, entry)
+        ? 'user'
+        : (entry.botId === bot.id || entry.authorId === bot.id)
+          ? 'you'
+          : (entry.authorKind === 'human' ? 'peer' : 'bot')
       return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
     }
     return {
