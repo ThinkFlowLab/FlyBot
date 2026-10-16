@@ -15,6 +15,7 @@ import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName } from './delivery.js'
 import { SOURCE_KIND } from './constants.js'
+import { currentParticipants } from './room-membership.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const FLYBOT_API_VERSION = 1
@@ -715,9 +716,20 @@ export function install(rt) {
 
   // The user's "@handle" of a remote member in a Bot's chat or a group goes out through
   // bot.send (so the social middleware still decides), from that Bot or the group's admin.
+  // A remote already sitting in the same room is not a 1:1 send: the human line is the
+  // delivery, and relaying it as Chief would demand a grant the human does not need (#143).
   const SESSION_CHIP = /@\[((?:\\.|[^\]\\])*)\]\(dsh-session:([A-Za-z0-9_-]+)\)/g
   const decodeChip = payload => {
     try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) } catch { return undefined }
+  }
+  const remoteHandleInRoom = (room, handle) => {
+    if (!room) return false
+    const want = String(handle ?? '').replace(/^@+/, '').toLowerCase()
+    if (!want) return false
+    return currentParticipants(room).some(p => {
+      if (p.kind !== 'bot' || p.remote !== true) return false
+      return [p.handle, p.id].some(value => String(value ?? '').replace(/^@+/, '').toLowerCase() === want)
+    })
   }
   const seenUserMessages = new Set()
   async function sendUserMentions(sessionId, text, key) {
@@ -745,6 +757,7 @@ export function install(rt) {
     const plain = text.replace(SESSION_CHIP, (_, label) => `@${label.replace(/\\([\\\]])/g, '$1')}`).trim()
     const results = []
     for (const handle of handles) {
+      if (room && remoteHandleInRoom(room, handle)) continue
       try {
         results.push({ handle, ...(await send({ from, to: handle, text: plain, via: 'user-mention', meta: { sessionId } })) })
       } catch (error) {
@@ -766,7 +779,11 @@ export function install(rt) {
     const lines = results.map(({ handle, action, reason }) => {
       const name = cleanName(known.get(handle)?.name, handle)
       const why = line(reason)
-      if (action === 'deny') return `${name}: not sent${why ? ` — ${why}` : ''}`
+      if (action === 'deny') {
+        const grant = /has no grant to that Bot|has not been granted/i.test(why)
+        const shown = grant ? 'invite that Bot from Bot settings, or add it to this group first' : why
+        return `${name}: not sent${shown ? ` — ${shown}` : ''}`
+      }
       if (action === 'hold') return `${name}: held for your approval${why ? ` — ${why}` : ''}`
       return `${name}: sent — its replies appear in its own chat under Friends' Bots, not in this group`
     })

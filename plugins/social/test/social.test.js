@@ -1122,6 +1122,26 @@ test('a paused conversation explains the pause and names the console, without re
   await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), /paused this conversation/)
 })
 
+test('sendChat failures are short English with a next step', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'http_403', message: 'HTTP 403' }) }] } }), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await assert.rejects(social.sendChat({ handle: '@coder.bob.home', text: 'hi' }), /cannot be reached right now.*Invite it from Bot settings/)
+})
+
 function withFaceRooms(server) {
   const rooms = new Map()
   const codes = new Map()

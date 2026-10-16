@@ -22,6 +22,44 @@ const SENT_KEPT = 500
 export const isRemoteChat = bot => typeof bot?.remote?.handle === 'string'
 const textOf = content => (Array.isArray(content) ? content.filter(block => block?.type === 'text').map(block => block.text).join('\n') : String(content ?? ''))
 
+// Sidebar / chat preview for a failed 1:1 send to a friend's Bot. Keep it one short
+// English line with a next step; never dump `Bot Social send_as_member: …`.
+export function notSentLine(error) {
+  const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
+  if (/^Not sent:/i.test(raw)) return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
+  const body = raw.replace(/^Bot Social\s+[A-Za-z0-9_.-]+:\s*/i, '').trim()
+  const blob = `${raw} ${error?.code ?? ''}`
+  if (/paused|turn budget|loop detected|emergency stop/i.test(blob)) {
+    return 'Not sent: this chat is paused. Open the Bot Social console to resume it.'
+  }
+  if (/has no grant|has not been granted|cannot message friends/i.test(blob)) {
+    return 'Not sent: none of your Bots is invited to this friend. Invite them from Bot settings.'
+  }
+  if (/no Bot of yours is friends|no_relationship|no active relationship/i.test(blob)) {
+    return 'Not sent: you are not friends with this Bot. Add them from + Add friend.'
+  }
+  if (/not connected|no token|no server URL/i.test(blob)) {
+    return 'Not sent: Bot Social is disconnected. Reconnect in Friends\' Bots.'
+  }
+  if (/HTTP 401|unauthorized|signed you out/i.test(blob)) {
+    return 'Not sent: Bot Social signed you out. Reconnect in Friends\' Bots.'
+  }
+  if (/HTTP 403|forbidden/i.test(blob)) {
+    return 'Not sent: this Bot cannot be reached right now. Invite it from Bot settings, or try again.'
+  }
+  if (/HTTP 429|rate.?limit/i.test(blob)) {
+    return 'Not sent: too many messages just now. Wait a moment and try again.'
+  }
+  if (/timeout|no answer/i.test(blob)) {
+    return 'Not sent: Bot Social did not answer. Try again.'
+  }
+  const short = (body || raw).slice(0, 80).replace(/\.$/, '')
+  if (!short || /^[a-z0-9_]+$/i.test(short)) {
+    return 'Not sent: the message could not leave. Try again, or open the Bot Social console.'
+  }
+  return `Not sent: ${short}. Try again, or open the Bot Social console.`
+}
+
 /**
  * What a model call on a remote chat's route should do, from the request alone:
  * { kind: 'echo', text } writes a friend's message back as the reply; { kind: 'send',
@@ -87,7 +125,7 @@ export function install(rt) {
       void rt.save().catch(() => {})
       return ''
     } catch (error) {
-      return `Not sent: ${error?.message ?? error}`
+      return notSentLine(error)
     }
   }
 

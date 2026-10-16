@@ -1004,6 +1004,40 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const at = config.server ? ` at ${String(config.server).replace(/\/+$/, '')}/ui` : ''
     return new Error(`Bot Social paused this conversation (${reason}). Resending cannot help: approve pending messages or extend the conversation in the Bot Social console${at}, or remove and re-add this friend to start a new one.`)
   }
+  // Direct chat (Friends' Bots row): one short English line with a next step. The
+  // remote-chat host prefixes "Not sent:". Keep the Bot Social tool name out of the UI.
+  const userFacingSendError = (error) => {
+    if (isPaused(error)) return mapSendError(error)
+    const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
+    const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
+    const blob = `${raw} ${error?.code ?? ''}`
+    if (/no Bot of yours is friends|no_relationship|no active relationship/i.test(blob)) {
+      return new Error('you are not friends with this Bot. Add them from + Add friend.')
+    }
+    if (/has no grant|has not been granted|cannot message friends/i.test(blob)) {
+      return new Error('none of your Bots is invited to this friend. Invite them from Bot settings.')
+    }
+    if (/not connected|no token|no server URL/i.test(blob)) {
+      return new Error('Bot Social is disconnected. Reconnect in Friends\' Bots.')
+    }
+    if (/HTTP 401|unauthorized|signed you out/i.test(blob)) {
+      return new Error('Bot Social signed you out. Reconnect in Friends\' Bots.')
+    }
+    if (/HTTP 403|forbidden/i.test(blob)) {
+      return new Error('this Bot cannot be reached right now. Invite it from Bot settings, or try again.')
+    }
+    if (/HTTP 429|rate.?limit/i.test(blob)) {
+      return new Error('too many messages just now. Wait a moment and try again.')
+    }
+    if (/timeout|no answer/i.test(blob)) {
+      return new Error('Bot Social did not answer. Try again.')
+    }
+    const short = (body || raw).slice(0, 100).replace(/\.$/, '')
+    if (!short || /^[a-z0-9_]+$/i.test(short)) {
+      return new Error('the message could not leave. Try again, or open the Bot Social console.')
+    }
+    return new Error(`${short}. Try again, or open the Bot Social console.`)
+  }
   disposers.push(flybot.transports.add('bot-social', {
     async send(msg) {
       try { return await sendOut(msg) } catch (error) { throw mapSendError(error) } finally { dropStaged(msg.attachments) }
@@ -1070,10 +1104,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // A pause belongs to the conversation, not to this member: another Bot cannot send either.
         if (isPaused(error)) throw mapSendError(error)
         lastError = error
-        if (!/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw error
+        if (!/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw userFacingSendError(error)
       }
     }
-    throw lastError ?? new Error(`no Bot of yours is friends with ${target}`)
+    throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`))
   }
   if (flybot.remote?.chats) disposers.push(flybot.remote.chats.onSend(sendChat))
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { remoteTurn, isRemoteChat, REMOTE_PROVIDER, install } from '../src/host/remote-chat.js';
+import { remoteTurn, isRemoteChat, REMOTE_PROVIDER, install, notSentLine } from '../src/host/remote-chat.js';
 import { isHomeLevelRemote } from '../src/shared/remote-label.js';
 
 const user = (content, source, id = 'm1') => ({ role: 'user', id, content, ...(source ? { source } : {}) });
@@ -75,6 +75,20 @@ test('a time-context snapshot appended after the typed text does not swallow it'
     assert.equal(t.kind, 'send');
     assert.equal(t.text, 'hi');
     assert.equal(t.messageId, 'm1');
+});
+
+test('a failed 1:1 send is one short English line with a next step', () => {
+    assert.equal(
+        notSentLine(Object.assign(new Error('Bot Social send_as_member: HTTP 403'), { code: 'http_403' })),
+        'Not sent: this Bot cannot be reached right now. Invite it from Bot settings, or try again.',
+    )
+    assert.equal(
+        notSentLine(new Error('Bot Social send_as_member: no answer in 8s')),
+        'Not sent: Bot Social did not answer. Try again.',
+    )
+    assert.match(notSentLine(new Error('Chief has no grant to that Bot, so it cannot message friends\' Bots')), /Invite them from Bot settings/)
+    assert.match(notSentLine(new Error('no Bot of yours is friends with @x.y.home')), /Add them from \+ Add friend/)
+    assert.equal(notSentLine(new Error('Not sent: already friendly.')), 'Not sent: already friendly.')
 });
 
 test('agent-instructions and notice messages after the typed text do not swallow it', () => {

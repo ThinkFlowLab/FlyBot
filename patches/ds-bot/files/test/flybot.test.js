@@ -411,6 +411,54 @@ test('mentions in a group (#80, #81): the room gets a receipt — sent points to
   assert.equal((agents.get('b')?.calls ?? []).length, 0)
 })
 
+test('mentions (#143): a human line to a friend Bot already in the room stays in the room; Chief is not the sender', async (t) => {
+  const { ctx, fb, stop, agents } = await start({
+    rooms: {
+      face: {
+        id: 'face', name: 'Face-to-face', origin: 'face-to-face', members: ['a'], admin: 'a',
+        mode: 'admin', notice: '', createdAt: 1, createdBy: null,
+        participants: [
+          { kind: 'human', id: 'owner', role: 'admin', joinedSeq: 0 },
+          { kind: 'bot', id: 'a', role: 'admin', joinedSeq: 0 },
+          { kind: 'bot', remote: true, handle: '@docs.danyang.home', id: '@docs.danyang.home', joinedSeq: 0 },
+        ],
+      },
+    },
+  })
+  t.after(stop)
+  const out = []
+  fb.transports.add('bot-social', { send: async msg => { out.push(msg); return { exchangeId: `r${out.length}` } } })
+  fb.scope('social').remote.publish([{ handle: '@docs.danyang.home', name: '技术文档', home: '@danyang.home' }])
+  ctx.emitArgs('session/event', { id: 'face' }, {
+    type: 'user/message', seq: 1,
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@docs.danyang.home 你是干嘛的' }] },
+  })
+  await delay(30)
+  assert.equal(out.length, 0, 'must not 1:1-relay the human line through Chief')
+  assert.equal((agents.get('face')?.calls ?? []).length, 0, 'no mention receipt: the room line is the delivery')
+  assert.equal((await fb.bot.send({ from: 'a', to: '@docs.danyang.home', text: 'hi from Chief' })).action, 'deny')
+})
+
+test('mentions (#143): a group @ of a friend Bot that is not in the room still needs a grant on Chief', async (t) => {
+  const { ctx, fb, stop, agents } = await start({
+    rooms: { 'room-1': { id: 'room-1', name: 'Group', members: ['a', 'b'], admin: 'a', mode: 'admin', notice: '', createdAt: 1, createdBy: null } },
+  })
+  t.after(stop)
+  const out = []
+  fb.transports.add('bot-social', { send: async msg => { out.push(msg); return { exchangeId: `r${out.length}` } } })
+  fb.scope('social').remote.publish([{ handle: '@helper.friend.home', name: '助手', home: '@friend.home' }])
+  ctx.emitArgs('session/event', { id: 'room-1' }, {
+    type: 'user/message', seq: 1,
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@helper.friend.home hi' }] },
+  })
+  await delay(30)
+  assert.equal(out.length, 0)
+  const receipts = (agents.get('room-1')?.calls ?? []).map(([, m]) => m.content.map(b => b.text).join('\n'))
+  assert.equal(receipts.length, 1)
+  assert.match(receipts[0], /助手: not sent — invite that Bot from Bot settings/)
+  assert.equal((await fb.bot.send({ from: 'a', to: '@helper.friend.home', text: 'hi from Chief' })).action, 'deny')
+})
+
 test('host API (#18): reserved names and the shared scope throw, listeners get copies, changes carry an epoch', async (t) => {
   const { fb, call, stop } = await start()
   t.after(stop)
