@@ -132,7 +132,10 @@ window.__ModuleLoader__.load({
 .fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;max-height:calc(18px * 3)}
 .fs-hold-more{align-self:flex-start;margin:0;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;line-height:16px;cursor:pointer}
 .fs-hold-more:hover{text-decoration:underline}
-.fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:6px;flex-wrap:nowrap}
+.fs-hold-always{flex:none;margin:0;padding:0 2px;height:28px;border:0;background:none;color:var(--bt-ink-2,rgba(20,20,20,.6));font:inherit;font-size:12px;line-height:16px;font-weight:500;cursor:pointer;white-space:nowrap}
+.fs-hold-always:hover:not(:disabled){color:var(--bt-ink,#141414);text-decoration:underline}
+.fs-hold-always:disabled{opacity:.45;cursor:default}
+.fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:8px;flex-wrap:nowrap}
 .fs-hold .fs-btn{flex:none;height:28px;padding:0 12px;border-radius:999px;font-size:12px}
 .fs-hold .fs-btn-primary{width:auto;color:#fff}
 .fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
@@ -657,6 +660,20 @@ window.__ModuleLoader__.load({
     const WAITING_OWNER = 'Waiting for approval'
     const WAITING_OTHERS = "Waiting for the owner's approval"
 
+    function holdParties(item) {
+      const from = readableParty(item?.from, 'Bot')
+      const to = readableParty(item?.toName) || (item?.kind === 'face_room_message' ? 'the room' : readableParty(item?.to, 'friend'))
+      return { from, to }
+    }
+    const autoSendToast = (from, to) => `Auto-send on for ${from} → ${to}. Change it anytime in settings.`
+    function homeOfHandle(value) {
+      const body = String(value ?? '').trim().replace(/^@+/, '').toLowerCase()
+      if (!body) return ''
+      const parts = body.split('.')
+      if (parts.length >= 2 && parts.at(-1) === 'home') return `@${parts.at(-2)}.home`
+      return `@${body}`
+    }
+
     function ChatApproval({ item, canDecide = true, busy, onDecide } = {}) {
       const [open, setOpen] = useState(false)
       if (!item) return null
@@ -668,8 +685,7 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
           h('div', { className: 'fs-name' }, WAITING_OTHERS))
       }
-      const from = readableParty(item.from, 'Bot')
-      const to = readableParty(item.toName) || (item.kind === 'face_room_message' ? 'the room' : readableParty(item.to, 'friend'))
+      const { from, to } = holdParties(item)
       const text = item.text || item.summary || ''
       const long = text.length > 160 || text.split(/\n/).length > 3
       return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
@@ -684,6 +700,7 @@ window.__ModuleLoader__.load({
         }, open ? 'Show less' : 'Show more') : null,
         h('div', { className: 'fs-actions fs-chat-actions' },
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
+          h('button', { type: 'button', className: 'fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve'),
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')))
     }
 
@@ -719,7 +736,7 @@ window.__ModuleLoader__.load({
         sessionId: approval.request?.meta?.sessionId,
       }
     }
-    function ChatApprovalDock({ sessionId, roster, room, bot } = {}) {
+    function ChatApprovalDock({ sessionId, roster, room, bot, actions } = {}) {
       useStyles()
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
@@ -749,12 +766,28 @@ window.__ModuleLoader__.load({
       const decide = async (item, decision) => {
         setBusy(item.id)
         try {
-          if (item.source === 'local') await call('decide', { id: item.id, decision })
-          else await call('social/decide-approval', { approvalId: item.id, decision })
-          const status = decision === 'reject' || decision === 'rejected' ? 'rejected' : 'approved'
+          const always = decision === 'always'
+          const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
+          if (item.source === 'local') {
+            await call('decide', { id: item.id, decision: mapped })
+            if (always) {
+              if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') await call('social/face-auto', { on: true })
+              else {
+                const home = item.home || homeOfHandle(item.to)
+                if (home) await call('social/auto-accept', { home, on: true })
+              }
+            }
+          } else {
+            await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
+          }
+          const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           const mark = list => list.map(entry => entry.id === item.id ? { ...entry, status } : entry)
           setItems(mark)
           setLocal(mark)
+          if (always && status === 'approved') {
+            const { from, to } = holdParties(item)
+            actions?.notify?.(autoSendToast(from, to))
+          }
         } finally { setBusy('') }
       }
       const approveAll = async () => {

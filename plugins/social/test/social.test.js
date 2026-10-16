@@ -964,6 +964,100 @@ test('decide-approval (#69): owner click approves or rejects via Bot Social', as
   assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval').map(c => c.args.confirm_code), [undefined, 'C0DE02'])
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
   assert.equal((await call('flybot/social/decide-approval', { approvalId: 'apr-hold-1', decision: 'maybe' })).ok, false)
+  assert.equal(server.calls.some(c => c.name === 'set_auto_approve'), false)
+})
+
+test('Always approve turns on Auto-send for that pair only', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const bob = {
+    approval_id: 'apr-bob',
+    kind: 'outbound_message',
+    status: 'pending',
+    bot_id: 'm1',
+    message: { to: { handle: '@coder.bob.home', display_name: 'Coder' }, payload: { text: 'one' } },
+  }
+  const carol = {
+    approval_id: 'apr-carol',
+    kind: 'outbound_message',
+    status: 'pending',
+    bot_id: 'm1',
+    message: { to: { handle: '@helper.carol.home', display_name: 'Helper' }, payload: { text: 'two' } },
+  }
+  let queue = [bob, carol]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    queue = queue.filter(item => item.approval_id !== a.approval_id)
+    return { approval_id: a.approval_id, decision: a.decision }
+  }
+  server.tools.list_friends = () => ({
+    friends: [
+      { relationship_id: 'r1', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } },
+      { relationship_id: 'r-carol', status: 'active', peer: { handle: '@carol.home', display_name: 'Carol' } },
+    ],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [
+      { relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder' }] },
+      { relationship_id: 'r-carol', home: { bot_id: 'h3', handle: '@carol.home', display_name: 'Carol' }, bots: [{ bot_id: 'x9', handle: '@helper.carol.home', display_name: 'Helper' }] },
+    ],
+  })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 2)
+  const decided = (await call('flybot/social/decide-approval', { approvalId: 'apr-bob', decision: 'approve', always: true })).value
+  assert.equal(decided.status, 'approved')
+  assert.equal(decided.autoSend?.home, '@bob.home')
+  const auto = server.calls.filter(c => c.name === 'set_auto_approve')
+  assert.ok(auto.some(c => c.args.relationship_id === 'r1' && c.args.auto_approve_chat === true && c.args.confirm_code === 'C0DE03'))
+  assert.equal(auto.some(c => c.args.relationship_id === 'r-carol'), false)
+  assert.equal(auto.some(c => c.args.auto_approve_face_rooms === true), false)
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval' && c.args.confirm_code).map(c => c.args.approval_id), ['apr-bob'])
+  assert.ok(queue.some(item => item.approval_id === 'apr-carol'))
+  assert.equal(queue.some(item => item.approval_id === 'apr-bob'), false)
+  const settings = (await call('flybot/social/settings', {})).value
+  assert.equal(settings.autoAccept['@bob.home'], true)
+  assert.equal(settings.autoAccept['@carol.home'] === true, false)
+})
+
+test('Always approve on a face-room hold uses face Auto-send', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.me.confirm = true
+  let queue = [{
+    approval_id: 'apr-face-1',
+    kind: 'face_room_message',
+    status: 'pending',
+    bot_id: 'm1',
+    room_id: 'frm_123456',
+    message: { payload: { text: 'hold me' } },
+    summary: 'To the room: hold me',
+  }]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    queue = queue.filter(item => item.approval_id !== a.approval_id)
+    return { approval_id: a.approval_id, decision: a.decision }
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const decided = (await call('flybot/social/decide-approval', { approvalId: 'apr-face-1', decision: 'approve', always: true })).value
+  assert.equal(decided.status, 'approved')
+  assert.equal(decided.autoSend?.scope, 'face')
+  const auto = server.calls.filter(c => c.name === 'set_auto_approve')
+  assert.ok(auto.some(c => c.args.auto_approve_face_rooms === true && c.args.confirm_code === 'MECODE'))
+  assert.equal(auto.some(c => typeof c.args.relationship_id === 'string' && c.args.auto_approve_chat === true), false)
 })
 
 test('approvalView: outbound draft text is sanitized, friend requests stay out', () => {
@@ -2050,8 +2144,11 @@ test('in-chat hold card is a compact bubble with names, clamp, and Approve/Rejec
   const reject = named.find(n => n.type === 'button' && n.children.includes('Reject'))
   assert.ok(approve && /fs-btn-primary/.test(approve.props.className))
   assert.ok(reject && !/fs-btn-primary/.test(reject.props.className))
+  const always = named.find(n => n.props['data-flybot'] === 'hold-always')
+  assert.ok(always && always.children.includes('Always approve'))
+  assert.equal(/fs-btn-primary/.test(always.props.className), false)
   assert.equal(named.some(n => n.props['data-flybot'] === 'hold-expand'), false)
-  assert.equal(named.filter(n => n.type === 'button').length, 2)
+  assert.equal(named.filter(n => n.type === 'button').length, 3)
 
   const friend = walk(plugin.ChatApproval({
     item: { id: 'apr-named', from: 'Chief', to: '@hsliu.bot', toName: 'Helper', text: 'ok' },
@@ -2068,7 +2165,40 @@ test('in-chat hold card is a compact bubble with names, clamp, and Approve/Rejec
   assert.equal(draft?.props['data-clamp'], true)
   assert.ok(longTree.some(n => n.props['data-flybot'] === 'hold-expand' && n.children.includes('Show more')))
   assert.ok(longTree.some(n => n.props.className === 'fs-sub' && n.children.includes('You → Helper')))
-  assert.equal(longTree.filter(n => n.type === 'button' && (n.children.includes('Approve') || n.children.includes('Reject') || n.props['data-flybot'] === 'hold-expand')).length, 3)
+  assert.equal(longTree.filter(n => n.type === 'button' && (n.children.includes('Approve') || n.children.includes('Reject') || n.props['data-flybot'] === 'hold-expand' || n.props['data-flybot'] === 'hold-always')).length, 4)
+})
+
+test('Always approve is owner-only and toasts Auto-send for that pair', async () => {
+  const calls = []
+  const notes = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/decide-approval') return { approvalId: payload.approvalId, status: 'approved', autoSend: { from: 'Chief', to: 'Helper', home: '@bob.home' } }
+    if (endpoint === 'social/auto-accept') return { home: payload.home, autoAccept: true }
+    return {}
+  })
+  const plugin = pluginOf([
+    [{ id: 'apr-1', from: 'Chief', to: '@coder.bob.home', toName: 'Helper', text: 'hi' }],
+    [],
+    '',
+  ])
+  const tree = walk(plugin.ChatApprovalDock({
+    bot: { remote: { handle: '@coder.bob.home' } },
+    actions: { notify: text => notes.push(text) },
+  }))
+  const always = tree.find(n => n.props['data-flybot'] === 'hold-always')
+  assert.ok(always)
+  assert.equal(always.children.includes('Always approve'), true)
+  await always.props.onClick()
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/decide-approval' && payload.approvalId === 'apr-1' && payload.decision === 'approve' && payload.always === true))
+  assert.deepEqual(notes, ['Auto-send on for Chief → Helper. Change it anytime in settings.'])
+
+  const other = walk(plugin.ChatApproval({
+    item: { id: 'apr-1', from: 'Chief', to: '@coder.bob.home', toName: 'Helper', text: 'hi' },
+    canDecide: false,
+  }))
+  assert.equal(other.some(n => n.props['data-flybot'] === 'hold-always'), false)
+  assert.equal(other.some(n => n.children?.includes?.('Always approve')), false)
 })
 
 test('Bot settings: Manage access lists grants and revokes one', async () => {
@@ -2837,10 +2967,12 @@ test('#90: Friends\' Bots has Remove this Bot; ChatApproval is owner-only', () =
   collect(other, otherNodes)
   assert.ok(ownerNodes.some(n => n.children?.includes?.(WAITING_OWNER) || (Array.isArray(n.children) && n.children.includes(WAITING_OWNER))))
   assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Approve')))
+  assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Always approve')))
   assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Reject')))
   assert.equal(ownerNodes.some(n => n.props['data-flybot'] === 'chat-auto-send'), false)
   assert.ok(otherNodes.some(n => n.children?.includes?.(WAITING_OTHERS) || (Array.isArray(n.children) && n.children.includes(WAITING_OTHERS))))
   assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Approve')), false)
+  assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Always approve')), false)
   ownerNodes.find(n => n.type === 'button' && n.children.includes('Reject')).props.onClick()
   assert.deepEqual(decided.at(-1), ['apr-hold-1', 'reject'])
   const done = plugin.ChatApproval({ item: { ...pending[0], status: 'approved' } })
