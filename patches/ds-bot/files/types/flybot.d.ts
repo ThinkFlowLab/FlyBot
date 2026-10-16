@@ -273,6 +273,17 @@ export interface FlyBot {
     onFaceLine(fn: ((room: { id: string; face?: { roomId?: string }; members?: string[] }, line: Record<string, unknown>) => unknown) | undefined): () => void
     postNotice(roomId: string, text: string): unknown
     postRemote(roomId: string, msg: { handle?: string; name?: string; text?: string }): unknown
+    /** Inbox envelope → inbound-share room (join/line/leave). */
+    applyInbound?(event: {
+      fromHandle?: string
+      fromHome?: string
+      fromName?: string
+      text?: string
+      localBotId?: string
+      ownerId?: string
+    }, actor?: { memberId?: string }): Promise<{ handled: boolean; room?: { id: string; origin?: string } } | undefined>
+    /** Hide inbound-share rooms when the invited Bot is removed or its grant is revoked. */
+    leaveInbound?(spec: { localBotId?: string; handle?: string; grantee?: string }): Promise<void>
   }
   approvals: {
     list(filter?: { status?: Approval['status'] | 'all' }): Approval[]

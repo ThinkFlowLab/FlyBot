@@ -131,6 +131,22 @@ test('reach matrix: other owners reach only granted Bots, never through the Chie
   assert.equal(reach(s, { from: 'a', to: 'b2' }).action, 'deny')
 })
 
+test('reach matrix: a room member may message a friend\'s Bot that already sits in that room', () => {
+  const s = team()
+  grant(s, 'a', '@carol.home')
+  s.rooms.r = {
+    id: 'r', members: ['a'], participants: [
+      { kind: 'human', id: 'alice', role: 'admin', joinedSeq: 0 },
+      { kind: 'bot', id: 'a', role: 'admin', joinedSeq: 0 },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home', joinedSeq: 0 },
+    ],
+  }
+  const remote = { kind: 'remote', handle: '@coder.bob.home' }
+  assert.equal(reach(s, { from: 'a', to: remote }).action, 'deny', 'outside the room it still needs a grant to that friend')
+  assert.equal(reach(s, { from: 'a', to: remote, roomId: 'r' }).action, 'allow')
+  assert.equal(reach(s, { from: 'a', to: { kind: 'remote', handle: '@eve.home' }, roomId: 'r' }).action, 'deny')
+})
+
 test('reach matrix: a code-joined Bot is reachable inside its room only, while a member', () => {
   const s = team()
   grant(s, 'a', 'bob')

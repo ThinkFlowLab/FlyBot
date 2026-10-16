@@ -49,6 +49,7 @@ import {
   filterHiddenHomes,
   presentRemoteHandles,
   isHomeLevelHandle,
+  isHiddenRemote,
   WAITING_OTHERS,
   REJECT_NOTE,
 } from './hidden-remotes.js'
@@ -525,6 +526,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     void syncOutgoingGrants().catch(error => warn('grants not synced', error))
     const published = applyRemoteRoster(unfiltered, { source, ok: true })
     if (published && typeof published.then === 'function') await published.catch(error => warn('remote chats not synced', error))
+    void leaveMissingRemotes().catch(error => warn('unpublished remotes not left', error))
     return remote
   }
   const remoteBot = async handle => (await remoteBots()).homes.flatMap(entry => entry.bots).find(bot => bot.handle === norm(handle))
@@ -595,6 +597,23 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const leftRooms = roomsHolding(key)
     void afterHideRemote(key).catch(error => warn('hide-remote follow-up failed', error))
     return { handle: key, hidden: true, leftRooms, homes: remote.homes }
+  }
+  async function leaveMissingRemotes() {
+    if (typeof flybot.rooms?.list !== 'function') return
+    const live = new Set(listedRemoteBots().map(bot => norm(bot.handle)))
+    for (const room of flybot.rooms.list()) {
+      if (room.origin === 'face-to-face' || room.origin === 'inbound-share') continue
+      for (const p of room.participants ?? []) {
+        if (!p.remote || p.leftSeq !== undefined || !p.handle) continue
+        const key = norm(p.handle)
+        if (live.has(key) || isHiddenRemote(settings, key)) continue
+        try {
+          await flybot.rooms.removeParticipant(room.id, { kind: 'bot', id: p.handle, remote: true })
+        } catch (error) {
+          warn('unpublished Bot not left from room', error)
+        }
+      }
+    }
   }
   // Whether this local Bot is one the friendship with that friend home covers.
   const covered = (entry, botId) => !entry?.via?.length || entry.via.includes(norm(memberOf(botId)?.handle ?? ''))
@@ -687,6 +706,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // A Bot's files are always shown to the user first, whatever auto-accept says;
       // files the user picked in the composer are the user's own send.
       if (msg.attachments?.length && msg.via !== 'composer') return { action: 'hold', reason: 'a Bot attaches files: check them before they leave' }
+      // Adding a friend's Bot to a group (or a line in that group) is the owner's consent
+      // to share that room. The invited owner's Bot replies still go through the hold.
+      if (msg.via === 'room' || msg.via === 'room-share') return undefined
       if (approvalFor(msg.from, bot.home) === 'auto') return undefined
       return { action: 'hold', reason: `messages to ${bot.home}'s Bots need your approval` }
     },
@@ -830,6 +852,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           : said
         const handle = norm(event.from?.handle)
         const fromHome = event.from?.home_handle ? norm(event.from.home_handle) : undefined
+        const share = await flybot.rooms?.applyInbound?.({
+          fromHandle: handle,
+          fromHome,
+          fromName: cleanText(event.from?.display_name, handle),
+          text: said,
+          localBotId: local.id,
+        })
+        if (share?.handled) {
+          delivered += 1
+          done()
+          continue
+        }
         // The user's own chat with this friend's Bot (it went out from this Bot's identity):
         // the answer lands in that chat, written back as the friend's Bot's reply.
         if (settings.via[handle] === local.id && flybot.remote?.chats) {
@@ -1068,6 +1102,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     })
     const next = current.filter(grant => grant !== target && grant.id !== (grantId || target?.id))
     if (typeof flybot.grants?.set === 'function') await flybot.grants.set(bot.id, next)
+    const invited = memberOf(bot.id)?.handle
+    void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
     fetchedAt = 0
     void remoteBots({ fresh: true }).catch(() => {})
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }

@@ -34,6 +34,7 @@
 // of a friend's room that invited their granted Bot.
 
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { encodeRoomShare, parseRoomShare } from '../shared/room-share.js'
 import { cleanName, fenceUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
 
@@ -240,10 +241,11 @@ export function roomVisibleTo(state, actor, roomId) {
   if (!actor?.memberId) return false
   const room = state.rooms?.[String(roomId ?? '')]
   if (!room) return false
+  if (room.hidden) return false
   if (participantOf(room, 'human', actor.memberId)) return true
   if (ownsInvitedBot(room, actor, state) || room.sharedFrom?.ownerId === actor.memberId) {
     const bot = invitedBotOf(room, actor, state)
-    if (bot && bot.leftSeq !== undefined) return false
+    if (!bot || bot.leftSeq !== undefined) return false
     return true
   }
   const ids = room.members ?? []
@@ -555,6 +557,7 @@ export function install(rt) {
       }
       syncMembers(room)
       await rt.save()
+      if (record?.remote && record.handle) void rt.notifyRoomShare?.(room, { op: 'join', handle: record.handle })
       return room
     })
   }
@@ -593,6 +596,7 @@ export function install(rt) {
       }
       syncMembers(room)
       await rt.save()
+      if (me.remote) void rt.notifyRoomShare?.(room, { op: 'leave', handle: me.handle || me.id })
       return room
     })
   }
@@ -731,6 +735,61 @@ export function install(rt) {
     }))
   }
 
+  function shareSpeaker(room) {
+    const speakers = [room.admin, ...(room.members ?? [])].filter(id => id && rt.botOf?.(id) && mayShareRoom(state, room, id))
+    return speakers[0]
+  }
+
+  function shareInviter(room) {
+    const human = currentParticipants(room).find(p => p.kind === 'human')
+    const from = shareSpeaker(room)
+    const member = from ? state.bots?.[from]?.fields?.social?.member : undefined
+    return {
+      inviterName: human?.displayName || displayNameFor(state, human?.id, 'a friend'),
+      inviterHome: member?.home || human?.ownerHome,
+      inviterHandle: member?.handle,
+    }
+  }
+
+  async function sendShareTo(room, remote, payload, via) {
+    const from = shareSpeaker(room)
+    if (!from || !rt.flybotSend) return
+    try {
+      await rt.flybotSend({
+        from,
+        to: remote.handle || remote.id,
+        text: encodeRoomShare(payload),
+        role: 'request',
+        via,
+        meta: { roomId: room.id, seq: payload.seq, share: payload.op },
+      })
+    } catch (error) {
+      rt.warn?.('ds-bot: room share not sent to %s: %s', remote.handle || remote.id, error)
+    }
+  }
+
+  // Membership notice: the add/remove click is the owner's consent, so this does not wait
+  // for a chat line. Bot Social is 1:1; the envelope is the group record the other FlyBot sees.
+  rt.notifyRoomShare = async function notifyRoomShare(room, { op = 'join', handle } = {}) {
+    if (!room || isFaceRoom(room) || room.origin === 'inbound-share') return
+    const wanted = handle ? String(handle) : undefined
+    const remotes = (op === 'leave' ? (room.participants ?? []) : currentParticipants(room))
+      .filter(p => isRemoteParticipant(p) && (!wanted || p.handle === wanted || p.id === wanted))
+    if (remotes.length === 0) return
+    const from = shareInviter(room)
+    for (const remote of remotes) {
+      if (op !== 'leave' && !publishedRemoteOf(state, remote.handle)) continue
+      await sendShareTo(room, remote, {
+        op,
+        roomId: room.id,
+        name: room.name,
+        invitedHandle: remote.handle,
+        seq: room.seq ?? 0,
+        ...from,
+      }, 'room-share')
+    }
+  }
+
   // Room lines go out to the friends' Bots in the room, checked per author and per recipient
   // (#51): a line written by a local Bot that may not share the room never leaves, a friend's
   // Bot that is no longer granted to us gets nothing, and the sending Bot is one that may
@@ -746,26 +805,26 @@ export function install(rt) {
     if (remotes.length === 0 || !rt.flybotSend) return
     const localAuthor = line.authorKind === 'bot' && !line.remote && rt.botOf?.(line.authorId ?? line.botId) ? (line.authorId ?? line.botId) : undefined
     if (localAuthor !== undefined && !mayShareRoom(state, room, localAuthor)) return
-    const speakers = [room.admin, ...(room.members ?? [])].filter(id => id && rt.botOf?.(id) && mayShareRoom(state, room, id))
-    const from = speakers[0]
-    if (!from) return
+    if (!shareSpeaker(room)) return
     const who = cleanName(line.who || 'member')
     const body = line.text ? fenceUntrusted(who, line.text) : `[${cleanName(line.kind || 'event')}]`
+    const from = shareInviter(room)
     for (const remote of remotes) {
       if (line.authorId === remote.id || line.authorId === remote.handle) continue
       if (!publishedRemoteOf(state, remote.handle)) continue
-      try {
-        await rt.flybotSend({
-          from,
-          to: remote.handle,
-          text: `${who}: ${body}`,
-          role: 'request',
-          via: 'room',
-          meta: { roomId: room.id, seq: line.seq },
-        })
-      } catch (error) {
-        rt.warn?.('ds-bot: room line not sent to %s: %s', remote.handle, error)
-      }
+      await sendShareTo(room, remote, {
+        op: 'line',
+        roomId: room.id,
+        name: room.name,
+        invitedHandle: remote.handle,
+        seq: line.seq,
+        who,
+        kind: line.kind || 'message',
+        authorKind: line.authorKind,
+        authorId: line.authorId,
+        text: `${who}: ${body}`,
+        ...from,
+      }, 'room')
     }
   }
 
@@ -792,11 +851,16 @@ export function install(rt) {
     if (changed) await rt.save()
   }
 
-  rt.ingestRemoteRoomLine = async function ingestRemoteRoomLine({ handle, text } = {}) {
+  rt.ingestRemoteRoomLine = async function ingestRemoteRoomLine({ handle, text, name, home } = {}) {
     const id = String(handle ?? '')
     if (!id) return
     const body = String(text ?? '')
+    if (parseRoomShare(body)) {
+      await rt.applyInboundRoomShare({ fromHandle: id, fromHome: home, fromName: name, text: body })
+      return
+    }
     for (const room of Object.values(state.rooms || {})) {
+      if (room.origin === 'inbound-share' || isFaceRoom(room)) continue
       const remote = currentParticipants(room).find(p => p.remote && (p.handle === id || p.id === id))
       if (!remote) continue
       append(room, rt.authoredRoomLine(room, {
@@ -812,21 +876,126 @@ export function install(rt) {
     await rt.save()
   }
 
+  function inboundOf(remoteRoomId, inviterHome, inviterHandle) {
+    return Object.values(state.rooms || {}).find((room) => {
+      if (room.origin !== 'inbound-share') return false
+      if (String(room.sharedFrom?.remoteRoomId) !== String(remoteRoomId)) return false
+      const home = room.sharedFrom?.inviterHome
+      const from = room.sharedFrom?.inviterHandle
+      if (inviterHome && home && home === inviterHome) return true
+      if (inviterHandle && from && from === inviterHandle) return true
+      return !home && !from
+    })
+  }
+
+  function markInboundLeft(room) {
+    const at = Date.now()
+    const line = append(room, { kind: 'left', who: room.sharedFrom?.inviterName || 'the room', authorKind: 'bot', text: '' })
+    for (const p of currentParticipants(room)) {
+      p.leftSeq = line.seq
+      p.leftAt = at
+    }
+    room.hidden = true
+    syncMembers(room)
+    return room
+  }
+
+  rt.leaveInboundShares = async function leaveInboundShares({ localBotId, handle, grantee } = {}) {
+    let changed = false
+    const botKey = localBotId ? String(localBotId) : ''
+    const invited = handle ? String(handle) : ''
+    const peer = grantee ? String(grantee) : ''
+    for (const room of Object.values(state.rooms || {})) {
+      if (room.origin !== 'inbound-share' || room.hidden) continue
+      const from = room.sharedFrom ?? {}
+      const botHit = botKey && (from.localBotId === botKey || (room.members ?? []).includes(botKey))
+      const handleHit = invited && (from.invitedHandle === invited)
+      if (!botHit && !handleHit) continue
+      if (peer && (from.inviterHome || from.inviterHandle) && from.inviterHome !== peer && from.inviterHandle !== peer) continue
+      markInboundLeft(room)
+      changed = true
+    }
+    if (changed) await rt.save?.()
+  }
+
+  rt.applyInboundRoomShare = async function applyInboundRoomShare(event = {}, actor) {
+    const data = parseRoomShare(event.text)
+    if (!data) return undefined
+    const fromHandle = event.fromHandle || data.inviterHandle
+    const fromHome = event.fromHome || data.inviterHome
+    const fromName = cleanPeerName(event.fromName || data.inviterName, 'a friend')
+    const localBotId = event.localBotId && state.bots?.[event.localBotId] ? event.localBotId : undefined
+    const ownerId = actor?.memberId ?? event.ownerId ?? Object.keys(state.members || {})[0]
+    let room = inboundOf(data.roomId, fromHome, fromHandle)
+    if (data.op === 'leave') {
+      if (!room) return { handled: true, room: undefined }
+      markInboundLeft(room)
+      await rt.save?.()
+      return { handled: true, room }
+    }
+    if (!room) {
+      room = await rt.recordInboundSharedRoom({
+        name: data.name,
+        inviterName: fromName,
+        inviterHome: fromHome,
+        inviterHandle: fromHandle,
+        invitedHandle: data.invitedHandle,
+        localBotId,
+        ownerId,
+        remoteRoomId: data.roomId,
+        joinedSeq: data.seq,
+      }, actor || (ownerId ? { memberId: ownerId } : undefined))
+    } else {
+      delete room.hidden
+      for (const p of room.participants ?? []) {
+        if (p.leftSeq !== undefined) {
+          delete p.leftSeq
+          delete p.leftAt
+        }
+      }
+      if (data.name) room.name = cleanPeerName(data.name, room.name)
+      room.sharedFrom = {
+        ...room.sharedFrom,
+        inviterName: fromName,
+        inviterHome: fromHome || room.sharedFrom?.inviterHome,
+        inviterHandle: fromHandle || room.sharedFrom?.inviterHandle,
+        invitedHandle: data.invitedHandle || room.sharedFrom?.invitedHandle,
+        remoteRoomId: data.roomId,
+      }
+      syncMembers(room)
+    }
+    if (data.op === 'line') {
+      const who = cleanPeerName(data.who || fromName, fromName)
+      append(room, rt.authoredRoomLine(room, {
+        who,
+        text: data.text || '',
+        authorId: data.authorId || fromHandle,
+        authorKind: data.authorKind || 'human',
+        remote: data.authorKind === 'bot',
+        kind: data.kind === 'message' ? undefined : data.kind,
+      }))
+    }
+    await rt.save?.()
+    return { handled: true, room }
+  }
+
   rt.recordInboundSharedRoom = async function recordInboundSharedRoom(draft = {}, actor) {
-    const ownerId = actor?.memberId ?? draft.ownerId
+    const ownerId = actor?.memberId ?? draft.ownerId ?? Object.keys(state.members || {})[0]
     if (!ownerId) throw invalid('Sign in first')
     const handle = draft.invitedHandle || draft.handle
-    const localBotId = draft.localBotId
+    const localBotId = draft.localBotId && state.bots?.[draft.localBotId] ? draft.localBotId : undefined
     const at = Date.now()
-    const id = draft.id || `inbound-${at.toString(36)}`
     const inviterName = cleanPeerName(draft.inviterName, 'a friend')
+    const title = cleanPeerName(draft.name, sharedRoomTitle(inviterName))
+    const id = draft.id || (typeof rt.createSession === 'function' ? await rt.createSession(title) : `inbound-${at.toString(36)}`)
+    if (state.rooms[id]?.origin === 'inbound-share') return state.rooms[id]
     const room = {
       id,
-      name: cleanPeerName(draft.name, sharedRoomTitle(inviterName)),
+      name: title,
       origin: 'inbound-share',
-      members: localBotId && state.bots?.[localBotId] ? [localBotId] : [],
+      members: localBotId ? [localBotId] : [],
       admin: localBotId ?? null,
-      named: true,
+      named: Boolean(draft.name),
       createdAt: at,
       createdBy: null,
       log: Array.isArray(draft.log) ? draft.log : [],
@@ -835,15 +1004,17 @@ export function install(rt) {
       sharedFrom: {
         inviterName,
         inviterHome: draft.inviterHome,
+        inviterHandle: draft.inviterHandle,
         invitedHandle: handle,
         invitedAt: draft.invitedAt ?? at,
         ownerId,
         localBotId,
+        remoteRoomId: draft.remoteRoomId,
         joinedSeq: draft.joinedSeq ?? 0,
       },
       inviteNotice: true,
       participants: [
-        ...(localBotId && state.bots?.[localBotId] ? [{
+        ...(localBotId ? [{
           kind: 'bot',
           id: localBotId,
           role: 'member',

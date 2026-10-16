@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat } from '../src/shared/remote-label.js'
+import { listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, splitRoomPicks } from '../src/shared/remote-label.js'
 import { DICTIONARY } from '../src/client/i18n.js'
 
 test('picker hides gone, hidden, and home-level remotes; labels include the owner', () => {
@@ -27,6 +27,18 @@ test('picker hides gone, hidden, and home-level remotes; labels include the owne
   assert.equal(pickerBotLabel(listed[2]), "助手 · Friend's Bot")
 })
 
+test('new-chat splits a friend\'s Bot out of local members into remote participants', () => {
+  const roster = {
+    byId: {
+      chief: { id: 'chief', name: 'Chief' },
+      r2: { id: 'r2', name: '助手', remote: { handle: '@assistant.friend.home' } },
+    },
+  }
+  const { members, remotes } = splitRoomPicks(roster, ['chief', 'r2'])
+  assert.deepEqual(members, ['chief'])
+  assert.deepEqual(remotes, [{ kind: 'bot', remote: true, handle: '@assistant.friend.home' }])
+})
+
 test('the sidebar + menu wires plugin actions in after Create group chat', () => {
   const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
   const group = src.indexOf("t('Create group chat')")
@@ -35,6 +47,8 @@ test('the sidebar + menu wires plugin actions in after Create group chat', () =>
   assert.ok(group > 0 && actions > group && agent > actions, `order group=${group} actions=${actions} agent=${agent}`)
   assert.match(src, /listedChatBots/)
   assert.match(src, /pickerBotLabel/)
+  assert.match(src, /splitRoomPicks/)
+  assert.match(src, /choosingAdmin \? bots.filter\(bot => !bot.remote\)/)
   assert.match(src, /t\(action\.label\)/)
   const slots = readFileSync(new URL('../src/client/flybot-slots.js', import.meta.url), 'utf8')
   assert.match(slots, /isListedRemoteChat/)

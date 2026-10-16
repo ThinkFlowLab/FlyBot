@@ -859,6 +859,8 @@ export function install(rt) {
         const who = name || handle || 'Bot'
         return rt.postToRoom(room, { id: handle, name: who }, String(text ?? ''), { remote: { handle }, senderName: who })
       },
+      applyInbound: (event, actor) => rt.applyInboundRoomShare?.(event, actor),
+      leaveInbound: spec => rt.leaveInboundShares?.(spec),
     },
     remote: {
       publish: list => remoteMembers.publish(plugin, list),

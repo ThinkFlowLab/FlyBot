@@ -203,8 +203,9 @@ export function install(rt) {
           const room = await rt.createRoom({
             members: Array.isArray(body.members) ? body.members : [],
             name: body.name,
+            actor,
             ...(typeof body.admin === 'string' ? { admin: body.admin } : {}),
-            ...(Array.isArray(body.participants) ? { participants: body.participants, actor } : {}),
+            ...(Array.isArray(body.participants) ? { participants: body.participants } : {}),
           })
           if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
           return ok(room)

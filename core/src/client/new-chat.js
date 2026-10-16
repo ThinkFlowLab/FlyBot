@@ -7,7 +7,7 @@ import { CreateBot } from './create-bot.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
-import { listedChatBots, pickerBotLabel } from '../shared/remote-label.js'
+import { listedChatBots, pickerBotLabel, splitRoomPicks } from '../shared/remote-label.js'
 
 export function NewChat({ mode, roster, actions }) {
   const [query, setQuery] = useState('')
@@ -27,8 +27,9 @@ export function NewChat({ mode, roster, actions }) {
   const paneLeft = usePaneLeft()
   const wanted = query.trim().toLowerCase()
   const bots = listedChatBots(roster)
-  const matches = bots.filter(bot => !picked.includes(bot.id) && bot.id !== admin && (wanted === '' || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? '').toLowerCase().includes(wanted)))
   const choosingAdmin = group && admin === null
+  const pool = choosingAdmin ? bots.filter(bot => !bot.remote) : bots
+  const matches = pool.filter(bot => !picked.includes(bot.id) && bot.id !== admin && (wanted === '' || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? '').toLowerCase().includes(wanted)))
   const exact = bots.some(bot => bot.name.toLowerCase() === wanted)
   const pickedBots = picked.map(id => roster.byId[id]).filter(Boolean)
   const run = async (task) => {
@@ -74,7 +75,12 @@ export function NewChat({ mode, roster, actions }) {
   const makeGroup = async () => {
     if (admin === null || picked.length === 0) return
     const text = message.trim()
-    const room = await actions.createRoom([admin, ...picked], { admin, ...(text ? {} : { greet: true }) })
+    const { members, remotes } = splitRoomPicks(roster, [admin, ...picked])
+    const participants = remotes.length === 0 ? undefined : [
+      ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
+      ...remotes,
+    ]
+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}), ...(text ? {} : { greet: true }) })
     if (text) await actions.send(room.id, text)
     actions.openSession(room.id)
     close()
@@ -90,7 +96,12 @@ export function NewChat({ mode, roster, actions }) {
       close()
       return
     }
-    const room = await actions.createRoom(picked)
+    const { members, remotes } = splitRoomPicks(roster, picked)
+    const participants = remotes.length === 0 ? undefined : [
+      ...members.map(id => ({ kind: 'bot', id })),
+      ...remotes,
+    ]
+    const room = await actions.createRoom(members, participants ? { participants } : {})
     await actions.send(room.id, text)
     actions.openSession(room.id)
     close()

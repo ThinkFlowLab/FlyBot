@@ -39,6 +39,27 @@ export function listedChatBots(roster) {
   return (roster?.bots ?? []).filter(isListedRemoteChat)
 }
 
+// New-chat / create-room: local Bot ids stay members; a friend's chat becomes a remote participant.
+export function splitRoomPicks(roster, ids) {
+  const byId = roster?.byId ?? Object.fromEntries((roster?.bots ?? []).map(bot => [bot.id, bot]))
+  const members = []
+  const remotes = []
+  const seen = new Set()
+  for (const id of ids ?? []) {
+    const bot = byId[id]
+    const handle = bot?.remote?.handle
+    if (typeof handle === 'string' && handle) {
+      const key = normRemoteHandle(handle)
+      if (seen.has(key)) continue
+      seen.add(key)
+      remotes.push({ kind: 'bot', remote: true, handle: key })
+    } else {
+      members.push(id)
+    }
+  }
+  return { members, remotes }
+}
+
 export function pickerBotLabel(bot) {
   if (!bot) return ''
   if (!bot.remote) return bot.name ?? ''

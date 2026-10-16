@@ -1,0 +1,1 @@
+Adding a friend's Bot to a group chat (新建群聊 or later) now shows that group on the Bot's owner's FlyBot as a shared room, so they can follow the conversation and approve the Bot's replies in-chat — including before anyone has sent a message. Removing the Bot from the group or revoking the grant hides it again.

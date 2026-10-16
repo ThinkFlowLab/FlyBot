@@ -225,7 +225,7 @@ diff --git a/client.js b/client.js
        body: JSON.stringify({ endpoint, payload: payload ?? null }),
        signal
      });
-@@ -1097,6 +1097,269 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,288 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -260,6 +260,25 @@ diff --git a/client.js b/client.js
 +}
 +function listedChatBots(roster) {
 +  return (roster?.bots ?? []).filter(isListedRemoteChat);
++}
++function splitRoomPicks(roster, ids) {
++  const byId = roster?.byId ?? Object.fromEntries((roster?.bots ?? []).map((bot) => [bot.id, bot]));
++  const members = [];
++  const remotes = [];
++  const seen = /* @__PURE__ */ new Set();
++  for (const id of ids ?? []) {
++    const bot = byId[id];
++    const handle = bot?.remote?.handle;
++    if (typeof handle === "string" && handle) {
++      const key = normRemoteHandle(handle);
++      if (seen.has(key)) continue;
++      seen.add(key);
++      remotes.push({ kind: "bot", remote: true, handle: key });
++    } else {
++      members.push(id);
++    }
++  }
++  return { members, remotes };
 +}
 +function pickerBotLabel(bot) {
 +  if (!bot) return "";
@@ -1101,12 +1120,10 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2827,254 +2827,136 @@ function installCompiledStyles(text, tag) {
-       if (sheet.ownerNode?.dataset?.dshBot) continue;
-       let list = cache.get(sheet);
+@@ -2829,252 +2829,134 @@ function installCompiledStyles(text, tag) {
        if (!list) {
--        list = sheetClassNames(sheet);
--        cache.set(sheet, list);
+         list = sheetClassNames(sheet);
+         cache.set(sheet, list);
 -      }
 -      for (const name of list) names.add(name);
 -    }
@@ -1258,8 +1275,6 @@ diff --git a/client.js b/client.js
 -  }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+        list = sheetClassNames(sheet);
-+        cache.set(sheet, list);
 +      }
 +      for (const name of list) names.add(name);
 +    }
@@ -2788,7 +2803,8 @@ diff --git a/client.js b/client.js
 +      }
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, reply.text);
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -2801,8 +2817,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -6165,7 +6180,7 @@ diff --git a/client.js b/client.js
          className: "bt-input",
          autoFocus: !inline,
          value: name,
-@@ -8284,62 +8284,63 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
+@@ -8284,62 +8284,64 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
            }
          }
        }),
@@ -6251,14 +6266,42 @@ diff --git a/client.js b/client.js
    const wanted = query.trim().toLowerCase();
 -  const matches = roster.bots.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
 +  const bots = listedChatBots(roster);
-+  const matches = bots.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
    const choosingAdmin = group && admin === null;
 -  const exact = roster.bots.some((bot) => bot.name.toLowerCase() === wanted);
++  const pool = choosingAdmin ? bots.filter((bot) => !bot.remote) : bots;
++  const matches = pool.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
 +  const exact = bots.some((bot) => bot.name.toLowerCase() === wanted);
    const pickedBots = picked.map((id) => roster.byId[id]).filter(Boolean);
    const run = async (task) => {
      if (busy) return;
-@@ -8418,35 +8418,44 @@ function NewChat({ mode, roster, actions }) {
+@@ -8392,7 +8392,12 @@ function NewChat({ mode, roster, actions }) {
+   const makeGroup = async () => {
+     if (admin === null || picked.length === 0) return;
+     const text = message.trim();
+-    const room2 = await actions.createRoom([admin, ...picked], { admin, ...text ? {} : { greet: true } });
++    const { members, remotes } = splitRoomPicks(roster, [admin, ...picked]);
++    const participants = remotes.length === 0 ? void 0 : [
++      ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
++      ...remotes
++    ];
++    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...text ? {} : { greet: true } });
+     if (text) await actions.send(room2.id, text);
+     actions.openSession(room2.id);
+     close();
+@@ -8411,42 +8411,56 @@ function NewChat({ mode, roster, actions }) {
+       close();
+       return;
+     }
+-    const room2 = await actions.createRoom(picked);
++    const { members, remotes } = splitRoomPicks(roster, picked);
++    const participants = remotes.length === 0 ? void 0 : [
++      ...members.map((id) => ({ kind: "bot", id })),
++      ...remotes
++    ];
++    const room2 = await actions.createRoom(members, participants ? { participants } : {});
+     await actions.send(room2.id, text);
+     actions.openSession(room2.id);
+     close();
    });
    const options = [];
    if (!group && picked.length === 0 && mode !== "search" && wanted === "") {

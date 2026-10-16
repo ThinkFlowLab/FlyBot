@@ -142,6 +142,16 @@ const inRoom = (state, roomId, botId) => {
   return room !== undefined && (room.members ?? []).includes(botId)
 }
 
+function remoteInRoom(state, roomId, peer) {
+  const room = state.rooms?.[String(roomId ?? '')]
+  if (!room) return false
+  const keys = new Set(peerKeys(peer))
+  return remotesInRoom(room).some((p) => {
+    for (const key of peerKeys(p.handle || p.id)) if (keys.has(key)) return true
+    return false
+  })
+}
+
 export function reach(state, { from, to, roomId } = {}) {
   const fromRemote = isRemoteRef(from)
   const toRemote = isRemoteRef(to)
@@ -157,6 +167,8 @@ export function reach(state, { from, to, roomId } = {}) {
   if (sender === undefined) return ALLOW
   if (toRemote) {
     if (hasGrant(state, from, to, roomId) || (roomId !== undefined && isCodeJoined(state, roomId, from))) return ALLOW
+    // The owner already put this friend's Bot in the room: talking to it here is that share.
+    if (roomId !== undefined && inRoom(state, roomId, from) && remoteInRoom(state, roomId, to)) return ALLOW
     return deny(`${sender.name} has no grant to that Bot, so it cannot message friends' Bots`)
   }
   const target = state.bots?.[to]

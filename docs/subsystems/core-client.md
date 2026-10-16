@@ -39,6 +39,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 - The committed bundle includes `flybot-slots.js` `registry()`, which exposes `BotAvatar` / `BotMark` / `lookOf` on `globalThis.__flybot__` for classic-script plugins. Behavior is specified on [plugin-runtime](plugin-runtime.md).
 
+### New group chat with a friend's Bot
+
+- 新建群聊 (`new-chat.js`) picks a local Bot as admin; a friend's remote chat is split into `participants: [{ kind: 'bot', remote: true, handle }]` (`splitRoomPicks`). The host also converts remote chat ids passed as members, so the friend's owner gets the inbound-share projection instead of a silent local-only member.
+
 ### Held-send approval card
 
 The default card (`flybot-slots.js`) shows where a held request came from: `senderName` / `targetName` resolved server-side, plus a delegated marker when the send was relayed (`hop > 0`). The strings live in `i18n.js` (`Sent by {sender}`, `Sent by {sender} · delegated`). The decision itself is owner-bound in the host (#52); see [core-host](core-host.md).

@@ -52,6 +52,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 - Context sharing (#53) is specified in [team](team.md), **Context sharing foundation**: the own-chat brief is share-gated (`share-brief` / `briefShared`), a memory review reads only its owner as the user (`isUserLine`) and keeps cross-owner entries out of the team scope (`teamAllowedFrom`), `list_bots` narrows another owner's Bot to name, role and model, and a `dsh-session:` chip in `send` / `room-post` must resolve for the author (`sessionOwnedBy`). Host modules: `src/host/groups.js`, `src/host/memory.js`, `src/host/tools.js`, `src/host/channel.js`, `src/host/room-membership.js`, `src/host/authz.js`. Team mode stays disabled.
 
+### Inbound shared rooms
+
+- Bot Social conversations are 1:1; it does not list a FlyBot group. When a room gains a granted remote Bot (create-room, addParticipants, or 新建群聊 picking a friend's chat), the host fans out a `FLYBOT-ROOM-SHARE` envelope (`src/shared/room-share.js`) through `flybotSend` (`via: 'room-share'` for join/leave, `via: 'room'` for lines, `meta.roomId` set) so the Bot's owner's FlyBot can project it immediately — including a room with no chat lines yet. Receive is `rt.applyInboundRoomShare` (`origin: 'inbound-share'`, `recordInboundSharedRoom`), labelled **Shared room from \<inviter\>** with the room name stored. A leave envelope, hide, or grant revoke marks it left/hidden. `reach()` allows a local member to message a remote that already sits in that room when `roomId` is on the send. Still not team mode.
+
 ### Face-to-face participant look
 
 - `syncFaceParticipants` / `faceRemoteRecord` keep optional `color` / `avatar` from the Bot Social member payload on the remote participant. The client seeds a distinct generated look from the handle when those fields are absent (see [core-client](core-client.md)). Face-room REST still does not require a person-grant.

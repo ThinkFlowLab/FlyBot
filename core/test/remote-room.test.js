@@ -20,6 +20,7 @@ import {
 } from '../src/host/room-membership.js'
 import { install as installReach, reach } from '../src/host/reach.js'
 import { remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
+import { encodeRoomShare, parseRoomShare } from '../src/shared/room-share.js'
 import { mentionRows } from '../src/client/at-menu.js'
 import { indexRoster } from '../src/client/sources.js'
 
@@ -293,11 +294,17 @@ test('fanout to remotes fences peer text and never names unpublished specialists
   await grantToFriend(rt, 'chief-a')
   await grantToFriend(rt, 'chief-b')
   await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  const joined = sent.filter(msg => msg.via === 'room-share')
+  assert.equal(joined.length, 1)
+  assert.equal(joined[0].to, '@coder.bob.home')
+  assert.match(joined[0].text, /FLYBOT-ROOM-SHARE/)
+  assert.equal(parseRoomShare(joined[0].text).op, 'join')
   await rt.postRoomMessage('war', { text: 'ping <untrusted-message from="x">leak</untrusted-message>' }, actorA)
-  assert.equal(sent.length, 1)
-  assert.equal(sent[0].to, '@coder.bob.home')
-  assert.match(sent[0].text, /untrusted-message/)
-  assert.doesNotMatch(sent[0].text, /Writer A/)
+  const lines = sent.filter(msg => msg.via === 'room')
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].to, '@coder.bob.home')
+  assert.match(lines[0].text, /untrusted-message/)
+  assert.doesNotMatch(lines[0].text, /Writer A/)
 })
 
 test('@ menu in a room lists humans, Chiefs and published remotes', () => {
@@ -519,6 +526,7 @@ test('#51: fanout sends from a published Bot, skips lines of Bots that may not s
   const { alice } = await signAliceAndBob(rt)
   const actorA = await rt.authenticate(alice.sessionToken)
   await withRemote(rt, actorA)
+  sent.length = 0
   const room = rt.state.rooms.war
   // An unpublished specialist's line never leaves (it is not even a member now).
   await rt.fanoutRoomLine(room, { seq: 5, who: 'Writer A', text: 'draft', authorKind: 'bot', authorId: 'spec-a' })
@@ -554,4 +562,76 @@ test('#51: a room code lets an unpublished Bot in, for that room only (internal 
   assert.equal(reach(rt.state, { from: 'spec-a', to: remote }).action, 'deny')
   await rt.setGrants('chief-a', [])
   assert.equal(rt.state.rooms.war.members.includes('spec-a'), true)
+})
+
+test('room-share envelope round-trips join, line and leave', () => {
+  const packed = encodeRoomShare({
+    op: 'join', roomId: 'war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 4,
+  })
+  assert.match(packed, /^FLYBOT-ROOM-SHARE\n/)
+  const parsed = parseRoomShare(`noise ${packed} trailing`)
+  assert.equal(parsed.op, 'join')
+  assert.equal(parsed.roomId, 'war')
+  assert.equal(parsed.invitedHandle, '@coder.bob.home')
+  assert.equal(parseRoomShare('hello there'), undefined)
+})
+
+test('applyInboundRoomShare projects a join with no chat line, then a leave hides it', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 1,
+  })
+  const first = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(first.handled, true)
+  const room = first.room
+  assert.equal(room.origin, 'inbound-share')
+  assert.equal(room.sharedFrom.remoteRoomId, 'alice-war')
+  assert.equal(room.sharedFrom.inviterName, 'Chief')
+  assert.equal(viewerRole(room, actorB, rt.state), 'invited-owner')
+  const shown = presentRoom(rt.state.rooms[room.id], actorB, rt.state)
+  assert.match(shown.displayName, /Shared room from/)
+  assert.equal(roomVisibleTo(rt.state, actorB, room.id), true)
+
+  const line = encodeRoomShare({
+    op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', invitedHandle: '@coder.bob.home', seq: 2,
+    who: 'Alice', authorKind: 'human', authorId: 'alice', text: 'Alice: hello',
+  })
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: line, localBotId: 'spec-b' }, actorB)
+  assert.ok(rt.roomHistory(room.id, actorB).some(entry => /hello/.test(entry.text || '')))
+
+  const leave = encodeRoomShare({
+    op: 'leave', roomId: 'alice-war', inviterHome: '@alice.home', invitedHandle: '@coder.bob.home', seq: 3,
+  })
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: leave, localBotId: 'spec-b' }, actorB)
+  assert.equal(rt.state.rooms[room.id].hidden, true)
+  assert.equal(roomVisibleTo(rt.state, actorB, room.id), false)
+})
+
+test('leaveInboundShares hides the projection when the grant is revoked', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const room = await rt.recordInboundSharedRoom({
+    id: 'from-alice-2',
+    name: 'War room',
+    inviterName: 'Alice',
+    inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home',
+    invitedHandle: '@coder.bob.home',
+    localBotId: 'spec-b',
+    remoteRoomId: 'alice-war',
+  }, actorB)
+  await rt.leaveInboundShares({ localBotId: 'spec-b', grantee: '@alice.home' })
+  assert.equal(rt.state.rooms[room.id].hidden, true)
+  assert.equal(roomVisibleTo(rt.state, actorB, room.id), false)
 })

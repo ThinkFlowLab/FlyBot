@@ -310,8 +310,18 @@ export function install(rt) {
     const fromParticipants = Array.isArray(participants)
       ? participants.filter(p => p?.kind === 'bot' && !p.remote && !p.handle).map(p => p.id)
       : []
-    const remotes = Array.isArray(participants) ? participants.filter(p => p?.kind === 'bot' && (p.remote || p.handle)) : []
-    const members = [...new Set([...memberIds, ...fromParticipants])].filter(id => rt.botOf(id))
+    const remotesFromMembers = [...memberIds, ...fromParticipants]
+      .map(id => rt.botOf(id))
+      .filter(bot => bot?.remote?.handle)
+      .map(bot => ({ kind: 'bot', remote: true, handle: bot.remote.handle }))
+    const remotes = [
+      ...(Array.isArray(participants) ? participants.filter(p => p?.kind === 'bot' && (p.remote || p.handle)) : []),
+      ...remotesFromMembers,
+    ].filter((p, i, all) => all.findIndex(other => (other.handle || other.id) === (p.handle || p.id)) === i)
+    const members = [...new Set([...memberIds, ...fromParticipants])].filter(id => {
+      const bot = rt.botOf(id)
+      return bot && !bot.remote
+    })
     if (members.length >= 2) checkMembers(members)
     else if (members.length + remotes.length < 2 || members.length === 0) checkMembers(members)
     const custom = cleanRoomName(roomName ?? '')
@@ -336,13 +346,19 @@ export function install(rt) {
         createdAt: Date.now(),
         createdBy: createdBy ?? null,
       }
-      if (Array.isArray(participants) && participants.length > 0) {
-        rt.applyParticipants(state.rooms[id], participants, actor)
+      const drafts = Array.isArray(participants) && participants.length > 0
+        ? participants
+        : remotes.length > 0
+          ? [...members.map(botId => ({ kind: 'bot', id: botId, role: botId === adminId ? 'admin' : 'member' })), ...remotes]
+          : undefined
+      if (drafts) {
+        rt.applyParticipants(state.rooms[id], drafts, actor)
         if (!custom) {
           state.rooms[id].name = autoRoomName(state.rooms[id].members, state.rooms[id])
         }
       }
       await rt.save()
+      if (remotes.length > 0) void rt.notifyRoomShare?.(state.rooms[id], { op: 'join' })
       return state.rooms[id]
     } catch (error) {
       // The group's Session was already made: archive it instead of leaving an orphan.

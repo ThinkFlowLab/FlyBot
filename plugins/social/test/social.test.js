@@ -10,6 +10,7 @@ import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
 import { approvalView, createSocial, draftText, homeHandleOf, onboard, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions } from '../src/mcp-client.js'
+import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
 import {
   hideRemoteInSettings, forgetHiddenIfGone, filterHiddenHomes, presentRemoteHandles,
   HIDE_GONE_FETCHES, isHomeLevelHandle, isHiddenRemote, clearHiddenRemote, homeOfHiddenHandle,
@@ -2421,5 +2422,67 @@ test('createSocialApi derives grants from list_friends and revokes over REST', a
   assert.ok(listed.some(g => g.grantee === '@bob.home'))
   await api.revokeGrant({ grantId: 'g-rest' })
   assert.ok(server.calls.some(c => c.name === 'REST DELETE /v1/grants' && c.args.id === 'g-rest'))
+})
+
+test('creating a group with a friend\'s Bot fans out a room-share join without a chat line', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const created = await call('create-room', {
+    name: 'War',
+    members: ['a'],
+    participants: [
+      { kind: 'bot', id: 'a' },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home' },
+    ],
+  })
+  assert.equal(created.ok, true, created.error?.message)
+  await waitUntil(() => server.calls.some(c => c.name === 'send_as_member' && String(c.args?.text ?? '').includes('FLYBOT-ROOM-SHARE')))
+  const sent = server.calls.find(c => c.name === 'send_as_member' && String(c.args?.text ?? '').includes('FLYBOT-ROOM-SHARE'))
+  assert.equal(sent.args.to, '@coder.bob.home')
+  assert.match(sent.args.text, /"op":"join"/)
+})
+
+test('inbox room-share join appears as an inbound-share room for the Bot\'s owner', async (t) => {
+  const { ctx, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const envelope = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@chief.danyang.home', seq: 1,
+  })
+  const event = {
+    event_type: 'message.received',
+    event_id: 'share-join-1',
+    cursor: 1,
+    from: { handle: '@chief.alice.home', home_handle: '@alice.home', display_name: 'Alice' },
+    untrusted_content: `<<<UNTRUSTED>>>\n${JSON.stringify({ text: envelope })}\n<<<END>>>`,
+  }
+  const botId = [...server.members.keys()][0]
+  assert.ok(botId, 'registerAll should create a member identity')
+  server.events.set(botId, [event])
+  assert.equal(await social.pollInbox(), 1)
+  const shared = ctx.flybot.rooms.list().find(room => room.origin === 'inbound-share')
+  assert.ok(shared, 'owner FlyBot should list the projected group')
+  assert.equal(shared.name, 'War room')
+  const from = shared.participants?.length
+    ? shared
+    : ctx.flybot.rooms.list().find(room => room.id === shared.id)
+  assert.ok(from)
 })
 

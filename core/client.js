@@ -1189,6 +1189,25 @@ function isListedRemoteChat(bot) {
 function listedChatBots(roster) {
   return (roster?.bots ?? []).filter(isListedRemoteChat);
 }
+function splitRoomPicks(roster, ids) {
+  const byId = roster?.byId ?? Object.fromEntries((roster?.bots ?? []).map((bot) => [bot.id, bot]));
+  const members = [];
+  const remotes = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const id of ids ?? []) {
+    const bot = byId[id];
+    const handle = bot?.remote?.handle;
+    if (typeof handle === "string" && handle) {
+      const key = normRemoteHandle(handle);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      remotes.push({ kind: "bot", remote: true, handle: key });
+    } else {
+      members.push(id);
+    }
+  }
+  return { members, remotes };
+}
 function pickerBotLabel(bot) {
   if (!bot) return "";
   if (!bot.remote) return bot.name ?? "";
@@ -9107,8 +9126,9 @@ function NewChat({ mode, roster, actions }) {
   const paneLeft = usePaneLeft();
   const wanted = query.trim().toLowerCase();
   const bots = listedChatBots(roster);
-  const matches = bots.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
   const choosingAdmin = group && admin === null;
+  const pool = choosingAdmin ? bots.filter((bot) => !bot.remote) : bots;
+  const matches = pool.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
   const exact = bots.some((bot) => bot.name.toLowerCase() === wanted);
   const pickedBots = picked.map((id) => roster.byId[id]).filter(Boolean);
   const run = async (task) => {
@@ -9162,7 +9182,12 @@ function NewChat({ mode, roster, actions }) {
   const makeGroup = async () => {
     if (admin === null || picked.length === 0) return;
     const text = message.trim();
-    const room2 = await actions.createRoom([admin, ...picked], { admin, ...text ? {} : { greet: true } });
+    const { members, remotes } = splitRoomPicks(roster, [admin, ...picked]);
+    const participants = remotes.length === 0 ? void 0 : [
+      ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
+      ...remotes
+    ];
+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...text ? {} : { greet: true } });
     if (text) await actions.send(room2.id, text);
     actions.openSession(room2.id);
     close();
@@ -9181,7 +9206,12 @@ function NewChat({ mode, roster, actions }) {
       close();
       return;
     }
-    const room2 = await actions.createRoom(picked);
+    const { members, remotes } = splitRoomPicks(roster, picked);
+    const participants = remotes.length === 0 ? void 0 : [
+      ...members.map((id) => ({ kind: "bot", id })),
+      ...remotes
+    ];
+    const room2 = await actions.createRoom(members, participants ? { participants } : {});
     await actions.send(room2.id, text);
     actions.openSession(room2.id);
     close();
