@@ -212,7 +212,8 @@ export function normalizeGrant(item) {
   })
   return {
     ...(id ? { id: String(id) } : {}),
-    grantee: String(grantee),
+    // Canonical @handle for core grants.set / normGrantee (not decorated Chief@…).
+    grantee: view.member || view.home || memberHandleOf(grantee) || String(grantee),
     ...(view.label ? { name: view.label } : {}),
     ...(view.home ? { home: view.home } : {}),
     ...(view.member ? { member: view.member } : {}),

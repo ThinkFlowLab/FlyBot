@@ -166,7 +166,13 @@ export const ONBOARD_TRIES = 12
 
 export function nextOnboardDisplayName(base, attempt) {
   const name = String(base ?? 'FlyBot').trim() || 'FlyBot'
-  return attempt <= 1 ? name : `${name}${attempt}`
+  if (attempt <= 1) return name
+  const suffix = String(attempt)
+  // homeHandleOf keeps 32 alphanumeric chars; reserve space so the suffix changes the handle.
+  const sanitized = name.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const maxBase = Math.max(1, 32 - suffix.length)
+  if (sanitized.length <= maxBase) return `${name}${suffix}`
+  return `${sanitized.slice(0, maxBase)}${suffix}`
 }
 
 async function onboardError(response, displayName) {
@@ -220,7 +226,14 @@ export function mapJoinInviteError(error) {
   const code = String(error?.code ?? '')
   const blob = `${code} ${msg}`
   if (/relationship_exists/i.test(blob)) {
-    return Object.assign(new Error("You're already friends. That Bot is in Friends' Bots again."), { code: 'relationship_exists' })
+    return Object.assign(new Error("You're already friends. That Bot is in Friends' Bots again."), {
+      code: 'relationship_exists',
+      ...(error?.peer ? { peer: error.peer } : {}),
+      ...(error?.bot ? { bot: error.bot } : {}),
+      ...(error?.relationshipId || error?.relationship_id
+        ? { relationshipId: String(error.relationshipId ?? error.relationship_id) }
+        : {}),
+    })
   }
   if (/invite is used|invite_used|already used|max_uses|used_up/i.test(blob)) {
     return Object.assign(new Error('This invite was already used. Ask your friend for a new one.'), { code: 'invite_used' })
@@ -548,7 +561,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const key = norm(handle)
     const room = String(faceId ?? '')
     if (!key || key === '@' || !room) return
-    if (settings.inboundBots?.[key]) return
+    const peerHome = (() => {
+      const parts = key.slice(1).split('.')
+      return parts.length > 2 ? `@${parts.slice(1).join('.')}` : key
+    })()
+    if (settings.inboundBots?.[key] || settings.inboundBots?.[peerHome]) return
+    // Already a normal friend in the roster — do not reclassify as room-only.
+    if (listedRemoteBots().some(bot => bot.handle === key || bot.home === key || bot.home === peerHome)) return
     settings.roomBots ??= {}
     const rec = settings.roomBots[key] ?? { rooms: {} }
     if (rec.rooms?.[room]) return
@@ -581,6 +600,20 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
     }
     return keys
+  }
+  // One-time upgrade: remotes already on the server roster are treated as inbound so
+  // reciprocal friends are not dropped when inboundBots was empty (Codex P1).
+  function backfillInboundFromRoster(mappedHomes) {
+    if (settings.inboundBackfilled) return
+    settings.inboundBots ??= {}
+    for (const bot of (mappedHomes ?? []).flatMap(entry => entry.bots ?? [])) {
+      const key = norm(bot.handle)
+      if (!key || key === '@') continue
+      if (settings.roomBots?.[key]) continue
+      settings.inboundBots[key] = true
+    }
+    settings.inboundBackfilled = true
+    saveSettings()
   }
   function keepGrantedRemote(bot) {
     const key = norm(bot.handle)
@@ -629,6 +662,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (home) {
         result = await client.callTool('list_remote_bots', { home: home.id })
         const mapped = mapRemoteHomes(result?.homes)
+        backfillInboundFromRoster(mapped)
         unfiltered = { homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }
       } else {
         // Per-bot identity (legacy): each active friend is its own "home" of one Bot.
@@ -787,9 +821,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
         const people = listed.filter(grant => !grant.roomId).map(grant => {
           const view = grantPersonView(grant)
+          // Core normGrantee cannot match decorated non-@ values; persist a canonical @handle.
+          const canonical = view.member || view.home || memberHandleOf(grant.grantee) || grant.grantee
           return {
-            id: grant.id || grant.relationshipId || `${bot.id}:${grant.grantee}`,
-            grantee: grant.grantee,
+            id: grant.id || grant.relationshipId || `${bot.id}:${canonical}`,
+            grantee: canonical,
             ...(view.label ? { name: view.label } : grant.name ? { name: grant.name } : {}),
             ...(view.home ? { home: view.home } : {}),
             ...(view.member ? { member: view.member } : {}),
@@ -1211,7 +1247,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         try {
           const result = await client.callTool('list_remote_bots', { home: home.id })
           const homes = mapRemoteHomes(result?.homes)
-          const next = revealHiddenIfPresent(settings, presentRemoteHandles(homes))
+          // Scope unhide to the invite's Bot/peer home — never every remote on the home.
+          const focus = norm(mapped.bot?.handle || mapped.peer?.handle)
+          const present = presentRemoteHandles(homes)
+          const handles = focus
+            ? present.filter(h => {
+              const homeKey = isHomeLevelHandle(focus) ? focus : homeOfPeer(focus)
+              return h === focus || h === homeKey || homeOfPeer(h) === homeKey
+            })
+            : []
+          const next = handles.length ? revealHiddenIfPresent(settings, handles) : settings
           if (next !== settings) { settings = next; saveSettings() }
           fetchedAt = 0
           await remoteBots({ fresh: true }).catch(() => {})
@@ -1248,17 +1293,33 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }))
   disposers.push(flybot.api.handle('social/respond', async ({ relationshipId, decision } = {}) => {
     if (decision !== 'accept' && decision !== 'decline') throw new Error('decision is accept or decline')
-    const result = await confirmedCall('respond_friend_request', { relationship_id: String(relationshipId ?? ''), decision, ...(decision === 'accept' ? { grant_capabilities: ['chat.public'] } : {}) })
+    const rid = String(relationshipId ?? '')
+    let pendingPeer
+    if (decision === 'accept') {
+      try {
+        const overview = await friendsOverview()
+        pendingPeer = (overview.incoming ?? []).find(item => String(item.relationshipId) === rid)
+      } catch (error) {
+        warn('could not load pending request for respond', error)
+      }
+    }
+    const result = await confirmedCall('respond_friend_request', { relationship_id: rid, decision, ...(decision === 'accept' ? { grant_capabilities: ['chat.public'] } : {}) })
     if (decision === 'accept') {
       const before = new Set(listedRemoteBots().map(bot => bot.handle))
       const roster = await remoteBots({ fresh: true }).catch(() => remote)
-      for (const bot of (roster?.homes ?? []).flatMap(entry => entry.bots)) {
-        if (!before.has(bot.handle)) rememberInbound(bot.handle)
-      }
-      const peerHome = roster?.homes?.find(entry => entry.bots?.length)?.home
-      if (autoAcceptOf(peerHome)) await serverAutoApprove(String(relationshipId ?? ''), true)
+      const added = (roster?.homes ?? []).flatMap(entry => entry.bots).filter(bot => !before.has(bot.handle))
+      for (const bot of added) rememberInbound(bot.handle)
+      const resultPeer = result?.peer?.handle || result?.friend?.handle || result?.inviter?.handle
+      const peerHome = pendingPeer?.handle
+        ? (isHomeLevelHandle(pendingPeer.handle) ? pendingPeer.handle : homeOfPeer(pendingPeer.handle))
+        : resultPeer
+          ? (isHomeLevelHandle(norm(resultPeer)) ? norm(resultPeer) : homeOfPeer(resultPeer))
+          : added.length
+            ? added[0].home
+            : undefined
+      if (peerHome && autoAcceptOf(peerHome)) await serverAutoApprove(rid, true)
     }
-    return { relationshipId, status: result?.status ?? (decision === 'accept' ? 'active' : 'declined') }
+    return { relationshipId: rid, status: result?.status ?? (decision === 'accept' ? 'active' : 'declined') }
   }))
 
   // The owner's composer for a remote member: text plus files, through bot.send (approval applies).

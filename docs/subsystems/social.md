@@ -68,9 +68,10 @@ Everything in `plugins/social/` (entry `plugins/social/index.js` and any helpers
 
 - **#136:** A taken `displayName` at onboard retries `Name2` … rather than refusing to start. Friends' Bots shows `@your.home` with Copy.
 - **#137 (deferred):** The owner's chosen Bot avatar/color does not cross homes. Live Bot Social `update_bot_profile` only has `display_name` / `bot_id`; face-room join POST is `{ code, bots: [handle] }`. Peers keep the handle-seeded look until the server grows profile look fields.
-- **#138:** Accepting a Helper invite grants Helper only. The joiner picks a talk-through Bot (not shared). Success copy is `{person} shared {Bot} with you.` Manage access lists `SelfB1935 (@selfb1935.home)`. Face-room remotes leave Friends' Bots when the room is left.
-- **#139:** **Remove this Bot** asks once (`Remove Helper? Bob can share it again.`). Hide stays local (A's Manage access still shows the grant until A revokes — an incoming un-grant needs Bot Social). Re-joining an existing friendship unhides instead of a raw `relationship_exists`; used invites say “This invite was already used.”
-- **#140:** Auto-send defaults off. The owner sees Approve / Reject in the chat, not “Waiting for the owner's approval.” Composer drafts are labelled You.
+- **#138:** Accepting a Helper invite grants Helper only. The joiner picks a talk-through Bot (not shared). Success copy is `{person} shared {Bot} with you.` Manage access lists `SelfB1935 (@selfb1935.home)`. Core grants store a canonical `@handle` (never decorated `Chief@…`). On upgrade, remotes already on `list_remote_bots` are seeded into `inboundBots` once so reciprocal friends are not dropped. Face-room remotes leave Friends' Bots when the room is left; existing friend handles are not reclassified as room-only.
+- **#139:** **Remove this Bot** asks once (`Remove Helper? Bob can share it again.`). Hide stays local (A's Manage access still shows the grant until A revokes — an incoming un-grant needs Bot Social). Re-joining an existing friendship unhides only that invite's Bot/peer home (not every hidden remote); used invites say “This invite was already used.”
+- **#140:** Auto-send defaults off. Accepting a friend request uses that relationship's peer home for Auto-send, not the first roster entry. The owner sees Approve / Reject in the chat, not “Waiting for the owner's approval.” Composer drafts are labelled You.
+- **#136 (suffix):** Onboard retries truncate the sanitized handle body so `Name2` / `Name3` still change within the 32-character `homeHandleOf` limit.
 
 ### Past rooms, unique titles, poll, and + (#129–#133)
 
