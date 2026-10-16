@@ -53,6 +53,10 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 9. `flybot.rooms` hosts a Bot Social face-to-face matching room as a native room (`upsertFace` / `applyFaceLine` / `ofFace` / `dropFace` / `onFaceLine` / `postNotice` / `postRemote`). Slot `flybot.room.overview` is a block at the top of a group's overview (Leave / Start chat / Auto-send for origin `face-to-face`). Slot `flybot.new-chat.action` adds a row to the sidebar **+** new-chat menu (next to Create group chat; `label` / `hint` go through the same `t()` map). Still not team mode.
 10. Held sends are owner-bound (#52): a hold stamps server-derived provenance on the record — `requestId`, a sha256 `version` over the request content, `origin` (`via`/`hop`/audience) and the sender Bot's `ownerId`; message claims (`meta`, text) never confer authority. `flybot/decide` passes authz for any signed-in actor and hooks binds the decision to the sender Bot's owner's session; `release` revalidates and marks records `stale` (changed request, deleted sender/target Bot, changed owner, demoted Chief — `deleteBot`/`setMain` also invalidate eagerly), and the pending list is filtered per actor under member enforcement. The default approval card shows `senderName`/`targetName` and a delegated marker (`Approval.origin`).
 
+### Chat-row pending badge
+
+- `flybot.chatApprovals.setProvider` attaches pending Bot Social holds to a 1:1 friend's-Bot chat the same way `roomApprovals` does for groups. The team view puts `pendingCount` on that bot; the sidebar paints the gold wait dot. Still not team mode.
+
 ### Inbound shared rooms on `flybot.rooms`
 
 - `flybot.rooms.applyInbound` turns a Bot Social inbox envelope into the owner's inbound-share projection; `leaveInbound` hides those rooms when the invited Bot is removed or its grant is revoked. Face-to-face methods are unchanged. Still not team mode.

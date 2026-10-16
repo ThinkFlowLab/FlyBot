@@ -547,7 +547,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { showsDshRow } from './dsh-offer.js'
  
  // -------------------------------------------------------------------------
-@@ -37,16 +37,16 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,38 +37,40 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -565,9 +565,12 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 -  const tile = roster.mainBotId === id
 +  const tile = roster.mainBotId === id && !asRow
    const approval = useApproval(useWork, entry => entry.botId === id)
-   const alert = roster.questions?.[part] !== undefined || approval
+-  const alert = roster.questions?.[part] !== undefined || approval
++  const waiting = approval || (bot.pendingCount ?? 0) > 0
++  const alert = roster.questions?.[part] !== undefined || waiting
    const doing = useActivity(map => map[id])
-@@ -55,20 +55,21 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+   // Work in a group runs in a Session of its own, so the Bot's chat stays idle meanwhile.
+   const groups = workKeys(useGroupWork(useWork, rooms => Object.entries(rooms).flatMap(([roomId, entries]) => entries.filter(entry => entry.botId === id).map(entry => `${roomId}|${entry.tool ?? ''}`))))
    const away = !running && groups.length > 0
    const state = botState(running || away, doing, alert)
    const awayLine = away ? workLine(roster.roomsById[groups[0].id]?.name ?? t('a group chat'), groups[0].tool, groups.length - 1) : null
@@ -580,7 +583,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    const pinned = bot.pinned === true && !tile
 -  const label = [bot.name, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', approval ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
 +  const shown = bot.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : bot.name
-+  const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', approval ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
++  const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
    if (tile && wide) {
      return h('div', { className: 'bt-tile-wrap' }, h('button', {
        type: 'button', className: 'bt-tile', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
@@ -592,23 +595,25 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      bot.role ? h('span', { className: 'bt-chip' }, bot.role) : null))
    }
    return h('button', {
-@@ -78,15 +78,22 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -78,15 +78,23 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
    h(BotAvatar, { bot, size: 36, state, main }),
    pinned && !wide ? h(PinMark) : null,
    wide ? h('span', { className: 'bt-row-body' },
 -    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, bot.name), pinned ? h(PinMark) : null),
 +    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, shown), bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
      awayLine ? h('span', { className: 'bt-row-preview' }, awayLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
-   wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
- }
- 
+-  wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
++  wide && waiting && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
++    : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
++}
++
 +// A friend's Bot: a small globe after the name, its handle on hover.
 +function RemoteMark({ remote }) {
 +  return h('span', { className: 'bt-row-remote', title: remote.gone ? `${remote.handle} · ${t('no longer shared')}` : remote.handle, 'aria-label': t('Friend\'s Bot') },
 +    h('svg', { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
 +      h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18' })))
-+}
-+
+ }
+ 
  function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
    const id = room.id
 -  const fallback = useSessions(list => previewOf(list, id))
@@ -856,7 +861,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
  .bt-round:hover{background:var(--bt-hover)}
  .bt-round:active{transform:scale(.94)}
-@@ -132,21 +132,21 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -132,21 +132,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -866,6 +871,8 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-unread{width:8px;height:8px;border-radius:50%;background:#1084fe;flex:none;margin-right:2px;animation:bt-fade .13s cubic-bezier(.22,1,.36,1)}
  .bt-unread-wait{background:var(--bt-star)}
 +.bt-shared-from,.bt-shared-wait{display:flex;flex-direction:column;gap:6px;padding:8px 0}
++.bt-shared-wait .bt-set-row{min-width:0}
++.bt-shared-wait .bt-set-copy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
  .bt-rail{align-items:center;padding:0 0 8px}
  .bt-rail .bt-row{justify-content:center;padding:6px 0;min-height:44px}
  .bt-side-foot{display:flex;padding-top:8px}

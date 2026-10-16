@@ -37,9 +37,17 @@ export function install(rt) {
     mainBotIds: state.mainBotIds,
     // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
     // `waiting`: the Bot holds its greeting until the user picks its model.
-    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => ({
-      ...bot, granted: rt.hasAnyGrant?.(bot.id) === true, sessionId: rt.chatOf(bot.id), parts: (segments ?? []).map(segment => segment.sessionId), ...(kickoff ? { waiting: true } : {}),
-    })),
+    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
+      const pending = bot.remote ? (rt.listChatApprovals?.(bot, actor) ?? []) : []
+      return {
+        ...bot,
+        granted: rt.hasAnyGrant?.(bot.id) === true,
+        sessionId: rt.chatOf(bot.id),
+        parts: (segments ?? []).map(segment => segment.sessionId),
+        pendingCount: pending.length,
+        ...(kickoff ? { waiting: true } : {}),
+      }
+    }),
     // `parts`: the members' hidden group Sessions and their earlier segments, for usage.
     rooms: Object.values(state.rooms).map(({ log, seen, botRounds, lateRounds, sessions, segments, ...room }) => {
       const parts = [...Object.values(sessions ?? {}), ...Object.values(segments ?? {}).flat().map(segment => segment.sessionId)]

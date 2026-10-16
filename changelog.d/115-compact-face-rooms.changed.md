@@ -1,0 +1,1 @@
+Face-to-face rooms in Friends' Bots are one row each (name, small avatar stack, open/closed chip, Open and Leave). Closed and left rooms fold under **Past rooms**. Auto-send is a single compact toggle with a tooltip, not repeated on every card. ([#115](https://github.com/ThinkFlowLab/FlyBot/issues/115))

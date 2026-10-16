@@ -1087,7 +1087,7 @@ diff --git a/client.js b/client.js
  .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
  .bt-round:hover{background:var(--bt-hover)}
  .bt-round:active{transform:scale(.94)}
-@@ -1950,21 +1950,21 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -1950,21 +1950,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1097,6 +1097,8 @@ diff --git a/client.js b/client.js
  .bt-unread{width:8px;height:8px;border-radius:50%;background:#1084fe;flex:none;margin-right:2px;animation:bt-fade .13s cubic-bezier(.22,1,.36,1)}
  .bt-unread-wait{background:var(--bt-star)}
 +.bt-shared-from,.bt-shared-wait{display:flex;flex-direction:column;gap:6px;padding:8px 0}
++.bt-shared-wait .bt-set-row{min-width:0}
++.bt-shared-wait .bt-set-copy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
  .bt-rail{align-items:center;padding:0 0 8px}
  .bt-rail .bt-row{justify-content:center;padding:6px 0;min-height:44px}
  .bt-side-foot{display:flex;padding-top:8px}
@@ -1123,10 +1125,18 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2830,251 +2830,133 @@ function installCompiledStyles(text, tag) {
-         list = sheetClassNames(sheet);
-         cache.set(sheet, list);
-       }
+@@ -2822,259 +2822,141 @@ function installCompiledStyles(text, tag) {
+   const style = installStyles("", tag);
+   const cache = /* @__PURE__ */ new WeakMap();
+   const render = () => {
+-    const names = /* @__PURE__ */ new Set();
+-    for (const sheet of document.styleSheets) {
+-      if (sheet.ownerNode?.dataset?.dshBot) continue;
+-      let list = cache.get(sheet);
+-      if (!list) {
+-        list = sheetClassNames(sheet);
+-        cache.set(sheet, list);
+-      }
 -      for (const name of list) names.add(name);
 -    }
 -    const next = compileFragmentSelectors(text, names);
@@ -1277,6 +1287,14 @@ diff --git a/client.js b/client.js
 -  }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
++    const names = /* @__PURE__ */ new Set();
++    for (const sheet of document.styleSheets) {
++      if (sheet.ownerNode?.dataset?.dshBot) continue;
++      let list = cache.get(sheet);
++      if (!list) {
++        list = sheetClassNames(sheet);
++        cache.set(sheet, list);
++      }
 +      for (const name of list) names.add(name);
 +    }
 +    const next = compileFragmentSelectors(text, names);
@@ -2379,7 +2397,8 @@ diff --git a/client.js b/client.js
        bot.name,
 -      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +      room2?.admin === bot.id ? (0, import_react7.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
-+    ),
+     ),
+-    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    (0, import_react7.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +  );
 +}
@@ -2414,8 +2433,7 @@ diff --git a/client.js b/client.js
 +      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
 +      name,
 +      (0, import_react7.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react7.createElement)(GlobeMark), handle)
-     ),
--    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
++    ),
 +    (0, import_react7.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
@@ -3098,7 +3116,7 @@ diff --git a/client.js b/client.js
        )
      )
    ), host);
-@@ -4732,32 +4732,32 @@ function showsDshRow(dsh, app) {
+@@ -4732,48 +4732,50 @@ function showsDshRow(dsh, app) {
  }
  
  // src/client/sidebar.js
@@ -3136,9 +3154,11 @@ diff --git a/client.js b/client.js
 -  const tile = roster.mainBotId === id;
 +  const tile = roster.mainBotId === id && !asRow;
    const approval = useApproval(useWork, (entry) => entry.botId === id);
-   const alert = roster.questions?.[part] !== void 0 || approval;
+-  const alert = roster.questions?.[part] !== void 0 || approval;
++  const waiting = approval || (bot.pendingCount ?? 0) > 0;
++  const alert = roster.questions?.[part] !== void 0 || waiting;
    const doing = useActivity((map) => map[id]);
-@@ -4765,15 +4765,16 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+   const groups = workKeys(useGroupWork(useWork, (rooms) => Object.entries(rooms).flatMap(([roomId, entries2]) => entries2.filter((entry) => entry.botId === id).map((entry) => `${roomId}|${entry.tool ?? ""}`))));
    const away = !running && groups.length > 0;
    const state = botState(running || away, doing, alert);
    const awayLine = away ? workLine(roster.roomsById[groups[0].id]?.name ?? t("a group chat"), groups[0].tool, groups.length - 1) : null;
@@ -3151,7 +3171,7 @@ diff --git a/client.js b/client.js
    const pinned = bot.pinned === true && !tile;
 -  const label = [bot.name, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", approval ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
 +  const shown = bot.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : bot.name;
-+  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", approval ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
++  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
    if (tile && wide) {
 -    return (0, import_react8.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react8.createElement)(
 +    return (0, import_react9.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react9.createElement)(
@@ -3193,7 +3213,7 @@ diff --git a/client.js b/client.js
 +      awayLine ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, awayLine) : preview ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, preview) : null
      ) : null,
 -    wide && unread && !active ? (0, import_react8.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
-+    wide && unread && !active ? (0, import_react9.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
++    wide && waiting && !active ? (0, import_react9.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react9.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
 +  );
 +}
 +function RemoteMark({ remote }) {
@@ -8880,7 +8900,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,71 +11367,186 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,71 +11367,161 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -8923,7 +8943,6 @@ diff --git a/client.js b/client.js
 +function SharedRoomApprovals({ room: room2 }) {
 +  const [items, setItems] = (0, import_react32.useState)(room2.pendingApprovals ?? []);
 +  const [busy, setBusy] = (0, import_react32.useState)("");
-+  const [autoSend, setAutoSend] = (0, import_react32.useState)(false);
 +  const face = room2.origin === "face-to-face";
 +  (0, import_react32.useEffect)(() => {
 +    const haveItems = Array.isArray(room2.pendingApprovals) && room2.pendingApprovals.length;
@@ -8935,7 +8954,6 @@ diff --git a/client.js b/client.js
 +      if (room2.viewerRole === "invited-owner" && !haveItems) {
 +        setItems(Array.isArray(value?.approvals) ? value.approvals : []);
 +      }
-+      if (typeof value?.autoApproveFaceRooms === "boolean") setAutoSend(value.autoApproveFaceRooms);
 +    }, () => {
 +    });
 +    return () => {
@@ -8952,39 +8970,16 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +    }
 +  };
-+  const setAuto = async (on) => {
-+    setBusy("auto");
-+    try {
-+      const result = await call("social/face-auto", { on });
-+      setAutoSend(result?.autoApproveFaceRooms === true);
-+    } finally {
-+      setBusy("");
-+    }
-+  };
-+  const approveAndAuto = async (item) => {
-+    setBusy(item.id);
-+    try {
-+      const result = await call("social/face-auto", { on: true });
-+      setAutoSend(result?.autoApproveFaceRooms === true);
-+      await call("social/decide-approval", { approvalId: item.id, decision: "approve" });
-+      setItems((list) => list.filter((entry) => entry.id !== item.id));
-+    } finally {
-+      setBusy("");
-+    }
-+  };
 +  return (0, import_react32.createElement)(
 +    "div",
 +    { key: "approvals", className: "bt-shared-wait", "data-flybot": "room-pending-approvals" },
 +    (0, import_react32.createElement)("div", { className: "bt-section-title" }, t("Waiting for your approval"), (0, import_react32.createElement)("span", { className: "bt-chip" }, t("{count} to approve", { count: items.length }))),
-+    face && autoSend ? (0, import_react32.createElement)("div", { className: "bt-set-hint" }, t("Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.")) : null,
-+    face && !autoSend ? (0, import_react32.createElement)("button", { type: "button", className: "bt-more", "data-flybot": "face-auto-send-on", disabled: !!busy, onClick: () => setAuto(true) }, t("Turn on auto-send")) : null,
 +    items.map((item) => (0, import_react32.createElement)(
 +      "div",
 +      { key: item.id, className: "bt-set-row" },
 +      (0, import_react32.createElement)("span", { className: "bt-set-copy" }, item.text || item.summary || item.to || t("Outbound reply")),
-+      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id || busy === "auto", onClick: () => decide(item, "approve") }, t("Approve")),
-+      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id || busy === "auto", onClick: () => decide(item, "reject") }, t("Reject")),
-+      face && !autoSend ? (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", "data-flybot": "face-approve-auto", disabled: busy === item.id || busy === "auto", onClick: () => approveAndAuto(item) }, t("Approve and always auto-send in this room")) : null
++      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
++      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
 +    ))
    );
  }

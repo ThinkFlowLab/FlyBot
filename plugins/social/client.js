@@ -85,20 +85,36 @@ window.__ModuleLoader__.load({
 .fs-status[data-tone=error]{color:#e5484d}
 .fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
-.fs-pending{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px}
+.fs-pending{margin:4px 4px 6px;padding:6px 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
 .fs-pending .fs-label{padding:0}
+.fs-pending-item{display:flex;align-items:center;gap:8px;width:100%;max-width:100%;min-width:0;padding:4px 4px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;flex-wrap:nowrap}
+.fs-pending-item:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-pending-item .fs-text{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:row;align-items:baseline;gap:8px}
+.fs-pending-item .fs-name{flex:0 1 auto;max-width:40%;min-width:0}
+.fs-pending-one{flex:1 1 auto;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .fs-draft{font-size:13px;line-height:18px;color:var(--bt-ink,#141414);white-space:pre-wrap;overflow-wrap:anywhere;max-height:96px;overflow:auto}
 .fs-digits{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:16px;letter-spacing:.24em;font-variant-numeric:tabular-nums;outline:none;text-align:center}
 .fs-digits:focus{border-color:var(--bt-accent,#4d6bfe)}
-.fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px}
-.fs-face-members{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
-.fs-face-members li{display:flex;align-items:center;gap:8px;font-size:13px;line-height:18px;padding:2px 0;min-width:0}
-.fs-face-members .fs-member-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fs-face-actions{display:flex;gap:6px;flex-wrap:wrap}
-.fs-face-auto-wrap{display:flex;flex-direction:column;gap:2px;padding:2px 0}
-.fs-face-auto{white-space:normal;font-size:13px;line-height:18px;color:var(--bt-ink,#141414);align-items:flex-start}
-.fs-face-auto input{margin-top:2px}
-.fs-face-note{padding:0}
+.fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
+.fs-face-row{display:flex;align-items:center;gap:6px;min-width:0;width:100%;padding:2px 0;flex-wrap:nowrap}
+.fs-face-row .fs-name{flex:1 1 auto;min-width:0}
+.fs-stack{display:flex;flex-direction:row;align-items:center;flex:none}
+.fs-stack .fs-face-mark,.fs-stack [data-flybot=face-card-member]{margin-left:-6px}
+.fs-stack .fs-face-mark:first-child,.fs-stack [data-flybot=face-card-member]:first-child{margin-left:0}
+.fs-stack [data-flybot=face-card-member]{display:inline-flex;border-radius:50%;box-shadow:0 0 0 2px var(--bt-card,#fff)}
+.fs-stack-more{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));margin-left:4px}
+.fs-chip{flex:none;font-size:11px;line-height:14px;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.56));white-space:nowrap}
+.fs-face-actions{display:flex;gap:4px;flex:none;flex-wrap:nowrap}
+.fs-face-head{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.fs-face-head .fs-auto{margin-left:auto}
+.fs-past{margin:2px 0 4px}
+.fs-past-head{display:flex;align-items:center;gap:6px;width:100%;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;text-align:left;cursor:pointer}
+.fs-past-head:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-past-head .fs-chev[data-closed]{transform:rotate(-90deg)}
+.fs-face-auto-wrap{display:inline-flex;align-items:center;gap:2px;padding:0}
+.fs-face-auto{white-space:nowrap;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-face-note{padding:0;display:none}
+.fs-chat-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
 .fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
 .fs-remove{flex:none;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0}
@@ -108,7 +124,8 @@ window.__ModuleLoader__.load({
 .fs-menu{position:absolute;right:4px;top:100%;z-index:5;min-width:160px;padding:4px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:var(--bt-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,.12)}
 .fs-menu button{display:block;width:100%;text-align:left;height:28px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer}
 .fs-menu button:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
-.fs-chat-approval{margin:4px 0 8px}
+.fs-chat-approval{margin:4px 0 8px;min-width:0}
+.fs-chat-approval[data-state=approved] .fs-name,.fs-chat-approval[data-state=rejected] .fs-name{color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-dialog-back{position:fixed;inset:0;z-index:40;background:rgba(20,20,20,.4);display:flex;align-items:center;justify-content:center;padding:12px}
 .fs-dialog{width:min(420px,100%);max-height:min(640px,92vh);overflow:hidden;margin:0;padding:14px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
 .fs-dialog-head{display:flex;align-items:center;gap:8px;flex:none}
@@ -276,8 +293,7 @@ window.__ModuleLoader__.load({
             'aria-label': "Auto-send my Bot's room messages",
             onChange: e => onChange?.(e.target.checked),
           }),
-          "Auto-send my Bot's room messages"),
-        h('div', { className: 'fs-hint fs-face-note' }, AUTO_SEND_NOTE),
+          'Auto-send'),
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
@@ -300,60 +316,24 @@ window.__ModuleLoader__.load({
       return h(FaceAutoSend, { on, busy, onChange: toggle, error })
     }
 
-    // Outbound drafts Bot Social is holding: badge + Approve / Reject. Inbound does not wait.
-    function PendingApprovals({ items, busy, onDecide }) {
-      const hasFace = items?.some(item => item.kind === 'face_room_message')
-      const [autoSend, setAutoSend] = useState(false)
-      const [autoBusy, setAutoBusy] = useState(false)
-      const [autoError, setAutoError] = useState('')
-      useEffect(() => {
-        if (!hasFace) return undefined
-        call('social/status', {}).then(value => setAutoSend(value?.autoApproveFaceRooms === true), () => {})
-        return undefined
-      }, [hasFace])
+    const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
+    function pendingTitle(item) {
+      return item.from ? `${item.from} → ${item.toName || item.to || 'friend'}` : (item.toName || item.to || 'Outbound reply')
+    }
+
+    // Compact jump list. Approve / Reject live on the in-chat card.
+    function PendingApprovals({ items, onOpen }) {
       if (!items?.length) return null
-      const setAuto = async (next) => {
-        setAutoBusy(true)
-        setAutoError('')
-        try {
-          const result = await call('social/face-auto', { on: next })
-          const on = result?.autoApproveFaceRooms === true
-          setAutoSend(on)
-          return on
-        } catch (e) {
-          setAutoError(errorText(e))
-          return autoSend
-        } finally { setAutoBusy(false) }
-      }
-      const locked = !!busy || autoBusy
       return h('div', { className: 'fs-pending', 'data-flybot': 'pending-approvals', role: 'region', 'aria-label': 'Messages waiting for your approval' },
         h('div', { className: 'fs-label' }, 'Waiting for your approval', h('span', { className: 'fs-count' }, String(items.length))),
-        h('div', { className: 'fs-hint' }, hasFace
-          ? (autoSend
-            ? 'Auto-send is on: new room messages go out without asking. Drafts already here still need Approve or Reject.'
-            : 'These room messages stay here until you Approve or Reject them. They are not sent until you approve.')
-          : 'A friend already sees their own message. These replies stay here until you Approve or Reject them. Turn on Auto-accept for that friend to skip the hold next time.'),
-        hasFace ? h(FaceAutoSend, { on: autoSend, busy: locked, onChange: setAuto, error: autoError }) : null,
-        hasFace && !autoSend ? h('div', { className: 'fs-face-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-auto-send-on', disabled: locked, onClick: () => setAuto(true) }, 'Turn on auto-send')) : null,
-        items.map(item => h('div', { key: item.id, className: 'fs-row', 'data-flybot': 'pending-item' },
-          h(FaceAvatar, { bot: faceLook({ member: { handle: item.to, displayName: item.from || item.toName || item.to } }), size: 24 }),
+        items.map(item => h('button', {
+          key: item.id, type: 'button', className: 'fs-pending-item', 'data-flybot': 'pending-item',
+          title: oneLine(item.text || item.summary || pendingTitle(item)),
+          onClick: () => onOpen?.(item),
+        },
           h('span', { className: 'fs-text' },
-            h('span', { className: 'fs-name' }, item.from ? `${item.from} → ${item.toName || item.to || 'friend'}` : (item.toName || item.to || 'Outbound reply')),
-            item.text ? h('span', { className: 'fs-draft' }, item.text) : (item.summary ? h('span', { className: 'fs-sub fs-msg' }, item.summary) : null),
-            item.attachments?.length ? h('span', { className: 'fs-sub' }, item.attachments.map(file => file.name).join(', ')) : null),
-          h('span', { className: 'fs-actions' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy === item.id || autoBusy, onClick: () => onDecide(item, 'approve') }, 'Approve'),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy === item.id || autoBusy, onClick: () => onDecide(item, 'reject') }, 'Reject'),
-            hasFace && item.kind === 'face_room_message' && !autoSend
-              ? h('button', {
-                type: 'button',
-                className: 'fs-btn fs-btn-sm',
-                'data-flybot': 'face-approve-auto',
-                disabled: busy === item.id || autoBusy,
-                onClick: async () => { await setAuto(true); onDecide(item, 'approve') },
-              }, 'Approve and always auto-send in this room')
-              : null))))
+            h('span', { className: 'fs-name' }, pendingTitle(item)),
+            h('span', { className: 'fs-pending-one' }, oneLine(item.text || item.summary || ''))))))
     }
 
     const STOP_JOIN = /6-digit|no longer valid|Too many (failed )?attempts|signed you out/i
@@ -560,7 +540,13 @@ window.__ModuleLoader__.load({
             status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone }, status.text) : null)))
     }
 
-    function FaceRoomCard({ room, actions, onChange, autoSend, autoBusy, autoError, onAutoSend, roster, remoteChats } = {}) {
+    function faceChip(room) {
+      if (room.status === 'closed') return 'closed'
+      if (room.status === 'left') return 'left'
+      if (room.status === 'candidate') return room.expiresAt ? countdown(room.expiresAt) : 'joining'
+      return 'open'
+    }
+    function FaceRoomCard({ room, actions, onChange, roster, remoteChats } = {}) {
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
       const run = async (label, fn) => {
@@ -573,23 +559,22 @@ window.__ModuleLoader__.load({
         finally { setBusy('') }
       }
       const members = room.members ?? []
+      const shown = members.slice(0, 3)
+      const extra = Math.max(0, members.length - shown.length)
       const candidate = room.status === 'candidate'
-      return h('div', { className: 'fs-face', 'data-flybot': 'face-room', 'data-status': room.status },
-        h('div', { className: 'fs-name' }, room.name || 'Face-to-face room'),
-        candidate && room.expiresAt ? h('div', { className: 'fs-sub' }, countdown(room.expiresAt)) : h('div', { className: 'fs-sub' }, 'The number is no longer valid.'),
-        h('ul', { className: 'fs-face-members', 'aria-label': 'Members' },
-          members.map(m => h('li', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
-            h(FaceAvatar, {
-              bot: m.remote === false || m.id && roster?.byId?.[m.id]
-                ? faceLook({ roster, local: roster?.byId?.[m.id] || { id: m.id, name: m.displayName } })
-                : faceLook({ roster, remoteChats, member: m }),
-              size: 24,
-            }),
-            h('span', { className: 'fs-member-name' }, m.label || m.displayName || m.handle)))),
-        h(FaceAutoSend, { on: autoSend, busy: autoBusy, onChange: onAutoSend, error: autoError }),
-        h('div', { className: 'fs-face-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => { if (room.roomId) actions?.openSession?.(room.roomId) } }, 'Open'),
-          candidate ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('start', () => call('social/face-start', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Start chat') : null,
+      const look = (m) => (m.remote === false || m.id && roster?.byId?.[m.id]
+        ? faceLook({ roster, local: roster?.byId?.[m.id] || { id: m.id, name: m.displayName } })
+        : faceLook({ roster, remoteChats, member: m }))
+      return h('div', { className: 'fs-face-row', 'data-flybot': 'face-room', 'data-status': room.status },
+        h('span', { className: 'fs-stack', 'aria-label': 'Members' },
+          shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
+            h(FaceAvatar, { bot: look(m), size: 20 }))),
+          extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
+        h('span', { className: 'fs-name' }, room.name || 'Face-to-face room'),
+        h('span', { className: 'fs-chip', 'data-flybot': 'face-status' }, faceChip(room)),
+        h('span', { className: 'fs-face-actions' },
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy || !room.roomId, onClick: () => { if (room.roomId) actions?.openSession?.(room.roomId) } }, 'Open'),
+          candidate ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('start', () => call('social/face-start', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Start') : null,
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Leave')),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
@@ -597,30 +582,23 @@ window.__ModuleLoader__.load({
     const WAITING_OWNER = 'Waiting for approval'
     const WAITING_OTHERS = "Waiting for the owner's approval"
 
-    function ChatApproval({ item, canDecide = true, busy, onDecide, autoSend, onAutoSend, autoBusy, autoError } = {}) {
+    function ChatApproval({ item, canDecide = true, busy, onDecide } = {}) {
       if (!item) return null
+      if (item.status === 'approved' || item.status === 'rejected') {
+        return h('div', { className: 'fs-pending fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': item.status, role: 'status' },
+          h('div', { className: 'fs-name' }, item.status === 'approved' ? 'Approved' : 'Rejected'))
+      }
       if (canDecide !== true) {
         return h('div', { className: 'fs-pending fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
           h('div', { className: 'fs-name' }, WAITING_OTHERS))
       }
-      const locked = !!busy || autoBusy
       return h('div', { className: 'fs-pending fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
         h('div', { className: 'fs-label' }, WAITING_OWNER),
         item.from ? h('div', { className: 'fs-sub' }, `${item.from} → ${item.toName || item.to || 'friend'}`) : null,
         item.text ? h('div', { className: 'fs-draft' }, item.text) : (item.summary ? h('div', { className: 'fs-sub fs-msg' }, item.summary) : null),
-        h('label', { className: 'fs-auto', title: 'Skip the hold on later messages from this Bot.', 'data-flybot': 'chat-auto-send' },
-          h('input', {
-            type: 'checkbox',
-            checked: autoSend === true,
-            disabled: locked,
-            'aria-label': 'Auto-send',
-            onChange: e => onAutoSend?.(e.target.checked),
-          }),
-          'Auto-send'),
-        autoError ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, autoError) : null,
-        h('div', { className: 'fs-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: locked, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: locked, onClick: () => onDecide?.(item, 'reject') }, 'Reject')))
+        h('div', { className: 'fs-actions fs-chat-actions' },
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')))
     }
 
     function approvalsForOpenChat(items, { sessionId, room, bot } = {}) {
@@ -638,17 +616,33 @@ window.__ModuleLoader__.load({
       })
     }
 
+    function localHoldView(approval) {
+      if (!approval?.id) return undefined
+      const to = approval.targetName ?? (typeof approval.request?.to === 'object' ? approval.request.to.handle : approval.request?.to)
+      return {
+        id: approval.id,
+        source: 'local',
+        from: approval.senderName,
+        to,
+        toName: approval.targetName || to,
+        text: approval.request?.text || approval.reason,
+        roomId: approval.request?.meta?.roomId || approval.request?.to,
+        sessionId: approval.request?.meta?.sessionId,
+      }
+    }
     function ChatApprovalDock({ sessionId, roster, room, bot } = {}) {
       useStyles()
       const [items, setItems] = useState([])
+      const [local, setLocal] = useState([])
       const [busy, setBusy] = useState('')
-      const [autoSend, setAutoSend] = useState(false)
-      const [autoBusy, setAutoBusy] = useState(false)
-      const [autoError, setAutoError] = useState('')
-      const load = () => call('social/status', {}).then(value => {
-        setItems(Array.isArray(value?.approvals) ? value.approvals : [])
-        if (typeof value?.autoApproveFaceRooms === 'boolean') setAutoSend(value.autoApproveFaceRooms)
-      }, () => {})
+      const load = () => {
+        call('social/status', {}).then(value => {
+          setItems(Array.isArray(value?.approvals) ? value.approvals : [])
+        }, () => {})
+        call('approvals', { status: ['pending', 'failed'] }).then(list => {
+          setLocal((Array.isArray(list) ? list : []).map(localHoldView).filter(Boolean))
+        }, () => {})
+      }
       useEffect(() => {
         load()
         if (typeof setInterval !== 'function') return undefined
@@ -656,35 +650,38 @@ window.__ModuleLoader__.load({
         timer?.unref?.()
         return () => clearInterval(timer)
       }, [])
-      const mine = approvalsForOpenChat(items, { sessionId, roster, room, bot })
-      if (!mine.length) return null
+      const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
+      const mine = [
+        ...approvalsForOpenChat(items, session),
+        ...approvalsForOpenChat(local, session),
+      ]
+      const waitingOthers = mine.length === 0 && (room?.pendingCount ?? 0) > 0
+      if (!mine.length && !waitingOthers) return null
       const decide = async (item, decision) => {
         setBusy(item.id)
         try {
-          await call('social/decide-approval', { approvalId: item.id, decision })
-          await load()
+          if (item.source === 'local') await call('decide', { id: item.id, decision })
+          else await call('social/decide-approval', { approvalId: item.id, decision })
+          const status = decision === 'reject' || decision === 'rejected' ? 'rejected' : 'approved'
+          const mark = list => list.map(entry => entry.id === item.id ? { ...entry, status } : entry)
+          setItems(mark)
+          setLocal(mark)
         } finally { setBusy('') }
       }
-      const toggle = async (next) => {
-        setAutoBusy(true)
-        setAutoError('')
-        try {
-          const first = mine[0]
-          if (first?.kind === 'face_room_message') {
-            const result = await call('social/face-auto', { on: next })
-            setAutoSend(result?.autoApproveFaceRooms === true)
-          } else if (first?.to) {
-            const home = String(first.to).replace(/^@[^.]+\./, '@')
-            await call('social/auto-accept', { home, on: next })
-            setAutoSend(next === true)
-          }
-        } catch (e) { setAutoError(errorText(e)) }
-        finally { setAutoBusy(false) }
+      const approveAll = async () => {
+        for (const item of mine.filter(entry => !entry.status)) await decide(item, 'approve')
+      }
+      if (waitingOthers) {
+        return h('div', { 'data-flybot': 'chat-approvals' },
+          h(ChatApproval, { item: { id: 'waiting' }, canDecide: false }))
       }
       return h('div', { 'data-flybot': 'chat-approvals' },
+        mine.length > 1 && mine.some(entry => !entry.status)
+          ? h('div', { className: 'fs-chat-actions' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll }, 'Approve all'))
+          : null,
         mine.map(item => h(ChatApproval, {
           key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide,
-          autoSend, onAutoSend: toggle, autoBusy, autoError,
         })))
     }
 
@@ -727,12 +724,16 @@ window.__ModuleLoader__.load({
       return seconds === 1 ? '1 second left to join' : `${seconds} seconds left to join`
     }
 
+    const isPastFace = (room) => room?.status === 'closed' || room?.status === 'left'
     function FaceRooms({ actions, enabled = true, roster, remoteChats } = {}) {
       const [rooms, setRooms] = useState([])
       const [autoSend, setAutoSend] = useState(false)
       const [autoBusy, setAutoBusy] = useState(false)
       const [autoError, setAutoError] = useState('')
-      const candidate = rooms.some(room => room.status === 'candidate')
+      const [pastOpen, setPastOpen] = useState(false)
+      const live = rooms.filter(room => !isPastFace(room))
+      const past = rooms.filter(isPastFace)
+      const candidate = live.some(room => room.status === 'candidate')
       const load = (poll) => call('social/face-rooms', { poll }).then(value => {
         setRooms(Array.isArray(value?.rooms) ? value.rooms : [])
         if (typeof value?.autoApproveFaceRooms === 'boolean') setAutoSend(value.autoApproveFaceRooms)
@@ -759,12 +760,20 @@ window.__ModuleLoader__.load({
         finally { setAutoBusy(false) }
       }
       if (!rooms.length) return null
+      const card = (room) => h(FaceRoomCard, {
+        key: room.faceRoomId || room.roomId, room, actions, onChange: load, roster, remoteChats,
+      })
       return h('div', { 'data-flybot': 'face-rooms' },
-        h('div', { className: 'fs-label' }, 'Face-to-face rooms'),
-        rooms.map(room => h(FaceRoomCard, {
-          key: room.faceRoomId || room.roomId, room, actions, onChange: load,
-          autoSend, autoBusy, autoError, onAutoSend: toggle, roster, remoteChats,
-        })))
+        h('div', { className: 'fs-label fs-face-head' },
+          'Face-to-face rooms',
+          h(FaceAutoSend, { on: autoSend, busy: autoBusy, onChange: toggle, error: autoError })),
+        live.map(card),
+        past.length ? h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
+          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
+            h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
+            'Past rooms',
+            h('span', { className: 'fs-count' }, String(past.length))),
+          pastOpen ? past.map(card) : null) : null)
     }
 
     function FaceRoomOverview({ room } = {}) {
@@ -787,13 +796,11 @@ window.__ModuleLoader__.load({
         finally { setBusy('') }
       }
       const candidate = face?.status === 'candidate'
-      return h('div', { className: 'fs-face', 'data-flybot': 'face-overview' },
-        h('div', { className: 'fs-hint', 'data-tick': tick }, candidate
-          ? (face?.expiresAt ? countdown(face.expiresAt) : 'Matching window open. Anyone with the number can still join.')
-          : 'This room is open. The number is no longer valid.'),
+      return h('div', { className: 'fs-face-row', 'data-flybot': 'face-overview' },
+        candidate ? h('span', { className: 'fs-chip', 'data-tick': tick }, face?.expiresAt ? countdown(face.expiresAt) : 'joining') : h('span', { className: 'fs-chip' }, faceChip({ status: face?.status || 'open' })),
         h(FaceAutoSendControl),
-        h('div', { className: 'fs-face-actions' },
-          candidate ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('start', () => call('social/face-start', { roomId: room.id, faceRoomId: face?.roomId })) }, 'Start chat') : null,
+        h('span', { className: 'fs-face-actions' },
+          candidate ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('start', () => call('social/face-start', { roomId: room.id, faceRoomId: face?.roomId })) }, 'Start') : null,
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('leave', () => call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })) }, 'Leave')),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
@@ -874,13 +881,6 @@ window.__ModuleLoader__.load({
         setSaving(home)
         try { const r = await call('social/auto-accept', { home, on }); setAuto(value => ({ ...value, [home]: r.autoAccept })) } catch (e) { setError(errorText(e)) } finally { setSaving('') }
       }
-      const decide = async (item, decision) => {
-        setSaving(item.id)
-        try {
-          await call('social/decide-approval', { approvalId: item.id, decision })
-          await loadApprovals()
-        } catch (e) { setError(errorText(e)) } finally { setSaving('') }
-      }
       const markHiding = (handle, on) => {
         setHiding(current => {
           const next = new Set(current)
@@ -902,12 +902,21 @@ window.__ModuleLoader__.load({
           }
         } catch (e) { setError(errorText(e)) } finally { markHiding(bot.handle, false) }
       }
+      const openItem = (item) => {
+        if (!item || typeof actions?.openSession !== 'function') return
+        const chat = chats.find(entry => entry.remote?.handle === item.to)
+        if (chat) {
+          actions.openSession(chat.sessionId || chat.id)
+          return
+        }
+        const rooms = actions.roster?.rooms ?? roster?.rooms ?? []
+        const hosted = rooms.find(entry => entry.face?.roomId === item.roomId || entry.id === item.roomId)
+        if (hosted?.id) actions.openSession(hosted.id)
+        else if (item.roomId) actions.openSession(item.roomId)
+        else if (item.sessionId) actions.openSession(item.sessionId)
+      }
       const openPending = () => {
-        const first = pending[0]
-        if (!first) return
-        const chat = chats.find(entry => entry.remote?.handle === first.to)
-        if (chat && typeof actions?.openSession === 'function') actions.openSession(chat.sessionId || chat.id)
-        else if (first.roomId && typeof actions?.openSession === 'function') actions.openSession(first.roomId)
+        openItem(pending[0])
         setOpen(true)
       }
       return h('section', { className: 'fs bt-social', 'aria-label': 'Friends\' Bots' },
@@ -920,7 +929,7 @@ window.__ModuleLoader__.load({
           refreshing ? h('span', { className: 'fs-refresh', 'data-flybot': 'roster-refreshing' }, 'Refreshing…') : null,
           unavailable ? null : h('button', { type: 'button', className: 'fs-icon', 'aria-expanded': adding, title: 'Add a friend', onClick: () => { setAdding(!adding); setOpen(true) } }, adding ? 'Done' : '+ Add')),
         open ? h('div', { className: 'fs-body' },
-          h(PendingApprovals, { items: pending, busy: saving, onDecide: decide }),
+          h(PendingApprovals, { items: pending, onOpen: openItem }),
           unavailable ? null : h(FaceRooms, { actions, enabled: open, roster, remoteChats }),
           adding && !unavailable ? h('div', { className: 'fs-card', 'data-flybot': 'face-group-entry' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-group-open', onClick: () => setFaceOpen(true) }, 'Face-to-face group'),
@@ -1156,6 +1165,7 @@ window.__ModuleLoader__.load({
       FaceAvatar,
       FaceRoomOverview,
       FaceRoomCard,
+      FaceRooms,
       FaceAutoSend,
       apply(ctx) {
         let offs = []

@@ -37,6 +37,13 @@ test('sidebar tree toggle is a 28px hit target with a 16px chevron, hover, and f
   assert.doesNotMatch(css, /\.bt-tree-toggle\[aria-expanded=false\]\{transform:rotate/)
 })
 
+test('sidebar Bot rows show a wait badge when pendingCount is set', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8')
+  assert.match(src, /const waiting = approval \|\| \(bot\.pendingCount \?\? 0\) > 0/)
+  assert.match(src, /wide && waiting && !active \? h\('span', \{ className: 'bt-unread bt-unread-wait'/)
+})
+
 test('sidebar tree draws the structure entry\'s nodeActions after each row', async () => {
   const { readFileSync } = await import('node:fs')
   const src = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8')

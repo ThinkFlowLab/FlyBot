@@ -1263,6 +1263,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const faceId = room?.face?.roomId
     return pendingCache.items.filter(item => handles.has(norm(item.from)) || handles.has(norm(item.to)) || (faceId && item.roomId === faceId))
   })
+  flybot.chatApprovals?.setProvider?.((bot) => {
+    const handle = bot?.remote?.handle ? norm(bot.remote.handle) : ''
+    if (!handle) return []
+    return pendingCache.items.filter(item => norm(item.to) === handle || norm(item.from) === handle)
+  })
 
   // ------------------------------------------------------------ face-to-face rooms (#83)
   // Join by 6-digit number on Bot Social; host the result as a native room (#82 membership).
@@ -1442,6 +1447,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         n += got.reduce((sum, count) => sum + count, 0)
         for (const [serverId, meta] of Object.entries(settings.faceRooms)) {
           if (known.has(serverId)) continue
+          const hosted = flybot.rooms.ofFace?.(serverId)
+          rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed' })
+            || { faceRoomId: serverId, roomId: meta?.localRoomId, name: 'Face-to-face room', status: 'closed', members: [] })
           if (meta?.localRoomId) await flybot.rooms.dropFace?.(meta.localRoomId).catch(() => {})
           delete settings.faceRooms[serverId]
           for (const handle of asBotsOf(meta)) {
@@ -1480,10 +1488,20 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       throw error
     }
   }
+  function rememberPastFace(room) {
+    if (!room?.faceRoomId) return
+    settings.pastFaceRooms = [
+      { ...room, status: room.status || 'left' },
+      ...(settings.pastFaceRooms ?? []).filter(item => item.faceRoomId !== room.faceRoomId),
+    ].slice(0, 20)
+  }
   async function leaveFaceRoom({ roomId, faceRoomId, bots } = {}) {
     const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
     if (!id) throw new Error('which room?')
     const meta = settings.faceRooms[id]
+    const hosted = flybot.rooms.ofFace?.(id)
+    rememberPastFace(viewHostedFace(hosted, { faceRoomId: id, localRoomId: meta?.localRoomId, status: 'left' })
+      || { faceRoomId: id, roomId: meta?.localRoomId, name: 'Face-to-face room', status: 'left', members: [] })
     const handles = (Array.isArray(bots) && bots.length ? bots : asBotsOf(meta)).map(norm).filter(Boolean)
     const result = await faceNeed().leave(id, { bots: handles })
     if (meta?.localRoomId) {
@@ -1532,6 +1550,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const room = flybot.rooms.ofFace?.(faceRoomId)
       return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate' }
     }).filter(Boolean)
+    const liveIds = new Set(rooms.map(room => room.faceRoomId).filter(Boolean))
+    for (const past of settings.pastFaceRooms ?? []) {
+      if (past?.faceRoomId && !liveIds.has(past.faceRoomId)) rooms.push(past)
+    }
     return { rooms, bots: localFaceBots(), autoApproveFaceRooms: await faceAutoApprove().catch(() => false) }
   }, { read: true }))
   disposers.push(flybot.api.handle('social/face-auto', async ({ on } = {}) => {
@@ -1568,6 +1590,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     setAutoAccept,
     dispose() {
       flybot.roomApprovals?.setProvider?.(undefined)
+      flybot.chatApprovals?.setProvider?.(undefined)
       for (const dispose of disposers.splice(0).reverse()) dispose?.()
     },
   }

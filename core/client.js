@@ -2659,6 +2659,8 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-unread{width:8px;height:8px;border-radius:50%;background:#1084fe;flex:none;margin-right:2px;animation:bt-fade .13s cubic-bezier(.22,1,.36,1)}
 .bt-unread-wait{background:var(--bt-star)}
 .bt-shared-from,.bt-shared-wait{display:flex;flex-direction:column;gap:6px;padding:8px 0}
+.bt-shared-wait .bt-set-row{min-width:0}
+.bt-shared-wait .bt-set-copy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .bt-rail{align-items:center;padding:0 0 8px}
 .bt-rail .bt-row{justify-content:center;padding:6px 0;min-height:44px}
 .bt-side-foot{display:flex;padding-top:8px}
@@ -5475,7 +5477,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const main = isMainOf(roster, id);
   const tile = roster.mainBotId === id && !asRow;
   const approval = useApproval(useWork, (entry) => entry.botId === id);
-  const alert = roster.questions?.[part] !== void 0 || approval;
+  const waiting = approval || (bot.pendingCount ?? 0) > 0;
+  const alert = roster.questions?.[part] !== void 0 || waiting;
   const doing = useActivity((map) => map[id]);
   const groups = workKeys(useGroupWork(useWork, (rooms) => Object.entries(rooms).flatMap(([roomId, entries2]) => entries2.filter((entry) => entry.botId === id).map((entry) => `${roomId}|${entry.tool ?? ""}`))));
   const away = !running && groups.length > 0;
@@ -5488,7 +5491,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   };
   const pinned = bot.pinned === true && !tile;
   const shown = bot.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : bot.name;
-  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", approval ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
+  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
     return (0, import_react9.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react9.createElement)(
       "button",
@@ -5527,7 +5530,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       (0, import_react9.createElement)("span", { className: "bt-row-name" }, (0, import_react9.createElement)("span", { className: "bt-row-title" }, shown), bot.remote ? (0, import_react9.createElement)(RemoteMark, { remote: bot.remote }) : null, pinned ? (0, import_react9.createElement)(PinMark) : null),
       awayLine ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, awayLine) : preview ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
-    wide && unread && !active ? (0, import_react9.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
+    wide && waiting && !active ? (0, import_react9.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react9.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
   );
 }
 function RemoteMark({ remote }) {
@@ -12254,7 +12257,6 @@ function About({ text, title = "About" }) {
 function SharedRoomApprovals({ room: room2 }) {
   const [items, setItems] = (0, import_react32.useState)(room2.pendingApprovals ?? []);
   const [busy, setBusy] = (0, import_react32.useState)("");
-  const [autoSend, setAutoSend] = (0, import_react32.useState)(false);
   const face = room2.origin === "face-to-face";
   (0, import_react32.useEffect)(() => {
     const haveItems = Array.isArray(room2.pendingApprovals) && room2.pendingApprovals.length;
@@ -12266,7 +12268,6 @@ function SharedRoomApprovals({ room: room2 }) {
       if (room2.viewerRole === "invited-owner" && !haveItems) {
         setItems(Array.isArray(value?.approvals) ? value.approvals : []);
       }
-      if (typeof value?.autoApproveFaceRooms === "boolean") setAutoSend(value.autoApproveFaceRooms);
     }, () => {
     });
     return () => {
@@ -12283,39 +12284,16 @@ function SharedRoomApprovals({ room: room2 }) {
       setBusy("");
     }
   };
-  const setAuto = async (on) => {
-    setBusy("auto");
-    try {
-      const result = await call("social/face-auto", { on });
-      setAutoSend(result?.autoApproveFaceRooms === true);
-    } finally {
-      setBusy("");
-    }
-  };
-  const approveAndAuto = async (item) => {
-    setBusy(item.id);
-    try {
-      const result = await call("social/face-auto", { on: true });
-      setAutoSend(result?.autoApproveFaceRooms === true);
-      await call("social/decide-approval", { approvalId: item.id, decision: "approve" });
-      setItems((list) => list.filter((entry) => entry.id !== item.id));
-    } finally {
-      setBusy("");
-    }
-  };
   return (0, import_react32.createElement)(
     "div",
     { key: "approvals", className: "bt-shared-wait", "data-flybot": "room-pending-approvals" },
     (0, import_react32.createElement)("div", { className: "bt-section-title" }, t("Waiting for your approval"), (0, import_react32.createElement)("span", { className: "bt-chip" }, t("{count} to approve", { count: items.length }))),
-    face && autoSend ? (0, import_react32.createElement)("div", { className: "bt-set-hint" }, t("Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.")) : null,
-    face && !autoSend ? (0, import_react32.createElement)("button", { type: "button", className: "bt-more", "data-flybot": "face-auto-send-on", disabled: !!busy, onClick: () => setAuto(true) }, t("Turn on auto-send")) : null,
     items.map((item) => (0, import_react32.createElement)(
       "div",
       { key: item.id, className: "bt-set-row" },
       (0, import_react32.createElement)("span", { className: "bt-set-copy" }, item.text || item.summary || item.to || t("Outbound reply")),
-      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id || busy === "auto", onClick: () => decide(item, "approve") }, t("Approve")),
-      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id || busy === "auto", onClick: () => decide(item, "reject") }, t("Reject")),
-      face && !autoSend ? (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", "data-flybot": "face-approve-auto", disabled: busy === item.id || busy === "auto", onClick: () => approveAndAuto(item) }, t("Approve and always auto-send in this room")) : null
+      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
+      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
     ))
   );
 }

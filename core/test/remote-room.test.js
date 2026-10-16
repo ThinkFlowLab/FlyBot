@@ -426,6 +426,25 @@ test('channel: each viewer sees the room under the documented rule', async (t) =
   assert.equal(roomVisibleTo(rt.state, eve, 'war'), false)
 })
 
+test('channel: a friend\'s chat gets pendingCount from chatApprovals', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  const inviteA = (await call('auth-invite', {})).value
+  const alice = (await call('auth-redeem', { token: inviteA.token, displayName: 'Alice' })).value
+  rt.state.bots['remote-coder'] = {
+    id: 'remote-coder',
+    name: 'Coder',
+    ownerId: alice.memberId,
+    remote: { handle: '@coder.bob.home', home: '@bob.home' },
+  }
+  rt.listChatApprovals = (bot) => (bot.remote?.handle === '@coder.bob.home' ? [{ id: 'appr-1' }] : [])
+  const view = (await call('state', {}, alice.sessionToken)).value
+  const chat = view.bots.find(bot => bot.remote?.handle === '@coder.bob.home')
+  assert.ok(chat)
+  assert.equal(chat.pendingCount, 1)
+  const local = view.bots.find(bot => bot.id === 'chief-a')
+  assert.equal(local?.pendingCount, 0)
+})
+
 // ---- #51: a room with friends' Bots takes published local Bots only
 
 // The war room starts with both Chiefs; these tests want one owner and the friend's Bot.

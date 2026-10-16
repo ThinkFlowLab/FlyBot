@@ -824,6 +824,9 @@ export function install(rt) {
     roomApprovals: {
       setProvider(fn) { rt.listRoomApprovals = typeof fn === 'function' ? fn : undefined },
     },
+    chatApprovals: {
+      setProvider(fn) { rt.listChatApprovals = typeof fn === 'function' ? fn : undefined },
+    },
     rooms: {
       list() {
         return Object.values(state.rooms || {}).map(room => ({

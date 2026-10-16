@@ -153,6 +153,8 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-unread{width:8px;height:8px;border-radius:50%;background:#1084fe;flex:none;margin-right:2px;animation:bt-fade .13s cubic-bezier(.22,1,.36,1)}
 .bt-unread-wait{background:var(--bt-star)}
 .bt-shared-from,.bt-shared-wait{display:flex;flex-direction:column;gap:6px;padding:8px 0}
+.bt-shared-wait .bt-set-row{min-width:0}
+.bt-shared-wait .bt-set-copy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .bt-rail{align-items:center;padding:0 0 8px}
 .bt-rail .bt-row{justify-content:center;padding:6px 0;min-height:44px}
 .bt-side-foot{display:flex;padding-top:8px}

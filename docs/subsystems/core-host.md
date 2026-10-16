@@ -22,7 +22,7 @@ The server side of the patched `ds-bot` core (`core/`): the part of [ds-bot-core
 - `core/web-search.js` — standalone `auto` web-search provider.
 - `core/test/identity.test.js` — the state identity schema tests (store `state.json` v2, #47).
 - `core/test/room-membership.test.js` — typed room participants, authorship and the membership-window history rule (#50).
-- `core/test/remote-room.test.js` — granted remote participants, per-viewer presentation and ungranted-Bot refusal; #90 room rules (a room with friends' Bots takes granted local Bots only, revoke evicts, fanout checks author and recipient, room-code Bots).
+- `core/test/remote-room.test.js` — granted remote participants, per-viewer presentation and ungranted-Bot refusal; #90 room rules (a room with friends' Bots takes granted local Bots only, revoke evicts, fanout checks author and recipient, room-code Bots); a friend's chat `pendingCount` from `listChatApprovals`.
 - `core/test/reach-policy.test.js` — #90 reach policy: per-Bot grants (default deny, Chief included), the allow/deny matrix per direction, no bypass, hold release and flagged deliveries re-checked, setGrants and `bot.grants`.
 
 ## Does not own
@@ -70,6 +70,7 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 ### Remote chats and mentions
 
+- Channel `view()` puts `pendingCount` on a friend's chat (`bot.remote`) from `rt.listChatApprovals`, the same gold wait badge rooms already use. Local team Bots stay at 0. The social plugin supplies the list via `flybot.chatApprovals.setProvider` ([plugin-runtime](plugin-runtime.md)). Still not team mode.
 - `remoteTurn` (`src/host/remote-chat.js`) finds what the user typed on a friend's remote chat by skipping host-appended `role:'user'` context: forms `snapshot`, `instructions` (the AGENTS.md baseline on a chat's first turn) and `notice`, and the time-context kinds. Match by form, not by a whitelist of senders, or the first message of a new chat is dropped (#66).
 - `0002-flybot-api-host` `cleanRemote` sanitizes those peer-controlled `name` / `homeName` / `owner` labels (strip `@` and controls/newlines, 60-char cap) before they are stored. Details in [plugin-runtime](plugin-runtime.md) (#75).
 - A friend's Bot @-mentioned in a group never has its reply delivered back into that group (it lands in the friend's Bot's own chat), so the host posts one receipt line into the room per mention (`src/host/hooks.js` `mentionReceipt`, source role `mention`) and the client renders it as a muted event line (`src/client/cells.js`) (#80, #81). The role stays outside the room's round trigger (`groups.js` `opens`) and outside `RELAY_ROLES`, so the receipt opens no round and folds no turns.

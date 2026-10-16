@@ -244,6 +244,10 @@ export interface FlyBot {
   roomApprovals: {
     setProvider(fn: ((room: { id?: string; participants?: unknown[]; sharedFrom?: unknown; viewerRole?: string; origin?: string; face?: { roomId?: string } }, actor?: { memberId?: string }) => unknown[]) | undefined): void
   }
+  /** Optional: pending Bot Social approvals for a 1:1 friend's-Bot chat. */
+  chatApprovals: {
+    setProvider(fn: ((bot: { id?: string; remote?: { handle?: string } }, actor?: { memberId?: string }) => unknown[]) | undefined): void
+  }
   /** Face-to-face rooms (#83): host a Bot Social matching room as a normal native room. */
   rooms: {
     /** Every hosted room (native, shared, face-to-face). Used to hide a friend's Bot from groups. */
