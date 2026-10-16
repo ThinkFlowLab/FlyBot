@@ -38,6 +38,24 @@ export const cleanName = (name, fallback = 'a remote Bot') => {
 }
 export const fenceUntrusted = (name, text) => `<untrusted-message from="${cleanName(name)}">\n${stripUntrusted(text ?? '')}\n</untrusted-message>`
 
+// Bot-authored followups are createUserMessage; DSH may resolve `dsh-session:` chips
+// there and attach the snapshot. Drop chips so a Bot cannot tunnel a private chat
+// into another Bot's own chat or a shared room (#106). Authorship stays the gate
+// on actor-authored send / room-post. Loop until stable so a nested marker cannot
+// reconstitute a valid chip after one pass.
+export function stripSessionChips(text) {
+  if (typeof text !== 'string' || !text.includes('dsh-session:')) return text
+  let out = text
+  for (let previous; previous !== out;) {
+    previous = out
+    out = out
+      .replace(/@\[((?:\\.|[^\]\\])*)\]\(dsh-session:[A-Za-z0-9_-]+\)/g, (_, label) => `@${String(label).replace(/\\([\\\]])/g, '$1')}`)
+      .replace(/dsh-session:[A-Za-z0-9_-]+/g, '')
+  }
+  if (out.includes('dsh-session:')) out = out.replace(/dsh-session:/g, '')
+  return out
+}
+
 export function install(rt) {
   const { ctx, state } = rt
 
@@ -114,8 +132,9 @@ export function install(rt) {
     const agent = await resolveAgent(targetSessionId)
     // A steered message cuts into a running turn at its next step; a follow-up
     // queues for the next turn (see turns.js for how each is routed).
+    const body = fromId ? stripSessionChips(text) : text
     const message = createUserMessage({
-      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${untrusted ? fenceUntrusted(fromName, text) : text}` }],
+      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
       source,
     })
     if (steer) agent.steer(message)

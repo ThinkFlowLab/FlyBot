@@ -279,7 +279,7 @@ test('a held send blocks only the named working task, not every working task of 
   assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'working')
 })
 
-test('an untagged hold does not block every working task when the Bot has several', async (t) => {
+test('an untagged hold stamps the latest working task so two tasks do not share one card', async (t) => {
   const { fb, call, signIn, createTask } = await start(t)
   const alice = await signIn('Alice')
   const first = await createTask(alice.sessionToken, { botId: 'a', title: 'Note one' })
@@ -292,7 +292,27 @@ test('an untagged hold does not block every working task when the Bot has severa
   const held = await fb.bot.send({ from: 'a', to: 's', text: 'untagged send', meta: { hold: true } })
   assert.equal(held.action, 'hold', JSON.stringify(held))
   assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'working')
-  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'working')
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'blocked')
+  const rejected = await call('flybot/decide', { id: held.approvalId, decision: 'reject' }, alice.sessionToken)
+  assert.equal(rejected.ok, true, JSON.stringify(rejected))
+  assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'working')
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'cancelled')
+})
+
+test('a send without taskId matches the working task whose origin is this session', async (t) => {
+  const { fb, call, signIn, createTask } = await start(t)
+  const alice = await signIn('Alice')
+  const first = await createTask(alice.sessionToken, { botId: 'a', title: 'Chat one', sessionId: 'a' })
+  const second = await createTask(alice.sessionToken, { botId: 'a', title: 'Room two', roomId: 'war' })
+  for (const id of [first.value.id, second.value.id]) {
+    await call('task-accept', { id }, alice.sessionToken)
+    await call('task-start', { id }, alice.sessionToken)
+  }
+  fb.bot.send.use({ name: 'gate', handle: async msg => (msg.meta?.hold ? { action: 'hold', reason: 'held by test' } : undefined) })
+  const held = await fb.bot.send({ from: 'a', to: 's', text: 'from the room', meta: { hold: true, roomId: 'war' } })
+  assert.equal(held.action, 'hold', JSON.stringify(held))
+  assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'working')
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'blocked')
 })
 
 test('a result-ready task is not pruned while it waits for acceptance', async (t) => {

@@ -4960,6 +4960,24 @@ function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTu
 function Nothing() {
   return null;
 }
+var HIDDEN_REMOVED_TOOLS = /* @__PURE__ */ new Set(["ask_user_question"]);
+function isHiddenToolRemoval(node) {
+  const content = node?.data?.content;
+  if (!Array.isArray(content) || content.length === 0) return false;
+  return content.every((block) => block?.type === "tool-removal" && HIDDEN_REMOVED_TOOLS.has(block.toolName));
+}
+function ContextCell({ node }) {
+  if (isHiddenToolRemoval(node)) return null;
+  const content = Array.isArray(node?.data?.content) ? node.data.content : [];
+  const parts = [];
+  for (const block of content) {
+    if (block?.type === "tool-removal" && HIDDEN_REMOVED_TOOLS.has(block.toolName)) continue;
+    if (block?.type === "tool-removal" && block.toolName) parts.push(`Tool removed: ${block.toolName}`);
+    else if (block?.type === "tool-addition" && block.toolName) parts.push(`Tool added: ${block.toolName}`);
+  }
+  if (parts.length === 0) return null;
+  return (0, import_react7.createElement)("div", { className: "bt-event" }, parts.join(" · "));
+}
 var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
 function clockLabel(time, now = Date.now()) {
   const date = new Date(time);
@@ -15164,6 +15182,9 @@ function apply(ctx) {
     // every message.
     shadow("conversation.chat.node", { key: "question-reply", priority: -10, locale: "chat" }, AnsweredCell),
     shadow("conversation.chat.node", { key: "compaction", priority: -10, locale: "chat" }, Nothing),
+    // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
+    // restrict that tool; hide it, keep other tool-change notices (#140).
+    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat" }, ContextCell),
     ...canDrawUserMessages() ? ["user", "steering"].map((key) => shadow("conversation.chat.node", { key, priority: -10, locale: "chat", inject: face }, UserMessageCell)) : [],
     shadow("conversation.input.permission", { priority: -10 }, Nothing),
     shadow("conversation.input.plan", { priority: -10 }, Nothing),

@@ -231,6 +231,37 @@ diff --git a/src/client/cells.js b/src/client/cells.js
          const room = roster.roomsById[sessionId]
          const poster = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t('a Bot'), color: 'gray' }
          return h(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi })
+@@ -411,6 +411,30 @@ export function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi
+ 
+ export function Nothing() { return null }
+ 
++// DSH writes a developer `tool-removal` context row when FlyBot `restrict()`s
++// `ask_user_question` off Bot sessions. The chat then shows "Tool removed: …".
++// Hide only those notices; other context (tool-added, unrelated removals) stays.
++export const HIDDEN_REMOVED_TOOLS = new Set(['ask_user_question'])
++
++export function isHiddenToolRemoval(node) {
++  const content = node?.data?.content
++  if (!Array.isArray(content) || content.length === 0) return false
++  return content.every(block => block?.type === 'tool-removal' && HIDDEN_REMOVED_TOOLS.has(block.toolName))
++}
++
++export function ContextCell({ node }) {
++  if (isHiddenToolRemoval(node)) return null
++  const content = Array.isArray(node?.data?.content) ? node.data.content : []
++  const parts = []
++  for (const block of content) {
++    if (block?.type === 'tool-removal' && HIDDEN_REMOVED_TOOLS.has(block.toolName)) continue
++    if (block?.type === 'tool-removal' && block.toolName) parts.push(`Tool removed: ${block.toolName}`)
++    else if (block?.type === 'tool-addition' && block.toolName) parts.push(`Tool added: ${block.toolName}`)
++  }
++  if (parts.length === 0) return null
++  return h('div', { className: 'bt-event' }, parts.join(' · '))
++}
++
+ // The time separator: "Today 1:12 AM", "Yesterday 9:03 PM", "Thu, Sep 3 4:20 PM".
+ const SEPARATOR_GAP_MS = 30 * 60 * 1000
+ export function clockLabel(time, now = Date.now()) {
 @@ -571,11 +571,14 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
      replies.map((reply, index) => {
        const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
@@ -350,7 +381,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
  import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
-@@ -5,10 +5,11 @@ import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } f
+@@ -5,15 +5,16 @@ import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } f
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
  import { MENTION_ORIGIN, currentPart } from './text.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
@@ -363,6 +394,12 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { CHATS_SOURCE, atSources } from './at-menu.js'
  import { VOICE_BUNDLE } from './speech.js'
  import { sameVersion } from './dsh-offer.js'
+ import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
+-import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell } from './cells.js'
++import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell } from './cells.js'
+ import { Overlays } from './overlays.js'
+ import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
+ import { BROWSER_CSS } from './browser-pane.js'
 @@ -37,7 +37,16 @@ import { noticeApprovals } from './approval-notices.js'
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
@@ -413,6 +450,16 @@ diff --git a/src/client/index.js b/src/client/index.js
    ]
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, 'conversation'),
+@@ -790,6 +790,9 @@ export function apply(ctx) {
+     // every message.
+     shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
+     shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
++    // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
++    // restrict that tool; hide it, keep other tool-change notices (#140).
++    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat' }, ContextCell),
+     ...(canDrawUserMessages() ? ['user', 'steering'].map(key => shadow('conversation.chat.node', { key, priority: -10, locale: 'chat', inject: face }, UserMessageCell)) : []),
+     shadow('conversation.input.permission', { priority: -10 }, Nothing),
+     shadow('conversation.input.plan', { priority: -10 }, Nothing),
 @@ -799,6 +799,7 @@ export function apply(ctx) {
      shadow('conversation.composer.dock', { id: 'activity', order: 0, priority: -10 }, Nothing),
      shadow('conversation.composer.dock', { id: 'usage', order: 1, priority: -10 }, Nothing),

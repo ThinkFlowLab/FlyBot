@@ -87,6 +87,30 @@ export function install(rt) {
   const save = () => rt.save()
 
   // ---------------------------------------------------------------- host hooks
+  // Name the working task a send belongs to so a hold can block that one (#111).
+  // Prefer an already-stamped `meta.taskId`; else the Bot's only working task;
+  // else the one whose origin matches this send's session/room; else the most
+  // recently started. Clarification / workBotId still wait on #55.
+  rt.taskIdForSend = (msg) => {
+    const from = msg?.from
+    if (typeof from !== 'string') return undefined
+    const ofSender = task => task.ownerBotId === from || task.workBotId === from
+    const given = typeof msg?.meta?.taskId === 'string' ? msg.meta.taskId : undefined
+    if (given) {
+      const named = store()[given]
+      if (named && named.status === 'working' && ofSender(named)) return given
+    }
+    const working = Object.values(store()).filter(task => task.status === 'working' && ofSender(task))
+    if (working.length === 0) return undefined
+    if (working.length === 1) return working[0].id
+    const sessionId = typeof msg?.meta?.sessionId === 'string' ? msg.meta.sessionId : undefined
+    const roomId = typeof msg?.meta?.roomId === 'string' ? msg.meta.roomId : rt.roomOf?.(sessionId)?.id
+    const matched = working.filter(task =>
+      (roomId && task.origin?.roomId === roomId) || (sessionId && task.origin?.sessionId === sessionId))
+    if (matched.length === 1) return matched[0].id
+    return [...(matched.length ? matched : working)].sort((a, b) => b.updatedAt - a.updatedAt)[0].id
+  }
+
   // A consequential send from the responsible Bot was held (#52 card): the task
   // blocks on that approval until the owner decides. Link one task, not every
   // working task of that Bot: `meta.taskId` names it, else the Bot's only working

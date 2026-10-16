@@ -946,7 +946,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     await flybot.grants.set(botId, [...current, {
       id: `room:${room.id}`,
       grantee: faceRoomId ? `room:${faceRoomId}` : `room:${room.id}`,
-      name: name || room.name || 'Face-to-face room',
+      name: name || faceRoomTitle({}, { room }),
       roomId: String(room.id),
     }])
   }
@@ -1715,18 +1715,50 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }), { read: true }))
   disposers.push(flybot.api.handle('social/poll', async () => ({ delivered: await pollInbox() })))
   disposers.push(flybot.api.handle('social/approvals', async () => ({ approvals: await pendingApprovals({ fresh: true }) }), { read: true }))
+  async function friendHomeOfApproval(item) {
+    const to = item?.to ? norm(item.to) : ''
+    if (!to) return ''
+    let listed = listedBotsForPeer(to)
+    if (!listed.length) {
+      try { await remoteBots() } catch { /* roster is optional; fall back to the handle */ }
+      listed = listedBotsForPeer(to)
+    }
+    const hit = listed.find(bot => bot.home)
+    if (hit?.home) return norm(hit.home)
+    if (isHomeLevelHandle(to)) return to
+    return homeOfPeer(to)
+  }
+  // Always approve: this card only, then the existing Auto-send for that pair (friend home
+  // or face-room Auto-send). Never a new global switch; never decide a different hold.
+  async function enableAutoSendForItem(item) {
+    if (!item) return undefined
+    if (item.kind === 'face_room_message') {
+      await setFaceAutoApprove(true)
+      return { from: item.from || 'Bot', to: item.toName || 'the room', scope: 'face' }
+    }
+    const home = await friendHomeOfApproval(item)
+    if (!home) return undefined
+    await setAutoAccept(home, true)
+    return { from: item.from || 'Bot', to: item.toName || home, home, scope: 'friend' }
+  }
   // Owner click is the consent, same as Accept / Join: request and use the confirm code here.
-  disposers.push(flybot.api.handle('social/decide-approval', async ({ approvalId, decision } = {}) => {
+  disposers.push(flybot.api.handle('social/decide-approval', async ({ approvalId, decision, always } = {}) => {
     const id = String(approvalId ?? '').trim()
     if (!id) throw new Error('which approval?')
     const mapped = decision === 'approve' || decision === 'approved' ? 'approved'
       : decision === 'reject' || decision === 'rejected' ? 'rejected'
       : undefined
     if (!mapped) throw new Error('decision is approve or reject')
+    const pending = mapped === 'approved' && always === true
+      ? await pendingApprovals({ fresh: true }).catch(() => pendingCache.items)
+      : undefined
+    const item = Array.isArray(pending) ? pending.find(entry => entry.id === id) : undefined
     if (mapped === 'rejected') await postRejectNote(id)
     const result = await confirmedCall('decide_approval', { approval_id: id, decision: mapped })
     pendingCache = { at: 0, items: [] }
-    return { approvalId: result?.approval_id ?? id, status: result?.decision ?? mapped }
+    let autoSend
+    if (mapped === 'approved' && always === true) autoSend = await enableAutoSendForItem(item)
+    return { approvalId: result?.approval_id ?? id, status: result?.decision ?? mapped, ...(autoSend ? { autoSend } : {}) }
   }))
 
   flybot.roomApprovals?.setProvider?.((room) => {
@@ -1950,7 +1982,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       } else if (line.human || line.authorKind === 'human') {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
         if (local) continue
-        const who = humanFaceWho(line, ownerDisplayName(snapshot, hosted))
+        const who = line.who || 'Someone'
         flybot.rooms.applyFaceLine?.(room.id, { ...line, who, remote: true, authorKind: 'human' })
         void flybot.rooms.postNotice?.(room.id, `${who}: ${line.text}`)
       } else {
@@ -2026,7 +2058,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (known.has(serverId)) continue
           const hosted = flybot.rooms.ofFace?.(serverId)
           rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed' })
-            || { faceRoomId: serverId, roomId: meta?.localRoomId, name: 'Face-to-face room', status: 'closed', members: [] })
+            || { faceRoomId: serverId, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'closed', members: [] })
           if (meta?.localRoomId) await flybot.rooms.dropFace?.(meta.localRoomId).catch(() => {})
           delete settings.faceRooms[serverId]
           dropRoomRemotes(serverId)
@@ -2084,7 +2116,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const meta = settings.faceRooms[id]
     const hosted = flybot.rooms.ofFace?.(id)
     rememberPastFace(viewHostedFace(hosted, { faceRoomId: id, localRoomId: meta?.localRoomId, status: 'left' })
-      || { faceRoomId: id, roomId: meta?.localRoomId, name: 'Face-to-face room', status: 'left', members: [] })
+      || { faceRoomId: id, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'left', members: [] })
     const handles = (Array.isArray(bots) && bots.length ? bots : asBotsOf(meta)).map(norm).filter(Boolean)
     let result
     try {

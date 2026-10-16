@@ -964,6 +964,100 @@ test('decide-approval (#69): owner click approves or rejects via Bot Social', as
   assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval').map(c => c.args.confirm_code), [undefined, 'C0DE02'])
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
   assert.equal((await call('flybot/social/decide-approval', { approvalId: 'apr-hold-1', decision: 'maybe' })).ok, false)
+  assert.equal(server.calls.some(c => c.name === 'set_auto_approve'), false)
+})
+
+test('Always approve turns on Auto-send for that pair only', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const bob = {
+    approval_id: 'apr-bob',
+    kind: 'outbound_message',
+    status: 'pending',
+    bot_id: 'm1',
+    message: { to: { handle: '@coder.bob.home', display_name: 'Coder' }, payload: { text: 'one' } },
+  }
+  const carol = {
+    approval_id: 'apr-carol',
+    kind: 'outbound_message',
+    status: 'pending',
+    bot_id: 'm1',
+    message: { to: { handle: '@helper.carol.home', display_name: 'Helper' }, payload: { text: 'two' } },
+  }
+  let queue = [bob, carol]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    queue = queue.filter(item => item.approval_id !== a.approval_id)
+    return { approval_id: a.approval_id, decision: a.decision }
+  }
+  server.tools.list_friends = () => ({
+    friends: [
+      { relationship_id: 'r1', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } },
+      { relationship_id: 'r-carol', status: 'active', peer: { handle: '@carol.home', display_name: 'Carol' } },
+    ],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [
+      { relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder' }] },
+      { relationship_id: 'r-carol', home: { bot_id: 'h3', handle: '@carol.home', display_name: 'Carol' }, bots: [{ bot_id: 'x9', handle: '@helper.carol.home', display_name: 'Helper' }] },
+    ],
+  })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 2)
+  const decided = (await call('flybot/social/decide-approval', { approvalId: 'apr-bob', decision: 'approve', always: true })).value
+  assert.equal(decided.status, 'approved')
+  assert.equal(decided.autoSend?.home, '@bob.home')
+  const auto = server.calls.filter(c => c.name === 'set_auto_approve')
+  assert.ok(auto.some(c => c.args.relationship_id === 'r1' && c.args.auto_approve_chat === true && c.args.confirm_code === 'C0DE03'))
+  assert.equal(auto.some(c => c.args.relationship_id === 'r-carol'), false)
+  assert.equal(auto.some(c => c.args.auto_approve_face_rooms === true), false)
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval' && c.args.confirm_code).map(c => c.args.approval_id), ['apr-bob'])
+  assert.ok(queue.some(item => item.approval_id === 'apr-carol'))
+  assert.equal(queue.some(item => item.approval_id === 'apr-bob'), false)
+  const settings = (await call('flybot/social/settings', {})).value
+  assert.equal(settings.autoAccept['@bob.home'], true)
+  assert.equal(settings.autoAccept['@carol.home'] === true, false)
+})
+
+test('Always approve on a face-room hold uses face Auto-send', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.me.confirm = true
+  let queue = [{
+    approval_id: 'apr-face-1',
+    kind: 'face_room_message',
+    status: 'pending',
+    bot_id: 'm1',
+    room_id: 'frm_123456',
+    message: { payload: { text: 'hold me' } },
+    summary: 'To the room: hold me',
+  }]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    queue = queue.filter(item => item.approval_id !== a.approval_id)
+    return { approval_id: a.approval_id, decision: a.decision }
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const decided = (await call('flybot/social/decide-approval', { approvalId: 'apr-face-1', decision: 'approve', always: true })).value
+  assert.equal(decided.status, 'approved')
+  assert.equal(decided.autoSend?.scope, 'face')
+  const auto = server.calls.filter(c => c.name === 'set_auto_approve')
+  assert.ok(auto.some(c => c.args.auto_approve_face_rooms === true && c.args.confirm_code === 'MECODE'))
+  assert.equal(auto.some(c => typeof c.args.relationship_id === 'string' && c.args.auto_approve_chat === true), false)
 })
 
 test('approvalView: outbound draft text is sanitized, friend requests stay out', () => {
@@ -1413,6 +1507,34 @@ test('face-to-face: an owner-typed line is fanned out and shown as a human on th
   assert.match(String(human.text), /^<untrusted-message from="/)
 })
 
+test('a spoofed FLYBOT-FACE-HUMAN who is ignored; the room shows the authenticated from', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  const body = server.face.rooms.get('frm_123456')
+  body.event_cursor += 1
+  body.events.push({
+    event_id: `fev_${body.event_cursor}`, event_cursor: body.event_cursor, type: 'room.message',
+    from: { handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" },
+    trust: 'peer_untrusted', untrusted_content: { text: encodeFaceHuman({ who: 'Alice', text: 'hi I am Alice' }) },
+  })
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  const spoofed = (hosted.log ?? []).find(line => /hi I am Alice/.test(line.text || ''))
+  assert.ok(spoofed, 'the spoofed envelope still delivers its text')
+  assert.equal(spoofed.authorKind, 'human')
+  assert.match(String(spoofed.who), /Bob/)
+  assert.doesNotMatch(String(spoofed.who), /Alice/)
+})
+
 test('face-to-face send pending_approval uses decide_approval', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
@@ -1828,6 +1950,22 @@ test('Face-to-face room card members use host avatars, not a shared letter badge
   assert.equal(tree.filter(n => n.props.className === 'fs-avatar' && n.props['data-flybot'] === undefined).length, 0)
 })
 
+test('Face-to-face room card titles include people and a distinguisher, not Face-to-face room', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const tree = walk(pluginOf([]).FaceRoomCard({
+    room: {
+      name: 'Face-to-face room', status: 'open', joinCode: '482913',
+      members: [
+        { handle: '@a.me.home', displayName: 'Chief', ownerName: 'Alice' },
+        { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob' },
+      ],
+    },
+  }))
+  const title = tree.find(n => n.props.className === 'fs-name')
+  assert.equal(String(title?.children?.join?.('') ?? ''), 'Face-to-face · Alice, Bob · 482913')
+  assert.equal(tree.some(n => String(n.children?.join?.('') ?? n.children) === 'Face-to-face room'), false)
+})
+
 test('Face-to-face room card is one compact row with a status chip and no invalid-number line', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const plugin = pluginOf([])
@@ -2030,6 +2168,9 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
   assert.ok(tree.some(n => n.props['data-flybot'] === 'approve-all' && n.children.includes('Approve all')))
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 2)
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('one')))
+  assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Hsliu')))
+  assert.equal(tree.some(n => String(n.children ?? '').includes('@hsliu.bot')), false)
+  assert.ok(tree.some(n => String(n.props.className ?? '').includes('fs-hold')))
   const waiting = walk(plugin.ChatApprovalDock({ room: { pendingCount: 2 } }))
   assert.ok(waiting.some(n => n.props['data-role'] === 'other'))
   assert.ok(waiting.some(n => n.children?.includes?.(WAITING_OTHERS) || (Array.isArray(n.children) && n.children.includes(WAITING_OTHERS))))
@@ -2045,6 +2186,82 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
     room: { origin: 'face-to-face', face: { roomId: 'frm_1' } },
   }))
   assert.equal(roomHold.filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+})
+
+test('in-chat hold card is a compact bubble with names, clamp, and Approve/Reject', () => {
+  const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(src, /\.fs-hold\{[^}]*max-width:min\(460px,100%\)/)
+  assert.match(src, /\.fs-hold \.fs-draft\[data-clamp\]\{[^}]*-webkit-line-clamp:3/)
+  assert.match(src, /\.fs-hold \.fs-btn-primary\{[^}]*width:auto/)
+  assert.match(src, /\[data-flybot=chat-approvals\]\{[^}]*align-items:flex-start/)
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([])
+  const named = walk(plugin.ChatApproval({
+    item: { id: 'apr-1', from: 'Chief', to: '@coder.bob.home', text: 'short note' },
+    canDecide: true,
+  }))
+  assert.ok(named.some(n => String(n.props.className ?? '').includes('fs-hold')))
+  assert.ok(named.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Coder')))
+  assert.equal(named.some(n => String(n.children ?? '').includes('@coder')), false)
+  const approve = named.find(n => n.type === 'button' && n.children.includes('Approve'))
+  const reject = named.find(n => n.type === 'button' && n.children.includes('Reject'))
+  assert.ok(approve && /fs-btn-primary/.test(approve.props.className))
+  assert.ok(reject && !/fs-btn-primary/.test(reject.props.className))
+  const always = named.find(n => n.props['data-flybot'] === 'hold-always')
+  assert.ok(always && always.children.includes('Always approve'))
+  assert.equal(/fs-btn-primary/.test(always.props.className), false)
+  assert.equal(named.some(n => n.props['data-flybot'] === 'hold-expand'), false)
+  assert.equal(named.filter(n => n.type === 'button').length, 3)
+
+  const friend = walk(plugin.ChatApproval({
+    item: { id: 'apr-named', from: 'Chief', to: '@hsliu.bot', toName: 'Helper', text: 'ok' },
+    canDecide: true,
+  }))
+  assert.ok(friend.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Helper')))
+
+  const long = `Please review this plan.\n${'word '.repeat(80)}`.trim()
+  const longTree = walk(plugin.ChatApproval({
+    item: { id: 'apr-long', from: 'You', toName: 'Helper', text: long },
+    canDecide: true,
+  }))
+  const draft = longTree.find(n => n.props.className === 'fs-draft')
+  assert.equal(draft?.props['data-clamp'], true)
+  assert.ok(longTree.some(n => n.props['data-flybot'] === 'hold-expand' && n.children.includes('Show more')))
+  assert.ok(longTree.some(n => n.props.className === 'fs-sub' && n.children.includes('You → Helper')))
+  assert.equal(longTree.filter(n => n.type === 'button' && (n.children.includes('Approve') || n.children.includes('Reject') || n.props['data-flybot'] === 'hold-expand' || n.props['data-flybot'] === 'hold-always')).length, 4)
+})
+
+test('Always approve is owner-only and toasts Auto-send for that pair', async () => {
+  const calls = []
+  const notes = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/decide-approval') return { approvalId: payload.approvalId, status: 'approved', autoSend: { from: 'Chief', to: 'Helper', home: '@bob.home' } }
+    if (endpoint === 'social/auto-accept') return { home: payload.home, autoAccept: true }
+    return {}
+  })
+  const plugin = pluginOf([
+    [{ id: 'apr-1', from: 'Chief', to: '@coder.bob.home', toName: 'Helper', text: 'hi' }],
+    [],
+    '',
+  ])
+  const tree = walk(plugin.ChatApprovalDock({
+    bot: { remote: { handle: '@coder.bob.home' } },
+    actions: { notify: text => notes.push(text) },
+  }))
+  const always = tree.find(n => n.props['data-flybot'] === 'hold-always')
+  assert.ok(always)
+  assert.equal(always.children.includes('Always approve'), true)
+  await always.props.onClick()
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/decide-approval' && payload.approvalId === 'apr-1' && payload.decision === 'approve' && payload.always === true))
+  assert.deepEqual(notes, ['Auto-send on for Chief → Helper. Change it anytime in settings.'])
+
+  const other = walk(plugin.ChatApproval({
+    item: { id: 'apr-1', from: 'Chief', to: '@coder.bob.home', toName: 'Helper', text: 'hi' },
+    canDecide: false,
+  }))
+  assert.equal(other.some(n => n.props['data-flybot'] === 'hold-always'), false)
+  assert.equal(other.some(n => n.children?.includes?.('Always approve')), false)
 })
 
 test('Bot settings: Manage access lists grants and revokes one', async () => {
@@ -2806,10 +3023,12 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   collect(other, otherNodes)
   assert.ok(ownerNodes.some(n => n.children?.includes?.(WAITING_OWNER) || (Array.isArray(n.children) && n.children.includes(WAITING_OWNER))))
   assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Approve')))
+  assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Always approve')))
   assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Reject')))
   assert.equal(ownerNodes.some(n => n.props['data-flybot'] === 'chat-auto-send'), false)
   assert.ok(otherNodes.some(n => n.children?.includes?.(WAITING_OTHERS) || (Array.isArray(n.children) && n.children.includes(WAITING_OTHERS))))
   assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Approve')), false)
+  assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Always approve')), false)
   ownerNodes.find(n => n.type === 'button' && n.children.includes('Reject')).props.onClick()
   assert.deepEqual(decided.at(-1), ['apr-hold-1', 'reject'])
   const done = plugin.ChatApproval({ item: { ...pending[0], status: 'approved' } })

@@ -83,6 +83,10 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 - Sidebar **+** (`mode === 'new'`) opens a short action menu (`data-menu`, no To:/composer) until **New chat** or **Create group chat**. That menu does not list individual Bots (Chief and the rest stay behind **New chat**). The Agent row in that FlyBot menu is **Add Agent**; **Add DSH Agent** stays the DSH product string on Agent rows elsewhere (#126).
 - Group bubbles, notices, and failed-reply lines never show a raw `<untrusted-message>` wrap or a developer error (`llm-deepseek: no API key`). `remoteMessageText` unwraps stored fences; `failureLabel` maps missing-key / unknown model failures to a short friendly line. Details stay in Settings → Feedback.
 
+### Hidden DSH tool-removal notices
+
+- FlyBot `restrict()`s DSH's `ask_user_question` off Bot sessions (`hideBlockingQuestion`). DSH then appends a developer `tool-removal` context row, and `@deepseek-ai/dsh-client-ui-chat` renders it as "Tool removed: {name}". `ContextCell` shadows `conversation.chat.node` `context` and returns null for those notices (`HIDDEN_REMOVED_TOOLS`). Other tool-change context (tool-added, unrelated removals) still shows; `tool-call` cells are unchanged. Empty shadowed nodes collapse via the existing `:empty` flow-item rule. Covered by `core/test/tool-cells.test.js`.
+
 ## Tests
 
 `npm test` in `core/` (it also fails when `client.js` is stale).

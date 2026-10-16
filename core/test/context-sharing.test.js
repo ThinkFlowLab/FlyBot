@@ -289,6 +289,27 @@ test('answer-question and schedule-create accept menu-encoded session chips the 
   if (ownSchedule.ok === false) assert.notEqual(ownSchedule.error.code, 'bot/forbidden', JSON.stringify(ownSchedule))
 })
 
+test('a Bot-to-Bot send drops chat-reference chips in the other Bot\'s own chat, including cross-owner', async (t) => {
+  const { tool, agentOf, signIn } = await start(t)
+  const alice = await signIn('Alice')
+  await signIn('Bob', alice.sessionToken)
+  const sameOwner = await tool('message_bot', { to: 'Writer', message: 'see @[secret](dsh-session:a) please' }, 'a')
+  assert.match(String(sameOwner), /Delivered/, String(sameOwner))
+  const writer = agentOf('s').calls.map(message => (message.content ?? []).map(block => block.text ?? '').join('\n')).join('\n')
+  assert.ok(writer.includes('see @secret'), 'the rest of the Bot-to-Bot text still lands')
+  assert.ok(!writer.includes('dsh-session:'), 'chips do not enter the other Bot\'s own chat')
+  const cross = await tool('message_bot', { to: 'ChiefB', message: 'peek @[notes](dsh-session:a) and dsh-session:e' }, 's')
+  assert.match(String(cross), /Delivered/, String(cross))
+  const bob = agentOf('d').calls.map(message => (message.content ?? []).map(block => block.text ?? '').join('\n')).join('\n')
+  assert.ok(bob.includes('peek @notes'), 'cross-owner Bot-to-Bot keeps the label')
+  assert.ok(!bob.includes('dsh-session:'), 'a granted Bot cannot tunnel a private chip into another owner\'s chat')
+  const nested = await tool('message_bot', { to: 'Writer', message: 'nested @[secret](dsh-sessiondsh-session:x:ImEi) end' }, 'a')
+  assert.match(String(nested), /Delivered/, String(nested))
+  const again = agentOf('s').calls.map(message => (message.content ?? []).map(block => block.text ?? '').join('\n')).join('\n')
+  assert.ok(!again.includes('dsh-session:'), 'nested chips do not reconstitute in own-chat followups')
+  void alice
+})
+
 test('a Bot post into a group drops chat-reference chips so they cannot tunnel a private chat', async (t) => {
   const { tool, agentOf, signIn } = await start(t)
   const alice = await signIn('Alice')

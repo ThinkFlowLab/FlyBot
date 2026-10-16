@@ -11,6 +11,7 @@
 
 import { socialFetch } from './mcp-client.js'
 import { lookFromServer } from './look.js'
+import { formatFaceRoomTitle } from '../../../core/src/shared/face-title.js'
 
 export const FACE_JOIN_CODE = /^\d{6}$/
 export const FACE_MAX_MEMBERS = 8
@@ -220,26 +221,43 @@ export function humanFaceWho(line, fallback = 'Someone') {
   return cleanFaceName(fallback, 'Someone')
 }
 
+// Display name for a face-room line: the Bot Social `from` snapshot is the
+// authenticated sender. Never take `who` from the FLYBOT-FACE-HUMAN JSON (a
+// peer can put another member's name there). Old events without `from` fall
+// back to the handle's home label, then Someone — not the claimed name.
+export function trustedFaceWho(from) {
+  if (!from || typeof from !== 'object') return 'Someone'
+  const label = cleanFaceName(from.label, '')
+  if (label) return label
+  const owner = cleanFaceName(from.owner_name || from.ownerName, '')
+  if (owner) {
+    const named = faceMemberLabel(from)
+    if (named && named !== 'Bot') return named
+    return owner
+  }
+  const handle = String(from.handle || from.id || '')
+  const parts = handle.replace(/^@+/, '').split('.').filter(Boolean)
+  const home = parts.length >= 2 && parts.at(-1)?.toLowerCase() === 'home'
+    ? parts[parts.length - 2]
+    : ''
+  const shown = cleanFaceName(home, '')
+  if (!shown) return 'Someone'
+  return shown.charAt(0).toUpperCase() + shown.slice(1)
+}
+
 export function faceRoomTitle(snapshot = {}, { code, room } = {}) {
-  const named = String(snapshot.name || room?.name || '').trim()
-  if (named && named !== 'Face-to-face room') return named
   const owners = []
-  const seen = new Set()
   for (const member of snapshot.members ?? room?.participants ?? []) {
     const owner = cleanFaceName(member.ownerName || member.owner_name, '')
-    const key = owner.toLowerCase()
-    if (!owner || seen.has(key)) continue
-    seen.add(key)
-    owners.push(owner)
+    if (owner) owners.push(owner)
   }
-  if (owners.length) return `Face-to-face · ${owners.slice(0, 3).join(', ')}`
-  const join = String(code || snapshot.joinCode || '').replace(/\D/g, '').slice(0, 6)
-  if (join.length === 6) return `Face-to-face · ${join}`
-  const at = Date.parse(snapshot.startedAt || snapshot.expiresAt || '')
-  const when = Number.isFinite(at) ? new Date(at) : new Date()
-  const hh = String(when.getHours()).padStart(2, '0')
-  const mm = String(when.getMinutes()).padStart(2, '0')
-  return `Face-to-face · ${hh}:${mm}`
+  const at = snapshot.startedAt || snapshot.expiresAt || room?.face?.startedAt || room?.face?.expiresAt || room?.createdAt
+  return formatFaceRoomTitle({
+    name: snapshot.name || room?.name,
+    owners,
+    code: code || snapshot.joinCode,
+    at,
+  })
 }
 
 export function parseFaceHuman(text) {
@@ -412,14 +430,14 @@ export function renderFaceEvent(event) {
     const from = viewed.from || {}
     const body = viewed.untrustedText ?? ''
     const human = parseFaceHuman(body)
-    const label = human?.who || from.label || faceMemberLabel(from)
+    const who = trustedFaceWho(from)
     const text = human ? human.text : body
     return {
       kind: undefined,
       system: false,
-      who: label,
+      who,
       text,
-      fenced: fenceFaceText(label, text),
+      fenced: fenceFaceText(who, text),
       authorId: human ? (from.handle || 'human') : from.handle,
       authorKind: human ? 'human' : 'bot',
       remote: true,

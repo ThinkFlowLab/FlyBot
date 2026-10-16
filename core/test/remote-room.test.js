@@ -268,6 +268,8 @@ test('face-to-face room hosts room-only remotes and skips friend fanout', async 
   })
   assert.equal(isFaceRoom(room), true)
   assert.equal(room.origin, 'face-to-face')
+  assert.notEqual(room.name, 'Face-to-face room')
+  assert.match(room.name, /^Face-to-face · Alice, Bob · /)
   const live = room.participants.filter(p => p.leftSeq === undefined)
   assert.equal(live.some(p => p.id === 'spec-a' && !p.remote), true)
   const remote = live.find(p => p.handle === '@coder.bob.home')

@@ -124,6 +124,21 @@ window.__ModuleLoader__.load({
 .fs-face-auto{white-space:nowrap;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-face-note{padding:0;display:none}
 .fs-chat-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+[data-flybot=chat-approvals]{display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:100%;box-sizing:border-box;padding:4px 0 8px}
+.fs-hold{box-sizing:border-box;width:100%;max-width:min(460px,100%);min-width:0;margin:0;padding:10px 12px;border:.5px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);color:var(--bt-ink,#141414);display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(20,20,20,.06);overflow:hidden}
+.fs-hold .fs-label{padding:0;font-size:11px;line-height:14px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-hold .fs-sub{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink,#141414);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-hold .fs-draft{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:anywhere;white-space:pre-wrap;max-height:none}
+.fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;max-height:calc(18px * 3)}
+.fs-hold-more{align-self:flex-start;margin:0;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;line-height:16px;cursor:pointer}
+.fs-hold-more:hover{text-decoration:underline}
+.fs-hold-always{flex:none;margin:0;padding:0 2px;height:28px;border:0;background:none;color:var(--bt-ink-2,rgba(20,20,20,.6));font:inherit;font-size:12px;line-height:16px;font-weight:500;cursor:pointer;white-space:nowrap}
+.fs-hold-always:hover:not(:disabled){color:var(--bt-ink,#141414);text-decoration:underline}
+.fs-hold-always:disabled{opacity:.45;cursor:default}
+.fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:8px;flex-wrap:nowrap}
+.fs-hold .fs-btn{flex:none;height:28px;padding:0 12px;border-radius:999px;font-size:12px}
+.fs-hold .fs-btn-primary{width:auto;color:#fff}
+.fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
 .fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
 .fs-remove{flex:none;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0}
@@ -133,8 +148,8 @@ window.__ModuleLoader__.load({
 .fs-menu{position:absolute;right:4px;top:100%;z-index:5;min-width:160px;padding:4px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:var(--bt-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,.12)}
 .fs-menu button{display:block;width:100%;text-align:left;height:28px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer}
 .fs-menu button:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
-.fs-chat-approval{margin:4px 0 8px;min-width:0}
-.fs-chat-approval[data-state=approved] .fs-name,.fs-chat-approval[data-state=rejected] .fs-name{color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-chat-approval{margin:0;min-width:0}
+.fs-chat-approval[data-state=approved] .fs-label,.fs-chat-approval[data-state=rejected] .fs-label,.fs-chat-approval[data-state=approved] .fs-name,.fs-chat-approval[data-state=rejected] .fs-name{color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-dialog-back{position:fixed;inset:0;z-index:40;background:rgba(20,20,20,.4);display:flex;align-items:center;justify-content:center;padding:12px}
 .fs-dialog{width:min(420px,100%);max-height:min(640px,92vh);overflow:hidden;margin:0;padding:14px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
 .fs-dialog-head{display:flex;align-items:center;gap:8px;flex:none}
@@ -353,9 +368,15 @@ window.__ModuleLoader__.load({
 
     const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
     const looksLikeBotId = (value) => /^bot_[a-z0-9]+$/i.test(String(value ?? '').trim())
+    const looksLikeHandle = (value) => /^@[\w.-]+$/.test(String(value ?? '').trim())
     function readableParty(value, fallback = '') {
       const text = String(value ?? '').trim()
       if (!text || looksLikeBotId(text)) return fallback
+      if (looksLikeHandle(text)) {
+        const body = text.replace(/^@+/, '').split('.')[0]
+        if (!body || looksLikeBotId(body)) return fallback
+        return body.charAt(0).toUpperCase() + body.slice(1)
+      }
       return text
     }
     function pendingTitle(item) {
@@ -598,6 +619,30 @@ window.__ModuleLoader__.load({
       }
       return 'open'
     }
+    function shownFaceTitle(room) {
+      const named = String(room?.name || '').trim()
+      if (named && named !== 'Face-to-face room') return named
+      const owners = []
+      const seen = new Set()
+      for (const member of room?.members ?? []) {
+        const owner = String(member.ownerName || member.owner_name || '').trim()
+        const key = owner.toLowerCase()
+        if (!owner || seen.has(key)) continue
+        seen.add(key)
+        owners.push(owner)
+      }
+      const code = String(room?.joinCode || room?.code || '').replace(/\D/g, '').slice(0, 6)
+      const bits = ['Face-to-face']
+      if (owners.length) bits.push(owners.slice(0, 3).join(', '))
+      if (code.length === 6) bits.push(code)
+      else {
+        const at = Date.parse(room?.startedAt || room?.expiresAt || '')
+        const when = Number.isFinite(at) ? new Date(at) : new Date()
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        bits.push(`${months[when.getMonth()]} ${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
+      }
+      return bits.join(' · ')
+    }
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
@@ -627,7 +672,7 @@ window.__ModuleLoader__.load({
             shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
               h(FaceAvatar, { bot: look(m), size: 20 }))),
             extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
-          h('span', { className: 'fs-name' }, room.name || 'Face-to-face room'),
+          h('span', { className: 'fs-name' }, shownFaceTitle(room)),
           h('span', { className: 'fs-chip', 'data-flybot': 'face-status' }, faceChip(room)),
           h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
             past
@@ -639,26 +684,47 @@ window.__ModuleLoader__.load({
     const WAITING_OWNER = 'Waiting for approval'
     const WAITING_OTHERS = "Waiting for the owner's approval"
 
+    function holdParties(item) {
+      const from = readableParty(item?.from, 'Bot')
+      const to = readableParty(item?.toName) || (item?.kind === 'face_room_message' ? 'the room' : readableParty(item?.to, 'friend'))
+      return { from, to }
+    }
+    const autoSendToast = (from, to) => `Auto-send on for ${from} → ${to}. Change it anytime in settings.`
+    function homeOfHandle(value) {
+      const body = String(value ?? '').trim().replace(/^@+/, '').toLowerCase()
+      if (!body) return ''
+      const parts = body.split('.')
+      if (parts.length >= 2 && parts.at(-1) === 'home') return `@${parts.at(-2)}.home`
+      return `@${body}`
+    }
+
     function ChatApproval({ item, canDecide = true, busy, onDecide } = {}) {
+      const [open, setOpen] = useState(false)
       if (!item) return null
       if (item.status === 'approved' || item.status === 'rejected') {
-        return h('div', { className: 'fs-pending fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': item.status, role: 'status' },
+        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': item.status, role: 'status' },
           h('div', { className: 'fs-name' }, item.status === 'approved' ? 'Approved' : 'Rejected'))
       }
       if (canDecide !== true) {
-        return h('div', { className: 'fs-pending fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
+        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
           h('div', { className: 'fs-name' }, WAITING_OTHERS))
       }
-      const from = readableParty(item.from, 'Bot')
-      const to = readableParty(item.toName) || (item.kind === 'face_room_message' ? 'the room' : readableParty(item.to, 'friend'))
-      return h('div', { className: 'fs-pending fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
+      const { from, to } = holdParties(item)
+      const text = item.text || item.summary || ''
+      const long = text.length > 160 || text.split(/\n/).length > 3
+      return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
         h('div', { className: 'fs-label' }, WAITING_OWNER),
         item.from || item.to || item.toName || item.kind === 'face_room_message'
           ? h('div', { className: 'fs-sub' }, `${from} → ${to}`)
           : null,
-        item.text ? h('div', { className: 'fs-draft' }, item.text) : (item.summary ? h('div', { className: 'fs-sub fs-msg' }, item.summary) : null),
+        text ? h('div', { className: 'fs-draft', 'data-clamp': !open && long ? true : undefined }, text) : null,
+        long ? h('button', {
+          type: 'button', className: 'fs-hold-more', 'data-flybot': 'hold-expand',
+          onClick: () => setOpen(value => !value),
+        }, open ? 'Show less' : 'Show more') : null,
         h('div', { className: 'fs-actions fs-chat-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
+          h('button', { type: 'button', className: 'fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve'),
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')))
     }
 
@@ -694,7 +760,7 @@ window.__ModuleLoader__.load({
         sessionId: approval.request?.meta?.sessionId,
       }
     }
-    function ChatApprovalDock({ sessionId, roster, room, bot } = {}) {
+    function ChatApprovalDock({ sessionId, roster, room, bot, actions } = {}) {
       useStyles()
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
@@ -724,12 +790,28 @@ window.__ModuleLoader__.load({
       const decide = async (item, decision) => {
         setBusy(item.id)
         try {
-          if (item.source === 'local') await call('decide', { id: item.id, decision })
-          else await call('social/decide-approval', { approvalId: item.id, decision })
-          const status = decision === 'reject' || decision === 'rejected' ? 'rejected' : 'approved'
+          const always = decision === 'always'
+          const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
+          if (item.source === 'local') {
+            await call('decide', { id: item.id, decision: mapped })
+            if (always) {
+              if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') await call('social/face-auto', { on: true })
+              else {
+                const home = item.home || homeOfHandle(item.to)
+                if (home) await call('social/auto-accept', { home, on: true })
+              }
+            }
+          } else {
+            await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
+          }
+          const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           const mark = list => list.map(entry => entry.id === item.id ? { ...entry, status } : entry)
           setItems(mark)
           setLocal(mark)
+          if (always && status === 'approved') {
+            const { from, to } = holdParties(item)
+            actions?.notify?.(autoSendToast(from, to))
+          }
         } finally { setBusy('') }
       }
       const approveAll = async () => {

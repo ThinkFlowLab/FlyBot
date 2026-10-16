@@ -496,6 +496,30 @@ export function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi
 
 export function Nothing() { return null }
 
+// DSH writes a developer `tool-removal` context row when FlyBot `restrict()`s
+// `ask_user_question` off Bot sessions. The chat then shows "Tool removed: …".
+// Hide only those notices; other context (tool-added, unrelated removals) stays.
+export const HIDDEN_REMOVED_TOOLS = new Set(['ask_user_question'])
+
+export function isHiddenToolRemoval(node) {
+  const content = node?.data?.content
+  if (!Array.isArray(content) || content.length === 0) return false
+  return content.every(block => block?.type === 'tool-removal' && HIDDEN_REMOVED_TOOLS.has(block.toolName))
+}
+
+export function ContextCell({ node }) {
+  if (isHiddenToolRemoval(node)) return null
+  const content = Array.isArray(node?.data?.content) ? node.data.content : []
+  const parts = []
+  for (const block of content) {
+    if (block?.type === 'tool-removal' && HIDDEN_REMOVED_TOOLS.has(block.toolName)) continue
+    if (block?.type === 'tool-removal' && block.toolName) parts.push(`Tool removed: ${block.toolName}`)
+    else if (block?.type === 'tool-addition' && block.toolName) parts.push(`Tool added: ${block.toolName}`)
+  }
+  if (parts.length === 0) return null
+  return h('div', { className: 'bt-event' }, parts.join(' · '))
+}
+
 // The time separator: "Today 1:12 AM", "Yesterday 9:03 PM", "Thu, Sep 3 4:20 PM".
 const SEPARATOR_GAP_MS = 30 * 60 * 1000
 export function clockLabel(time, now = Date.now()) {

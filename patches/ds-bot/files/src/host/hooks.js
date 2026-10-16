@@ -13,7 +13,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
-import { cleanName } from './delivery.js'
+import { cleanName, stripSessionChips } from './delivery.js'
 import { SOURCE_KIND } from './constants.js'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -508,6 +508,12 @@ export function install(rt) {
   // revoked since it was written is refused.
   const ownerPolicy = msg => rt.reach?.(msg) ?? { action: 'allow' }
   const run = async (msg) => {
+    const taskId = rt.taskIdForSend?.(msg)
+    if (taskId) msg.meta = { ...msg.meta, taskId }
+    if (typeof msg.text === 'string') {
+      msg.text = stripSessionChips(msg.text)
+      if (msg.deliverArgs) msg.deliverArgs = { ...msg.deliverArgs, text: msg.text }
+    }
     const owner = ownerPolicy(msg)
     if (owner.action === 'deny') return { action: 'deny', reason: owner.reason, by: owner.by }
     const verdict = await evaluate(msg)

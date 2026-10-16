@@ -15,7 +15,7 @@ import { CHATS_SOURCE, atSources } from './at-menu.js'
 import { VOICE_BUNDLE } from './speech.js'
 import { sameVersion } from './dsh-offer.js'
 import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
-import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell } from './cells.js'
+import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell } from './cells.js'
 import { Overlays } from './overlays.js'
 import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
 import { BROWSER_CSS } from './browser-pane.js'
@@ -806,6 +806,9 @@ export function apply(ctx) {
     // every message.
     shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
     shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
+    // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
+    // restrict that tool; hide it, keep other tool-change notices (#140).
+    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat' }, ContextCell),
     ...(canDrawUserMessages() ? ['user', 'steering'].map(key => shadow('conversation.chat.node', { key, priority: -10, locale: 'chat', inject: face }, UserMessageCell)) : []),
     shadow('conversation.input.permission', { priority: -10 }, Nothing),
     shadow('conversation.input.plan', { priority: -10 }, Nothing),
