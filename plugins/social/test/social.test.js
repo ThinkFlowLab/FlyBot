@@ -2011,6 +2011,9 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
   assert.ok(tree.some(n => n.props['data-flybot'] === 'approve-all' && n.children.includes('Approve all')))
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 2)
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('one')))
+  assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Hsliu')))
+  assert.equal(tree.some(n => String(n.children ?? '').includes('@hsliu.bot')), false)
+  assert.ok(tree.some(n => String(n.props.className ?? '').includes('fs-hold')))
   const waiting = walk(plugin.ChatApprovalDock({ room: { pendingCount: 2 } }))
   assert.ok(waiting.some(n => n.props['data-role'] === 'other'))
   assert.ok(waiting.some(n => n.children?.includes?.(WAITING_OTHERS) || (Array.isArray(n.children) && n.children.includes(WAITING_OTHERS))))
@@ -2026,6 +2029,46 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
     room: { origin: 'face-to-face', face: { roomId: 'frm_1' } },
   }))
   assert.equal(roomHold.filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+})
+
+test('in-chat hold card is a compact bubble with names, clamp, and Approve/Reject', () => {
+  const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(src, /\.fs-hold\{[^}]*max-width:min\(460px,100%\)/)
+  assert.match(src, /\.fs-hold \.fs-draft\[data-clamp\]\{[^}]*-webkit-line-clamp:3/)
+  assert.match(src, /\.fs-hold \.fs-btn-primary\{[^}]*width:auto/)
+  assert.match(src, /\[data-flybot=chat-approvals\]\{[^}]*align-items:flex-start/)
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([])
+  const named = walk(plugin.ChatApproval({
+    item: { id: 'apr-1', from: 'Chief', to: '@coder.bob.home', text: 'short note' },
+    canDecide: true,
+  }))
+  assert.ok(named.some(n => String(n.props.className ?? '').includes('fs-hold')))
+  assert.ok(named.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Coder')))
+  assert.equal(named.some(n => String(n.children ?? '').includes('@coder')), false)
+  const approve = named.find(n => n.type === 'button' && n.children.includes('Approve'))
+  const reject = named.find(n => n.type === 'button' && n.children.includes('Reject'))
+  assert.ok(approve && /fs-btn-primary/.test(approve.props.className))
+  assert.ok(reject && !/fs-btn-primary/.test(reject.props.className))
+  assert.equal(named.some(n => n.props['data-flybot'] === 'hold-expand'), false)
+  assert.equal(named.filter(n => n.type === 'button').length, 2)
+
+  const friend = walk(plugin.ChatApproval({
+    item: { id: 'apr-named', from: 'Chief', to: '@hsliu.bot', toName: 'Helper', text: 'ok' },
+    canDecide: true,
+  }))
+  assert.ok(friend.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Helper')))
+
+  const long = `Please review this plan.\n${'word '.repeat(80)}`.trim()
+  const longTree = walk(plugin.ChatApproval({
+    item: { id: 'apr-long', from: 'You', toName: 'Helper', text: long },
+    canDecide: true,
+  }))
+  const draft = longTree.find(n => n.props.className === 'fs-draft')
+  assert.equal(draft?.props['data-clamp'], true)
+  assert.ok(longTree.some(n => n.props['data-flybot'] === 'hold-expand' && n.children.includes('Show more')))
+  assert.ok(longTree.some(n => n.props.className === 'fs-sub' && n.children.includes('You → Helper')))
+  assert.equal(longTree.filter(n => n.type === 'button' && (n.children.includes('Approve') || n.children.includes('Reject') || n.props['data-flybot'] === 'hold-expand')).length, 3)
 })
 
 test('Bot settings: Manage access lists grants and revokes one', async () => {
