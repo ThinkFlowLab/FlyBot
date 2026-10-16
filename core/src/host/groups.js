@@ -28,6 +28,15 @@ const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
 const ROOM_DELTA_MAX = 24
 const ROOM_EARLIER_MAX = 8
+// Bot-authored group followups are createUserMessage; DSH may resolve `dsh-session:`
+// chips there and attach the snapshot to the last user post. Drop chips so a member
+// Bot cannot tunnel a private chat into the room (#106). Authorship stays the gate.
+function stripSessionChips(text) {
+  if (typeof text !== 'string' || !text.includes('dsh-session:')) return text
+  return text
+    .replace(/@\[((?:\\.|[^\]\\])*)\]\(dsh-session:[A-Za-z0-9_-]+\)/g, (_, label) => `@${String(label).replace(/\\([\\\]])/g, '$1')}`)
+    .replace(/dsh-session:[A-Za-z0-9_-]+/g, '')
+}
 const ROOM_EXTRA_TURNS = 4
 const ROOM_ADMIN_EXTRA_TURNS = 4
 const ROOM_TURNS_EACH = 2
@@ -601,7 +610,7 @@ export function install(rt) {
   async function postToRoom(room, sender, text, extra = {}) {
     const agent = await rt.resolveAgent(room.id)
     agent.followup(createUserMessage({
-      content: [{ type: 'text', text: `[Group post from ${sender.name}]\n${text}` }],
+      content: [{ type: 'text', text: `[Group post from ${sender.name}]\n${stripSessionChips(text)}` }],
       source: { kind: SOURCE_KIND, form: 'relay', role: 'post', exchangeId: randomUUID(), senderName: sender.name, senderSessionId: sender.id, roomId: room.id, hop: 0, ...extra },
     }))
     await ctx.sessions.flush(agent.session)

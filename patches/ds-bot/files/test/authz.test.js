@@ -195,6 +195,35 @@ test('a member reaches their own Bots sessions, groups and schedules', async (t)
   // A group Session follows its room's rule; so does a schedule on it.
   assert.equal(rt.authorize(actor, 'send', { sessionId: 'gs-a1' }).ok, true)
   assert.equal(rt.authorize(actor, 'schedule-create', { sessionId: 'gs-a1' }).ok, true)
+  // The create endpoint keys off `target` (Bot or room id), not sessionId (#106).
+  assert.equal(rt.authorize(actor, 'schedule-create', { target: 'a1' }).ok, true)
+  assert.equal(rt.authorize(actor, 'schedule-create', { target: 'ra' }).ok, true)
+})
+
+test('schedule-create cannot hide a foreign target behind an owned sessionId', async (t) => {
+  const { rt } = runtime(t, TEAM)
+  await rt.load()
+  const sessionA = await redeemOwner(rt)
+  await redeemOwner(rt)
+  rt.state.bots.a1 = { id: 'a1', sessionId: 'chat-a1', name: 'A', instructions: '', createdAt: 2, ownerId: 'owner-1' }
+  rt.state.bots.b1 = { id: 'b1', sessionId: 'chat-b1', name: 'B', instructions: '', createdAt: 3, ownerId: 'owner-2' }
+  const actorA = await rt.authenticate(sessionA.sessionToken)
+  assert.equal(rt.authorize(actorA, 'schedule-create', { target: 'b1' }).ok, false)
+  assert.equal(rt.authorize(actorA, 'schedule-create', { target: 'b1', sessionId: 'chat-a1' }).code, 'bot/forbidden')
+  assert.equal(rt.authorize(actorA, 'schedule-create', { target: 'a1' }).ok, true)
+})
+
+test('task endpoints are an explicit allow-list, not a task-* prefix', async (t) => {
+  const { rt } = runtime(t, TEAM)
+  await rt.load()
+  const sessionA = await redeemOwner(rt)
+  const actorA = await rt.authenticate(sessionA.sessionToken)
+  for (const ep of ['tasks', 'task-create', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-cancel']) {
+    assert.equal(rt.authorize(actorA, ep, {}).ok, true, ep)
+  }
+  const unknown = rt.authorize(actorA, 'task-explode', {})
+  assert.equal(unknown.ok, false, JSON.stringify(unknown))
+  assert.equal(unknown.code, 'bot/not-found')
 })
 
 test('approval-answer resolves the approval, not caller-chosen fields', async (t) => {

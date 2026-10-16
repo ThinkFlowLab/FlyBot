@@ -1,0 +1,1 @@
+Held-send invalidation matches the contract: a hold addressed to a replaced Chief stays pending and decidable, unknown `invalidateFor` fields throw, and an in-flight approve is re-checked before dispatch so a concurrent Chief replacement cannot send on the old verdict. ([#97](https://github.com/ThinkFlowLab/FlyBot/issues/97))

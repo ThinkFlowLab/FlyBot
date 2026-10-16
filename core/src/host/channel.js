@@ -119,7 +119,9 @@ export function install(rt) {
   const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
 
   // A chat reference chip names a Session whose snapshot rides to every recipient of
-  // the message, so the author must be able to read what they share (#53).
+  // the message, so the author must be able to read what they share (#53, #106).
+  // Actor-authored text that becomes a session user message: send, room-post,
+  // answer-question, schedule-create. Bot-authored room posts strip chips in groups.js.
   const unshareableReference = (actor, text) => {
     if (!actor || !rt.authzEnforced?.() || typeof text !== 'string') return undefined
     for (const match of text.matchAll(/dsh-session:([A-Za-z0-9_-]+)/g)) {
@@ -318,10 +320,15 @@ export function install(rt) {
           await rt.load()
           return ok(await rt.capabilityEndpoint(endpoint, body))
         case 'schedules':
-        case 'schedule-create':
         case 'schedule-delete':
           await rt.load()
           return ok(await rt.scheduleEndpoint(endpoint, body))
+        case 'schedule-create': {
+          await rt.load()
+          const leaked = unshareableReference(actor, [body.title, body.prompt].filter(part => typeof part === 'string').join('\n'))
+          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
+          return ok(await rt.scheduleEndpoint(endpoint, body))
+        }
         case 'memory-view':
         case 'memory-ask':
         case 'memory-forget':
@@ -336,6 +343,8 @@ export function install(rt) {
           if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
           const reply = questionReply(question, body.answer)
           if (reply === undefined) return fail('Nothing to send', 'bot/invalid')
+          const leaked = unshareableReference(actor, reply.text)
+          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
           // Claim the question before queueing so a second answer is refused.
           delete state.questions[sessionId]
           try {

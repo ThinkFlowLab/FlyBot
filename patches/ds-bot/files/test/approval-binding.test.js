@@ -251,6 +251,47 @@ test('replacing a Chief invalidates the held sends written under it', async (t) 
   assert.equal(approval.status, 'stale', JSON.stringify(approval))
 })
 
+test('replacing a Chief leaves holds addressed to it pending and decidable', async (t) => {
+  const { fb, call, stop, received } = await start()
+  t.after(stop)
+  const alice = await signIn(call, 'Alice')
+  holdFlagged(fb)
+  // Sender-side only: a hold *to* the demoted Chief is still the sender's owner's to spend.
+  const id = await heldId(fb, { from: 'b', to: 'a', text: 'ask the chief', meta: { hold: true } })
+  const swapped = await call('set-main', { id: 'b', main: true, replace: 'a' }, alice.sessionToken)
+  assert.equal(swapped.ok, true, JSON.stringify(swapped))
+  const list = await call('flybot/approvals', { status: ['pending', 'failed', 'stale'] }, alice.sessionToken)
+  assert.equal(list.ok, true)
+  const approval = list.value.find(entry => entry.id === id)
+  assert.equal(approval.status, 'pending', JSON.stringify(approval))
+  const decided = await call('flybot/decide', { id, decision: 'approve' }, alice.sessionToken)
+  assert.equal(decided.ok, true, JSON.stringify(decided))
+  assert.equal(decided.value.status, 'approved', JSON.stringify(decided.value))
+  assert.deepEqual(received('a'), ['[Message from Writer]\nask the chief'])
+})
+
+test('an in-flight approve is invalidated if the Chief is replaced before dispatch', async (t) => {
+  const { fb, call, stop, received } = await start()
+  t.after(stop)
+  const alice = await signIn(call, 'Alice')
+  holdFlagged(fb)
+  const id = await heldId(fb, { from: 'a', to: 'c', text: 'still in flight', meta: { hold: true } })
+  // After the hold middleware, release re-evaluates the rest of the chain. Swap the
+  // Chief there so invalidateFor races the already-approved record (#97 TOCTOU).
+  fb.bot.send.use({
+    name: 'swap-chief',
+    handle: async () => {
+      const swapped = await call('set-main', { id: 'b', main: true, replace: 'a' }, alice.sessionToken)
+      assert.equal(swapped.ok, true, JSON.stringify(swapped))
+      return undefined
+    },
+  })
+  const decided = await call('flybot/decide', { id, decision: 'approve' }, alice.sessionToken)
+  assert.equal(decided.ok, true, JSON.stringify(decided))
+  assert.equal(decided.value.status, 'stale', JSON.stringify(decided.value))
+  assert.equal(received('c').length, 0)
+})
+
 test('a member whose sender Bot is gone cannot decide leftovers with an old session', async (t) => {
   const { fb, call, stop, statePath } = await start()
   t.after(stop)

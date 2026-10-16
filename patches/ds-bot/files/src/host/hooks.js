@@ -328,10 +328,17 @@ export function install(rt) {
   // Queued work whose authority is gone does not wait forever: a hold naming one of
   // these Bots as sender or target is marked stale (still listed for the audit view).
   // `field` narrows the match ('from': sender-side only, e.g. a demoted Chief).
+  // Unknown values must throw: a silent no-op would skip invalidation (#97).
   const invalidateFor = async (botIds, reason, field) => {
+    if (field !== undefined && field !== 'from') {
+      throw new Error(`flybot: invalidateFor field must be 'from' or omitted, got ${JSON.stringify(field)}`)
+    }
     await rt.load()
     const ids = new Set(botIds)
-    const hit = Object.values(store()).filter(a => a.status === 'pending'
+    // Pending, and approved-but-not-yet-dispatched: otherwise a concurrent setMain /
+    // deleteBot during release() skips the record (status already `approved`) (#97).
+    const inFlight = a => a.status === 'pending' || (a.status === 'approved' && a.exchangeId === undefined)
+    const hit = Object.values(store()).filter(a => inFlight(a)
       && (ids.has(a.request?.from) && (field === undefined || field === 'from')
         || ids.has(a.request?.to) && field === undefined))
     if (hit.length === 0) return
@@ -413,6 +420,15 @@ export function install(rt) {
         approval.status = 'failed'
         approval.error = error?.message ?? String(error)
       }
+      return
+    }
+    // Re-check immediately before dispatch: evaluate() yielded, so a concurrent
+    // setMain/deleteBot may have marked this in-flight approve stale (#97).
+    if (approval.status === 'stale') return
+    const still = staleReason(approval)
+    if (still !== undefined) {
+      approval.status = 'stale'
+      approval.error = still
       return
     }
     try {

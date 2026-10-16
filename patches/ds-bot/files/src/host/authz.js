@@ -49,6 +49,12 @@ const ROOM_TARGETED = new Set(['update-room', 'delete-room', 'room-progress', 'c
 // Endpoints whose body names a Session.
 const SESSION_TARGETED = new Set(['earlier', 'send', 'answer-question', 'dismiss-question', 'approval-answer', 'exchange'])
 
+// Task channel names. Requester checks live on the record in tasks.js; listing them
+// here keeps a future `task-*` from auto-allowing for any signed-in actor (#111).
+const TASK_ENDPOINTS = new Set([
+  'tasks', 'task-create', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-cancel',
+])
+
 const deny = (code, message) => ({ ok: false, code, message })
 const ALLOW = { ok: true }
 
@@ -217,6 +223,16 @@ export function install(rt) {
 
     if (BOT_TARGETED.has(ep)) {
       if (ep === 'schedules' || ep === 'schedule-create' || ep === 'schedule-delete') {
+        // The create endpoint keys off `body.target` (Bot or room id); `sessionId` is
+        // the list/delete key. Checking only sessionId would allow a foreign target
+        // paired with an owned session (#106).
+        if (ep === 'schedule-create') {
+          const target = body?.target
+          if (typeof target === 'string' && target !== '') {
+            if (botOwnedBy(actor, target) || roomOwnedBy(actor, target) || roomMemberOf(actor, target)) return ALLOW
+            return deny('bot/forbidden', 'You do not own that Bot or group chat')
+          }
+        }
         if (ep === 'schedule-delete' && typeof body?.id === 'string' && !sessionOwnedBy(actor, body.id) && !sessionOwnedBy(actor, body.sessionId)) return deny('bot/forbidden', 'You do not own that schedule')
         return requireSession(body?.sessionId)
       }
@@ -327,8 +343,9 @@ export function install(rt) {
     if (ep === 'share-brief') return ALLOW
     // Task transitions are requester-checked on the record in tasks.js (#54) — the
     // endpoint only needs a signed-in actor, like held-send decisions. Create is
-    // grant-aware there (owner, matching grant, or the named room).
-    if (ep === 'tasks' || ep.startsWith('task-')) return ALLOW
+    // grant-aware there (owner, matching grant, or the named room). Explicit set:
+    // a future `task-*` name must be listed here, not auto-allowed (#111).
+    if (TASK_ENDPOINTS.has(ep)) return ALLOW
 
     // Anything not in the table and not a known auth/read endpoint is denied.
     if (NO_ACTOR_ALLOWED.has(ep) || ep.startsWith('auth-')) return ALLOW

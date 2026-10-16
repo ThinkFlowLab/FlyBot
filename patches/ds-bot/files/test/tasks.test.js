@@ -259,6 +259,70 @@ test('rejecting the blocked approval cancels the task', async (t) => {
   assert.equal(resume.error.code, 'bot/stale')
 })
 
+test('a held send blocks only the named working task, not every working task of that Bot', async (t) => {
+  const { fb, call, signIn, createTask } = await start(t)
+  const alice = await signIn('Alice')
+  const first = await createTask(alice.sessionToken, { botId: 'a', title: 'Note one' })
+  const second = await createTask(alice.sessionToken, { botId: 'a', title: 'Note two' })
+  for (const id of [first.value.id, second.value.id]) {
+    await call('task-accept', { id }, alice.sessionToken)
+    await call('task-start', { id }, alice.sessionToken)
+  }
+  fb.bot.send.use({ name: 'gate', handle: async msg => (msg.meta?.hold ? { action: 'hold', reason: 'held by test' } : undefined) })
+  const held = await fb.bot.send({ from: 'a', to: 's', text: 'send this out', meta: { hold: true, taskId: first.value.id } })
+  assert.equal(held.action, 'hold', JSON.stringify(held))
+  assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'blocked')
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'working')
+  const rejected = await call('flybot/decide', { id: held.approvalId, decision: 'reject' }, alice.sessionToken)
+  assert.equal(rejected.ok, true, JSON.stringify(rejected))
+  assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'cancelled')
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'working')
+})
+
+test('an untagged hold does not block every working task when the Bot has several', async (t) => {
+  const { fb, call, signIn, createTask } = await start(t)
+  const alice = await signIn('Alice')
+  const first = await createTask(alice.sessionToken, { botId: 'a', title: 'Note one' })
+  const second = await createTask(alice.sessionToken, { botId: 'a', title: 'Note two' })
+  for (const id of [first.value.id, second.value.id]) {
+    await call('task-accept', { id }, alice.sessionToken)
+    await call('task-start', { id }, alice.sessionToken)
+  }
+  fb.bot.send.use({ name: 'gate', handle: async msg => (msg.meta?.hold ? { action: 'hold', reason: 'held by test' } : undefined) })
+  const held = await fb.bot.send({ from: 'a', to: 's', text: 'untagged send', meta: { hold: true } })
+  assert.equal(held.action, 'hold', JSON.stringify(held))
+  assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'working')
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'working')
+})
+
+test('a result-ready task is not pruned while it waits for acceptance', async (t) => {
+  const { call, signIn, createTask, stop, home } = await start(t)
+  const alice = await signIn('Alice')
+  const created = await createTask(alice.sessionToken)
+  const task = created.value
+  await call('task-accept', { id: task.id }, alice.sessionToken)
+  await call('task-start', { id: task.id }, alice.sessionToken)
+  await call('task-return', { id: task.id, summary: 'waiting' }, alice.sessionToken)
+  await stop({ keepHome: true })
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  for (let i = 0; i < 200; i++) {
+    const id = `task-old${i.toString(16).padStart(8, '0')}deadbeef`
+    saved.tasks[id] = {
+      id, status: 'cancelled', createdAt: 1, updatedAt: i + 2,
+      requesterId: alice.memberId, ownerBotId: 'a', title: 'old', origin: {}, actors: [],
+    }
+  }
+  saved.tasks[task.id].updatedAt = 1
+  writeFileSync(join(home, 'state.json'), JSON.stringify(saved))
+  const again = await start(t, { home })
+  t.after(() => again.stop())
+  const extra = await again.createTask(alice.sessionToken, { title: 'new' })
+  assert.equal(extra.ok, true, JSON.stringify(extra))
+  const waiting = await statusOf(again.call, alice.sessionToken, task.id)
+  assert.ok(waiting, 'the result-ready task is still listed')
+  assert.equal(waiting.status, 'result-ready', JSON.stringify(waiting))
+})
+
 test('a grantee may create a task on a granted child, not on an ungranted sibling', async (t) => {
   const { fb, signIn, createTask } = await start(t)
   const alice = await signIn('Alice')

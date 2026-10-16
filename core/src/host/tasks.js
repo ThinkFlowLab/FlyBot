@@ -17,6 +17,8 @@ import { randomBytes } from 'node:crypto'
 import { currentParticipants } from './room-membership.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
+// result-ready still waits for the requester: prune must not evict it with terminals (#111).
+const PROTECTED = new Set([...ACTIVE, 'result-ready'])
 const TRANSITIONS = {
   open: ['claimed', 'cancelled', 'failed'],
   claimed: ['working', 'cancelled', 'failed'],
@@ -79,17 +81,25 @@ export function install(rt) {
   const view = task => ({ ...task, actors: [...task.actors ?? []] })
   const prune = () => {
     const all = Object.values(store())
-    const terminal = all.filter(task => !ACTIVE.has(task.status)).sort((a, b) => a.updatedAt - b.updatedAt)
-    for (const task of terminal.slice(0, Math.max(0, all.length - KEPT))) delete store()[task.id]
+    const droppable = all.filter(task => !PROTECTED.has(task.status)).sort((a, b) => a.updatedAt - b.updatedAt)
+    for (const task of droppable.slice(0, Math.max(0, all.length - KEPT))) delete store()[task.id]
   }
   const save = () => rt.save()
 
   // ---------------------------------------------------------------- host hooks
   // A consequential send from the responsible Bot was held (#52 card): the task
-  // blocks on that approval until the owner decides.
+  // blocks on that approval until the owner decides. Link one task, not every
+  // working task of that Bot: `meta.taskId` names it, else the Bot's only working
+  // task (several without a name stay working — they are not this send's) (#111).
   rt.taskHeld = (msg, approval) => {
-    for (const task of Object.values(store())) {
-      if (task.status !== 'working' || task.ownerBotId !== msg.from) continue
+    const namedId = typeof msg?.meta?.taskId === 'string' ? msg.meta.taskId : undefined
+    const named = namedId ? store()[namedId] : undefined
+    const ofSender = task => task.ownerBotId === msg.from || task.workBotId === msg.from
+    const working = Object.values(store()).filter(task => task.status === 'working' && ofSender(task))
+    const targets = named && named.status === 'working' && ofSender(named)
+      ? [named]
+      : working.length === 1 ? working : []
+    for (const task of targets) {
       task.approvalId = approval.id
       transition(task, 'blocked', null, { approvalId: approval.id })
     }
@@ -135,6 +145,7 @@ export function install(rt) {
           updatedAt: Date.now(),
           requesterId,
           ownerBotId: botId,
+          // workBotId is the specialist on the exchange; assigned with #55 wiring (#111).
           title: String(body.title ?? '').slice(0, 300),
           ...(typeof body.criteria === 'string' && body.criteria.trim() !== '' ? { criteria: body.criteria.slice(0, 2000) } : {}),
           origin: { ...(roomId ? { roomId } : {}), ...(body.sessionId ? { sessionId: String(body.sessionId) } : {}) },

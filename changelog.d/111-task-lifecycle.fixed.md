@@ -1,0 +1,1 @@
+A held send blocks only the named working task (or that Bot's only working task), a task waiting for your acceptance is not pruned, and task channel names are an explicit allow-list rather than any `task-*` prefix. ([#111](https://github.com/ThinkFlowLab/FlyBot/issues/111))
