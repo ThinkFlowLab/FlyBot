@@ -88,7 +88,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
         : t('Add a provider and a model in DeepSeek Harness first, or pick one in the Bot\'s chat later.'))),
     error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null,
     h('div', { className: 'bt-create-foot' },
-      h('button', { type: 'button', className: 'bt-soft', onClick: onBack }, canGoBack ? t('Back') : t('Cancel')),
+      // The dialog's header already has Back and Close (#230); only the inline form needs its own.
+      inline ? h('button', { type: 'button', className: 'bt-soft', onClick: onBack }, canGoBack ? t('Back') : t('Cancel')) : null,
       h('button', { type: 'button', className: 'bt-send bt-create-go', disabled: busy || clash || Boolean(problem), onClick: () => void create() }, busy ? t('Creating…') : t('Create'))))
   if (inline) return h('div', { ref: frame, className: 'bt-create-inline', role: 'group', 'aria-label': t('Create Bot') }, card)
   return h('div', { className: 'bt-create', role: 'dialog', 'aria-label': t('Create Bot') },

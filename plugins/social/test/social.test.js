@@ -825,6 +825,56 @@ test('invite card: "Copy link" copies the bare URL; "Copy with instructions" the
   assert.deepEqual(copied, ['https://s/i/ABC', invite.text]) // written synchronously, inside each click
 })
 
+// A client.js component tree with a scripted useState order.
+function clientPlugin(initial = [], { call = async () => ({}) } = {}) {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, navigator: {} }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  let i = 0
+  const setters = []
+  const h = (type, props, ...children) => ({ type, props: { ...props, children: children.flat() } })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => { const index = i++; return [index < initial.length ? initial[index] : v, value => setters.push([index, value])] }, useRef: v => ({ current: v }), useMemo: f => f() }))
+  const all = (node, out = []) => { if (node && typeof node === 'object') { out.push(node); for (const c of node.props?.children ?? []) all(c, out) } return out }
+  const text = node => (typeof node === 'string' ? node : (node?.props?.children ?? []).map(text).join(''))
+  return { plugin, all, text, setters }
+}
+
+test('#230: Sharing shows the link first, Copy link as the one primary button and a quiet New link', () => {
+  const { plugin, all, text } = clientPlugin([{ link: 'https://s/i/ABC', text: 'Add my bot … Link: https://s/i/ABC' }])
+  const nodes = all(plugin.InviteToBot({ bot: { id: 'b1', name: 'Chief' } }))
+  const order = nodes.filter(node => node.type === 'input' || node.type === 'button').map(node => node.type === 'input' ? 'link' : text(node))
+  assert.deepEqual(order, ['link', 'Copy link', 'Copy with instructions', 'New link'])
+  const primary = nodes.filter(node => node.type === 'button' && /fs-btn-primary/.test(node.props.className))
+  assert.deepEqual(primary.map(text), ['Copy link'])
+  assert.match(nodes.find(node => text(node) === 'New link' && node.type === 'button').props.className, /fs-link/)
+  assert.equal(nodes.some(node => /Create another invite link/.test(text(node))), false)
+})
+
+test('#230: removing a friend\'s Bot asks inline, not with the browser confirm box; Auto-send names the friend', () => {
+  const bot = { name: 'Helper', remote: { handle: '@helper.selfa.home', home: '@selfa.home', homeName: 'SelfA' } }
+  const byId = (nodes, id) => nodes.find(node => node.props?.['data-flybot'] === id)
+  {
+    const { plugin, all, text } = clientPlugin()
+    const nodes = all(plugin.FriendChatSettings({ bot }))
+    assert.equal(text(byId(nodes, 'friend-auto-send')).trim(), 'Auto-send to SelfA')
+    const remove = byId(nodes, 'remove-friend-bot')
+    assert.ok(remove)
+    assert.equal(byId(nodes, 'remove-friend-bot-confirm'), undefined)
+  }
+  {
+    // state order: auto, saving, busy, asking, error
+    const { plugin, all, text } = clientPlugin([false, false, false, true, ''])
+    const nodes = all(plugin.FriendChatSettings({ bot }))
+    const ask = byId(nodes, 'remove-friend-bot-confirm')
+    assert.match(text(ask), /Remove Helper\? SelfA can share it again\./)
+    assert.ok(byId(nodes, 'remove-friend-bot-yes'))
+    assert.ok(byId(nodes, 'remove-friend-bot-no'))
+  }
+  assert.doesNotMatch(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /globalThis\.confirm/)
+})
+
 test('two Bots never share one member identity: a saved shared identity is repaired and invites name the right Bot', async (t) => {
   const { ctx, home, call, stop } = await team()
   t.after(stop)
@@ -2020,8 +2070,8 @@ test('a friend\'s Bot settings uses Auto-send, not a second Auto-accept label', 
   const tree = walk(pluginOf([false, false, false, '']).FriendChatSettings({
     bot: { name: 'Coder', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
   }))
-  assert.ok(tree.some(n => n.type === 'label' && n.children.includes('Auto-send')))
-  assert.equal(tree.some(n => n.type === 'label' && n.children.includes('Auto-accept')), false)
+  assert.ok(tree.some(n => n.type === 'label' && n.children.includes('Auto-send to Bob')))
+  assert.equal(tree.some(n => n.type === 'label' && n.children.some(c => /Auto-accept/.test(String(c)))), false)
   assert.ok(tree.some(n => n.props.className === 'fs fs-card fs-friend-settings'))
   const remove = tree.find(n => n.props['data-flybot'] === 'remove-friend-bot')
   assert.ok(remove)
@@ -3477,7 +3527,7 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   assert.ok(remove.props.title)
   assert.ok(remove.children.includes('Remove this Bot'))
   assert.ok(all.some(n => n.props['data-flybot'] === 'friend-chat-settings'))
-  assert.ok(all.some(n => n.type === 'label' && n.children.includes('Auto-send')))
+  assert.ok(all.some(n => n.type === 'label' && n.children.includes('Auto-send to hsliu')))
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(src, /data-flybot': 'remove-friend-bot/)
   remove.props.onClick({ stopPropagation() {} })
@@ -3522,7 +3572,10 @@ test('Remove this Bot leaves rooms only through social/hide-remote, not a second
   sandbox.__flybot__ = flybot
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
-  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+  // Rendered with the inline "Remove hsliu?" question already open (#230).
+  const states = [false, false, false, true, '']
+  let si = 0
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [si < states.length ? states[si++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
   plugin.apply({})
   const roster = { rooms: [{ id: 'g1', participants: [{ kind: 'bot', id: '@hsliu.bot', handle: '@hsliu.bot', remote: true }] }] }
   const actions = { roster, updateRoom: async (id, change) => { updates.push([id, change]) } }
@@ -3534,8 +3587,7 @@ test('Remove this Bot leaves rooms only through social/hide-remote, not a second
     ;(node.children ?? []).forEach(walk)
   }
   walk(plugin.BotSocialDetails({ bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } }, roster, actions }))
-  const remove = all.find(n => n.props['data-flybot'] === 'remove-friend-bot')
-  remove.props.onClick({ stopPropagation() {} })
+  all.find(n => n.props['data-flybot'] === 'remove-friend-bot-yes').props.onClick({ stopPropagation() {} })
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.deepEqual(hidden.map(p => p.handle), ['@hsliu.bot'])
   assert.equal(updates.length, 0)
@@ -3588,6 +3640,7 @@ test('#90: Remove on a friend\'s Bot stays busy until hide-remote finishes', asy
   }
   const button = nodes => nodes.find(n => n.props['data-flybot'] === 'remove-friend-bot')
   button(snapshot()).props.onClick()
+  snapshot().find(n => n.props['data-flybot'] === 'remove-friend-bot-yes').props.onClick()
   const busy = button(snapshot())
   assert.equal(busy.props.disabled, true)
   assert.equal(busy.props['aria-label'], 'Removing…')
@@ -4277,19 +4330,19 @@ test('#160: Remove this Bot closes the settings overlay', async () => {
     if (endpoint === 'social/settings') return { autoAccept: {} }
     return {}
   })
-  sandbox.confirm = () => true
-  const tree = walk(pluginOf([false, false, false, '']).FriendChatSettings({
+  sandbox.confirm = () => { throw new Error('no browser confirm box') }
+  const tree = walk(pluginOf([false, false, false, true, '']).FriendChatSettings({
     bot: { name: 'Helper', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
     actions: { closeSettings: () => closed.push('settings'), closeOverlay: () => closed.push('overlay') },
   }))
-  tree.find(n => n.props['data-flybot'] === 'remove-friend-bot').props.onClick()
+  tree.find(n => n.props['data-flybot'] === 'remove-friend-bot-yes').props.onClick()
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.deepEqual(hidden.map(p => p.handle), ['@coder.bob.home'])
   assert.ok(closed.includes('settings'))
   assert.ok(closed.includes('overlay'))
 })
 
-test('#139: Remove asks once; cancelling leaves the Bot', () => {
+test('#139: Remove asks once (inline, #230); Keep leaves the Bot', () => {
   const asked = []
   const hidden = []
   const { walk, pluginOf, sandbox } = loadSocialClient(async (endpoint, payload) => {
@@ -4298,13 +4351,13 @@ test('#139: Remove asks once; cancelling leaves the Bot', () => {
     return {}
   })
   sandbox.confirm = (text) => { asked.push(text); return false }
-  const tree = walk(pluginOf([false, false, false, '']).FriendChatSettings({
-    bot: { name: 'Helper', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
-  }))
-  const remove = tree.find(n => n.props['data-flybot'] === 'remove-friend-bot')
-  remove.props.onClick()
-  assert.equal(asked.length, 1)
-  assert.match(asked[0], /Remove Helper\?/)
+  const bot = { name: 'Helper', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  // The first click only opens the question; nothing is removed yet.
+  walk(pluginOf([false, false, false, false, '']).FriendChatSettings({ bot })).find(n => n.props['data-flybot'] === 'remove-friend-bot').props.onClick()
+  const open = walk(pluginOf([false, false, false, true, '']).FriendChatSettings({ bot }))
+  assert.match(open.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm').children.flatMap(c => c.children ?? [c]).join(' '), /Remove Helper\? Bob can share it again\./)
+  open.find(n => n.props['data-flybot'] === 'remove-friend-bot-no').props.onClick()
+  assert.equal(asked.length, 0)
   assert.equal(hidden.length, 0)
 })
 

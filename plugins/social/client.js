@@ -74,7 +74,9 @@ window.__ModuleLoader__.load({
 .fs-actions{flex:none;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:100%}
 .fs-card{margin:4px 4px 2px;padding:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px}
 .fs-friend-settings{gap:10px;max-width:280px}
-.fs-friend-settings .fs-auto{align-self:flex-start}
+.fs-friend-settings .fs-auto{align-self:flex-start;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-friend-settings .fs-auto input{width:14px;height:14px}
+.fs-friend-settings .fs-leave-ask{flex-wrap:wrap;white-space:normal}
 .fs-friend-settings .fs-link{align-self:flex-start;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-card .fs-hint{padding:0}
 .fs-line{display:flex;gap:6px;min-width:0;align-items:center}
@@ -115,7 +117,9 @@ window.__ModuleLoader__.load({
 .fs-label-plain{text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
 .fs-invite-link{width:100%;box-sizing:border-box;min-width:0}
 .fs-invite-actions{flex-wrap:wrap}
-.fs-sharing > .fs-label{padding:0 0 2px;text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
+.fs-btn-fit{width:auto}
+.fs-invite-new{margin-left:auto}
+.fs-sharing > .fs-label{padding:0 4px;text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
 .fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
 .fs-face-item{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;overflow:hidden}
 .fs-face-row{display:flex;align-items:center;gap:6px;min-width:0;width:100%;padding:2px 0;flex-wrap:nowrap;overflow:hidden}
@@ -1422,6 +1426,7 @@ window.__ModuleLoader__.load({
       const [auto, setAuto] = useState(false)
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
+      const [asking, setAsking] = useState(false)
       const [error, setError] = useState('')
       useEffect(() => {
         if (!home) return undefined
@@ -1441,10 +1446,10 @@ window.__ModuleLoader__.load({
           setAuto(!on)
         } finally { setSaving(false) }
       }
+      const who = remote.homeName || remote.owner || home || 'Your friend'
+      // Asked inline, like Leave on a face room (#230), not with the browser's confirm box.
       const removeBot = async () => {
-        const who = remote.homeName || remote.owner || home || 'Your friend'
-        const ask = typeof globalThis.confirm === 'function' ? globalThis.confirm : undefined
-        if (ask && !ask(`Remove ${bot.name}? ${who} can share it again.`)) return
+        setAsking(false)
         setBusy(true)
         setError('')
         try {
@@ -1456,19 +1461,25 @@ window.__ModuleLoader__.load({
         } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
       }
       return h('div', { className: 'fs fs-card fs-friend-settings', 'data-flybot': 'friend-chat-settings' },
+        // Auto-send covers every message from your Bots to this friend's Bots (#230 names the pair).
         h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
           h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
-          'Auto-send'),
-        h('button', {
-          type: 'button',
-          className: 'fs-link',
-          'data-flybot': 'remove-friend-bot',
-          title: 'Remove this Bot from your list and from your groups. This does not unfriend the owner.',
-          'aria-label': busy ? 'Removing…' : 'Remove this Bot',
-          'aria-busy': busy || undefined,
-          disabled: !!busy,
-          onClick: () => { void removeBot() },
-        }, busy ? 'Removing…' : 'Remove this Bot'),
+          `Auto-send to ${who}`),
+        asking
+          ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
+            h('span', { className: 'fs-hint' }, `Remove ${bot.name}? ${who} can share it again.`),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, 'Remove'),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, 'Keep'))
+          : h('button', {
+            type: 'button',
+            className: 'fs-link',
+            'data-flybot': 'remove-friend-bot',
+            title: 'Remove this Bot from your list and from your groups. This does not unfriend the owner.',
+            'aria-label': busy ? 'Removing…' : 'Remove this Bot',
+            'aria-busy': busy || undefined,
+            disabled: !!busy,
+            onClick: () => setAsking(true),
+          }, busy ? 'Removing…' : 'Remove this Bot'),
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
@@ -1500,13 +1511,15 @@ window.__ModuleLoader__.load({
         const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
         if (clip?.writeText) clip.writeText(text).then(() => setNote({ tone: 'ok', text: 'Copied.' }), () => setNote({ tone: 'error', text: 'Could not copy. Select the link and copy it by hand.' }))
       }
+      // The link first, then Copy link as the one primary action; a new link is a quiet text button (#230).
       return h('div', { className: 'fs fs-card', 'data-flybot': 'invite-to-bot' },
         h('div', { className: 'fs-hint' }, `Invite grants ${bot.name} only. Revoke anytime in People with access.`),
-        h('button', { type: 'button', className: 'fs-btn', disabled: busy, onClick: create }, invite ? 'Create another invite link' : 'Invite to this Bot'),
+        invite ? null : h('button', { type: 'button', className: 'fs-btn', disabled: busy, onClick: create }, 'Invite to this Bot'),
         invite ? h('input', { className: 'fs-input fs-invite-link', readOnly: true, value: invite.link, 'aria-label': 'Invite link', onFocus: e => e.target.select() }) : null,
         invite ? h('div', { className: 'fs-line fs-invite-actions' },
-          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-link', onClick: () => copy(invite.link) }, 'Copy link'),
-          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => copy(invite.text) }, 'Copy with instructions')) : null,
+          h('button', { type: 'button', className: 'fs-btn fs-btn-primary fs-btn-fit', 'data-flybot': 'copy-link', onClick: () => copy(invite.link) }, 'Copy link'),
+          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => copy(invite.text) }, 'Copy with instructions'),
+          h('button', { type: 'button', className: 'fs-link fs-invite-new', 'data-flybot': 'new-invite-link', disabled: busy, onClick: create }, 'New link')) : null,
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 

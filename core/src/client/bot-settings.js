@@ -78,9 +78,10 @@ export function Switch({ on, label, disabled, onChange }) {
 }
 
 // A row with a switch. Not a label: a click on the copy must not flip it twice.
-export function SwitchRow({ label, hint, on, disabled, onChange }) {
+// `showLabel: false` when the card title already says it (#230): the switch keeps the label for screen readers.
+export function SwitchRow({ label, hint, on, disabled, onChange, showLabel = true }) {
   return h('div', { className: 'bt-set-row bt-bs-row' },
-    h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, label), hint ? h('span', { className: 'bt-set-hint' }, hint) : null),
+    h('span', { className: 'bt-set-copy' }, showLabel ? h('span', { className: 'bt-bs-label' }, label) : null, hint ? h('span', { className: 'bt-set-hint' }, hint) : null),
     h(Switch, { on, label, disabled, onChange }))
 }
 
@@ -224,7 +225,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
       h(Row, { label: t('Label'), hint: t('Optional. Shown under the name.') }, h(InlineText, { label: t('Label'), value: bot.role, placeholder: t('Research, admin…'), maxLength: 24, onSave: role => save({ role }) }))),
     h(Card, { title: t('Model') },
       h('div', { className: 'bt-set-row bt-bs-row' },
-        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Model')), h('span', { className: 'bt-set-hint' }, modelHint(bot, roster))),
+        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, modelHint(bot, roster))),
         h(ModelMenu, { bot, roster, actions, run }))),
     h(Card, { title: t('Working folder') },
       h('div', { className: 'bt-set-row bt-bs-row' },
@@ -240,10 +241,9 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
       onlyMain
         ? h('div', { className: 'bt-set-row bt-bs-row' },
             h('span', { className: 'bt-set-copy' },
-              h('span', { className: 'bt-bs-label' }, t('Main Bot')),
               h('span', { className: 'bt-set-hint' }, t('The only Main Bot. To hand the role to another Bot, use Main Bot on the Bots page.'))),
             h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => actions.openSettings('bots') }, t('Change')))
-        : h(SwitchRow, { label: t('Main Bot'), hint: t('Can create and change Bots, and runs every group chat.'), on: isMainBot, onChange: on => run(actions.setMain(bot.id, on)) })),
+        : h(SwitchRow, { label: t('Main Bot'), showLabel: false, hint: t('Can create and change Bots, and runs every group chat.'), on: isMainBot, onChange: on => run(actions.setMain(bot.id, on)) })),
     // The Main Bot tile is always first and always shown, like in the context menu.
     isTile ? null : h(Card, { title: t('Sidebar') },
       h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: bot.pinned === true, onChange: pinned => run(actions.setFlags(bot.id, { pinned })) }),

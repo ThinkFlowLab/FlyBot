@@ -3211,7 +3211,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
 .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
 .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
 @media (prefers-reduced-motion:reduce){.bt-palette{animation:bt-fade .1s ease-out}}
-.bt-account-menu{width:224px}
+.bt-account-menu{min-width:224px;width:max-content;max-width:calc(100vw - 16px)}
 .bt-flybot-account-header:not(:empty){padding:6px 0 2px;margin-bottom:4px;border-bottom:.5px solid var(--bt-line-2)}
 .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
 .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
@@ -8830,11 +8830,11 @@ function Switch({ on, label, disabled, onChange }) {
     (0, import_react19.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
   );
 }
-function SwitchRow({ label, hint, on, disabled, onChange }) {
+function SwitchRow({ label, hint, on, disabled, onChange, showLabel = true }) {
   return (0, import_react19.createElement)(
     "div",
     { className: "bt-set-row bt-bs-row" },
-    (0, import_react19.createElement)("span", { className: "bt-set-copy" }, (0, import_react19.createElement)("span", { className: "bt-bs-label" }, label), hint ? (0, import_react19.createElement)("span", { className: "bt-set-hint" }, hint) : null),
+    (0, import_react19.createElement)("span", { className: "bt-set-copy" }, showLabel ? (0, import_react19.createElement)("span", { className: "bt-bs-label" }, label) : null, hint ? (0, import_react19.createElement)("span", { className: "bt-set-hint" }, hint) : null),
     (0, import_react19.createElement)(Switch, { on, label, disabled, onChange })
   );
 }
@@ -9051,7 +9051,7 @@ function BotSettingsForm({ bot, roster, actions, run }) {
       (0, import_react19.createElement)(
         "div",
         { className: "bt-set-row bt-bs-row" },
-        (0, import_react19.createElement)("span", { className: "bt-set-copy" }, (0, import_react19.createElement)("span", { className: "bt-bs-label" }, t("Model")), (0, import_react19.createElement)("span", { className: "bt-set-hint" }, modelHint(bot, roster))),
+        (0, import_react19.createElement)("span", { className: "bt-set-copy" }, (0, import_react19.createElement)("span", { className: "bt-set-hint" }, modelHint(bot, roster))),
         (0, import_react19.createElement)(ModelMenu, { bot, roster, actions, run })
       )
     ),
@@ -9086,11 +9086,10 @@ function BotSettingsForm({ bot, roster, actions, run }) {
         (0, import_react19.createElement)(
           "span",
           { className: "bt-set-copy" },
-          (0, import_react19.createElement)("span", { className: "bt-bs-label" }, t("Main Bot")),
           (0, import_react19.createElement)("span", { className: "bt-set-hint" }, t("The only Main Bot. To hand the role to another Bot, use Main Bot on the Bots page."))
         ),
         (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.openSettings("bots") }, t("Change"))
-      ) : (0, import_react19.createElement)(SwitchRow, { label: t("Main Bot"), hint: t("Can create and change Bots, and runs every group chat."), on: isMainBot, onChange: (on) => run(actions.setMain(bot.id, on)) })
+      ) : (0, import_react19.createElement)(SwitchRow, { label: t("Main Bot"), showLabel: false, hint: t("Can create and change Bots, and runs every group chat."), on: isMainBot, onChange: (on) => run(actions.setMain(bot.id, on)) })
     ),
     // The Main Bot tile is always first and always shown, like in the context menu.
     isTile ? null : (0, import_react19.createElement)(
@@ -9302,7 +9301,8 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
     (0, import_react20.createElement)(
       "div",
       { className: "bt-create-foot" },
-      (0, import_react20.createElement)("button", { type: "button", className: "bt-soft", onClick: onBack }, canGoBack ? t("Back") : t("Cancel")),
+      // The dialog's header already has Back and Close (#230); only the inline form needs its own.
+      inline ? (0, import_react20.createElement)("button", { type: "button", className: "bt-soft", onClick: onBack }, canGoBack ? t("Back") : t("Cancel")) : null,
       (0, import_react20.createElement)("button", { type: "button", className: "bt-send bt-create-go", disabled: busy || clash || Boolean(problem), onClick: () => void create() }, busy ? t("Creating…") : t("Create"))
     )
   );
