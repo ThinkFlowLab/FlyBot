@@ -441,6 +441,8 @@ var ZH = {
   // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
   // stays in English.
   "Add DSH Agent": "添加 DSH Agent",
+  "Add coding agent": "添加编码 Agent",
+  "A plain DSH session, not a Bot": "普通 DSH 会话，不是 Bot",
   "Add Agent": "添加 Agent",
   "Remove DSH Agent": "移除 DSH Agent",
   "New session": "新会话",
@@ -1273,7 +1275,7 @@ function disambiguatedRemoteTitle(record, others = []) {
 }
 
 // src/client/flybot-registry.js
-var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.session.dock", "flybot.new-chat.action"];
+var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header"];
 function createRegistry() {
   const entries2 = new Map(SLOTS.map((name) => [name, []]));
   const listeners2 = /* @__PURE__ */ new Set();
@@ -1884,6 +1886,15 @@ function FlyBotRoomOverview({ room: room2, roster, actions }) {
     "div",
     { key: entry.id, className: "bt-flybot-room-overview", "data-flybot": entry.id },
     (0, import_react2.createElement)(Safe, { entry, props: { room: room2, roster, actions, call: call2 } })
+  )));
+}
+function FlyBotAccountHeader({ actions }) {
+  const entries2 = useSlot("flybot.account.header");
+  if (entries2.length === 0) return null;
+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+    "div",
+    { key: entry.id, className: "bt-flybot-account-header", "data-flybot": entry.id },
+    (0, import_react2.createElement)(Safe, { entry, props: { actions, call: call2 } })
   )));
 }
 function FlyBotDetails({ bot, roster, actions }) {
@@ -3201,6 +3212,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
 .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
 @media (prefers-reduced-motion:reduce){.bt-palette{animation:bt-fade .1s ease-out}}
 .bt-account-menu{width:224px}
+.bt-flybot-account-header:not(:empty){padding:6px 0 2px;margin-bottom:4px;border-bottom:.5px solid var(--bt-line-2)}
 .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
 .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
 /* Popover keyframes move translate and scale, which compose with a transform the popover
@@ -6251,6 +6263,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
     open && box ? (0, import_react_dom3.createPortal)((0, import_react9.createElement)(
       "div",
       { className: "bt-menu bt-menu-up bt-account-menu", role: "menu", "aria-label": t("Account"), style: box },
+      (0, import_react9.createElement)(FlyBotAccountHeader, { actions }),
       groups.map((group, index) => (0, import_react9.createElement)(
         import_react9.Fragment,
         { key: index },
@@ -9450,7 +9463,7 @@ function NewChat({ mode, roster, actions }) {
       });
     }
     if ((roster.agents ?? []).length === 0) {
-      options.push({ key: "agent", icon: (0, import_react21.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add DSH Agent"), run: () => run(async () => {
+      options.push({ key: "agent", icon: (0, import_react21.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add coding agent"), hint: t("A plain DSH session, not a Bot"), run: () => run(async () => {
         await actions.addAgent();
         close();
       }) });

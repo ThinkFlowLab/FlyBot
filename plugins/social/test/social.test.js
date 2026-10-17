@@ -509,7 +509,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -4042,6 +4042,15 @@ test('createSocialApi listGrants maps an object-shaped grantee to a handle', asy
   assert.equal(listed[0].grantee, '@carol.home')
   assert.equal(listed[0].name, 'Carol (@carol.home)')
   assert.doesNotMatch(listed[0].grantee, /object/i)
+})
+
+test('#181: the account menu header shows my own handle with a Copy button', async () => {
+  const { walk, pluginOf } = loadSocialClient(async (endpoint) => endpoint === 'social/status' ? { connected: true, home: '@uia1415.home', bots: [] } : {})
+  const shown = walk(pluginOf(['@uia1415.home', false]).MyHandle({}))
+  assert.match(shown.find(n => n.props['data-flybot'] === 'my-handle-menu').children.map(c => (typeof c === 'object' ? '' : c)).join('') + shown.map(n => n.children?.join?.('') ?? '').join(''), /@uia1415\.home/)
+  assert.ok(shown.some(n => n.props['data-flybot'] === 'copy-my-handle'))
+  const none = walk(pluginOf(['', false]).MyHandle({}))
+  assert.equal(none.some(n => n.props?.['data-flybot'] === 'my-handle-menu'), false)
 })
 
 test('#136 / #181: Add friend shows my own handle; Auto-send starts unchecked; Join-as is always offered', async () => {

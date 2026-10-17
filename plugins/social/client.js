@@ -93,7 +93,7 @@ window.__ModuleLoader__.load({
 .fs-status[data-tone=error]{color:#e5484d}
 .fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
-.fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;justify-content:space-between;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-me-handle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fs-me .fs-link{flex:none}
 .fs-pending{margin:4px 4px 6px;padding:6px 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
@@ -877,6 +877,29 @@ window.__ModuleLoader__.load({
         sessionId: approval.request?.meta?.sessionId,
       }
     }
+    // The owner's own Bot Social handle at the top of the account menu, with copy (#181).
+    function MyHandle() {
+      const [handle, setHandle] = useState('')
+      const [copied, setCopied] = useState(false)
+      useEffect(() => {
+        let live = true
+        call('social/status', {}).then(value => { if (live) setHandle(typeof value?.home === 'string' ? value.home : '') }, () => {})
+        return () => { live = false }
+      }, [])
+      if (!handle) return null
+      const copy = async () => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+        try {
+          await clip?.writeText?.(handle)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch {}
+      }
+      return h('div', { className: 'fs-me', 'data-flybot': 'my-handle-menu' },
+        h('span', { className: 'fs-me-handle', title: 'Your Bot Social handle' }, handle),
+        h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'copy-my-handle', onClick: copy }, copied ? 'Copied' : 'Copy'))
+    }
+
     function ChatApprovalDock({ sessionId, roster, room, bot, actions } = {}) {
       useStyles()
       const [items, setItems] = useState([])
@@ -1482,6 +1505,7 @@ window.__ModuleLoader__.load({
       PendingApprovals,
       ChatApproval,
       ChatApprovalDock,
+      MyHandle,
       FriendBotRow,
       FriendChatSettings,
       FaceToFaceGroup,
@@ -1518,6 +1542,7 @@ window.__ModuleLoader__.load({
               run: ({ close } = {}) => { openAddFriend(); close?.() },
             }),
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),
+            (() => { try { return slots().register('flybot.account.header', { id: 'social-handle', order: 10, component: MyHandle }) } catch { return () => {} } })(),
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, component: ChatApprovalDock }),

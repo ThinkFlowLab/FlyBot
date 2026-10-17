@@ -633,6 +633,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
 .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
 @media (prefers-reduced-motion:reduce){.bt-palette{animation:bt-fade .1s ease-out}}
 .bt-account-menu{width:224px}
+.bt-flybot-account-header:not(:empty){padding:6px 0 2px;margin-bottom:4px;border-bottom:.5px solid var(--bt-line-2)}
 .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
 .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
 /* Popover keyframes move translate and scale, which compose with a transform the popover

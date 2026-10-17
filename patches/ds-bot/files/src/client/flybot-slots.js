@@ -14,6 +14,7 @@
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
 //   flybot.session.dock     { id, order, component({ sessionId, roster, room, bot, actions, call }) }  above the composer
 //   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat; Face-to-face group, Add friend, Friend requests)
+//   flybot.account.header   { id, order, component({ actions, call }) }   top of the account menu (the owner's own Bot Social handle)
 //
 // The same registry object also carries the host Bot look so a plugin can draw a Bot
 // exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf (set in registry()).
@@ -103,6 +104,13 @@ export function FlyBotRoomOverview({ room, roster, actions }) {
   if (entries.length === 0) return null
   return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-room-overview', 'data-flybot': entry.id },
     h(Safe, { entry, props: { room, roster, actions, call } }))))
+}
+
+export function FlyBotAccountHeader({ actions }) {
+  const entries = useSlot('flybot.account.header')
+  if (entries.length === 0) return null
+  return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-account-header', 'data-flybot': entry.id },
+    h(Safe, { entry, props: { actions, call } }))))
 }
 
 export function FlyBotDetails({ bot, roster, actions }) {

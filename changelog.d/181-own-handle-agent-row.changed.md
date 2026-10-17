@@ -1,0 +1,1 @@
+Your own Bot Social handle now shows (with Copy) at the top of the account menu, and the DSH agent row in the + menu reads "Add coding agent" (a plain DSH session, not a Bot) so it is not confused with Create new Bot. ([#181](https://github.com/ThinkFlowLab/FlyBot/issues/181))

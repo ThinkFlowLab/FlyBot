@@ -60,6 +60,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 ### Sidebar + friend actions
 
+- Social also registers `flybot.account.header` (`MyHandle`): my own Bot Social handle plus Copy at the top of the account menu (#181), hidden while not connected.
 - Social registers two `flybot.new-chat.action` rows (Face-to-face group, Add friend). Each `run` closes the picker. Copying an invite and seeing your own handle happen inside the Add friend panel (#181). Still not team mode.
 - A friend's Bot opens **Bot settings** through core `remote-bot-settings` (`openSettings('bots', id)`): a compact sheet (`data-flybot=remote-bot-sheet`) with `FlyBotDetails` from slot `flybot.bot.details`, not the local Bot editor. The sheet stacks above its scrim like the host settings overlay (#166).
 

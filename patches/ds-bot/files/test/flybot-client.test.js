@@ -15,7 +15,7 @@ test('the client registry orders entries, replaces by id, and notifies', () => {
   // The replaced entry stays: disposing the old one does not remove its successor.
   assert.deepEqual(slots.entries('flybot.sidebar.section').map(e => e.id), ['b', 'a'])
   assert.throws(() => slots.register('nope', { id: 'x' }), /unknown slot/)
-  assert.deepEqual(SLOTS, ['flybot.sidebar.section', 'flybot.sidebar.structure', 'flybot.composer.mention', 'flybot.bot.details', 'flybot.approvals', 'flybot.room.overview', 'flybot.session.dock', 'flybot.new-chat.action'])
+  assert.deepEqual(SLOTS, ['flybot.sidebar.section', 'flybot.sidebar.structure', 'flybot.composer.mention', 'flybot.bot.details', 'flybot.approvals', 'flybot.room.overview', 'flybot.session.dock', 'flybot.new-chat.action', 'flybot.account.header'])
 })
 
 test('new-chat action rows sit next to Create group chat and skip a failing plugin', () => {

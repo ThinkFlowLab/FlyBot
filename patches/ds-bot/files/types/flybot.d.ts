@@ -351,6 +351,8 @@ export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
  *   face-to-face room).
  * - `flybot.session.dock`: a card above the composer in a Bot or group chat (held Bot
  *   Social replies waiting for approval).
+ * - `flybot.account.header`: a compact block at the top of the account menu (the social
+ *   plugin shows the owner's own Bot Social handle with a copy button).
  * - `flybot.new-chat.action`: a row in the sidebar '+' new-chat menu, next to
  *   Create group chat (e.g. Face-to-face group, Add friend). `label` / `hint` are English keys
  *   looked up with the same `t()` map as the neighbouring rows.
@@ -370,6 +372,7 @@ export interface FlyBotSlots {
   'flybot.approvals': { id: string; order?: number; policy?: string; component(props: ApprovalCardProps): any }
   'flybot.room.overview': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall }): any }
   'flybot.session.dock': { id: string; order?: number; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall }): any }
+  'flybot.account.header': { id: string; order?: number; component(props: { actions?: any; call: FlyBotCall }): any }
   'flybot.new-chat.action': {
     id: string
     order?: number

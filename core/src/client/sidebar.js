@@ -1,4 +1,4 @@
-import { FlyBotSections, useSidebarStructure, botTree } from './flybot-slots.js'
+import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -574,6 +574,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
     h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
       h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),
     open && box ? createPortal(h('div', { className: 'bt-menu bt-menu-up bt-account-menu', role: 'menu', 'aria-label': t('Account'), style: box },
+      h(FlyBotAccountHeader, { actions }),
       groups.map((group, index) => h(Fragment, { key: index },
         index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
         group.map(([label, Icon, run, hint]) => h('button', {

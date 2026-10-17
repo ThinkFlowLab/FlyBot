@@ -699,7 +699,8 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +    }
 +    // A team holds at most one Agent; the entry exists only while there is none.
      if ((roster.agents ?? []).length === 0) {
-       options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
+-      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
++      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add coding agent'), hint: t('A plain DSH session, not a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
      }
    }
 -  for (const bot of matches) {
@@ -793,7 +794,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +++ b/src/client/sidebar.js
 @@ -1,15 +1,17 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-+import { FlyBotSections, useSidebarStructure, botTree } from './flybot-slots.js'
++import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
  import { createPortal } from 'react-dom'
  import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -1088,6 +1089,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
+@@ -523,6 +523,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+     h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
+       h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),
+     open && box ? createPortal(h('div', { className: 'bt-menu bt-menu-up bt-account-menu', role: 'menu', 'aria-label': t('Account'), style: box },
++      h(FlyBotAccountHeader, { actions }),
+       groups.map((group, index) => h(Fragment, { key: index },
+         index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
+         group.map(([label, Icon, run, hint]) => h('button', {
 @@ -572,9 +572,9 @@ export function FooterAccount(props) {
  export function BotReturn({ wide, useSurface, actions }) {
    const mode = useSurface(value => value.mode)
@@ -1225,6 +1234,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
+@@ -610,6 +610,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+ .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
+ @media (prefers-reduced-motion:reduce){.bt-palette{animation:bt-fade .1s ease-out}}
+ .bt-account-menu{width:224px}
++.bt-flybot-account-header:not(:empty){padding:6px 0 2px;margin-bottom:4px;border-bottom:.5px solid var(--bt-line-2)}
+ .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
+ .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
+ /* Popover keyframes move translate and scale, which compose with a transform the popover
 @@ -782,6 +782,9 @@ export const CONVERSATION_CSS = `
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
