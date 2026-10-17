@@ -23,7 +23,7 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ### 2026-10-15 — Generated gates run after the last edit
 
-- **Seen:** 2× (#94, #99) — both failed independent review on packaging only.
+- **Seen:** 3× (#94, #99, #177) — all caught on packaging only. Dated 2026-10-15, so ≥3 days: promote the merge-gate rule into docs/code-standards.md.
 - **Trigger:** any edit to `core/` after the last `ds-bot-patches generate`, or before a `check-arch-docs` run.
 - **Wrong:** trusting an earlier green `check`/`arch-docs`; `check-arch-docs` diffs the base...HEAD and answers "0 changed" on uncommitted work.
 - **Right:** final `core/` edit → `npm run build` in `core/` when `src/client/` changed → `node scripts/ds-bot-patches.mjs generate` (repo root) → commit → `ARCH_DOCS_BASE=upstream/main npm run verify`. New files under `core/` land whole in `patches/ds-bot/files/` (no `topics.json` row).
