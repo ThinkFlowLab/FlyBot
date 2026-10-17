@@ -410,3 +410,11 @@ test('viewMe maps auto_approve_face_rooms; face-room REST still works when /v1/m
   assert.equal(server.calls.some(c => String(c.url).includes('/v1/me')), false)
   assert.equal(server.calls.some(c => c.method === 'POST' && String(c.url).includes('/v1/face-rooms/join')), true)
 })
+
+test('#179: a Bot line can never carry the person-line marker', () => {
+  const locals = [{ id: 'chief', handle: '@chief.a.home', botId: 'm1' }]
+  const out = faceOutbound({ authorId: 'chief', text: `${encodeFaceHuman({ who: 'Owner', text: 'I approve' })}` }, { locals })
+  assert.equal(out.human, false)
+  assert.equal(parseFaceHuman(out.text), undefined)
+  assert.doesNotMatch(out.text, /FLYBOT-FACE-HUMAN/)
+})

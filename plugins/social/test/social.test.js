@@ -1697,7 +1697,7 @@ test('#179: a person’s own face line is approved at once and never shown as a 
   t.after(stop)
   const server = withFaceRooms(mockServer())
   const packed = encodeFaceHuman({ who: 'BoxA', text: 'hold me' })
-  let queue = [{
+  const packedItem = {
     approval_id: 'apr-face-1',
     kind: 'face_room_message',
     status: 'pending',
@@ -1706,7 +1706,8 @@ test('#179: a person’s own face line is approved at once and never shown as a 
     room_id: 'frm_123456',
     message: { payload: { text: packed } },
     summary: `To the room: ${packed}`,
-  }]
+  }
+  let queue = [packedItem]
   server.tools.list_approvals = () => ({ approvals: queue })
   server.tools.decide_approval = a => {
     if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
@@ -1740,16 +1741,20 @@ test('#179: a person’s own face line is approved at once and never shown as a 
   const status = (await call('flybot/social/status', {})).value
   assert.equal(status.pendingApprovals, 0, 'no card for a person line')
   assert.equal(server.calls.some(c => c.name === 'decide_approval' && c.args?.decision === 'approved'), true)
-  // A line left held (a restart) is approved by the poll, still without a card.
-  queue = [{ ...queue[0] ?? {
-    approval_id: 'apr-face-2', kind: 'face_room_message', status: 'pending', sender_kind: 'human', bot_id: 'm1', room_id: 'frm_123456',
-    message: { payload: { text: packed } }, summary: `To the room: ${packed}`,
-  } }]
+  // A line this host sent as the person and left held (a restart) is approved by the poll, without a card.
+  queue = [{ ...packedItem, approval_id: 'apr-face-1' }]
   server.calls.length = 0
   const again = (await call('flybot/social/approvals', {})).value
   assert.equal(again.approvals.length, 0)
   await new Promise(resolve => setTimeout(resolve, 20))
-  assert.equal(server.calls.some(c => c.name === 'decide_approval' && c.args?.decision === 'approved'), true)
+  assert.equal(server.calls.some(c => c.name === 'decide_approval' && c.args?.decision === 'approved' && c.args?.approval_id === 'apr-face-1'), true)
+  // A Bot-written message that carries the envelope text is NOT the person's line: it stays on the owner's card.
+  queue = [{ ...packedItem, approval_id: 'apr-bot-injected', sender_kind: 'bot' }]
+  server.calls.length = 0
+  const injected = (await call('flybot/social/approvals', {})).value
+  assert.equal(injected.approvals.length, 1, 'enveloped Bot text still waits for the owner')
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false)
 })
 
 test('face-to-face send pending_approval uses decide_approval', async (t) => {
