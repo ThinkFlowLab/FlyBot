@@ -283,12 +283,16 @@ export function parseFaceHuman(text) {
   }
 }
 
+// A Bot's own words never carry the person-line marker: only the human-send path writes it,
+// so model output cannot pass itself off as the owner speaking (or skip the owner's card).
+export const neutralizeFaceHuman = text => String(text ?? '').replace(/FLYBOT-FACE-HUMAN/gi, 'FLYBOT FACE HUMAN')
+
 export function faceOutbound(line, { locals = [], asBots = [], who } = {}) {
   if (!line || line.kind) return undefined
   if (line.remote === true) return undefined
   const author = line.authorId || line.botId
   const local = locals.find(bot => bot.id === author || bot.handle === author)
-  if (local?.botId) return { text: String(line.text ?? ''), botId: local.botId, human: false }
+  if (local?.botId) return { text: neutralizeFaceHuman(line.text), botId: local.botId, human: false }
   if (line.authorKind === 'human') {
     const speaker = asBots.map(handle => locals.find(bot => bot.handle === handle)).find(Boolean)
       || locals.find(bot => bot.botId)
