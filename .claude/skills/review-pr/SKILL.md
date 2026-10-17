@@ -96,3 +96,13 @@ Host / delivery changes: note smoke as **Ran** or **Not run**. Record skipped su
 5. Explicit statement that this is not merge authority  
 
 Do not fill contributor checkboxes or flip draft status unless asked.
+
+## Recording the PASS
+
+Post the report as a **pull request comment** (or the review body) only when a human asks for it, and
+only from the reviewer's own login: `.github/scripts/review-gate.mjs` reads the newest Verifier block
+that names the head, from a login in `.github/agent/review-policy.json`, and the pull request's own
+author never counts. Keep the block intact — `Tip SHA:`, `Ran:`, `Not run:`, `Verdict:` — because a
+missing `Ran:` command or `Not run:` line is reported as incomplete evidence, and a PASS at an older
+sha stops counting the moment the tip moves. Posting it is not merge authority: see AGENTS.md step 6
+for when the standing T0/T1 delegation lets an agent merge.

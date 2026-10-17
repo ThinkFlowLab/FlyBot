@@ -1,0 +1,62 @@
+name: Review gate (report only)
+
+# Phase 1 of docs/autonomous-dev.md. It says whether a pull request's tip carries an independent
+# Verifier PASS (`Tip SHA:` + `Verdict: PASS`, by a login in .github/agent/review-policy.json), and
+# why not when it does not. It is NOT a required check: continue-on-error, never labels, comments,
+# approves or merges, and it must stay out of branch protection and out of `tests-ok`'s needs.
+# When a tip has a PASS and the risk tier is T0/T1, the standing delegation in AGENTS.md step 6
+# lets an agent enable auto-merge; nothing here acts on that.
+#
+# Safety: `pull_request` (never pull_request_target), read-only token, no secrets. The script and
+# the policy are checked out from the BASE commit, and the pull request is read only through the
+# API, so PR code is never run. The one exception is the pull request that introduces the script:
+# the base has no copy yet, so that single run falls back to the copy in the PR under the same
+# read-only token (same exception as risk-tier.yml).
+on:
+  pull_request:
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  report:
+    name: reviewed tip (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: hashFiles('base/.github/scripts/review-gate.mjs') == ''
+        with:
+          path: pr
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      - name: Judge the tip
+        id: judge
+        # Report only: a tip without a PASS exits 1 so by-hand use reads as a failure, but the
+        # step is neutral here, so the check never turns red and no one learns to ignore it.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          dir="base"
+          if [ ! -f base/.github/scripts/review-gate.mjs ]; then
+            echo "::notice::The base commit has no review-gate script yet; using the copy in this pull request."
+            dir="pr"
+          fi
+          node "$dir/.github/scripts/review-gate.mjs"

@@ -1,8 +1,8 @@
 # Autonomous development (Phase 0: report only)
 
-Status: **Phase 0.** Nothing here blocks, labels, comments on or merges anything. It adds a way to
-file agent tasks, a label set, a PR template, and a workflow that *reports* a risk tier (T0 to T3)
-for each pull request. The rest of the plan is described so that later phases fit the constraints.
+Status: **Phase 0, plus a Phase 1 report.** Nothing here blocks, labels, comments on or merges anything. It adds a way to
+file agent tasks, a label set, a PR template, a workflow that *reports* a risk tier (T0 to T3)
+for each pull request, and a workflow that *reports* whether that PR's tip is reviewed. The rest of the plan is described so that later phases fit the constraints.
 
 ## Adaptation: no GitHub App, no Cursor cloud agent
 
@@ -120,6 +120,51 @@ deleted once the script is on `main`. The workflow must stay out of branch prote
 
 To switch the report off: disable the workflow in the Actions tab, or delete `.github/workflows/risk-tier.yml`.
 
+## The reviewed tip (Phase 1: report only)
+
+A merge decision needs a check it can read, not a report in a chat. `.github/scripts/review-gate.mjs`
+answers one question for a pull request: **does the current head carry an independent Verifier PASS?**
+AGENTS.md step 6 is the rule it serves: under the standing delegation an agent may enable auto-merge
+only for a T0/T1 pull request whose tip is reviewed, and this report is how it shows that.
+
+What counts as a reviewed tip, all of it:
+
+1. A pull request **comment or review body** by a login listed in `.github/agent/review-policy.json`.
+2. Not the pull request's **own author**: no self-review, even when that login is listed.
+3. The Verifier block `review-pr` already writes: `Tip SHA:`, `Ran:` with at least one command,
+   `Not run:` (a gap named, not hidden), and `Verdict: PASS`.
+4. The `Tip SHA:` **is the head being judged**. A later commit moves the tip and the old PASS stops
+   counting; that report is then listed as "not counted", with the sha it named.
+5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
+   earlier PASS, and a later PASS at the same tip replaces a FAIL.
+
+| File | Purpose |
+| --- | --- |
+| `.github/agent/review-policy.json` | the logins whose PASS counts; editing it is T3 |
+| `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
+| `.github/scripts/review-gate.test.mjs` | stale tip, self-review, unlisted login, FAIL after PASS, missing `Ran:` / `Not run:`, and the workflow's shape |
+| `.github/workflows/review-gate.yml` | reports it in the job summary; `continue-on-error`, never required |
+
+Run it by hand (read-only API calls with your `gh` login):
+
+```sh
+node .github/scripts/review-gate.mjs --pr 215 --repo ThinkFlowLab/FlyBot
+node .github/scripts/review-gate.mjs --pr 215 --sha <other head>   # judge a tip that is not the head
+```
+
+The workflow is safe the same way `risk-tier.yml` is: `pull_request` (never `pull_request_target`),
+a read-only token, no secrets, and the script and policy checked out from the **base** commit, so a
+pull request cannot change the rules that judge it. The one exception is the pull request that adds
+the script: the base has none, so that run falls back to the PR's copy under the same read-only
+token. It is **not** a required check and must stay out of branch protection and out of `tests-ok`'s
+`needs` (a test checks both), so a pull request without a PASS can still merge on the maintainer's
+approval.
+
+**Why report-only.** No agent login is in the policy yet, so today only a maintainer's comment can
+satisfy the gate. The delegation slice changes that: it adds the reviewer's login to the policy and
+gives the implementer and the reviewer separate credentials. Until then this is evidence a human can
+read, and the record every later auto-merge is checked against.
+
 ## Merge plumbing: `merge_group`, merge queue, auto-merge
 
 `test.yml` has a `merge_group:` trigger. Nothing is enabled: with no merge queue it never fires.
@@ -180,4 +225,6 @@ independent public reports say the same for `gh pr merge --auto` run with `GITHU
    non-maintainer edit, set `agent-pr` and `risk:T*`, expire stale claims, a pause variable and a kill-switch drill.
    Enforce the tier with a required check and CODEOWNERS for T3 approval.
 3. **Agents on a dedicated credential**, one open PR at a time, with the cost caps in one config file.
-4. **Auto-merge T0/T1** after a cooling period; T3 stays human. Then edge releases, a red-`main` watchdog, and T2 behind a smoke gate.
+   Add the reviewer's login to `.github/agent/review-policy.json` in the same change: until it is
+   listed, no agent report can satisfy the reviewed-tip gate.
+4. **Auto-merge T0/T1** after a cooling period, on the gate above as its evidence; T3 stays human. Then edge releases, a red-`main` watchdog, and T2 behind a smoke gate.
