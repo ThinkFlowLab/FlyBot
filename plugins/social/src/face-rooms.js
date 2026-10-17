@@ -184,7 +184,8 @@ export function publishedForJoin(bot, isPublished) {
 }
 
 export function handleBotName(handle) {
-  const part = String(handle ?? '').replace(/^@/, '').split('.')[0]
+  const raw = typeof handle === 'object' && handle !== null ? (handle.handle ?? '') : handle
+  const part = String(raw ?? '').replace(/^@/, '').split('.')[0]
   if (!part || part === 'home' || part === 'bot') return ''
   return part.charAt(0).toUpperCase() + part.slice(1)
 }
@@ -471,7 +472,8 @@ export function rememberEvent(seen, eventId) {
 }
 
 const normHandle = (handle) => {
-  const body = String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
+  const raw = typeof handle === 'object' && handle !== null ? (handle.handle ?? handle.home ?? '') : handle
+  const body = String(raw ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
   return body ? `@${body}` : ''
 }
 

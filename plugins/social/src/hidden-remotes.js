@@ -4,7 +4,10 @@
 export const HIDE_GONE_FETCHES = 2
 
 export function normHiddenHandle(handle) {
-  const body = String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
+  const raw = typeof handle === 'object' && handle !== null
+    ? (handle.handle ?? handle.home ?? handle.member ?? '')
+    : handle
+  const body = String(raw ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
   return body ? `@${body}` : ''
 }
 
@@ -29,7 +32,7 @@ export function hideRemoteInSettings(settings, handle, at = Date.now()) {
 export function isHiddenRemote(settings, handle) {
   const key = normHiddenHandle(handle)
   const hidden = settings?.hiddenRemotes ?? {}
-  if (hidden[key] || hidden[String(handle ?? '')]) return true
+  if (hidden[key] || (typeof handle === 'string' && hidden[handle])) return true
   return Object.keys(hidden).some(entry => normHiddenHandle(entry) === key)
 }
 
@@ -128,19 +131,30 @@ export function chatApprovalTitle(canDecide) {
 
 export function approvalsForSession(items, session = {}) {
   const list = Array.isArray(items) ? items : []
-  const handle = String(session.handle ?? session.bot?.remote?.handle ?? '')
+  const asText = (value) => {
+    if (value == null) return ''
+    if (typeof value === 'object') return String(value.handle ?? value.home ?? '')
+    return String(value)
+  }
+  const handle = asText(session.handle) || asText(session.bot?.remote?.handle)
   const faceId = session.faceRoomId ?? session.room?.face?.roomId
   const roomId = session.roomId ?? session.room?.id
   const handles = new Set((session.handles ?? session.room?.participants ?? [])
     .map(p => (typeof p === 'string' ? p : p?.handle))
-    .filter(Boolean)
-    .map(String))
+    .map(asText)
+    .filter(Boolean))
   if (handle) handles.add(handle)
   return list.filter(item => {
-    if (faceId && item.roomId === faceId) return true
-    if (roomId && item.roomId === roomId) return true
-    if (item.to && handles.has(String(item.to))) return true
-    if (item.fromHandle && handles.has(String(item.fromHandle))) return true
+    if (item.kind === 'face_room_message') {
+      if (faceId && (!item.roomId || item.roomId === faceId)) return true
+      if (roomId && item.roomId === roomId) return true
+      return false
+    }
+    if (item.roomId) return item.roomId === roomId || (faceId && item.roomId === faceId)
+    const to = asText(item.to)
+    const fromHandle = asText(item.fromHandle)
+    if (to && handles.has(to)) return true
+    if (fromHandle && handles.has(fromHandle)) return true
     return false
   })
 }

@@ -15,7 +15,7 @@ import { Segmented, useGlide, useMorph } from './motion.js'
 import { MemberWork, useMemberWork } from './member-status.js'
 import { t } from './i18n.js'
 import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
-import { FlyBotRoomOverview } from './flybot-slots.js'
+import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 import { call } from './api.js'
 
 function transcriptOf(list, id, name, hiddenTurns = []) {
@@ -205,8 +205,8 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
       })])),
     face ? null : h('div', { key: 'mode' }, h('div', { className: 'bt-section-title' }, t('Who answers')),
       h('div', { className: 'bt-kv' }, h('span', null, t(ROOM_MODES.find(([id]) => id === shownMode(room, roster))?.[1] ?? 'Everyone')))),
-    usage ? h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
-      h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))) : null,
+    face || !usage ? null : h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
+      h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))),
   ]
 }
 
@@ -251,15 +251,15 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
     return [
       h('div', { key: 'head', className: 'bt-subhead', 'data-move': move },
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Back to details'), onClick: () => setView('overview') }, h(ChevronLeftIcon)),
-        h('span', { className: 'bt-subhead-title' }, bot ? t('Settings') : t('Group settings')),
+        h('span', { className: 'bt-subhead-title' }, bot ? (bot.remote ? t('Bot settings') : t('Settings')) : t('Group settings')),
         hasStrip ? null : h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon))),
       h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move }, errorLine,
         bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
     ]
   }
   const top = h('div', { className: 'bt-drawer-top', 'data-move': side },
-    bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': bot ? t('Edit Bot') : t('Group settings'), title: bot ? t('Edit Bot') : t('Group settings'), 'data-info-row': 'settings', onClick: () => setView('settings') }, h(GearIcon)) : null,
-    bot && roster.browser === true && actions.openBrowser
+    bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': bot ? (bot.remote ? t('Bot settings') : t('Edit Bot')) : t('Group settings'), title: bot ? (bot.remote ? t('Bot settings') : t('Edit Bot')) : t('Group settings'), 'data-info-row': 'settings', onClick: () => setView('settings') }, h(GearIcon)) : null,
+    bot && !bot.remote && roster.browser === true && actions.openBrowser
       ? h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Open browser'), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, h(GlobeIcon))
       : null,
     bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': copied ? t('Copied conversation') : t('Share conversation'), title: copied ? t('Copied') : t('Copy conversation as Markdown'), onClick: share }, copied ? h('span', { key: 'copied', className: 'bt-pop-in' }, '✓') : h(ShareIcon)) : null,
@@ -284,22 +284,28 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
     h('div', { key: 'id', className: 'bt-drawer-id', 'data-move': side },
       bot ? h(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== undefined), main: isMainBot, badge: false, gaze: true, pokeable: true })
         : h(RoomAvatar, { room, roster, size: 64 }),
-      editing
-        ? h('input', {
-            className: 'bt-drawer-name-input', autoFocus: true, value: draftName, 'aria-label': bot ? t('Bot name') : t('Group name'),
-            placeholder: room ? t('Name after members') : undefined,
-            onChange: event => setDraftName(event.target.value), onBlur: saveName,
-            onKeyDown: (event) => { if (event.key === 'Enter') void saveName(); if (event.key === 'Escape') { event.stopPropagation(); setEditing(false) } },
-          })
-        : h('button', { type: 'button', className: 'bt-drawer-name', 'aria-label': t('Rename {name}', { name: current }), title: t('Rename'), onClick: () => { setDraftName(room && !room.named ? '' : current); setEditing(true) } }, current),
-      subtitle ? h('span', { className: 'bt-drawer-role' }, subtitle) : null),
-    h('div', { key: 'tabs', ref: glide.box, className: 'bt-tabs', role: 'tablist', 'data-move': side },
+      bot?.remote
+        ? h('div', { className: 'bt-drawer-name' }, current)
+        : editing
+          ? h('input', {
+              className: 'bt-drawer-name-input', autoFocus: true, value: draftName, 'aria-label': bot ? t('Bot name') : t('Group name'),
+              placeholder: room ? t('Name after members') : undefined,
+              onChange: event => setDraftName(event.target.value), onBlur: saveName,
+              onKeyDown: (event) => { if (event.key === 'Enter') void saveName(); if (event.key === 'Escape') { event.stopPropagation(); setEditing(false) } },
+            })
+          : h('button', { type: 'button', className: 'bt-drawer-name', 'aria-label': t('Rename {name}', { name: current }), title: t('Rename'), onClick: () => { setDraftName(room && !room.named ? '' : current); setEditing(true) } }, current),
+      subtitle ? h('span', { className: 'bt-drawer-role' }, subtitle) : bot?.remote ? h('span', { className: 'bt-drawer-role' }, t("Friend's Bot")) : null),
+    bot?.remote ? null : h('div', { key: 'tabs', ref: glide.box, className: 'bt-tabs', role: 'tablist', 'data-move': side },
       h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
       tabs.map(key => h('button', { key, type: 'button', role: 'tab', className: 'bt-tab', 'aria-selected': tab === key, onClick: () => setTab(key) }, t(TAB_LABELS[key])))),
     h('div', { key: `body:${tab}`, className: 'bt-drawer-body', 'data-move': move },
       errorLine,
       room && tab === 'details' ? h(GroupOverview, { room, roster, actions, usage, useWork, openSettings: () => setView('settings') }) : null,
-      bot && tab === 'details' ? [
+      bot && bot.remote && tab === 'details' ? [
+        bot.remote.handle ? h('div', { key: 'handle', className: 'bt-muted' }, bot.remote.handle) : null,
+        h(FlyBotDetails, { key: 'social', bot, roster, actions }),
+      ] : null,
+      bot && !bot.remote && tab === 'details' ? [
         h('div', { key: 'model', className: 'bt-drawer-model' },
           h('div', { className: 'bt-section-title' }, t('Model')),
           h(ModelMenu, { bot, roster, actions, run, wide: true }),
@@ -316,5 +322,5 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
           h('div', { className: 'bt-kv' }, h('span', null, bot.name), h('span', null, usage))) : null,
         h(ScheduleSummary, { key: 'routines', bot, actions }),
       ] : null,
-      bot && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]
+      bot && !bot.remote && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]
 }

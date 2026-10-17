@@ -1,0 +1,1 @@
+A friend's Bot settings page is a remote-friend surface, not the local editor: Auto-send and Remove this Bot stay there, without rename, model, Hide, Duplicate, or Delete. Remove closes the overlay. ([#160](https://github.com/ThinkFlowLab/FlyBot/issues/160))

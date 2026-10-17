@@ -363,6 +363,35 @@ test('a face-to-face send posts a human line and does not start a bot round', as
   assert.equal(prompts.length, 1)
 })
 
+test('#167: a plain face-to-face human line does not start a Bot turn', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_plain',
+    localId: 'face-plain',
+    status: 'open',
+    members: [{ handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false }],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }],
+  })
+  assert.ok((hosted.members ?? []).includes(chief))
+  sent.length = 0
+  await emit(hosted.id, userMessage('hello from the owner'))
+  const silent = JSON.parse(await relay(hosted.id, 'plain-face'))
+  assert.equal((silent.replies ?? []).filter(reply => reply.kind === undefined).length, 0)
+  assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false)
+
+  sent.length = 0
+  await emit(hosted.id, userMessage('@Chief ping'))
+  const running = relay(hosted.id, 'named-face')
+  const first = await turnFor(sent)
+  assert.ok(first, 'an @mention still starts that Bot\'s turn')
+  await answer(first.sessionId, first.message.source.exchangeId, 'pong', 1)
+  await running
+})
+
 test('a message sent between rounds still opens a full round', async (t) => {
   const { call, emit, userMessage, relay, answer, stop, sent } = start()
   t.after(stop)

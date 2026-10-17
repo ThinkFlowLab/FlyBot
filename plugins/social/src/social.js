@@ -30,7 +30,7 @@ import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, wri
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
-import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf } from './mcp-client.js'
+import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf, personHomeOf } from './mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint } from './look.js'
 import {
   createFaceRoomApi,
@@ -48,6 +48,7 @@ import {
   platformJoinText,
   humanFaceWho,
   faceRoomTitle,
+  parseFaceHuman,
 } from './face-rooms.js'
 import {
   hideRemoteInSettings,
@@ -66,7 +67,10 @@ const REMOTE_TTL_MS = 30_000
 // Empty / missing / "@" stay empty. Prefixing '@' before the body is stripped
 // used to persist the literal "@" as a face-room `as` handle (#122).
 const norm = (handle) => {
-  const body = String(handle ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
+  const raw = typeof handle === 'object' && handle !== null
+    ? (handle.handle ?? handle.home ?? handle.member ?? '')
+    : handle
+  const body = String(raw ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
   return body ? `@${body}` : ''
 }
 const MAX_FILES = 5
@@ -80,6 +84,13 @@ const sizeLabel = n => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixe
 export const cleanText = (value, fallback = '') => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || fallback
 // Owner-only draft body: keep punctuation the friend will see; strip controls and cap.
 export const draftText = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800)
+// Owner cards never show the FLYBOT-FACE-HUMAN wire envelope (#159).
+export function approvalDraftText(value) {
+  const raw = draftText(value)
+  const human = parseFaceHuman(raw)
+  const body = human ? draftText(human.text) : raw
+  return body.replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
+}
 // Bot Social list_approvals card → the Friends' Bots queue (outbound drafts only).
 const looksLikeBotId = (value) => /^bot_[a-z0-9]+$/i.test(String(value ?? '').trim())
 export function approvalView(item, { localName } = {}) {
@@ -88,7 +99,7 @@ export function approvalView(item, { localName } = {}) {
   if (!id) return undefined
   const to = item.message?.to
   const payload = item.message?.payload
-  const text = draftText(payload && typeof payload === 'object' ? payload.text : payload) || draftText(item.summary)
+  const text = approvalDraftText(payload && typeof payload === 'object' ? payload.text : payload) || approvalDraftText(item.summary)
   const kind = String(item.kind ?? '')
   const viaComposer = item.via === 'composer'
     || item.message?.via === 'composer'
@@ -653,13 +664,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return keys
   }
   // One-time upgrade: remotes already on the server roster are treated as inbound so
-  // reciprocal friends are not dropped when inboundBots was empty (Codex P1).
+  // reciprocal friends are not dropped when inboundBots was empty (Codex P1). Skip
+  // reverse-friends of invites we created and face-room-only remotes (#138 / #161).
   function backfillInboundFromRoster(mappedHomes) {
     if (settings.inboundBackfilled) return
     settings.inboundBots ??= {}
+    const outgoing = outgoingPeerHandles()
     for (const bot of (mappedHomes ?? []).flatMap(entry => entry.bots ?? [])) {
       const key = norm(bot.handle)
       if (!key || key === '@') continue
+      if (outgoing.has(key)) continue
       if (settings.roomBots?.[key]) continue
       settings.inboundBots[key] = true
     }
@@ -670,8 +684,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const key = norm(bot.handle)
     if (!key) return false
     if (declinedRemotes.has(key)) return false
-    if (settings.inboundBots?.[key] || settings.inboundBots?.[bot.home]) return true
+    // Outgoing grants win: the Bot that joined our invite is not granted back (#138 / #161).
     if (outgoingPeerHandles().has(key)) return false
+    if (settings.inboundBots?.[key] || settings.inboundBots?.[bot.home]) return true
     if (settings.roomBots?.[key]) return false
     return true
   }
@@ -899,7 +914,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const localIn = (room.members ?? []).includes(botId) || live.some(p => p.kind === 'bot' && !p.remote && p.id === botId)
       if (!localIn) continue
       const hit = !key || live.some(p => {
-        if (p.kind === 'human' && String(p.id) === String(grantee)) return true
+        const humanId = typeof grantee === 'object' && grantee
+          ? String(grantee.handle ?? grantee.id ?? '')
+          : String(grantee ?? '')
+        if (p.kind === 'human' && humanId && String(p.id) === humanId) return true
         if (p.handle && (norm(p.handle) === key || homeOfPeer(p.handle) === key || homeOfPeer(p.handle) === home)) return true
         if (p.ownerHome && (norm(p.ownerHome) === key || norm(p.ownerHome) === home)) return true
         return false
@@ -923,16 +941,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         const people = listed.filter(grant => !grant.roomId).map(grant => {
           const view = grantPersonView(grant)
           // Core normGrantee cannot match decorated non-@ values; persist a canonical @handle.
-          const canonical = view.member || view.home || memberHandleOf(grant.grantee) || grant.grantee
+          const canonical = view.member || view.home || memberHandleOf(grant.grantee)
+          if (!canonical) return undefined
           return {
             id: grant.id || grant.relationshipId || `${bot.id}:${canonical}`,
             grantee: canonical,
-            ...(view.label ? { name: view.label } : grant.name ? { name: grant.name } : {}),
+            ...(view.label ? { name: view.label } : typeof grant.name === 'string' ? { name: grant.name } : {}),
             ...(view.home ? { home: view.home } : {}),
             ...(view.member ? { member: view.member } : {}),
             ...(grant.relationshipId ? { relationshipId: grant.relationshipId } : {}),
           }
-        })
+        }).filter(Boolean)
         await flybot.grants.set(bot.id, [...people, ...roomScoped])
       } catch (error) {
         warn(`${bot.name} grants not synced`, error)
@@ -1493,13 +1512,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       granted: hasPersonGrant(bot.id),
       grants: grants.map(grant => {
         const view = grantPersonView(grant)
+        const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
         return {
           id: grant.id,
-          grantee: view.home || grant.home || grant.grantee,
-          name: view.label || grant.name,
-          home: view.home || grant.home,
+          grantee: home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : ''),
+          name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
+          home,
           relationshipId: grant.relationshipId,
-          rooms: roomsUsing(bot.id, grant.grantee),
+          rooms: roomsUsing(bot.id, view.member || grant.grantee),
         }
       }),
       rooms,
@@ -1772,12 +1792,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     if (room?.sharedFrom?.invitedHandle) handles.add(norm(room.sharedFrom.invitedHandle))
     const faceId = room?.face?.roomId
-    return pendingCache.items.filter(item => handles.has(norm(item.from)) || handles.has(norm(item.to)) || (faceId && item.roomId === faceId))
+    return pendingCache.items.filter((item) => {
+      if (item.kind === 'face_room_message') {
+        return Boolean(faceId) && (!item.roomId || item.roomId === faceId || item.roomId === room.id)
+      }
+      if (item.roomId) return item.roomId === room.id || (faceId && item.roomId === faceId)
+      return handles.has(norm(item.from)) || handles.has(norm(item.to))
+    })
   })
   flybot.chatApprovals?.setProvider?.((bot) => {
     const handle = bot?.remote?.handle ? norm(bot.remote.handle) : ''
     if (!handle) return []
-    return pendingCache.items.filter(item => norm(item.to) === handle || norm(item.from) === handle)
+    return pendingCache.items.filter((item) => {
+      if (item.kind === 'face_room_message' || item.roomId) return false
+      return norm(item.to) === handle || norm(item.from) === handle
+    })
   })
 
   // ------------------------------------------------------------ face-to-face rooms (#83)
@@ -1964,18 +1993,28 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }, asBot)
     let seen = settings.faceRooms[snapshot.roomId].seen
     const joinedFromEvents = new Set()
+    const alreadyJoined = (text) => {
+      const body = String(text ?? '')
+      if (!body) return false
+      return (room?.log ?? []).some(line => (line.kind === 'joined' || line.kind === 'notice') && line.text === body)
+        || seen.includes(`join-text:${body}`)
+    }
     for (const event of snapshot.events ?? []) {
       if (event.eventId && seen.includes(event.eventId)) continue
       const line = renderFaceEvent(event)
       if (!line) continue
       seen = rememberEvent(seen, event.eventId)
       if (line.system) {
-        if (line.kind === 'joined' && event.member?.handle) {
-          const handle = norm(event.member.handle)
-          const key = `join:${handle}`
-          joinedFromEvents.add(handle)
-          if (seen.includes(key)) continue
-          seen = rememberEvent(seen, key)
+        if (line.kind === 'joined') {
+          const handle = norm(event.member?.handle)
+          if (handle) {
+            joinedFromEvents.add(handle)
+            const key = `join:${handle}`
+            if (seen.includes(key)) continue
+            seen = rememberEvent(seen, key)
+          }
+          if (alreadyJoined(line.text)) continue
+          seen = rememberEvent(seen, `join-text:${line.text}`)
         }
         flybot.rooms.applyFaceLine?.(room.id, line)
         void flybot.rooms.postNotice?.(room.id, line.text)
@@ -1998,8 +2037,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (handle && !localHandles.has(handle)) markRoomRemote(handle, snapshot.roomId)
       const key = `join:${handle}`
       if (!handle || previousLive.has(handle) || joinedFromEvents.has(handle) || seen.includes(key)) continue
-      seen = rememberEvent(seen, key)
       const text = platformJoinText(member)
+      if (alreadyJoined(text)) {
+        seen = rememberEvent(seen, key)
+        continue
+      }
+      seen = rememberEvent(seen, key)
+      seen = rememberEvent(seen, `join-text:${text}`)
       flybot.rooms.applyFaceLine?.(room.id, { kind: 'joined', who: 'Room', text, authorKind: 'system' })
       void flybot.rooms.postNotice?.(room.id, text)
     }
@@ -2094,7 +2138,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const room = await applyFaceSnapshot(snapshot, { asBot: ready.handle })
       saveSettings()
       if (room) await setRoomGrant(ready.id, room, { faceRoomId: snapshot.roomId, name: faceRoomTitle(snapshot, { code: digits, room }) })
-      return { ...viewHostedFace(room, { joinedAs: { botId: ready.id, botName: ready.name, handle: ready.handle } }), faceRoomId: snapshot.roomId, status: snapshot.status, expiresAt: snapshot.expiresAt, members: snapshot.members }
+      return { ...viewHostedFace(room, { joinedAs: { botId: ready.id, botName: ready.name, handle: ready.handle }, joinCode: digits }), faceRoomId: snapshot.roomId, status: snapshot.status, expiresAt: snapshot.expiresAt, members: snapshot.members, joinCode: digits }
     } catch (error) {
       // A brand-new room-only identity that never made it into a room must not block retry
       // (and must not linger as a reachable home member).
@@ -2170,11 +2214,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       try {
         const sent = await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
         if (sent?.status === 'pending_approval') {
-          pendingCache.at = 0
-          if (outbound.human && sent.approvalId) {
+          // Auto-send is the only owner-line auto-approve. Otherwise the in-chat card
+          // stays until Approve / Always approve / Reject (#159). Decide first so a
+          // poll cannot flash the FLYBOT-FACE-HUMAN envelope.
+          if (outbound.human && sent.approvalId && await faceAutoApprove().catch(() => false)) {
             await confirmedCall('decide_approval', { approval_id: sent.approvalId, decision: 'approved' })
               .catch(error => warn('face-room owner line not auto-approved', error))
           }
+          pendingCache.at = 0
         }
       } catch (error) {
         warn('face-room send failed', error)
@@ -2187,7 +2234,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (payload?.poll !== false) await pollFaceRooms().catch(() => {})
     const rooms = Object.entries(settings.faceRooms).map(([faceRoomId, meta]) => {
       const room = flybot.rooms.ofFace?.(faceRoomId)
-      return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate' }
+      return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor, joinCode: meta.joinCode }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate', joinCode: meta.joinCode }
     }).filter(Boolean)
     const liveIds = new Set(rooms.map(room => room.faceRoomId).filter(Boolean))
     for (const past of settings.pastFaceRooms ?? []) {

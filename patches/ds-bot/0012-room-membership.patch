@@ -61,7 +61,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  import { MemberWork, useMemberWork } from './member-status.js'
  import { t } from './i18n.js'
 +import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
-+import { FlyBotRoomOverview } from './flybot-slots.js'
++import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 +import { call } from './api.js'
  
  function transcriptOf(list, id, name, hiddenTurns = []) {
@@ -157,7 +157,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
          const entry = entries.find(item => item.id === member.id)
          return h('div', { key: member.id, role: 'listitem' },
            h('div', { className: 'bt-member' },
-@@ -131,8 +131,8 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings })
+@@ -131,11 +131,11 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings })
                h('span', null, member.name)),
              room.admin === member.id ? h('span', { className: 'bt-chip bt-chip-admin' }, t('Admin')) : null),
            entry ? h(MemberWork, { entry, bot: member, room, roster, actions, now }) : null)
@@ -166,8 +166,79 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +      })])),
 +    face ? null : h('div', { key: 'mode' }, h('div', { className: 'bt-section-title' }, t('Who answers')),
        h('div', { className: 'bt-kv' }, h('span', null, t(ROOM_MODES.find(([id]) => id === shownMode(room, roster))?.[1] ?? 'Everyone')))),
-     usage ? h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
-       h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))) : null,
+-    usage ? h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
+-      h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))) : null,
++    face || !usage ? null : h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
++      h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))),
+   ]
+ }
+ 
+@@ -180,15 +180,15 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+     return [
+       h('div', { key: 'head', className: 'bt-subhead', 'data-move': move },
+         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Back to details'), onClick: () => setView('overview') }, h(ChevronLeftIcon)),
+-        h('span', { className: 'bt-subhead-title' }, bot ? t('Settings') : t('Group settings')),
++        h('span', { className: 'bt-subhead-title' }, bot ? (bot.remote ? t('Bot settings') : t('Settings')) : t('Group settings')),
+         hasStrip ? null : h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon))),
+       h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move }, errorLine,
+         bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
+     ]
+   }
+   const top = h('div', { className: 'bt-drawer-top', 'data-move': side },
+-    bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': bot ? t('Edit Bot') : t('Group settings'), title: bot ? t('Edit Bot') : t('Group settings'), 'data-info-row': 'settings', onClick: () => setView('settings') }, h(GearIcon)) : null,
+-    bot && roster.browser === true && actions.openBrowser
++    bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': bot ? (bot.remote ? t('Bot settings') : t('Edit Bot')) : t('Group settings'), title: bot ? (bot.remote ? t('Bot settings') : t('Edit Bot')) : t('Group settings'), 'data-info-row': 'settings', onClick: () => setView('settings') }, h(GearIcon)) : null,
++    bot && !bot.remote && roster.browser === true && actions.openBrowser
+       ? h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Open browser'), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, h(GlobeIcon))
+       : null,
+     bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': copied ? t('Copied conversation') : t('Share conversation'), title: copied ? t('Copied') : t('Copy conversation as Markdown'), onClick: share }, copied ? h('span', { key: 'copied', className: 'bt-pop-in' }, '✓') : h(ShareIcon)) : null,
+@@ -213,22 +213,28 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+     h('div', { key: 'id', className: 'bt-drawer-id', 'data-move': side },
+       bot ? h(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== undefined), main: isMainBot, badge: false, gaze: true, pokeable: true })
+         : h(RoomAvatar, { room, roster, size: 64 }),
+-      editing
+-        ? h('input', {
+-            className: 'bt-drawer-name-input', autoFocus: true, value: draftName, 'aria-label': bot ? t('Bot name') : t('Group name'),
+-            placeholder: room ? t('Name after members') : undefined,
+-            onChange: event => setDraftName(event.target.value), onBlur: saveName,
+-            onKeyDown: (event) => { if (event.key === 'Enter') void saveName(); if (event.key === 'Escape') { event.stopPropagation(); setEditing(false) } },
+-          })
+-        : h('button', { type: 'button', className: 'bt-drawer-name', 'aria-label': t('Rename {name}', { name: current }), title: t('Rename'), onClick: () => { setDraftName(room && !room.named ? '' : current); setEditing(true) } }, current),
+-      subtitle ? h('span', { className: 'bt-drawer-role' }, subtitle) : null),
+-    h('div', { key: 'tabs', ref: glide.box, className: 'bt-tabs', role: 'tablist', 'data-move': side },
++      bot?.remote
++        ? h('div', { className: 'bt-drawer-name' }, current)
++        : editing
++          ? h('input', {
++              className: 'bt-drawer-name-input', autoFocus: true, value: draftName, 'aria-label': bot ? t('Bot name') : t('Group name'),
++              placeholder: room ? t('Name after members') : undefined,
++              onChange: event => setDraftName(event.target.value), onBlur: saveName,
++              onKeyDown: (event) => { if (event.key === 'Enter') void saveName(); if (event.key === 'Escape') { event.stopPropagation(); setEditing(false) } },
++            })
++          : h('button', { type: 'button', className: 'bt-drawer-name', 'aria-label': t('Rename {name}', { name: current }), title: t('Rename'), onClick: () => { setDraftName(room && !room.named ? '' : current); setEditing(true) } }, current),
++      subtitle ? h('span', { className: 'bt-drawer-role' }, subtitle) : bot?.remote ? h('span', { className: 'bt-drawer-role' }, t("Friend's Bot")) : null),
++    bot?.remote ? null : h('div', { key: 'tabs', ref: glide.box, className: 'bt-tabs', role: 'tablist', 'data-move': side },
+       h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
+       tabs.map(key => h('button', { key, type: 'button', role: 'tab', className: 'bt-tab', 'aria-selected': tab === key, onClick: () => setTab(key) }, t(TAB_LABELS[key])))),
+     h('div', { key: `body:${tab}`, className: 'bt-drawer-body', 'data-move': move },
+       errorLine,
+       room && tab === 'details' ? h(GroupOverview, { room, roster, actions, usage, useWork, openSettings: () => setView('settings') }) : null,
+-      bot && tab === 'details' ? [
++      bot && bot.remote && tab === 'details' ? [
++        bot.remote.handle ? h('div', { key: 'handle', className: 'bt-muted' }, bot.remote.handle) : null,
++        h(FlyBotDetails, { key: 'social', bot, roster, actions }),
++      ] : null,
++      bot && !bot.remote && tab === 'details' ? [
+         h('div', { key: 'model', className: 'bt-drawer-model' },
+           h('div', { className: 'bt-section-title' }, t('Model')),
+           h(ModelMenu, { bot, roster, actions, run, wide: true }),
+@@ -245,5 +245,5 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+           h('div', { className: 'bt-kv' }, h('span', null, bot.name), h('span', null, usage))) : null,
+         h(ScheduleSummary, { key: 'routines', bot, actions }),
+       ] : null,
+-      bot && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]
++      bot && !bot.remote && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]
+ }
 diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 --- a/src/client/group-settings.js
 +++ b/src/client/group-settings.js
@@ -320,11 +391,24 @@ diff --git a/src/client/sources.js b/src/client/sources.js
 diff --git a/src/host/groups.js b/src/host/groups.js
 --- a/src/host/groups.js
 +++ b/src/host/groups.js
+@@ -7,8 +7,10 @@
+ // the speaking order and the member's place in it. Nobody answers a room that has
+ // moved on, and nobody has to count lines to know who went before. A plain message
+ // goes to every member in roster order, admin first, or to the admin alone in admin
+-// mode; "@Name" picks members. A reply that @mentions a member calls that member
+-// next, bounded per member and per round; the admin's calls reach further.
++// mode; "@Name" picks members. A face-to-face room still logs a plain human line,
++// but only "@Name" / "@all" starts a Bot turn. A reply that @mentions a member
++// calls that member next, bounded per member and per round; the admin's calls reach
++// further.
+ //
+ // Work does not hold a round up: a member that is still busy with tools a little after
+ // it started, or that is called while still at earlier work, lets the round go on. Its
 @@ -22,6 +22,8 @@ import { escapeRegExp, splitRef, textOf } from './text.js'
  import { mentionSpans } from '../shared/mentions.js'
  import { GROUP_REF, output } from './tools.js'
  import { failureLine } from './turns.js'
-+import { currentParticipants } from './room-membership.js'
++import { currentParticipants, isFaceRoom } from './room-membership.js'
 +import { stripSessionChips } from './delivery.js'
  
  const ROOM_LOG_MAX = 60
@@ -455,7 +539,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        return lines.length === 0 ? `"${room.name}" has no messages yet.` : `Latest in "${room.name}" (oldest first):\n${transcript(lines)}`
      },
    }))
-@@ -563,10 +563,11 @@ export function install(rt) {
+@@ -558,15 +558,18 @@ export function install(rt) {
+     const found = named.filter(bot => bot.id !== opener.botId)
+     if (opener.late) return found.length > 0 ? found : members.filter(bot => bot.id === opener.askedBy)
+     if (found.length > 0 && !all) return found
++    // Face-to-face: a plain human line stays in the room. Only @Name / @all starts a Bot turn (#167).
++    if (isFaceRoom(room) && !all) return []
+     if (!all && room.mode === 'admin' && admin) return [admin]
+     return admin ? [admin, ...members.filter(bot => bot !== admin)] : members
    }
  
    // A Bot's message into the group's own Session, which relays it as a new round.

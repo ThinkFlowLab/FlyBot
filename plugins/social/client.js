@@ -48,6 +48,8 @@ window.__ModuleLoader__.load({
 .fs-icon[aria-expanded=true]{background:var(--bt-active,rgba(119,119,119,.17));color:var(--bt-ink,#141414)}
 .fs-body{display:flex;flex-direction:column;gap:2px;padding:2px 0 0}
 .fs-empty,.fs-hint{padding:4px 10px;font-size:12px;line-height:17px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:anywhere}
+.fs-join-as{align-items:baseline;flex-wrap:wrap;overflow-wrap:normal;word-break:normal}
+.fs-join-as-label{flex:none;white-space:nowrap;overflow-wrap:normal;word-break:keep-all}
 .fs-empty{padding:6px 10px 8px;font-size:13px;line-height:18px}
 .fs-label{padding:8px 10px 2px;font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36));display:flex;align-items:center;gap:6px}
 .fs-home-head{display:flex;align-items:center;gap:4px;min-width:0;padding:2px 4px 0 0}
@@ -71,6 +73,9 @@ window.__ModuleLoader__.load({
 .fs-msg{white-space:normal;overflow-wrap:anywhere}
 .fs-actions{flex:none;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:100%}
 .fs-card{margin:4px 4px 2px;padding:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px}
+.fs-friend-settings{gap:10px;max-width:280px}
+.fs-friend-settings .fs-auto{align-self:flex-start}
+.fs-friend-settings .fs-link{align-self:flex-start;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-card .fs-hint{padding:0}
 .fs-line{display:flex;gap:6px;min-width:0;align-items:center}
 .fs-input{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;outline:none;text-overflow:ellipsis}
@@ -128,8 +133,8 @@ window.__ModuleLoader__.load({
 .fs-hold{box-sizing:border-box;width:100%;max-width:min(460px,100%);min-width:0;margin:0;padding:10px 12px;border:.5px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);color:var(--bt-ink,#141414);display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(20,20,20,.06);overflow:hidden}
 .fs-hold .fs-label{padding:0;font-size:11px;line-height:14px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-hold .fs-sub{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink,#141414);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fs-hold .fs-draft{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:anywhere;white-space:pre-wrap;max-height:none}
-.fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;max-height:calc(18px * 3)}
+.fs-hold .fs-draft{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:break-word;word-break:normal;white-space:pre-wrap;max-height:none}
+.fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;overflow-wrap:break-word;word-break:normal;max-height:calc(18px * 3)}
 .fs-hold-more{align-self:flex-start;margin:0;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;line-height:16px;cursor:pointer}
 .fs-hold-more:hover{text-decoration:underline}
 .fs-hold-always{flex:none;margin:0;padding:0 2px;height:28px;border:0;background:none;color:var(--bt-ink-2,rgba(20,20,20,.6));font:inherit;font-size:12px;line-height:16px;font-weight:500;cursor:pointer;white-space:nowrap}
@@ -171,6 +176,9 @@ window.__ModuleLoader__.load({
 .fs-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .fs-wait{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;overflow:hidden}
 .fs-wait-count{flex:none;padding:0}
+.fs-wait-code{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0 2px}
+.fs-wait-code-label{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-wait-code-digits{font-size:28px;line-height:34px;font-weight:600;letter-spacing:.28em;font-variant-numeric:tabular-nums;color:var(--bt-ink,#141414)}
 .fs-wait-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
 .fs-wait-foot{display:flex;align-items:stretch;gap:8px;flex:none}
 .fs-wait-foot .fs-btn{height:36px}
@@ -284,7 +292,10 @@ window.__ModuleLoader__.load({
         const fromLabel = String(member?.label ?? '').split('·')[0].replace(/'s Chief$/i, 'Chief').trim()
         if (fromLabel && !/^bot$/i.test(fromLabel) && (!owner || fromLabel.toLowerCase() !== owner.toLowerCase())) name = fromLabel
         else {
-          const part = String(member?.handle ?? '').replace(/^@/, '').split('.')[0]
+          const handleText = typeof member?.handle === 'object' && member.handle
+            ? String(member.handle.handle ?? '')
+            : String(member?.handle ?? '')
+          const part = handleText.replace(/^@/, '').split('.')[0]
           name = part && part !== 'home' && part !== 'bot'
             ? part.charAt(0).toUpperCase() + part.slice(1)
             : (raw || 'Bot')
@@ -370,7 +381,9 @@ window.__ModuleLoader__.load({
     const looksLikeBotId = (value) => /^bot_[a-z0-9]+$/i.test(String(value ?? '').trim())
     const looksLikeHandle = (value) => /^@[\w.-]+$/.test(String(value ?? '').trim())
     function readableParty(value, fallback = '') {
-      const text = String(value ?? '').trim()
+      const text = (typeof value === 'object' && value
+        ? String(value.owner_display_name || value.display_name || value.handle || value.name || '')
+        : String(value ?? '')).trim()
       if (!text || looksLikeBotId(text)) return fallback
       if (looksLikeHandle(text)) {
         const body = text.replace(/^@+/, '').split('.')[0]
@@ -408,10 +421,54 @@ window.__ModuleLoader__.load({
     }
     function memberIsMine(member, bots, room) {
       if (member?.remote === false) return true
-      const handle = String(member?.handle ?? '')
+      const handle = typeof member?.handle === 'object' && member.handle
+        ? String(member.handle.handle ?? '')
+        : String(member?.handle ?? '')
       if (!handle) return false
       if ((room?.mineHandles ?? []).includes(handle)) return true
       return (bots ?? []).some(bot => bot.handle === handle)
+    }
+
+    function faceWaitCode(room, typed) {
+      const fromRoom = String(room?.joinCode || room?.code || '').replace(/\D/g, '').slice(0, 6)
+      if (fromRoom.length === 6) return fromRoom
+      const fromTyped = String(typed || '').replace(/\D/g, '').slice(0, 6)
+      return fromTyped.length === 6 ? fromTyped : ''
+    }
+    function FaceWaitCode({ code } = {}) {
+      const digits = String(code || '').replace(/\D/g, '').slice(0, 6)
+      if (digits.length !== 6) return null
+      return h('div', { className: 'fs-wait-code', 'data-flybot': 'face-wait-code', 'aria-label': `Room number ${digits}` },
+        h('div', { className: 'fs-wait-code-label' }, 'Room number'),
+        h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits))
+    }
+    function shownHoldText(value) {
+      const raw = String(value ?? '')
+      const mark = 'FLYBOT-FACE-HUMAN'
+      const at = raw.indexOf(mark)
+      if (at < 0) return stripHoldPrefix(raw)
+      const start = raw.indexOf('{', at)
+      if (start < 0) return raw.slice(0, at).trim()
+      let depth = 0
+      let end = -1
+      for (let i = start; i < raw.length; i += 1) {
+        const ch = raw[i]
+        if (ch === '{') depth += 1
+        else if (ch === '}') {
+          depth -= 1
+          if (depth === 0) { end = i; break }
+        }
+      }
+      if (end < 0) return stripHoldPrefix(raw.slice(0, at).trim())
+      try {
+        const parsed = JSON.parse(raw.slice(start, end + 1))
+        const text = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
+        if (text) return stripHoldPrefix(text)
+      } catch { /* fall through */ }
+      return stripHoldPrefix(raw.slice(0, at).trim())
+    }
+    function stripHoldPrefix(text) {
+      return String(text ?? '').replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
     }
 
     // Separate Face-to-face group screen (#92): pick Bots, join by number, live waiting room.
@@ -508,7 +565,7 @@ window.__ModuleLoader__.load({
           setBusy(false)
           return
         }
-        setRoom({ ...last, mineHandles: mine })
+        setRoom({ ...last, mineHandles: mine, joinCode: last.joinCode || digits })
         setStep('waiting')
         setBusy(false)
       }
@@ -554,6 +611,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'fs-name' }, 'Face-to-face group'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: () => onClose?.() }, 'Close')),
           waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
+            h(FaceWaitCode, { code: faceWaitCode(room, code) }),
             h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
               ? (room.expiresAt ? countdown(room.expiresAt) : 'Anyone with the number can still join.')
               : 'The room is open. The number is no longer valid.'),
@@ -576,7 +634,7 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter',
                 disabled: !!busy || !room.roomId, onClick: enter,
               }, 'Enter chat'))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
-            h('div', { className: 'fs-hint' }, 'Choose which of your Bots to bring, then type the same 6-digit number as the people next to you. You join at once — there is no preview.'),
+            h('div', { className: 'fs-hint' }, "Choose which of your Bots to bring, then type the same 6-digit number as the people next to you. You'll wait together until someone enters the chat."),
             h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
               bots.map(bot => h(FaceTile, {
                 key: bot.id,
@@ -691,7 +749,10 @@ window.__ModuleLoader__.load({
     }
     const autoSendToast = (from, to) => `Auto-send on for ${from} → ${to}. Change it anytime in settings.`
     function homeOfHandle(value) {
-      const body = String(value ?? '').trim().replace(/^@+/, '').toLowerCase()
+      const raw = typeof value === 'object' && value
+        ? String(value.handle ?? value.home ?? '')
+        : String(value ?? '')
+      const body = raw.trim().replace(/^@+/, '').toLowerCase()
       if (!body) return ''
       const parts = body.split('.')
       if (parts.length >= 2 && parts.at(-1) === 'home') return `@${parts.at(-2)}.home`
@@ -710,7 +771,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-name' }, WAITING_OTHERS))
       }
       const { from, to } = holdParties(item)
-      const text = item.text || item.summary || ''
+      const text = shownHoldText(item.text || item.summary || '')
       const long = text.length > 160 || text.split(/\n/).length > 3
       return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
         h('div', { className: 'fs-label' }, WAITING_OWNER),
@@ -736,9 +797,14 @@ window.__ModuleLoader__.load({
       const handles = new Set((room?.participants ?? []).map(p => p.handle).filter(Boolean))
       if (handle) handles.add(handle)
       return list.filter(item => {
+        if (item.kind === 'face_room_message') {
+          if (faceId && (!item.roomId || item.roomId === faceId)) return true
+          if (room?.id && item.roomId === room.id) return true
+          return Boolean(face && !item.roomId)
+        }
         if (faceId && item.roomId === faceId) return true
         if (room?.id && item.roomId === room.id) return true
-        if (face && item.kind === 'face_room_message' && !item.roomId) return true
+        if (item.roomId) return false
         if (item.to && handles.has(item.to)) return true
         if (sessionId && item.sessionId === sessionId) return true
         return false
@@ -963,6 +1029,7 @@ window.__ModuleLoader__.load({
       const expiresAt = snapshot?.expiresAt || face?.expiresAt
       if (candidate) {
         return h('div', { className: 'fs-wait-overview', 'data-flybot': 'face-overview', 'data-wait': true },
+          h(FaceWaitCode, { code: faceWaitCode(snapshot || face || room) }),
           h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
             expiresAt ? countdown(expiresAt) : 'Anyone with the number can still join.'),
           h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
@@ -1020,10 +1087,8 @@ window.__ModuleLoader__.load({
       useStyles()
       const [error, setError] = useState('')
       const [adding, setAdding] = useState(false)
-      const [pending, setPending] = useState([])
       const [faceOpen, setFaceOpen] = useState(false)
-      const loadApprovals = () => call('social/status', {}).then(value => {
-        setPending(Array.isArray(value?.approvals) ? value.approvals : [])
+      const loadApprovals = () => call('social/status', {}).then(() => {
         setError('')
       }, e => setError(errorText(e)))
       useEffect(() => {
@@ -1039,31 +1104,12 @@ window.__ModuleLoader__.load({
       }, [])
       useEffect(() => facePanel.bind(() => setFaceOpen(true)), [])
       useEffect(() => addFriendPanel.bind(() => setAdding(true)), [])
-      const chats = remoteChats ?? []
       const unavailable = String(error).startsWith('Social is not running:')
-      const openItem = (item) => {
-        if (!item || typeof actions?.openSession !== 'function') return
-        const chat = chats.find(entry => entry.remote?.handle === item.to)
-        if (chat) {
-          actions.openSession(chat.sessionId || chat.id)
-          return
-        }
-        const rooms = actions.roster?.rooms ?? roster?.rooms ?? []
-        const hosted = rooms.find(entry => entry.face?.roomId === item.roomId || entry.id === item.roomId)
-        if (hosted?.id) actions.openSession(hosted.id)
-        else if (item.roomId) actions.openSession(item.roomId)
-        else if (item.sessionId) actions.openSession(item.sessionId)
-      }
       if (unavailable) {
         return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
           h('div', { className: 'fs-empty', 'data-flybot': 'social-unavailable' }, error))
       }
       return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
-        pending.length ? h('button', {
-          type: 'button', className: 'fs-tag fs-pending-tag', 'data-flybot': 'pending-badge',
-          title: `${pending.length} outbound ${pending.length === 1 ? 'reply' : 'replies'} waiting for your approval. Opens that chat.`,
-          onClick: () => openItem(pending[0]),
-        }, `${pending.length} to approve`) : null,
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
         adding ? h(AddFriend, { onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
@@ -1149,7 +1195,8 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-line' },
             h('input', { className: 'fs-input', value: code, placeholder: 'Paste invite link or code', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Join')),
-          mine.length ? h('label', { className: 'fs-line fs-hint', 'data-flybot': 'join-as' }, 'Talk through ',
+          mine.length ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as' },
+            h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
             ' (not shared unless you invite them to it)') : null),
@@ -1244,7 +1291,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function FriendChatSettings({ bot } = {}) {
+    function FriendChatSettings({ bot, actions } = {}) {
       const remote = bot?.remote
       const home = remote?.home
       const handle = remote?.handle
@@ -1280,17 +1327,17 @@ window.__ModuleLoader__.load({
           // social/hide-remote already leaves every room holding this Bot; a second
           // removal from here would race it and show "not in the room" after a good Remove.
           await call('social/hide-remote', { handle })
+          actions?.closeSettings?.()
+          actions?.closeOverlay?.()
         } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
       }
-      return h('div', { className: 'fs fs-card', 'data-flybot': 'friend-chat-settings' },
-        h('div', { className: 'fs-name' }, bot.name || handle),
-        h('div', { className: 'fs-hint' }, handle),
+      return h('div', { className: 'fs fs-card fs-friend-settings', 'data-flybot': 'friend-chat-settings' },
         h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
           h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
           'Auto-send'),
         h('button', {
           type: 'button',
-          className: 'fs-btn',
+          className: 'fs-link',
           'data-flybot': 'remove-friend-bot',
           title: 'Remove this Bot from your list and from your groups. This does not unfriend the owner.',
           'aria-label': busy ? 'Removing…' : 'Remove this Bot',
@@ -1301,11 +1348,11 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function BotSocialDetails({ bot } = {}) {
+    function BotSocialDetails({ bot, actions } = {}) {
       useStyles()
       if (bot?.remote) {
         return h('div', { 'data-flybot': 'bot-social-details' },
-          h(FriendChatSettings, { bot }))
+          h(FriendChatSettings, { bot, actions }))
       }
       return h('div', { 'data-flybot': 'bot-social-details' },
         h(InviteToBot, { bot }),

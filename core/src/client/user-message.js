@@ -117,9 +117,11 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
   const room = roster.roomsById?.[sessionId]
   const multiHuman = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined).length > 1
   const incoming = author && !author.mine
+  const held = Boolean(room && room.origin === 'face-to-face' && !incoming && (room.pendingCount ?? 0) > 0)
   return h('div', {
     className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
     'data-steering': steering || undefined,
+    'data-held': held || undefined,
     'data-author': author?.authorId,
     'data-author-kind': author?.authorKind,
     'data-author-name': author?.name,
@@ -142,6 +144,7 @@ export const USER_MESSAGE_CSS = `
 .bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
 .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
+.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
 .bt-ubody a{color:inherit}
 .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
 .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}

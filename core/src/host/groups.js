@@ -7,8 +7,10 @@
 // the speaking order and the member's place in it. Nobody answers a room that has
 // moved on, and nobody has to count lines to know who went before. A plain message
 // goes to every member in roster order, admin first, or to the admin alone in admin
-// mode; "@Name" picks members. A reply that @mentions a member calls that member
-// next, bounded per member and per round; the admin's calls reach further.
+// mode; "@Name" picks members. A face-to-face room still logs a plain human line,
+// but only "@Name" / "@all" starts a Bot turn. A reply that @mentions a member
+// calls that member next, bounded per member and per round; the admin's calls reach
+// further.
 //
 // Work does not hold a round up: a member that is still busy with tools a little after
 // it started, or that is called while still at earlier work, lets the round go on. Its
@@ -22,7 +24,7 @@ import { escapeRegExp, splitRef, textOf } from './text.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
 import { failureLine } from './turns.js'
-import { currentParticipants } from './room-membership.js'
+import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { stripSessionChips } from './delivery.js'
 
 const ROOM_LOG_MAX = 60
@@ -594,6 +596,8 @@ export function install(rt) {
     const found = named.filter(bot => bot.id !== opener.botId)
     if (opener.late) return found.length > 0 ? found : members.filter(bot => bot.id === opener.askedBy)
     if (found.length > 0 && !all) return found
+    // Face-to-face: a plain human line stays in the room. Only @Name / @all starts a Bot turn (#167).
+    if (isFaceRoom(room) && !all) return []
     if (!all && room.mode === 'admin' && admin) return [admin]
     return admin ? [admin, ...members.filter(bot => bot !== admin)] : members
   }

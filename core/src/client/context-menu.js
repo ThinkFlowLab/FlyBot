@@ -31,29 +31,41 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
   const isMainBot = isMainOf(roster, menu.id)
   const isTile = roster.mainBotId === menu.id
   const mainCount = (roster.mainBotIds ?? []).length
-  const groups = [
-    [
-      isTile ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
-      [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
-    ],
-    [
-      bot ? [t('Rename Bot'), PencilIcon, () => actions.renameBot(bot.id)] : null,
-      bot ? [t('Edit Bot'), GearIcon, () => actions.openSettings('bots', bot.id)] : null,
-      room ? [t('Group settings'), GearIcon, () => actions.openSettings('groups', room.id)] : null,
-      room ? [t('Rename group'), PencilIcon, () => actions.renameBot(room.id)] : null,
-      bot ? [t('Duplicate'), DuplicateIcon, async () => { const copy = await actions.duplicateBot(bot.id); actions.openSession(copy.id) }] : null,
-      bot && !isMainBot ? [t('Make Main Bot'), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
-      bot && isMainBot && mainCount > 1 ? [t('Remove Main Bot role'), StarLineIcon, () => actions.setMain(bot.id, false)] : null,
-    ],
-    bot ? pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]) : [],
-    [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
-    [
-      isMainBot ? null : [t('Hide from sidebar'), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
-      isMainBot ? null : [room ? t('Delete group') : t('Delete'), TrashIcon, () => (bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id)), true],
-    ],
-  ].map(group => group.filter(Boolean)).filter(group => group.length > 0)
+  const groups = bot?.remote
+    ? [
+        [
+          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+        ],
+        [
+          [t('Bot settings'), GearIcon, () => actions.openSettings('bots', bot.id)],
+        ],
+        pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]),
+        [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(currentPart(bot))]],
+      ]
+    : [
+        [
+          isTile ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
+          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+        ],
+        [
+          bot ? [t('Rename Bot'), PencilIcon, () => actions.renameBot(bot.id)] : null,
+          bot ? [t('Edit Bot'), GearIcon, () => actions.openSettings('bots', bot.id)] : null,
+          room ? [t('Group settings'), GearIcon, () => actions.openSettings('groups', room.id)] : null,
+          room ? [t('Rename group'), PencilIcon, () => actions.renameBot(room.id)] : null,
+          bot ? [t('Duplicate'), DuplicateIcon, async () => { const copy = await actions.duplicateBot(bot.id); actions.openSession(copy.id) }] : null,
+          bot && !isMainBot ? [t('Make Main Bot'), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
+          bot && isMainBot && mainCount > 1 ? [t('Remove Main Bot role'), StarLineIcon, () => actions.setMain(bot.id, false)] : null,
+        ],
+        bot ? pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]) : [],
+        [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
+        [
+          isMainBot ? null : [t('Hide from sidebar'), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
+          isMainBot ? null : [room ? t('Delete group') : t('Delete'), TrashIcon, () => (bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id)), true],
+        ],
+      ]
+  const shown = groups.map(group => group.filter(Boolean)).filter(group => group.length > 0)
   return h('div', { ref, className: 'bt-menu', role: 'menu', 'aria-label': t('{name} actions', { name: bot?.name ?? room.name }), style: place, 'data-leaving': leaving || undefined },
-    groups.map((group, index) => h(Fragment, { key: index },
+    shown.map((group, index) => h(Fragment, { key: index },
       index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
       group.map(([label, Icon, run, danger]) => h('button', {
         key: label, type: 'button', role: 'menuitem', className: danger ? 'bt-danger' : undefined,

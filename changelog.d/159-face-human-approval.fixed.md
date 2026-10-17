@@ -1,0 +1,1 @@
+A face-to-face owner line held for approval shows the human text from the trusted sender, never a flash of the raw `FLYBOT-FACE-HUMAN` envelope. The card stays until Approve, Always approve, or Reject unless face Auto-send is on. ([#159](https://github.com/ThinkFlowLab/FlyBot/issues/159))

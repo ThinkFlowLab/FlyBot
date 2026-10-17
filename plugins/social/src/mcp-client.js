@@ -180,9 +180,30 @@ function asList(value) {
   return []
 }
 
+// Bot Social `publicBot` / grant.grantee may be a handle string or
+// `{ handle, display_name, owner_display_name, bot_id }`. Never String() an object:
+// that becomes "[object Object]" → "@objectobject".
+function handleText(value) {
+  if (value == null) return ''
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim()
+  if (typeof value === 'object') return handleText(value.handle ?? value.home ?? value.member ?? '')
+  return ''
+}
+
+function personNameOf(value) {
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim()
+  if (value && typeof value === 'object') {
+    return String(
+      value.owner_display_name || value.ownerName
+      || value.display_name || value.displayName || '',
+    ).trim()
+  }
+  return ''
+}
+
 // Chief@chief.selfb1935.home / @chief.selfb1935.home / @selfb1935.home → a comparable handle.
 export function memberHandleOf(value) {
-  const raw = String(value ?? '').trim()
+  const raw = handleText(value)
   if (!raw) return ''
   const nested = raw.match(/@([^@\s]+)$/)
   const body = (nested ? nested[1] : raw).replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)
@@ -205,10 +226,14 @@ function titleHome(home) {
 }
 
 export function grantPersonView(grant) {
-  const raw = String(grant?.grantee ?? '')
+  const peer = grant && typeof grant === 'object' ? grant.grantee : grant
+  const raw = handleText(peer)
+    || handleText(grant?.member)
+    || handleText(grant?.home)
+    || handleText(grant?.handle)
   const member = memberHandleOf(raw)
   const home = personHomeOf(raw)
-  const rawName = String(grant?.name ?? '').trim()
+  const rawName = personNameOf(grant?.name) || personNameOf(peer) || personNameOf(grant)
   const nameLooksLikeHandle = /@/.test(rawName) || /[a-z0-9]+@[a-z0-9.]/i.test(rawName)
   const person = (!nameLooksLikeHandle && rawName) ? rawName.replace(/\s+/g, ' ').trim().slice(0, 60) : titleHome(home)
   const label = home ? `${person} (${home})` : person
@@ -217,17 +242,20 @@ export function grantPersonView(grant) {
 
 export function normalizeGrant(item) {
   if (!item || typeof item !== 'object') return undefined
-  const grantee = item.grantee ?? item.peer?.handle ?? item.handle ?? item.home
-  if (!grantee) return undefined
+  const grantee = item.grantee ?? item.peer ?? item.handle ?? item.home
+  const name = personNameOf(item.name)
+    || personNameOf(item.peer)
+    || personNameOf(grantee)
+    || (typeof item.display_name === 'string' ? item.display_name : '')
+  if (!handleText(grantee) && !handleText(item.handle)) return undefined
   const id = item.id ?? item.grant_id ?? item.relationship_id ?? item.relationshipId
-  const view = grantPersonView({
-    grantee,
-    name: item.name ?? item.peer?.display_name ?? item.display_name ?? item.peer?.owner_display_name,
-  })
+  const view = grantPersonView({ grantee, name })
+  const canonical = view.member || view.home || memberHandleOf(grantee)
+  if (!canonical) return undefined
   return {
     ...(id ? { id: String(id) } : {}),
     // Canonical @handle for core grants.set / normGrantee (not decorated Chief@…).
-    grantee: view.member || view.home || memberHandleOf(grantee) || String(grantee),
+    grantee: canonical,
     ...(view.label ? { name: view.label } : {}),
     ...(view.home ? { home: view.home } : {}),
     ...(view.member ? { member: view.member } : {}),

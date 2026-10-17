@@ -1212,28 +1212,10 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2832,249 +2832,131 @@ function installCompiledStyles(text, tag) {
-       }
-       for (const name of list) names.add(name);
-     }
--    const next = compileFragmentSelectors(text, names);
--    if (style.textContent !== next) style.textContent = next;
--  };
--  render();
--  let timer;
--  const schedule = () => {
--    clearTimeout(timer);
--    timer = setTimeout(render, 120);
--  };
--  const onLoad = (event) => {
--    if (event.target instanceof HTMLLinkElement) schedule();
--  };
--  const observer = new MutationObserver(schedule);
--  observer.observe(document.head, { childList: true });
--  document.addEventListener("load", onLoad, true);
--  return () => {
--    observer.disconnect();
--    document.removeEventListener("load", onLoad, true);
+@@ -2850,231 +2850,113 @@ function installCompiledStyles(text, tag) {
+   return () => {
+     observer.disconnect();
+     document.removeEventListener("load", onLoad, true);
 -    clearTimeout(timer);
 -    style.remove();
 -  };
@@ -1364,24 +1346,6 @@ diff --git a/client.js b/client.js
 -  }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+    const next = compileFragmentSelectors(text, names);
-+    if (style.textContent !== next) style.textContent = next;
-+  };
-+  render();
-+  let timer;
-+  const schedule = () => {
-+    clearTimeout(timer);
-+    timer = setTimeout(render, 120);
-+  };
-+  const onLoad = (event) => {
-+    if (event.target instanceof HTMLLinkElement) schedule();
-+  };
-+  const observer = new MutationObserver(schedule);
-+  observer.observe(document.head, { childList: true });
-+  document.addEventListener("load", onLoad, true);
-+  return () => {
-+    observer.disconnect();
-+    document.removeEventListener("load", onLoad, true);
 +    clearTimeout(timer);
 +    style.remove();
 +  };
@@ -2912,8 +2876,7 @@ diff --git a/client.js b/client.js
 +      }
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -2926,7 +2889,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -6022,7 +5986,7 @@ diff --git a/client.js b/client.js
          const file = event.target.files?.[0];
          event.target.value = "";
          upload(file);
-@@ -7982,22 +7982,22 @@ function AvatarEditor({ bot, actions, run, onClose }) {
+@@ -7982,26 +7982,45 @@ function AvatarEditor({ bot, actions, run, onClose }) {
  function MemoryCard({ bot, actions }) {
    const count = useMemoryCount(bot.id, actions);
    const label = count === null ? t("Loading…") : count === 0 ? t("Nothing saved yet") : count === 1 ? t("1 entry") : t("{count} entries", { count });
@@ -6053,6 +6017,29 @@ diff --git a/client.js b/client.js
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(false), 4e3);
      return () => clearTimeout(timer);
+   }, [confirming]);
++  if (bot.remote) {
++    const who = bot.remote.homeName || bot.remote.owner || bot.remote.home || t("Friend's Bot");
++    return (0, import_react19.createElement)(
++      "div",
++      { className: "bt-bs", "data-flybot": "remote-bot-settings" },
++      (0, import_react19.createElement)(
++        "div",
++        { className: "bt-bs-hero" },
++        (0, import_react19.createElement)(BotMark, { bot, size: 64, live: true }),
++        (0, import_react19.createElement)(
++          "div",
++          { className: "bt-bs-who" },
++          (0, import_react19.createElement)("span", { className: "bt-bs-name" }, bot.name),
++          (0, import_react19.createElement)("span", { className: "bt-bs-sub" }, who)
++        )
++      ),
++      (0, import_react19.createElement)(FlyBotDetails, { bot, roster, actions })
++    );
++  }
+   const isMainBot = isMainOf(roster, bot.id);
+   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
+   const isTile = roster.mainBotId === bot.id;
 @@ -8011,112 +8011,113 @@ function BotSettingsForm({ bot, roster, actions, run }) {
      if (confirming) void run(actions.deleteBot(bot.id));
      else setConfirming(true);
@@ -7076,10 +7063,7 @@ diff --git a/client.js b/client.js
 +          (0, import_react24.createElement)(BotMark, { bot, size: 22 }),
 +          (0, import_react24.createElement)("span", { className: "bt-set-copy" }, (0, import_react24.createElement)("span", { className: "bt-bs-label" }, bot.name)),
 +          (0, import_react24.createElement)("span", { className: "bt-set-hint" }, t("Add"))
-         )),
--        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
--      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
--      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
++        )),
 +        ...outsideRemotes.map((bot) => (0, import_react24.createElement)(
 +          "button",
 +          { key: bot.handle, type: "button", className: "bt-set-row bt-bs-row bt-gs-pick", onClick: () => {
@@ -7089,7 +7073,10 @@ diff --git a/client.js b/client.js
 +          (0, import_react24.createElement)(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
 +          (0, import_react24.createElement)("span", { className: "bt-set-copy" }, (0, import_react24.createElement)("span", { className: "bt-bs-label" }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
 +          (0, import_react24.createElement)("span", { className: "bt-set-hint" }, t("Add friend's Bot"))
-+        )),
+         )),
+-        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
+-      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
+-      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
 +        (0, import_react24.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
 +      ] : outside.length + outsidePeople.length + outsideRemotes.length > 0 ? (0, import_react24.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react24.createElement)(PlusIcon), t("Add member")) : null,
 +      (0, import_react24.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react24.createElement)(
@@ -8482,9 +8469,10 @@ diff --git a/client.js b/client.js
 -    (0, import_react28.createElement)(
 +    (0, import_react29.createElement)(
        SetSection,
-       { key: "bots", title: t("Bots · {count}", { count: roster.bots.length }) },
+-      { key: "bots", title: t("Bots · {count}", { count: roster.bots.length }) },
 -      roster.bots.map((bot) => (0, import_react28.createElement)(
-+      roster.bots.map((bot) => (0, import_react29.createElement)(
++      { key: "bots", title: t("Bots · {count}", { count: roster.bots.filter((bot) => !bot.remote).length }) },
++      roster.bots.filter((bot) => !bot.remote).map((bot) => (0, import_react29.createElement)(
          "button",
          { key: bot.id, type: "button", className: "bt-set-row", onClick: () => actions.openSettings("bots", bot.id) },
 -        (0, import_react28.createElement)(
@@ -8697,7 +8685,25 @@ diff --git a/client.js b/client.js
    const bot = roster.byId[menu.id];
    const room2 = roster.roomsById[menu.id];
    const entry = bot ?? room2;
-@@ -10901,20 +10901,21 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
+@@ -10884,7 +10884,16 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
+   const isMainBot = isMainOf(roster, menu.id);
+   const isTile = roster.mainBotId === menu.id;
+   const mainCount = (roster.mainBotIds ?? []).length;
+-  const groups = [
++  const groups = bot?.remote ? [
++    [
++      [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
++    ],
++    [
++      [t("Bot settings"), GearIcon, () => actions.openSettings("bots", bot.id)]
++    ],
++    pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]),
++    [[t("Copy conversation ID"), CopyIcon, () => navigator.clipboard?.writeText(currentPart(bot))]]
++  ] : [
+     [
+       isTile ? null : [entry.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
+       [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
+@@ -10901,20 +10901,22 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
        bot && !isMainBot ? [t("Make Main Bot"), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
        bot && isMainBot && mainCount > 1 ? [t("Remove Main Bot role"), StarLineIcon, () => actions.setMain(bot.id, false)] : null
      ],
@@ -8707,14 +8713,16 @@ diff --git a/client.js b/client.js
        isMainBot ? null : [t("Hide from sidebar"), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
        isMainBot ? null : [room2 ? t("Delete group") : t("Delete"), TrashIcon, () => bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id), true]
      ]
-   ].map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
+-  ].map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
 -  return (0, import_react29.createElement)(
++  ];
++  const shown = groups.map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
 +  return (0, import_react30.createElement)(
      "div",
      { ref, className: "bt-menu", role: "menu", "aria-label": t("{name} actions", { name: bot?.name ?? room2.name }), style: place, "data-leaving": leaving || void 0 },
 -    groups.map((group, index) => (0, import_react29.createElement)(
 -      import_react29.Fragment,
-+    groups.map((group, index) => (0, import_react30.createElement)(
++    shown.map((group, index) => (0, import_react30.createElement)(
 +      import_react30.Fragment,
        { key: index },
 -      index > 0 ? (0, import_react29.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
@@ -9047,7 +9055,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,71 +11367,161 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,87 +11367,177 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -9234,17 +9242,18 @@ diff --git a/client.js b/client.js
 +      (0, import_react32.createElement)("div", { className: "bt-kv" }, (0, import_react32.createElement)("span", null, t(ROOM_MODES.find(([id]) => id === shownMode(room2, roster))?.[1] ?? "Everyone")))
      ),
 -    usage ? (0, import_react31.createElement)(
-+    usage ? (0, import_react32.createElement)(
++    face || !usage ? null : (0, import_react32.createElement)(
        "div",
        { key: "usage" },
 -      (0, import_react31.createElement)("div", { className: "bt-section-title" }, t("Usage")),
 -      (0, import_react31.createElement)("div", { className: "bt-kv" }, (0, import_react31.createElement)("span", null, room2.name), (0, import_react31.createElement)("span", null, usage))
+-    ) : null
 +      (0, import_react32.createElement)("div", { className: "bt-section-title" }, t("Usage")),
 +      (0, import_react32.createElement)("div", { className: "bt-kv" }, (0, import_react32.createElement)("span", null, room2.name), (0, import_react32.createElement)("span", null, usage))
-     ) : null
++    )
    ];
  }
-@@ -11439,15 +11439,15 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
+ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }) {
    const owner = roster.byId[sessionId];
    const part = owner ? currentPart(owner) : sessionId;
    const isMainBot = isMainOf(roster, owner?.id);
@@ -9283,7 +9292,7 @@ diff --git a/client.js b/client.js
 -        (0, import_react31.createElement)("span", { className: "bt-subhead-title" }, bot ? t("Settings") : t("Group settings")),
 -        hasStrip ? null : (0, import_react31.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close details"), onClick: close }, (0, import_react31.createElement)(CloseIcon))
 +        (0, import_react32.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Back to details"), onClick: () => setView("overview") }, (0, import_react32.createElement)(ChevronLeftIcon)),
-+        (0, import_react32.createElement)("span", { className: "bt-subhead-title" }, bot ? t("Settings") : t("Group settings")),
++        (0, import_react32.createElement)("span", { className: "bt-subhead-title" }, bot ? bot.remote ? t("Bot settings") : t("Settings") : t("Group settings")),
 +        hasStrip ? null : (0, import_react32.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close details"), onClick: close }, (0, import_react32.createElement)(CloseIcon))
        ),
 -      (0, import_react31.createElement)(
@@ -9304,8 +9313,8 @@ diff --git a/client.js b/client.js
 -    bot && roster.browser === true && actions.openBrowser ? (0, import_react31.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Open browser"), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, (0, import_react31.createElement)(GlobeIcon)) : null,
 -    bot || room2 ? (0, import_react31.createElement)("button", { type: "button", className: "bt-round", "aria-label": copied ? t("Copied conversation") : t("Share conversation"), title: copied ? t("Copied") : t("Copy conversation as Markdown"), onClick: share }, copied ? (0, import_react31.createElement)("span", { key: "copied", className: "bt-pop-in" }, "✓") : (0, import_react31.createElement)(ShareIcon)) : null,
 -    hasStrip ? null : (0, import_react31.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Close details"), onClick: close }, (0, import_react31.createElement)(CloseIcon))
-+    bot || room2 ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": bot ? t("Edit Bot") : t("Group settings"), title: bot ? t("Edit Bot") : t("Group settings"), "data-info-row": "settings", onClick: () => setView("settings") }, (0, import_react32.createElement)(GearIcon)) : null,
-+    bot && roster.browser === true && actions.openBrowser ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Open browser"), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, (0, import_react32.createElement)(GlobeIcon)) : null,
++    bot || room2 ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": bot ? bot.remote ? t("Bot settings") : t("Edit Bot") : t("Group settings"), title: bot ? bot.remote ? t("Bot settings") : t("Edit Bot") : t("Group settings"), "data-info-row": "settings", onClick: () => setView("settings") }, (0, import_react32.createElement)(GearIcon)) : null,
++    bot && !bot.remote && roster.browser === true && actions.openBrowser ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Open browser"), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, (0, import_react32.createElement)(GlobeIcon)) : null,
 +    bot || room2 ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": copied ? t("Copied conversation") : t("Share conversation"), title: copied ? t("Copied") : t("Copy conversation as Markdown"), onClick: share }, copied ? (0, import_react32.createElement)("span", { key: "copied", className: "bt-pop-in" }, "✓") : (0, import_react32.createElement)(ShareIcon)) : null,
 +    hasStrip ? null : (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Close details"), onClick: close }, (0, import_react32.createElement)(CloseIcon))
    );
@@ -9331,11 +9340,11 @@ diff --git a/client.js b/client.js
 -      bot ? (0, import_react31.createElement)(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== void 0), main: isMainBot, badge: false, gaze: true, pokeable: true }) : (0, import_react31.createElement)(RoomAvatar, { room: room2, roster, size: 64 }),
 -      editing ? (0, import_react31.createElement)("input", {
 +      bot ? (0, import_react32.createElement)(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== void 0), main: isMainBot, badge: false, gaze: true, pokeable: true }) : (0, import_react32.createElement)(RoomAvatar, { room: room2, roster, size: 64 }),
-+      editing ? (0, import_react32.createElement)("input", {
++      bot?.remote ? (0, import_react32.createElement)("div", { className: "bt-drawer-name" }, current) : editing ? (0, import_react32.createElement)("input", {
          className: "bt-drawer-name-input",
          autoFocus: true,
          value: draftName,
-@@ -11535,55 +11535,55 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
+@@ -11535,55 +11535,59 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
              setEditing(false);
            }
          }
@@ -9345,10 +9354,10 @@ diff --git a/client.js b/client.js
          setEditing(true);
        } }, current),
 -      subtitle ? (0, import_react31.createElement)("span", { className: "bt-drawer-role" }, subtitle) : null
-+      subtitle ? (0, import_react32.createElement)("span", { className: "bt-drawer-role" }, subtitle) : null
++      subtitle ? (0, import_react32.createElement)("span", { className: "bt-drawer-role" }, subtitle) : bot?.remote ? (0, import_react32.createElement)("span", { className: "bt-drawer-role" }, t("Friend's Bot")) : null
      ),
 -    (0, import_react31.createElement)(
-+    (0, import_react32.createElement)(
++    bot?.remote ? null : (0, import_react32.createElement)(
        "div",
        { key: "tabs", ref: glide.box, className: "bt-tabs", role: "tablist", "data-move": side },
 -      (0, import_react31.createElement)("span", { ref: glide.thumb, className: "bt-thumb", "aria-hidden": true }),
@@ -9362,9 +9371,14 @@ diff --git a/client.js b/client.js
        { key: `body:${tab}`, className: "bt-drawer-body", "data-move": move },
        errorLine,
 -      room2 && tab === "details" ? (0, import_react31.createElement)(GroupOverview, { room: room2, roster, actions, usage, useWork, openSettings: () => setView("settings") }) : null,
-+      room2 && tab === "details" ? (0, import_react32.createElement)(GroupOverview, { room: room2, roster, actions, usage, useWork, openSettings: () => setView("settings") }) : null,
-       bot && tab === "details" ? [
+-      bot && tab === "details" ? [
 -        (0, import_react31.createElement)(
++      room2 && tab === "details" ? (0, import_react32.createElement)(GroupOverview, { room: room2, roster, actions, usage, useWork, openSettings: () => setView("settings") }) : null,
++      bot && bot.remote && tab === "details" ? [
++        bot.remote.handle ? (0, import_react32.createElement)("div", { key: "handle", className: "bt-muted" }, bot.remote.handle) : null,
++        (0, import_react32.createElement)(FlyBotDetails, { key: "social", bot, roster, actions })
++      ] : null,
++      bot && !bot.remote && tab === "details" ? [
 +        (0, import_react32.createElement)(
            "div",
            { key: "model", className: "bt-drawer-model" },
@@ -9403,7 +9417,7 @@ diff --git a/client.js b/client.js
 +        (0, import_react32.createElement)(ScheduleSummary, { key: "routines", bot, actions })
        ] : null,
 -      bot && tab === "browser" ? (0, import_react31.createElement)(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null
-+      bot && tab === "browser" ? (0, import_react32.createElement)(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null
++      bot && !bot.remote && tab === "browser" ? (0, import_react32.createElement)(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null
      )
    ];
  }
@@ -9900,7 +9914,7 @@ diff --git a/client.js b/client.js
  }
  var clock3 = (time) => typeof time === "number" ? new Date(time).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" }) : void 0;
  function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
-@@ -13178,26 +13178,41 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
+@@ -13178,28 +13178,46 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
    const referenceLabels = data.referenceLabels ?? [];
    const references = openFile && openSkill ? { openFile, openSkill } : void 0;
    const steering = node.kind === "steering";
@@ -9909,6 +9923,7 @@ diff --git a/client.js b/client.js
 +  const room2 = roster.roomsById?.[sessionId];
 +  const multiHuman = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).length > 1;
 +  const incoming = author && !author.mine;
++  const held = Boolean(room2 && room2.origin === "face-to-face" && !incoming && (room2.pendingCount ?? 0) > 0);
 +  return (0, import_react35.createElement)(
      "div",
 -    { className: "bt-umsg", "data-steering": steering || void 0 },
@@ -9916,6 +9931,7 @@ diff --git a/client.js b/client.js
 +    {
 +      className: incoming ? "bt-umsg bt-umsg-other" : "bt-umsg",
 +      "data-steering": steering || void 0,
++      "data-held": held || void 0,
 +      "data-author": author?.authorId,
 +      "data-author-kind": author?.authorKind,
 +      "data-author-name": author?.name
@@ -9950,7 +9966,10 @@ diff --git a/client.js b/client.js
 +.bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
  .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
  .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
++.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
  .bt-ubody a{color:inherit}
+ .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
+ .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
 @@ -13250,7 +13250,16 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
  // src/client/index.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];

@@ -110,3 +110,10 @@ test('the surface wins over the host bubble rule that reads the skin variable', 
   assert.equal(surface(body), 'var(--bt-user)!important')
   assert.equal(declared(body, 'color'), 'var(--bt-user-ink)!important')
 })
+
+test('a held face-room outgoing line uses pending styles, not the sent user ink', () => {
+  const src = readFileSync(new URL('../src/client/user-message.js', import.meta.url), 'utf8')
+  assert.match(src, /'data-held': held/)
+  assert.match(src, /\.bt-umsg\[data-held\] \.bt-ubody\{[^}]*color:var\(--bt-ink\)/)
+  assert.doesNotMatch(src, /\.bt-umsg\[data-held\] \.bt-ubody\{[^}]*color:var\(--bt-user-ink\)/)
+})

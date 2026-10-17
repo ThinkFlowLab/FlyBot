@@ -200,6 +200,16 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
     const timer = setTimeout(() => setConfirming(false), 4000)
     return () => clearTimeout(timer)
   }, [confirming])
+  if (bot.remote) {
+    const who = bot.remote.homeName || bot.remote.owner || bot.remote.home || t("Friend's Bot")
+    return h('div', { className: 'bt-bs', 'data-flybot': 'remote-bot-settings' },
+      h('div', { className: 'bt-bs-hero' },
+        h(BotMark, { bot, size: 64, live: true }),
+        h('div', { className: 'bt-bs-who' },
+          h('span', { className: 'bt-bs-name' }, bot.name),
+          h('span', { className: 'bt-bs-sub' }, who))),
+      h(FlyBotDetails, { bot, roster, actions }))
+  }
   const isMainBot = isMainOf(roster, bot.id)
   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
   const isTile = roster.mainBotId === bot.id

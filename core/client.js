@@ -8901,6 +8901,25 @@ function BotSettingsForm({ bot, roster, actions, run }) {
     const timer = setTimeout(() => setConfirming(false), 4e3);
     return () => clearTimeout(timer);
   }, [confirming]);
+  if (bot.remote) {
+    const who = bot.remote.homeName || bot.remote.owner || bot.remote.home || t("Friend's Bot");
+    return (0, import_react19.createElement)(
+      "div",
+      { className: "bt-bs", "data-flybot": "remote-bot-settings" },
+      (0, import_react19.createElement)(
+        "div",
+        { className: "bt-bs-hero" },
+        (0, import_react19.createElement)(BotMark, { bot, size: 64, live: true }),
+        (0, import_react19.createElement)(
+          "div",
+          { className: "bt-bs-who" },
+          (0, import_react19.createElement)("span", { className: "bt-bs-name" }, bot.name),
+          (0, import_react19.createElement)("span", { className: "bt-bs-sub" }, who)
+        )
+      ),
+      (0, import_react19.createElement)(FlyBotDetails, { bot, roster, actions })
+    );
+  }
   const isMainBot = isMainOf(roster, bot.id);
   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
   const isTile = roster.mainBotId === bot.id;
@@ -11705,8 +11724,8 @@ function BotsPage({ roster, actions, run }) {
     ),
     (0, import_react29.createElement)(
       SetSection,
-      { key: "bots", title: t("Bots · {count}", { count: roster.bots.length }) },
-      roster.bots.map((bot) => (0, import_react29.createElement)(
+      { key: "bots", title: t("Bots · {count}", { count: roster.bots.filter((bot) => !bot.remote).length }) },
+      roster.bots.filter((bot) => !bot.remote).map((bot) => (0, import_react29.createElement)(
         "button",
         { key: bot.id, type: "button", className: "bt-set-row", onClick: () => actions.openSettings("bots", bot.id) },
         (0, import_react29.createElement)(
@@ -11873,7 +11892,16 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
   const isMainBot = isMainOf(roster, menu.id);
   const isTile = roster.mainBotId === menu.id;
   const mainCount = (roster.mainBotIds ?? []).length;
-  const groups = [
+  const groups = bot?.remote ? [
+    [
+      [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
+    ],
+    [
+      [t("Bot settings"), GearIcon, () => actions.openSettings("bots", bot.id)]
+    ],
+    pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]),
+    [[t("Copy conversation ID"), CopyIcon, () => navigator.clipboard?.writeText(currentPart(bot))]]
+  ] : [
     [
       isTile ? null : [entry.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
       [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
@@ -11896,11 +11924,12 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
       isMainBot ? null : [t("Hide from sidebar"), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
       isMainBot ? null : [room2 ? t("Delete group") : t("Delete"), TrashIcon, () => bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id), true]
     ]
-  ].map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
+  ];
+  const shown = groups.map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
   return (0, import_react30.createElement)(
     "div",
     { ref, className: "bt-menu", role: "menu", "aria-label": t("{name} actions", { name: bot?.name ?? room2.name }), style: place, "data-leaving": leaving || void 0 },
-    groups.map((group, index) => (0, import_react30.createElement)(
+    shown.map((group, index) => (0, import_react30.createElement)(
       import_react30.Fragment,
       { key: index },
       index > 0 ? (0, import_react30.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
@@ -12507,12 +12536,12 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
       (0, import_react32.createElement)("div", { className: "bt-section-title" }, t("Who answers")),
       (0, import_react32.createElement)("div", { className: "bt-kv" }, (0, import_react32.createElement)("span", null, t(ROOM_MODES.find(([id]) => id === shownMode(room2, roster))?.[1] ?? "Everyone")))
     ),
-    usage ? (0, import_react32.createElement)(
+    face || !usage ? null : (0, import_react32.createElement)(
       "div",
       { key: "usage" },
       (0, import_react32.createElement)("div", { className: "bt-section-title" }, t("Usage")),
       (0, import_react32.createElement)("div", { className: "bt-kv" }, (0, import_react32.createElement)("span", null, room2.name), (0, import_react32.createElement)("span", null, usage))
-    ) : null
+    )
   ];
 }
 function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }) {
@@ -12559,7 +12588,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
         "div",
         { key: "head", className: "bt-subhead", "data-move": move },
         (0, import_react32.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Back to details"), onClick: () => setView("overview") }, (0, import_react32.createElement)(ChevronLeftIcon)),
-        (0, import_react32.createElement)("span", { className: "bt-subhead-title" }, bot ? t("Settings") : t("Group settings")),
+        (0, import_react32.createElement)("span", { className: "bt-subhead-title" }, bot ? bot.remote ? t("Bot settings") : t("Settings") : t("Group settings")),
         hasStrip ? null : (0, import_react32.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close details"), onClick: close }, (0, import_react32.createElement)(CloseIcon))
       ),
       (0, import_react32.createElement)(
@@ -12573,8 +12602,8 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
   const top = (0, import_react32.createElement)(
     "div",
     { className: "bt-drawer-top", "data-move": side },
-    bot || room2 ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": bot ? t("Edit Bot") : t("Group settings"), title: bot ? t("Edit Bot") : t("Group settings"), "data-info-row": "settings", onClick: () => setView("settings") }, (0, import_react32.createElement)(GearIcon)) : null,
-    bot && roster.browser === true && actions.openBrowser ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Open browser"), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, (0, import_react32.createElement)(GlobeIcon)) : null,
+    bot || room2 ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": bot ? bot.remote ? t("Bot settings") : t("Edit Bot") : t("Group settings"), title: bot ? bot.remote ? t("Bot settings") : t("Edit Bot") : t("Group settings"), "data-info-row": "settings", onClick: () => setView("settings") }, (0, import_react32.createElement)(GearIcon)) : null,
+    bot && !bot.remote && roster.browser === true && actions.openBrowser ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Open browser"), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, (0, import_react32.createElement)(GlobeIcon)) : null,
     bot || room2 ? (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": copied ? t("Copied conversation") : t("Share conversation"), title: copied ? t("Copied") : t("Copy conversation as Markdown"), onClick: share }, copied ? (0, import_react32.createElement)("span", { key: "copied", className: "bt-pop-in" }, "✓") : (0, import_react32.createElement)(ShareIcon)) : null,
     hasStrip ? null : (0, import_react32.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Close details"), onClick: close }, (0, import_react32.createElement)(CloseIcon))
   );
@@ -12600,7 +12629,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       "div",
       { key: "id", className: "bt-drawer-id", "data-move": side },
       bot ? (0, import_react32.createElement)(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== void 0), main: isMainBot, badge: false, gaze: true, pokeable: true }) : (0, import_react32.createElement)(RoomAvatar, { room: room2, roster, size: 64 }),
-      editing ? (0, import_react32.createElement)("input", {
+      bot?.remote ? (0, import_react32.createElement)("div", { className: "bt-drawer-name" }, current) : editing ? (0, import_react32.createElement)("input", {
         className: "bt-drawer-name-input",
         autoFocus: true,
         value: draftName,
@@ -12619,9 +12648,9 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
         setDraftName(room2 && !room2.named ? "" : current);
         setEditing(true);
       } }, current),
-      subtitle ? (0, import_react32.createElement)("span", { className: "bt-drawer-role" }, subtitle) : null
+      subtitle ? (0, import_react32.createElement)("span", { className: "bt-drawer-role" }, subtitle) : bot?.remote ? (0, import_react32.createElement)("span", { className: "bt-drawer-role" }, t("Friend's Bot")) : null
     ),
-    (0, import_react32.createElement)(
+    bot?.remote ? null : (0, import_react32.createElement)(
       "div",
       { key: "tabs", ref: glide.box, className: "bt-tabs", role: "tablist", "data-move": side },
       (0, import_react32.createElement)("span", { ref: glide.thumb, className: "bt-thumb", "aria-hidden": true }),
@@ -12632,7 +12661,11 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       { key: `body:${tab}`, className: "bt-drawer-body", "data-move": move },
       errorLine,
       room2 && tab === "details" ? (0, import_react32.createElement)(GroupOverview, { room: room2, roster, actions, usage, useWork, openSettings: () => setView("settings") }) : null,
-      bot && tab === "details" ? [
+      bot && bot.remote && tab === "details" ? [
+        bot.remote.handle ? (0, import_react32.createElement)("div", { key: "handle", className: "bt-muted" }, bot.remote.handle) : null,
+        (0, import_react32.createElement)(FlyBotDetails, { key: "social", bot, roster, actions })
+      ] : null,
+      bot && !bot.remote && tab === "details" ? [
         (0, import_react32.createElement)(
           "div",
           { key: "model", className: "bt-drawer-model" },
@@ -12657,7 +12690,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
         ) : null,
         (0, import_react32.createElement)(ScheduleSummary, { key: "routines", bot, actions })
       ] : null,
-      bot && tab === "browser" ? (0, import_react32.createElement)(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null
+      bot && !bot.remote && tab === "browser" ? (0, import_react32.createElement)(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null
     )
   ];
 }
@@ -14279,11 +14312,13 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
   const room2 = roster.roomsById?.[sessionId];
   const multiHuman = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).length > 1;
   const incoming = author && !author.mine;
+  const held = Boolean(room2 && room2.origin === "face-to-face" && !incoming && (room2.pendingCount ?? 0) > 0);
   return (0, import_react35.createElement)(
     "div",
     {
       className: incoming ? "bt-umsg bt-umsg-other" : "bt-umsg",
       "data-steering": steering || void 0,
+      "data-held": held || void 0,
       "data-author": author?.authorId,
       "data-author-kind": author?.authorKind,
       "data-author-name": author?.name
@@ -14312,6 +14347,7 @@ var USER_MESSAGE_CSS = `
 .bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
 .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
+.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
 .bt-ubody a{color:inherit}
 .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
 .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}

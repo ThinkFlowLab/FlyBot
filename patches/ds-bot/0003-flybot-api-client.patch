@@ -75,6 +75,23 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
  import { createElement as h, Fragment, useCallback, useEffect, useRef, useState } from 'react'
  import { paintCss } from './inks.js'
  import { CHARACTERS, PICKER_SHAPES, PICKER_COLUMNS, CHARACTER_COLORS, SHAPES, hasShape, shapeOf, bodyOf, maskBox, holes, nextMarkSerial } from './characters.js'
+@@ -199,6 +199,16 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+     const timer = setTimeout(() => setConfirming(false), 4000)
+     return () => clearTimeout(timer)
+   }, [confirming])
++  if (bot.remote) {
++    const who = bot.remote.homeName || bot.remote.owner || bot.remote.home || t("Friend's Bot")
++    return h('div', { className: 'bt-bs', 'data-flybot': 'remote-bot-settings' },
++      h('div', { className: 'bt-bs-hero' },
++        h(BotMark, { bot, size: 64, live: true }),
++        h('div', { className: 'bt-bs-who' },
++          h('span', { className: 'bt-bs-name' }, bot.name),
++          h('span', { className: 'bt-bs-sub' }, who))),
++      h(FlyBotDetails, { bot, roster, actions }))
++  }
+   const isMainBot = isMainOf(roster, bot.id)
+   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
+   const isTile = roster.mainBotId === bot.id
 @@ -246,6 +246,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
      isTile ? null : h(Card, { title: t('Sidebar') },
        h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: bot.pinned === true, onChange: pinned => run(actions.setFlags(bot.id, { pinned })) }),
@@ -324,14 +341,69 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
    const ref = useRef(null)
    const [place, setPlace] = useState({ left: menu.x, top: menu.y })
    useLayoutEffect(() => {
-@@ -41,6 +41,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
-       bot && !isMainBot ? [t('Make Main Bot'), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
-       bot && isMainBot && mainCount > 1 ? [t('Remove Main Bot role'), StarLineIcon, () => actions.setMain(bot.id, false)] : null,
-     ],
-+    bot ? pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]) : [],
-     [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
-     [
-       isMainBot ? null : [t('Hide from sidebar'), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
+@@ -27,28 +27,41 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+   const isMainBot = isMainOf(roster, menu.id)
+   const isTile = roster.mainBotId === menu.id
+   const mainCount = (roster.mainBotIds ?? []).length
+-  const groups = [
+-    [
+-      isTile ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
+-      [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+-    ],
+-    [
+-      bot ? [t('Rename Bot'), PencilIcon, () => actions.renameBot(bot.id)] : null,
+-      bot ? [t('Edit Bot'), GearIcon, () => actions.openSettings('bots', bot.id)] : null,
+-      room ? [t('Group settings'), GearIcon, () => actions.openSettings('groups', room.id)] : null,
+-      room ? [t('Rename group'), PencilIcon, () => actions.renameBot(room.id)] : null,
+-      bot ? [t('Duplicate'), DuplicateIcon, async () => { const copy = await actions.duplicateBot(bot.id); actions.openSession(copy.id) }] : null,
+-      bot && !isMainBot ? [t('Make Main Bot'), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
+-      bot && isMainBot && mainCount > 1 ? [t('Remove Main Bot role'), StarLineIcon, () => actions.setMain(bot.id, false)] : null,
+-    ],
+-    [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
+-    [
+-      isMainBot ? null : [t('Hide from sidebar'), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
+-      isMainBot ? null : [room ? t('Delete group') : t('Delete'), TrashIcon, () => (bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id)), true],
+-    ],
+-  ].map(group => group.filter(Boolean)).filter(group => group.length > 0)
++  const groups = bot?.remote
++    ? [
++        [
++          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
++        ],
++        [
++          [t('Bot settings'), GearIcon, () => actions.openSettings('bots', bot.id)],
++        ],
++        pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]),
++        [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(currentPart(bot))]],
++      ]
++    : [
++        [
++          isTile ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
++          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
++        ],
++        [
++          bot ? [t('Rename Bot'), PencilIcon, () => actions.renameBot(bot.id)] : null,
++          bot ? [t('Edit Bot'), GearIcon, () => actions.openSettings('bots', bot.id)] : null,
++          room ? [t('Group settings'), GearIcon, () => actions.openSettings('groups', room.id)] : null,
++          room ? [t('Rename group'), PencilIcon, () => actions.renameBot(room.id)] : null,
++          bot ? [t('Duplicate'), DuplicateIcon, async () => { const copy = await actions.duplicateBot(bot.id); actions.openSession(copy.id) }] : null,
++          bot && !isMainBot ? [t('Make Main Bot'), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
++          bot && isMainBot && mainCount > 1 ? [t('Remove Main Bot role'), StarLineIcon, () => actions.setMain(bot.id, false)] : null,
++        ],
++        bot ? pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]) : [],
++        [[t('Copy conversation ID'), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
++        [
++          isMainBot ? null : [t('Hide from sidebar'), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
++          isMainBot ? null : [room ? t('Delete group') : t('Delete'), TrashIcon, () => (bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id)), true],
++        ],
++      ]
++  const shown = groups.map(group => group.filter(Boolean)).filter(group => group.length > 0)
+   return h('div', { ref, className: 'bt-menu', role: 'menu', 'aria-label': t('{name} actions', { name: bot?.name ?? room.name }), style: place, 'data-leaving': leaving || undefined },
+-    groups.map((group, index) => h(Fragment, { key: index },
++    shown.map((group, index) => h(Fragment, { key: index },
+       index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
+       group.map(([label, Icon, run, danger]) => h('button', {
+         key: label, type: 'button', role: 'menuitem', className: danger ? 'bt-danger' : undefined,
 @@ -92,3 +92,4 @@ function AgentMenu({ menu, roster, actions, leaving }) {
          onClick: () => { actions.closeMenu(); void Promise.resolve(run()).catch(error => console.warn('[ds-bot]', error)) },
        }, h(Icon), label)))))
@@ -1099,7 +1171,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
      : h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))))
  }
  
-@@ -87,8 +87,19 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -87,8 +87,21 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
    const referenceLabels = data.referenceLabels ?? []
    const references = openFile && openSkill ? { openFile, openSkill } : undefined
    const steering = node.kind === 'steering'
@@ -1108,9 +1180,11 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  const room = roster.roomsById?.[sessionId]
 +  const multiHuman = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined).length > 1
 +  const incoming = author && !author.mine
++  const held = Boolean(room && room.origin === 'face-to-face' && !incoming && (room.pendingCount ?? 0) > 0)
 +  return h('div', {
 +    className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
 +    'data-steering': steering || undefined,
++    'data-held': held || undefined,
 +    'data-author': author?.authorId,
 +    'data-author-kind': author?.authorKind,
 +    'data-author-name': author?.name,
@@ -1120,7 +1194,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
        attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
        text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
          h(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
-@@ -99,6 +99,10 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -99,8 +99,13 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
  
  export const USER_MESSAGE_CSS = `
  .bt-umsg{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:4px}
@@ -1130,7 +1204,28 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +.bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
  .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
  .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
++.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
  .bt-ubody a{color:inherit}
+ .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
+ .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
+diff --git a/test/looks.test.js b/test/looks.test.js
+--- a/test/looks.test.js
++++ b/test/looks.test.js
+@@ -40,7 +40,13 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
+   assert.match(text('palette.js'), /title: t\('Bot settings'\), run: \(\) => actions\.openSettings\('general'\)/)
+   // One Bot's own entries open that Bot, so they read Edit Bot instead.
+   assert.match(text('context-menu.js'), /\[t\('Edit Bot'\), GearIcon, \(\) => actions\.openSettings\('bots', bot\.id\)\]/)
+-  assert.match(text('details-drawer.js'), /'aria-label': bot \? t\('Edit Bot'\) : t\('Group settings'\), title: bot \? t\('Edit Bot'\) : t\('Group settings'\)/)
++  assert.match(text('context-menu.js'), /bot\?\.remote/)
++  assert.match(text('context-menu.js'), /\[t\('Bot settings'\), GearIcon, \(\) => actions\.openSettings\('bots', bot\.id\)\]/)
++  assert.match(text('details-drawer.js'), /bot\.remote \? t\('Bot settings'\) : t\('Edit Bot'\)/)
++  assert.match(text('details-drawer.js'), /bot && bot\.remote && tab === 'details'[\s\S]*FlyBotDetails/)
++  assert.match(text('bot-settings.js'), /if \(bot\.remote\)/)
++  assert.match(text('bot-settings.js'), /Friend's Bot/)
++  assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
+   // A group chat's entries open its own settings the same way.
+   assert.match(text('context-menu.js'), /\[t\('Group settings'\), GearIcon, \(\) => actions\.openSettings\('groups', room\.id\)\]/)
+   assert.ok(!text('mark.js').includes('WhaleLogo'))
 diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 --- a/test/mention-rule.test.js
 +++ b/test/mention-rule.test.js
@@ -1156,3 +1251,17 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
  test('a Bot name is something "@" can call without a second reading', () => {
    assert.equal(nameProblem('新 Bot'), undefined)
    assert.equal(nameProblem('  '), 'A Bot needs a name')
+diff --git a/test/user-bubble.test.js b/test/user-bubble.test.js
+--- a/test/user-bubble.test.js
++++ b/test/user-bubble.test.js
+@@ -110,3 +110,10 @@ test('the surface wins over the host bubble rule that reads the skin variable',
+   assert.equal(surface(body), 'var(--bt-user)!important')
+   assert.equal(declared(body, 'color'), 'var(--bt-user-ink)!important')
+ })
++
++test('a held face-room outgoing line uses pending styles, not the sent user ink', () => {
++  const src = readFileSync(new URL('../src/client/user-message.js', import.meta.url), 'utf8')
++  assert.match(src, /'data-held': held/)
++  assert.match(src, /\.bt-umsg\[data-held\] \.bt-ubody\{[^}]*color:var\(--bt-ink\)/)
++  assert.doesNotMatch(src, /\.bt-umsg\[data-held\] \.bt-ubody\{[^}]*color:var\(--bt-user-ink\)/)
++})

@@ -1,0 +1,1 @@
+A plain human message in an open face-to-face room stays in the room. It does not start a Chief or Bot model turn unless that Bot is @mentioned or @all. ([#167](https://github.com/ThinkFlowLab/FlyBot/issues/167))

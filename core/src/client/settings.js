@@ -112,8 +112,8 @@ function BotsPage({ roster, actions, run }) {
       ? h(CreateBot, { key: 'create', roster, actions, inline: true, onBack: () => setCreating(false), onCreated: bot => actions.openSettings('bots', bot.id) })
       : h('div', { key: 'new', className: 'bt-actions' },
           h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => setCreating(true) }, h(PlusIcon), t('New Bot'))),
-    h(SetSection, { key: 'bots', title: t('Bots · {count}', { count: roster.bots.length }) },
-      roster.bots.map(bot => h('button', { key: bot.id, type: 'button', className: 'bt-set-row', onClick: () => actions.openSettings('bots', bot.id) },
+    h(SetSection, { key: 'bots', title: t('Bots · {count}', { count: roster.bots.filter(bot => !bot.remote).length }) },
+      roster.bots.filter(bot => !bot.remote).map(bot => h('button', { key: bot.id, type: 'button', className: 'bt-set-row', onClick: () => actions.openSettings('bots', bot.id) },
         h('span', { className: 'bt-set-bot' },
           h(BotAvatar, { bot, size: 28, badge: false, live: false }),
           h('span', { className: 'bt-row-title' }, bot.name),

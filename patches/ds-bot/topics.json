@@ -35,7 +35,9 @@
     "src/client/icons.js",
     "src/client/new-chat.js",
     "src/client/palette.js",
-    "test/mention-rule.test.js"
+    "test/mention-rule.test.js",
+    "test/looks.test.js",
+    "test/user-bubble.test.js"
   ],
   "0005-social-seams": [
     "src/host/channel.js",

@@ -63,6 +63,7 @@ A tracked request with a stable id (`task-<hex>`) and a small state machine, own
 ### Face-to-face owner send
 
 - Channel `send` on a face-to-face room (`origin: 'face-to-face'`) always `postRoomMessage`s, then shows a quiet local notice (`postToRoom` `quiet`+`notice`). It does not call `sessionController.prompt` unless a local Bot is @mentioned. Unsigned-in cloud UI uses `implicitRoomOwner` (the local human) so the line still fans out over `onFaceLine` / `FLYBOT-FACE-HUMAN` and the other FlyBot instance shows it; that path must not open a bot round (#124). Covered by `core/test/remote-room.test.js` and `core/test/rounds.test.js`.
+- The DSH composer still prompts the group Session (`user/message` → `group_relay`). For a face-to-face room, `openingSpeakers` returns no Bots unless the line `@Name`s a member or `@all`, so a plain human line is logged and does not start a Chief/Bot model turn (#167). Covered by `core/test/rounds.test.js`.
 
 ### Face-to-face participant look
 

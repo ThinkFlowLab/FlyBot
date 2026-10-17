@@ -1,0 +1,1 @@
+The face-to-face waiting room shows the 6-digit room number clearly. Setup copy no longer says there is no preview: you wait together until someone enters the chat. ([#158](https://github.com/ThinkFlowLab/FlyBot/issues/158))
