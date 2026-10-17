@@ -335,6 +335,7 @@ export function install(rt) {
             ...(source.late ? { late: true } : {}),
             ...(source.quiet ? { quiet: true } : {}),
             ...(source.notice ? { notice: true } : {}),
+            ...(source.human ? { human: source.human } : {}),
             ...(source.failed ? { failed: source.failed } : {}),
             ...(source.resumed ? { resumed: true } : {}),
             ...(source.again ? { again: true } : {}),

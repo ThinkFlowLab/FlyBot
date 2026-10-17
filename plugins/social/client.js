@@ -147,9 +147,6 @@ window.__ModuleLoader__.load({
 .fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;overflow-wrap:break-word;word-break:normal;max-height:calc(18px * 3)}
 .fs-hold-more{align-self:flex-start;margin:0;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;line-height:16px;cursor:pointer}
 .fs-hold-more:hover{text-decoration:underline}
-.fs-hold-always{flex:none;margin:0;padding:0 2px;height:28px;border:0;background:none;color:var(--bt-ink-2,rgba(20,20,20,.6));font:inherit;font-size:12px;line-height:16px;font-weight:500;cursor:pointer;white-space:nowrap}
-.fs-hold-always:hover:not(:disabled){color:var(--bt-ink,#141414);text-decoration:underline}
-.fs-hold-always:disabled{opacity:.45;cursor:default}
 .fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:8px;flex-wrap:nowrap}
 .fs-hold .fs-btn{flex:none;height:28px;padding:0 12px;border-radius:999px;font-size:12px}
 .fs-hold .fs-btn-primary{width:auto;color:#fff}
@@ -836,7 +833,7 @@ window.__ModuleLoader__.load({
         }, open ? 'Show less' : 'Show more') : null,
         h('div', { className: 'fs-actions fs-chat-actions' },
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
-          h('button', { type: 'button', className: 'fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve'),
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve'),
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')))
     }
 

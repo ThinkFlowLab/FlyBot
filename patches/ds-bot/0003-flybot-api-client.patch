@@ -272,13 +272,20 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // The time separator: "Today 1:12 AM", "Yesterday 9:03 PM", "Thu, Sep 3 4:20 PM".
  const SEPARATOR_GAP_MS = 30 * 60 * 1000
  export function clockLabel(time, now = Date.now()) {
-@@ -571,11 +571,14 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -571,11 +571,21 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
      replies.map((reply, index) => {
        const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
        if (reply.kind === 'user') {
 -        return h('div', { key: `user-${index}`, className: 'bt-urow' }, h('div', { className: 'bt-ububble' },
 -          h(MarkdownText, { text: reply.text, labels: mdLabels(), variant: 'compact' })))
 +        const who = reply.name && reply.name !== 'User' ? reply.name : reply.authorId
++        // Another member's line: a left-hand bubble with their name, like any other person's message (#180).
++        if (reply.other) {
++          return h('div', { key: `user-${index}`, className: 'bt-umsg bt-umsg-other', 'data-author': reply.authorId, 'data-author-kind': 'human', 'data-author-name': who },
++            h('div', { className: 'bt-ustack' },
++              who ? h('span', { className: 'bt-uauthor' }, who) : null,
++              h('div', { className: 'bt-ubody' }, remoteMessageText(reply.text))))
++        }
 +        return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
 +          who ? h('span', { className: 'bt-uauthor' }, who) : null,
 +          h('div', { className: 'bt-ububble' },

@@ -598,11 +598,12 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -331,6 +331,7 @@ export function install(rt) {
+@@ -331,6 +331,8 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
 +            ...(source.notice ? { notice: true } : {}),
++            ...(source.human ? { human: source.human } : {}),
              ...(source.failed ? { failed: source.failed } : {}),
              ...(source.resumed ? { resumed: true } : {}),
              ...(source.again ? { again: true } : {}),

@@ -5173,6 +5173,18 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? "gray" };
       if (reply.kind === "user") {
         const who = reply.name && reply.name !== "User" ? reply.name : reply.authorId;
+        if (reply.other) {
+          return (0, import_react7.createElement)(
+            "div",
+            { key: `user-${index}`, className: "bt-umsg bt-umsg-other", "data-author": reply.authorId, "data-author-kind": "human", "data-author-name": who },
+            (0, import_react7.createElement)(
+              "div",
+              { className: "bt-ustack" },
+              who ? (0, import_react7.createElement)("span", { className: "bt-uauthor" }, who) : null,
+              (0, import_react7.createElement)("div", { className: "bt-ubody" }, remoteMessageText(reply.text))
+            )
+          );
+        }
         return (0, import_react7.createElement)(
           "div",
           { key: `user-${index}`, className: "bt-urow", "data-author": reply.authorId, "data-author-name": who },

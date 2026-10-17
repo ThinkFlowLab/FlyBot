@@ -92,6 +92,7 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 - Slot `flybot.new-chat.action` (`0003-flybot-api-client`, types in `flybot.d.ts`) is a row on the sidebar **+** new-chat menu, next to Create group chat. Plugins register `{ id, order, label, hint?, visible?, run }`; the picker looks `label` / `hint` up with `t()` like the neighbouring rows. A string returned from `run` is shown as a toast (`actions.notify`). Social registers Face-to-face group, Add friend, Accept invite, Copy invite link, and Copy my handle; see [plugin-runtime](plugin-runtime.md) and [social](social.md).
 - Sidebar **+** (`mode === 'new'`) opens a short action menu (`data-menu`, no To:/composer) until **New chat** or **Create group chat**. That menu does not list individual Bots (Chief and the rest stay behind **New chat**). The Agent row in that FlyBot menu is **Add Agent**; **Add DSH Agent** stays the DSH product string on Agent rows elsewhere (#126).
 - Group bubbles, notices, and failed-reply lines never show a raw `<untrusted-message>` wrap or a developer error (`llm-deepseek: no API key`). `remoteMessageText` unwraps stored fences; `failureLabel` maps missing-key / unknown model failures to a short friendly line. Details stay in Settings → Feedback.
+- `GroupReplies` draws a `user` reply with `other: true` (another member's face-room line, #180) as a left-hand `bt-umsg-other` bubble with the person's name, not as a centred `bt-event` notice; own lines keep the right-hand bubble.
 
 ### Hidden DSH tool-removal notices
 

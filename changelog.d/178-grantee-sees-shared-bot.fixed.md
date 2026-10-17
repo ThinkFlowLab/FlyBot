@@ -1,0 +1,1 @@
+A Bot a friend shared with you shows in your list again: the talk-through grant on your own Bot no longer hides it (regression of the #161 fix), it no longer shows as you sharing that Bot, and the join message names the person ("SelfA shared Helper with you."). ([#178](https://github.com/ThinkFlowLab/FlyBot/issues/178))
