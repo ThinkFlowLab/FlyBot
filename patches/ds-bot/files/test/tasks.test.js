@@ -156,6 +156,23 @@ test('returned-result cancellation keeps requester authority despite forged body
   assert.equal(afterAcceptance.error.code, 'bot/stale')
 })
 
+test('the requester, rather than the assigned Bot owner, decides whether to cancel a returned result', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const bob = await app.signIn('Bob', alice.sessionToken)
+  await app.fb.grants.set('s', [{ grantee: bob.memberId }])
+  const returned = await returnTask(app.call, token => app.createTask(token, { botId: 's' }), bob.sessionToken)
+  assert.equal(returned.requesterId, bob.memberId)
+  const foreign = await app.call('task-cancel', { id: returned.id }, alice.sessionToken)
+  assert.equal(foreign.ok, false)
+  assert.equal(foreign.error.code, 'bot/forbidden')
+  const cancelled = await app.call('task-cancel', { id: returned.id }, bob.sessionToken)
+  assert.equal(cancelled.ok, true, JSON.stringify(cancelled))
+  assert.equal(cancelled.value.status, 'cancelled')
+  assert.equal(cancelled.value.actors.at(-1).memberId, bob.memberId)
+})
+
 test('a revoked requester session cannot cancel its returned result', async (t) => {
   const app = await start(t)
   t.after(() => app.stop())
