@@ -54,6 +54,13 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 ### Tasks
 
+The requester may also cancel a `result-ready` task before acceptance (#202).
+`task-cancel` keeps the returned summary and actor history; the cancelled task
+survives restart and cannot later be accepted, restarted or returned again.
+Accepted/failed/cancelled tasks stay terminal. This records the requester's task
+disposition, not proof that an external runtime stopped; no runtime abort or
+side-effect rollback is implied.
+
 A tracked request with a stable id (`task-<hex>`) and a small state machine, owned by `src/host/tasks.js` with `state.tasks` (additive; corrupt values reset, no version bump). States: `open → claimed → working → blocked ⇄ working → result-ready → accepted`, with `cancelled`/`failed` terminal and `accepted` reachable only from `result-ready` — a failed or cancelled task can never display as accepted (#54). Transitions after create are the requester's (server-derived `requesterId`, the signed-in actor or the single owner; `bot/forbidden` otherwise, `bot/stale` on invalid moves), recorded with per-status actor entries. Create does not require owning the Bot: a matching per-Bot grant, or both the requester and the Bot as current members of the named room, is enough; outgoing holds stay the owner's (#52 card). A working task's held send blocks **that** task (`meta.taskId` stamped on the send, matching origin when the Bot has several working tasks) with the approval id; the owner's decide resumes (approve) or cancels (reject) it; deleting the responsible Bot fails its open tasks. `result-ready` is protected from prune while it waits for acceptance. Endpoints `tasks` / `task-create` / `task-accept` / `task-start` / `task-return` / `task-accept-result` / `task-cancel` are an explicit authz allow-list and are record-checked in tasks.js. Records store pointers and a copied summary, never private transcripts. Clarification and `workBotId` wait on #55's exchange wiring. Team mode stays disabled.
 
 ### Inbound shared rooms

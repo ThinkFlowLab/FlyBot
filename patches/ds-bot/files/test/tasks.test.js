@@ -95,6 +95,96 @@ const statusOf = async (call, token, id) => {
   return list.value.find(task => task.id === id)
 }
 
+async function returnTask(call, createTask, token) {
+  const created = await createTask(token)
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const id = created.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    const moved = await call(endpoint, { id }, token)
+    assert.equal(moved.ok, true, JSON.stringify(moved))
+  }
+  const returned = await call('task-return', { id, summary: 'Returned evidence awaiting a decision' }, token)
+  assert.equal(returned.ok, true, JSON.stringify(returned))
+  return returned.value
+}
+
+test('the requester can cancel a returned result after restart without losing its evidence', async (t) => {
+  const first = await start(t)
+  let app = first
+  t.after(() => app.stop())
+  const alice = await first.signIn('Alice')
+  const returned = await returnTask(first.call, first.createTask, alice.sessionToken)
+  await first.stop({ keepHome: true })
+  const restored = await start(t, { home: first.home })
+  app = restored
+  const cancelled = await restored.call('task-cancel', { id: returned.id }, alice.sessionToken)
+  assert.equal(cancelled.ok, true, JSON.stringify(cancelled))
+  assert.equal(cancelled.value.status, 'cancelled')
+  assert.deepEqual(cancelled.value.result, returned.result)
+  assert.deepEqual(cancelled.value.actors.slice(0, -1), returned.actors)
+  assert.equal(cancelled.value.actors.at(-1).status, 'cancelled')
+  assert.equal(cancelled.value.actors.at(-1).memberId, alice.memberId)
+  await restored.stop({ keepHome: true })
+  const again = await start(t, { home: first.home })
+  app = again
+  const saved = await statusOf(again.call, alice.sessionToken, returned.id)
+  assert.equal(saved.status, 'cancelled')
+  assert.deepEqual(saved.result, returned.result)
+  for (const endpoint of ['task-accept-result', 'task-accept', 'task-start', 'task-return', 'task-cancel']) {
+    const late = await again.call(endpoint, { id: returned.id, summary: 'late result' }, alice.sessionToken)
+    assert.equal(late.ok, false, `${endpoint}: ${JSON.stringify(late)}`)
+    assert.equal(late.error.code, 'bot/stale')
+  }
+})
+
+test('returned-result cancellation keeps requester authority despite forged body claims', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const bob = await app.signIn('Bob', alice.sessionToken)
+  const returned = await returnTask(app.call, app.createTask, alice.sessionToken)
+  for (const token of [bob.sessionToken, undefined]) {
+    const refused = await app.call('task-cancel', { id: returned.id, actorId: alice.memberId, requesterId: alice.memberId }, token)
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, token ? 'bot/forbidden' : 'bot/unauthorized')
+    assert.equal((await statusOf(app.call, alice.sessionToken, returned.id)).status, 'result-ready')
+  }
+  const accepted = await app.call('task-accept-result', { id: returned.id }, alice.sessionToken)
+  assert.equal(accepted.ok, true, JSON.stringify(accepted))
+  const afterAcceptance = await app.call('task-cancel', { id: returned.id }, alice.sessionToken)
+  assert.equal(afterAcceptance.ok, false)
+  assert.equal(afterAcceptance.error.code, 'bot/stale')
+})
+
+test('a revoked requester session cannot cancel its returned result', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const returned = await returnTask(app.call, app.createTask, alice.sessionToken)
+  const revoked = await app.call('auth-revoke', {}, alice.sessionToken)
+  assert.equal(revoked.ok, true, JSON.stringify(revoked))
+  const refused = await app.call('task-cancel', { id: returned.id, actorId: alice.memberId }, alice.sessionToken)
+  assert.equal(refused.ok, false)
+  assert.equal(refused.error.code, 'bot/unauthorized')
+  const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[returned.id]
+  assert.equal(saved.status, 'result-ready')
+  assert.deepEqual(saved.result, returned.result)
+})
+
+test('acceptance racing returned-result cancellation commits only one terminal outcome', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const returned = await returnTask(app.call, app.createTask, alice.sessionToken)
+  const outcomes = await Promise.all(['task-accept-result', 'task-cancel'].map(endpoint => app.call(endpoint, { id: returned.id }, alice.sessionToken)))
+  assert.equal(outcomes.filter(outcome => outcome.ok).length, 1)
+  assert.equal(outcomes.find(outcome => !outcome.ok).error.code, 'bot/stale')
+  const task = await statusOf(app.call, alice.sessionToken, returned.id)
+  assert.ok(['accepted', 'cancelled'].includes(task.status))
+  assert.equal(task.actors.length, returned.actors.length + 1)
+  assert.deepEqual(task.result, returned.result)
+})
+
 test('a task walks the happy path: created, claimed, worked, returned, accepted by the requester', async (t) => {
   const { call, signIn, createTask } = await start(t)
   const alice = await signIn('Alice')

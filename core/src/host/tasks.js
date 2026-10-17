@@ -10,9 +10,9 @@
 // its authority. Outgoing holds stay the owner's (#52 card).
 //
 // States: open → claimed → working → blocked ⇄ working → result-ready → accepted;
-// cancelled and failed are terminal from any active state, and accepted is reachable
-// only from result-ready — so a failed or cancelled task can never display as
-// accepted. The record stores pointers and a summary, never private transcripts.
+// A returned result may also be cancelled before acceptance. Cancelled and failed
+// are terminal, and accepted is reachable only from result-ready. A cancelled or
+// failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
 import { randomBytes } from 'node:crypto'
 import { currentParticipants } from './room-membership.js'
 
@@ -24,7 +24,7 @@ const TRANSITIONS = {
   claimed: ['working', 'cancelled', 'failed'],
   working: ['blocked', 'result-ready', 'cancelled', 'failed'],
   blocked: ['working', 'cancelled', 'failed'],
-  'result-ready': ['accepted'],
+  'result-ready': ['accepted', 'cancelled'],
   accepted: [],
   cancelled: [],
   failed: [],

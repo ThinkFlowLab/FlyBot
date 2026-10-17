@@ -149,10 +149,11 @@ facets alongside it, not invented values written into `task.status`.
 | Abort observed | Show `cancel: observed` only after a version-specific runtime observation confirms that execution has stopped; an HTTP success alone is insufficient. No late event may resume/complete the task. |
 | Lost connection or ambiguous write | Show `recovery: uncertain`, retain raw status and suppress automatic dispatch/acceptance until reconciled. Do not map uncertainty to success, stopped or zero cost. |
 
-Current `tasks.js` allows `result-ready → accepted` only; it cannot cancel or
-reject a returned result. That limitation must be addressed in the host lifecycle
-work, or remain an explicit live-pilot blocker. A revision cannot silently reopen
-an accepted/cancelled/failed task; it requires a new task with an explicit link.
+The requester can dispose of a returned result through `result-ready → cancelled`
+using the existing `task-cancel` endpoint (#202), preserving its summary and actor
+history. This does not confirm that an external runtime stopped; execution-stop
+evidence remains a separate connector obligation. A revision cannot silently
+reopen an accepted/cancelled/failed task; it requires a new task with an explicit link.
 
 ## Journal, recovery and budget
 
