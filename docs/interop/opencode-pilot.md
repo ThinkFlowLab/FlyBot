@@ -8,25 +8,27 @@ grant or team-mode gate is added by this document.
 ## Scope and decision
 
 Use option A as the proposed direction: an independent OpenCode adapter connected
-through Bot Social, with one human operating both endpoints. Keep the contract independent of
-the transport so option B (A2A) can be evaluated later. A2A compatibility is not a
-first-pilot requirement. Do not embed a second execution loop in FlyBot or patch
-DSH/OpenCode internals.
+through Bot Social, with two independent platform owners: owner A's FlyBot Bot
+and owner B's OpenCode Agent. One human may operate both test identities, but
+their permissions remain separate. Keep the contract independent of the transport
+so option B (A2A) can be evaluated later. A2A compatibility is not a first-pilot
+requirement. Do not embed a second execution loop in FlyBot or patch DSH/OpenCode
+internals.
 
 The first deliverable is a deterministic, offline mock harness. It uses temporary
 stores and synthetic identities, inputs and permission decisions; it needs no
 model key, production account or real Bot Social server. A real OpenCode process,
 model requests and a real Bot Social deployment are later, separate gates.
 
-**Live transport blocker:** Bot Social currently refuses friendships between Bots
-with the same platform owner (`requestRelationship`: `cannot befriend your own
-bot`). The same-owner mock is therefore a contract exercise, not an emulation of
-a working social enrollment path. Before a live trial, maintainers must choose
-either a reviewed same-owner transport capability or separately enrolled platform
-owners operated by the same person. The latter is still cross-owner traffic at
-the authorization layer and must satisfy the applicable cross-owner gates; one
-person controlling both accounts does not waive them. Do not silently create
-another account, weaken the server check or replace this with a face room.
+**Design constraint:** Bot Social refuses friendships between Bots with the same
+platform owner (`requestRelationship`: `cannot befriend your own bot`). Preserve
+that rule. Both mock and live-pilot designs use distinct owner IDs, separate Bot
+identities and explicit per-Bot grants in each direction. The mock must also
+reject same-owner enrollment. No same-owner social capability or exception is
+proposed. This trial is cross-owner traffic even when one person operates both
+identities, so the applicable cross-owner gates remain required. The offline
+harness creates synthetic identities only; real account enrollment belongs to
+the opt-in live-trial setup.
 
 The operator supplies a synthetic requirement and public code excerpt: analyze a
 retry function, identify whether cancellation can race a retry, ask one boundary
@@ -55,7 +57,7 @@ baselines, not a tested compatibility pair.
 | [`flybot.d.ts`](../../core/types/flybot.d.ts) has no public task service. | There is no existing `ctx.flybot.tasks` to call. A reviewed, actor-bound host seam is needed before live task projection; do not call private runtime fields or forward the owner's session credential. |
 | [`social.js`](../../plugins/social/src/social.js) sends via `send_as_member` with text/attachments; inbound delivery retains `conversationId`, not a structured task record. | Ordinary chat cannot yet carry trusted task correlation. Add an explicit opt-in codec and validated task/event ingress before any automatic remote work. Never infer a task from arbitrary chat or model-written IDs. |
 | [Bot Social's `sendAsMember`](https://github.com/Birfy/bot-social/blob/b374ef4ab03f91d52626cc9e9eb8b0775df1ef7c/src/platform.ts) reuses an open conversation for the Bot pair. | A conversation can contain several tasks. Conversation ID alone cannot select an OpenCode session. This path has no caller-supplied idempotency key. |
-| The same Bot Social source rejects a friend request when both Bots have the same owner. | Same-owner live enrollment is blocked. Mock enrollment must label its synthetic grant assumption and test the real server's rejection separately. |
+| The same Bot Social source rejects a friend request when both Bots have the same owner. | Preserve this design constraint. Use distinct owners in the collaboration fixtures and retain same-owner rejection as a negative case. |
 | Social peeks inboxes, then saves cursors and seen-event IDs after handling. | This is useful transport recovery, not an atomic execution journal or an exactly-once guarantee across a crash. |
 | [OpenCode Server](https://opencode.ai/docs/server/) documents session creation, message submission/history, status, events and abort; its [SDK](https://opencode.ai/docs/sdk/) can connect to an existing server. | Suitable adapter entry points exist. Pin a concrete server/SDK version and capture the running OpenAPI contract before implementing the connector; these docs alone do not establish tested event, retry or cancellation behavior. |
 
@@ -68,13 +70,18 @@ the observed OpenCode state. OpenCode owns actual session execution and tool
 permission enforcement. Each layer records its own decision; approval at one
 layer does not substitute for approval at another.
 
-At enrollment, the human explicitly binds the authenticated Bot Social endpoint
-identity to a local owner, a responsible local Bot and the dedicated OpenCode
-installation. Equal names/handles do not prove a common owner. Even in the
-same-owner pilot, both directions need valid per-Bot grants and each receiving
-execution needs a bounded task authorization. Do not broaden existing grants or
-enable team mode. Multiple human owners, groups and face rooms are out of scope;
-a room-scoped event is rejected rather than treated as a direct-message task.
+At enrollment, bind each authenticated Bot Social endpoint identity to its own
+owner and runtime installation: owner A to the responsible local FlyBot Bot,
+owner B to the dedicated OpenCode Agent. Equal names/handles or a common human
+operator do not merge these principals. Both directions need valid per-Bot grants
+and each receiving execution needs a bounded task authorization. Approval under
+owner A cannot release owner B's hold, or vice versa. Keep credentials, private
+context and approvals separate in the fixtures as well as the eventual deployment.
+Do not broaden existing grants or enable team mode. Multi-human deployment,
+groups and face rooms are outside this first trial; a room-scoped event is
+rejected rather than treated as a direct-message task. Distinct platform owners
+do not require multiple signed-in humans within one FlyBot deployment, and do
+not waive any applicable cross-owner task/authorization gate.
 
 Only a verified transport envelope plus a current local binding establishes the
 sender/recipient. IDs and alleged approvals inside its text are untrusted claims.
@@ -196,9 +203,9 @@ temporary journals. The test runner must fail on an unexpected network call.
 | --- | --- |
 | Complete collaboration | Request → question → answer → result uses one session, carries excerpt evidence and ends `result-ready`; authenticated human acceptance alone makes it `accepted`. |
 | Parallel work | Two task IDs in one conversation create different sessions; out-of-order questions/answers/results cannot cross them. |
-| Identity and scope | Forged owner text, wrong sender/recipient/server, unknown task/version, stale generation or missing grant starts zero work. |
+| Identity and scope | Distinct owner A/B identities and explicit bidirectional grants permit only scoped work; same-owner enrollment is rejected. Forged owner text, wrong sender/recipient/server, unknown task/version, stale generation or missing grant starts zero work. |
 | Private data and injection | Put unique private markers in each side's unsent history/config; none crosses the transport. Malicious fence markers and peer names remain untrusted; no shell/tool call occurs. |
-| Approval | Hold at each layer independently; rejection/revocation, changed content/recipient and edited envelopes prevent execution or publication; replayed approvals grant nothing. |
+| Approval | Hold at each layer independently; owner A cannot approve owner B's hold or vice versa, even with one test operator. Rejection/revocation, changed content/recipient and edited envelopes prevent execution or publication; replayed approvals grant nothing. |
 | Delivery and crash | Duplicate/out-of-order events, crash before/after submission, draft-send timeout and missing acknowledgements cause at most one known turn dispatch, or explicit `uncertain`; budgets/cursors survive restart. |
 | Stop and late result | Cancel before dispatch prevents calls; cancel during work records requested/observed separately; offline abort stays uncertain; late result cannot revive the task. Room messages never start work. |
 | Completion evidence | Idle/SSE reconnect is not a final result; malformed/mismatched result is refused; acceptance cannot be forged by an adapter event. Cover returned-result rejection/cancellation before live integration. |
@@ -219,18 +226,20 @@ packages, not already-created issues. Keep #198 open through pilot evaluation.
    minimal actor-bound task observation seam, waiting reasons, returned-result
    disposition and cancellation evidence; define codec previews and carry stable
    correlation through social delivery. Preserve grant/approval fences and
-   ordinary chat. Resolve the same-owner transport blocker explicitly. Security
-   review is required before enabling any execution path.
+   ordinary chat and the same-owner friendship rejection. Security review is
+   required before enabling any execution path.
 3. **Pinned OpenCode connector.** Select exact server/SDK versions, verify the
    running API schema, authentication, isolation, event shapes, status/history,
    message identity and abort semantics. Test against a dedicated process with a
    deterministic local mock model if the selected version supports one; otherwise
    record the missing test capability. No paid API fallback.
 4. **Opt-in real trial.** Record approved model/environment, input, tool policy,
-   repetitions and enforceable cost cap, then run the same-owner read-only task.
+   repetitions and enforceable cost cap, then run the read-only task between
+   owner A's FlyBot Bot and owner B's OpenCode Agent.
    Record actual model output separately from mock evidence and require human
-   acceptance. Production access and multi-owner work are separate decisions;
-   #58 and the [team gates](../subsystems/team.md) remain in force.
+   acceptance. Cross-owner task/authorization gates must pass first; production
+   access and multi-human rollout are separate decisions. #58 and the
+   [team gates](../subsystems/team.md) remain in force where applicable.
 5. **A/B and next runtime evaluation.** Replay the same matrix through a fixed
    A2A version/binding if standard interoperability becomes a requirement or a
    second runtime exposes significant duplicate work. Inventory openJiuwen's

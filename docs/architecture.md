@@ -33,8 +33,9 @@ Multi-human ownership is **planned, not shipped**. The proposed contract — hum
 See [docs/integrating.md](integrating.md) for how to add a plugin or integrate with DSH.
 
 Cross-runtime collaboration is proposed in [#198](https://github.com/ThinkFlowLab/FlyBot/issues/198).
-The [OpenCode pilot contract](interop/opencode-pilot.md) scopes a same-owner,
-offline-first trial through Bot Social and lists the task/social API gaps. It is
+The [OpenCode pilot contract](interop/opencode-pilot.md) scopes an offline-first
+trial between two independent owner identities through Bot Social, preserves its
+same-owner friendship restriction, and lists the task/social API gaps. It is
 a design proposal, not a shipped adapter or an enabled team-mode gate.
 
 ## Reference
