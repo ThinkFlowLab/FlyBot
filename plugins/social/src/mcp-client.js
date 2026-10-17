@@ -145,7 +145,7 @@ function parseBody(text, type) {
   if (/text\/event-stream/i.test(type) || /^(event|data|id):/m.test(text.trimStart().slice(0, 6))) {
     const data = text.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).filter(Boolean)
     for (const line of data.reverse()) {
-      try { const value = JSON.parse(line); if (value && (value.result !== undefined || value.error !== undefined)) return value } catch {}
+      try { const value = JSON.parse(line); if (value && (value.result !== undefined || value.error !== undefined)) return value } catch { /* not the JSON-RPC answer: try the next data line */ }
     }
     throw new BotSocialError('Bot Social: the event stream had no answer', 'sse')
   }

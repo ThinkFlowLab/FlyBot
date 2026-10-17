@@ -47,7 +47,7 @@ export function apply(ctx) {
     if (typeof ctx.provide === 'function') ctx.provide('flybot', flybot)
     else if (typeof ctx.reflect?.provide === 'function') ctx.reflect.provide('flybot', flybot)
     else if (typeof ctx.set === 'function') ctx.set('flybot', flybot)
-  } catch {}
+  } catch { /* every provide form refused: __flybot__.api above still serves plugins */ }
   ctx.effect(() => installLocale(ctx.get('locale')), 'ds-bot: interface copy')
   ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
   const roster = createSource(EMPTY_ROSTER)

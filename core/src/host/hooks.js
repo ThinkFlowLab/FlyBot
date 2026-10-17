@@ -816,7 +816,7 @@ export function install(rt) {
         // A message the user addressed to a friend's Bot is that Bot's to answer; its
         // reply comes back into this chat. The local Bot does not answer it itself.
         if (!results.some(result => result.action !== 'deny') || rt.roomOf(id)) return
-        try { (await rt.resolveAgent(id)).cancel({ kind: 'user' }) } catch {}
+        try { (await rt.resolveAgent(id)).cancel({ kind: 'user' }) } catch { /* already ended: nothing to cancel */ }
       })
       .catch(error => warn('flybot: user mention failed: %s', error))
   })

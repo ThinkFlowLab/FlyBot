@@ -24,6 +24,11 @@ When you report status on a change:
 - If review or a test finds one escape path, fix the shared helper and cover sibling markers (`untrusted-message`, `untrusted-file`, trusted headers).
 - Same-class reds tighten LESSONS / this file; do not paper over with a special case.
 
+## Silent catches
+
+- A `catch` that swallows the error says why in a comment inside the block (or handles it); `check-empty-catch` in `.github/scripts/` fails the build on a bare one (#205).
+- The `void p.catch(() => {})` promise form is a separate fire-and-forget idiom and test-helper retries stay out of the gate's scope.
+
 ## Security: fences and remote strings
 
 - Untrusted bodies stay inside fences; closing markers must not reconstitute after a single strip.

@@ -105,9 +105,9 @@ const dshVersion = () => {
       try {
         const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
         if (manifest.name === '@deepseek-ai/dsh-llm') return manifest.version
-      } catch {}
+      } catch { /* no readable manifest at this depth: keep walking up */ }
     }
-  } catch {}
+  } catch { /* the package does not resolve here: no version to report */ }
   return undefined
 }
 

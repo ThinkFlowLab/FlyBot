@@ -21,6 +21,7 @@
     "src/host/store.js",
     "src/host/roster.js",
     "src/host/tools.js",
+    "src/host/home-lock.js",
     "test/fake-ctx.js"
   ],
   "0003-flybot-api-client": [

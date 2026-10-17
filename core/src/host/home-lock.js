@@ -50,7 +50,7 @@ export function homeLock(path, { staleMs = 60_000, beatMs = 15_000, host = hostn
       return
     }
     const time = new Date(now())
-    try { utimesSync(path, time, time) } catch {}
+    try { utimesSync(path, time, time) } catch { /* best effort: a stale mtime only lets a live check retake it */ }
   }
   const stop = () => {
     if (timer !== undefined) clearInterval(timer)
@@ -80,7 +80,7 @@ export function homeLock(path, { staleMs = 60_000, beatMs = 15_000, host = hostn
           ? current?.token === holder.token
           : JSON.stringify(current) === JSON.stringify(holder)
       if (unchanged) {
-        try { unlinkSync(path) } catch {}
+        try { unlinkSync(path) } catch { /* another claimer removed it first */ }
       }
     }
     return read() ?? {}
@@ -89,7 +89,7 @@ export function homeLock(path, { staleMs = 60_000, beatMs = 15_000, host = hostn
   function release() {
     stop()
     if (owns()) {
-      try { unlinkSync(path) } catch {}
+      try { unlinkSync(path) } catch { /* already gone, or taken over */ }
     }
   }
 

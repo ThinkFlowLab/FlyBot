@@ -96,7 +96,7 @@ export function createClientApi({ call: callFn, registry: slots = registry, ever
         const { seq: _seq, ...event } = change
         for (const fn of [...listeners]) fn(event)
       }
-    } catch {}
+    } catch { /* a failed poll leaves the fields as they are; the next one catches up */ }
   }
   return {
     bots: () => callFn('bots'),

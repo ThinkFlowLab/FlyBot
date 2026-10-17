@@ -380,6 +380,18 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      row('DSH', facts.dshVersion),
      row('Surface', client.surface),
      row('OS', facts.os),
+@@ -105,9 +105,9 @@ const dshVersion = () => {
+       try {
+         const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+         if (manifest.name === '@deepseek-ai/dsh-llm') return manifest.version
+-      } catch {}
++      } catch { /* no readable manifest at this depth: keep walking up */ }
+     }
+-  } catch {}
++  } catch { /* the package does not resolve here: no version to report */ }
+   return undefined
+ }
+ 
 @@ -167,7 +167,9 @@ export function install(rt) {
      const error = args.find(arg => arg instanceof Error)
      const line = clean(format(template, ...args.map(arg => (arg instanceof Error ? errorText(arg) : arg))))

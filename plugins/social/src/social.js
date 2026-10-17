@@ -294,7 +294,7 @@ export const readCredentials = (path) => {
 export const writeCredentials = (path, value) => {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(value, null, 2), { mode: 0o600 })
-  try { chmodSync(path, 0o600) } catch {}
+  try { chmodSync(path, 0o600) } catch { /* file systems that ignore the write mode */ }
 }
 
 export function createSocial(service, config = {}, { client: given, api: givenApi, home: givenHome, now = Date.now, setInterval: every = globalThis.setInterval, clearInterval: clear = globalThis.clearInterval, faceApi: givenFace } = {}) {
@@ -389,7 +389,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (CREDENTIAL_NAME.test(basename(file))) return 'it looks like a credential'
     for (const dir of privateDirs()) {
       let real = dir
-      try { real = realpathSync(dir) } catch {}
+      try { real = realpathSync(dir) } catch { /* not a symlink or gone: compare the path as it is */ }
       if (file === real || file.startsWith(real + sep)) return 'it is a private FlyBot file'
     }
     if (!(extname(file).toLowerCase() in MIME)) return `only ${Object.keys(MIME).join(' ')} files`
@@ -1097,7 +1097,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         try {
           const message = await client.callTool('send_message', { conversation_id: bot.conversationId, text: msg.text })
           return { exchangeId: message?.message_id ?? msg.exchangeId }
-        } catch {}
+        } catch { /* the old conversation is gone: start a fresh one below */ }
       }
       const started = await client.callTool('start_conversation', { friend: bot.handle, text: msg.text, ...(config.botId ? { bot_id: config.botId } : {}) })
       // Kept, so a file sent right after goes into this conversation.

@@ -68,7 +68,7 @@ export function provideFlyBot(ctx, flybot) {
     try {
       ctx.set('flybot', flybot)
       return
-    } catch {}
+    } catch { /* the key is refused: fall through to the plain property */ }
   }
   ctx.flybot = flybot
 }

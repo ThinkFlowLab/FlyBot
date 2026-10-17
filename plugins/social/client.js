@@ -897,7 +897,7 @@ window.__ModuleLoader__.load({
           await clip?.writeText?.(handle)
           setCopied(true)
           setTimeout(() => setCopied(false), 1500)
-        } catch {}
+        } catch { /* clipboard denied: skip the Copied feedback */ }
       }
       return h('div', { className: 'fs-me', 'data-flybot': 'my-handle-menu' },
         h('span', { className: 'fs-me-handle', title: 'Your Bot Social handle' }, handle),

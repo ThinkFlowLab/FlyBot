@@ -32,9 +32,9 @@ export function apply(ctx, config = {}) {
     .catch((error) => {
       const reason = startFailureReason(error)
       console.warn('flybot-social: start failed:', reason)
-      try { ctx.logger?.warn?.('flybot-social: start failed: %s', reason) } catch {}
+      try { ctx.logger?.warn?.('flybot-social: start failed: %s', reason) } catch { /* the logger failed while reporting the failure */ }
       // Host diagnostics (Settings → Feedback). Optional on older cores without flybot.warn.
-      try { ctx.flybot?.warn?.('flybot-social: start failed: %s', error) } catch {}
+      try { ctx.flybot?.warn?.('flybot-social: start failed: %s', error) } catch { /* the optional channel itself failed */ }
       if (!stopped) unavailableOff = registerUnavailable(ctx.flybot, reason)
     })
   ctx.effect(() => () => {
