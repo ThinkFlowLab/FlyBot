@@ -890,16 +890,11 @@ window.__ModuleLoader__.load({
     }
     function FaceRooms({ actions, enabled = true, roster, remoteChats } = {}) {
       const [rooms, setRooms] = useState([])
-      const [autoSend, setAutoSend] = useState(false)
-      const [autoBusy, setAutoBusy] = useState(false)
-      const [autoError, setAutoError] = useState('')
       const [pastOpen, setPastOpen] = useState(false)
       const unique = uniqueFaceRooms(rooms)
-      const live = unique.filter(room => !isPastFace(room))
       const past = unique.filter(isPastFace)
       const load = (poll = true) => call('social/face-rooms', { poll }).then(value => {
         setRooms(Array.isArray(value?.rooms) ? value.rooms : [])
-        if (typeof value?.autoApproveFaceRooms === 'boolean') setAutoSend(value.autoApproveFaceRooms)
       }, () => {})
       useEffect(() => {
         if (!enabled) return undefined
@@ -913,31 +908,17 @@ window.__ModuleLoader__.load({
         timer?.unref?.()
         return () => clearInterval(timer)
       }, [enabled])
-      const toggle = async (next) => {
-        setAutoBusy(true)
-        setAutoError('')
-        try {
-          const result = await call('social/face-auto', { on: next })
-          setAutoSend(result?.autoApproveFaceRooms === true)
-        } catch (e) { setAutoError(errorText(e)) }
-        finally { setAutoBusy(false) }
-      }
-      if (!unique.length) return null
+      if (!past.length) return null
       const card = (room, folded) => h(FaceRoomCard, {
         key: room.faceRoomId || room.roomId, room, past: folded, actions, onChange: () => load(true), roster, remoteChats,
       })
-      const pastFold = past.length ? h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
-        h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
-          h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
-          'Past rooms',
-          h('span', { className: 'fs-count' }, String(past.length))),
-        pastOpen ? past.map(room => card(room, true)) : null) : null
       return h('div', { 'data-flybot': 'face-rooms' },
-        live.length ? h('div', { className: 'fs-label fs-face-head' },
-          'Face-to-face rooms',
-          h(FaceAutoSend, { on: autoSend, busy: autoBusy, onChange: toggle, error: autoError })) : null,
-        live.map(room => card(room, false)),
-        pastFold)
+        h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
+          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
+            h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
+            'Past rooms',
+            h('span', { className: 'fs-count' }, String(past.length))),
+          pastOpen ? past.map(room => card(room, true)) : null))
     }
 
     function FaceRoomOverview({ room, roster, actions } = {}) {
@@ -1015,19 +996,6 @@ window.__ModuleLoader__.load({
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
-    const ROSTER_CACHE_KEY = 'flybot-social-remote-bots'
-    function readCachedRoster() {
-      try {
-        const raw = globalThis.sessionStorage?.getItem?.(ROSTER_CACHE_KEY)
-        if (!raw) return null
-        const parsed = JSON.parse(raw)
-        return parsed && Array.isArray(parsed.homes) ? parsed : null
-      } catch { return null }
-    }
-    function writeCachedRoster(value) {
-      try { globalThis.sessionStorage?.setItem?.(ROSTER_CACHE_KEY, JSON.stringify({ homes: value?.homes ?? [] })) } catch {}
-    }
-
     function makeOpener() {
       let handler = null
       let pending = false
@@ -1048,91 +1016,31 @@ window.__ModuleLoader__.load({
     const openFaceToFace = () => facePanel.open()
     const openAddFriend = () => addFriendPanel.open()
 
-    function FriendsBots({ renderBot, remoteChats, actions, roster } = {}) {
+    function FriendsBots({ remoteChats, actions, roster } = {}) {
       useStyles()
-      const [data, setData] = useState(() => readCachedRoster())
       const [error, setError] = useState('')
-      const [open, setOpen] = useState(true)
       const [adding, setAdding] = useState(false)
-      const [closed, setClosed] = useState({})
-      const [auto, setAuto] = useState({})
-      const [saving, setSaving] = useState('')
       const [pending, setPending] = useState([])
-      const [hiding, setHiding] = useState(() => new Set())
       const [faceOpen, setFaceOpen] = useState(false)
-      const [refreshing, setRefreshing] = useState(false)
-      const [homeHandle, setHomeHandle] = useState('')
-      const openRef = useRef(open)
-      openRef.current = open
-      const load = () => call('social/remote-bots', { fresh: true }).then(value => {
-        setData(value)
-        writeCachedRoster(value)
+      const loadApprovals = () => call('social/status', {}).then(value => {
+        setPending(Array.isArray(value?.approvals) ? value.approvals : [])
         setError('')
       }, e => setError(errorText(e)))
-      const loadSettings = () => call('social/settings', {}).then(value => setAuto(value?.autoAccept ?? {}), () => {})
-      const loadApprovals = () => call('social/status', {}).then(value => {
-        const items = Array.isArray(value?.approvals) ? value.approvals : []
-        setPending(items)
-        if (value?.home) setHomeHandle(value.home)
-        if (items.length) setOpen(true)
-      }, () => {})
-      const loadAll = () => {
-        setRefreshing(true)
-        return Promise.all([load(), loadSettings(), loadApprovals()]).finally(() => setRefreshing(false))
-      }
       useEffect(() => {
-        loadAll()
+        loadApprovals()
         if (typeof setInterval !== 'function') return undefined
         const tick = () => {
-          if (!openRef.current) return
           if (typeof document !== 'undefined' && document.hidden) return
           loadApprovals()
-          load()
         }
         const timer = setInterval(tick, 15_000)
         timer?.unref?.()
         return () => clearInterval(timer)
       }, [])
-      useEffect(() => facePanel.bind(() => { setFaceOpen(true); setOpen(true) }), [])
-      useEffect(() => addFriendPanel.bind(() => { setAdding(true); setOpen(true) }), [])
-      const homes = data?.homes ?? []
-      const count = homes.reduce((n, entry) => n + entry.bots.length, 0)
+      useEffect(() => facePanel.bind(() => setFaceOpen(true)), [])
+      useEffect(() => addFriendPanel.bind(() => setAdding(true)), [])
       const chats = remoteChats ?? []
-      const unavailable = error.startsWith('Social is not running:')
-      const toggleAuto = async (home, on) => {
-        setSaving(home)
-        setAuto(value => ({ ...value, [home]: on }))
-        try { const r = await call('social/auto-accept', { home, on }); setAuto(value => ({ ...value, [home]: r.autoAccept })) } catch (e) { setError(errorText(e)); setAuto(value => ({ ...value, [home]: !on })) } finally { setSaving('') }
-      }
-      const copyHome = () => {
-        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
-        if (homeHandle && clip?.writeText) void clip.writeText(homeHandle)
-      }
-      const markHiding = (handle, on) => {
-        setHiding(current => {
-          const next = new Set(current)
-          if (on) next.add(handle)
-          else next.delete(handle)
-          return next
-        })
-      }
-      const removeBot = async (bot) => {
-        const home = (data?.homes ?? []).find(entry => (entry.bots ?? []).some(item => item.handle === bot.handle))
-        const who = home?.name || home?.owner || home?.home || 'Your friend'
-        const ask = typeof globalThis.confirm === 'function' ? globalThis.confirm : undefined
-        if (ask && !ask(`Remove ${bot.name}? ${who} can share it again.`)) return
-        markHiding(bot.handle, true)
-        try {
-          const result = await call('social/hide-remote', { handle: bot.handle })
-          if (result?.homes) setData(result)
-          if (typeof actions?.updateRoom === 'function') {
-            void Promise.all((actions.roster?.rooms ?? []).flatMap(room => {
-              const hit = (room.participants ?? []).find(p => p.remote && p.handle === bot.handle && p.leftSeq === undefined)
-              return hit ? [actions.updateRoom(room.id, { removeParticipants: [{ kind: 'bot', id: hit.handle || hit.id, remote: true }] })] : []
-            })).catch(e => setError(errorText(e)))
-          }
-        } catch (e) { setError(errorText(e)) } finally { markHiding(bot.handle, false) }
-      }
+      const unavailable = String(error).startsWith('Social is not running:')
       const openItem = (item) => {
         if (!item || typeof actions?.openSession !== 'function') return
         const chat = chats.find(entry => entry.remote?.handle === item.to)
@@ -1146,46 +1054,20 @@ window.__ModuleLoader__.load({
         else if (item.roomId) actions.openSession(item.roomId)
         else if (item.sessionId) actions.openSession(item.sessionId)
       }
-      const openPending = () => {
-        openItem(pending[0])
-        setOpen(true)
+      if (unavailable) {
+        return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
+          h('div', { className: 'fs-empty', 'data-flybot': 'social-unavailable' }, error))
       }
-      return h('section', { className: 'fs bt-social', 'aria-label': 'Friends\' Bots' },
-        h('div', { className: 'fs-head' },
-          h('button', { type: 'button', className: 'fs-head-main', 'aria-expanded': open, onClick: () => setOpen(!open) },
-            h('span', { className: 'fs-chev', 'aria-hidden': true }, '▾'),
-            h('span', { className: 'fs-title' }, 'Friends\' Bots'),
-            data && !pending.length ? h('span', { className: 'fs-count', title: `${count} ${count === 1 ? 'Bot' : 'Bots'}` }, String(count)) : null),
-          pending.length ? h('button', { type: 'button', className: 'fs-tag fs-pending-tag', 'data-flybot': 'pending-badge', title: `${pending.length} outbound ${pending.length === 1 ? 'reply' : 'replies'} waiting for your approval. Opens that chat.`, onClick: openPending }, `${pending.length} to approve`) : null,
-          refreshing ? h('span', { className: 'fs-refresh', 'data-flybot': 'roster-refreshing' }, 'Refreshing…') : null),
-        open && homeHandle ? h('div', { className: 'fs-me', 'data-flybot': 'own-home' },
-          h('span', { className: 'fs-me-handle', title: homeHandle }, homeHandle),
-          h('button', { type: 'button', className: 'fs-link', onClick: copyHome }, 'Copy')) : null,
-        open ? h('div', { className: 'fs-body' },
-          unavailable ? null : h(FaceRooms, { actions, enabled: open, roster, remoteChats }),
-          adding && !unavailable ? h(AddFriend, { onChange: () => load().then(loadSettings), onDone: () => setAdding(false) }) : null,
-          faceOpen && !unavailable ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null,
-          unavailable ? h('div', { className: 'fs-empty', 'data-flybot': 'social-unavailable' }, error) : error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
-          homes.map(entry => {
-            const shut = closed[entry.home] === true
-            const rows = entry.bots.map(bot => ({ bot, chat: chats.find(chat => chat.remote?.handle === bot.handle) }))
-            return h('div', { key: entry.home, className: 'bt-social-home', 'data-home': entry.home },
-              h('div', { className: 'fs-home-head' },
-                h('button', { type: 'button', className: 'fs-home', 'aria-expanded': !shut, title: entry.owner ? `${entry.home} · owned by ${entry.owner}` : entry.home, onClick: () => setClosed(value => ({ ...value, [entry.home]: !shut })) },
-                  h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': shut || undefined }, '▾'),
-                  h('span', { className: 'fs-home-name' }, entry.name ?? entry.home),
-                  entry.name ? h('span', { className: 'fs-home-handle' }, entry.home) : null),
-                h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE },
-                  h('input', { type: 'checkbox', checked: auto[entry.home] === true, disabled: saving === entry.home, onChange: e => toggleAuto(entry.home, e.target.checked) }),
-                  'Auto-send')),
-              shut ? null : entry.bots.length === 0 ? h('div', { className: 'fs-hint' }, 'No Bots shared yet') : null,
-              shut ? null : h('div', { className: 'bt-social-rows' }, rows.map(({ bot, chat }) => h(FriendBotRow, {
-                key: bot.handle, bot, chat, renderBot, busy: hiding instanceof Set ? hiding.has(bot.handle) : hiding === bot.handle, onRemove: removeBot,
-              }))))
-          }),
-          data && homes.length === 0 && !adding
-            ? h('div', { className: 'fs-empty' }, 'No friends yet. Use ', h('b', null, 'Copy invite link'), ' in Add friend, or the ', h('b', null, '+'), ' menu → ', h('b', null, 'Add friend'), ' to join a friend’s invite.')
-            : null) : null)
+      return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
+        pending.length ? h('button', {
+          type: 'button', className: 'fs-tag fs-pending-tag', 'data-flybot': 'pending-badge',
+          title: `${pending.length} outbound ${pending.length === 1 ? 'reply' : 'replies'} waiting for your approval. Opens that chat.`,
+          onClick: () => openItem(pending[0]),
+        }, `${pending.length} to approve`) : null,
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
+        h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
+        adding ? h(AddFriend, { onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
+        faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null)
     }
 
     // Add friend: join a friend's link and answer requests (invites are made from a Bot's right-click menu).
@@ -1362,8 +1244,69 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function BotSocialDetails({ bot }) {
+    function FriendChatSettings({ bot } = {}) {
+      const remote = bot?.remote
+      const home = remote?.home
+      const handle = remote?.handle
+      const [auto, setAuto] = useState(false)
+      const [saving, setSaving] = useState(false)
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState('')
+      useEffect(() => {
+        if (!home) return undefined
+        call('social/settings', {}).then(value => setAuto(value?.autoAccept?.[home] === true), () => {})
+      }, [home])
+      if (!handle) return null
+      const toggleAuto = async (on) => {
+        if (!home) return
+        setSaving(true)
+        setAuto(on)
+        setError('')
+        try {
+          const result = await call('social/auto-accept', { home, on })
+          setAuto(result?.autoAccept === true)
+        } catch (e) {
+          setError(errorText(e))
+          setAuto(!on)
+        } finally { setSaving(false) }
+      }
+      const removeBot = async () => {
+        const who = remote.homeName || remote.owner || home || 'Your friend'
+        const ask = typeof globalThis.confirm === 'function' ? globalThis.confirm : undefined
+        if (ask && !ask(`Remove ${bot.name}? ${who} can share it again.`)) return
+        setBusy(true)
+        setError('')
+        try {
+          // social/hide-remote already leaves every room holding this Bot; a second
+          // removal from here would race it and show "not in the room" after a good Remove.
+          await call('social/hide-remote', { handle })
+        } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+      }
+      return h('div', { className: 'fs fs-card', 'data-flybot': 'friend-chat-settings' },
+        h('div', { className: 'fs-name' }, bot.name || handle),
+        h('div', { className: 'fs-hint' }, handle),
+        h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
+          h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
+          'Auto-send'),
+        h('button', {
+          type: 'button',
+          className: 'fs-btn',
+          'data-flybot': 'remove-friend-bot',
+          title: 'Remove this Bot from your list and from your groups. This does not unfriend the owner.',
+          'aria-label': busy ? 'Removing…' : 'Remove this Bot',
+          'aria-busy': busy || undefined,
+          disabled: !!busy,
+          onClick: () => { void removeBot() },
+        }, busy ? 'Removing…' : 'Remove this Bot'),
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
+    }
+
+    function BotSocialDetails({ bot } = {}) {
       useStyles()
+      if (bot?.remote) {
+        return h('div', { 'data-flybot': 'bot-social-details' },
+          h(FriendChatSettings, { bot }))
+      }
       return h('div', { 'data-flybot': 'bot-social-details' },
         h(InviteToBot, { bot }),
         h(ManageAccess, { bot }))
@@ -1418,6 +1361,7 @@ window.__ModuleLoader__.load({
       ChatApproval,
       ChatApprovalDock,
       FriendBotRow,
+      FriendChatSettings,
       FaceToFaceGroup,
       FaceAvatar,
       FaceRoomOverview,
@@ -1481,6 +1425,28 @@ window.__ModuleLoader__.load({
                   }
                 }
                 return `Invite link: ${link}`
+              },
+            }),
+            slots().register('flybot.new-chat.action', {
+              id: 'social-copy-handle',
+              order: 19,
+              label: 'Copy my handle',
+              hint: 'Your Bot Social handle',
+              run: async ({ close } = {}) => {
+                close?.()
+                const status = await call('social/status', {})
+                const handle = status?.home
+                if (!handle) return 'Social is not connected yet.'
+                const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+                if (clip?.writeText) {
+                  try {
+                    await clip.writeText(handle)
+                    return `Copied. Your handle is ${handle}`
+                  } catch {
+                    return `Could not copy. Your handle is ${handle}`
+                  }
+                }
+                return `Your handle is ${handle}`
               },
             }),
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),

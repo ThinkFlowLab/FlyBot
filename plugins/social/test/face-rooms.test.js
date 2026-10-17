@@ -34,6 +34,7 @@ import {
   faceRoomTitle,
   FACE_HUMAN_MARK,
 } from '../src/face-rooms.js'
+import { formatFaceRoomTitle } from '../src/face-title.js'
 
 test('join code is exactly six digits', () => {
   assert.equal(isJoinCode('123456'), true)
@@ -124,6 +125,7 @@ test('owner-typed face-room lines encode as a human envelope', () => {
   const unnamed = faceOutbound({ authorKind: 'human', who: 'User', text: 'hi', authorId: 'owner-1' }, { locals, asBots: ['@chief.boxa.home'], who: 'Alice' })
   assert.deepEqual(parseFaceHuman(unnamed.text), { who: 'Alice', text: 'hi' })
   assert.equal(humanFaceWho({ who: 'User' }, 'Alice'), 'Alice')
+  assert.equal(formatFaceRoomTitle({ owners: ['BoxA', 'BoxB'], code: '482913' }), 'Face-to-face · BoxA, BoxB · 482913')
   assert.equal(faceRoomTitle({ members: [{ owner_name: 'BoxA' }, { ownerName: 'BoxB' }] }, { code: '482913' }), 'Face-to-face · BoxA, BoxB · 482913')
   assert.equal(faceRoomTitle({}, { code: '123456' }), 'Face-to-face · 123456')
   assert.equal(faceRoomTitle({ name: 'Kitchen' }), 'Kitchen')

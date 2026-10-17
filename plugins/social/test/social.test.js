@@ -509,7 +509,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.new-chat.action#social-accept-invite', 'flybot.new-chat.action#social-copy-invite', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.new-chat.action#social-accept-invite', 'flybot.new-chat.action#social-copy-invite', 'flybot.new-chat.action#social-copy-handle', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -754,7 +754,7 @@ test('MCP client (#18): a hung server times out; an SSE answer is read', async (
   assert.deepEqual(await sse.callTool('x'), { ok: true })
 })
 
-test('Friends\' Bots (#21): one group per home, rows drawn by ds-bot\'s own Bot row, no pills', async () => {
+test('Friends\' Bots (#21): friends are not a separate per-home group in the social strip', () => {
   const registered = []
   const entries = []
   const flybot = { slots: { register: (slot, entry) => { entries.push([slot, entry]); return () => {} } }, call: async () => ({}) }
@@ -762,8 +762,7 @@ test('Friends\' Bots (#21): one group per home, rows drawn by ds-bot\'s own Bot 
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = flybot
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
-  const data = { homes: [{ home: '@danyang.home', name: 'Danyang', bots: [{ handle: '@chief.danyang.home', name: 'Chief' }] }] }
-  const initial = [data, '', true, false, {}, {}, '', [], new Set()]
+  const initial = ['', false, [], false]
   let i = 0
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
   const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [i < initial.length ? initial[i++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
@@ -778,9 +777,10 @@ test('Friends\' Bots (#21): one group per home, rows drawn by ds-bot\'s own Bot 
     ;(node.children ?? []).forEach(walk)
   }
   walk(tree)
-  assert.deepEqual(drawn, ['@chief.danyang.home'])
-  assert.ok(all.some(n => n.props.className === 'fs-home-name' && n.children.includes('Danyang')))
-  assert.ok(!all.some(n => /remote/.test(String(n.props.className ?? '')) && n.children.includes('remote')))
+  assert.deepEqual(drawn, [])
+  assert.equal(all.some(n => n.props.className === 'fs-home-name'), false)
+  assert.equal(all.some(n => n.props['data-flybot'] === 'friend-bot'), false)
+  assert.equal(all.some(n => n.children?.includes?.("Friends' Bots")), false)
 })
 
 test('nits (#20): approval.homes keys match with or without @; legacy send falls back to a new conversation', async (t) => {
@@ -1111,9 +1111,8 @@ test('Friends\' Bots (#69): a pending approval shows a badge and a one-line jump
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = flybot
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
-  const data = { homes: [{ home: '@hsliu.home', name: 'hsliu', bots: [{ handle: '@hsliu.bot', name: 'hsliu' }] }] }
   const pending = [{ id: 'apr-hold-1', kind: 'outbound_message', from: '代码审查官', to: '@hsliu.bot', toName: 'hsliu', text: 'I can review that' }]
-  const initial = [data, '', true, false, {}, {}, '', pending, new Set()]
+  const initial = ['', false, pending, false]
   let i = 0
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
   const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [i < initial.length ? initial[i++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
@@ -1151,7 +1150,7 @@ test('Friends\' Bots (#68): a start failure is an idle state, never Unknown FlyB
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = { slots: { register: (slot, entry) => { entries.push([slot, entry]); return () => {} } }, call: async () => { throw Object.assign(new Error('Unknown FlyBot endpoint social/remote-bots'), { code: 'bot/not-found' }) } }
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
-  const initial = [null, 'Social is not running: Bot Social onboarding failed: HTTP 409 (handle @danyang.home is taken). Change displayName in the flybot-social config so a new home is created, then restart.', true, false, {}, {}, '', []]
+  const initial = ['Social is not running: Bot Social onboarding failed: HTTP 409 (handle @danyang.home is taken). Change displayName in the flybot-social config so a new home is created, then restart.', false, [], false]
   let i = 0
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
   const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [i < initial.length ? initial[i++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
@@ -1175,8 +1174,7 @@ test('Friends\' Bots (#69): no cue when status reports no pending approvals', ()
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = { slots: { register: (slot, entry) => { entries.push([slot, entry]); return () => {} } }, call: async () => ({}) }
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
-  const data = { homes: [] }
-  const initial = [data, '', true, false, {}, {}, '', []]
+  const initial = ['', false, [], false]
   let i = 0
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
   const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [i < initial.length ? initial[i++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
@@ -1640,23 +1638,22 @@ test('mapPool runs work concurrently up to the cap', async () => {
   assert.equal(max, 2)
 })
 
-test('Friends\' Bots uses Auto-send for each friend, not a second Auto-accept label', () => {
-  const { walk, pluginOf, entries } = loadSocialClient(async () => ({ connected: true, bots: [], homes: [], rooms: [] }))
-  const plugin = pluginOf([
-    { homes: [{ home: '@bob.home', name: 'Bob', bots: [{ handle: '@coder.bob.home', name: 'Coder' }] }] },
-    '', true, false, {}, {}, '', [], new Set(), false, false,
-  ])
-  plugin.apply({})
-  const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
-  const tree = walk(entry[1].component({}))
+test('a friend\'s Bot settings uses Auto-send, not a second Auto-accept label', () => {
+  const { walk, pluginOf } = loadSocialClient(async (endpoint) => {
+    if (endpoint === 'social/settings') return { autoAccept: { '@bob.home': false } }
+    return { connected: true, bots: [], homes: [], rooms: [] }
+  })
+  const tree = walk(pluginOf([false, false, false, '']).FriendChatSettings({
+    bot: { name: 'Coder', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
+  }))
   assert.ok(tree.some(n => n.type === 'label' && n.children.includes('Auto-send')))
   assert.equal(tree.some(n => n.type === 'label' && n.children.includes('Auto-accept')), false)
 })
 
-test('Friends\' Bots header has no + Add; Add friend and Face-to-face group live on the sidebar + menu', () => {
+test('social section has no + Add; Add friend and Face-to-face group live on the sidebar + menu', () => {
   const sidebar = (adding) => {
     const { entries, walk, pluginOf } = loadSocialClient(async () => ({ connected: true, bots: [{ id: 'a', name: 'Chief', isMain: true }], homes: [], rooms: [] }))
-    const plugin = pluginOf([{ homes: [] }, '', true, adding, {}, {}, '', [], '', false])
+    const plugin = pluginOf(['', adding, [], false])
     plugin.apply({})
     const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
     return { nodes: walk(entry[1].component({})), entries }
@@ -1670,6 +1667,10 @@ test('Friends\' Bots header has no + Add; Add friend and Face-to-face group live
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend'))
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-accept-invite'))
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-invite'))
+  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-handle'))
+  assert.equal(closed.nodes.some(n => n.type === 'button' && n.children.includes('Copy')), false)
+  assert.equal(closed.nodes.some(n => n.props['data-flybot'] === 'own-home'), false)
+  assert.equal(closed.nodes.some(n => n.children?.includes?.("Friends' Bots")), false)
   assert.equal(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-friend-requests'), false)
 
   const opened = sidebar(true)
@@ -1681,7 +1682,7 @@ test('Friends\' Bots header has no + Add; Add friend and Face-to-face group live
 
   const loading = (() => {
     const { entries, walk, pluginOf } = loadSocialClient(async () => ({ connected: true, bots: [], homes: [], rooms: [] }))
-    const plugin = pluginOf([null, '', true, true, {}, {}, '', [], new Set(), false, false])
+    const plugin = pluginOf(['', true, [], false])
     plugin.apply({})
     const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
     return walk(entry[1].component({}))
@@ -1691,16 +1692,14 @@ test('Friends\' Bots header has no + Add; Add friend and Face-to-face group live
   assert.equal(loading.some(n => n.type === 'div' && n.children.includes('Loading…')), false)
 })
 
-test('Friends\' Bots mount starts remote-bots, settings, and status in parallel', async () => {
+test('social sidebar mount starts status without waiting on a friends roster', async () => {
   const started = []
   let resolved = 0
   const { registered, entries, walk } = loadSocialClient(async (endpoint) => {
     started.push(endpoint)
-    assert.equal(resolved, 0, `${endpoint} started after another Friends' Bots call finished`)
+    assert.equal(resolved, 0, `${endpoint} started after another social sidebar call finished`)
     await new Promise(resolve => setTimeout(resolve, 25))
     resolved += 1
-    if (endpoint === 'social/remote-bots') return { homes: [] }
-    if (endpoint === 'social/settings') return { autoAccept: {} }
     if (endpoint === 'social/status') return { approvals: [], bots: [] }
     if (endpoint === 'social/face-rooms') return { rooms: [] }
     return {}
@@ -1723,11 +1722,9 @@ test('Friends\' Bots mount starts remote-bots, settings, and status in parallel'
   const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
   hookI = 0
   walk(entry[1].component({}))
-  assert.ok(started.includes('social/remote-bots'))
-  assert.ok(started.includes('social/settings'))
   assert.ok(started.includes('social/status'))
-  const trio = ['social/remote-bots', 'social/settings', 'social/status']
-  assert.deepEqual(started.filter(name => trio.includes(name)).slice(0, 3).sort(), trio.slice().sort())
+  assert.equal(started.includes('social/remote-bots'), false)
+  assert.equal(started.includes('social/settings'), false)
 })
 
 test('the sidebar + menu gets a Face-to-face group action from social', () => {
@@ -1785,6 +1782,8 @@ test('sidebar + Add friend opens the join panel in Friends\' Bots; header stays 
   assert.equal(accept[1].label, 'Accept invite')
   const copy = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-invite')
   assert.equal(copy[1].label, 'Copy invite link')
+  const handle = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-handle')
+  assert.equal(handle[1].label, 'Copy my handle')
   assert.equal(typeof sandbox.__flybot__.social.openAddFriend, 'function')
 })
 
@@ -1994,33 +1993,33 @@ test('Face-to-face room card is one compact row with a status chip and no invali
   assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.fs-face-row\{[^}]*align-items:center/)
 })
 
-test('Face-to-face past rooms sit under a Past rooms fold; Auto-send is once in the header', () => {
+test('Face-to-face past rooms sit under a Past rooms fold; live rooms stay off this list', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const rooms = [
     { faceRoomId: 'frm_live', roomId: 'g1', name: 'Kitchen', status: 'open', members: [{ handle: '@a', displayName: 'A' }] },
     { faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] },
     { faceRoomId: 'frm_left', roomId: 'g3', name: 'Gone', status: 'left', members: [] },
   ]
-  const plugin = pluginOf([rooms, false, false, '', false])
+  const plugin = pluginOf([rooms, false])
   const closed = walk(plugin.FaceRooms({}))
-  assert.ok(closed.some(n => n.props['data-flybot'] === 'face-auto-send'))
-  assert.equal(closed.filter(n => n.props['data-flybot'] === 'face-auto-send').length, 1)
+  assert.equal(closed.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
   assert.ok(closed.some(n => n.props['data-flybot'] === 'face-past'))
   assert.ok(closed.some(n => n.children?.includes?.('Past rooms') || (Array.isArray(n.children) && n.children.includes('Past rooms'))))
-  assert.ok(closed.some(n => n.props['data-flybot'] === 'face-room' && n.props['data-status'] === 'open'))
+  assert.equal(closed.some(n => n.props['data-flybot'] === 'face-room' && n.props['data-status'] === 'open'), false)
   assert.equal(closed.some(n => n.props['data-status'] === 'closed' || n.props['data-status'] === 'left'), false)
-  const pluginOpen = pluginOf([rooms, false, false, '', true])
+  const pluginOpen = pluginOf([rooms, true])
   const opened = walk(pluginOpen.FaceRooms({}))
   assert.ok(opened.some(n => n.props['data-status'] === 'closed'))
   assert.ok(opened.some(n => n.props['data-status'] === 'left'))
   assert.equal(opened.filter(n => n.props['data-flybot'] === 'face-room' && n.props['data-past']).length, 2)
   assert.equal(opened.filter(n => n.type === 'button' && n.children.includes('Open')).length, 2)
-  assert.equal(opened.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 1)
+  assert.equal(opened.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 0)
   assert.equal(opened.some(n => n.type === 'button' && n.children.includes('Start')), false)
+  assert.equal(opened.some(n => n.props['data-status'] === 'open'), false)
 
   const pastOnly = walk(pluginOf([
     [{ faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] }],
-    false, false, '', false,
+    false,
   ]).FaceRooms({}))
   assert.equal(pastOnly.some(n => n.props.className === 'fs-face-head' || (Array.isArray(n.children) && n.children.includes('Face-to-face rooms'))), false)
   assert.equal(pastOnly.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
@@ -2077,12 +2076,12 @@ test('an ended matching window sits under Past rooms with Open, not Leave', () =
     { faceRoomId: 'frm_end', roomId: 'g4', name: 'Old meet', status: 'candidate', expiresAt: '2000-01-01T00:00:00.000Z', members: [] },
     { faceRoomId: 'frm_live', roomId: 'g1', name: 'Kitchen', status: 'open', members: [{ handle: '@a', displayName: 'A' }] },
   ]
-  const tree = walk(pluginOf([rooms, false, false, '', true]).FaceRooms({}))
+  const tree = walk(pluginOf([rooms, true]).FaceRooms({}))
   const ended = tree.find(n => n.props['data-flybot'] === 'face-room' && n.props['data-status'] === 'candidate')
   assert.ok(ended?.props['data-past'])
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('ended')))
   assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Open')))
-  assert.equal(tree.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 1)
+  assert.equal(tree.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 0)
 })
 
 test('Face-to-face past rooms hide duplicate ids and keep Open as the only action', () => {
@@ -2091,7 +2090,7 @@ test('Face-to-face past rooms hide duplicate ids and keep Open as the only actio
     { faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] },
     { faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'left', members: [] },
   ]
-  const tree = walk(pluginOf([rooms, false, false, '', true]).FaceRooms({}))
+  const tree = walk(pluginOf([rooms, true]).FaceRooms({}))
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'face-room').length, 1)
   assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Open')))
   assert.equal(tree.some(n => n.type === 'button' && n.children.includes('Leave')), false)
@@ -2134,7 +2133,7 @@ test('#126: a face-room hold shows in that chat with a readable name', () => {
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('hello there')))
 })
 
-test('Face-to-face rooms list polls Bot Social while Friends\' Bots is open', () => {
+test('Face-to-face rooms list polls Bot Social for Past rooms', () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
     calls.push([endpoint, payload])
@@ -2971,7 +2970,7 @@ test('#90: reject goes through decide-approval and leaves a chat note', async (t
   assert.ok(notes.some(n => n.text === REJECT_NOTE && n.handle === '@hsliu.bot'))
 })
 
-test('#90: Friends\' Bots has Remove this Bot; ChatApproval is owner-only', () => {
+test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-only', () => {
   const registered = []
   const entries = []
   const hidden = []
@@ -2982,7 +2981,6 @@ test('#90: Friends\' Bots has Remove this Bot; ChatApproval is owner-only', () =
       if (endpoint === 'social/hide-remote') { hidden.push(payload); return { handle: payload.handle, hidden: true, homes: [{ home: '@hsliu.home', name: 'hsliu', bots: [] }] } }
       if (endpoint === 'social/decide-approval') { decided.push(payload); return { approvalId: payload.approvalId, status: payload.decision } }
       if (endpoint === 'social/status') return { connected: true, pendingApprovals: 1, approvals: [{ id: 'apr-hold-1', kind: 'outbound_message', from: 'Chief', to: '@hsliu.bot', text: 'I can review that' }] }
-      if (endpoint === 'social/remote-bots') return { homes: [{ home: '@hsliu.home', name: 'hsliu', bots: [{ handle: '@hsliu.bot', name: 'hsliu' }] }] }
       if (endpoint === 'social/settings') return { autoAccept: {} }
       return {}
     },
@@ -2991,15 +2989,13 @@ test('#90: Friends\' Bots has Remove this Bot; ChatApproval is owner-only', () =
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = flybot
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
-  const data = { homes: [{ home: '@hsliu.home', name: 'hsliu', bots: [{ handle: '@hsliu.bot', name: 'hsliu' }] }] }
   const pending = [{ id: 'apr-hold-1', kind: 'outbound_message', from: 'Chief', to: '@hsliu.bot', text: 'I can review that' }]
-  const initial = [data, '', true, false, {}, {}, '', pending, new Set()]
+  const initial = [false, false, false, '']
   let i = 0
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
   const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [i < initial.length ? initial[i++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
   plugin.apply({})
   assert.ok(entries.some(([slot, entry]) => slot === 'flybot.session.dock' && entry.id === 'social-approval'))
-  const tree = entries.find(([slot]) => slot === 'flybot.sidebar.section')[1].component({ renderBot: () => h('BotRow', {}), remoteChats: [], actions: {} })
   const all = []
   const walk = node => {
     if (!node || typeof node !== 'object') return
@@ -3007,25 +3003,21 @@ test('#90: Friends\' Bots has Remove this Bot; ChatApproval is owner-only', () =
     all.push(node)
     ;(node.children ?? []).forEach(walk)
   }
-  walk(tree)
+  walk(plugin.BotSocialDetails({ bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } } }))
   const remove = all.find(n => n.props['data-flybot'] === 'remove-friend-bot')
   assert.ok(remove)
   assert.equal(remove.props['aria-label'], 'Remove this Bot')
   assert.ok(remove.props.title)
-  assert.ok(remove.children.includes('×'))
-  assert.equal(remove.children.includes('Remove this Bot'), false)
-  assert.equal(remove.props.className, 'fs-remove')
-  assert.ok(all.some(n => n.props['data-flybot'] === 'friend-bot'))
+  assert.ok(remove.children.includes('Remove this Bot'))
+  assert.ok(all.some(n => n.props['data-flybot'] === 'friend-chat-settings'))
+  assert.ok(all.some(n => n.type === 'label' && n.children.includes('Auto-send')))
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-  assert.match(src, /\.fs-row-wrap:hover \.fs-remove/)
-  assert.match(src, /\.fs-row-wrap:focus-within \.fs-remove/)
-  assert.match(src, /\.fs-remove\{[^}]*width:20px/)
+  assert.match(src, /data-flybot': 'remove-friend-bot/)
   remove.props.onClick({ stopPropagation() {} })
   const owner = plugin.ChatApproval({ item: pending[0], canDecide: true, onDecide: (item, decision) => decided.push([item.id, decision]) })
   const other = plugin.ChatApproval({ item: pending[0], canDecide: false })
   const ownerNodes = []
   const otherNodes = []
-  walk.owner = undefined
   const collect = (node, into) => { if (node && typeof node === 'object') { into.push(node); (node.children ?? []).forEach(c => collect(c, into)) } }
   collect(owner, ownerNodes)
   collect(other, otherNodes)
@@ -3046,23 +3038,50 @@ test('#90: Friends\' Bots has Remove this Bot; ChatApproval is owner-only', () =
   assert.ok(doneNodes.some(n => n.children?.includes?.('Approved') || (Array.isArray(n.children) && n.children.includes('Approved'))))
 })
 
-test('#90: two Remove clicks keep independent pending state', async () => {
+test('Remove this Bot leaves rooms only through social/hide-remote, not a second client-side removal', async () => {
   const registered = []
-  const blocked = new Map()
+  const hidden = []
+  const updates = []
+  const flybot = {
+    slots: { register: () => () => {} },
+    call: async (endpoint, payload) => {
+      if (endpoint === 'social/hide-remote') { hidden.push(payload); return { handle: payload.handle, hidden: true, leftRooms: [{ id: 'g1', origin: 'group' }], homes: [] } }
+      if (endpoint === 'social/settings') return { autoAccept: {} }
+      return {}
+    },
+  }
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = flybot
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+  plugin.apply({})
+  const roster = { rooms: [{ id: 'g1', participants: [{ kind: 'bot', id: '@hsliu.bot', handle: '@hsliu.bot', remote: true }] }] }
+  const actions = { roster, updateRoom: async (id, change) => { updates.push([id, change]) } }
+  const all = []
+  const walk = node => {
+    if (!node || typeof node !== 'object') return
+    if (typeof node.type === 'function') { walk(node.type(node.props)); return }
+    all.push(node)
+    ;(node.children ?? []).forEach(walk)
+  }
+  walk(plugin.BotSocialDetails({ bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } }, roster, actions }))
+  const remove = all.find(n => n.props['data-flybot'] === 'remove-friend-bot')
+  remove.props.onClick({ stopPropagation() {} })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(hidden.map(p => p.handle), ['@hsliu.bot'])
+  assert.equal(updates.length, 0)
+})
+
+test('#90: Remove on a friend\'s Bot stays busy until hide-remote finishes', async () => {
+  const registered = []
+  let release
   const flybot = {
     slots: { register: (slot, entry) => { registered.push([slot, entry]); return () => {} } },
     call: (endpoint, payload) => {
       if (endpoint === 'social/hide-remote') {
-        return new Promise(resolve => { blocked.set(payload.handle, resolve) })
-      }
-      if (endpoint === 'social/status') return Promise.resolve({ connected: true, pendingApprovals: 0, approvals: [] })
-      if (endpoint === 'social/remote-bots') {
-        return Promise.resolve({
-          homes: [{
-            home: '@hsliu.home', name: 'hsliu',
-            bots: [{ handle: '@hsliu.bot', name: 'hsliu' }, { handle: '@coder.bob.home', name: 'Coder' }],
-          }],
-        })
+        return new Promise(resolve => { release = () => resolve({ handle: payload.handle, hidden: true }) })
       }
       if (endpoint === 'social/settings') return Promise.resolve({ autoAccept: {} })
       return Promise.resolve({})
@@ -3085,18 +3104,10 @@ test('#90: two Remove clicks keep independent pending state', async () => {
     useRef: v => ({ current: v }), useMemo: f => f(),
   }))
   plugin.apply({})
-  const seed = {
-    homes: [{
-      home: '@hsliu.home', name: 'hsliu',
-      bots: [{ handle: '@hsliu.bot', name: 'hsliu' }, { handle: '@coder.bob.home', name: 'Coder' }],
-    }],
-  }
   const snapshot = () => {
     hookI = 0
-    const tree = registered.find(entry => Array.isArray(entry) && entry[0] === 'flybot.sidebar.section')[1].component({
-      renderBot: chat => h('BotRow', { handle: chat.remote?.handle }, chat.remote?.handle),
-      remoteChats: [{ remote: { handle: '@hsliu.bot' } }, { remote: { handle: '@coder.bob.home' } }],
-      actions: {},
+    const tree = plugin.FriendChatSettings({
+      bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } },
     })
     const all = []
     const walk = node => {
@@ -3108,38 +3119,17 @@ test('#90: two Remove clicks keep independent pending state', async () => {
     walk(tree)
     return all
   }
-  hookI = 0
-  hooks.length = 0
-  snapshot()
-  hooks[0] = seed
-  const rowButton = (nodes, handle) => {
-    const row = nodes.find(n => n.props['data-flybot'] === 'friend-bot' && n.props['data-handle'] === handle)
-    return (row?.children ?? []).find(n => n.props?.['data-flybot'] === 'remove-friend-bot')
-  }
-  rowButton(snapshot(), '@hsliu.bot').props.onClick({ stopPropagation() {} })
-  const afterFirst = snapshot()
-  const firstBtn = rowButton(afterFirst, '@hsliu.bot')
-  const otherBtn = rowButton(afterFirst, '@coder.bob.home')
-  assert.equal(firstBtn.props.disabled, true)
-  assert.equal(firstBtn.props['aria-label'], 'Removing…')
-  assert.ok(firstBtn.children.includes('…'))
-  assert.equal(otherBtn.props.disabled, false)
-  assert.equal(otherBtn.props['aria-label'], 'Remove this Bot')
-  otherBtn.props.onClick({ stopPropagation() {} })
-  const afterBoth = snapshot()
-  assert.equal(rowButton(afterBoth, '@hsliu.bot').props.disabled, true)
-  assert.equal(rowButton(afterBoth, '@hsliu.bot').props['aria-label'], 'Removing…')
-  assert.equal(rowButton(afterBoth, '@coder.bob.home').props.disabled, true)
-  assert.equal(rowButton(afterBoth, '@coder.bob.home').props['aria-label'], 'Removing…')
-  blocked.get('@hsliu.bot')({
-    handle: '@hsliu.bot', hidden: true,
-    homes: [{ home: '@hsliu.home', name: 'hsliu', bots: [{ handle: '@coder.bob.home', name: 'Coder' }] }],
-  })
+  const button = nodes => nodes.find(n => n.props['data-flybot'] === 'remove-friend-bot')
+  button(snapshot()).props.onClick()
+  const busy = button(snapshot())
+  assert.equal(busy.props.disabled, true)
+  assert.equal(busy.props['aria-label'], 'Removing…')
+  assert.ok(busy.children.includes('Removing…'))
+  release()
   await new Promise(resolve => setTimeout(resolve, 0))
-  const afterDone = snapshot()
-  assert.equal(rowButton(afterDone, '@hsliu.bot'), undefined)
-  assert.equal(rowButton(afterDone, '@coder.bob.home').props.disabled, true)
-  assert.equal(rowButton(afterDone, '@coder.bob.home').props['aria-label'], 'Removing…')
+  const done = button(snapshot())
+  assert.equal(done.props.disabled, false)
+  assert.equal(done.props['aria-label'], 'Remove this Bot')
 })
 
 test('#90: social/access lists who has the Bot; revoke uses the isolated grant API', async (t) => {
@@ -3611,21 +3601,26 @@ test('createSocialApi prefers list_bot_grants', async () => {
   assert.equal(server.calls.some(c => c.name === 'list_friends' && c.args?.bot_id === 'm1'), false)
 })
 
-test('#136: Friends\' Bots shows my handle with Copy; Auto-send starts unchecked; Join-as is always offered', () => {
-  const { walk, pluginOf, entries } = loadSocialClient(async () => ({ connected: true, home: '@selfa1935.home', bots: [{ id: 'a', name: 'Chief', isMain: true }], homes: [], rooms: [] }))
-  const plugin = pluginOf([
-    { homes: [{ home: '@bob.home', name: 'Bob', bots: [{ handle: '@coder.bob.home', name: 'Coder' }] }] },
-    '', true, false, {}, {}, '', [], new Set(), false, false, '@selfa1935.home',
-  ])
-  plugin.apply({})
-  const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
-  const tree = walk(entry[1].component({}))
-  const me = tree.find(n => n.props['data-flybot'] === 'own-home')
-  assert.ok(me)
-  assert.ok(me.children.some(c => typeof c === 'object' && c.children?.includes?.('@selfa1935.home')))
-  assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Copy')))
-  const box = tree.find(n => n.type === 'input' && n.props.type === 'checkbox' && n.props.checked === true)
-  assert.equal(box, undefined)
+test('#136: + Copy my handle copies the home; Auto-send starts unchecked; Join-as is always offered', async () => {
+  const copied = []
+  const { walk, pluginOf, entries, sandbox } = loadSocialClient(async (endpoint) => {
+    if (endpoint === 'social/status') return { connected: true, home: '@selfa1935.home', bots: [{ id: 'a', name: 'Chief', isMain: true }], approvals: [] }
+    if (endpoint === 'social/settings') return { autoAccept: {} }
+    return {}
+  })
+  sandbox.navigator = { clipboard: { writeText: async (text) => { copied.push(text) } } }
+  pluginOf([]).apply({})
+  const copy = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-handle')
+  assert.ok(copy)
+  assert.equal(copy[1].label, 'Copy my handle')
+  const note = await copy[1].run({ close: () => {} })
+  assert.equal(note, 'Copied. Your handle is @selfa1935.home')
+  assert.deepEqual(copied, ['@selfa1935.home'])
+  const settings = walk(pluginOf([false, false, false, '']).FriendChatSettings({
+    bot: { name: 'Coder', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
+  }))
+  const box = settings.find(n => n.type === 'input' && n.props.type === 'checkbox')
+  assert.equal(box.props.checked, false)
   const add = walk(pluginOf([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a']).AddFriend({}))
   assert.ok(add.some(n => n.props['data-flybot'] === 'join-as'))
   assert.match(add.find(n => n.props['data-flybot'] === 'join-as').children.join(''), /not shared/i)
@@ -3634,23 +3629,17 @@ test('#136: Friends\' Bots shows my handle with Copy; Auto-send starts unchecked
 test('#139: Remove asks once; cancelling leaves the Bot', () => {
   const asked = []
   const hidden = []
-  const { walk, pluginOf, sandbox, entries } = loadSocialClient(async (endpoint, payload) => {
+  const { walk, pluginOf, sandbox } = loadSocialClient(async (endpoint, payload) => {
     if (endpoint === 'social/hide-remote') { hidden.push(payload); return { handle: payload.handle, hidden: true, homes: [{ home: '@bob.home', name: 'Bob', bots: [] }] } }
-    if (endpoint === 'social/status') return { connected: true, home: '@me.home', approvals: [] }
-    if (endpoint === 'social/remote-bots') return { homes: [{ home: '@bob.home', name: 'Bob', bots: [{ handle: '@coder.bob.home', name: 'Helper' }] }] }
     if (endpoint === 'social/settings') return { autoAccept: {} }
     return {}
   })
   sandbox.confirm = (text) => { asked.push(text); return false }
-  const plugin = pluginOf([
-    { homes: [{ home: '@bob.home', name: 'Bob', bots: [{ handle: '@coder.bob.home', name: 'Helper' }] }] },
-    '', true, false, {}, {}, '', [], new Set(), false, false, '',
-  ])
-  plugin.apply({})
-  const entry = entries.find(([slot]) => slot === 'flybot.sidebar.section')
-  const tree = walk(entry[1].component({}))
+  const tree = walk(pluginOf([false, false, false, '']).FriendChatSettings({
+    bot: { name: 'Helper', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
+  }))
   const remove = tree.find(n => n.props['data-flybot'] === 'remove-friend-bot')
-  remove.props.onClick({ stopPropagation() {} })
+  remove.props.onClick()
   assert.equal(asked.length, 1)
   assert.match(asked[0], /Remove Helper\?/)
   assert.equal(hidden.length, 0)

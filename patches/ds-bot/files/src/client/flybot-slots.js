@@ -105,11 +105,11 @@ export function FlyBotRoomOverview({ room, roster, actions }) {
     h(Safe, { entry, props: { room, roster, actions, call } }))))
 }
 
-export function FlyBotDetails({ bot, roster }) {
+export function FlyBotDetails({ bot, roster, actions }) {
   const entries = useSlot('flybot.bot.details')
   if (entries.length === 0) return null
   return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-details', 'data-flybot': entry.id },
-    h(Safe, { entry, props: { bot, roster, call } }))))
+    h(Safe, { entry, props: { bot, roster, actions, call } }))))
 }
 
 const POLL_MS = 5000

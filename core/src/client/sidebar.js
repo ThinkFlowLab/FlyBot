@@ -95,6 +95,21 @@ function RemoteMark({ remote }) {
       h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18' })))
 }
 
+function isPastFaceRoom(room) {
+  if (room?.origin !== 'face-to-face') return false
+  const status = room.face?.status
+  if (status === 'closed' || status === 'left') return true
+  const expires = room.face?.expiresAt
+  return status === 'candidate' && expires && Number.isFinite(Date.parse(expires)) && Date.parse(expires) <= Date.now()
+}
+
+function FaceMark() {
+  return h('span', { className: 'bt-row-remote', title: t('Face-to-face'), 'aria-label': t('Face-to-face') },
+    h('svg', { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
+      h('circle', { cx: 9, cy: 8, r: 3 }), h('circle', { cx: 16, cy: 9, r: 2.5 }),
+      h('path', { d: 'M4 18a5 5 0 0 1 10 0M14 18a4 4 0 0 1 6 0' })))
+}
+
 function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
   const id = room.id
   const fallback = useSessions(list => nameMentions(previewOf(list, id), roster))
@@ -110,7 +125,8 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const pinned = room.pinned === true
   const title = room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name)
   const waiting = approval || (room.pendingCount ?? 0) > 0
-  const label = [title, pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : ''].filter(Boolean).join(', ')
+  const face = room.origin === 'face-to-face'
+  const label = [title, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : ''].filter(Boolean).join(', ')
   return h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
     'data-room-id': id, onClick: () => actions.openSession(id),
@@ -119,7 +135,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   h(RoomAvatar, { room, roster, size: 36 }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, title), room.sharedFrom ? h('span', { className: 'bt-tag' }, t('Shared')) : null, pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag' }, t('Shared')) : null, pinned ? h(PinMark) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   wide && waiting && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
@@ -288,20 +304,24 @@ export function TeamSidebar(props) {
   const order = useMemo(() => {
     const stamps = JSON.parse(updated)
     const entries = [
-      // Friends' Bots (remote chats) are listed by their plugin's section, not with the team.
-      ...roster.bots.filter(bot => bot.id !== roster.mainBotId && !bot.remote).map(bot => ({ kind: 'bot', item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
-      ...roster.rooms.map(room => ({ kind: 'room', item: room, at: stamps[room.id] ?? room.createdAt })),
+      // Own Bots, friends' Bots, groups and face rooms share one list. A remote chat
+      // still uses BotRow's globe; gone / hidden / home-level remotes stay out.
+      ...roster.bots.filter(bot => bot.id !== roster.mainBotId && isListedRemoteChat(bot)).map(bot => ({ kind: 'bot', item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
+      ...roster.rooms.filter(room => !isPastFaceRoom(room)).map(room => ({ kind: 'room', item: room, at: stamps[room.id] ?? room.createdAt })),
       // The Agent sorts by its most recent Session, falling back to when it was added.
       ...(roster.agents ?? []).map(agent => ({ kind: 'agent', item: agent, at: Math.max(0, ...agent.sessions.map(id => stamps[id] ?? 0)) || agent.createdAt })),
     ]
-    return entries.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || b.at - a.at)
+    const foreign = entry => (entry.kind === 'bot' && entry.item.remote) || (entry.kind === 'room' && (entry.item.origin === 'face-to-face' || entry.item.sharedFrom))
+    return entries.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || Number(foreign(a)) - Number(foreign(b)) || b.at - a.at)
   }, [roster, updated])
   const main = roster.byId[roster.mainBotId]
   // A plugin (the tree) may give the Bots a structure: the list then is one tree under the Main Bot.
   const structure = useSidebarStructure()
   const [collapsed, setCollapsed] = useState({})
   const toggle = id => setCollapsed(value => ({ ...value, [id]: !value[id] }))
-  const tree = structure && wide && main ? botTree([main, ...order.filter(entry => entry.kind === 'bot').map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
+  // Only own Bots belong to the tree; a friend's Bot stays in the ordered list below it.
+  const inTree = entry => entry.kind === 'bot' && !entry.item.remote
+  const tree = structure && wide && main ? botTree([main, ...order.filter(inTree).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
   useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
   useLandOnMainBot(roster, useSessions, actions)
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
@@ -325,7 +345,7 @@ export function TeamSidebar(props) {
     h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
       tree ? h('div', { className: 'bt-tree', role: 'group', 'aria-label': t('Bot tree') }, tree.map(node => h(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions })))
         : main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
-      order.filter(entry => !(tree && entry.kind === 'bot')).map(entry => (entry.kind === 'bot'
+      order.filter(entry => !(tree && inTree(entry))).map(entry => (entry.kind === 'bot'
         ? h(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true })
         : entry.kind === 'room'
           ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })

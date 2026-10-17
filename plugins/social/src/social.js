@@ -962,7 +962,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const override = typeof fromBotId === 'string' ? flybot.fields.get(fromBotId, 'autoApprove')?.[friendHome] : undefined
     if (override === true) return 'auto'
     if (override === false) return 'hold'
-    // Auto-send (off unless the owner switched it on for this friend in Friends' Bots).
+    // Auto-send (off unless the owner switched it on for this friend in that Bot's settings).
     if (autoAcceptOf(friendHome)) return 'auto'
     const homeSetting = approvalHomes[norm(friendHome)]
     if (homeSetting) return homeSetting

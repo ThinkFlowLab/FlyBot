@@ -791,7 +791,7 @@ export function install(rt) {
         return `${name}: not sent${shown ? ` — ${shown}` : ''}`
       }
       if (action === 'hold') return `${name}: held for your approval${why ? ` — ${why}` : ''}`
-      return `${name}: sent — its replies appear in its own chat under Friends' Bots, not in this group`
+      return `${name}: sent — its replies appear in its own chat, not in this group`
     })
     try {
       const agent = await rt.resolveAgent(sessionId)

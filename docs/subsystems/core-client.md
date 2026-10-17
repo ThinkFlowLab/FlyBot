@@ -24,7 +24,7 @@ The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/cl
 | File | Role |
 | --- | --- |
 | `core/src/client/` | Client sources → build to `core/client.js`. |
-| `core/src/client/new-chat.js` | Sidebar **+** picker. Plugin rows via `flybot.new-chat.action` (`newChatActionRows` in `flybot-registry.js`); social adds Face-to-face group, Add friend, Accept invite, and Copy invite link. The short + menu does not list individual Bots. |
+| `core/src/client/new-chat.js` | Sidebar **+** picker. Plugin rows via `flybot.new-chat.action` (`newChatActionRows` in `flybot-registry.js`); social adds Face-to-face group, Add friend, Accept invite, Copy invite link, and Copy my handle. The short + menu does not list individual Bots. |
 | `core/test/new-chat.test.js` | Picker filters and the **+** short action menu (`data-menu`; New chat, then Create group chat, plugin actions, then Add Agent). |
 
 ## Invariants
@@ -65,6 +65,10 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 
 - User-visible chrome says **FlyBot** (header mark + name, About, settings title, tab title, favicon, zh copy). The mark is the existing FlyBot logo (`docs/images/logo.svg`), inlined as `FlyBotMark` from `src/client/brand.js`. Update popups say **FlyBot core {version}**. The npm package remains `ds-bot`; plugin id, localStorage keys, and `console.warn('[ds-bot]')` stay upstream.
 
+### One sidebar list
+
+- `TeamSidebar` lists local Bots, listed remote chats (`isListedRemoteChat`), live face-to-face rooms, and shared rooms in one `bt-list`. Own chats sort before foreign ones (a remote Bot, a face room, or `sharedFrom`); pinned and recency still win. A friend's Bot keeps the globe `RemoteMark`; a live face room gets a small people `FaceMark`. Past/ended face rooms stay out of this list (`isPastFaceRoom`) so the social section can fold them under **Past rooms**. With `@flybot/tree` on, only own Bots are tree nodes under Main; a friend's Bot stays in the flat ordered list (not hidden when Main is collapsed).
+
 ### Approval wait badge on chat rows
 
 - A Bot row uses the same gold wait dot as a room row when `bot.pendingCount > 0` (Bot Social holds on that friend's chat) or a local hold is open. Shared-room overview pending lines stay one line with ellipsis (`bt-shared-wait`).
@@ -75,7 +79,7 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 
 ### New-chat menu
 
-- Slot `flybot.new-chat.action` (`0003-flybot-api-client`, types in `flybot.d.ts`) is a row on the sidebar **+** new-chat menu, next to Create group chat. Plugins register `{ id, order, label, hint?, visible?, run }`; the picker looks `label` / `hint` up with `t()` like the neighbouring rows. A string returned from `run` is shown as a toast (`actions.notify`). Social registers Face-to-face group, Add friend, Accept invite, and Copy invite link; see [plugin-runtime](plugin-runtime.md) and [social](social.md).
+- Slot `flybot.new-chat.action` (`0003-flybot-api-client`, types in `flybot.d.ts`) is a row on the sidebar **+** new-chat menu, next to Create group chat. Plugins register `{ id, order, label, hint?, visible?, run }`; the picker looks `label` / `hint` up with `t()` like the neighbouring rows. A string returned from `run` is shown as a toast (`actions.notify`). Social registers Face-to-face group, Add friend, Accept invite, Copy invite link, and Copy my handle; see [plugin-runtime](plugin-runtime.md) and [social](social.md).
 - Sidebar **+** (`mode === 'new'`) opens a short action menu (`data-menu`, no To:/composer) until **New chat** or **Create group chat**. That menu does not list individual Bots (Chief and the rest stay behind **New chat**). The Agent row in that FlyBot menu is **Add Agent**; **Add DSH Agent** stays the DSH product string on Agent rows elsewhere (#126).
 - Group bubbles, notices, and failed-reply lines never show a raw `<untrusted-message>` wrap or a developer error (`llm-deepseek: no API key`). `remoteMessageText` unwraps stored fences; `failureLabel` maps missing-key / unknown model failures to a short friendly line. Details stay in Settings → Feedback.
 

@@ -73,7 +73,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -47,15 +47,41 @@ const ZH = {
+@@ -47,15 +47,44 @@ const ZH = {
    'Remove Main Bot role': '取消主 Bot',
    'Bot settings': 'Bot 设置',
    'Create group chat': '新建群聊',
@@ -87,6 +87,9 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  "Paste a friend’s invite link or code.": '粘贴朋友的邀请链接或邀请码。',
 +  'Copy invite link': '复制邀请链接',
 +  'Copy a link a friend can paste in Add friend.': '复制链接，朋友在添加好友里粘贴即可。',
++  'Copy my handle': '复制我的 handle',
++  'Your Bot Social handle': '你的 Bot Social handle',
++  'Face-to-face': '面对面',
 +  'This Bot has no model set up yet.': '这个 Bot 还没有配置模型。',
 +  'This Bot could not answer right now.': '这个 Bot 现在没法回答。',
 +  'Refreshing…': '正在刷新…',

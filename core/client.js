@@ -109,6 +109,9 @@ var ZH = {
   "Paste a friend’s invite link or code.": "粘贴朋友的邀请链接或邀请码。",
   "Copy invite link": "复制邀请链接",
   "Copy a link a friend can paste in Add friend.": "复制链接，朋友在添加好友里粘贴即可。",
+  "Copy my handle": "复制我的 handle",
+  "Your Bot Social handle": "你的 Bot Social handle",
+  "Face-to-face": "面对面",
   "This Bot has no model set up yet.": "这个 Bot 还没有配置模型。",
   "This Bot could not answer right now.": "这个 Bot 现在没法回答。",
   "Refreshing…": "正在刷新…",
@@ -1882,13 +1885,13 @@ function FlyBotRoomOverview({ room: room2, roster, actions }) {
     (0, import_react2.createElement)(Safe, { entry, props: { room: room2, roster, actions, call: call2 } })
   )));
 }
-function FlyBotDetails({ bot, roster }) {
+function FlyBotDetails({ bot, roster, actions }) {
   const entries2 = useSlot("flybot.bot.details");
   if (entries2.length === 0) return null;
   return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
     "div",
     { key: entry.id, className: "bt-flybot-details", "data-flybot": entry.id },
-    (0, import_react2.createElement)(Safe, { entry, props: { bot, roster, call: call2 } })
+    (0, import_react2.createElement)(Safe, { entry, props: { bot, roster, actions, call: call2 } })
   )));
 }
 var POLL_MS = 5e3;
@@ -5620,6 +5623,26 @@ function RemoteMark({ remote }) {
     )
   );
 }
+function isPastFaceRoom(room2) {
+  if (room2?.origin !== "face-to-face") return false;
+  const status = room2.face?.status;
+  if (status === "closed" || status === "left") return true;
+  const expires = room2.face?.expiresAt;
+  return status === "candidate" && expires && Number.isFinite(Date.parse(expires)) && Date.parse(expires) <= Date.now();
+}
+function FaceMark() {
+  return (0, import_react9.createElement)(
+    "span",
+    { className: "bt-row-remote", title: t("Face-to-face"), "aria-label": t("Face-to-face") },
+    (0, import_react9.createElement)(
+      "svg",
+      { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
+      (0, import_react9.createElement)("circle", { cx: 9, cy: 8, r: 3 }),
+      (0, import_react9.createElement)("circle", { cx: 16, cy: 9, r: 2.5 }),
+      (0, import_react9.createElement)("path", { d: "M4 18a5 5 0 0 1 10 0M14 18a4 4 0 0 1 6 0" })
+    )
+  );
+}
 function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
   const id = room2.id;
   const fallback = useSessions((list) => nameMentions(previewOf(list, id), roster));
@@ -5635,7 +5658,8 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
   const pinned = room2.pinned === true;
   const title = room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name);
   const waiting = approval || (room2.pendingCount ?? 0) > 0;
-  const label = [title, pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : ""].filter(Boolean).join(", ");
+  const face = room2.origin === "face-to-face";
+  const label = [title, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : ""].filter(Boolean).join(", ");
   return (0, import_react9.createElement)(
     "button",
     {
@@ -5655,7 +5679,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
     wide ? (0, import_react9.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react9.createElement)("span", { className: "bt-row-name" }, (0, import_react9.createElement)("span", { className: "bt-row-title" }, title), room2.sharedFrom ? (0, import_react9.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react9.createElement)(PinMark) : null),
+      (0, import_react9.createElement)("span", { className: "bt-row-name" }, (0, import_react9.createElement)("span", { className: "bt-row-title" }, title), face ? (0, import_react9.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react9.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react9.createElement)(PinMark) : null),
       workingLine ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && waiting && !active ? (0, import_react9.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react9.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
@@ -5872,19 +5896,22 @@ function TeamSidebar(props) {
   const order = (0, import_react9.useMemo)(() => {
     const stamps = JSON.parse(updated);
     const entries2 = [
-      // Friends' Bots (remote chats) are listed by their plugin's section, not with the team.
-      ...roster.bots.filter((bot) => bot.id !== roster.mainBotId && !bot.remote).map((bot) => ({ kind: "bot", item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
-      ...roster.rooms.map((room2) => ({ kind: "room", item: room2, at: stamps[room2.id] ?? room2.createdAt })),
+      // Own Bots, friends' Bots, groups and face rooms share one list. A remote chat
+      // still uses BotRow's globe; gone / hidden / home-level remotes stay out.
+      ...roster.bots.filter((bot) => bot.id !== roster.mainBotId && isListedRemoteChat(bot)).map((bot) => ({ kind: "bot", item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
+      ...roster.rooms.filter((room2) => !isPastFaceRoom(room2)).map((room2) => ({ kind: "room", item: room2, at: stamps[room2.id] ?? room2.createdAt })),
       // The Agent sorts by its most recent Session, falling back to when it was added.
       ...(roster.agents ?? []).map((agent) => ({ kind: "agent", item: agent, at: Math.max(0, ...agent.sessions.map((id) => stamps[id] ?? 0)) || agent.createdAt }))
     ];
-    return entries2.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || b.at - a.at);
+    const foreign = (entry) => entry.kind === "bot" && entry.item.remote || entry.kind === "room" && (entry.item.origin === "face-to-face" || entry.item.sharedFrom);
+    return entries2.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || Number(foreign(a)) - Number(foreign(b)) || b.at - a.at);
   }, [roster, updated]);
   const main = roster.byId[roster.mainBotId];
   const structure = useSidebarStructure();
   const [collapsed, setCollapsed] = (0, import_react9.useState)({});
   const toggle = (id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }));
-  const tree = structure && wide && main ? botTree([main, ...order.filter((entry) => entry.kind === "bot").map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
+  const inTree = (entry) => entry.kind === "bot" && !entry.item.remote;
+  const tree = structure && wide && main ? botTree([main, ...order.filter(inTree).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
   useListGlide(listRef, wide, order.map((entry) => entry.item.id).join(","));
   useLandOnMainBot(roster, useSessions, actions);
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide };
@@ -5915,7 +5942,7 @@ function TeamSidebar(props) {
       "div",
       { ref: listRef, className: "bt-list", role: "region", "aria-label": t("Bot list") },
       tree ? (0, import_react9.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react9.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : main ? (0, import_react9.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react9.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
-      order.filter((entry) => !(tree && entry.kind === "bot")).map((entry) => entry.kind === "bot" ? (0, import_react9.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react9.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react9.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
+      order.filter((entry) => !(tree && inTree(entry))).map((entry) => entry.kind === "bot" ? (0, import_react9.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react9.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react9.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
       wide ? (0, import_react9.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react9.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
     )
   );
@@ -8970,7 +8997,7 @@ function BotSettingsForm({ bot, roster, actions, run }) {
       (0, import_react19.createElement)(SwitchRow, { label: t("Pin"), hint: t("Kept above the other chats."), on: bot.pinned === true, onChange: (pinned) => run(actions.setFlags(bot.id, { pinned })) }),
       isMainBot ? null : (0, import_react19.createElement)(SwitchRow, { label: t("Hide from sidebar"), hint: t("Search still finds it."), on: bot.hidden === true, onChange: (hidden) => run(actions.setFlags(bot.id, { hidden })) })
     ),
-    (0, import_react19.createElement)(FlyBotDetails, { bot, roster }),
+    (0, import_react19.createElement)(FlyBotDetails, { bot, roster, actions }),
     (0, import_react19.createElement)(
       Card,
       { title: t("Manage") },

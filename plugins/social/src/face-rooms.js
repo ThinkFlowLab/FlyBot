@@ -11,7 +11,7 @@
 
 import { socialFetch } from './mcp-client.js'
 import { lookFromServer } from './look.js'
-import { formatFaceRoomTitle } from '../../../core/src/shared/face-title.js'
+import { formatFaceRoomTitle } from './face-title.js'
 
 export const FACE_JOIN_CODE = /^\d{6}$/
 export const FACE_MAX_MEMBERS = 8
