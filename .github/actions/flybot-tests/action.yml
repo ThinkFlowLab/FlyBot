@@ -64,6 +64,9 @@ runs:
       shell: bash
       working-directory: core
       run: node scripts/build-client.mjs --check
+    - name: Offline harness lint
+      shell: bash
+      run: npm run lint:interop
     # Core's suite (incl. bot-tree: the public flybot.sidebar.structure slot), then each peer
     # plugin's own suite and lint (plugins/social, plugins/tree; each also tests against core/).
     - name: Unit tests

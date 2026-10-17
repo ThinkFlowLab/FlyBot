@@ -12,6 +12,7 @@ Detail pages for each FlyBot subsystem. Each page lists `owned_paths`, what the 
 | social | [social.md](social.md) | `plugins/social/` |
 | install | [install.md](install.md) | `core/scripts/`, arch-doc tests, `plugins/README.md` |
 | team | [team.md](team.md) | `docs/subsystems/team.md` — **planned contract only** (no code paths; multi-human is not shipped) |
+| interop | [interop.md](interop.md) | `dev/interop/`, `scripts/lint-interop.mjs` — offline development harness only |
 
 The `team` page is a planning contract: it defines the proposed human ↔ Chief ↔ specialist authority, routing and approval rules **before** schema work. Team mode stays disabled until its authorization gates pass.
 

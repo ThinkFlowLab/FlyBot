@@ -107,6 +107,8 @@ jobs:
         run: npx --yes -p typescript@5.9.3 tsc --noEmit --strict --skipLibCheck types/*.d.ts
       - name: Tests of the repo scripts (risk tier, labels)
         run: node --test ".github/scripts/*.test.mjs"
+      - name: Offline cross-runtime harness (no network or model)
+        run: npm run test:interop
       - name: Changelog has an Unreleased section and well-formed fragments (changelog.d/)
         run: node .github/scripts/changelog.mjs check
       - name: Lint the workflows (actionlint)
