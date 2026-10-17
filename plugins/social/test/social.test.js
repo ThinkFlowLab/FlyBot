@@ -1498,6 +1498,31 @@ test('face-to-face: a member already in the snapshot gets a join line when the e
   assert.equal(live.length, 1)
 })
 
+test('#182: a peer leaving closes the room here and a later poll does not reopen it', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  const body = server.face.rooms.get('frm_123456')
+  body.members.push({ bot_id: 'bot_peer', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" })
+  body.status = 'open'
+  body.started_at = new Date().toISOString()
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open')
+  body.members = body.members.filter(member => member.handle !== '@chief.bob.home')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'left')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'left', 'a second poll must not reopen it')
+})
+
 test('#166: an open face room does not post two identical join lines', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
@@ -2069,6 +2094,11 @@ test('Friends\' Bots (#83): auto-send toggle in the room header and pending-appr
   assert.equal(header.some(n => n.type === 'button' && n.children.includes('Turn on auto-send')), false)
   assert.ok(header.some(n => n.type === 'button' && n.children.includes('Leave')))
   assert.equal(header.some(n => n.type === 'button' && n.children.includes('Start')), false)
+  // Leave asks first (#182): the confirm controls are not there until Leave is clicked.
+  assert.equal(header.some(n => n.props['data-flybot'] === 'face-leave-yes'), false)
+  const asked = walk(registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: () => [true, () => {}], useRef: v => ({ current: v }), useMemo: f => f() })).ConfirmLeave({ onLeave() {} }))
+  assert.ok(asked.some(n => n.props['data-flybot'] === 'face-leave-yes'))
+  assert.ok(asked.some(n => n.type === 'button' && n.children.includes('Stay')))
   assert.equal(header.some(n => n.type === 'button' && n.children.includes('Open')), false)
   assert.ok(header.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('Open')))
   const box = header.find(n => n.type === 'input' && n.props.type === 'checkbox')

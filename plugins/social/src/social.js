@@ -1942,6 +1942,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   function faceSnapshotPast(snapshot, hosted) {
     const status = snapshot?.status || hosted?.face?.status
     if (status === 'closed' || status === 'left') return { status }
+    // Once the room is left or closed here, a later poll must not reopen it (#182): the peer's
+    // leave shows at once and stays shown without a reload.
+    const held = hosted?.face?.status
+    if (held === 'left' || held === 'closed') return { status: held }
     const expiresAt = snapshot?.expiresAt || hosted?.face?.expiresAt
     if (status === 'candidate' && expiresAt) {
       const at = Date.parse(expiresAt)

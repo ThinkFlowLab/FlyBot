@@ -248,7 +248,7 @@ export function trustedFaceWho(from) {
 
 export function faceRoomTitle(snapshot = {}, { code, room } = {}) {
   const members = snapshot.members ?? room?.participants ?? []
-  const at = snapshot.startedAt || snapshot.expiresAt || room?.face?.startedAt || room?.face?.expiresAt || room?.createdAt
+  const at = snapshot.startedAt || room?.face?.startedAt || snapshot.expiresAt || room?.face?.expiresAt || room?.createdAt
   return formatFaceRoomTitle({
     name: snapshot.name || room?.name,
     members,

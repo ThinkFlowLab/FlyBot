@@ -1229,9 +1229,11 @@ export function install(rt) {
 
   const faceRoomFallbackTitle = (spec, room) => formatFaceRoomTitle({
     name: spec.name || room?.name,
-    members: spec.members ?? room?.participants,
+    // Everyone who was in the room, so the title reads the same on every home and does not
+    // lose a member who left (#182). The time is the start, never the joining deadline.
+    members: [...(spec.members ?? []), ...(room?.participants ?? [])],
     code: spec.joinCode || spec.code,
-    at: spec.startedAt || spec.expiresAt || room?.face?.startedAt || room?.createdAt,
+    at: spec.startedAt || room?.face?.startedAt || spec.expiresAt || room?.createdAt,
   })
 
   rt.upsertFaceRoom = async function upsertFaceRoom(spec = {}) {

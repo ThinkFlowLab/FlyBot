@@ -130,6 +130,7 @@ window.__ModuleLoader__.load({
 .fs-face-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;padding:2px 0 6px}
 .fs-face-head .fs-face-auto-wrap{flex:1 1 auto;min-width:0}
 .fs-face-head .fs-face-actions{flex:none;margin-left:auto}
+.fs-leave-ask{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .fs-past{margin:2px 0 4px}
 .fs-past-head{display:flex;align-items:center;gap:6px;width:100%;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:12px;line-height:16px;font-weight:500;text-align:left;cursor:pointer}
 .fs-past-head:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
@@ -353,7 +354,7 @@ window.__ModuleLoader__.load({
 
     const AUTO_SEND_NOTE = "Don't ask each time."
 
-    function FaceAutoSend({ on, busy, onChange, error } = {}) {
+    function FaceAutoSend({ on, busy, onChange, error, bot } = {}) {
       return h('div', { className: 'fs-face-auto-wrap', 'data-flybot': 'face-auto-send' },
         h('label', { className: 'fs-auto fs-face-auto', title: AUTO_SEND_NOTE },
           h('input', {
@@ -363,11 +364,21 @@ window.__ModuleLoader__.load({
             'aria-label': "Auto-send my Bot's room messages",
             onChange: e => onChange?.(e.target.checked),
           }),
-          'Auto-send'),
+          bot ? `Auto-send ${bot} → room` : 'Auto-send'),
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function FaceAutoSendControl() {
+    // Leave asks once (#182): leaving ends my part in the room for good.
+    function ConfirmLeave({ busy, onLeave, flybot = 'face-leave', size = 'fs-btn fs-btn-sm' } = {}) {
+      const [ask, setAsk] = useState(false)
+      if (!ask) return h('button', { type: 'button', className: size, 'data-flybot': flybot, disabled: !!busy, onClick: () => setAsk(true) }, 'Leave')
+      return h('span', { className: 'fs-leave-ask', 'data-flybot': 'face-leave-confirm' },
+        h('span', { className: 'fs-hint' }, 'Leave this room?'),
+        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-yes', disabled: !!busy, onClick: () => { setAsk(false); onLeave?.() } }, 'Leave'),
+        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-no', onClick: () => setAsk(false) }, 'Stay'))
+    }
+
+    function FaceAutoSendControl({ bot } = {}) {
       const [on, setOn] = useState(false)
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
@@ -383,7 +394,7 @@ window.__ModuleLoader__.load({
         } catch (e) { setError(errorText(e)) }
         finally { setBusy(false) }
       }
-      return h(FaceAutoSend, { on, busy, onChange: toggle, error })
+      return h(FaceAutoSend, { on, busy, onChange: toggle, error, bot })
     }
 
     const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
@@ -775,7 +786,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
             past
               ? (openable ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => open() }, 'Open') : null)
-              : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }, 'Leave'))),
+              : h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
@@ -1095,12 +1106,21 @@ window.__ModuleLoader__.load({
             }, 'Enter chat')),
           note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
       }
+      const mineNames = members.filter(member => member.remote === false || Boolean(member.id && roster?.byId?.[member.id])).map(member => member.displayName || member.name).filter(Boolean)
       const statusRoom = { status: snapshot?.status || face?.status || 'open', expiresAt: snapshot?.expiresAt || face?.expiresAt }
       return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview' },
         h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)),
-        h(FaceAutoSendControl),
+        h(FaceAutoSendControl, { bot: mineNames[0] }),
         h('span', { className: 'fs-face-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => run('leave', () => call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })) }, 'Leave')),
+          h(ConfirmLeave, {
+            busy,
+            onLeave: () => run('leave', async () => {
+              await call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })
+              // Straight to the main Bot, not a blank pane while the room closes.
+              const main = (roster?.bots ?? []).find(bot => bot.isMain) ?? roster?.bots?.[0]
+              if (main?.id && typeof actions?.openSession === 'function') actions.openSession(main.id)
+            }),
+          })),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
@@ -1464,6 +1484,7 @@ window.__ModuleLoader__.load({
       FaceRoomCard,
       FaceRooms,
       FaceAutoSend,
+      ConfirmLeave,
       apply(ctx) {
         let offs = []
         let tries = 0

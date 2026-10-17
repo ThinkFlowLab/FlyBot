@@ -1,0 +1,1 @@
+Face-to-face rooms: Leave asks first and lands on your main Bot, the other side sees someone leave within one poll (the room no longer flips back to open), every home shows the same room title and start time, and the Auto-send checkbox names the Bot. ([#182](https://github.com/ThinkFlowLab/FlyBot/issues/182))
