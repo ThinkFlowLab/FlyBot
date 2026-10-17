@@ -19,13 +19,14 @@
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { ROOM_LATE_ROUNDS, ROOM_REPLY_TIMEOUT_MS, ROOM_WORK_GRACE_MS, SOURCE_KIND, TEAM_TOOLS } from './constants.js'
-import { escapeRegExp, splitRef, textOf } from './text.js'
+import { ROOM_LATE_ROUNDS, SOURCE_KIND } from './constants.js'
+import { escapeRegExp, textOf } from './text.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
 import { failureLine } from './turns.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { stripSessionChips } from './delivery.js'
+import { createDshRoomParticipant } from './room-participant.js'
 
 const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
@@ -123,6 +124,7 @@ const ROOM_READ_MAX = 30
 
 export function install(rt) {
   const { ctx } = rt
+  const participant = createDshRoomParticipant(rt)
   fanoutRoomLine = (room, line) => rt.fanoutRoomLine?.(room, line)
 
   // A member's group Session, created on its first turn there. A new one starts with
@@ -146,26 +148,8 @@ export function install(rt) {
   }
 
   async function groupSessionFor(room, member) {
-    room.sessions ??= {}
-    const known = room.sessions[member.id]
-    if (known !== undefined) {
-      await rt.ensureCapabilities(known)
-      return { id: known, brief: undefined }
-    }
-    const id = await rt.createSession(`${member.name} · ${room.name}`, { dir: rt.workDirOf({ botId: member.id, roomId: room.id }) })
-    room.sessions[member.id] = id
-    rt.groupOwners.set(id, { botId: member.id, roomId: room.id })
-    delete room.seen[member.id]
-    const ref = await rt.desiredModel(member)
-    if (ref !== undefined) {
-      await rt.selectSessionModel(id, splitRef(ref))
-        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
-    }
-    await rt.applyPermission(member, id)
-      .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))
-    await rt.save()
-    await rt.ensureCapabilities(id)
-    return { id, brief: briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
+    const session = await participant.open({ room, member })
+    return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
   }
 
   // Lines from before the round's opening message are kept apart from this round, so
@@ -203,76 +187,11 @@ export function install(rt) {
 
   // Members whose turn in this group is running, and since when.
   const workingIn = room => room.members.flatMap((id) => {
-    const entry = rt.live.get(room.sessions?.[id])
+    const entry = participant.snapshot(room.sessions?.[id])
     const bot = rt.botOf(id)
-    return entry?.turn !== undefined && bot !== undefined ? [{ bot, since: entry.since ?? Date.now() }] : []
+    return entry.working && bot !== undefined ? [{ bot, since: entry.since ?? Date.now() }] : []
   })
   const minutesSince = at => Math.max(1, Math.round((Date.now() - at) / 60000))
-
-  // One member turn inside the room; resolves to its final text, `{ failure }` when its
-  // model call failed, `{ missed }` when it went quiet for too long, `{ approval }` when
-  // it waits for the user's approval, `{ working }` when it goes on working without the
-  // round, or null when the round was stopped. The wait restarts on each event of the
-  // member's Session, so a member at work is never cut off. `by` is the member that
-  // called it, which answers what the turn posts after the round moved on.
-  async function roomTurn(room, member, sessionId, text, note, signal, started, by) {
-    if (signal.aborted) return null
-    const exchangeId = randomUUID()
-    const turn = { botId: member.id, sessionId, exchangeId }
-    started.push(turn)
-    room.seen[member.id] = room.seq
-    // Checked before the delivery, which may start the turn at once.
-    const busy = rt.live.get(sessionId)?.turn !== undefined
-    const done = new Promise((resolve) => {
-      let timer
-      let grace
-      const finish = (value) => {
-        clearTimeout(timer)
-        clearTimeout(grace)
-        rt.roomWaiters.delete(exchangeId)
-        resolve(value)
-      }
-      const touch = () => {
-        clearTimeout(timer)
-        timer = setTimeout(() => finish({ missed: true }), ROOM_REPLY_TIMEOUT_MS)
-      }
-      const work = () => { grace ??= setTimeout(() => finish({ working: true }), ROOM_WORK_GRACE_MS) }
-      touch()
-      rt.roomWaiters.set(exchangeId, { sessionId, botId: member.id, roomId: room.id, resolve: finish, fail: failure => finish({ failure }), touch, work, approval: () => finish({ approval: true }) })
-      signal.addEventListener('abort', () => finish(null), { once: true })
-    })
-    try {
-      await rt.deliver({ fromId: undefined, toId: member.id, sessionId, role: 'room', roomId: room.id, exchangeId, note, text, ...(by ? { askedBy: by } : {}) })
-      // Still held by an earlier request: this turn cannot start until the user answers.
-      if (rt.waitsForApproval?.(sessionId)) rt.roomWaiters.get(exchangeId)?.approval()
-      // Still at earlier work: the call waits in its inbox and is answered after that.
-      else if (busy) rt.roomWaiters.get(exchangeId)?.resolve({ working: true })
-    } catch (error) {
-      rt.warn('ds-bot: group delivery to %s failed: %s', member.name, error)
-      rt.roomWaiters.get(exchangeId)?.resolve(null)
-    }
-    const reply = await done
-    // A turn that ended leaves nothing for a stop to cancel.
-    if (typeof reply === 'string' || reply?.failure !== undefined) started.splice(started.indexOf(turn), 1)
-    if (reply === null || typeof reply === 'object') return reply
-    return stripOwnName(member.name, String(reply ?? '').trim())
-  }
-
-  // A member that reaches its context limit mid-turn goes on in a fresh Session, so a
-  // waiter is also found by the member and group that Session now speaks for.
-  const waitersOf = (sessionId) => {
-    const owner = rt.groupOwners.get(sessionId)
-    return [...rt.roomWaiters.values()].filter(waiter => waiter.sessionId === sessionId
-      || (owner !== undefined && waiter.botId === owner.botId && waiter.roomId === owner.roomId))
-  }
-  rt.touchRoomTurn = (sessionId) => { for (const waiter of waitersOf(sessionId)) waiter.touch() }
-  rt.yieldRoomTurn = (sessionId) => { for (const waiter of waitersOf(sessionId)) waiter.approval() }
-  // The team's own tools are quick; any other tool is the start of work.
-  const QUICK_TOOLS = new Set(TEAM_TOOLS)
-  rt.workRoomTurn = (sessionId, tool) => {
-    if (QUICK_TOOLS.has(tool)) return
-    for (const waiter of waitersOf(sessionId)) waiter.work()
-  }
 
   // A called member moves up if it is still waiting, or gets one more turn if it
   // already spoke; either way it goes right after slot `index`. `cap` is the caller's
@@ -367,7 +286,9 @@ export function install(rt) {
       const prompt = roomPrompt(room, member, round)
       round.shown?.push(member.id)
       const text = session.brief === undefined ? prompt : `${session.brief}\n\n${prompt}`
-      const reply = await roomTurn(room, member, session.id, text, slot.note ?? 'your turn', signal, round.started, slot.by)
+      if (!signal.aborted) room.seen[member.id] = room.seq
+      const result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by })
+      const reply = result === null || typeof result === 'object' ? result : stripOwnName(member.name, String(result ?? '').trim())
       round.speaking = null
       if (reply?.failure !== undefined) {
         // Not a pass: the user sees why the member is silent, and the round goes on.
@@ -497,7 +418,7 @@ export function install(rt) {
         rt.roomProgress.delete(exec.callId)
       }
       if (exec.signal?.aborted) {
-        for (const turn of round.started) void rt.stopRoomTurn?.(room.sessions?.[turn.botId] ?? turn.sessionId, turn.exchangeId)
+        for (const turn of round.started) void participant.cancel({ sessionId: room.sessions?.[turn.botId] ?? turn.sessionId, exchangeId: turn.exchangeId })
       }
       await rt.save()
       for (const post of posts) {
@@ -641,9 +562,8 @@ export function install(rt) {
     const room = rt.roomOf(roomId)
     const member = rt.botOf(botId)
     const sessionId = room?.sessions?.[botId]
-    if (room === undefined || member === undefined || sessionId === undefined || rt.live.get(sessionId)?.turn === undefined) return false
-    const agent = await rt.resolveAgent(sessionId)
-    agent.cancel({ kind: 'user' })
+    if (room === undefined || member === undefined || sessionId === undefined) return false
+    if (!await participant.cancel({ sessionId })) return false
     await postToRoom(room, member, '', { quiet: true, stopped: true })
     return true
   }

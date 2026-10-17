@@ -1,5 +1,11 @@
 # OpenCode pilot contract (#198)
 
+**Scope update:** #198 requires collaboration in the same FlyBot room. The
+[room participant design](room-participants.md) describes that path. The DM
+proposal below is retained as the original offline transport experiment; it
+does not satisfy or replace the same-room acceptance target. Bot Social's
+same-owner friendship constraint continues to apply to social enrollment.
+
 **Status: proposed; documentation only.** This is the first implementation slice of
 [#198](https://github.com/ThinkFlowLab/FlyBot/issues/198), not a shipped integration
 or a decision that the RFC is closed. No runtime, configuration switch, permission
