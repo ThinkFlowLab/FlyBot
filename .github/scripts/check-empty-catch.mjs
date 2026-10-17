@@ -7,7 +7,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const CATCH = /(?<![\w$.])catch\s*(?:\(\s*[A-Za-z_$][\w$]*\s*\))?\s*\{/g
+const CATCH = /(?<![\w$.])catch\s*(?:\([^)]*\))?\s*\{/g
 
 // The block after `{`, ending at the brace that closes it. Braces inside strings can
 // only end the walk early, and a truncated block still shows its leading statements,

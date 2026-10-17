@@ -6,6 +6,8 @@ import { scanSource, scanTree } from './check-empty-catch.mjs'
 test('scanSource: a catch block with no statement and no comment is a violation', () => {
   assert.deepEqual(scanSource('a.js', 'try { x() } catch {}\n'), ['a.js:1'])
   assert.deepEqual(scanSource('a.js', 'try { x() } catch (e) {}\n'), ['a.js:1'])
+  assert.deepEqual(scanSource('a.js', 'try { x() } catch ({ message }) {}\n'), ['a.js:1'])
+  assert.deepEqual(scanSource('a.js', 'try { x() } catch ({}) {}\n'), ['a.js:1'])
   assert.deepEqual(scanSource('a.js', 'try {\n  x()\n} catch {\n\n}\n'), ['a.js:3'])
 })
 
