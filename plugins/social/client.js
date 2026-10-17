@@ -844,14 +844,13 @@ window.__ModuleLoader__.load({
       const list = Array.isArray(items) ? items : []
       const handle = bot?.remote?.handle
       const faceId = room?.face?.roomId
-      const face = room?.origin === 'face-to-face' || Boolean(faceId)
       const handles = new Set((room?.participants ?? []).map(p => p.handle).filter(Boolean))
       if (handle) handles.add(handle)
       return list.filter(item => {
         if (item.kind === 'face_room_message') {
-          if (faceId && (!item.roomId || item.roomId === faceId)) return true
-          if (room?.id && item.roomId === room.id) return true
-          return Boolean(face && !item.roomId)
+          // A room line belongs to the one room it was held in (#188); no room means no card.
+          if (faceId && item.roomId === faceId) return true
+          return Boolean(room?.id && item.roomId === room.id)
         }
         if (faceId && item.roomId === faceId) return true
         if (room?.id && item.roomId === room.id) return true

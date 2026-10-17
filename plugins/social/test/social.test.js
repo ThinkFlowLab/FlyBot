@@ -2398,7 +2398,7 @@ test('Add friend mints and copies an invite link in one click', async () => {
 test('#126: a face-room hold shows in that chat with a readable name', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const plugin = pluginOf([
-    [{ id: 'apr-face', kind: 'face_room_message', from: 'Chief', toName: 'the room', text: 'hello there' }],
+    [{ id: 'apr-face', kind: 'face_room_message', roomId: 'frm_1', from: 'Chief', toName: 'the room', text: 'hello there' }],
     [],
     '',
   ])
@@ -2408,6 +2408,42 @@ test('#126: a face-room hold shows in that chat with a readable name', () => {
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
   assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → the room')))
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('hello there')))
+})
+
+test('#188: a face-room hold shows only in its own room, never in a newer one', () => {
+  const holds = [
+    { id: 'apr-old', kind: 'face_room_message', roomId: 'frm_old', from: 'Chief', toName: 'the room', text: 'old line' },
+    { id: 'apr-legacy', kind: 'face_room_message', from: 'Chief', toName: 'the room', text: 'no room known' },
+  ]
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([holds, [], ''])
+  const tree = walk(plugin.ChatApprovalDock({
+    room: { origin: 'face-to-face', id: 'g2', face: { roomId: 'frm_new' } },
+  }))
+  assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+  const own = walk(pluginOf([holds, [], '']).ChatApprovalDock({
+    room: { origin: 'face-to-face', id: 'g1', face: { roomId: 'frm_old' } },
+  }))
+  assert.equal(own.filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
+})
+
+test('#188: holds of a left room or with no known room stay out of the list and the waiting dots', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const hold = (id, extra = {}) => ({ approval_id: id, kind: 'face_room_message', status: 'pending', bot_id: 'm1', message: { payload: { text: id } }, summary: `To the room: ${id}`, ...extra })
+  server.tools.list_approvals = () => ({ approvals: [hold('apr-live', { room_id: 'frm_live' }), hold('apr-left', { room_id: 'frm_left' }), hold('apr-legacy')] })
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_live', name: 'Live', status: 'open', members: [] })
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_left', name: 'Old', status: 'left', members: [] })
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const ids = (await social.pendingApprovals({ fresh: true })).map(item => item.id)
+  assert.deepEqual(ids, ['apr-live'])
 })
 
 test('#159: a face-room hold never shows the FLYBOT-FACE-HUMAN envelope', () => {

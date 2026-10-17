@@ -62,6 +62,7 @@ Everything in `plugins/social/` (entry `plugins/social/index.js` and any helpers
 ### Face-room human turns and UI polish (#166, #167)
 
 - A plain human line in an open face-to-face room is logged and fanned out; it does not start a Chief/Bot model turn unless that Bot is @mentioned or @all (core `openingSpeakers`; `plugins/social/test` and `core/test/rounds.test.js`).
+- A held room line belongs to one room (#188): the send path records `settings.holdRooms[approvalId] = faceRoomId` when Bot Social's card does not name the room, and `pendingApprovals` drops holds with no known room (legacy) or whose room is left / closed / past here, so no other room shows the card and no waiting dot stays on an old row. The room scope in the client, the `roomApprovals` provider and `hidden-remotes` match the room id strictly.
 - Face-room holds (`face_room_message` / `roomId`) attach `pendingCount` to that room only. They do not badge an unrelated friend row via `from`/`to` handle. The social strip no longer draws an **N to approve** tag under the last sidebar row; the gold wait dot on the owning RoomRow / 1:1 remains.
 - Approval preview strips `To face room:` / `To the room:` and wraps on word boundaries (`overflow-wrap:break-word; word-break:normal`), with **Show more** when long.
 - Join notices are remembered by handle and by exact text so a `member.joined` event plus the members loop does not post two identical joined lines.

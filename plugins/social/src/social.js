@@ -1722,6 +1722,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (keys.length > 200) for (const key of keys.sort((a, b) => map[a] - map[b]).slice(0, keys.length - 200)) delete map[key]
     saveSettings()
   }
+  // The room a held room line belongs to (#188). Bot Social's approval card may not name it, so
+  // the send path records it; a hold with no known room is legacy and stays out of every room.
+  const holdRooms = () => (settings.holdRooms ??= {})
+  function rememberHoldRoom(id, faceRoomId) {
+    if (!id || !faceRoomId) return
+    const map = holdRooms()
+    map[id] = { roomId: faceRoomId, at: now() }
+    const keys = Object.keys(map)
+    if (keys.length > 200) for (const key of keys.sort((a, b) => map[a].at - map[b].at).slice(0, keys.length - 200)) delete map[key]
+    saveSettings()
+  }
+  const faceHoldLive = (roomId) => {
+    const hosted = roomId ? flybot.rooms.ofFace?.(roomId) : undefined
+    if (hosted?.face?.status === 'left' || hosted?.face?.status === 'closed') return false
+    return !(settings.pastFaceRooms ?? []).some(item => item.faceRoomId === roomId)
+  }
   const ownLineApproving = new Set()
   async function approveOwnLine(item) {
     if (!item?.id || ownLineApproving.has(item.id)) return
@@ -1743,6 +1759,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const items = raw
         .map(item => approvalView(item, { localName: localNameOf }))
         .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message') && (item.status === 'pending' || item.status === 'pending_approval'))
+        // A held room line belongs to one live room only (#188): no known room (legacy) or a room
+        // that is left / closed here means no card and no waiting dot anywhere.
+        .map(item => (item.kind === 'face_room_message' && !item.roomId && holdRooms()[item.id]?.roomId ? { ...item, roomId: holdRooms()[item.id].roomId } : item))
+        .filter(item => item.kind !== 'face_room_message' || (ownLineIds()[item.id] || (item.roomId && faceHoldLive(item.roomId))))
       const own = items.filter(item => ownLineIds()[item.id])
       const held = items.filter(item => !ownLineIds()[item.id])
       pendingCache = { at: now(), items: held }
@@ -1839,7 +1859,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const faceId = room?.face?.roomId
     return pendingCache.items.filter((item) => {
       if (item.kind === 'face_room_message') {
-        return Boolean(faceId) && (!item.roomId || item.roomId === faceId || item.roomId === room.id)
+        return Boolean(item.roomId) && (item.roomId === faceId || item.roomId === room.id)
       }
       if (item.roomId) return item.roomId === room.id || (faceId && item.roomId === faceId)
       return handles.has(norm(item.from)) || handles.has(norm(item.to))
@@ -2263,6 +2283,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       try {
         const sent = await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
         if (sent?.status === 'pending_approval') {
+          rememberHoldRoom(sent.approvalId, serverId)
           // A person's own line is theirs: typing it is the approval, so it goes out at once
           // with no card (#179). Only Bot-written room lines wait for Approve / Reject.
           if (outbound.human && sent.approvalId) {

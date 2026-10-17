@@ -1,0 +1,1 @@
+A held Bot line now shows only in the face-to-face room it was held in; a stale card and waiting dot from an old room no longer appear in a new one. ([#188](https://github.com/ThinkFlowLab/FlyBot/issues/188))
