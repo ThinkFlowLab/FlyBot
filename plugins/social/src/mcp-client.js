@@ -267,6 +267,25 @@ export function normalizeGrants(value) {
   return asList(value).map(normalizeGrant).filter(Boolean)
 }
 
+// Bot Social accepts the FlyBot connector token only on these routes (bot-social README,
+// "Connector tokens work at /mcp and at the FlyBot REST routes"; docs/FACE_ROOMS.md
+// §Auth): /mcp, every face-room route, and per-Bot grant management. Other owner routes
+// reject it with 403 connector_token_rest_forbidden — /v1/me and the relationships
+// routes are the ones FlyBot used to try. Check here so a new call fails at the call
+// site, before the token leaves this process.
+const CONNECTOR_PATHS = [
+  /^\/mcp$/,
+  /^\/v1\/face-rooms(?:\/|$)/,
+  /^\/v1\/bots\/[^/]+\/(?:grants(?:\/|$)|profile$)/,
+  /^\/v1\/grants\/[^/]+$/,
+  /^\/v1\/remote-bots(?:\/|$)/,
+]
+
+export function connectorTokenAllowed(path) {
+  const route = String(path ?? '').split('?')[0]
+  return CONNECTOR_PATHS.some(pattern => pattern.test(route))
+}
+
 // Owner MCP + REST grant/invite helpers. Named methods so social.js never builds
 // URLs or tool names inline. Prefers list_bot_grants / revoke_bot_grant, then
 // list_grants / revoke_grant, then REST / list_friends.
@@ -277,6 +296,9 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
   async function rest(method, path, body) {
     if (!base) throw new BotSocialError(`Bot Social ${method} ${path}: no server URL`, 'no_server')
     if (!token) throw new BotSocialError(`Bot Social ${method} ${path}: no token`, 'no_token')
+    if (!connectorTokenAllowed(path)) {
+      throw new BotSocialError(`Bot Social ${method} ${path}: a connector token is not accepted there`, 'route_not_allowed')
+    }
     const response = await fetchImpl(`${base}${path}`, {
       method,
       headers: {
@@ -300,9 +322,9 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
       err.reason = reason
       throw err
     }
-    // Grant REST is a last resort when the MCP tool is missing. Connector tokens are
-    // forbidden on those /v1 routes (403 connector_token_rest_forbidden); callers catch
-    // and fall through. Face-room REST lives in face-rooms.js and is allowed.
+    // Grant REST is a last resort when the MCP tool is missing. Only the routes in
+    // connectorTokenAllowed accept the connector token; a path outside that list is
+    // refused above. Face-room REST lives in face-rooms.js and is allowed.
     return data
   }
 
