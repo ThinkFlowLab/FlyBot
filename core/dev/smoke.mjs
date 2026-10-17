@@ -358,6 +358,22 @@ await step('detached capabilities disappear from Chief', () => send(chief().id, 
   return expect(report?.endsWith(seesNothing), `Chief reported ${report}`)
 })
 
+let inputTaskId
+const inputWait = await step('task records an input wait without a model call', async () => {
+  const task = await api('task-create', { botId: chief().id, title: 'Input smoke', criteria: 'Record selected input' })
+  inputTaskId = task.id
+  await api('task-accept', { id: task.id })
+  await api('task-start', { id: task.id })
+  return api('task-wait-input', { id: task.id, question: 'How many retry attempts?' })
+}, (value, calls) => expect(value.status === 'blocked' && value.waitingFor === 'input' && typeof value.inputRequest?.id === 'string', 'expected a current input question')
+  ?? expect(calls.length === 0, 'task bookkeeping must not call the model'))
+
+await step('matching task input resumes bookkeeping without a model call', () => api('task-answer-input', {
+  id: inputTaskId, questionId: inputWait?.inputRequest?.id, answer: 'Three attempts, checking cancellation each time.',
+}), (value, calls) => expect(value.status === 'working' && value.waitingFor === undefined && value.inputRequest?.answeredAt !== undefined, 'expected answered input and working status')
+  ?? expect(calls.length === 0, 'answering task input must not call the model'))
+if (inputTaskId) await api('task-cancel', { id: inputTaskId })
+
 if (outFile) writeFileSync(outFile, `${JSON.stringify(transcript, null, 2)}\n`)
 console.log(failures.length === 0 ? `\nsmoke: all ${transcript.length} steps passed` : `\nsmoke: ${failures.length} failed\n${failures.join('\n')}`)
 process.exit(failures.length === 0 ? 0 : 1)

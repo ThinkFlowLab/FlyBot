@@ -56,6 +56,31 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 A tracked request with a stable id (`task-<hex>`) and a small state machine, owned by `src/host/tasks.js` with `state.tasks` (additive; corrupt values reset, no version bump). States: `open → claimed → working → blocked ⇄ working → result-ready → accepted`, with `cancelled`/`failed` terminal and `accepted` reachable only from `result-ready` — a failed or cancelled task can never display as accepted (#54). Transitions after create are the requester's (server-derived `requesterId`, the signed-in actor or the single owner; `bot/forbidden` otherwise, `bot/stale` on invalid moves), recorded with per-status actor entries. Create does not require owning the Bot: a matching per-Bot grant, or both the requester and the Bot as current members of the named room, is enough; outgoing holds stay the owner's (#52 card). A working task's held send blocks **that** task (`meta.taskId` stamped on the send, matching origin when the Bot has several working tasks) with the approval id; the owner's decide resumes (approve) or cancels (reject) it; deleting the responsible Bot fails its open tasks. `result-ready` is protected from prune while it waits for acceptance. Endpoints `tasks` / `task-create` / `task-accept` / `task-start` / `task-return` / `task-accept-result` / `task-cancel` are an explicit authz allow-list and are record-checked in tasks.js. Records store pointers and a copied summary, never private transcripts. Clarification and `workBotId` wait on #55's exchange wiring. Team mode stays disabled.
 
+### Task input waits
+
+`task-wait-input { id, question }` is a requester-only bookkeeping action on a
+working task (#207). It records `blocked`, `waitingFor: 'input'` and a fresh
+`inputRequest { id, question, requestedAt }`. `task-answer-input { id, questionId,
+answer }` requires that exact current question, the same requester and no pending
+task approvals before returning to `working`. Question/answer must be nonblank
+strings of at most 2,000 characters. Only the latest selected question/answer
+snapshot is kept, with actor entries linking its question ID; chat history is not
+copied. The wait and snapshot survive restart.
+
+`task-start` starts a claimed task only. It cannot resume a blocked task; approval
+decisions and matching input answers are the respective resume paths. An
+approval-only wait cannot be replaced by an input request. Explicitly stamped
+`meta.taskId` sends may still link an input-waiting task; untargeted sends do not
+guess that association. Such holds accumulate in `inputApprovalIds`, preserving
+all outstanding holds while a sibling task stays untouched. Each approval clears
+only its own ID; approval does not answer the question. Any rejection cancels the
+task. Cancellation/Bot deletion clear active input/approval-wait markers while
+retaining the selected input snapshot; late answers cannot revive a terminal task.
+
+These endpoints do not prompt, deliver a clarification, resume an agent or grant
+execution/tool permissions. Automatic exchange wiring, runtime-scoped observation
+credentials and team mode remain separate work under #55/#198.
+
 ### Inbound shared rooms
 
 - Bot Social conversations are 1:1; it does not list a FlyBot group. When a room gains a granted remote Bot (create-room, addParticipants, or 新建群聊 picking a friend's chat), the host fans out a `FLYBOT-ROOM-SHARE` envelope (`src/shared/room-share.js`) through `flybotSend` (`via: 'room-share'` for join/leave, `via: 'room'` for lines, `meta.roomId` set) so the Bot's owner's FlyBot can project it immediately — including a room with no chat lines yet. Receive is `rt.applyInboundRoomShare` (`origin: 'inbound-share'`, `recordInboundSharedRoom`), labelled **Shared room from \<inviter\>** with the room name stored. A leave envelope, hide, or grant revoke marks it left/hidden. `reach()` allows a local member to message a remote that already sits in that room when `roomId` is on the send. Still not team mode.

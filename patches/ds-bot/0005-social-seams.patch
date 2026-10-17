@@ -419,7 +419,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,7 +319,51 @@ export function install(rt) {
+@@ -319,7 +319,53 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -430,6 +430,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        case 'task-return':
 +        case 'task-accept-result':
 +        case 'task-cancel':
++        case 'task-wait-input':
++        case 'task-answer-input':
 +          await rt.load()
 +          return ok(await rt.taskEndpoint(endpoint, body, actor))
 +        case 'share-brief':

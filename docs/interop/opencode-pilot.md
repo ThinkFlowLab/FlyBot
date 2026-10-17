@@ -139,7 +139,7 @@ facets alongside it, not invented values written into `task.status`.
 | Execution observation | FlyBot projection and required evidence |
 | --- | --- |
 | Request enrolled / execution starts | `open → claimed → working` only through the host-authorized seam. Adapter receipt alone does not claim a task. |
-| Waiting for a selected input | `blocked`, reason `input`; correlate the question. An authorized answer resumes `working`. This reason/transition seam is new work. |
+| Waiting for a selected input | `blocked`, `waitingFor: 'input'`, with the host's current question ID. Requester-only `task-wait-input` / `task-answer-input` bookkeeping exists (#207); an answer resumes `working` only after separate task approvals clear. Automatic adapter routing/authentication is still new work. |
 | Waiting for outbound approval | `blocked`, reason `approval`; preserve each layer's approval ID. Local approval does not clear a separate server hold. |
 | Unexpected tool permission request | Deny in the no-tools pilot; report the unsupported action and stop the turn. Never auto-approve or relay it as owner consent. |
 | Runtime idle | Observation only. Idle can mean waiting, failed, aborted or finished; it is not completion evidence. |

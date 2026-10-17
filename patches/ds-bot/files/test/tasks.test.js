@@ -356,3 +356,217 @@ test('a grantee may create a task on a granted child, not on an ungranted siblin
   assert.equal(onUngranted.ok, false, JSON.stringify(onUngranted))
   assert.equal(onUngranted.error.code, 'bot/forbidden')
 })
+
+test('restored input holds keep Bot-owner approval distinct from the task requester answer', async t => {
+  let app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const bob = await app.signIn('Bob', alice.sessionToken)
+  await app.fb.grants.set('s', [{ grantee: bob.memberId }])
+  const id = await workingInputTask(app, bob.sessionToken, 's')
+  const waiting = await app.call('task-wait-input', { id, question: 'Question for requester' }, bob.sessionToken)
+  assert.equal(waiting.ok, true, JSON.stringify(waiting))
+  const questionId = waiting.value.inputRequest.id
+  const gate = () => app.fb.bot.send.use({ name: 'input-gate', handle: msg => msg.meta?.hold ? { action: 'hold', reason: 'test approval' } : undefined })
+  gate()
+  const held = await app.fb.bot.send({ from: 's', to: 'a', text: 'held', meta: { hold: true, taskId: id } })
+  assert.equal(held.action, 'hold')
+  const home = app.home
+  await app.stop({ keepHome: true })
+  app = await start(t, { home })
+  gate()
+  assert.deepEqual((await statusOf(app.call, bob.sessionToken, id)).inputApprovalIds, [held.approvalId])
+  const wrongDecision = await app.call('flybot/decide', { id: held.approvalId, decision: 'approve' }, bob.sessionToken)
+  assert.equal(wrongDecision.ok, false)
+  assert.equal(wrongDecision.error.code, 'bot/forbidden')
+  const early = await app.call('task-answer-input', { id, questionId, answer: 'Early answer' }, bob.sessionToken)
+  assert.equal(early.ok, false)
+  assert.equal(early.error.code, 'bot/stale')
+  assert.equal((await app.call('flybot/decide', { id: held.approvalId, decision: 'approve' }, alice.sessionToken)).ok, true)
+  const wrongAnswer = await app.call('task-answer-input', { id, questionId, answer: 'Bot owner answer', actorId: bob.memberId }, alice.sessionToken)
+  assert.equal(wrongAnswer.ok, false)
+  assert.equal(wrongAnswer.error.code, 'bot/forbidden')
+  const answer = await app.call('task-answer-input', { id, questionId, answer: 'Requester answer' }, bob.sessionToken)
+  assert.equal(answer.ok, true, JSON.stringify(answer))
+  assert.equal(answer.value.status, 'working')
+})
+
+test('racing input requests and duplicate answers record one question and one answer', async t => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const id = await workingInputTask(app, alice.sessionToken)
+  const before = await statusOf(app.call, alice.sessionToken, id)
+  const requests = await Promise.all(['First question', 'Second question'].map(question => app.call('task-wait-input', { id, question }, alice.sessionToken)))
+  assert.equal(requests.filter(r => r.ok).length, 1)
+  assert.equal(requests.find(r => !r.ok).error.code, 'bot/stale')
+  const questionId = requests.find(r => r.ok).value.inputRequest.id
+  const answers = await Promise.all(['First answer', 'Second answer'].map(answer => app.call('task-answer-input', { id, questionId, answer }, alice.sessionToken)))
+  assert.equal(answers.filter(r => r.ok).length, 1)
+  assert.equal(answers.find(r => !r.ok).error.code, 'bot/stale')
+  const after = await statusOf(app.call, alice.sessionToken, id)
+  assert.equal(after.actors.length, before.actors.length + 2)
+  assert.equal(after.status, 'working')
+})
+
+async function workingInputTask(app, token, botId = 'a') {
+  const made = await app.createTask(token, { botId })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  for (const endpoint of ['task-accept', 'task-start']) {
+    assert.equal((await app.call(endpoint, { id: made.value.id }, token)).ok, true)
+  }
+  return made.value.id
+}
+
+test('task input waits survive restart, accept only the current question, and dispatch no prompt', async t => {
+  let app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const id = await workingInputTask(app, alice.sessionToken)
+  const waiting = await app.call('task-wait-input', { id, question: 'Must retries stop after cancellation?' }, alice.sessionToken)
+  assert.equal(waiting.ok, true, JSON.stringify(waiting))
+  assert.equal(waiting.value.status, 'blocked')
+  assert.equal(waiting.value.waitingFor, 'input')
+  const bypass = await app.call('task-start', { id }, alice.sessionToken)
+  assert.equal(bypass.ok, false)
+  assert.equal(bypass.error.code, 'bot/stale')
+  const questionId = waiting.value.inputRequest.id
+  assert.match(questionId, /^input-[0-9a-f]{16}$/)
+  const home = app.home
+  await app.stop({ keepHome: true })
+  app = await start(t, { home })
+  assert.deepEqual((await statusOf(app.call, alice.sessionToken, id)).inputRequest, waiting.value.inputRequest)
+  const calls = app.agentOf('a').calls.length
+  const answer = await app.call('task-answer-input', { id, questionId, answer: 'Yes, before each retry.' }, alice.sessionToken)
+  assert.equal(answer.ok, true, JSON.stringify(answer))
+  assert.equal(answer.value.status, 'working')
+  assert.equal(answer.value.waitingFor, undefined)
+  assert.equal(answer.value.inputRequest.answer, 'Yes, before each retry.')
+  assert.equal(answer.value.actors.at(-1).questionId, questionId)
+  assert.equal(app.agentOf('a').calls.length, calls)
+  await app.stop({ keepHome: true })
+  app = await start(t, { home })
+  assert.deepEqual((await statusOf(app.call, alice.sessionToken, id)).inputRequest, answer.value.inputRequest)
+  const next = await app.call('task-wait-input', { id, question: 'How many attempts?' }, alice.sessionToken)
+  assert.equal(next.ok, true)
+  assert.notEqual(next.value.inputRequest.id, questionId)
+  assert.equal(next.value.inputRequest.answer, undefined)
+  const stale = await app.call('task-answer-input', { id, questionId, answer: 'Old answer' }, alice.sessionToken)
+  assert.equal(stale.ok, false)
+  assert.equal(stale.error.code, 'bot/stale')
+  const cancelled = await app.call('task-cancel', { id }, alice.sessionToken)
+  assert.equal(cancelled.ok, true)
+  assert.equal(cancelled.value.waitingFor, undefined)
+  assert.equal(cancelled.value.inputRequest.question, 'How many attempts?')
+  const late = await app.call('task-answer-input', { id, questionId: next.value.inputRequest.id, answer: 'Late' }, alice.sessionToken)
+  assert.equal(late.ok, false)
+  assert.equal(late.error.code, 'bot/stale')
+})
+
+test('input actions reject forged/wrong/revoked actors and invalid selected text', async t => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const bob = await app.signIn('Bob', alice.sessionToken)
+  const id = await workingInputTask(app, alice.sessionToken)
+  for (const token of [bob.sessionToken, undefined]) {
+    const denied = await app.call('task-wait-input', { id, question: 'Question', actorId: alice.memberId }, token)
+    assert.equal(denied.ok, false)
+    assert.equal(denied.error.code, token ? 'bot/forbidden' : 'bot/unauthorized')
+  }
+  for (const question of ['', '   ', null, 123, 'x'.repeat(2001)]) {
+    const invalid = await app.call('task-wait-input', { id, question }, alice.sessionToken)
+    assert.equal(invalid.ok, false)
+    assert.equal(invalid.error.code, 'bot/invalid')
+    assert.equal((await statusOf(app.call, alice.sessionToken, id)).status, 'working')
+  }
+  const waiting = await app.call('task-wait-input', { id, question: 'Question' }, alice.sessionToken)
+  const questionId = waiting.value.inputRequest.id
+  const foreign = await app.call('task-answer-input', { id, questionId, answer: 'Forged', requesterId: alice.memberId, actorId: alice.memberId }, bob.sessionToken)
+  assert.equal(foreign.ok, false)
+  assert.equal(foreign.error.code, 'bot/forbidden')
+  for (const answer of ['', '  ', null, 123, 'x'.repeat(2001)]) {
+    const invalid = await app.call('task-answer-input', { id, questionId, answer }, alice.sessionToken)
+    assert.equal(invalid.ok, false)
+    assert.equal(invalid.error.code, 'bot/invalid')
+  }
+  await app.call('auth-revoke', {}, alice.sessionToken)
+  const revoked = await app.call('task-answer-input', { id, questionId, answer: 'Revoked' }, alice.sessionToken)
+  assert.equal(revoked.ok, false)
+  assert.equal(revoked.error.code, 'bot/unauthorized')
+})
+
+test('input actions cannot replace or clear an approval-only task wait', async t => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const id = await workingInputTask(app, alice.sessionToken)
+  app.fb.bot.send.use({ name: 'input-gate', handle: msg => msg.meta?.hold ? { action: 'hold', reason: 'test approval' } : undefined })
+  const held = await app.fb.bot.send({ from: 'a', to: 's', text: 'held', meta: { hold: true, taskId: id } })
+  assert.equal(held.action, 'hold')
+  for (const [endpoint, body] of [['task-start', {}], ['task-wait-input', { question: 'Question' }], ['task-answer-input', { questionId: 'invented', answer: 'Answer' }]]) {
+    const denied = await app.call(endpoint, { id, ...body }, alice.sessionToken)
+    assert.equal(denied.ok, false)
+    assert.equal(denied.error.code, 'bot/stale')
+  }
+  assert.equal(app.fb.approvals.get(held.approvalId).status, 'pending')
+  assert.equal((await statusOf(app.call, alice.sessionToken, id)).approvalId, held.approvalId)
+})
+
+test('all holds during an input wait stay on that task; approval does not answer its question', async t => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const id = await workingInputTask(app, alice.sessionToken)
+  const sibling = await workingInputTask(app, alice.sessionToken)
+  const waiting = await app.call('task-wait-input', { id, question: 'Which retry limit?' }, alice.sessionToken)
+  assert.equal(waiting.ok, true, JSON.stringify(waiting))
+  const questionId = waiting.value.inputRequest.id
+  app.fb.bot.send.use({ name: 'input-gate', handle: msg => msg.meta?.hold ? { action: 'hold', reason: 'test approval' } : undefined })
+  const holds = []
+  for (const text of ['first held send', 'second held send']) {
+    const held = await app.fb.bot.send({ from: 'a', to: 's', text, meta: { hold: true, taskId: id } })
+    assert.equal(held.action, 'hold')
+    holds.push(held.approvalId)
+  }
+  assert.deepEqual((await statusOf(app.call, alice.sessionToken, id)).inputApprovalIds, holds)
+  assert.equal((await statusOf(app.call, alice.sessionToken, sibling)).status, 'working')
+  for (const approvalId of holds) {
+    const denied = await app.call('task-answer-input', { id, questionId, answer: 'Three' }, alice.sessionToken)
+    assert.equal(denied.ok, false)
+    assert.equal(denied.error.code, 'bot/stale')
+    const approved = await app.call('flybot/decide', { id: approvalId, decision: 'approve' }, alice.sessionToken)
+    assert.equal(approved.ok, true, JSON.stringify(approved))
+    assert.equal((await statusOf(app.call, alice.sessionToken, id)).status, 'blocked')
+  }
+  const resumed = await app.call('task-answer-input', { id, questionId, answer: 'Three' }, alice.sessionToken)
+  assert.equal(resumed.ok, true, JSON.stringify(resumed))
+  assert.equal(resumed.value.status, 'working')
+  assert.equal(resumed.value.approvalId, undefined)
+  assert.equal(resumed.value.inputApprovalIds, undefined)
+})
+
+test('approval rejection and Bot deletion end input waits; late answers cannot revive them', async t => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const id = await workingInputTask(app, alice.sessionToken)
+  const waiting = await app.call('task-wait-input', { id, question: 'Question' }, alice.sessionToken)
+  assert.equal(waiting.ok, true, JSON.stringify(waiting))
+  app.fb.bot.send.use({ name: 'input-gate', handle: msg => msg.meta?.hold ? { action: 'hold', reason: 'test approval' } : undefined })
+  const held = await app.fb.bot.send({ from: 'a', to: 's', text: 'held', meta: { hold: true, taskId: id } })
+  assert.equal((await app.call('flybot/decide', { id: held.approvalId, decision: 'reject' }, alice.sessionToken)).ok, true)
+  const cancelled = await statusOf(app.call, alice.sessionToken, id)
+  assert.equal(cancelled.status, 'cancelled')
+  assert.equal(cancelled.waitingFor, undefined)
+  const other = await workingInputTask(app, alice.sessionToken, 's')
+  const question = await app.call('task-wait-input', { id: other, question: 'Another question' }, alice.sessionToken)
+  assert.equal(question.ok, true)
+  assert.equal((await app.call('delete-bot', { id: 's' }, alice.sessionToken)).ok, true)
+  assert.equal((await statusOf(app.call, alice.sessionToken, other)).status, 'failed')
+  for (const [taskId, q] of [[id, waiting.value.inputRequest.id], [other, question.value.inputRequest.id]]) {
+    const late = await app.call('task-answer-input', { id: taskId, questionId: q, answer: 'Late' }, alice.sessionToken)
+    assert.equal(late.ok, false)
+    assert.equal(late.error.code, 'bot/stale')
+  }
+})

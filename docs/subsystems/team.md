@@ -111,6 +111,20 @@ Private context crosses owners only through an explicit, owner-granted share; ro
 
 `state.tasks` (`core/src/host/tasks.js`): a request becomes a tracked task — `open → claimed → working → blocked ⇄ working → result-ready → accepted`, `cancelled`/`failed` terminal, `accepted` only from `result-ready`. Only the requester's session moves their task (`bot/forbidden` otherwise). Create does not require owning the Bot: a matching per-Bot grant, or both the requester and the Bot as current members of the named room, is enough — a granted child can take a handoff within its authority. Outgoing holds stay the owner's: a held send (#52) blocks **that** task (`meta.taskId` stamped on the send from the working task — origin session/room when the Bot has several, else the latest — or an explicit id) until that owner decides. `result-ready` is protected from prune while it waits for acceptance. Task channel names are an explicit allow-list (`tasks` / `task-create` / `task-accept` / `task-start` / `task-return` / `task-accept-result` / `task-cancel`). Records carry per-status actor entries, pointers to the originating conversation, and a summary — never private transcripts. The in-room task view and audit trail are #57's; clarification (ask the requester) and `workBotId` (the specialist on the exchange) wait on #55's exchange wiring. Team mode stays disabled.
 
+### Requester-controlled input-wait bookkeeping (#207)
+
+The host task API has `task-wait-input` and `task-answer-input`, both checked
+against the task's server-derived requester. They persist one bounded selected
+question/answer snapshot and a current question ID, not conversation history.
+Answering requires the current ID and no pending task approvals. `task-start`
+only starts claimed work; it cannot bypass a blocked input or approval wait.
+Explicitly task-tagged holds that arrive during an input wait stay separately
+tracked, including across restart; approval clears no unanswered question.
+
+This is bookkeeping only: no automatic question delivery, model prompt, external
+runtime authentication or cross-owner execution is added. The #55 exchange wiring
+and team-mode gates remain unsatisfied. See [core-host](core-host.md#task-input-waits).
+
 ## Identity model
 
 | Relation | Rule |

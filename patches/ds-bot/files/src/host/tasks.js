@@ -33,6 +33,13 @@ const KEPT = 200
 
 const stale = message => Object.assign(new Error(message), { code: 'bot/stale' })
 const forbidden = message => Object.assign(new Error(message), { code: 'bot/forbidden' })
+const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
+const waitingForInput = task => task.status === 'blocked' && task.waitingFor === 'input'
+const canLinkSend = task => task.status === 'working' || waitingForInput(task)
+const selectedInput = (value, name) => {
+  if (typeof value !== 'string' || !value.trim() || value.length > 2000) throw invalid(`${name} must contain 1–2000 characters`)
+  return value
+}
 
 export function install(rt) {
   const { state } = rt
@@ -71,11 +78,19 @@ export function install(rt) {
       && live.some(p => p.kind === 'bot' && !p.remote && p.id === bot.id)
   }
 
+  function record(task, actor, extra) {
+    task.updatedAt = Date.now()
+    task.actors.push({ status: task.status, at: task.updatedAt, ...(actor?.memberId ? { memberId: actor.memberId } : {}), ...extra })
+  }
   function transition(task, to, actor, extra) {
     if (!TRANSITIONS[task.status]?.includes(to)) throw stale(`a task that is ${task.status} cannot become ${to}`)
+    if (waitingForInput(task) && to !== 'blocked') {
+      delete task.waitingFor
+      delete task.inputApprovalIds
+      delete task.approvalId
+    }
     task.status = to
-    task.updatedAt = Date.now()
-    task.actors.push({ status: to, at: task.updatedAt, ...(actor?.memberId ? { memberId: actor.memberId } : {}), ...extra })
+    record(task, actor, extra)
   }
 
   const view = task => ({ ...task, actors: [...task.actors ?? []] })
@@ -90,7 +105,8 @@ export function install(rt) {
   // Name the working task a send belongs to so a hold can block that one (#111).
   // Prefer an already-stamped `meta.taskId`; else the Bot's only working task;
   // else the one whose origin matches this send's session/room; else the most
-  // recently started. Clarification / workBotId still wait on #55.
+  // recently started. An explicit id also links a task waiting for input; do not
+  // infer that binding from an unrelated Bot conversation. workBotId waits on #55.
   rt.taskIdForSend = (msg) => {
     const from = msg?.from
     if (typeof from !== 'string') return undefined
@@ -98,7 +114,7 @@ export function install(rt) {
     const given = typeof msg?.meta?.taskId === 'string' ? msg.meta.taskId : undefined
     if (given) {
       const named = store()[given]
-      if (named && named.status === 'working' && ofSender(named)) return given
+      if (named && canLinkSend(named) && ofSender(named)) return given
     }
     const working = Object.values(store()).filter(task => task.status === 'working' && ofSender(task))
     if (working.length === 0) return undefined
@@ -120,10 +136,16 @@ export function install(rt) {
     const named = namedId ? store()[namedId] : undefined
     const ofSender = task => task.ownerBotId === msg.from || task.workBotId === msg.from
     const working = Object.values(store()).filter(task => task.status === 'working' && ofSender(task))
-    const targets = named && named.status === 'working' && ofSender(named)
+    const targets = named && canLinkSend(named) && ofSender(named)
       ? [named]
       : working.length === 1 ? working : []
     for (const task of targets) {
+      if (waitingForInput(task)) {
+        task.inputApprovalIds = [...new Set([...(task.inputApprovalIds ?? []), approval.id])]
+        task.approvalId = task.inputApprovalIds[0]
+        record(task, null, { approvalId: approval.id, by: 'approval while awaiting input' })
+        continue
+      }
       task.approvalId = approval.id
       transition(task, 'blocked', null, { approvalId: approval.id })
     }
@@ -132,6 +154,17 @@ export function install(rt) {
   // The owner's decision on that approval resumes the task — or, on reject, ends it.
   rt.taskDecided = (approval, decision) => {
     for (const task of Object.values(store())) {
+      if (waitingForInput(task) && task.inputApprovalIds?.includes(approval.id)) {
+        if (decision !== 'approve') {
+          transition(task, 'cancelled', { memberId: approval.ownerId }, { approvalId: approval.id, by: 'owner decision' })
+          continue
+        }
+        task.inputApprovalIds = task.inputApprovalIds.filter(id => id !== approval.id)
+        if (task.inputApprovalIds.length) task.approvalId = task.inputApprovalIds[0]
+        else delete task.approvalId
+        record(task, { memberId: approval.ownerId }, { approvalId: approval.id, by: 'approved; input still required' })
+        continue
+      }
       if (task.status !== 'blocked' || task.approvalId !== approval.id) continue
       delete task.approvalId
       transition(task, decision === 'approve' ? 'working' : 'cancelled', { memberId: approval.ownerId }, { by: 'owner decision' })
@@ -192,6 +225,7 @@ export function install(rt) {
         const task = find(body.id)
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         requireRequester(task, actor)
+        if (task.status !== 'claimed') throw stale('Only a claimed task can start; blocked tasks must clear their input or approval wait')
         transition(task, 'working', actor)
         await save()
         return view(task)
@@ -202,6 +236,31 @@ export function install(rt) {
         requireRequester(task, actor)
         transition(task, 'result-ready', actor)
         task.result = { kind: 'summary', summary: String(body.summary ?? '').slice(0, 2000) }
+        await save()
+        return view(task)
+      }
+      case 'task-wait-input': {
+        const task = find(body.id)
+        if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
+        requireRequester(task, actor)
+        if (task.status !== 'working' || task.approvalId) throw stale('Only a working task without an approval wait may request input')
+        const question = selectedInput(body.question, 'Question')
+        const questionId = `input-${randomBytes(8).toString('hex')}`
+        transition(task, 'blocked', actor, { questionId, by: 'input requested' })
+        task.waitingFor = 'input'
+        task.inputRequest = { id: questionId, question, requestedAt: task.updatedAt }
+        await save()
+        return view(task)
+      }
+      case 'task-answer-input': {
+        const task = find(body.id)
+        if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
+        requireRequester(task, actor)
+        if (!waitingForInput(task) || typeof body.questionId !== 'string' || body.questionId !== task.inputRequest?.id) throw stale('This is not the current input request')
+        if (task.approvalId || task.inputApprovalIds?.length) throw stale('Approval is still required before resuming')
+        const answer = selectedInput(body.answer, 'Answer')
+        transition(task, 'working', actor, { questionId: body.questionId, by: 'input answered' })
+        task.inputRequest = { ...task.inputRequest, answer, answeredAt: task.updatedAt }
         await save()
         return view(task)
       }

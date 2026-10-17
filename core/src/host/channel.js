@@ -443,6 +443,8 @@ export function install(rt) {
         case 'task-return':
         case 'task-accept-result':
         case 'task-cancel':
+        case 'task-wait-input':
+        case 'task-answer-input':
           await rt.load()
           return ok(await rt.taskEndpoint(endpoint, body, actor))
         case 'share-brief':

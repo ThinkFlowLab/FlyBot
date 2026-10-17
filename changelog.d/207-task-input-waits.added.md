@@ -1,0 +1,1 @@
+The task API can record a bounded clarification question and resume on its requester's matching answer. Pending send approvals remain separate, and `task-start` can no longer bypass a blocked input or approval wait. No question delivery or agent execution is triggered. ([#207](https://github.com/ThinkFlowLab/FlyBot/issues/207))

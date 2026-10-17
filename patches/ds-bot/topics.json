@@ -51,7 +51,8 @@
     "package.json",
     "scripts/lint.mjs",
     "package-lock.json",
-    "test/diagnostics.test.js"
+    "test/diagnostics.test.js",
+    "dev/smoke.mjs"
   ],
   "0008-client-bundle": [
     "client.js"

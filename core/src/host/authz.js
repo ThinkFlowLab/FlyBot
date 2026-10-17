@@ -53,6 +53,7 @@ const SESSION_TARGETED = new Set(['earlier', 'send', 'answer-question', 'dismiss
 // here keeps a future `task-*` from auto-allowing for any signed-in actor (#111).
 const TASK_ENDPOINTS = new Set([
   'tasks', 'task-create', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-cancel',
+  'task-wait-input', 'task-answer-input',
 ])
 
 const deny = (code, message) => ({ ok: false, code, message })

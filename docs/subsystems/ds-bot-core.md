@@ -17,6 +17,12 @@ This page covers the pin, the patch format and the core's dev tooling. The gener
 
 ## Owns
 
+The mock smoke (`core/dev/smoke.mjs`) includes two API-only task clarification
+steps: persist an input wait, then answer its current question (#207). Both must
+make zero mock-model calls. They exercise the real DSH channel while the focused
+task suite covers authorization, restart, stale answers and independent approval
+holds. Task bookkeeping does not imply runtime execution or tool permission.
+
 - `core/dev/` — harness packages, mock model, test bench, smoke test.
 - Pin (`ds-bot.pin.json`), ordered patches and whole added files (`patches/ds-bot/`).
 
