@@ -104,3 +104,4 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 ## Tests
 
 `npm test` in `core/` (it also fails when `client.js` is stale).
+- A friend's line that Bot Social attests the friend typed themselves (#227) is drawn as the person: `AssistantCell` looks the turn up in `roster.remoteTypedTurns` (`typedBy` in `src/client/text.js`) and renders `PersonMessage` — the person's name and a person mark (`.bt-person-mark`) — instead of the Bot's `Bubbles`. The name comes from the roster (the authenticated Bot Social `from`), never from message text.

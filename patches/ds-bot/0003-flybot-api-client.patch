@@ -132,7 +132,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
 -import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
-+import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
++import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
  import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
 +import { colorOf, lookBotForRemote, toolState, BotMark, RoomAvatar } from './mark.js'
@@ -158,15 +158,42 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      h('div', { className: 'bt-think-text' }, text))
  }
  
-@@ -126,7 +126,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
+@@ -126,7 +126,8 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
    const contexts = useTurnContext(String(data.turn))
    const mentions = useFileMentions({ node, openFile, fileMentions, useTurnData })
    const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
 -  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map(block => block.text)
++  const person = typedBy(roster, sessionId, data.turn)
 +  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter(text => text.trim() !== '')
    const running = data.status === 'running'
    // A streaming reply stands in for the activity row.
    useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts.length > 0 ? { text: true } : null)
+@@ -151,7 +151,24 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
+       })
+     }),
+     reasoning ? h(ThinkingRow, { text: reasoning }) : null,
+-    texts.length ? h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions }) : null)
++    texts.length ? (person
++      ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
++      : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions })) : null)
++}
++
++// A friend's line that Bot Social attests the friend typed themselves: the person's name and a
++// person mark, not the Bot's (the host marks the turn, remote-chat.js / turns.js).
++function PersonMark({ size = 22 }) {
++  return h('span', { className: 'bt-person-mark', style: { width: size, height: size }, 'aria-hidden': true },
++    h('svg', { width: size * 0.64, height: size * 0.64, viewBox: '0 0 24 24', fill: 'currentColor' },
++      h('circle', { cx: 12, cy: 8.5, r: 4.2 }), h('path', { d: 'M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z' })))
++}
++
++function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
++  const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark))
++  return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
++    h('span', { className: 'bt-group-name' }, name),
++    h(Bubbles, { texts, roster, selfId, actions, sessionId, msgKey, useUi, lead }))
+ }
+ 
+ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
 @@ -180,6 +180,75 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
      h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
  }
@@ -1288,12 +1315,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -782,6 +782,9 @@ export const CONVERSATION_CSS = `
+@@ -782,6 +782,11 @@ export const CONVERSATION_CSS = `
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
  .bt-think summary::-webkit-details-marker{display:none}
 +.bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 +.bt-think[open] .bt-think-caret{transform:rotate(90deg)}
++.bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
++.bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
 +.bt-remote-handle{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36))}
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
@@ -1454,6 +1483,28 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
  test('a Bot name is something "@" can call without a second reading', () => {
    assert.equal(nameProblem('新 Bot'), undefined)
    assert.equal(nameProblem('  '), 'A Bot needs a name')
+diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
+--- a/test/turn-tail.test.js
++++ b/test/turn-tail.test.js
+@@ -101,3 +101,18 @@ test('the turn tail entry notes when the turn ended and shows the pause before t
+   assert.deepEqual(noted, [['b', 3, 'end', 2_000]])
+   assert.equal(find(out, node => node.props?.className === 'bt-time-sep').length, 1)
+ })
++
++test('a reply to a line the friend typed themselves is drawn as the person, not as the Bot', () => {
++  const { props } = cellProps()
++  const typed = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 3: 'Bob' } } }) }
++  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles'])
++  const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
++  assert.equal(person.props['data-person'], 'Bob')
++  assert.equal(find(drawn, node => node.props?.className === 'bt-person-mark').length, 1)
++  assert.equal(find(drawn, node => node.props?.className === 'bt-group-name' && node.children.includes('Bob')).length, 1)
++  assert.equal(find(drawn, node => node.type === MarkdownText).length, 1, 'the text is still rendered as markdown')
++  // Another turn, or no mark at all: the Bot\'s own bubble.
++  const other = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 9: 'Bob' } } }) }
++  assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
++  assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
++})
 diff --git a/test/user-bubble.test.js b/test/user-bubble.test.js
 --- a/test/user-bubble.test.js
 +++ b/test/user-bubble.test.js

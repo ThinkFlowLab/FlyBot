@@ -1113,8 +1113,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // Typing it is the approval (#227): a hold Bot Social puts on it is approved here at once,
   // with no card. What marks it as typed is this call site (only the owner's own composer turn
   // reaches it) and the approval id it got back, never the message text; only ids recorded
-  // here are ever approved without the owner's click. The friend's side still shows the
-  // signing Bot: Bot Social carries no author-is-the-person flag a receiver could trust yet.
+  // here are ever approved without the owner's click. The friend's side shows the person: the
+  // call carries typed_by_owner, which Bot Social attests to the receiver only for this host's
+  // token (never from the text). An older Bot Social ignores the field, so the friend's side
+  // shows the signing Bot there, as before.
   async function approveTypedLine(sent) {
     const approvalId = sent?.message?.approval_id ?? sent?.approval_id
     if (sent?.message?.status !== 'pending_approval' || !approvalId) return
@@ -1122,6 +1124,37 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     pendingCache.at = 0
     await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       .catch(error => warn('direct-chat owner line not approved yet; the next poll retries', error))
+  }
+  // Typed-by-owner attestation (Bot Social typed_by_owner): `supported` is learned from the
+  // server's feature list (face rooms) or from an attested reply; `forbidden` is set when this
+  // token may not attest, so lines then go out the old way and nothing is retried in a loop.
+  const typed = { supported: false, forbidden: false, probedAt: 0 }
+  const TYPED_RECHECK_MS = 10 * 60_000
+  async function serverAttests() {
+    if (typed.supported || !faceApi?.features) return typed.supported
+    if (typed.probedAt && now() - typed.probedAt < TYPED_RECHECK_MS) return false
+    typed.probedAt = now()
+    const features = await faceApi.features()
+    if (features?.includes('typed_by_owner')) typed.supported = true
+    return typed.supported
+  }
+  const canAttest = async () => !typed.forbidden && await serverAttests()
+  const isAttestRefused = error => error?.code === 'typed_attestation_forbidden' || /typed_attestation_forbidden/.test(String(error?.message ?? ''))
+  // The owner's own typed line, as Bot Social's send_as_member with the attestation; falls back
+  // to a plain send when this token may not attest.
+  async function sendTypedAsMember(args) {
+    if (!typed.forbidden) {
+      try {
+        const sent = await client.callTool('send_as_member', { ...args, typed_by_owner: true })
+        if (sent?.typed_by_owner === true) typed.supported = true
+        return sent
+      } catch (error) {
+        if (!isAttestRefused(error)) throw error
+        typed.forbidden = true
+        warn('Bot Social will not attest typed lines for this token; they show as the Bot', error)
+      }
+    }
+    return client.callTool('send_as_member', args)
   }
   async function sendChat({ handle, text }) {
     if (!home) throw new Error('Bot Social is not connected')
@@ -1138,7 +1171,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const member = activeMember(bot.id) ?? await register(bot).catch(() => undefined)
       if (!member) continue
       try {
-        const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: target, text })
+        const sent = await sendTypedAsMember({ from_bot_id: member.bot_id, to: target, text })
         if (settings.via[target] !== bot.id) { settings.via[target] = bot.id; saveSettings() }
         await approveTypedLine(sent)
         return ''
@@ -1207,6 +1240,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           : said
         const handle = norm(event.from?.handle)
         const fromHome = event.from?.home_handle ? norm(event.from.home_handle) : undefined
+        // Bot Social stamps typed_by_owner when the sender's owner typed the line themselves (never
+        // read from the text). Only then is it the person's line; the name is the person's, from the
+        // server's owner_display_name.
+        const typedBy = event.typed_by_owner === true ? cleanText(event.from?.owner_display_name) : ''
+        if (event.typed_by_owner === true) typed.supported = true
         const share = await flybot.rooms?.applyInbound?.({
           fromHandle: handle,
           fromHome,
@@ -1222,13 +1260,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // The user's own chat with this friend's Bot (it went out from this Bot's identity):
         // the answer lands in that chat, written back as the friend's Bot's reply.
         if (settings.via[handle] === local.id && flybot.remote?.chats) {
-          await flybot.remote.chats.deliver({ handle, home: fromHome, name: cleanText(event.from?.display_name, handle), text })
+          await flybot.remote.chats.deliver({ handle, home: fromHome, name: cleanText(event.from?.display_name, handle), text, ...(typedBy ? { human: true, ownerName: typedBy } : {}) })
           delivered += 1
           done()
           continue
         }
         const outcome = await flybot.bot.send({
-          from: { kind: 'remote', handle, home: event.from?.home_handle ? norm(event.from.home_handle) : undefined, name: `${cleanText(event.from?.display_name, handle)} (${handle}, Bot Social)` },
+          from: { kind: 'remote', handle, home: event.from?.home_handle ? norm(event.from.home_handle) : undefined, name: typedBy ? `${typedBy} (typed via ${handle}, Bot Social)` : `${cleanText(event.from?.display_name, handle)} (${handle}, Bot Social)` },
           to: local.id,
           text,
           meta: { conversationId: event.conversation_id ?? null },
@@ -2043,6 +2081,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   async function applyFaceSnapshot(snapshot, { asBot } = {}) {
     if (!snapshot?.roomId || !flybot.rooms?.upsertFace) return undefined
+    const attested = await serverAttests()
     const locals = bringable()
     const hosted = flybot.rooms.ofFace?.(snapshot.roomId)
     const previousLive = new Set((hosted?.participants ?? [])
@@ -2090,7 +2129,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     for (const event of snapshot.events ?? []) {
       if (event.eventId && seen.includes(event.eventId)) continue
-      const line = renderFaceEvent(event)
+      const line = renderFaceEvent(event, { attested })
       if (!line) continue
       seen = rememberEvent(seen, event.eventId)
       if (line.system) {
@@ -2309,7 +2348,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       })
       if (!outbound) return
       try {
-        const sent = await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
+        // A person's line goes out plain with typed_by_owner when Bot Social attests it; an older
+        // server (or a token that may not attest) gets the legacy envelope, as before.
+        let sent
+        if (outbound.human && outbound.plain !== undefined && await canAttest()) {
+          try {
+            sent = await faceApi.send(serverId, { text: outbound.plain, botId: outbound.botId, typedByOwner: true })
+          } catch (error) {
+            if (!isAttestRefused(error)) throw error
+            typed.forbidden = true
+            warn('Bot Social will not attest typed lines for this token; sending the legacy form', error)
+          }
+        }
+        sent ??= await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
         if (sent?.status === 'pending_approval') {
           rememberHoldRoom(sent.approvalId, serverId)
           // A person's own line is theirs: typing it is the approval, so it goes out at once

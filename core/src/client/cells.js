@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
-import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
+import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, RoomAvatar } from './mark.js'
 import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
@@ -132,6 +132,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const contexts = useTurnContext(String(data.turn))
   const mentions = useFileMentions({ node, openFile, fileMentions, useTurnData })
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
+  const person = typedBy(roster, sessionId, data.turn)
   const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter(text => text.trim() !== '')
   const running = data.status === 'running'
   // A streaming reply stands in for the activity row.
@@ -157,7 +158,24 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
       })
     }),
     reasoning ? h(ThinkingRow, { text: reasoning }) : null,
-    texts.length ? h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions }) : null)
+    texts.length ? (person
+      ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
+      : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions })) : null)
+}
+
+// A friend's line that Bot Social attests the friend typed themselves: the person's name and a
+// person mark, not the Bot's (the host marks the turn, remote-chat.js / turns.js).
+function PersonMark({ size = 22 }) {
+  return h('span', { className: 'bt-person-mark', style: { width: size, height: size }, 'aria-hidden': true },
+    h('svg', { width: size * 0.64, height: size * 0.64, viewBox: '0 0 24 24', fill: 'currentColor' },
+      h('circle', { cx: 12, cy: 8.5, r: 4.2 }), h('path', { d: 'M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z' })))
+}
+
+function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
+  const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark))
+  return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
+    h('span', { className: 'bt-group-name' }, name),
+    h(Bubbles, { texts, roster, selfId, actions, sessionId, msgKey, useUi, lead }))
 }
 
 function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {

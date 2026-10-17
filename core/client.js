@@ -2003,7 +2003,7 @@ function createSource(initial) {
     }
   };
 }
-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 function indexRoster(value) {
   const byId = {};
@@ -2280,6 +2280,11 @@ function summaryBlocks(text) {
   }
   flush();
   return blocks;
+}
+function typedBy(roster, sessionId, turn) {
+  if (sessionId === void 0 || turn === void 0) return void 0;
+  const name = roster.remoteTypedTurns?.[sessionId]?.[turn];
+  return typeof name === "string" && name ? name : void 0;
 }
 function isHiddenTurn(roster, sessionId, turn) {
   if (sessionId === void 0 || turn === void 0) return false;
@@ -3386,6 +3391,8 @@ var CONVERSATION_CSS = `
 .bt-think summary::-webkit-details-marker{display:none}
 .bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 .bt-think[open] .bt-think-caret{transform:rotate(90deg)}
+.bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
+.bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
 .bt-remote-handle{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
 .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
@@ -4628,6 +4635,7 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
   const contexts = useTurnContext(String(data.turn));
   const mentions = useFileMentions({ node, openFile, fileMentions, useTurnData });
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn);
+  const person = typedBy(roster, sessionId, data.turn);
   const texts2 = groupPart === "reasoning" ? [] : data.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "").map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter((text) => text.trim() !== "");
   const running = data.status === "running";
   useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts2.length > 0 ? { text: true } : null);
@@ -4653,7 +4661,28 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
       });
     }),
     reasoning ? (0, import_react7.createElement)(ThinkingRow, { text: reasoning }) : null,
-    texts2.length ? (0, import_react7.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
+    texts2.length ? person ? (0, import_react7.createElement)(PersonMessage, { name: person, texts: texts2, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi }) : (0, import_react7.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
+  );
+}
+function PersonMark({ size = 22 }) {
+  return (0, import_react7.createElement)(
+    "span",
+    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
+    (0, import_react7.createElement)(
+      "svg",
+      { width: size * 0.64, height: size * 0.64, viewBox: "0 0 24 24", fill: "currentColor" },
+      (0, import_react7.createElement)("circle", { cx: 12, cy: 8.5, r: 4.2 }),
+      (0, import_react7.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
+    )
+  );
+}
+function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
+  const lead = (0, import_react7.createElement)("span", { className: "bt-lead", title: name }, (0, import_react7.createElement)(PersonMark));
+  return (0, import_react7.createElement)(
+    "div",
+    { className: "bt-group-msg bt-person-msg", "data-person": name },
+    (0, import_react7.createElement)("span", { className: "bt-group-name" }, name),
+    (0, import_react7.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi, lead })
   );
 }
 function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {

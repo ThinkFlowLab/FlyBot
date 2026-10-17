@@ -300,6 +300,7 @@ test('views keep the sole owner whole and narrow per owner with two members', as
     rooms: [],
     questions: { 'chat-a1': { q: 1 } },
     exchangeTurns: { 'chat-a1': [1] },
+    remoteTypedTurns: { 'chat-a1': { 2: 'Bob' } },
     agents: [{ id: 'ag1' }],
     secrets: [{ name: 'k' }],
     secretRequests: { r: {} },
@@ -330,6 +331,7 @@ test('views keep the sole owner whole and narrow per owner with two members', as
   assert.deepEqual(view2.bots.map(bot => bot.id), ['m1', 'a1'])
   assert.deepEqual(Object.keys(view2.questions), ['chat-a1'])
   assert.deepEqual(Object.keys(view2.exchangeTurns), ['chat-a1'])
+  assert.deepEqual(view2.remoteTypedTurns, fullView.remoteTypedTurns)
   assert.deepEqual(view2.agents, [])
   assert.deepEqual(view2.secrets, [])
   const live2 = rt.ownedLive(fullLive, solo)

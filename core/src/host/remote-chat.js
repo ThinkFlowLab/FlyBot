@@ -229,14 +229,17 @@ export function install(rt) {
 
   // A message from the friend's Bot, into its chat: a hidden relay (fenced, as any text
   // from outside the team) that the chat's route writes back as the reply.
-  async function deliver({ handle, text, name, home, plugin }) {
+  // `human` + `ownerName`: the plugin has Bot Social's attestation that the friend typed this line
+  // themselves (never derived from the text). The reply is then drawn as the person, not the Bot.
+  async function deliver({ handle, text, name, home, plugin, human, ownerName }) {
     const id = chatOfHandle(handle)?.id ?? await open({ handle, name: name ?? handle, home, plugin })
     const bot = rt.botOf(id)
     const agent = await rt.resolveAgent(rt.chatOf(id))
     const shownName = cleanName(bot?.name ?? name ?? handle)
+    const typedBy = human === true && typeof ownerName === 'string' && ownerName.trim() ? cleanName(ownerName) : ''
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: `[Message from ${shownName} (${cleanName(handle)})]\n${fenceUntrusted(shownName, text)}` }],
-      source: { kind: SOURCE_KIND, form: REMOTE_FORM, role: 'remote', exchangeId: randomUUID(), senderName: shownName, hop: 0, remote: { handle, ...(home ? { home } : {}) }, text: String(text) },
+      source: { kind: SOURCE_KIND, form: REMOTE_FORM, role: 'remote', exchangeId: randomUUID(), senderName: shownName, hop: 0, remote: { handle, ...(home ? { home } : {}) }, ...(typedBy ? { typedBy } : {}), text: String(text) },
     }))
     await ctx.sessions.flush(agent.session)
     await rt.ingestRemoteRoomLine?.({ handle, text, name: shownName }).catch(error => warn('ds-bot: room ingest for %s failed: %s', handle, error))

@@ -948,7 +948,8 @@ export function install(rt) {
       get: remoteMembers.get,
       // Remote chats: a friend's Bot as a chat of its own (remote-chat.js).
       // chats.onSend(fn({ handle, text, botId, remote })) sends what the user types there;
-      // chats.deliver({ handle, text, name?, home? }) posts the friend's message into it.
+      // chats.deliver({ handle, text, name?, home?, human?, ownerName? }) posts the friend's message into it;
+      // `human` (+ `ownerName`) is the plugin's server-attested "the friend typed this", never text.
       chats: {
         onSend: fn => rt.remoteChats.onSend(plugin, fn),
         deliver: msg => rt.remoteChats.deliver({ ...msg, plugin }),

@@ -164,6 +164,7 @@ export function install(rt) {
       self: { memberId: actor.memberId, displayName: actor.displayName },
       questions: bySession(full.questions),
       exchangeTurns: bySession(full.exchangeTurns),
+      remoteTypedTurns: bySession(full.remoteTypedTurns),
       agents: alone() ? full.agents : [],
       secrets: alone() ? full.secrets : [],
       secretRequests: alone() ? full.secretRequests : {},

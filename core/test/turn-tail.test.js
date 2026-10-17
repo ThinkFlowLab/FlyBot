@@ -101,3 +101,18 @@ test('the turn tail entry notes when the turn ended and shows the pause before t
   assert.deepEqual(noted, [['b', 3, 'end', 2_000]])
   assert.equal(find(out, node => node.props?.className === 'bt-time-sep').length, 1)
 })
+
+test('a reply to a line the friend typed themselves is drawn as the person, not as the Bot', () => {
+  const { props } = cellProps()
+  const typed = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 3: 'Bob' } } }) }
+  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles'])
+  const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
+  assert.equal(person.props['data-person'], 'Bob')
+  assert.equal(find(drawn, node => node.props?.className === 'bt-person-mark').length, 1)
+  assert.equal(find(drawn, node => node.props?.className === 'bt-group-name' && node.children.includes('Bob')).length, 1)
+  assert.equal(find(drawn, node => node.type === MarkdownText).length, 1, 'the text is still rendered as markdown')
+  // Another turn, or no mark at all: the Bot\'s own bubble.
+  const other = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 9: 'Bob' } } }) }
+  assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
+  assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
+})

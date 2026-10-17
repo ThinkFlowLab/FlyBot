@@ -123,6 +123,13 @@ export function summaryBlocks(text) {
   return blocks
 }
 
+// The person who typed the friend's line this turn answers, when Bot Social attested it (host: remoteTypedTurns).
+export function typedBy(roster, sessionId, turn) {
+  if (sessionId === undefined || turn === undefined) return undefined
+  const name = roster.remoteTypedTurns?.[sessionId]?.[turn]
+  return typeof name === 'string' && name ? name : undefined
+}
+
 export function isHiddenTurn(roster, sessionId, turn) {
   if (sessionId === undefined || turn === undefined) return false
   return (roster.exchangeTurns[sessionId] ?? []).includes(turn)

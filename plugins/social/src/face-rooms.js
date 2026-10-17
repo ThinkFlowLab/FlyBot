@@ -301,8 +301,11 @@ export function faceOutbound(line, { locals = [], asBots = [], who } = {}) {
     const speaker = asBots.map(handle => locals.find(bot => bot.handle === handle)).find(Boolean)
       || locals.find(bot => bot.botId)
     if (!speaker?.botId) return undefined
+    // `text` is the legacy wire form (envelope, for servers that cannot attest); `plain` goes out
+    // with typed_by_owner when the server attests it, so no marker text is on the wire.
     return {
       text: encodeFaceHuman({ who: humanFaceWho(line, who), text: line.text }),
+      plain: neutralizeFaceHuman(line.text),
       botId: speaker.botId,
       human: true,
     }
@@ -413,6 +416,9 @@ export function viewFaceEvent(event) {
     from,
     text: mapped === 'room.message' ? undefined : sanitizePlatformText(event.text, mapped, member, event.reason),
     untrustedText: mapped === 'room.message' ? stripFaceMarkers(faceUntrustedText(event.untrusted_content ?? event.untrustedContent ?? event.untrustedText)) : undefined,
+    // Stamped by Bot Social (never read from the text): the owner typed this line themselves. A viewed
+    // event is viewed again by renderFaceEvent, hence the camelCase form.
+    ...(mapped === 'room.message' && (event.typed_by_owner === true || event.typedByOwner === true) ? { typedByOwner: true } : {}),
   }
 }
 
@@ -431,17 +437,22 @@ function sanitizePlatformText(text, type, member, reason) {
   return cleaned
 }
 
-export function renderFaceEvent(event) {
+// `attested`: the server stamps typed_by_owner (Bot Social features), so a line is a person's only when
+// it carries that stamp; the FLYBOT-FACE-HUMAN text is then never an attribution (any Bot can write
+// it), though its inner text is still unwrapped for display. Without it (an older server) the envelope
+// keeps its legacy meaning (#180).
+export function renderFaceEvent(event, { attested = false } = {}) {
   const viewed = viewFaceEvent(event)
   if (!viewed) return undefined
   if (viewed.type === 'room.message') {
     const from = viewed.from || {}
     const body = viewed.untrustedText ?? ''
-    const human = parseFaceHuman(body)
+    const envelope = parseFaceHuman(body)
+    const human = attested ? (viewed.typedByOwner === true ? { text: envelope ? envelope.text : body } : undefined) : envelope
     // A person's own line is attributed to the person, not to the Bot that carried it (#180).
     const ownerName = cleanFaceName(from.owner_name || from.ownerName, '')
     const who = human && ownerName ? ownerName : trustedFaceWho(from)
-    const text = human ? human.text : body
+    const text = human ? human.text : (attested && envelope ? envelope.text : body)
     return {
       kind: undefined,
       system: false,
@@ -555,12 +566,26 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
       const body = await request('POST', `/${encodeURIComponent(String(roomId))}/leave`, handles.length ? { bots: handles } : {})
       return viewFaceRoom(body) ?? { roomId, status: body?.status }
     },
-    async send(roomId, { text, botId } = {}) {
+    // Bot Social features (GET /v1/platform): what this server can do. An older server, or any
+    // failure, is an empty list, so callers keep the behaviour they had.
+    async features() {
+      try {
+        const info = await callHttp('GET', `${origin}/v1/platform`)
+        return Array.isArray(info?.features) ? info.features.map(String) : []
+      } catch {
+        return undefined
+      }
+    },
+    // `typedByOwner`: the person typed this line. Bot Social stamps it for the receiver only when this
+    // token may attest; otherwise it answers 403 typed_attestation_forbidden.
+    async send(roomId, { text, botId, typedByOwner } = {}) {
       const body = await request('POST', `/${encodeURIComponent(String(roomId))}/messages`, {
         text: String(text ?? ''),
         ...(botId ? { bot_id: botId } : {}),
+        ...(typedByOwner === true ? { typed_by_owner: true } : {}),
       })
       return {
+        typedByOwner: body.typed_by_owner === true,
         messageId: body.message_id,
         status: body.status,
         approvalId: body.approval_id,

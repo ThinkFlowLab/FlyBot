@@ -102,3 +102,23 @@ test('agent-instructions and notice messages after the typed text do not swallow
     assert.equal(remoteTurn([user('<f/>', { kind: 'bot', form: 'remote-chat', text: 'pong' }), baseline]).kind, 'echo');
     assert.equal(remoteTurn([baseline]).kind, 'none');
 });
+
+test('a line Bot Social attests the friend typed themselves carries the person\'s name; a plain line does not', async () => {
+  const state = { bots: { a: { id: 'a', name: 'Coder', remote: { handle: '@coder.bob.home', home: '@bob.home', plugin: 'social' } } } }
+  const followups = []
+  const rt = {
+    state, load: async () => {}, save: async () => {}, warn() {},
+    ctx: { sessions: { flush: async () => {} } },
+    botOf: id => state.bots[id],
+    chatOf: id => ({ id }),
+    resolveAgent: async () => ({ session: 's', followup: message => followups.push(message) }),
+  }
+  install(rt)
+  const base = { handle: '@coder.bob.home', name: 'Coder', home: '@bob.home', plugin: 'social' }
+  await rt.remoteChats.deliver({ ...base, text: 'typed it', human: true, ownerName: 'Bob' })
+  await rt.remoteChats.deliver({ ...base, text: 'bot line', ownerName: 'Bob' })
+  await rt.remoteChats.deliver({ ...base, text: 'no name', human: true })
+  assert.deepEqual(followups.map(message => message.source.typedBy), ['Bob', undefined, undefined])
+  assert.equal(followups[0].source.form, 'remote-chat')
+  assert.equal(followups[1].source.text, 'bot line')
+})

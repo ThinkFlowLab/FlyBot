@@ -159,7 +159,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      revision: state.revision,
      workspaceId: state.workspaceId ?? null,
      // `mainBotId` is the first Main Bot, which the sidebar shows as its tile.
-@@ -36,17 +36,40 @@ export function install(rt) {
+@@ -36,17 +36,42 @@ export function install(rt) {
      mainBotIds: state.mainBotIds,
      // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
      // `waiting`: the Bot holds its greeting until the user picks its model.
@@ -198,6 +198,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +    humans: rt.publicHumans?.() ?? [],
 +    self: actor ? { memberId: actor.memberId, displayName: actor.displayName } : null,
      exchangeTurns: state.exchangeTurns,
++    // Per Session: turn → the person's name, for friends' lines Bot Social attests they typed themselves.
++    remoteTypedTurns: state.remoteTypedTurns ?? {},
      questions: state.questions,
 +    // FlyBot: friends' remote Bots, chat members with a remote badge (not team Bots).
 +    remoteBots: rt.flybotRemoteMembers?.() ?? [],

@@ -40,7 +40,8 @@
     "test/mention-rule.test.js",
     "test/looks.test.js",
     "test/user-bubble.test.js",
-    "src/client/create-bot.js"
+    "src/client/create-bot.js",
+    "test/turn-tail.test.js"
   ],
   "0005-social-seams": [
     "src/host/channel.js",

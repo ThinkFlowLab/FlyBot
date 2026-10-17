@@ -71,6 +71,8 @@ export function install(rt) {
     humans: rt.publicHumans?.() ?? [],
     self: actor ? { memberId: actor.memberId, displayName: actor.displayName } : null,
     exchangeTurns: state.exchangeTurns,
+    // Per Session: turn → the person's name, for friends' lines Bot Social attests they typed themselves.
+    remoteTypedTurns: state.remoteTypedTurns ?? {},
     questions: state.questions,
     // FlyBot: friends' remote Bots, chat members with a remote badge (not team Bots).
     remoteBots: rt.flybotRemoteMembers?.() ?? [],

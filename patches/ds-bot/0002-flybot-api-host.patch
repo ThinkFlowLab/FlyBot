@@ -328,6 +328,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      await rt.save()
    }
  
+@@ -438,6 +438,7 @@ export function install(rt) {
+     for (const part of parts) {
+       delete state.questions[part]
+       delete state.exchangeTurns[part]
++      delete state.remoteTypedTurns?.[part]
+     }
+     const touched = []
+     for (const room of Object.values(state.rooms)) {
 @@ -450,6 +450,7 @@ export function install(rt) {
      await followMemberNames(touched)
      await rt.forgetBotSecrets(id)

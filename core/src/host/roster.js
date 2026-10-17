@@ -516,6 +516,7 @@ export function install(rt) {
     for (const part of parts) {
       delete state.questions[part]
       delete state.exchangeTurns[part]
+      delete state.remoteTypedTurns?.[part]
     }
     const touched = []
     for (const room of Object.values(state.rooms)) {

@@ -358,6 +358,20 @@ diff --git a/src/client/text.js b/src/client/text.js
  
  // Of the Bots in a conversation, the one whose memory changed last, by the host's
  // clock: changes reaching one window in the same poll share a `seen` time.
+@@ -95,6 +95,13 @@ export function summaryBlocks(text) {
+   return blocks
+ }
+ 
++// The person who typed the friend's line this turn answers, when Bot Social attested it (host: remoteTypedTurns).
++export function typedBy(roster, sessionId, turn) {
++  if (sessionId === undefined || turn === undefined) return undefined
++  const name = roster.remoteTypedTurns?.[sessionId]?.[turn]
++  return typeof name === 'string' && name ? name : undefined
++}
++
+ export function isHiddenTurn(roster, sessionId, turn) {
+   if (sessionId === undefined || turn === undefined) return false
+   return (roster.exchangeTurns[sessionId] ?? []).includes(turn)
 @@ -207,7 +207,8 @@ export function previewOf(list, id, hiddenTurns = []) {
      const entry = outline[index]
      if (hiddenTurns.includes(entry.turn)) continue
@@ -592,7 +606,7 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
-@@ -162,6 +162,9 @@ export function install(rt) {
+@@ -162,17 +162,30 @@ export function install(rt) {
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -602,7 +616,20 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
    // A group Session is hidden as a whole, so its turns need no marking. A handoff
    // package that only opens a part is acknowledged with a fixed line, also hidden.
-@@ -172,7 +172,7 @@ export function install(rt) {
++  // A friend's line the friend typed themselves (Bot Social attests it, remote-chat.js): the reply
++  // in that turn is drawn as the person. Kept per Session and turn, like exchangeTurns.
++  const markTypedTurn = (sessionId, turn, name) => {
++    const turns = (state.remoteTypedTurns ??= {})[sessionId] ??= {}
++    turns[turn] = name
++    const keys = Object.keys(turns)
++    if (keys.length > 400) for (const key of keys.slice(0, keys.length - 400)) delete turns[key]
++    void rt.save().catch(() => {})
++  }
+   const claimTrigger = (sessionId, entry, info) => {
++    if (info.form === 'remote-chat' && typeof info.typedBy === 'string' && info.typedBy && entry.turn !== undefined) markTypedTurn(sessionId, entry.turn, info.typedBy)
+     entry.info = info
+     // A turn that was stopped for a part switch brings its joined requests along.
+     if (Array.isArray(info.joined) && info.joined.length > 0) {
        entry.joined = info.joined.filter(item => item?.info !== undefined && item.info !== null)
      }
      if (rt.groupOwners.has(sessionId)) return

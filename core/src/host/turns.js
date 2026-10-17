@@ -168,7 +168,17 @@ export function install(rt) {
 
   // A group Session is hidden as a whole, so its turns need no marking. A handoff
   // package that only opens a part is acknowledged with a fixed line, also hidden.
+  // A friend's line the friend typed themselves (Bot Social attests it, remote-chat.js): the reply
+  // in that turn is drawn as the person. Kept per Session and turn, like exchangeTurns.
+  const markTypedTurn = (sessionId, turn, name) => {
+    const turns = (state.remoteTypedTurns ??= {})[sessionId] ??= {}
+    turns[turn] = name
+    const keys = Object.keys(turns)
+    if (keys.length > 400) for (const key of keys.slice(0, keys.length - 400)) delete turns[key]
+    void rt.save().catch(() => {})
+  }
   const claimTrigger = (sessionId, entry, info) => {
+    if (info.form === 'remote-chat' && typeof info.typedBy === 'string' && info.typedBy && entry.turn !== undefined) markTypedTurn(sessionId, entry.turn, info.typedBy)
     entry.info = info
     // A turn that was stopped for a part switch brings its joined requests along.
     if (Array.isArray(info.joined) && info.joined.length > 0) {
