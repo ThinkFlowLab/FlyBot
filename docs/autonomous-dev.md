@@ -157,8 +157,8 @@ a read-only token, no secrets, and the script and policy checked out from the **
 pull request cannot change the rules that judge it. The one exception is the pull request that adds
 the script: the base has none, so that run falls back to the PR's copy under the same read-only
 token. It is **not** a required check and must stay out of branch protection and out of `tests-ok`'s
-`needs` (a test checks both), so a pull request without a PASS can still merge on the maintainer's
-approval.
+`needs` (a test checks the `needs` half; branch protection is a live setting), so a pull request
+without a PASS can still merge on the maintainer's approval.
 
 **Why report-only.** No agent login is in the policy yet, so today only a maintainer's comment can
 satisfy the gate. The delegation slice changes that: it adds the reviewer's login to the policy and

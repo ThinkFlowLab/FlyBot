@@ -93,8 +93,12 @@ export function decide({ head, author, reports, policy }) {
     return { ok: false, verdict: null, by: null, tip: null, reason, judged }
   }
 
-  // Newest first: the reviewer's latest word at this tip decides.
-  const last = [...counting].sort((a, b) => Date.parse(b.at ?? 0) - Date.parse(a.at ?? 0))[0]
+  // Newest first: the reviewer's latest word at this tip decides. Equal timestamps fall back to
+  // the order the API returned them in (oldest first), so the later comment still wins.
+  const last = counting
+    .map((e, i) => ({ e, i, t: Date.parse(e.at ?? 0) || 0 }))
+    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .at(-1).e
   const { parsed } = last
   if (last.verdict === 'PASS' && !parsed.ran.length) {
     return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS lists no command it ran`, judged }

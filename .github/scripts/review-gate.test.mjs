@@ -70,6 +70,17 @@ test('a later PASS replaces an earlier FAIL at the same tip', () => {
   assert.equal(r.ok, true)
 })
 
+test('equal timestamps: the later comment in API order decides', () => {
+  const at = '2026-10-18T01:00:00Z'
+  const reports = [
+    comment('codex-agent', report(), at),
+    comment('codex-agent', report({ verdict: 'FAIL' }), at),
+  ]
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports, policy })
+  assert.equal(r.ok, false, 'the FAIL that came later must not lose to an equal-timestamped PASS')
+  assert.equal(r.verdict, 'FAIL')
+})
+
 test('INC is not PASS', () => {
   const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('codex-agent', report({ verdict: 'INC' }))], policy })
   assert.equal(r.ok, false)

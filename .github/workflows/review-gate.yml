@@ -45,7 +45,6 @@ jobs:
         with:
           node-version: 24
       - name: Judge the tip
-        id: judge
         # Report only: a tip without a PASS exits 1 so by-hand use reads as a failure, but the
         # step is neutral here, so the check never turns red and no one learns to ignore it.
         continue-on-error: true
