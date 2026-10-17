@@ -3908,6 +3908,40 @@ test('#161: invite accept does not list the joiner Chief on a fresh install', as
   assert.equal(saved.inboundBots?.['@chief.bob.home'], undefined)
 })
 
+test('#178: the Bot a friend shared shows for the grantee although our Bot carries the talk-through grant', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // Joiner side of one invite: bob shared Helper; our Chief carries the talk-through grant to it.
+  server.tools.list_bot_grants = () => ({
+    grants: [{ id: 'g-tt', grantee: '@helper.bob.home', name: 'bob (@bob.home)', relationship_id: 'r1' }],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBots: { '@helper.bob.home': true } }))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(listed.homes[0]?.bots.some(bot => bot.handle === '@helper.bob.home'), true, 'the shared Bot shows for the person it was shared with')
+  // The talk-through grant is not us sharing Chief.
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.grantee === '@helper.bob.home'), false)
+})
+
 test('#140: respond Auto-send follows the accepted relationship, not the first roster home', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

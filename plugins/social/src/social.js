@@ -684,9 +684,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const key = norm(bot.handle)
     if (!key) return false
     if (declinedRemotes.has(key)) return false
-    // Outgoing grants win: the Bot that joined our invite is not granted back (#138 / #161).
+    // A Bot someone shared with us (we joined their invite) always shows, even though the
+    // talk-through grant on our own Bot names it as grantee (#178).
+    if (settings.inboundBots?.[key]) return true
+    // Otherwise outgoing grants win: the Bot that joined our invite is not granted back (#138 / #161).
     if (outgoingPeerHandles().has(key)) return false
-    if (settings.inboundBots?.[key] || settings.inboundBots?.[bot.home]) return true
+    if (settings.inboundBots?.[bot.home]) return true
     if (settings.roomBots?.[key]) return false
     return true
   }
@@ -718,8 +721,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // The friendship covers only these local members (an invite made for one Bot, or joined
         // as one Bot); empty when it covers this whole home. Only they can talk to this friend.
         via: (entry.via ?? []).map(norm),
+        ...(entry.relationship_id ? { relationshipId: String(entry.relationship_id) } : {}),
       }
     })
+  }
+  // The grant a joiner's own Bot carries for talking through to a shared Bot: same
+  // relationship, the Bot is one this friendship covers, and the grantee is a Bot the friend
+  // shared with us. It is not us sharing that Bot (#178).
+  function isTalkThroughGrant(member, grant) {
+    const rid = grant.relationshipId
+    const grantee = memberHandleOf(grant.grantee)
+    if (!rid || !grantee || !member?.handle || !settings.inboundBots?.[grantee]) return false
+    return remote.homes.some(entry => entry.relationshipId === rid && entry.via.includes(norm(member.handle)))
   }
   function listedRemoteBots() {
     return remote.homes.flatMap(entry => entry.bots.map(bot => ({
@@ -938,7 +951,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       try {
         const listed = await api.listGrants({ botId: member.bot_id })
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
-        const people = listed.filter(grant => !grant.roomId).map(grant => {
+        const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant)).map(grant => {
           const view = grantPersonView(grant)
           // Core normGrantee cannot match decorated non-@ values; persist a canonical @handle.
           const canonical = view.member || view.home || memberHandleOf(grant.grantee)
@@ -1446,7 +1459,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     if (offered?.handle) rememberInbound(offered.handle)
     const inviterHome = joined.inviter?.handle ? homeOfPeer(joined.inviter.handle) : added[0]?.home
-    const inviterName = cleanText(joined.inviter?.display_name || joined.inviter?.owner_display_name || added[0]?.owner || added[0]?.homeName)
+    // Name the person, not the Bot they shared (#178: "SelfA1933 shared Helper with you").
+    const inviterName = cleanText(joined.inviter?.owner_display_name || added[0]?.owner || added[0]?.homeName || joined.inviter?.display_name)
     const inviterBotName = cleanText(offered?.display_name || offered?.name || (added.length === 1 ? added[0].name : ''))
     // A new friendship starts with Auto-send off; only push server auto-approve if the owner already opted in.
     if (joined.relationship_id && autoAcceptOf(inviterHome)) await serverAutoApprove(joined.relationship_id, true)
