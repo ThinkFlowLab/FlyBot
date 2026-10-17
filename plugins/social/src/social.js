@@ -100,7 +100,6 @@ export function approvalView(item, { localName } = {}) {
   const to = item.message?.to
   const payload = item.message?.payload
   const text = approvalDraftText(payload && typeof payload === 'object' ? payload.text : payload) || approvalDraftText(item.summary)
-  const rawText = draftText(payload && typeof payload === 'object' ? payload.text : payload)
   const kind = String(item.kind ?? '')
   const viaComposer = item.via === 'composer'
     || item.message?.via === 'composer'
@@ -124,8 +123,6 @@ export function approvalView(item, { localName } = {}) {
     toName: cleanText(to?.display_name) || (kind === 'face_room_message' ? 'the room' : undefined),
     roomId: item.room_id || item.face_room_id || item.message?.room_id,
     text,
-    // A person's own typed room line carried by their Bot (#179): never a card, never held.
-    ...(parseFaceHuman(rawText) ? { human: true } : {}),
     summary: cleanText(item.summary),
     createdAt: item.created_at,
     attachments: (item.message?.attachments ?? []).filter(file => file?.name).map(file => ({ name: safeName(file.name), size: Number(file.size) || 0 })),
@@ -1713,6 +1710,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   // Typing a line in a room is the approval (#179): a held human envelope that the send path
   // did not already approve (a restart, a failed call) is approved here without a card.
+  // Only approval ids this host created for a line the person typed are ever auto-approved
+  // (persisted, so a restart still finishes them). Text alone never qualifies: a Bot can write
+  // anything, so its held message always waits for the owner's card.
+  const ownLineIds = () => (settings.ownLineApprovals ??= {})
+  function rememberOwnLine(id) {
+    if (!id) return
+    const map = ownLineIds()
+    map[id] = now()
+    const keys = Object.keys(map)
+    if (keys.length > 200) for (const key of keys.sort((a, b) => map[a] - map[b]).slice(0, keys.length - 200)) delete map[key]
+    saveSettings()
+  }
   const ownLineApproving = new Set()
   async function approveOwnLine(item) {
     if (!item?.id || ownLineApproving.has(item.id)) return
@@ -1734,8 +1743,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const items = raw
         .map(item => approvalView(item, { localName: localNameOf }))
         .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message') && (item.status === 'pending' || item.status === 'pending_approval'))
-      const own = items.filter(item => item.human)
-      const held = items.filter(item => !item.human)
+      const own = items.filter(item => ownLineIds()[item.id])
+      const held = items.filter(item => !ownLineIds()[item.id])
       pendingCache = { at: now(), items: held }
       for (const item of own) void approveOwnLine(item)
       await syncApprovalNotices(held).catch(error => warn('approval notice failed', error))
@@ -2253,6 +2262,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // A person's own line is theirs: typing it is the approval, so it goes out at once
           // with no card (#179). Only Bot-written room lines wait for Approve / Reject.
           if (outbound.human && sent.approvalId) {
+            rememberOwnLine(sent.approvalId)
             await confirmedCall('decide_approval', { approval_id: sent.approvalId, decision: 'approved' })
               .catch(error => warn('face-room owner line not approved', error))
           }
