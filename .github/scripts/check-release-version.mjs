@@ -5,7 +5,7 @@
 // Usage: node .github/scripts/check-release-version.mjs <version>   (run from the repo root)
 import { readFileSync } from 'node:fs'
 
-const PRODUCT_TAGS = ['0.1.0']
+const PRODUCT_TAGS = ['0.1.0', '0.2.0']
 
 const version = process.argv[2]
 if (!version) { console.error('usage: check-release-version.mjs <version>'); process.exit(1) }

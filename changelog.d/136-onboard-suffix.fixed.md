@@ -1,1 +1,0 @@
-A taken Bot Social home name at first start retries `FlyBot2`, `FlyBot3`, … instead of failing until the owner edits YAML, and Friends' Bots shows the connected handle with Copy. ([#136](https://github.com/ThinkFlowLab/FlyBot/issues/136))

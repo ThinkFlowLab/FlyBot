@@ -1,1 +1,0 @@
-Expired matching and a peer leaving the last remote seat move Face-to-face rooms into **Past rooms** on their own, so active cards no longer keep a stale **Leave**. ([#129](https://github.com/ThinkFlowLab/FlyBot/issues/129))

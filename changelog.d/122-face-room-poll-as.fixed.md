@@ -1,1 +1,0 @@
-Face-to-face poll no longer turns an empty handle into `@` or calls `GET /v1/face-rooms/:id?as=@` (which 404s). Empty handles stay empty, a stored bogus `@` is healed or ignored, and rooms discovered from the list seed `asBot` from `my_bots`. ([#122](https://github.com/ThinkFlowLab/FlyBot/issues/122))

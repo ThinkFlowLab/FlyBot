@@ -1,1 +1,0 @@
-Chat-reference chips are author-checked on answer-question and schedule-create as well as send and room-post, schedule-create authorization keys off the Bot or room the endpoint uses, and Bot-authored group posts drop chips so a member Bot cannot tunnel a private chat into a shared room. ([#106](https://github.com/ThinkFlowLab/FlyBot/issues/106))

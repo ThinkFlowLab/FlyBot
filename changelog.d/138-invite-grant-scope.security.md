@@ -1,1 +1,0 @@
-Accepting a per-Bot invite grants only that Bot: the joiner's talk-through Bot is not shared back, Manage access lists people by name and home, and leaving a face-to-face room drops room-only remotes from Friends' Bots. ([#138](https://github.com/ThinkFlowLab/FlyBot/issues/138))

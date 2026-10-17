@@ -1,1 +1,0 @@
-New friends start with Auto-send off, the owner sees Approve / Reject in the chat (not a waiting bubble), and a message the owner typed is labelled You. ([#140](https://github.com/ThinkFlowLab/FlyBot/issues/140))
