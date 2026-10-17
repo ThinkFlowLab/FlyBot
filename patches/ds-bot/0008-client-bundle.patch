@@ -2424,7 +2424,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,136 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,148 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -2529,6 +2529,18 @@ diff --git a/client.js b/client.js
 -    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    (0, import_react7.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
++  );
++}
++function PersonLine({ authorId, name, text }) {
++  return (0, import_react7.createElement)(
++    "div",
++    { className: "bt-umsg bt-umsg-other", "data-author": authorId, "data-author-kind": "human", "data-author-name": name },
++    (0, import_react7.createElement)(
++      "div",
++      { className: "bt-ustack" },
++      name ? (0, import_react7.createElement)("span", { className: "bt-uauthor" }, name) : null,
++      (0, import_react7.createElement)("div", { className: "bt-ubody" }, text)
++    )
 +  );
 +}
 +function GlobeMark() {
@@ -2705,7 +2717,7 @@ diff --git a/client.js b/client.js
      if (relayed) actions.noteTurnPeer(sessionId, turn, source.senderSessionId);
    }, [relayed, sessionId, turn, source.senderSessionId]);
    const order = useSessions((list) => {
-@@ -4135,23 +4135,29 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
+@@ -4135,23 +4135,32 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
      return first?.turn === turn && unseenSince(visit, first.start) ? clockLabel(first.start) : "";
    });
    const body = triggerBody();
@@ -2713,6 +2725,9 @@ diff --git a/client.js b/client.js
 +  return unreadOpening ? (0, import_react7.createElement)(import_react7.Fragment, null, (0, import_react7.createElement)("div", { className: "bt-open-new" }, (0, import_react7.createElement)(NewDivider), (0, import_react7.createElement)("div", { className: "bt-time-sep", role: "separator" }, unreadOpening)), body) : body;
    function triggerBody() {
 +    if (source.form === "remote-chat") return null;
++    if (source.remote?.handle && source.remote.human?.name) {
++      return (0, import_react7.createElement)(PersonLine, { authorId: source.remote.handle, name: source.remote.human.name, text: remoteMessageText(stripHeader(contentText(data.content))) });
++    }
 +    if (source.remote?.handle) {
 +      return (0, import_react7.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
 +    }
@@ -2860,7 +2875,7 @@ diff --git a/client.js b/client.js
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4366,66 +4366,100 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -4366,66 +4366,89 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
    const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
    if (replies.length === 0 && pending.length === 0) return null;
    const room2 = roster.roomsById[sessionId];
@@ -2873,18 +2888,7 @@ diff --git a/client.js b/client.js
        if (reply.kind === "user") {
 -        return (0, import_react6.createElement)("div", { key: `user-${index}`, className: "bt-urow" }, (0, import_react6.createElement)(
 +        const who = reply.name && reply.name !== "User" ? reply.name : reply.authorId;
-+        if (reply.other) {
-+          return (0, import_react7.createElement)(
-+            "div",
-+            { key: `user-${index}`, className: "bt-umsg bt-umsg-other", "data-author": reply.authorId, "data-author-kind": "human", "data-author-name": who },
-+            (0, import_react7.createElement)(
-+              "div",
-+              { className: "bt-ustack" },
-+              who ? (0, import_react7.createElement)("span", { className: "bt-uauthor" }, who) : null,
-+              (0, import_react7.createElement)("div", { className: "bt-ubody" }, remoteMessageText(reply.text))
-+            )
-+          );
-+        }
++        if (reply.other) return (0, import_react7.createElement)(PersonLine, { key: `user-${index}`, authorId: reply.authorId, name: who, text: remoteMessageText(reply.text) });
 +        return (0, import_react7.createElement)(
            "div",
 -          { className: "bt-ububble" },

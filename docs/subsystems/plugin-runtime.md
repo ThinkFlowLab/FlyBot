@@ -56,7 +56,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 ### Chat-row pending badge
 
-- `flybot.chatApprovals.setProvider` attaches pending Bot Social holds to a 1:1 friend's-Bot chat the same way `roomApprovals` does for groups. The team view puts `pendingCount` on that bot; the sidebar paints the gold wait dot. Still not team mode.
+- `flybot.chatApprovals.setProvider` attaches pending Bot Social holds to a 1:1 friend's-Bot chat the same way `roomApprovals` does for groups. The team view puts `pendingCount` on that bot; the sidebar paints the gold wait dot. `flybot.chatApprovals.changed()` tells the host the list changed (a hold arrived or was decided), so the badge refreshes at once instead of on the next unrelated revision (#226). A plugin may set `from.human { name }` on a remote `bot.send` sender for a line the remote owner typed themself (#227); the chat then shows that person, not their Bot. Still not team mode.
 
 ### Sidebar + friend actions
 

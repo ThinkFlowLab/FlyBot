@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, PersonLine } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, PersonLine, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -158,4 +158,16 @@ test('handles equal modulo @ and case share one look; a stored look still wins',
   const owned = lookOf({ id: 'c', remote: { handle: '@bot.x.home' }, color: 'green', avatar: { shape: 'kitty' } })
   assert.equal(owned.shape, 'kitty')
   assert.equal(owned.color, 'green')
+})
+
+test("#227: a friend's own typed line is a person's bubble with their name, not their Bot's", () => {
+  const line = PersonLine({ authorId: '@chief.bob.home', name: 'Bob', text: 'hello from Bob himself' })
+  assert.equal(line.props.className, 'bt-umsg bt-umsg-other')
+  assert.equal(line.props['data-author-kind'], 'human')
+  assert.equal(line.props['data-author-name'], 'Bob')
+  const [stack] = line.props.children
+  const [author, body] = stack.props.children
+  assert.equal(author.props.children[0], 'Bob')
+  assert.equal(body.props.className, 'bt-ubody')
+  assert.equal(body.props.children[0], 'hello from Bob himself')
 })

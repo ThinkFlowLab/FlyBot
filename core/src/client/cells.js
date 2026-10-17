@@ -222,6 +222,15 @@ function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi
     files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 }
 
+// Another person's own line (a face-room member, a friend in a direct chat): a left-hand
+// bubble with their name, like any other person's message (#180, #227).
+export function PersonLine({ authorId, name, text }) {
+  return h('div', { className: 'bt-umsg bt-umsg-other', 'data-author': authorId, 'data-author-kind': 'human', 'data-author-name': name },
+    h('div', { className: 'bt-ustack' },
+      name ? h('span', { className: 'bt-uauthor' }, name) : null,
+      h('div', { className: 'bt-ubody' }, text)))
+}
+
 function GlobeMark() {
   return h('svg', { width: 10, height: 10, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
     h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18' }))
@@ -408,6 +417,10 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
   function triggerBody() {
     // A friend's message in its remote chat: the reply below shows it (remote-chat.js).
     if (source.form === 'remote-chat') return null
+    // A line the friend typed themself, carried by their Bot (#227): their own bubble, not the Bot's.
+    if (source.remote?.handle && source.remote.human?.name) {
+      return h(PersonLine, { authorId: source.remote.handle, name: source.remote.human.name, text: remoteMessageText(stripHeader(contentText(data.content))) })
+    }
     if (source.remote?.handle) {
       return h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
     }
@@ -682,12 +695,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       if (reply.kind === 'user') {
         const who = reply.name && reply.name !== 'User' ? reply.name : reply.authorId
         // Another member's line: a left-hand bubble with their name, like any other person's message (#180).
-        if (reply.other) {
-          return h('div', { key: `user-${index}`, className: 'bt-umsg bt-umsg-other', 'data-author': reply.authorId, 'data-author-kind': 'human', 'data-author-name': who },
-            h('div', { className: 'bt-ustack' },
-              who ? h('span', { className: 'bt-uauthor' }, who) : null,
-              h('div', { className: 'bt-ubody' }, remoteMessageText(reply.text))))
-        }
+        if (reply.other) return h(PersonLine, { key: `user-${index}`, authorId: reply.authorId, name: who, text: remoteMessageText(reply.text) })
         return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
           who ? h('span', { className: 'bt-uauthor' }, who) : null,
           h('div', { className: 'bt-ububble' },

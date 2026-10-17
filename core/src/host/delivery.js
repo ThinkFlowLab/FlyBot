@@ -119,7 +119,8 @@ export function install(rt) {
       ...(askedBy ? { askedBy } : {}),
       ...(fromRoomId ? { senderRoomId: fromRoomId } : {}),
       // A remote member's message (FlyBot): the chat draws it as that member's bubble.
-      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}) } } : {}),
+      // `human`: the remote Bot's owner typed it (the plugin checked); the chat draws that person's bubble.
+      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}), ...(remote.human?.name ? { human: { name: cleanName(remote.human.name) } } : {}) } } : {}),
       // A remote member's files, as references the chat shows as chips (fetched on demand).
       ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
     }

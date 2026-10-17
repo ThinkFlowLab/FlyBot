@@ -95,6 +95,7 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 - Sidebar **+** (`mode === 'new'`) opens a short action menu (`data-menu`, no To:/composer) until **New chat** or **Create group chat**. That menu does not list individual Bots (Chief and the rest stay behind **New chat**). The Agent row in that FlyBot menu is **Add coding agent**; **Add DSH Agent** stays the DSH product string on Agent rows elsewhere (#126, #181).
 - Group bubbles, notices, and failed-reply lines never show a raw `<untrusted-message>` wrap or a developer error (`llm-deepseek: no API key`). `remoteMessageText` unwraps stored fences; `failureLabel` maps missing-key / unknown model failures to a short friendly line. Details stay in Settings → Feedback.
 - `GroupReplies` draws a `user` reply with `other: true` (another member's face-room line, #180) as a left-hand `bt-umsg-other` bubble with the person's name, not as a centred `bt-event` notice; own lines keep the right-hand bubble.
+- `PersonLine` is that left-hand person bubble, shared by `GroupReplies` and `TriggerCell`: a relay whose `source.remote.human.name` is set (a friend's own typed line in a direct chat, #227) draws as `PersonLine`, not as `RemoteMessage` with the friend's Bot avatar and name.
 
 ### Hidden DSH tool-removal notices
 

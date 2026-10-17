@@ -20,6 +20,12 @@ export interface RemoteBotRef {
   name?: string
   /** Transport that reaches it; default "bot-social". */
   transport?: string
+  /**
+   * Set only by the plugin that received it: the line was typed by the remote Bot's owner
+   * (a person), carried by that Bot. `name` is the network-stamped owner name. The chat
+   * shows a person's bubble instead of the Bot's.
+   */
+  human?: { name: string }
 }
 export type BotRef = BotId | RemoteBotRef | `@${string}`
 
@@ -251,6 +257,8 @@ export interface FlyBot {
   /** Optional: pending Bot Social approvals for a 1:1 friend's-Bot chat. */
   chatApprovals: {
     setProvider(fn: ((bot: { id?: string; remote?: { handle?: string } }, actor?: { memberId?: string }) => unknown[]) | undefined): void
+    /** The provider's list changed (a hold arrived or was decided): the sidebar badge refreshes now. */
+    changed(): void
   }
   /** Face-to-face rooms (#83): host a Bot Social matching room as a normal native room. */
   rooms: {

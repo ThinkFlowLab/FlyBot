@@ -257,6 +257,33 @@ test('bot.send reaches remote Bots through a transport and takes remote senders 
   await assert.rejects(fb.bot.send({ from: 'a', to: 'zz', text: 'x' }), /unknown Bot/)
 })
 
+test('#227: a remote line the friend typed themself carries the person on its source', async (t) => {
+  const { fb, received, agents, stop, grantTo } = await start()
+  t.after(stop)
+  await grantTo('a', '@bob.bot')
+  const inbound = await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Bob (a person)', human: { name: 'Bob' } }, to: 'a', text: 'hello from Bob himself' })
+  assert.equal(inbound.action, 'allow')
+  assert.match(received('a').at(-1), /<untrusted-message from="Bob \(a person\)">\nhello from Bob himself\n/)
+  const source = agents.get('a').calls.at(-1)[1].source
+  assert.deepEqual(source.remote, { handle: '@bob.bot', home: '@bob.bot', human: { name: 'Bob' } })
+  // A plain remote Bot line has no person on it.
+  await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Bob' }, to: 'a', text: 'a Bot line' })
+  assert.equal(agents.get('a').calls.at(-1)[1].source.remote.human, undefined)
+})
+
+test('#226: chatApprovals.changed moves the team revision so a friend chat badge refreshes', async (t) => {
+  const { fb, call, stop } = await start()
+  t.after(stop)
+  const before = (await call('state', {})).value.revision
+  fb.chatApprovals.changed()
+  let after = before
+  for (let i = 0; i < 50 && after === before; i++) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    after = (await call('state', {})).value.revision
+  }
+  assert.ok(after > before)
+})
+
 test('a throwing middleware denies instead of letting the message through', async (t) => {
   const { fb, stop } = await start()
   t.after(stop)

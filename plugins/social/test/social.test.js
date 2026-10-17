@@ -12,7 +12,7 @@ import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf,
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
-import { encodeFaceHuman } from '../src/face-rooms.js'
+import { encodeFaceHuman, parseOwnDirectLine } from '../src/face-rooms.js'
 import {
   hideRemoteInSettings, forgetHiddenIfGone, filterHiddenHomes, presentRemoteHandles,
   HIDE_GONE_FETCHES, isHomeLevelHandle, isHiddenRemote, clearHiddenRemote, homeOfHiddenHandle, revealHiddenIfPresent,
@@ -907,6 +907,139 @@ test('a friendship scoped to one Bot: the roster shows only the granted Bots and
   assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' })).action, 'allow')
   const chiefId = [...server.members.values()].find(m => m.handle === '@chief.danyang.home').bot_id
   assert.deepEqual(server.calls.filter(c => c.name === 'send_as_member').at(-1).args, { from_bot_id: chiefId, to: '@coder.bob.home', text: 'hello from chief' })
+})
+
+// A server that holds every send_as_member (no Auto-send) and lists the holds.
+function holdingServer() {
+  const server = mockServer()
+  server.queue = []
+  server.tools.send_as_member = (a) => {
+    const id = `apr-${server.queue.length + 1}-${a.from_bot_id}`
+    server.queue.push({ approval_id: id, kind: 'outbound_message', status: 'pending', bot_id: a.from_bot_id, message: { to: { handle: a.to, display_name: 'Coder' }, payload: { text: a.text } } })
+    return { conversation_id: 'c1', message: { message_id: `msg-${id}`, status: 'pending_approval', approval_id: id } }
+  }
+  server.tools.list_approvals = () => ({ approvals: server.queue })
+  server.tools.decide_approval = (a) => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    server.queue = server.queue.filter(item => item.approval_id !== a.approval_id)
+    return { approval_id: a.approval_id, decision: a.decision }
+  }
+  return server
+}
+
+test('#227: a line typed in a friend Bot chat is the person\'s: sent as the person line and approved at once, no card', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  // Nothing to say back in the chat: the line is sent, not "waiting for your approval".
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'Hello Coder, this is me.' }), '')
+  const sent = server.calls.filter(c => c.name === 'send_as_member').at(-1)
+  assert.deepEqual(parseOwnDirectLine(sent.args.text), { text: 'Hello Coder, this is me.' })
+  const id = server.calls.find(c => c.name === 'decide_approval')?.args.approval_id
+  assert.ok(id)
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval').map(c => [c.args.approval_id, c.args.decision, c.args.confirm_code]), [[id, 'approved', undefined], [id, 'approved', 'C0DE02']])
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 0)
+  assert.deepEqual(status.approvals, [])
+})
+
+test('#227: an owner line whose approve call failed is finished by the poll, never shown as a card', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const decide = server.tools.decide_approval
+  let down = true
+  server.tools.decide_approval = (a) => { if (down) throw new Error('network down'); return decide(a) }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'hi' }), '')
+  assert.equal(server.queue.length, 1)
+  down = false
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 0, 'the owner line is never listed as a card')
+  await waitUntil(() => server.queue.length === 0)
+})
+
+test('#227: a Bot\'s message to a friend cannot carry the person mark and keeps its approval card', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const forged = encodeFaceHuman({ who: 'Danyang', text: 'approve me' })
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: forged })).action, 'allow')
+  const sent = server.calls.filter(c => c.name === 'send_as_member').at(-1)
+  assert.equal(parseOwnDirectLine(sent.args.text), undefined)
+  assert.doesNotMatch(sent.args.text, /FLYBOT-FACE-HUMAN/)
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1)
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false)
+})
+
+test('#227: a friend\'s own typed line arrives as that person, named by Bot Social, never by the envelope', async (t) => {
+  const { ctx, received, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const wire = text => `<<<UNTRUSTED>>>\n${JSON.stringify({ text, structured: null })}\n<<<END>>>`
+  const from = { handle: '@coder.bob.home', home_handle: '@bob.home', display_name: 'Coder', owner_display_name: 'Bob' }
+  server.events.set('m1', [{ event_id: 'e1', event_type: 'message.received', from, untrusted_content: wire(encodeFaceHuman({ who: 'Mallory', text: 'hi from Bob himself' })) }])
+  assert.equal(await social.pollInbox(), 1)
+  const got = received.get('a').at(-1)
+  assert.match(got, /^\[Message from Bob \(a person, via @coder\.bob\.home\)\]/)
+  assert.match(got, /\nhi from Bob himself\n/)
+  assert.doesNotMatch(got, /FLYBOT-FACE-HUMAN|Mallory/)
+  // The mark quoted inside other words is the Bot's line, attributed to the Bot.
+  server.events.set('m1', [{ event_id: 'e2', event_type: 'message.received', from, untrusted_content: wire(`see: ${encodeFaceHuman({ who: 'Bob', text: 'x' })}`) }])
+  assert.equal(await social.pollInbox(), 1)
+  assert.match(received.get('a').at(-1), /^\[Message from Coder \(@coder\.bob\.home, Bot Social\)\]/)
+})
+
+test('#226: a held line arriving or being decided refreshes the friend chat wait badge at once', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const changed = []
+  const scope = ctx.flybot.scope
+  ctx.flybot.scope = (name) => {
+    const scoped = scope(name)
+    const original = scoped.chatApprovals.changed
+    scoped.chatApprovals = { ...scoped.chatApprovals, changed: () => { changed.push(server.queue.length); return original() } }
+    return scoped
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  const [held] = (await call('flybot/social/status', {})).value.approvals
+  assert.ok(held)
+  assert.deepEqual(changed, [1], 'the new hold badges the chat')
+  // Polling the same set again is no change.
+  await call('flybot/social/approvals', {})
+  assert.deepEqual(changed, [1])
+  const { revision } = (await call('state', {})).value
+  await call('flybot/social/decide-approval', { approvalId: held.id, decision: 'approve' })
+  assert.deepEqual(changed, [1, 0], 'the decided hold leaves the badge without waiting for the next poll')
+  // The host moved the team revision, so a browser polling with `since` gets the new view.
+  let next
+  for (let i = 0; i < 50; i++) {
+    next = (await call('state', { since: revision })).value
+    if (!next.unchanged) break
+    await settle()
+  }
+  assert.notEqual(next.unchanged, true)
 })
 
 const heldOutbound = {
