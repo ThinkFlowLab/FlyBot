@@ -27,7 +27,7 @@ window.__ModuleLoader__.load({
         return 'Social is not running: the plugin did not start. See Settings → Feedback.'
       }
       const message = String(e?.message ?? e ?? '')
-      if (/relationship_exists/i.test(message)) return "You're already friends. That Bot is in Friends' Bots again."
+      if (/relationship_exists/i.test(message)) return "You're already friends. Their Bot is back in your list."
       if (/invite_unavailable|invite is used|invite_used|already used/i.test(message)) return 'This invite was already used. Ask your friend for a new one.'
       return message
     }
@@ -94,8 +94,10 @@ window.__ModuleLoader__.load({
 .fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
 .fs-room-end{margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
+/* A left or closed face room is read-only (#197): its end line replaces the composer. */
+[class*="_composerStack"]:has([data-flybot="face-room-end"]) [class*="_root"]:has(> [data-composer-card]){display:none!important}
 .fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;justify-content:space-between;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
-.fs-me-handle{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px}
+.fs-me-handle{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink,#141414);font-size:13px}
 .bt-menu .fs-me button.fs-link{display:inline;flex:none;width:auto;min-height:0;padding:0 2px;border-radius:4px;font-size:12px;line-height:16px}
 .fs-me .fs-link{flex:none}
 .fs-pending{margin:4px 4px 6px;padding:6px 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}

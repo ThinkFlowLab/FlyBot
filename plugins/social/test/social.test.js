@@ -4399,3 +4399,16 @@ test('#192: Open on a room the user left shows that room with its transcript, re
   assert.equal(room.face.status, 'left')
   assert.ok(room.log.some(line => /earlier line/.test(line.text)), 'the transcript is kept')
 })
+
+test('#197: a read-only face room hides the composer, the own handle uses normal ink, no Friends\' Bots section is named', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  // The end line of a left/closed room sits in the composer stack; the composer itself goes.
+  assert.match(source, /\[class\*="_composerStack"\]:has\(\[data-flybot="face-room-end"\]\) \[class\*="_root"\]:has\(> \[data-composer-card\]\)\{display:none!important\}/)
+  assert.match(source, /\.fs-me-handle\{[^}]*color:var\(--bt-ink,[^}]*\}/)
+  assert.doesNotMatch(source.match(/\.fs-me-handle\{[^}]*\}/)[0], /--bt-ink-2/)
+  const server = readFileSync(new URL('../src/social.js', import.meta.url), 'utf8')
+  for (const text of [source, server]) {
+    assert.doesNotMatch(text, /(?:return|Error\()[^\n]*in Friends' Bots/)
+  }
+  assert.equal(mapJoinInviteError(Object.assign(new Error('relationship_exists'), { code: 'relationship_exists' })).message, "You're already friends. Their Bot is back in your list.")
+})

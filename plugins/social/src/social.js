@@ -238,7 +238,7 @@ export function mapJoinInviteError(error) {
   const code = String(error?.code ?? '')
   const blob = `${code} ${msg}`
   if (/relationship_exists/i.test(blob)) {
-    return Object.assign(new Error("You're already friends. That Bot is in Friends' Bots again."), {
+    return Object.assign(new Error("You're already friends. Their Bot is back in your list."), {
       code: 'relationship_exists',
       ...(error?.peer ? { peer: error.peer } : {}),
       ...(error?.bot ? { bot: error.bot } : {}),
@@ -1129,7 +1129,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (settings.via[target] !== bot.id) { settings.via[target] = bot.id; saveSettings() }
         if (sent?.message?.status === 'pending_approval') {
           pendingCache.at = 0
-          return `Sent, but Bot Social holds it until you approve it in Friends' Bots. Turn on Auto-accept for this friend to skip the hold on later messages.`
+          return `Sent, but it waits for your approval in this chat. Turn on Auto-send for this friend to skip that next time.`
         }
         return ''
       } catch (error) {

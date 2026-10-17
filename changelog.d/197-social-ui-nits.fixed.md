@@ -1,0 +1,1 @@
+Social: a face-to-face room you left or that closed no longer shows a message box under "You left this room."; your own handle in the account menu is in normal, readable ink; messages no longer point to a "Friends' Bots" section that no longer exists, and a held message to a friend's Bot names the Auto-send setting the UI actually shows.
