@@ -74,8 +74,8 @@ window.__ModuleLoader__.load({
 .fs-actions{flex:none;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:100%}
 .fs-card{margin:4px 4px 2px;padding:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px}
 .fs-friend-settings{gap:10px;max-width:280px}
-.fs-friend-settings .fs-auto{align-self:flex-start;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
-.fs-friend-settings .fs-auto input{width:14px;height:14px}
+.fs-friend-settings .fs-auto{align-self:flex-start;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-friend-settings .fs-auto input{flex:none;width:14px;height:14px}
 .fs-friend-settings .fs-leave-ask{flex-wrap:wrap;white-space:normal}
 .fs-friend-settings .fs-link{align-self:flex-start;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-card .fs-hint{padding:0}

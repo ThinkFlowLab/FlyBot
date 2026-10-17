@@ -873,6 +873,8 @@ test('#230: removing a friend\'s Bot asks inline, not with the browser confirm b
     assert.ok(byId(nodes, 'remove-friend-bot-no'))
   }
   assert.doesNotMatch(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /globalThis\.confirm/)
+  // A long friend name wraps inside the 280px card instead of running off the sheet.
+  assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.fs-friend-settings \.fs-auto\{[^}]*white-space:normal;overflow-wrap:anywhere/)
 })
 
 test('two Bots never share one member identity: a saved shared identity is repaired and invites name the right Bot', async (t) => {
