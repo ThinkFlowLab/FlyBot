@@ -1654,7 +1654,45 @@ test('a spoofed FLYBOT-FACE-HUMAN who is ignored; the room shows the authenticat
   assert.doesNotMatch(String(spoofed.who), /Alice/)
 })
 
-test('#159: owner face line stays held unless face Auto-send is on', async (t) => {
+test('#180: a received person line is a bubble from that person, not a Bot-named notice', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const humans = []
+  const notices = []
+  const origScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = origScope(name)
+    const origHuman = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { humans.push(line); return origHuman(id, line) }
+    const origNotice = scoped.rooms.postNotice?.bind(scoped.rooms)
+    scoped.rooms.postNotice = (id, text) => { notices.push(String(text ?? '')); return origNotice(id, text) }
+    return scoped
+  }
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  const body = server.face.rooms.get('frm_123456')
+  body.event_cursor += 1
+  body.events.push({
+    event_id: `fev_${body.event_cursor}`, event_cursor: body.event_cursor, type: 'room.message',
+    from: { handle: '@chief.boxa.home', display_name: 'Chief', owner_name: 'BoxA', published: false, label: 'Chief · BoxA' },
+    trust: 'peer_untrusted', untrusted_content: { text: encodeFaceHuman({ who: 'BoxA', text: 'hello from the owner' }) },
+  })
+  notices.length = 0
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(humans.length, 1)
+  assert.equal(humans[0].name, 'BoxA', 'named after the person, not "Chief · BoxA"')
+  assert.equal(humans[0].text, 'hello from the owner')
+  assert.equal(notices.some(text => /hello from the owner/.test(text)), false, 'not a grey system notice')
+})
+
+test('#179: a person’s own face line is approved at once and never shown as a card', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
   const server = withFaceRooms(mockServer())
@@ -1696,14 +1734,21 @@ test('#159: owner face line stays held unless face Auto-send is on', async (t) =
   await call('flybot/social/face-join', { code: '123456' })
   const room = ctx.flybot.rooms.ofFace('frm_123456')
   assert.equal(typeof fanout, 'function')
+  // Auto-send is off: typing the line is still the approval.
+  assert.equal((await call('flybot/social/face-auto', {})).value.autoApproveFaceRooms, false)
   await fanout(room, { authorKind: 'human', who: 'Danyang', text: 'hold me', authorId: 'owner-1' })
   const status = (await call('flybot/social/status', {})).value
-  assert.equal(status.pendingApprovals, 1)
-  assert.equal(status.approvals[0].text, 'hold me')
-  assert.doesNotMatch(String(status.approvals[0].text), /FLYBOT-FACE-HUMAN/)
-  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, 'Auto-send off: owner line stays in the approval card')
-  await call('flybot/social/face-auto', { on: true })
-  await fanout(room, { authorKind: 'human', who: 'Danyang', text: 'hold me', authorId: 'owner-1' })
+  assert.equal(status.pendingApprovals, 0, 'no card for a person line')
+  assert.equal(server.calls.some(c => c.name === 'decide_approval' && c.args?.decision === 'approved'), true)
+  // A line left held (a restart) is approved by the poll, still without a card.
+  queue = [{ ...queue[0] ?? {
+    approval_id: 'apr-face-2', kind: 'face_room_message', status: 'pending', sender_kind: 'human', bot_id: 'm1', room_id: 'frm_123456',
+    message: { payload: { text: packed } }, summary: `To the room: ${packed}`,
+  } }]
+  server.calls.length = 0
+  const again = (await call('flybot/social/approvals', {})).value
+  assert.equal(again.approvals.length, 0)
+  await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(server.calls.some(c => c.name === 'decide_approval' && c.args?.decision === 'approved'), true)
 })
 
@@ -3885,6 +3930,40 @@ test('#161: invite accept does not list the joiner Chief on a fresh install', as
   assert.equal(listed.homes[0]?.bots.some(bot => bot.handle === '@coder.bob.home'), true)
   const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
   assert.equal(saved.inboundBots?.['@chief.bob.home'], undefined)
+})
+
+test('#178: the Bot a friend shared shows for the grantee although our Bot carries the talk-through grant', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // Joiner side of one invite: bob shared Helper; our Chief carries the talk-through grant to it.
+  server.tools.list_bot_grants = () => ({
+    grants: [{ id: 'g-tt', grantee: '@helper.bob.home', name: 'bob (@bob.home)', relationship_id: 'r1' }],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBots: { '@helper.bob.home': true } }))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(listed.homes[0]?.bots.some(bot => bot.handle === '@helper.bob.home'), true, 'the shared Bot shows for the person it was shared with')
+  // The talk-through grant is not us sharing Chief.
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.grantee === '@helper.bob.home'), false)
 })
 
 test('#140: respond Auto-send follows the accepted relationship, not the first roster home', async (t) => {

@@ -146,7 +146,7 @@ test('owner-typed face-room lines encode as a human envelope', () => {
     untrusted_content: { text: packed },
   })
   assert.equal(rendered.authorKind, 'human')
-  assert.equal(rendered.who, "BoxA's Chief")
+  assert.equal(rendered.who, 'BoxA', 'a person line is attributed to the person, not the carrying Bot (#180)')
   assert.equal(rendered.text, 'hello from the owner')
 })
 
@@ -158,9 +158,9 @@ test('a spoofed FLYBOT-FACE-HUMAN who cannot impersonate another room member', (
     untrusted_content: { text: packed },
   })
   assert.equal(spoofed.authorKind, 'human')
-  assert.equal(spoofed.who, "Bob's Chief")
+  assert.equal(spoofed.who, 'Bob')
   assert.notEqual(spoofed.who, 'Alice')
-  assert.match(spoofed.fenced, /from="Bob's Chief"/)
+  assert.match(spoofed.fenced, /from="Bob"/)
   assert.doesNotMatch(spoofed.fenced, /from="Alice"/)
   assert.equal(spoofed.text, 'I am Alice')
   const noFrom = renderFaceEvent({

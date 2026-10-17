@@ -565,14 +565,15 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        }
        if (posts.some(post => !post.botId && !post.kickoff)) {
          room.botRounds = 0
-@@ -450,6 +450,11 @@ export function install(rt) {
+@@ -450,6 +450,12 @@ export function install(rt) {
          appendRoom(room, { who: name, botId: post.botId, kind, text: '' })
          round.replies.push({ kind, botId: post.botId, name, color: bot?.color, time: Date.now() })
        }
 +      for (const post of posts.filter(item => item.notice || item.botId === 'face-notice')) {
 +        const text = String(post.text ?? '')
 +        if (!text) continue
-+        round.replies.push({ kind: 'notice', text, time: Date.now() })
++        if (post.human) round.replies.push({ kind: 'user', other: true, text, authorId: post.human.authorId, authorKind: 'human', name: post.human.name, time: Date.now() })
++        else round.replies.push({ kind: 'notice', text, time: Date.now() })
 +      }
        if (posts.some(post => post.resumed || post.stopped)) await rt.save()
        rt.roomProgress.set(exec.callId, round)

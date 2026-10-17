@@ -427,7 +427,9 @@ export function renderFaceEvent(event) {
     const from = viewed.from || {}
     const body = viewed.untrustedText ?? ''
     const human = parseFaceHuman(body)
-    const who = trustedFaceWho(from)
+    // A person's own line is attributed to the person, not to the Bot that carried it (#180).
+    const ownerName = cleanFaceName(from.owner_name || from.ownerName, '')
+    const who = human && ownerName ? ownerName : trustedFaceWho(from)
     const text = human ? human.text : body
     return {
       kind: undefined,

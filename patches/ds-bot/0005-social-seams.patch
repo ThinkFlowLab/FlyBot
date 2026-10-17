@@ -640,6 +640,25 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 diff --git a/test/rounds.test.js b/test/rounds.test.js
 --- a/test/rounds.test.js
 +++ b/test/rounds.test.js
+@@ -180,6 +180,18 @@ test('a message the composer queues mid-round joins the round and leaves the Ses
+   assert.deepEqual(inboxOf(room.id).nextTurn, [])
+ })
+ 
++test('#180: another member\'s line is a bubble from that person and starts no Bot turn', async (t) => {
++  const { call, emit, relay, stop, sent } = start()
++  t.after(stop)
++  const room = await team(call, sent)
++  await emit(room.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'SelfA', quiet: true, notice: true, human: { authorId: '@chief.selfa.home', name: 'SelfA' } }, content: [{ type: 'text', text: '[Group post from SelfA]\nhello from A' }] } })
++  const result = JSON.parse(await relay(room.id, 'relay'))
++  assert.deepEqual(result.replies.map(({ kind, other, name, text, authorId }) => ({ kind, other, name, text, authorId })), [
++    { kind: 'user', other: true, name: 'SelfA', text: 'hello from A', authorId: '@chief.selfa.home' },
++  ])
++  assert.equal(sent.length, 0, 'a person line asks no Bot to answer')
++})
++
+ test('a plain message steered mid-round is answered by everyone, admin first, inside the round', async (t) => {
+   const { call, emit, userMessage, compose, relay, inboxOf, answer, stop, sent } = start()
+   t.after(stop)
 @@ -331,6 +331,67 @@ test('a stopped round leaves a waiting message for the next round', async (t) =>
    assert.equal(inboxOf(room.id).nextTurn.length, 1)
  })

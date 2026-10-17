@@ -923,6 +923,13 @@ export function install(rt) {
         if (!room || typeof rt.postToRoom !== 'function') return
         return rt.postToRoom(room, { id: 'face-notice', name: 'Room' }, String(text ?? ''), { quiet: true, notice: true })
       },
+      // Another member's own typed line: a plain chat bubble from that person, no Bot turn (#180).
+      postHuman: (roomId, { authorId, name, text } = {}) => {
+        const room = rt.roomOf(roomId)
+        if (!room || typeof rt.postToRoom !== 'function') return
+        const who = String(name || 'Someone')
+        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who } })
+      },
       postRemote: (roomId, { handle, name, text } = {}) => {
         const room = rt.roomOf(roomId)
         if (!room || typeof rt.postToRoom !== 'function') return

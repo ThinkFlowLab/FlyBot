@@ -681,6 +681,13 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
       if (reply.kind === 'user') {
         const who = reply.name && reply.name !== 'User' ? reply.name : reply.authorId
+        // Another member's line: a left-hand bubble with their name, like any other person's message (#180).
+        if (reply.other) {
+          return h('div', { key: `user-${index}`, className: 'bt-umsg bt-umsg-other', 'data-author': reply.authorId, 'data-author-kind': 'human', 'data-author-name': who },
+            h('div', { className: 'bt-ustack' },
+              who ? h('span', { className: 'bt-uauthor' }, who) : null,
+              h('div', { className: 'bt-ubody' }, remoteMessageText(reply.text))))
+        }
         return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
           who ? h('span', { className: 'bt-uauthor' }, who) : null,
           h('div', { className: 'bt-ububble' },

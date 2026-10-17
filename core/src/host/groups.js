@@ -484,7 +484,8 @@ export function install(rt) {
       for (const post of posts.filter(item => item.notice || item.botId === 'face-notice')) {
         const text = String(post.text ?? '')
         if (!text) continue
-        round.replies.push({ kind: 'notice', text, time: Date.now() })
+        if (post.human) round.replies.push({ kind: 'user', other: true, text, authorId: post.human.authorId, authorKind: 'human', name: post.human.name, time: Date.now() })
+        else round.replies.push({ kind: 'notice', text, time: Date.now() })
       }
       if (posts.some(post => post.resumed || post.stopped)) await rt.save()
       rt.roomProgress.set(exec.callId, round)
