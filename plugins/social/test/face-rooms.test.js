@@ -419,3 +419,13 @@ test('#179: a Bot line can never carry the person-line marker', () => {
   assert.equal(parseFaceHuman(out.text), undefined)
   assert.doesNotMatch(out.text, /FLYBOT-FACE-HUMAN/)
 })
+
+test('#194: a face room title shows one time, the creation time, before and after Enter chat', () => {
+  const members = [{ ownerName: 'Alice', handle: '@a.home' }]
+  const candidate = faceRoomTitle({ members, expiresAt: '2026-10-17T13:06:00.000Z' })
+  const open = faceRoomTitle({ members, expiresAt: '2026-10-17T13:06:00.000Z', startedAt: '2026-10-17T13:01:30.000Z' })
+  assert.equal(candidate, open)
+  assert.match(candidate, /12:56$/)
+  assert.equal(faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z', expiresAt: '2026-10-17T13:06:00.000Z' }), faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z' }))
+  assert.notEqual(faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z', expiresAt: '2026-10-17T13:06:00.000Z' }), candidate)
+})

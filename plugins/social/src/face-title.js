@@ -54,6 +54,18 @@ export function joinCodeOf(code) {
   return String(code ?? '').replace(/\D/g, '').slice(0, 6)
 }
 
+// The one time a face room's title shows (#194): when the room was created. Bot Social's
+// `created_at` when it sends one, else the joining deadline minus the 10-minute joining window
+// (the deadline never changes once the room is open, so the title reads the same before and after
+// Enter chat and on every home), else the start.
+export const FACE_JOIN_WINDOW_MS = 10 * 60_000
+export function faceRoomCreatedAt({ createdAt, expiresAt, startedAt } = {}) {
+  if (createdAt && Number.isFinite(Date.parse(createdAt))) return createdAt
+  const deadline = Date.parse(expiresAt)
+  if (Number.isFinite(deadline)) return new Date(deadline - FACE_JOIN_WINDOW_MS).toISOString()
+  return startedAt || undefined
+}
+
 // `Face-to-face · Alice, Bob · 482913` when a code is known, else `… · Oct 16 21:40`.
 // A caller-chosen name that is not an auto title is kept.
 export function formatFaceRoomTitle({ name, owners, members, code, at } = {}) {

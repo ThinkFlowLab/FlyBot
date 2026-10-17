@@ -11,7 +11,7 @@
 
 import { socialFetch } from './mcp-client.js'
 import { lookFromServer } from './look.js'
-import { formatFaceRoomTitle } from './face-title.js'
+import { formatFaceRoomTitle, faceRoomCreatedAt } from './face-title.js'
 
 export const FACE_JOIN_CODE = /^\d{6}$/
 export const FACE_MAX_MEMBERS = 8
@@ -248,7 +248,11 @@ export function trustedFaceWho(from) {
 
 export function faceRoomTitle(snapshot = {}, { code, room } = {}) {
   const members = snapshot.members ?? room?.participants ?? []
-  const at = snapshot.startedAt || room?.face?.startedAt || snapshot.expiresAt || room?.face?.expiresAt || room?.createdAt
+  const at = faceRoomCreatedAt({
+    createdAt: snapshot.createdAt,
+    expiresAt: snapshot.expiresAt || room?.face?.expiresAt,
+    startedAt: snapshot.startedAt || room?.face?.startedAt,
+  }) || room?.createdAt
   return formatFaceRoomTitle({
     name: snapshot.name || room?.name,
     members,
@@ -369,6 +373,7 @@ export function viewFaceRoom(body) {
     status: body.status === 'open' || body.status === 'closed' ? body.status : 'candidate',
     expiresAt: body.expires_at || body.expiresAt || null,
     startedAt: body.started_at || body.startedAt || null,
+    createdAt: body.created_at || body.createdAt || null,
     closedAt: body.closed_at || body.closedAt || null,
     eventCursor: Number(body.event_cursor ?? body.eventCursor ?? 0) || 0,
     members: (body.members ?? []).map(viewFaceMember).filter(Boolean),

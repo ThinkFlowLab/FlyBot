@@ -95,7 +95,8 @@ window.__ModuleLoader__.load({
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
 .fs-room-end{margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
 .fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;justify-content:space-between;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
-.fs-me-handle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fs-me-handle{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px}
+.bt-menu .fs-me button.fs-link{display:inline;flex:none;width:auto;min-height:0;padding:0 2px;border-radius:4px;font-size:12px;line-height:16px}
 .fs-me .fs-link{flex:none}
 .fs-pending{margin:4px 4px 6px;padding:6px 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
 .fs-pending .fs-label{padding:0}
@@ -881,6 +882,7 @@ window.__ModuleLoader__.load({
     }
     // The owner's own Bot Social handle at the top of the account menu, with copy (#181).
     function MyHandle() {
+      useStyles()
       const [handle, setHandle] = useState('')
       const [copied, setCopied] = useState(false)
       useEffect(() => {
@@ -1213,12 +1215,12 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
-        adding ? h(AddFriend, { onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
+        adding ? h(AddFriend, { actions, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
         faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null)
     }
 
     // Add friend: join a friend's link and answer requests (invites are made from a Bot's right-click menu).
-    function AddFriend({ onChange, onDone } = {}) {
+    function AddFriend({ onChange, onDone, actions } = {}) {
       const [overview, setOverview] = useState(null)
       const [code, setCode] = useState('')
       const [status, setStatus] = useState(null)
@@ -1282,12 +1284,18 @@ window.__ModuleLoader__.load({
       })
       const join = e => {
         e.preventDefault()
-        return run('Joining', async () => {
+        return run('Accepting invite', async () => {
           const r = await call('social/join-invite', { code, ...(joiner ? { botId: joiner } : {}) })
           setCode('')
           const who = r.inviterName ?? r.inviter ?? 'Your friend'
           const shared = r.inviterBotName || r.sharedBot
-          if (r.status === 'active') return shared ? `${who} shared ${shared} with you.` : `${who} shared a Bot with you.`
+          if (r.status === 'active') {
+            // The new Bot row is in the sidebar already: close this panel and say what was added,
+            // instead of leaving it open until Done (#195).
+            const text = shared ? `${who} shared ${shared} with you.` : `${who} shared a Bot with you.`
+            if (onDone && actions?.notify) { actions.notify(text); setTimeout(onDone, 0) }
+            return text
+          }
           return `Request sent to ${who}. They show up here once they accept.`
         })
       }
@@ -1309,7 +1317,7 @@ window.__ModuleLoader__.load({
         h('form', { onSubmit: join, className: 'fs-card bt-social-join' },
           h('div', { className: 'fs-line' },
             h('input', { className: 'fs-input', value: code, placeholder: 'Paste invite link', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
-            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Join')),
+            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite')),
           mine.length ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: 'Your friend only sees this Bot unless you invite them to another.' },
             h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },

@@ -142,7 +142,7 @@ const safeName = name => String(name ?? 'file').replace(/[\u0000-\u001f\u007f/\\
 export function inviteText({ handle, name, home, url, expiresAt }) {
   const expires = expiresAt ? new Date(expiresAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : ''
   return `Add my bot ${handle}${name ? ` (${name})` : ''}${home ? ` from my FlyBot home ${home}` : ''}. ` +
-    "In FlyBot: open the + menu, choose Add friend, paste this link and click Join. " +
+    "In FlyBot: open the + menu, choose Add friend, paste this link and click Accept invite. " +
     "Using a Grok bot? Send it this link and say 'join this FlyBot invite'. " +
     `Link: ${url} (single use${expires ? `, expires ${expires}` : ''})`
 }
@@ -2038,6 +2038,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       status: past?.status || snapshot.status,
       expiresAt: snapshot.expiresAt,
       startedAt: snapshot.startedAt,
+      createdAt: snapshot.createdAt,
       eventCursor: snapshot.eventCursor,
       members: (snapshot.members ?? []).map(m => ({
         handle: m.handle,
@@ -2218,10 +2219,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   function rememberPastFace(room) {
     if (!room?.faceRoomId) return
-    settings.pastFaceRooms = [
+    const next = [
       { ...room, status: room.status || 'left' },
       ...(settings.pastFaceRooms ?? []).filter(item => item.faceRoomId !== room.faceRoomId),
-    ].slice(0, 20)
+    ]
+    settings.pastFaceRooms = next.slice(0, 20)
+    // A past room that falls off the list takes its kept transcript with it.
+    for (const old of next.slice(20)) {
+      const hosted = old?.roomId && flybot.rooms.ofFace?.(old.faceRoomId)
+      if (hosted?.id && ['left', 'closed'].includes(hosted.face?.status)) void flybot.rooms.dropFace?.(hosted.id)?.catch?.(() => {})
+    }
   }
   async function leaveFaceRoom({ roomId, faceRoomId, bots } = {}) {
     const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
@@ -2245,7 +2252,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         const leftBot = botByHandle(handle)
         if (leftBot) await dropRoomGrant(leftBot.id, meta.localRoomId)
       }
-      await flybot.rooms.dropFace?.(meta.localRoomId).catch(() => {})
+      // The room stays as a read-only past room with its transcript (#192): Open from Past rooms
+      // finds it already hosted. It is only marked left; the sidebar lists past rooms elsewhere.
+      await flybot.rooms.upsertFace?.({ roomId: id, status: 'left' }).catch(() => {})
     }
     delete settings.faceRooms[id]
     dropRoomRemotes(id)

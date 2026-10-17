@@ -1,0 +1,1 @@
+Open in Past rooms now works on a room you left: Leave keeps the room as a read-only past room with its transcript and a "You left this room." line. ([#192](https://github.com/ThinkFlowLab/FlyBot/issues/192))

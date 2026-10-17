@@ -34,7 +34,7 @@
 // of a friend's room that invited their granted Bot.
 
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
-import { formatFaceRoomTitle, isAutoFaceTitle } from '../shared/face-title.js'
+import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
 import { encodeRoomShare, parseRoomShare } from '../shared/room-share.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
@@ -1233,7 +1233,7 @@ export function install(rt) {
     // lose a member who left (#182). The time is the start, never the joining deadline.
     members: [...(spec.members ?? []), ...(room?.participants ?? [])],
     code: spec.joinCode || spec.code,
-    at: spec.startedAt || room?.face?.startedAt || spec.expiresAt || room?.createdAt,
+    at: faceRoomCreatedAt({ createdAt: spec.createdAt, expiresAt: spec.expiresAt || room?.face?.expiresAt, startedAt: spec.startedAt || room?.face?.startedAt }) || room?.createdAt,
   })
 
   rt.upsertFaceRoom = async function upsertFaceRoom(spec = {}) {
