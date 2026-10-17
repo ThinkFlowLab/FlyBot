@@ -287,21 +287,6 @@ export function parseFaceHuman(text) {
   }
 }
 
-// A direct-chat line the friend typed themself (#227). Stricter than the room parse: the whole
-// message must be the envelope, so a marker quoted inside a Bot's words never counts. Who said
-// it always comes from the network-stamped owner name, never from the envelope.
-export function parseOwnDirectLine(text) {
-  const raw = String(text ?? '')
-  if (!raw.startsWith(`${FACE_HUMAN_MARK}\n`)) return undefined
-  try {
-    const data = JSON.parse(raw.slice(FACE_HUMAN_MARK.length + 1))
-    if (data?.v !== 1 || typeof data.text !== 'string' || !data.text.trim()) return undefined
-    return { text: data.text }
-  } catch {
-    return undefined
-  }
-}
-
 // A Bot's own words never carry the person-line marker: only the human-send path writes it,
 // so model output cannot pass itself off as the owner speaking (or skip the owner's card).
 export const neutralizeFaceHuman = text => String(text ?? '').replace(/FLYBOT-FACE-HUMAN/gi, 'FLYBOT FACE HUMAN')

@@ -20,12 +20,6 @@ export interface RemoteBotRef {
   name?: string
   /** Transport that reaches it; default "bot-social". */
   transport?: string
-  /**
-   * Set only by the plugin that received it: the line was typed by the remote Bot's owner
-   * (a person), carried by that Bot. `name` is the network-stamped owner name. The chat
-   * shows a person's bubble instead of the Bot's.
-   */
-  human?: { name: string }
 }
 export type BotRef = BotId | RemoteBotRef | `@${string}`
 

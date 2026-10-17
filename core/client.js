@@ -4737,18 +4737,6 @@ function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi
     files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
   );
 }
-function PersonLine({ authorId, name, text }) {
-  return (0, import_react7.createElement)(
-    "div",
-    { className: "bt-umsg bt-umsg-other", "data-author": authorId, "data-author-kind": "human", "data-author-name": name },
-    (0, import_react7.createElement)(
-      "div",
-      { className: "bt-ustack" },
-      name ? (0, import_react7.createElement)("span", { className: "bt-uauthor" }, name) : null,
-      (0, import_react7.createElement)("div", { className: "bt-ubody" }, text)
-    )
-  );
-}
 function GlobeMark() {
   return (0, import_react7.createElement)(
     "svg",
@@ -4937,9 +4925,6 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
   return unreadOpening ? (0, import_react7.createElement)(import_react7.Fragment, null, (0, import_react7.createElement)("div", { className: "bt-open-new" }, (0, import_react7.createElement)(NewDivider), (0, import_react7.createElement)("div", { className: "bt-time-sep", role: "separator" }, unreadOpening)), body) : body;
   function triggerBody() {
     if (source.form === "remote-chat") return null;
-    if (source.remote?.handle && source.remote.human?.name) {
-      return (0, import_react7.createElement)(PersonLine, { authorId: source.remote.handle, name: source.remote.human.name, text: remoteMessageText(stripHeader(contentText(data.content))) });
-    }
     if (source.remote?.handle) {
       return (0, import_react7.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
     }
@@ -5199,7 +5184,18 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? "gray" };
       if (reply.kind === "user") {
         const who = reply.name && reply.name !== "User" ? reply.name : reply.authorId;
-        if (reply.other) return (0, import_react7.createElement)(PersonLine, { key: `user-${index}`, authorId: reply.authorId, name: who, text: remoteMessageText(reply.text) });
+        if (reply.other) {
+          return (0, import_react7.createElement)(
+            "div",
+            { key: `user-${index}`, className: "bt-umsg bt-umsg-other", "data-author": reply.authorId, "data-author-kind": "human", "data-author-name": who },
+            (0, import_react7.createElement)(
+              "div",
+              { className: "bt-ustack" },
+              who ? (0, import_react7.createElement)("span", { className: "bt-uauthor" }, who) : null,
+              (0, import_react7.createElement)("div", { className: "bt-ubody" }, remoteMessageText(reply.text))
+            )
+          );
+        }
         return (0, import_react7.createElement)(
           "div",
           { key: `user-${index}`, className: "bt-urow", "data-author": reply.authorId, "data-author-name": who },

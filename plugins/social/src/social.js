@@ -49,9 +49,6 @@ import {
   humanFaceWho,
   faceRoomTitle,
   parseFaceHuman,
-  encodeFaceHuman,
-  neutralizeFaceHuman,
-  parseOwnDirectLine,
 } from './face-rooms.js'
 import {
   hideRemoteInSettings,
@@ -1079,9 +1076,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     },
   }))
   async function sendOut(msg) {
-      // Only sendChat (the owner typing in a friend's Bot's chat) writes the person-line marker;
-      // anything through bot.send is a Bot's words and must never read as the owner's (#227).
-      msg = { ...msg, text: neutralizeFaceHuman(msg.text) }
       const bot = await remoteBot(msg.target.handle)
       if (bot === undefined) throw new Error(`${msg.target.handle} is no longer reachable`)
       if (home) {
@@ -1116,10 +1110,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // What the user types in a friend's Bot's chat goes out directly: no approval hold, it
   // is the user's own message. It is signed by one of this home's members: the one used
   // before for that Bot, else the Main Bot, else any member the friendship covers.
-  // On the wire it is the person's line, not the Bot's (#227): the person envelope tells the
-  // friend's side to show the owner, and typing it is the approval, so a hold Bot Social puts
-  // on it is approved here at once, with no card. Only this path writes the envelope (bot.send
-  // neutralizes it), and only approval ids it created are ever approved without the owner.
+  // Typing it is the approval (#227): a hold Bot Social puts on it is approved here at once,
+  // with no card. What marks it as typed is this call site (only the owner's own composer turn
+  // reaches it) and the approval id it got back, never the message text; only ids recorded
+  // here are ever approved without the owner's click. The friend's side still shows the
+  // signing Bot: Bot Social carries no author-is-the-person flag a receiver could trust yet.
   async function approveTypedLine(sent) {
     const approvalId = sent?.message?.approval_id ?? sent?.approval_id
     if (sent?.message?.status !== 'pending_approval' || !approvalId) return
@@ -1143,7 +1138,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const member = activeMember(bot.id) ?? await register(bot).catch(() => undefined)
       if (!member) continue
       try {
-        const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: target, text: encodeFaceHuman({ who: ownerWho(), text }) })
+        const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: target, text })
         if (settings.via[target] !== bot.id) { settings.via[target] = bot.id; saveSettings() }
         await approveTypedLine(sent)
         return ''
@@ -1156,8 +1151,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`))
   }
-  // Shown only by an older FlyBot on the other side; a current one shows the network-stamped owner name.
-  const ownerWho = () => cleanText(home?.owner_display_name || home?.display_name, 'Someone')
   if (flybot.remote?.chats) disposers.push(flybot.remote.chats.onSend(sendChat))
 
   // ------------------------------------------------------------ inbound
@@ -1206,20 +1199,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (event.event_type !== 'message.received' || seen.has(event.event_id)) { done(); continue }
         try {
         const files = (Array.isArray(event.attachments) ? event.attachments : []).filter(file => typeof file?.id === 'string').slice(0, MAX_FILES)
-        let said = untrustedText(event.untrusted_content)
+        const said = untrustedText(event.untrusted_content)
         if (!said && files.length === 0) { done(); continue }
         // File names come from the remote side too, so they stay inside the untrusted text.
-        let text = files.length
+        const text = files.length
           ? `${said}\n\nAttached files: ${files.map(file => `${safeName(file.name)} (${sizeLabel(Number(file.size) || 0)}, id ${file.id})`).join('; ')}`
           : said
         const handle = norm(event.from?.handle)
         const fromHome = event.from?.home_handle ? norm(event.from.home_handle) : undefined
-        // The friend typed it themself (#227): shown as that person, named by Bot Social's
-        // stamped owner name. Without that name it stays the Bot's line, envelope removed.
-        const typed = files.length ? undefined : parseOwnDirectLine(said)
-        const person = typed ? cleanText(event.from?.owner_display_name) : ''
-        if (typed) said = typed.text
-        if (typed) text = typed.text
         const share = await flybot.rooms?.applyInbound?.({
           fromHandle: handle,
           fromHome,
@@ -1240,11 +1227,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           done()
           continue
         }
-        const botName = cleanText(event.from?.display_name, handle)
         const outcome = await flybot.bot.send({
-          from: person
-            ? { kind: 'remote', handle, home: fromHome, name: `${person} (a person, via ${handle})`, human: { name: person } }
-            : { kind: 'remote', handle, home: fromHome, name: `${botName} (${handle}, Bot Social)` },
+          from: { kind: 'remote', handle, home: event.from?.home_handle ? norm(event.from.home_handle) : undefined, name: `${cleanText(event.from?.display_name, handle)} (${handle}, Bot Social)` },
           to: local.id,
           text,
           meta: { conversationId: event.conversation_id ?? null },

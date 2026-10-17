@@ -617,13 +617,12 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      const room = rt.roomOf(roomId)
      // Session events reject `undefined` members, so optional fields are omitted instead.
      const source = {
-@@ -62,6 +62,11 @@ export function install(rt) {
+@@ -62,6 +62,10 @@ export function install(rt) {
        ...(retried ? { retried: true } : {}),
        ...(askedBy ? { askedBy } : {}),
        ...(fromRoomId ? { senderRoomId: fromRoomId } : {}),
 +      // A remote member's message (FlyBot): the chat draws it as that member's bubble.
-+      // `human`: the remote Bot's owner typed it (the plugin checked); the chat draws that person's bubble.
-+      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}), ...(remote.human?.name ? { human: { name: cleanName(remote.human.name) } } : {}) } } : {}),
++      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}) } } : {}),
 +      // A remote member's files, as references the chat shows as chips (fetched on demand).
 +      ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
      }
