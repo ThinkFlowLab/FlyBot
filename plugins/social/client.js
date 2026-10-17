@@ -93,6 +93,7 @@ window.__ModuleLoader__.load({
 .fs-status[data-tone=error]{color:#e5484d}
 .fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
+.fs-room-end{margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
 .fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;justify-content:space-between;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-me-handle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fs-me .fs-link{flex:none}
@@ -596,6 +597,8 @@ window.__ModuleLoader__.load({
         setRoom({ ...last, mineHandles: mine, joinCode: last.joinCode || digits })
         setStep('waiting')
         setBusy(false)
+        // The main pane (and its title) moves to the new room at once, not the room before it (#191).
+        if (last.roomId && typeof actions?.openSession === 'function') actions.openSession(last.roomId)
       }
       const enter = async () => {
         if (!room || opened.current) return
@@ -898,6 +901,21 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'fs-me', 'data-flybot': 'my-handle-menu' },
         h('span', { className: 'fs-me-handle', title: 'Your Bot Social handle' }, handle),
         h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'copy-my-handle', onClick: copy }, copied ? 'Copied' : 'Copy'))
+    }
+
+    // A face-to-face room that has ended says so in plain view, naming the person who left (#191).
+    function faceEndLine(room) {
+      const status = room?.origin === 'face-to-face' ? room.face?.status : ''
+      if (status !== 'left' && status !== 'closed') return ''
+      const gone = (room.participants ?? []).filter(p => p.remote && p.leftSeq !== undefined)
+        .map(p => p.ownerName || p.displayName || p.name).filter(Boolean)
+      const names = [...new Set(gone)]
+      if (names.length > 0) return `${names.join(', ')} left the room. This room is closed.`
+      return status === 'left' ? 'You left this room.' : 'This room is closed.'
+    }
+    function FaceRoomStatus({ room } = {}) {
+      const text = faceEndLine(room)
+      return text ? h('div', { className: 'fs-room-end', 'data-flybot': 'face-room-end', role: 'status' }, text) : null
     }
 
     function ChatApprovalDock({ sessionId, roster, room, bot, actions } = {}) {
@@ -1506,6 +1524,7 @@ window.__ModuleLoader__.load({
       ChatApproval,
       ChatApprovalDock,
       MyHandle,
+      FaceRoomStatus,
       FriendBotRow,
       FriendChatSettings,
       FaceToFaceGroup,
@@ -1545,6 +1564,7 @@ window.__ModuleLoader__.load({
             (() => { try { return slots().register('flybot.account.header', { id: 'social-handle', order: 10, component: MyHandle }) } catch { return () => {} } })(),
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
+            slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, component: ChatApprovalDock }),
           ]
           // For other plugins (the tree's per-node "Copy invite link"): ctx.flybot.social.canInvite(botId)

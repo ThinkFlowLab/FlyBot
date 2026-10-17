@@ -313,8 +313,10 @@ export function platformJoinText(member) {
   return `${who} joined`
 }
 
+// A leave names the person, not their Bot (#191): "Bob left the room".
 export function platformLeaveText(member) {
-  return `${faceMemberLabel(member)} left`
+  const owner = cleanFaceName(member?.owner_name || member?.ownerName, '')
+  return owner ? `${owner} left the room` : `${faceMemberLabel(member)} left`
 }
 
 export function platformStartedText(reason) {

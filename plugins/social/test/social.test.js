@@ -509,7 +509,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -2700,6 +2700,7 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
     calls.filter(([endpoint]) => endpoint === 'social/face-join').map(([, payload]) => [payload.code, payload.botId]),
     [['123456', 'a'], ['123456', 'b']],
   )
+  assert.deepEqual(opened, ['g1'], '#191: joining moves the main pane to the new room, not the room before it')
 
   calls.length = 0
   const full = setup(['setup', bots, ['a'], '999999', false, { tone: 'error', text: 'This room already has 8 Bots. Nobody else can join with this number.' }, [], null, 0])
@@ -4042,6 +4043,19 @@ test('createSocialApi listGrants maps an object-shaped grantee to a handle', asy
   assert.equal(listed[0].grantee, '@carol.home')
   assert.equal(listed[0].name, 'Carol (@carol.home)')
   assert.doesNotMatch(listed[0].grantee, /object/i)
+})
+
+test('#191: an ended face room says so in plain view and names the person who left', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([])
+  const room = status => ({ origin: 'face-to-face', face: { status }, participants: [
+    { remote: false, displayName: 'Chief' },
+    { remote: true, ownerName: 'UiB1415', displayName: 'Chief', leftSeq: 3 },
+  ] })
+  const left = walk(plugin.FaceRoomStatus({ room: room('left') }))
+  assert.match(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\./)
+  assert.equal(walk(plugin.FaceRoomStatus({ room: room('open') })).some(n => n.props?.['data-flybot'] === 'face-room-end'), false)
+  assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
 })
 
 test('#181: the account menu header shows my own handle with a Copy button', async () => {
