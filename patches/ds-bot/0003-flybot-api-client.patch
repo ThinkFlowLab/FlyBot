@@ -472,7 +472,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { GROUP_SETTINGS_CSS } from './group-settings.js'
  import { FOLDER_CSS } from './folder-menu.js'
  import { USAGE_CSS } from './usage-page.js'
-@@ -37,7 +37,29 @@ import { noticeApprovals } from './approval-notices.js'
+@@ -37,8 +37,30 @@ import { noticeApprovals } from './approval-notices.js'
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
  export function apply(ctx) {
@@ -486,6 +486,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +  } catch {}
    ctx.effect(() => installLocale(ctx.get('locale')), 'ds-bot: interface copy')
 +  ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
+   const roster = createSource(EMPTY_ROSTER)
 +  ctx.effect(() => {
 +    const sessions = ctx.sessions.list
 +    const sync = () => {
@@ -499,9 +500,9 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    sync()
 +    return sessions.subscribe(sync)
 +  }, 'ds-bot: tab title')
-   const roster = createSource(EMPTY_ROSTER)
    migrateStorage()
    const UNREAD_KEY = STORAGE.unread
+   let savedUnread = {}
 @@ -52,7 +52,7 @@ export function apply(ctx) {
    try { seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') ?? {} } catch { seenAt = {} }
    // `details` is the panel's subject (a Session id); `view` picks details or the

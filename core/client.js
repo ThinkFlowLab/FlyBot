@@ -14532,6 +14532,7 @@ function apply(ctx) {
   }
   ctx.effect(() => installLocale(ctx.get("locale")), "ds-bot: interface copy");
   ctx.effect(() => installBrandChrome(), "ds-bot: brand chrome");
+  const roster = createSource(EMPTY_ROSTER);
   ctx.effect(() => {
     const sessions = ctx.sessions.list;
     const sync = () => {
@@ -14545,7 +14546,6 @@ function apply(ctx) {
     sync();
     return sessions.subscribe(sync);
   }, "ds-bot: tab title");
-  const roster = createSource(EMPTY_ROSTER);
   migrateStorage();
   const UNREAD_KEY = STORAGE.unread;
   let savedUnread = {};
