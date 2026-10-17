@@ -146,7 +146,7 @@ export function approvalsForSession(items, session = {}) {
   if (handle) handles.add(handle)
   return list.filter(item => {
     if (item.kind === 'face_room_message') {
-      if (faceId && (!item.roomId || item.roomId === faceId)) return true
+      if (faceId && item.roomId === faceId) return true
       if (roomId && item.roomId === roomId) return true
       return false
     }
