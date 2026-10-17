@@ -85,3 +85,5 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 - Reaching into DSH internals instead of using hooks/slots.
 - Changing slots without updating types or client tests.
+- `flybot.remote.chats.deliver({ handle, text, name?, home?, human?, ownerName? })` (#227): `human: true` is the plugin's server-attested "the friend typed this line themselves" (Bot Social `typed_by_owner`, never derived from text) and `ownerName` the authenticated owner label; the host then draws that turn's reply as the person. Plugins that cannot attest leave both out and the line stays the Bot's.
+
