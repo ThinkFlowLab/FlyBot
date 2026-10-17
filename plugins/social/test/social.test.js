@@ -4096,7 +4096,7 @@ test('#191: an ended face room says so in plain view and names the person who le
 
 test('#195: accepting a Bot invite says what was added and closes the panel; the button reads Accept invite', async () => {
   const calls = []
-  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+  const { walk, pluginOf } = loadSocialClient(async (endpoint) => {
     calls.push(endpoint)
     if (endpoint === 'social/join-invite') return { status: 'active', inviterName: 'Alice', inviterBotName: 'Helper' }
     return {}
