@@ -1,4 +1,5 @@
 import { digest, requireValue } from './codec.mjs'
+import { RuntimeRecoveryError, requireRuntimeEvidence } from './runtime-error.mjs'
 
 export const input = {
   requirement: 'Analyze a retry loop for cancellation races.',
@@ -36,23 +37,23 @@ export class ScriptedRuntime {
   confirmAbort = true
   capabilities = { history: true, abort: true }
   create(taskId) {
-    requireValue(!this.offline, 'runtime offline')
+    requireRuntimeEvidence(!this.offline, 'runtime offline')
     const session = { id: `session-${this.sessions.length + 1}`, taskId }
     this.sessions.push(session)
-    if (this.loseCreateReply) throw new Error('lost create reply')
+    if (this.loseCreateReply) throw new RuntimeRecoveryError('lost create reply')
     return session.id
   }
   submit(sessionId, turnId, content) {
-    requireValue(!this.offline, 'runtime offline')
+    requireRuntimeEvidence(!this.offline, 'runtime offline')
     this.submissions.push({ sessionId, turnId, digest: digest(content), content: { trust: 'peer-untrusted', data: structuredClone(content) } })
-    if (this.loseSubmitReply) throw new Error('lost submit reply')
+    if (this.loseSubmitReply) throw new RuntimeRecoveryError('lost submit reply')
   }
   history(taskId) {
-    requireValue(!this.offline && this.capabilities.history, 'history unavailable')
+    requireRuntimeEvidence(!this.offline && this.capabilities.history, 'history unavailable')
     return structuredClone({ sessions: this.sessions.filter(s => s.taskId === taskId), submissions: this.submissions })
   }
   abort(sessionId) {
-    requireValue(!this.offline && this.capabilities.abort, 'abort unavailable')
+    requireRuntimeEvidence(!this.offline && this.capabilities.abort, 'abort unavailable')
     this.aborts.push(sessionId)
     return this.confirmAbort ? 'stopped' : 'requested'
   }

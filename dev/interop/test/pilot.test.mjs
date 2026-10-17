@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pilot } from '../harness.mjs'
+import { requireValue } from '../codec.mjs'
 import { FakeClock, MockPolicy, ScriptedRuntime, input, eventFor } from '../mocks.mjs'
 
 function fixture(t) {
@@ -327,4 +328,56 @@ test('known failure remains terminal and unsupported runtime capability starts n
   f.receive(req); f.pilot.approve(req.eventId, 'owner-a', 'delivery', true)
   assert.throws(() => f.pilot.approve(req.eventId, 'owner-b', 'execution', true), /capabilities/)
   assert.equal(f.runtime.submissions.length, 1)
+})
+
+test('unexpected invariant failure after submission is surfaced and its durable intent can reconcile', t => {
+  const f = fixture(t), task = f.enroll(), req = eventFor(task, 'request')
+  f.receive(req)
+  f.pilot.approve(req.eventId, 'owner-a', 'delivery', true)
+  f.pilot.finishDispatch = () => requireValue(false, 'unexpected completion invariant')
+  assert.throws(() => f.pilot.approve(req.eventId, 'owner-b', 'execution', true), /unexpected completion invariant/)
+  assert.equal(f.runtime.submissions.length, 1)
+  assert.equal(f.pilot.task(task.id).execution.phase, 'submitting')
+  f.restart()
+  assert.equal(f.pilot.task(task.id).recovery, 'uncertain')
+  assert.equal(f.pilot.reconcile(task.id).action, 'reconciled')
+  assert.equal(f.runtime.submissions.length, 1)
+})
+
+test('unexpected history and abort bugs are not mistaken for transport uncertainty', t => {
+  const f = fixture(t), task = f.enroll()
+  f.runtime.loseSubmitReply = true
+  start(f, task)
+  f.runtime.history = () => { throw new Error('unexpected history invariant') }
+  assert.throws(() => f.pilot.reconcile(task.id), /unexpected history invariant/)
+  f.runtime.abort = () => { throw new Error('unexpected abort invariant') }
+  assert.throws(() => f.pilot.cancel(task.id, 'owner-a'), /unexpected abort invariant/)
+  assert.equal(f.pilot.task(task.id).status, 'cancelled')
+  assert.equal(f.pilot.task(task.id).cancel, 'requested')
+})
+
+test('cancellation racing session creation stops before submitting a turn', t => {
+  const f = fixture(t), task = f.enroll()
+  const create = f.runtime.create.bind(f.runtime)
+  f.runtime.create = id => {
+    const sessionId = create(id)
+    f.pilot.cancel(id, 'owner-a')
+    return sessionId
+  }
+  start(f, task)
+  assert.equal(f.pilot.task(task.id).status, 'cancelled')
+  assert.equal(f.pilot.task(task.id).cancel, 'observed')
+  assert.equal(f.pilot.task(task.id).recovery, null)
+  assert.equal(f.runtime.submissions.length, 0)
+})
+
+test('awaiting acceptance does not consume an execution slot, while two unfinished tasks do', t => {
+  const f = fixture(t), a = f.enroll('slot-a'), b = f.enroll('slot-b')
+  const request = start(f, a), result = resultFor(a, request)
+  f.receive(result); f.release(result)
+  assert.equal(f.pilot.task(a.id).status, 'result-ready')
+  f.enroll('slot-c')
+  assert.throws(() => f.enroll('slot-d'), /concurrency limit/)
+  assert.equal(f.pilot.task(b.id).status, 'open')
+  assert.equal(f.pilot.task(a.id).status, 'result-ready')
 })

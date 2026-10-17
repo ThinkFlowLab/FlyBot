@@ -1,5 +1,6 @@
 import { decode, digest, requireValue, validateInput } from './codec.mjs'
 import { Journal } from './journal.mjs'
+import { RuntimeRecoveryError, requireRuntimeEvidence } from './runtime-error.mjs'
 
 const DEFAULTS = { turns: 4, messages: 8, progress: 12, durationMs: 600000 }
 const TERMINAL = new Set(['accepted', 'cancelled', 'failed'])
@@ -193,11 +194,15 @@ export class Pilot {
         this.journal.transaction(state => { state.tasks[task.id].sessionId = sessionId; state.tasks[task.id].execution.phase = 'submitting' })
       }
       const current = this.task(task.id)
+      if (TERMINAL.has(current.status)) {
+        this.finishDispatch(task.id, record)
+        return { action: 'stopped' }
+      }
       this.checkEvent(current, event)
       this.runtime.submit(current.sessionId, event.turnId, contentOf(event))
-      this.finishDispatch(task.id, record)
-      return { action: 'submitted' }
-    } catch {
+      return { action: this.finishDispatch(task.id, record) ? 'submitted' : 'stopped' }
+    } catch (error) {
+      if (!(error instanceof RuntimeRecoveryError)) throw error
       return this.journal.transaction(state => {
         const current = state.tasks[task.id]
         const stopped = TERMINAL.has(current.status)
@@ -209,13 +214,19 @@ export class Pilot {
     }
   }
   finishDispatch(id, record) {
-    this.journal.transaction(state => {
+    return this.journal.transaction(state => {
       const task = state.tasks[id], event = record.event
-      requireValue(!TERMINAL.has(task.status) && event.generation === task.generation, 'task stopped')
+      if (TERMINAL.has(task.status)) {
+        task.pending = null
+        state.inbox[event.eventId].status = 'stopped'
+        return false
+      }
+      requireValue(event.generation === task.generation, 'execution generation mismatch')
       task.active = { eventId: event.eventId, turnId: event.turnId }
       task.turns[`${event.generation}:${event.turnId}`].status = 'submitted'
       task.execution = null; task.recovery = null; task.pending = null; task.waiting = null; task.status = 'working'
       state.inbox[event.eventId].status = 'applied'
+      return true
     })
   }
   reconcile(id) {
@@ -225,15 +236,17 @@ export class Pilot {
     try {
       const history = this.runtime.history(id)
       const sessions = history.sessions.filter(s => s.taskId === id)
-      requireValue(sessions.length === 1 && (!task.sessionId || task.sessionId === sessions[0].id), 'ambiguous session')
+      requireRuntimeEvidence(sessions.length === 1 && (!task.sessionId || task.sessionId === sessions[0].id), 'ambiguous session')
       const record = this.journal.state.inbox[task.execution.eventId]
       const matches = history.submissions.filter(s => s.sessionId === sessions[0].id && s.turnId === record.event.turnId)
-      requireValue(matches.length === 1 && matches[0].digest === digest(contentOf(record.event)), 'ambiguous submission')
-      requireValue(this.clock.now() < task.deadline, 'deadline exceeded')
+      requireRuntimeEvidence(matches.length === 1 && matches[0].digest === digest(contentOf(record.event)), 'ambiguous submission')
+      requireRuntimeEvidence(this.clock.now() < task.deadline, 'deadline exceeded')
       this.journal.transaction(state => { state.tasks[id].sessionId = sessions[0].id })
-      this.finishDispatch(id, record)
-      return { action: 'reconciled' }
-    } catch { return { action: 'uncertain' } }
+      return { action: this.finishDispatch(id, record) ? 'reconciled' : 'stopped' }
+    } catch (error) {
+      if (!(error instanceof RuntimeRecoveryError)) throw error
+      return { action: 'uncertain' }
+    }
   }
   cancel(id, actor) {
     const task = this.task(id)
@@ -252,12 +265,15 @@ export class Pilot {
       let sessionId = task.sessionId
       if (!sessionId && task.execution) {
         const sessions = this.runtime.history(id).sessions
-        requireValue(sessions.length === 1, 'session uncertain')
+        requireRuntimeEvidence(sessions.length === 1, 'session uncertain')
         sessionId = sessions[0].id
       }
       const stopped = sessionId ? this.runtime.abort(sessionId) === 'stopped' : !task.execution
       this.journal.transaction(state => { state.tasks[id].cancel = stopped ? 'observed' : 'requested'; state.tasks[id].recovery = stopped ? null : 'uncertain' })
-    } catch { this.journal.transaction(state => { state.tasks[id].recovery = 'uncertain' }) }
+    } catch (error) {
+      if (!(error instanceof RuntimeRecoveryError)) throw error
+      this.journal.transaction(state => { state.tasks[id].recovery = 'uncertain' })
+    }
     return this.task(id)
   }
   enforce() {

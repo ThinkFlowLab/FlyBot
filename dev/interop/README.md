@@ -49,6 +49,7 @@ runs its lint. Root `verify` runs both after the existing suites.
 | `journal.mjs` | Single-writer snapshots with a lock, copy-on-transaction, fsynced temporary file, rename and directory fsync. |
 | `harness.mjs` | Synthetic task binding, staged approvals, producer sequences, inbox/cursors, turn reservations, execution intent, cancellation observations and reconciliation. |
 | `mocks.mjs` | Two-owner grant policy, fake clock, deliberately non-idempotent session/submission methods and controllable lost replies/offline/abort behavior. |
+| `runtime-error.mjs` | Explicit recoverable runtime/evidence errors; unexpected assertion, storage and programming errors propagate. |
 | `demo.mjs` | Scripted request → question → answer → result → simulated requester acceptance. |
 
 The coordinator's public methods take fixture arguments such as `actor` and a
@@ -85,6 +86,9 @@ it established authority. There is no HTTP server or real connector here.
   There are at most two unfinished tasks and one synchronous work turn at a time
   per task. The final allowed turn can finish; no additional turn is admitted.
   Cancellation remains available after budgets or grants are exhausted.
+
+`result-ready` tasks await a human decision and intentionally do not consume an
+execution slot; they remain subject to the journal's 64-task retention bound.
 
 Call `enforce()` when advancing the fake clock or revoking a grant to simulate
 the supervisor tick. It cancels overdue/revoked work; there is deliberately no

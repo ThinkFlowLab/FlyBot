@@ -31,6 +31,11 @@ Commands, semantics and limitations are in [the harness README](../../dev/intero
   A returned result needs explicit requester acceptance and can be cancelled.
 - Limits survive restart. The last allowed turn may finish; new turns are denied.
   The coordinator mirrors proposed host behavior without modifying `tasks.js`.
+- Only explicit `RuntimeRecoveryError` transport/evidence failures become
+  `uncertain`; assertion, storage and programming errors propagate. A cancellation
+  racing completion records `stopped` without reviving execution.
+- `result-ready` tasks do not occupy an execution slot while awaiting acceptance;
+  they still count toward the journal's total task bound.
 
 ## Tests and gates
 
