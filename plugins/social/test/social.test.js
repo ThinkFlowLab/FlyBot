@@ -509,7 +509,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.new-chat.action#social-copy-invite', 'flybot.new-chat.action#social-copy-handle', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-approval'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -805,7 +805,7 @@ test('nits (#20): approval.homes keys match with or without @; legacy send falls
   assert.equal(server.calls.filter(c => c.name === 'start_conversation').length, 2)
 })
 
-test('invite card: "Copy link" copies the bare URL; "Copy invite with instructions" the full text, inside the click', async () => {
+test('invite card: "Copy link" copies the bare URL; "Copy with instructions" the full text, inside the click', async () => {
   const registered = []
   const copied = []
   const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, navigator: { clipboard: { writeText: t => { copied.push(t); return Promise.resolve() } } } }
@@ -821,7 +821,7 @@ test('invite card: "Copy link" copies the bare URL; "Copy invite with instructio
   const buttons = all(tree).filter(node => node.type === 'button')
   const byLabel = label => buttons.find(b => b.props.children.includes(label))
   byLabel('Copy link').props.onClick()
-  byLabel('Copy invite with instructions').props.onClick()
+  byLabel('Copy with instructions').props.onClick()
   assert.deepEqual(copied, ['https://s/i/ABC', invite.text]) // written synchronously, inside each click
 })
 
@@ -1844,8 +1844,8 @@ test('social section has no + Add; Add friend and Face-to-face group live on the
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group'))
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend'))
   assert.equal(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-accept-invite'), false)
-  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-invite'))
-  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-handle'))
+  // Copy actions live in Add friend, not in the short + menu (#181).
+  assert.equal(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && (entry.id === 'social-copy-invite' || entry.id === 'social-copy-handle')), false)
   assert.equal(closed.nodes.some(n => n.type === 'button' && n.children.includes('Copy')), false)
   assert.equal(closed.nodes.some(n => n.props['data-flybot'] === 'own-home'), false)
   assert.equal(closed.nodes.some(n => n.children?.includes?.("Friends' Bots")), false)
@@ -1956,29 +1956,8 @@ test('sidebar + Add friend opens the join panel in Friends\' Bots; header stays 
   assert.ok(after.some(n => n.props['data-flybot'] === 'add-friend'))
   assert.ok(after.some(n => n.type === 'button' && n.children.includes('Join')))
   assert.equal(after.some(n => n.type === 'button' && n.children.includes('+ Add')), false)
-  const copy = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-invite')
-  assert.equal(copy[1].label, 'Copy invite link')
-  const handle = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-handle')
-  assert.equal(handle[1].label, 'Copy my handle')
+  assert.equal(entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && (entry.id === 'social-copy-invite' || entry.id === 'social-copy-handle')), false)
   assert.equal(typeof sandbox.__flybot__.social.openAddFriend, 'function')
-})
-
-test('sidebar + Copy invite link mints and copies in one click', async () => {
-  const copied = []
-  const { entries, pluginOf, sandbox } = loadSocialClient(async (endpoint, payload) => {
-    if (endpoint === 'social/status') return { bots: [{ id: 'a', name: 'Chief', isMain: true }] }
-    if (endpoint === 'social/create-invite') {
-      assert.equal(payload.botId, 'a')
-      return { link: 'https://s/i/INVPLUS', url: 'https://s/i/INVPLUS' }
-    }
-    return {}
-  })
-  sandbox.navigator = { clipboard: { writeText: async (text) => { copied.push(text) } } }
-  pluginOf([]).apply({})
-  const copy = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-invite')
-  const note = await copy[1].run({ close: () => {} })
-  assert.equal(note, 'Invite link copied. Send it to a friend.')
-  assert.deepEqual(copied, ['https://s/i/INVPLUS'])
 })
 
 test('face-to-face auto-send uses MCP whoami / set_auto_approve and ignores REST 403 /v1/me', async (t) => {
@@ -2330,7 +2309,7 @@ test('Add friend mints and copies an invite link in one click', async () => {
   const mint = tree.find(n => n.props['data-flybot'] === 'mint-invite')
   assert.ok(mint)
   assert.ok(mint.children.includes('Copy invite link'))
-  assert.match(tree.find(n => n.props['data-flybot'] === 'invite-hint').children.join(''), /paste a friend.s invite/i)
+  assert.equal(tree.some(n => n.props['data-flybot'] === 'invite-hint'), false, 'one paste field, one hint (#181)')
   await mint.props.onClick()
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/create-invite' && payload.botId === 'a'))
   assert.deepEqual(copied, ['https://s/i/INV123'])
@@ -3951,21 +3930,14 @@ test('createSocialApi listGrants maps an object-shaped grantee to a handle', asy
   assert.doesNotMatch(listed[0].grantee, /object/i)
 })
 
-test('#136: + Copy my handle copies the home; Auto-send starts unchecked; Join-as is always offered', async () => {
-  const copied = []
-  const { walk, pluginOf, entries, sandbox } = loadSocialClient(async (endpoint) => {
+test('#136 / #181: Add friend shows my own handle; Auto-send starts unchecked; Join-as is always offered', async () => {
+  const { walk, pluginOf } = loadSocialClient(async (endpoint) => {
     if (endpoint === 'social/status') return { connected: true, home: '@selfa1935.home', bots: [{ id: 'a', name: 'Chief', isMain: true }], approvals: [] }
     if (endpoint === 'social/settings') return { autoAccept: {} }
     return {}
   })
-  sandbox.navigator = { clipboard: { writeText: async (text) => { copied.push(text) } } }
-  pluginOf([]).apply({})
-  const copy = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-copy-handle')
-  assert.ok(copy)
-  assert.equal(copy[1].label, 'Copy my handle')
-  const note = await copy[1].run({ close: () => {} })
-  assert.equal(note, 'Copied. Your handle is @selfa1935.home')
-  assert.deepEqual(copied, ['@selfa1935.home'])
+  const shown = walk(pluginOf([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', '@selfa1935.home']).AddFriend({}))
+  assert.match(shown.find(n => n.props['data-flybot'] === 'my-handle').children.join(''), /@selfa1935\.home/)
   const settings = walk(pluginOf([false, false, false, '']).FriendChatSettings({
     bot: { name: 'Coder', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
   }))
