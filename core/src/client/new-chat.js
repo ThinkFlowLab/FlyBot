@@ -132,7 +132,7 @@ export function NewChat({ mode, roster, actions }) {
     }
     // A team holds at most one Agent; the entry exists only while there is none.
     if ((roster.agents ?? []).length === 0) {
-      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
+      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
     }
   }
   // The + menu is a short action list. Individual Bots (Chief and the rest) belong on

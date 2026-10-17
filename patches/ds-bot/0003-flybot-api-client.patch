@@ -699,8 +699,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +    }
 +    // A team holds at most one Agent; the entry exists only while there is none.
      if ((roster.agents ?? []).length === 0) {
--      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
-+      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
+       options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
      }
    }
 -  for (const bot of matches) {

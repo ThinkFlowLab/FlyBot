@@ -108,6 +108,9 @@ window.__ModuleLoader__.load({
 .fs-digits::placeholder{color:var(--bt-ink-3,rgba(20,20,20,.36));opacity:1;font-weight:400;letter-spacing:.24em}
 .fs-digits:focus{border-color:var(--bt-accent,#4d6bfe)}
 .fs-sharing{display:flex;flex-direction:column;gap:10px}
+.fs-label-plain{text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
+.fs-invite-link{width:100%;box-sizing:border-box;min-width:0}
+.fs-invite-actions{flex-wrap:wrap}
 .fs-sharing > .fs-label{padding:0 0 2px;text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
 .fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
 .fs-face-item{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;overflow:hidden}
@@ -1183,13 +1186,18 @@ window.__ModuleLoader__.load({
       // Which of my Bots joins: the friend sees and reaches only that one (default: the Main Bot).
       const [mine, setMine] = useState([])
       const [joiner, setJoiner] = useState('')
+      // Which of my Bots the copied invite shares (default: the Main Bot), and my own handle (#181).
+      const [sharing, setSharing] = useState('')
+      const [me, setMe] = useState('')
       const refresh = () => call('social/overview', {}).then(setOverview, e => setStatus({ tone: 'error', text: errorText(e) }))
       useEffect(() => {
         refresh()
         call('social/status', {}).then(value => {
           const bots = value?.bots ?? []
           setMine(bots)
+          setMe(typeof value?.home === 'string' ? value.home : '')
           setJoiner(current => current || (bots.find(bot => bot.isMain) ?? bots[0])?.id || '')
+          setSharing(current => current || (bots.find(bot => bot.isMain) ?? bots[0])?.id || '')
         }, () => {})
       }, [])
       useEffect(() => {
@@ -1216,7 +1224,7 @@ window.__ModuleLoader__.load({
         }
       }
       const mint = () => run('Invite', async () => {
-        const botId = joiner || mine.find(bot => bot.isMain)?.id || mine[0]?.id
+        const botId = sharing || mine.find(bot => bot.isMain)?.id || mine[0]?.id
         if (!botId) throw new Error('Choose one of your Bots to invite a friend to')
         const invite = await call('social/create-invite', { botId })
         const link = invite?.link || invite?.url
@@ -1251,13 +1259,14 @@ window.__ModuleLoader__.load({
       const outgoing = overview?.outgoing ?? []
       return h('div', { className: 'bt-social-add', 'data-flybot': 'add-friend' },
         h('div', { className: 'fs-face-head' },
-          h('div', { className: 'fs-label' }, 'Add friend'),
+          h('div', { className: 'fs-label fs-label-plain' }, 'Add friend'),
           onDone ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, 'Done') : null),
-        h('div', { className: 'fs-line', style: { padding: '4px 10px 0' } },
+        me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, `You are ${me}`) : null,
+        h('div', { className: 'fs-line', style: { padding: '4px 10px 0' }, 'data-flybot': 'invite-line' },
+          mine.length > 1 ? h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => setSharing(e.target.value) },
+            mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))) : null,
           h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', disabled: busy, onClick: mint }, 'Copy invite link')),
-        h('div', { className: 'fs-hint', 'data-flybot': 'invite-hint' }, 'Or paste a friend’s invite below.'),
         h('form', { onSubmit: join, className: 'fs-card bt-social-join' },
-          h('div', { className: 'fs-hint' }, 'Got a link from a friend?'),
           h('div', { className: 'fs-line' },
             h('input', { className: 'fs-input', value: code, placeholder: 'Paste invite link', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Join')),
@@ -1444,10 +1453,10 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'fs fs-card', 'data-flybot': 'invite-to-bot' },
         h('div', { className: 'fs-hint' }, `Invite grants ${bot.name} only. Revoke anytime in People with access.`),
         h('button', { type: 'button', className: 'fs-btn', disabled: busy, onClick: create }, invite ? 'Create another invite link' : 'Invite to this Bot'),
-        invite ? h('div', { className: 'fs-line' },
-          h('input', { className: 'fs-input', readOnly: true, value: invite.link, 'aria-label': 'Invite link', onFocus: e => e.target.select() }),
+        invite ? h('input', { className: 'fs-input fs-invite-link', readOnly: true, value: invite.link, 'aria-label': 'Invite link', onFocus: e => e.target.select() }) : null,
+        invite ? h('div', { className: 'fs-line fs-invite-actions' },
           h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-link', onClick: () => copy(invite.link) }, 'Copy link'),
-          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => copy(invite.text) }, 'Copy invite with instructions')) : null,
+          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => copy(invite.text) }, 'Copy with instructions')) : null,
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
@@ -1507,54 +1516,6 @@ window.__ModuleLoader__.load({
               label: 'Add friend',
               hint: 'Paste an invite link or code.',
               run: ({ close } = {}) => { openAddFriend(); close?.() },
-            }),
-            slots().register('flybot.new-chat.action', {
-              id: 'social-copy-invite',
-              order: 18,
-              label: 'Copy invite link',
-              hint: 'Copy a link a friend can paste in Add friend.',
-              run: async ({ close } = {}) => {
-                close?.()
-                const status = await call('social/status', {})
-                const bots = status?.bots ?? []
-                const botId = (bots.find(bot => bot.isMain) ?? bots[0])?.id
-                if (!botId) return 'Choose one of your Bots first.'
-                const invite = await call('social/create-invite', { botId })
-                const link = invite?.link || invite?.url
-                if (!link) return 'The invite came back without its link.'
-                const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
-                if (clip?.writeText) {
-                  try {
-                    await clip.writeText(link)
-                    return 'Invite link copied. Send it to a friend.'
-                  } catch {
-                    return `Could not copy. Link: ${link}`
-                  }
-                }
-                return `Invite link: ${link}`
-              },
-            }),
-            slots().register('flybot.new-chat.action', {
-              id: 'social-copy-handle',
-              order: 19,
-              label: 'Copy my handle',
-              hint: 'Your Bot Social handle',
-              run: async ({ close } = {}) => {
-                close?.()
-                const status = await call('social/status', {})
-                const handle = status?.home
-                if (!handle) return 'Social is not connected yet.'
-                const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
-                if (clip?.writeText) {
-                  try {
-                    await clip.writeText(handle)
-                    return `Copied. Your handle is ${handle}`
-                  } catch {
-                    return `Could not copy. Your handle is ${handle}`
-                  }
-                }
-                return `Your handle is ${handle}`
-              },
             }),
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),

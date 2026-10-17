@@ -153,12 +153,11 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Settings pages': '设置页面',
    'Models, providers, and the rest of DeepSeek Harness': '模型、服务商和 DeepSeek Harness 的其他设置',
    'Harness settings': 'Harness 设置',
-@@ -333,6 +333,8 @@ const ZH = {
+@@ -333,6 +333,7 @@ const ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
 +  'Add Agent': '添加 Agent',
-+  'Add Bot': '添加 Bot',
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',
    Archive: '归档',

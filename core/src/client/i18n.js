@@ -381,7 +381,6 @@ const ZH = {
   // stays in English.
   'Add DSH Agent': '添加 DSH Agent',
   'Add Agent': '添加 Agent',
-  'Add Bot': '添加 Bot',
   'Remove DSH Agent': '移除 DSH Agent',
   'New session': '新会话',
   Archive: '归档',

@@ -442,7 +442,6 @@ var ZH = {
   // stays in English.
   "Add DSH Agent": "添加 DSH Agent",
   "Add Agent": "添加 Agent",
-  "Add Bot": "添加 Bot",
   "Remove DSH Agent": "移除 DSH Agent",
   "New session": "新会话",
   Archive: "归档",
@@ -9451,7 +9450,7 @@ function NewChat({ mode, roster, actions }) {
       });
     }
     if ((roster.agents ?? []).length === 0) {
-      options.push({ key: "agent", icon: (0, import_react21.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add Bot"), run: () => run(async () => {
+      options.push({ key: "agent", icon: (0, import_react21.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add DSH Agent"), run: () => run(async () => {
         await actions.addAgent();
         close();
       }) });

@@ -104,12 +104,11 @@ diff --git a/client.js b/client.js
    "Settings pages": "设置页面",
    "Models, providers, and the rest of DeepSeek Harness": "模型、服务商和 DeepSeek Harness 的其他设置",
    "Harness settings": "Harness 设置",
-@@ -394,6 +394,8 @@ var ZH = {
+@@ -394,6 +394,7 @@ var ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    "Add DSH Agent": "添加 DSH Agent",
 +  "Add Agent": "添加 Agent",
-+  "Add Bot": "添加 Bot",
    "Remove DSH Agent": "移除 DSH Agent",
    "New session": "新会话",
    Archive: "归档",
@@ -6562,7 +6561,7 @@ diff --git a/client.js b/client.js
 +    }
      if ((roster.agents ?? []).length === 0) {
 -      options.push({ key: "agent", icon: (0, import_react20.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add DSH Agent"), run: () => run(async () => {
-+      options.push({ key: "agent", icon: (0, import_react21.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add Bot"), run: () => run(async () => {
++      options.push({ key: "agent", icon: (0, import_react21.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add DSH Agent"), run: () => run(async () => {
          await actions.addAgent();
          close();
        }) });
