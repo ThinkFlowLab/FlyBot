@@ -96,3 +96,17 @@ test('#140: the context row hides FlyBot-removed tools, not other tool cells', (
   }
   assert.match(showTool(native), /Messaged.*Writer/)
 })
+
+test('#335: connector tools coming and going with a Bot\'s connector switch leave no notice in the chat', () => {
+  const node = type => toolName => ({ data: { content: [{ type, toolName }] } })
+  for (const name of ['mcp__composio__COMPOSIO_SEARCH_TOOLS', 'mcp__github__create_issue']) {
+    assert.equal(isHiddenToolRemoval(node('tool-removal')(name)), true, name)
+    assert.equal(isHiddenToolRemoval(node('tool-addition')(name)), true, name)
+    assert.equal(text(expand(ContextCell({ node: node('tool-addition')(name) }))), '')
+  }
+  // Other MCP tools and plain tools still show.
+  assert.equal(isHiddenToolRemoval(node('tool-addition')('mcp__notes__search')), false)
+  assert.match(text(expand(ContextCell({ node: node('tool-removal')('mcp__notes__search') }))), /Tool removed: mcp__notes__search/)
+  const mixed = { data: { content: [{ type: 'tool-addition', toolName: 'mcp__composio__COMPOSIO_SEARCH_TOOLS' }, { type: 'tool-addition', toolName: 'web_search' }] } }
+  assert.equal(text(expand(ContextCell({ node: mixed }))), 'Tool added: web_search')
+})

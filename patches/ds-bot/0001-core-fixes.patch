@@ -61,11 +61,13 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
-@@ -1,26 +1,62 @@
+@@ -1,26 +1,65 @@
  import { createElement as h, useRef, useState } from 'react'
  import { useMorph } from './motion.js'
  import { MaskedInput } from './secret-card.js'
 +import { ConnectorIcon } from './icons.js'
++import { SwitchRow } from './bot-settings.js'
++import { ConnectorBots, usageText } from './connector-bots.js'
  import { t } from './i18n.js'
  
  const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
@@ -102,6 +104,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    return ABOUT[connector.id]?.() ?? ''
  }
  
+-function ConnectorRow({ connector, actions }) {
 +function AppPicker({ apps, onChange }) {
 +  const [more, setMore] = useState(() => apps.filter(app => !KNOWN.has(app)).join(', '))
 +  const picked = new Set(apps)
@@ -118,8 +121,9 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +    h('input', { className: 'bt-input', value: more, spellCheck: false, 'aria-label': t('More apps'), placeholder: t('More apps: type Composio app names, separated by commas'), onChange: event => typed(event.target.value) }))
 +}
 +
- function ConnectorRow({ connector, actions }) {
++function ConnectorRow({ connector, roster, actions }) {
    const [form, setForm] = useState(false)
++  const [bots, setBots] = useState(false)
    const [token, setToken] = useState('')
 +  const [apps, setApps] = useState(() => connector.apps ?? [])
 +  const [picking, setPicking] = useState(false)
@@ -146,18 +150,21 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    const Mark = MARKS[connector.id]
    const row = useRef(null)
 -  useMorph(row, `${form}:${error !== null}:${connector.state}`)
-+  useMorph(row, `${form}:${picking}:${error !== null}:${connector.state}`)
++  useMorph(row, `${form}:${picking}:${bots}:${error !== null}:${connector.state}`)
    return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
      h('div', { className: 'bt-connector-head' },
        h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
-@@ -44,15 +44,24 @@ function ConnectorRow({ connector, actions }) {
+@@ -44,15 +44,27 @@ function ConnectorRow({ connector, actions }) {
          h('span', { className: 'bt-connector-status' }, statusText(connector))),
        h('span', { className: 'bt-connector-actions' },
          connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
 +        on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
++        on ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': bots, onClick: () => setBots(value => !value) }, bots ? t('Done') : t('Choose Bots')) : null,
          on
            ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
            : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
++    on ? h('span', { className: 'bt-connector-uses' }, usageText(roster, connector.id)) : null,
++    on && bots ? h(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
      !on && form ? h('div', { className: 'bt-connector-form' },
 -      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t('GitHub token'), autoFocus: true })),
 +      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t('Composio API key') : t('GitHub token'), autoFocus: true })),
@@ -177,6 +184,13 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
      error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
  }
  
+@@ -62,5 +62,5 @@ export function ConnectorsPage({ roster, actions }) {
+   return h('section', { className: 'bt-set-section' },
+     h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
+       ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
+-      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, actions }))))
++      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, roster, actions }))))
+ }
 diff --git a/src/client/feedback.js b/src/client/feedback.js
 --- a/src/client/feedback.js
 +++ b/src/client/feedback.js
@@ -344,7 +358,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +105,37 @@ const ZH = {
+@@ -105,17 +105,39 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -362,6 +376,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Could not reach Composio': '连不上 Composio',
 +  'Composio did not accept this API key': 'Composio 不接受这个 API key',
 +  'Composio did not give an MCP address': 'Composio 没有返回 MCP 地址',
++  'Composio did not give a session id': 'Composio 没有返回会话 id',
++  'Say whether to turn it on or off': '请说明是开启还是关闭',
 +  'Composio gave an MCP address on another host': 'Composio 返回的 MCP 地址不在它自己的域名上',
 +  'Composio addresses must start with https://': 'Composio 地址必须以 https:// 开头',
 +  'Connect Composio first': '请先连接 Composio',
@@ -383,8 +399,11 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
-@@ -154,6 +154,7 @@ const ZH = {
+@@ -152,8 +152,10 @@ const ZH = {
+   'Admin leads': '管理员主持',
+   'Plain messages go to the admin, who calls others with @Name.': '普通消息先给管理员，由管理员用 @名字 点名其他成员。',
    Everyone: '所有人',
++  'Every Bot in this room': '房间里的所有 Bot',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
 +  '{name} (you)': '{name}（你）',
@@ -498,7 +517,27 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -855,6 +855,8 @@ const HOST_ERRORS = [
+@@ -771,6 +771,14 @@ const ZH = {
+   'Add at least one more Bot': '再至少添加一个 Bot',
+   Members: '成员',
+   // Connectors and scheduled tasks
++  'Choose Bots': '选择 Bot',
++  'Off for every Bot. Choose which Bots may use it.': '所有 Bot 都未开启。选择哪些 Bot 可以使用。',
++  'On for {count} of {total} Bots': '已为 {total} 个 Bot 中的 {count} 个开启',
++  'Off. Turn on to let this Bot use it.': '未开启。打开后这个 Bot 才能使用。',
++  'This Bot can use it.': '这个 Bot 可以使用。',
++  'Not available: shared with {names}.': '不可用：已共享给 {names}。',
++  'A Bot that is shared with anyone never gets connector tools.': '共享给别人的 Bot 永远不会获得连接器工具。',
++  'No Bots': '没有 Bot',
+   'Scheduled tasks': '定时任务',
+   'Every day': '每天',
+   'Every {count} days': '每 {count} 天',
+@@ -851,10 +851,13 @@ const HOST_ERRORS = [
+   [/^A group chat holds at most (\d+) Bots$/, '一个群聊最多 $1 个 Bot'],
+   [/^Reply mode must be one of (.+)$/, '回复模式只能是 $1'],
+   [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
++  [/^(.+) is shared with (.+), so it cannot use connectors\. Stop sharing it first\.$/, '$1 已共享给 $2，所以不能使用连接器。请先停止共享。'],
+   [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
    [/^(.+) is not saved yet$/, '$1 还没有保存'],
    [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, '$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。'],
@@ -745,13 +784,14 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -1,27 +1,42 @@
+@@ -1,27 +1,43 @@
 -// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
 -// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
 -// so every Bot and Session gets them as mcp__github__<tool>.
-+// Connectors: outside services every Bot can use. Their tools come from an MCP server
-+// through DSH's own MCP client, mounted on the plugin context, so every Bot and Session
-+// gets them as mcp__<connector>__<tool>.
++// Connectors: outside services the owner's Bots can use. Their tools come from an MCP server
++// through DSH's own MCP client, mounted on the plugin context as mcp__<connector>__<tool>.
++// The mount is global to DSH, so which Bot sees them is decided per Bot in
++// connector-access.js: off by default, never on for a Bot that is shared with anyone.
  //
 -// The token is the GITHUB_TOKEN secret (secrets.js keeps it, redacts it, and offers it to
 -// the shell). It reaches GitHub only in the MCP request headers, built here in memory,
@@ -799,7 +839,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,20 +38,195 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,398 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -843,28 +883,25 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    throw new Error('Composio did not give an MCP address')
 +  }
 +  if (url.protocol !== 'https:' || url.origin !== new URL(base).origin) throw new Error('Composio gave an MCP address on another host')
++  // Only the id is kept (see composioSessionFind); the address is rebuilt from it at mount time.
 +  const id = typeof body?.session_id === 'string' && SESSION_ID.test(body.session_id) ? body.session_id : undefined
-+  return { url: url.href, ...(id === undefined ? {} : { id }) }
++  if (id === undefined) throw new Error('Composio did not give a session id')
++  return { url: url.href, id }
 +}
 +
-+// A stored session is trusted again only while its address is still https on the API's own host.
-+const sameHost = (address, base) => {
-+  try {
-+    const url = new URL(address)
-+    return url.protocol === 'https:' && url.origin === new URL(base).origin
-+  } catch {
-+    return false
-+  }
-+}
 +const sameApps = (left, right) => Array.isArray(left) && left.length === right.length && right.every(app => left.includes(app))
 +const sessionAddress = (base, id) => `${base.replace(/\/$/, '')}/tool_router/session/${encodeURIComponent(id)}`
 +
-+// Asks Composio whether a session is still there. True while it is, false once it is gone
-+// (404/410, or an id Composio does not know); a refused key or an outage throws.
-+export async function composioSessionAlive(apiKey, { api = COMPOSIO_DEFAULTS.api, id, fetch: request = fetch } = {}) {
++// Asks Composio for a session by id (GET /tool_router/session/{id}, `x-api-key`) and returns its
++// MCP address, which is what the mount needs. Composio documents the address in this answer, so
++// only the id is kept in state.json and the address is asked for again at each mount. Returns
++// undefined once the session is gone (404/410, an id Composio does not know) or when its answer
++// names no https address on the API's own host; a refused key or an outage throws.
++export async function composioSessionFind(apiKey, { api = COMPOSIO_DEFAULTS.api, id, fetch: request = fetch } = {}) {
++  const base = api.replace(/\/$/, '')
 +  let response
 +  try {
-+    response = await request(sessionAddress(api, id), {
++    response = await request(sessionAddress(base, id), {
 +      method: 'GET',
 +      headers: { 'x-api-key': apiKey, accept: 'application/json', 'user-agent': 'ds-bot' },
 +      redirect: 'error',
@@ -874,9 +911,20 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    throw new Error('Could not reach Composio')
 +  }
 +  if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
-+  if (response.ok) return true
-+  if (response.status === 400 || response.status === 404 || response.status === 410) return false
-+  throw new Error(`Composio answered ${response.status}`)
++  if (response.status === 400 || response.status === 404 || response.status === 410) return undefined
++  if (!response.ok) throw new Error(`Composio answered ${response.status}`)
++  const body = await response.json().catch(() => ({}))
++  try {
++    const url = new URL(body?.mcp?.url)
++    return url.protocol === 'https:' && url.origin === new URL(base).origin ? url.href : undefined
++  } catch {
++    return undefined
++  }
++}
++
++// True while Composio still has the session and names an address for it.
++export async function composioSessionAlive(apiKey, options = {}) {
++  return (await composioSessionFind(apiKey, options)) !== undefined
 +}
 +
 +// Deletes a session on Composio (DELETE /tool_router/session/{id}): afterwards its MCP address
@@ -898,17 +946,20 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +  }
 +}
 +
++// What state.json keeps of a session: its id and apps, never the address (see composioSessionFind).
++const kept = session => ({ id: session.id, apps: session.apps })
++
 +// One session per connect or app-list change: the stored session is reused while it is for the
-+// same apps, on the API's own host, and Composio still has it; otherwise a new one is made.
-+// Returns the session to keep ({ id, url, apps }); `id` is missing only if Composio sent none.
++// same apps and Composio still has it; otherwise a new one is made. Returns { id, apps, url }:
++// the address is for this mount only and is never saved.
 +async function composioEnsureSession(apiKey, { api, userId, apps, stored, fetch: request }) {
 +  const base = (api ?? COMPOSIO_DEFAULTS.api)
-+  if (stored?.id !== undefined && sameApps(stored.apps, apps) && typeof stored.url === 'string' && sameHost(stored.url, base)
-+    && await composioSessionAlive(apiKey, { api: base, id: stored.id, fetch: request })) {
-+    return { id: stored.id, url: stored.url, apps }
++  if (typeof stored?.id === 'string' && sameApps(stored.apps, apps)) {
++    const url = await composioSessionFind(apiKey, { api: base, id: stored.id, fetch: request })
++    if (url !== undefined) return { id: stored.id, url, apps }
 +  }
 +  const { url, id } = await composioSession(apiKey, { api: base, userId, apps, fetch: request })
-+  return { url, apps, ...(id === undefined ? {} : { id }) }
++  return { id, url, apps }
 +}
 +
 +const DEFINITIONS = {
@@ -937,22 +988,24 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    defaults: COMPOSIO_DEFAULTS,
 +    addresses: options => [options.api],
 +    // The user id names this FlyBot to Composio, so the apps signed in once stay signed in.
-+    // The session it makes (or reuses) is kept in the record, so the mount does not make another.
++    // The session it makes (or reuses) is kept in the record as { id, apps }, so the mount does not
++    // make another; the session's address is not kept.
 +    async check({ token, options, saved, body }) {
 +      const apps = cleanApps(body.apps ?? saved?.apps)
 +      const userId = saved?.userId ?? `flybot-${randomUUID()}`
 +      const session = await composioEnsureSession(token, { api: options.api, userId, apps, stored: saved?.session })
-+      return { userId, apps, session }
++      return { userId, apps, session: kept(session) }
 +    },
-+    // Mounts the kept session while Composio still has it. `record` is set when a new session had
-+    // to be made (first start after an older version, or one deleted on Composio) and must be kept.
++    // Mounts the kept session while Composio still has it, with the address Composio gives for its
++    // id. `record` is set when a new session had to be made (first start after an older version, or
++    // one deleted on Composio) or when an older version's record still carries an address; it must be kept.
 +    async mountConfig(token, options, saved) {
 +      // A key without a saved connection (added on the Secrets page, say) makes no session.
 +      if (saved?.userId === undefined) throw new Error('Connect Composio first')
 +      const apps = cleanApps(saved.apps)
 +      const session = await composioEnsureSession(token, { api: options.api, userId: saved.userId, apps, stored: saved.session })
-+      const same = saved.session?.id === session.id && saved.session?.url === session.url
-+      return { url: session.url, headers: { 'x-api-key': token }, ...(same ? {} : { record: { ...saved, session }, session }) }
++      const same = saved.session?.id === session.id && saved.session?.url === undefined
++      return { url: session.url, headers: { 'x-api-key': token }, ...(same ? {} : { record: { ...saved, session: kept(session) }, session: kept(session) }) }
 +    },
 +    // Best effort: a session that cannot be deleted is left to Composio, never an error for the user.
 +    async discard({ keys, options, session }) {
@@ -1004,8 +1057,14 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
    }
  
-   // The MCP client wraps the server's answer (a 401, say) as the cause.
-@@ -60,96 +60,159 @@ export function install(rt) {
+-  // The MCP client wraps the server's answer (a 401, say) as the cause.
++  // The MCP client wraps the server's answer (a 401, say) as the cause. The session address of a
++  // mount in progress is not kept anywhere, so it is also taken out of what is shown or logged.
++  let addresses = []
+   const reason = (error) => {
+-    const text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
++    let text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
++    for (const address of addresses) text = text.split(address).join('[session address]')
      return rt.redactSecrets(text || 'error').slice(0, 300)
    }
  
@@ -1045,6 +1104,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
      }
      try {
 +      const { url, headers, record, session } = await def.mountConfig(token, options, saved(c))
++      if (def.id === COMPOSIO) addresses = [url]
 +      if (record !== undefined) {
 +        // A session made just now is kept only while this connection is still the saved one;
 +        // after a Disconnect (or a new key) in the meantime it is deleted again.
@@ -1202,6 +1262,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
        }
 -      await sync()
 +      if (oldToken !== undefined) await retire(c, { gone: previous?.session, kept: undefined, keys: [oldToken] })
++      await rt.forgetConnector?.(c.def.id)
 +      await sync(c)
        return connectorsView()
      },
@@ -1214,12 +1275,23 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
        return connectorsView()
      },
    }
-@@ -158,12 +158,12 @@ export function install(rt) {
  
+   const connectorEndpoint = (endpoint, body) => endpoints[endpoint](body ?? {})
+ 
++  // An older version kept the session's address in state.json. Only the id stays; the address is
++  // asked for again at mount time (composioSessionFind).
++  const scrubAddresses = async () => {
++    await rt.load()
++    const session = state.connectors?.[COMPOSIO]?.session
++    if (session === undefined || !('url' in session)) return
++    state.connectors[COMPOSIO] = { ...state.connectors[COMPOSIO], session: kept(session) }
++    await rt.save()
++  }
++
    ctx.effect(() => {
      stopped = false
 -    void rt.loadSecrets().then(() => sync())
-+    void rt.loadSecrets().then(syncAll)
++    void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(syncAll)
      return () => {
        stopped = true
 -      void unmount()
@@ -1645,7 +1717,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  import { test } from 'node:test'
  import { apply } from '../index.js'
 -import { signIn } from '../src/host/connectors.js'
-+import { cleanApps, composioDeleteSession, composioSession, composioSessionAlive, signIn } from '../src/host/connectors.js'
++import { cleanApps, composioDeleteSession, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
  import { fakeContext } from './fake-ctx.js'
  
  const fresh = () => `ghp_${randomBytes(16).toString('hex')}`
@@ -1654,16 +1726,26 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  
  test('signIn asks GitHub who owns the token', async () => {
    const token = fresh()
-@@ -41,7 +41,7 @@ const teamHome = () => {
+@@ -41,8 +41,7 @@ const teamHome = () => {
  }
  
  // A loader that hands out a fake MCP client and records each mount.
 -function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
-+function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' } } = {}) {
-   const home = teamHome()
+-  const home = teamHome()
++function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome() } = {}) {
    const mounts = []
    const plugin = { name: 'mcp-client', apply() {} }
-@@ -60,7 +60,7 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
+   const loader = {
+@@ -55,12 +55,15 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
+     const mount = { config, disposed: false }
+     mounts.push(mount)
+     return {
+-      await: async () => { if (fail) throw new Error(`refused ${config.headers.Authorization}`) },
++      await: async () => {
++        if (fail === 'url') throw new Error(`cannot reach ${config.url}`)
++        if (fail) throw new Error(`refused ${config.headers.Authorization}`)
++      },
+       dispose: () => { mount.disposed = true },
      }
    }
    capture(ctx)
@@ -1726,7 +1808,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -172,3 +172,361 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -172,3 +172,457 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    assert.equal(asked, false)
    assert.equal(mounts.length, 0)
  })
@@ -1743,21 +1825,23 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +function fakeComposio(reply = () => answer(201, SESSION)) {
 +  const requests = []
 +  const live = new Set()
++  // The address Composio gives for each session it made, the way GET /tool_router/session/{id} answers it.
++  const addresses = new Map()
 +  const fetch = async (url, init) => {
 +    const method = init.method ?? 'GET'
 +    const request = { url, init, method, ...(init.body === undefined ? {} : { body: JSON.parse(init.body) }) }
 +    requests.push(request)
 +    if (method === 'POST') {
 +      const made = reply(init)
-+      if (made.ok && made.body?.session_id !== undefined) live.add(made.body.session_id)
++      if (made.ok && made.body?.session_id !== undefined) { live.add(made.body.session_id); addresses.set(made.body.session_id, made.body.mcp?.url) }
 +      return made
 +    }
 +    const id = decodeURIComponent(url.split('/').at(-1))
 +    if (!live.has(id)) return answer(404, { error: { message: 'gone' } })
 +    if (method === 'DELETE') live.delete(id)
-+    return answer(200, method === 'DELETE' ? { session_id: id, deleted: true } : { session_id: id })
++    return answer(200, method === 'DELETE' ? { session_id: id, deleted: true } : { session_id: id, mcp: { type: 'http', url: addresses.get(id) } })
 +  }
-+  return { requests, live, fetch, get posts() { return requests.filter(request => request.method === 'POST') }, get deletes() { return requests.filter(request => request.method === 'DELETE') } }
++  return { requests, live, addresses, fetch, get posts() { return requests.filter(request => request.method === 'POST') }, get deletes() { return requests.filter(request => request.method === 'DELETE') } }
 +}
 +// A new session id for every creation.
 +const numbered = () => { let count = 0; return () => { count += 1; return answer(201, { session_id: `trs_${count}`, mcp: { url: `https://composio.test/tool_router/trs_${count}/mcp` } }) } }
@@ -1792,6 +1876,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(400, { error: { message: 'Unknown toolkit nope' } })).fetch }), /answered 400: Unknown toolkit nope/)
 +  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(500, {})).fetch }), /answered 500/)
 +  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, {})).fetch }), /did not give an MCP address/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, { mcp: SESSION.mcp })).fetch }), /did not give a session id/)
 +  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, { mcp: { url: 'https://evil.test/mcp' } })).fetch }), /another host/)
 +  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, { mcp: { url: 'http://composio.test/mcp' } })).fetch }), /another host/)
 +  await assert.rejects(composioSession(key, { ...options, fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
@@ -1983,14 +2068,19 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  assert.equal(sent.posts.length, 1, 'the key check and the mount share one session')
 +  assert.equal(mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
 +  const kept = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio
-+  assert.deepEqual(kept.session, { id: 'trs_1', url: 'https://composio.test/tool_router/trs_1/mcp', apps: ['gmail'] })
++  // Only the id and the apps are kept: the address is not stored, it is asked for at each mount.
++  assert.deepEqual(kept.session, { id: 'trs_1', apps: ['gmail'] })
 +  assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(key))
++  assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes('composio.test/tool_router'))
 +
 +  await call(ctx, 'connector-retry', { id: 'composio' })
 +  await call(ctx, 'connector-retry', { id: 'composio' })
 +  assert.equal(mounts.length, 3)
 +  assert.equal(sent.posts.length, 1, 'Try again mounts the same session')
 +  assert.ok(mounts.every(mount => mount.config.url.endsWith('/trs_1/mcp')))
++  // Each mount asked Composio for the address, with the key in the header only.
++  assert.ok(sent.requests.filter(request => request.method === 'GET').length >= 3)
++  assert.ok(sent.requests.filter(request => request.method === 'GET').every(request => request.init.headers['x-api-key'] === key && request.url.endsWith('/trs_1')))
 +  assert.equal(sent.deletes.length, 0)
 +  // Choosing the same apps again changes nothing on Composio.
 +  await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail'] })
@@ -2088,6 +2178,94 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  assert.deepEqual(sent.deletes.map(request => [request.url.split('/').at(-1), request.init.headers['x-api-key']]), [['trs_1', first]])
 +  assert.deepEqual([...sent.live], ['trs_2'])
 +})
++
++// --- The session address is not kept in state.json (#335) ---
++
++const untilMounted = async (mounts, count) => {
++  const end = Date.now() + 3000
++  while (mounts.length < count) {
++    if (Date.now() > end) throw new Error('until: the mount did not happen within 3 s')
++    await new Promise(resolve => setTimeout(resolve, 20))
++  }
++}
++
++test('composioSessionFind asks Composio for the address by id, with the key only in the header, and trusts only https on the API host', async () => {
++  const key = composioKey()
++  const api = 'https://composio.test/api/v3.1/'
++  const sent = fakeComposio(() => answer(201, SESSION))
++  await composioSession(key, { api, userId: 'u', apps: ['gmail'], fetch: sent.fetch })
++  assert.equal(await composioSessionFind(key, { api, id: 's1', fetch: sent.fetch }), 'https://composio.test/tool_router/s1/mcp')
++  const get = sent.requests.at(-1)
++  assert.equal(get.url, 'https://composio.test/api/v3.1/tool_router/session/s1')
++  assert.equal(get.init.headers['x-api-key'], key)
++  assert.ok(!get.url.includes(key))
++  assert.equal(await composioSessionFind(key, { api, id: 'nope', fetch: sent.fetch }), undefined)
++  const says = body => async () => answer(200, body)
++  assert.equal(await composioSessionFind(key, { api, id: 's1', fetch: says({ session_id: 's1' }) }), undefined)
++  assert.equal(await composioSessionFind(key, { api, id: 's1', fetch: says({ mcp: { url: 'https://evil.test/mcp' } }) }), undefined)
++  assert.equal(await composioSessionFind(key, { api, id: 's1', fetch: says({ mcp: { url: 'http://composio.test/mcp' } }) }), undefined)
++  assert.equal(await composioSessionFind(key, { api, id: 's1', fetch: says({ mcp: { url: 'not a url' } }) }), undefined)
++  await assert.rejects(composioSessionFind(key, { api, id: 's1', fetch: async () => answer(401, {}) }), /did not accept/)
++  await assert.rejects(composioSessionFind(key, { api, id: 's1', fetch: async () => answer(500, {}) }), /answered 500/)
++})
++
++test('an address saved by an older version is dropped from state.json at start, and the mount uses the one Composio gives for the id', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  const sent = fakeComposio(numbered())
++  globalThis.fetch = sent.fetch
++  const first = setup()
++  const { home } = first
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const key = composioKey()
++  await call(first.ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
++  await first.ctx.dispose()
++
++  // What #323 wrote: the address next to the id (here with a made-up credential-looking tail).
++  const file = join(home, 'state.json')
++  const old = JSON.parse(readFileSync(file, 'utf8'))
++  old.connectors.composio.session.url = 'https://composio.test/tool_router/trs_1/mcp?legacy=LEGACYCREDENTIAL'
++  writeFileSync(file, JSON.stringify(old))
++
++  const second = setup({ home })
++  t.after(() => second.ctx.dispose())
++  await untilMounted(second.mounts, 1)
++  assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
++  assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
++  assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
++  const text = readFileSync(file, 'utf8')
++  assert.ok(!text.includes('LEGACYCREDENTIAL'))
++  assert.ok(!text.includes('composio.test/tool_router'))
++  assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
++})
++
++test('a session whose answer names no address on Composio\'s host is made again, and the address it named is never mounted', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  const sent = fakeComposio(numbered())
++  globalThis.fetch = sent.fetch
++  const { ctx, home, mounts } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
++  sent.addresses.set('trs_1', 'https://evil.test/mcp')
++  const retried = await call(ctx, 'connector-retry', { id: 'composio' })
++  assert.equal(retried.value.find(entry => entry.id === 'composio').state, 'ready')
++  assert.equal(sent.posts.length, 2)
++  assert.ok(mounts.every(mount => !mount.config.url.includes('evil.test')))
++  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.session.id, 'trs_2')
++})
++
++test('a mount error that quotes the session address shows it as [session address]', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = fakeComposio(numbered()).fetch
++  const { ctx, home } = setup({ fail: 'url' })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const result = await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
++  const composio = result.value.find(entry => entry.id === 'composio')
++  assert.equal(composio.state, 'error')
++  assert.equal(composio.error, 'cannot reach [session address]')
++})
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
@@ -2119,7 +2297,16 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -97,6 +97,9 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,18 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+     'on llm/stream',
+     'effect ds-bot: load secrets',
+     'effect ds-bot: connectors',
++    'tools guard',
++    'on tools/change',
++    'on agent/created',
+     'on agent/created',
+     'effect ds-bot: capabilities',
+     'effect ds-bot: usage ledger',
      'on llm/stream',
      'effect ds-bot: update check',
      'effect ds-bot: dsh update install',

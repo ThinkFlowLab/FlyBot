@@ -2,6 +2,8 @@ import { createElement as h, useRef, useState } from 'react'
 import { useMorph } from './motion.js'
 import { MaskedInput } from './secret-card.js'
 import { ConnectorIcon } from './icons.js'
+import { SwitchRow } from './bot-settings.js'
+import { ConnectorBots, usageText } from './connector-bots.js'
 import { t } from './i18n.js'
 
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
@@ -52,8 +54,9 @@ function AppPicker({ apps, onChange }) {
     h('input', { className: 'bt-input', value: more, spellCheck: false, 'aria-label': t('More apps'), placeholder: t('More apps: type Composio app names, separated by commas'), onChange: event => typed(event.target.value) }))
 }
 
-function ConnectorRow({ connector, actions }) {
+function ConnectorRow({ connector, roster, actions }) {
   const [form, setForm] = useState(false)
+  const [bots, setBots] = useState(false)
   const [token, setToken] = useState('')
   const [apps, setApps] = useState(() => connector.apps ?? [])
   const [picking, setPicking] = useState(false)
@@ -78,7 +81,7 @@ function ConnectorRow({ connector, actions }) {
   const on = connector.state !== 'off'
   const Mark = MARKS[connector.id]
   const row = useRef(null)
-  useMorph(row, `${form}:${picking}:${error !== null}:${connector.state}`)
+  useMorph(row, `${form}:${picking}:${bots}:${error !== null}:${connector.state}`)
   return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
     h('div', { className: 'bt-connector-head' },
       h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
@@ -88,9 +91,12 @@ function ConnectorRow({ connector, actions }) {
       h('span', { className: 'bt-connector-actions' },
         connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
         on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
+        on ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': bots, onClick: () => setBots(value => !value) }, bots ? t('Done') : t('Choose Bots')) : null,
         on
           ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
           : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
+    on ? h('span', { className: 'bt-connector-uses' }, usageText(roster, connector.id)) : null,
+    on && bots ? h(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
     !on && form ? h('div', { className: 'bt-connector-form' },
       h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t('Composio API key') : t('GitHub token'), autoFocus: true })),
       gateway ? h(AppPicker, { apps, onChange: setApps }) : null,
@@ -114,5 +120,5 @@ export function ConnectorsPage({ roster, actions }) {
   return h('section', { className: 'bt-set-section' },
     h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
       ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
-      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, actions }))))
+      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, roster, actions }))))
 }

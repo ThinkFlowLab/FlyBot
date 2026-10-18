@@ -259,7 +259,7 @@ export function faceRoomTitle(snapshot = {}, { code, room } = {}) {
   return formatFaceRoomTitle({
     name: snapshot.name || room?.name,
     members,
-    code: code || snapshot.joinCode,
+    code: code || snapshot.joinCode || room?.face?.joinCode,
     at,
   })
 }

@@ -64,6 +64,7 @@ export function install(rt) {
     if ('error' in resolved) throw new Error(resolved.error?.message ?? 'Session unavailable')
     rt.hideBlockingQuestion(resolved.agent)
     rt.flybotHideTools?.(resolved.agent)
+    rt.hideConnectorTools?.(resolved.agent)
     return resolved.agent
   }
 

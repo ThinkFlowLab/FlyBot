@@ -323,6 +323,31 @@ test('face-to-face rejoin revives a left participant instead of duplicating', as
   assert.equal(room.face.status, 'open')
 })
 
+test('#304: a face room keeps the number it was joined by in its title, through polls and leave', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const spec = {
+    roomId: 'frm_304',
+    localId: 'face-304',
+    status: 'open',
+    expiresAt: '2026-10-18T08:37:49.000Z',
+    localBots: [{ id: 'spec-a', handle: '@writer.alice.home', name: 'Writer A' }],
+    members: [
+      { handle: '@writer.alice.home', displayName: 'Writer', ownerName: 'Alice', published: false },
+      { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
+    ],
+  }
+  const room = await rt.upsertFaceRoom({ ...spec, name: 'Face-to-face · Alice, Bob · 482913', joinCode: '482913' })
+  assert.equal(room.name, 'Face-to-face · Bob, Alice · 482913')
+  assert.equal(room.face.joinCode, '482913')
+  // A later poll or the leave does not repeat the number: the title still has it.
+  await rt.upsertFaceRoom({ ...spec, name: 'Face-to-face · Alice, Bob · Oct 18 16:27' })
+  assert.equal(room.name, 'Face-to-face · Bob, Alice · 482913')
+  await rt.upsertFaceRoom({ roomId: 'frm_304', status: 'left' })
+  assert.equal(room.name, 'Face-to-face · Bob, Alice · 482913')
+  assert.equal(room.face.status, 'left')
+})
+
 const FACE_SPEC = {
   roomId: 'frm_236',
   localId: 'face-236',
