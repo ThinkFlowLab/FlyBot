@@ -944,10 +944,18 @@ var ZH = {
   "Choose Bots": "选择 Bot",
   "Off for every Bot. Choose which Bots may use it.": "所有 Bot 都未开启。选择哪些 Bot 可以使用。",
   "On for {count} of {total} Bots": "已为 {total} 个 Bot 中的 {count} 个开启",
-  "Off. Turn on to let this Bot use it.": "未开启。打开后这个 Bot 才能使用。",
-  "This Bot can use it.": "这个 Bot 可以使用。",
-  "Not available: shared with {names}.": "不可用：已共享给 {names}。",
-  "A Bot that is shared with anyone never gets connector tools.": "共享给别人的 Bot 永远不会获得连接器工具。",
+  "On for all {total} Bots": "已为全部 {total} 个 Bot 开启",
+  "Allowed for others on {count}": "允许他人使用的有 {count} 个",
+  "On. This Bot can use it for you.": "已开启。这个 Bot 可以为你使用它。",
+  "Off. This Bot will not use it for anyone.": "已关闭。这个 Bot 对任何人都不会使用它。",
+  "{name}: also when others use it": "{name}：别人使用时也开启",
+  "Turn it on for yourself first.": "请先为你自己开启。",
+  "On: anyone who uses this Bot, such as a friend or another room member, can use it too.": "已开启：任何使用这个 Bot 的人（比如好友、房间里的其他成员）也能使用。",
+  "On: {names} can use it through this Bot.": "已开启：{names} 可以通过这个 Bot 使用。",
+  "Off. If others use this Bot, they get it only when you turn this on.": "已关闭。别人使用这个 Bot 时，只有你打开这里才会有。",
+  "Shared with {names}. They cannot use it unless you turn this on.": "已共享给 {names}。除非你打开这里，否则他们用不了。",
+  "On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot.": "默认对你自己开启。别人使用某个 Bot 时，或者 Bot 在有其他人的房间里工作时（比如好友、其他成员），默认关闭，需要你为这个 Bot 单独允许。",
+  "Say whose use it is: yours or other people's": "请说明是你自己使用，还是别人使用",
   "No Bots": "没有 Bot",
   "Scheduled tasks": "定时任务",
   "Every day": "每天",
@@ -1026,7 +1034,7 @@ var HOST_ERRORS = [
   [/^A group chat holds at most (\d+) Bots$/, "一个群聊最多 $1 个 Bot"],
   [/^Reply mode must be one of (.+)$/, "回复模式只能是 $1"],
   [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, "只有你、主 Bot 或「$1」的管理员可以修改"],
-  [/^(.+) is shared with (.+), so it cannot use connectors\. Stop sharing it first\.$/, "$1 已共享给 $2，所以不能使用连接器。请先停止共享。"],
+  [/^Turn (.+) on for (.+) first: other people only get what you have\.$/, "请先为 $2 开启 $1：别人只能得到你已有的权限。"],
   [/^A key must have at least (\d+) characters$/, "密钥至少 $1 个字符"],
   [/^A key can have at most (\d+) characters$/, "密钥最多 $1 个字符"],
   [/^(.+) is not saved yet$/, "$1 还没有保存"],
@@ -3357,6 +3365,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
 .bt-connector-uses{padding-left:48px;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
 .bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+.bt-connector-others{padding-left:20px}
 .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
 
 /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
@@ -6679,7 +6688,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
         import_react9.Fragment,
         { key: index },
         index > 0 ? (0, import_react9.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
-        group.map(([label, Icon, run, hint2]) => (0, import_react9.createElement)("button", {
+        group.map(([label, Icon, run, hint]) => (0, import_react9.createElement)("button", {
           key: label,
           type: "button",
           role: "menuitem",
@@ -6687,7 +6696,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
             setOpen(false);
             void Promise.resolve(run()).catch((error) => actions.reportError(error, "menu"));
           }
-        }, (0, import_react9.createElement)(Icon), (0, import_react9.createElement)("span", { className: "bt-menu-label" }, label), hint2 ? (0, import_react9.createElement)("span", { className: "bt-menu-hint" }, hint2) : null))
+        }, (0, import_react9.createElement)(Icon), (0, import_react9.createElement)("span", { className: "bt-menu-label" }, label), hint ? (0, import_react9.createElement)("span", { className: "bt-menu-hint" }, hint) : null))
       ))
     ), document.body) : null
   );
@@ -8822,31 +8831,48 @@ function ownBots(roster) {
 }
 var connectedConnectors = (roster) => (roster?.connectors ?? []).filter((connector) => connector.state !== "off");
 var sharedNames = (bot) => (Array.isArray(bot.sharedWith) ? bot.sharedWith : []).join(", ");
-var isOn = (bot, id) => bot.connectors?.[id] === true && sharedNames(bot) === "";
-function hint(bot, id) {
+var isOn = (bot, id) => bot.connectors?.[id] !== false;
+var othersOn = (bot, id) => isOn(bot, id) && bot.connectorsShared?.[id] === true;
+function ownHint(bot, id) {
+  return isOn(bot, id) ? t("On. This Bot can use it for you.") : t("Off. This Bot will not use it for anyone.");
+}
+function othersHint(bot, id) {
   const names = sharedNames(bot);
-  if (names !== "") return t("Not available: shared with {names}.", { names });
-  return bot.connectors?.[id] === true ? t("This Bot can use it.") : t("Off. Turn on to let this Bot use it.");
+  if (!isOn(bot, id)) return t("Turn it on for yourself first.");
+  if (othersOn(bot, id)) return names === "" ? t("On: anyone who uses this Bot, such as a friend or another room member, can use it too.") : t("On: {names} can use it through this Bot.", { names });
+  return names === "" ? t("Off. If others use this Bot, they get it only when you turn this on.") : t("Shared with {names}. They cannot use it unless you turn this on.", { names });
 }
 function usageText(roster, id) {
   const bots = ownBots(roster);
-  const count = bots.filter((bot) => isOn(bot, id)).length;
-  return count === 0 ? t("Off for every Bot. Choose which Bots may use it.") : t("On for {count} of {total} Bots", { count, total: bots.length });
+  const own = bots.filter((bot) => isOn(bot, id)).length;
+  const others = bots.filter((bot) => othersOn(bot, id)).length;
+  const base = own === 0 ? t("Off for every Bot. Choose which Bots may use it.") : own === bots.length ? t("On for all {total} Bots", { total: bots.length }) : t("On for {count} of {total} Bots", { count: own, total: bots.length });
+  return others === 0 ? base : `${base} · ${t("Allowed for others on {count}", { count: others })}`;
+}
+function BotSwitches({ bot, connector, name, actions, run, SwitchRow: SwitchRow2 }) {
+  const set = (scope, on) => void run(actions.setBotConnector(bot.id, connector.id, on, scope));
+  return [
+    (0, import_react18.createElement)(SwitchRow2, { key: "own", label: name, hint: ownHint(bot, connector.id), on: isOn(bot, connector.id), disabled: false, onChange: (on) => set("owner", on) }),
+    (0, import_react18.createElement)("div", { key: "others", className: "bt-connector-others" }, (0, import_react18.createElement)(SwitchRow2, {
+      label: t("{name}: also when others use it", { name }),
+      hint: othersHint(bot, connector.id),
+      on: othersOn(bot, connector.id),
+      disabled: !isOn(bot, connector.id),
+      onChange: (on) => set("shared", on)
+    }))
+  ];
 }
 function ConnectorBots({ connector, roster, actions, run, SwitchRow: SwitchRow2 }) {
   const bots = ownBots(roster);
   return (0, import_react18.createElement)(
     "div",
     { className: "bt-connector-bots" },
-    bots.length === 0 ? (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("No Bots")) : bots.map((bot) => (0, import_react18.createElement)(SwitchRow2, {
-      key: bot.id,
-      label: bot.name,
-      hint: hint(bot, connector.id),
-      on: isOn(bot, connector.id),
-      disabled: sharedNames(bot) !== "",
-      onChange: (on) => void run(actions.setBotConnector(bot.id, connector.id, on))
-    })),
-    (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("A Bot that is shared with anyone never gets connector tools."))
+    bots.length === 0 ? (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("No Bots")) : bots.map((bot) => (0, import_react18.createElement)(
+      "div",
+      { key: bot.id, className: "bt-connector-bot" },
+      (0, import_react18.createElement)(BotSwitches, { bot, connector, name: bot.name, actions, run, SwitchRow: SwitchRow2 })
+    )),
+    (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot."))
   );
 }
 function BotConnectorsCard({ bot, roster, actions, run, Card: Card2, SwitchRow: SwitchRow2 }) {
@@ -8855,14 +8881,11 @@ function BotConnectorsCard({ bot, roster, actions, run, Card: Card2, SwitchRow: 
   return (0, import_react18.createElement)(
     Card2,
     { title: t("Connectors") },
-    connected.map((connector) => (0, import_react18.createElement)(SwitchRow2, {
-      key: connector.id,
-      label: connector.name,
-      hint: hint(bot, connector.id),
-      on: isOn(bot, connector.id),
-      disabled: sharedNames(bot) !== "",
-      onChange: (on) => void run(actions.setBotConnector(bot.id, connector.id, on))
-    }))
+    connected.map((connector) => (0, import_react18.createElement)(
+      "div",
+      { key: connector.id, className: "bt-connector-bot" },
+      (0, import_react18.createElement)(BotSwitches, { bot, connector, name: connector.name, actions, run, SwitchRow: SwitchRow2 })
+    ))
   );
 }
 
@@ -9306,11 +9329,11 @@ function InlineText({ label, value, placeholder, required = false, maxLength, mu
     }
   });
 }
-function Row({ label, hint: hint2, stack = false, children }) {
+function Row({ label, hint, stack = false, children }) {
   return (0, import_react20.createElement)(
     "label",
     { className: stack ? "bt-set-row bt-bs-row bt-bs-stack" : "bt-set-row bt-bs-row" },
-    (0, import_react20.createElement)("span", { className: "bt-set-copy" }, (0, import_react20.createElement)("span", { className: "bt-bs-label" }, label), hint2 ? (0, import_react20.createElement)("span", { className: "bt-set-hint" }, hint2) : null),
+    (0, import_react20.createElement)("span", { className: "bt-set-copy" }, (0, import_react20.createElement)("span", { className: "bt-bs-label" }, label), hint ? (0, import_react20.createElement)("span", { className: "bt-set-hint" }, hint) : null),
     children
   );
 }
@@ -9324,11 +9347,11 @@ function Switch({ on, label, disabled, onChange }) {
     (0, import_react20.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
   );
 }
-function SwitchRow({ label, hint: hint2, on, disabled, onChange, showLabel = true }) {
+function SwitchRow({ label, hint, on, disabled, onChange, showLabel = true }) {
   return (0, import_react20.createElement)(
     "div",
     { className: "bt-set-row bt-bs-row" },
-    (0, import_react20.createElement)("span", { className: "bt-set-copy" }, showLabel ? (0, import_react20.createElement)("span", { className: "bt-bs-label" }, label) : null, hint2 ? (0, import_react20.createElement)("span", { className: "bt-set-hint" }, hint2) : null),
+    (0, import_react20.createElement)("span", { className: "bt-set-copy" }, showLabel ? (0, import_react20.createElement)("span", { className: "bt-bs-label" }, label) : null, hint ? (0, import_react20.createElement)("span", { className: "bt-set-hint" }, hint) : null),
     (0, import_react20.createElement)(Switch, { on, label, disabled, onChange })
   );
 }
@@ -12360,11 +12383,11 @@ var PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: P
 function SetSection({ title, children }) {
   return (0, import_react30.createElement)("section", { className: "bt-set-section" }, (0, import_react30.createElement)("h3", null, title), (0, import_react30.createElement)("div", { className: "bt-set-card" }, children));
 }
-function SetRow({ label, hint: hint2, children }) {
+function SetRow({ label, hint, children }) {
   return (0, import_react30.createElement)(
     "div",
     { className: "bt-set-row" },
-    (0, import_react30.createElement)("div", { className: "bt-set-copy" }, (0, import_react30.createElement)("span", null, label), hint2 ? (0, import_react30.createElement)("span", { className: "bt-set-hint" }, hint2) : null),
+    (0, import_react30.createElement)("div", { className: "bt-set-copy" }, (0, import_react30.createElement)("span", null, label), hint ? (0, import_react30.createElement)("span", { className: "bt-set-hint" }, hint) : null),
     children ? (0, import_react30.createElement)("div", { className: "bt-set-control" }, children) : null
   );
 }
@@ -15873,7 +15896,7 @@ function apply(ctx) {
     saveCapability: (capability) => after(call("capability-save", capability)),
     deleteCapability: (name) => after(call("capability-delete", { name })),
     approveCapability: (name) => after(call("capability-approve", { name })),
-    setBotConnector: (botId, connector, enabled) => after(call("bot-connectors", { botId, connector, enabled })),
+    setBotConnector: (botId, connector, enabled, scope = "owner") => after(call("bot-connectors", { botId, connector, enabled, scope })),
     setBotCapability: (botId, name, attached) => after(call("bot-capability", { botId, name, attached })),
     schedules: () => call("schedules"),
     scheduleCreate: (task) => call("schedule-create", task),

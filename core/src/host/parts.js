@@ -17,6 +17,7 @@
 import { randomUUID } from 'node:crypto'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HISTORY_TIMEOUT_MS, REPLY_KIND, SOURCE_KIND } from './constants.js'
+import { settled } from './turn-origin.js'
 import { CHECKPOINT_PROMPT, STEWARD_SYSTEM, checkpointCount, checkpointTail, checkpointTailNote, checkpointText, linesFor, parseDecision, stewardRequest } from './steward.js'
 import { clip, createClock, escapeRegExp, estimateTokens, splitRef, textOf } from './text.js'
 
@@ -610,17 +611,24 @@ export function install(rt) {
     ].join('\n')
   }
 
+  // `origin`: whose request the stopped turn answered (turn-origin.js), so the fresh part keeps the
+  // same answer to "may it use the owner's connectors"; unknown stays unknown (the guard fails closed).
+  const HANDOFF = { kind: SOURCE_KIND, form: 'relay', role: 'handoff', senderName: 'FlyBot', hop: 0 }
+  const withOrigin = (source, origin) => {
+    const { origin: _earlier, ...rest } = source
+    return origin === undefined ? rest : { ...rest, origin }
+  }
   // A turn stopped for a switch goes on with its own source, so its reply still
   // reaches whoever asked.
   const handoffSource = (job, resume) => ({
-    ...(resume && job.info ? job.info : { kind: SOURCE_KIND, form: 'relay', role: 'handoff', senderName: 'FlyBot', hop: 0 }),
+    ...(resume ? withOrigin(job.info ?? HANDOFF, job.origin) : HANDOFF),
     exchangeId: job.info?.exchangeId ?? randomUUID(),
     handoff: true,
     ...(resume ? { resume: true } : {}),
     ...(resume && job.joined?.length ? { joined: job.joined } : {}),
   })
 
-  /** @type {Map<string, {botId:string, roomId?:string, carry:any[], info?:any, joined?:any[], resume:boolean, overflow:boolean, failed?:string, bare?:boolean, folder?:boolean, hard:boolean, started?:boolean, moved?:boolean, noteFailed?:boolean}>} */
+  /** @type {Map<string, {botId:string, roomId?:string, origin?:string, carry:any[], info?:any, joined?:any[], resume:boolean, overflow:boolean, failed?:string, bare?:boolean, folder?:boolean, hard:boolean, started?:boolean, moved?:boolean, noteFailed?:boolean}>} */
   const switches = new Map()
   // Parts whose move to their working folder failed, and the time before which it is
   // not tried again.
@@ -673,7 +681,7 @@ export function install(rt) {
   function startSwitch(agent, { resume = false, carry = [], info, joined, overflow = false, failed, bare = false, folder = false, hard = overflow || folder } = {}) {
     const place = placeOf(agent.id)
     if (place === undefined || switches.has(agent.id) || readOnly()) return
-    const job = { ...place, carry: [...carry], info, joined, resume, overflow, failed, bare, folder, hard }
+    const job = { ...place, carry: [...carry], info, joined, resume, overflow, failed, bare, folder, hard, origin: settled(rt, agent.id) }
     switches.set(agent.id, job)
     void runSwitch(agent, job)
       .catch(error => rt.warn('ds-bot: %s did not move on to a fresh part: %s', rt.botOf(job.botId)?.name ?? agent.id, error))
@@ -694,7 +702,7 @@ export function install(rt) {
           const carried = job.joined?.length ? { joined: job.joined } : {}
           back.unshift(createUserMessage({
             content: [{ type: 'text', text: 'FlyBot paused your turn for a context check. Go on with it now from where you stopped.' }],
-            source: job.info ? { ...job.info, ...carried } : { kind: SOURCE_KIND, form: 'relay', role: 'resume', exchangeId: randomUUID(), senderName: 'FlyBot', hop: 0, ...carried },
+            source: job.info ? { ...withOrigin(job.info, job.origin), ...carried } : { kind: SOURCE_KIND, form: 'relay', role: 'resume', exchangeId: randomUUID(), senderName: 'FlyBot', hop: 0, ...(job.origin === undefined ? {} : { origin: job.origin }), ...carried },
           }))
         }
         await forward(job, back).catch(error => rt.warn('ds-bot: input for %s was not handed on: %s', agent.id, error))

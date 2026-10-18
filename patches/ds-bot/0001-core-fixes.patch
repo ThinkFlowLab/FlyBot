@@ -527,17 +527,25 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,6 +771,14 @@ const ZH = {
+@@ -771,6 +771,22 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
 +  'Choose Bots': '选择 Bot',
 +  'Off for every Bot. Choose which Bots may use it.': '所有 Bot 都未开启。选择哪些 Bot 可以使用。',
 +  'On for {count} of {total} Bots': '已为 {total} 个 Bot 中的 {count} 个开启',
-+  'Off. Turn on to let this Bot use it.': '未开启。打开后这个 Bot 才能使用。',
-+  'This Bot can use it.': '这个 Bot 可以使用。',
-+  'Not available: shared with {names}.': '不可用：已共享给 {names}。',
-+  'A Bot that is shared with anyone never gets connector tools.': '共享给别人的 Bot 永远不会获得连接器工具。',
++  'On for all {total} Bots': '已为全部 {total} 个 Bot 开启',
++  'Allowed for others on {count}': '允许他人使用的有 {count} 个',
++  'On. This Bot can use it for you.': '已开启。这个 Bot 可以为你使用它。',
++  'Off. This Bot will not use it for anyone.': '已关闭。这个 Bot 对任何人都不会使用它。',
++  '{name}: also when others use it': '{name}：别人使用时也开启',
++  'Turn it on for yourself first.': '请先为你自己开启。',
++  'On: anyone who uses this Bot, such as a friend or another room member, can use it too.': '已开启：任何使用这个 Bot 的人（比如好友、房间里的其他成员）也能使用。',
++  'On: {names} can use it through this Bot.': '已开启：{names} 可以通过这个 Bot 使用。',
++  'Off. If others use this Bot, they get it only when you turn this on.': '已关闭。别人使用这个 Bot 时，只有你打开这里才会有。',
++  'Shared with {names}. They cannot use it unless you turn this on.': '已共享给 {names}。除非你打开这里，否则他们用不了。',
++  'On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot.': '默认对你自己开启。别人使用某个 Bot 时，或者 Bot 在有其他人的房间里工作时（比如好友、其他成员），默认关闭，需要你为这个 Bot 单独允许。',
++  'Say whose use it is: yours or other people\'s': '请说明是你自己使用，还是别人使用',
 +  'No Bots': '没有 Bot',
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
@@ -546,7 +554,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^A group chat holds at most (\d+) Bots$/, '一个群聊最多 $1 个 Bot'],
    [/^Reply mode must be one of (.+)$/, '回复模式只能是 $1'],
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
-+  [/^(.+) is shared with (.+), so it cannot use connectors\. Stop sharing it first\.$/, '$1 已共享给 $2，所以不能使用连接器。请先停止共享。'],
++  [/^Turn (.+) on for (.+) first: other people only get what you have\.$/, '请先为 $2 开启 $1：别人只能得到你已有的权限。'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
    [/^(.+) is not saved yet$/, '$1 还没有保存'],
@@ -1579,6 +1587,73 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
          '',
          rt.isMain(self) ? `${MAIN_RULES}\n\n${TEAM_RULES}` : TEAM_RULES,
        ].join('\n')
+diff --git a/src/host/resume.js b/src/host/resume.js
+--- a/src/host/resume.js
++++ b/src/host/resume.js
+@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
+ import { mkdir, writeFile } from 'node:fs/promises'
+ import { join } from 'node:path'
+ import { SOURCE_KIND } from './constants.js'
++import { OTHER, settled } from './turn-origin.js'
+ 
+ // Long enough for DSH to finish opening its workspaces after a start.
+ const RESUME_DELAY_MS = 3000
+@@ -51,7 +51,7 @@ export function install(rt) {
+   // What the last run left; read before this run notes anything.
+   let interrupted = readNotes(file)
+ 
+-  /** @type {Record<string, {botId:string, roomId?:string, since:number, trigger?:any, approval?:{tool:string, reason:string}, resumed?:boolean}>} */
++  /** @type {Record<string, {botId:string, roomId?:string, since:number, origin?:string, trigger?:any, approval?:{tool:string, reason:string}, resumed?:boolean}>} */
+   let turns = {}
+   /** @type {Record<string, {at:number, args:any}[]>} deliveries no turn has taken up, by Session */
+   let queued = {}
+@@ -76,6 +76,10 @@ export function install(rt) {
+       await writeFile(file, snapshot, 'utf8')
+     }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
+   }
++  const originNote = (id) => {
++    const origin = settled(rt, id)
++    return origin === undefined ? {} : { origin }
++  }
+   const update = (id, change) => {
+     const next = change(turns[id])
+     if (next === turns[id]) return
+@@ -137,10 +137,13 @@ export function install(rt) {
+       case 'turn/start': {
+         const owner = rt.groupOwners.get(id)
+         const botId = owner?.botId ?? rt.chatOwners.get(id)
+-        update(id, () => ({ botId, ...(owner ? { roomId: owner.roomId } : {}), since: event.time ?? Date.now() }))
++        update(id, () => ({ botId, ...(owner ? { roomId: owner.roomId } : {}), since: event.time ?? Date.now(), ...originNote(id) }))
+         break
+       }
+       case 'user/message': {
++        // Whose request the turn answers, so a resumed turn keeps its connector tools only when it was the owner's.
++        const note = originNote(id)
++        update(id, record => (record === undefined || record.origin === note.origin ? record : (({ origin: _, ...rest }) => ({ ...rest, ...note }))(record)))
+         if (event.data?.source?.kind !== SOURCE_KIND) break
+         // turns.js, installed earlier, has already claimed the turn's trigger.
+         const info = rt.live.get(id)?.info
+@@ -173,17 +173,17 @@ export function install(rt) {
+       // A turn already picked up once and cut off again stays stopped: a restart loop
+       // must not run it forever.
+       if (record.resumed) return
+-      await rt.deliver({ toId: bot.id, sessionId: room.sessions?.[bot.id] ?? sessionId, role: 'room', roomId: room.id, note: 'picking up after a restart', resumed: true, text, ...(record.trigger?.askedBy ? { askedBy: record.trigger.askedBy } : {}) })
++      await rt.deliver({ toId: bot.id, sessionId: room.sessions?.[bot.id] ?? sessionId, role: 'room', roomId: room.id, note: 'picking up after a restart', resumed: true, origin: record.origin ?? OTHER, text, ...(record.trigger?.askedBy ? { askedBy: record.trigger.askedBy } : {}) })
+       return
+     }
+     if (record.resumed) return
+     const trigger = record.trigger
+     if ((trigger?.role === 'request' || trigger?.role === 'stopped') && trigger.senderSessionId && trigger.audience !== 'user' && rt.botOf(trigger.senderSessionId)) {
+       // The sender still waits for this turn's answer, so it goes on under the same exchange.
+-      await rt.deliver({ fromId: trigger.senderSessionId, toId: bot.id, role: trigger.role, hop: trigger.hop ?? 0, ...(trigger.exchangeId ? { exchangeId: trigger.exchangeId } : {}), ...(trigger.senderRoomId ? { fromRoomId: trigger.senderRoomId } : {}), resumed: true, text })
++      await rt.deliver({ fromId: trigger.senderSessionId, toId: bot.id, role: trigger.role, hop: trigger.hop ?? 0, ...(trigger.exchangeId ? { exchangeId: trigger.exchangeId } : {}), ...(trigger.senderRoomId ? { fromRoomId: trigger.senderRoomId } : {}), resumed: true, origin: record.origin ?? OTHER, text })
+       return
+     }
+-    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, text })
++    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, origin: record.origin ?? OTHER, text })
+   }
+ 
+   // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
@@ -1594,6 +1669,35 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
+@@ -5,6 +5,7 @@
+ import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
+ import { textOf } from './text.js'
+ import { reminderText } from './schedules.js'
++import { OTHER, combine, originOfSource, settled } from './turn-origin.js'
+ 
+ // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
+ // error row, an AUTH failure loses its message: providers may echo part of the key.
+@@ -51,9 +51,10 @@ export function install(rt) {
+ 
+   // The retry goes where the turn's trigger came from: a group round's waiter or a
+   // Bot's request keeps its exchange; anything else is a nudge in the Bot's own chat.
+-  const retryWrittenCall = (id, info) => {
++  const retryWrittenCall = (id, info, origin) => {
+     const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
+     return rt.deliver({
++      origin,
+       ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
+       toId: rt.selfOf(id),
+       sessionId: id,
+@@ -70,7 +70,7 @@ export function install(rt) {
+     })
+   }
+ 
+-  /** @type {Map<string, {turn?:number, pending?:any, info?:any, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
++  /** @type {Map<string, {turn?:number, pending?:any, info?:any, origin?:string, next?:string, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
+   const live = new Map()
+   /** @type {Map<string, {sessionId:string, resolve:(text:string|null)=>void, fail:(failure:any)=>void, touch:()=>void, approval:()=>void}>} member turn waiters keyed by exchange id */
+   const roomWaiters = new Map()
 @@ -162,17 +162,30 @@ export function install(rt) {
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
@@ -1626,6 +1730,33 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
+@@ -293,6 +293,10 @@ export function install(rt) {
+         entry.answers = false
+         entry.opened = false
+         entry.joined = []
++        // Whose request the turn answers (turn-origin.js): what its messages said before it began.
++        entry.origin = entry.next
++        entry.next = undefined
++        rt.connectorTurnChanged?.(id)
+         if (entry.pending !== undefined) {
+           claimTrigger(id, entry, entry.pending)
+           entry.pending = undefined
+@@ -300,6 +300,15 @@ export function install(rt) {
+         break
+       case 'user/message': {
+         const source = event.data?.source
++        // The strictest verdict of everything the turn took in; one 'other' stays for the whole turn.
++        const verdict = originOfSource(source, rt.botOf(rt.selfOf(id)))
++        if (verdict !== undefined) {
++          if (entry.turn === undefined) entry.next = combine(entry.next, verdict)
++          else if (combine(entry.origin, verdict) !== entry.origin) {
++            entry.origin = combine(entry.origin, verdict)
++            rt.connectorTurnChanged?.(id)
++          }
++        }
+         // A message that shares a step with a bare handoff package is what the turn
+         // answers, so the turn is not a hidden acknowledgement.
+         const bare = info => info?.handoff === true && info.resume !== true
 @@ -331,6 +331,11 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
@@ -1651,6 +1782,34 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            }
            const own = rt.chatOwners.get(id)
            if (own !== undefined) rt.dropKickoff(own)
+@@ -386,6 +386,9 @@ export function install(rt) {
+       case 'turn/end': {
+         setActivity(id, undefined)
+         const info = entry.info
++        // What the turn's replies and requests pass on: a Bot answering a friend's request does not
++        // hand the owner's connector tools to whoever reads the answer.
++        const origin = settled(rt, id, entry) ?? OTHER
+         const joined = entry.joined ?? []
+         const texts = entry.texts
+         const { lastText, lastCalled } = entry
+@@ -401,6 +401,8 @@ export function install(rt) {
+         entry.calls = undefined
+         entry.lastText = undefined
+         entry.lastCalled = undefined
++        entry.origin = undefined
++        rt.connectorTurnChanged?.(id)
+         const reason = event.data?.reason
+         const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
+         if (failure !== undefined) noteTurnFailure(id, failure)
+@@ -411,7 +411,7 @@ export function install(rt) {
+         // the call.
+         const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
+         const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
+-        if (retry) void retryWrittenCall(id, info).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
++        if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
+         const replyText = () => {
+           const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
+           return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
 @@ -419,6 +419,15 @@ export function install(rt) {
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
@@ -1667,6 +1826,47 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
+@@ -434,6 +434,7 @@ export function install(rt) {
+               role: 'reply',
+               hop: (source.hop ?? 0) + 1,
+               replyTo: source.exchangeId,
++              origin,
+             }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
+           } else if (reply !== '' || reason?.kind === 'aborted') {
+             // A turn stopped before it could answer still owes the sender a line,
+@@ -446,6 +446,7 @@ export function install(rt) {
+               role: 'reply',
+               hop: (source.hop ?? 0) + 1,
+               replyTo: source.exchangeId,
++              origin,
+             }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
+           }
+         }
+@@ -488,6 +488,7 @@ export function install(rt) {
+             hop: request.info.hop ?? 0,
+             exchangeId: request.info.exchangeId,
+             ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
++            origin: request.info.origin,
+             deferred: true,
+           }).catch(error => rt.warn('ds-bot: deferred request delivery failed: %s', error))
+         }
+@@ -496,5 +496,15 @@ export function install(rt) {
+     }
+   })
+ 
+-  Object.assign(rt, { live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, callDetail, stopRoomTurn })
++  // Whose request the Bot is working on across the turns it runs now: the owner's only when every
++  // one of them is; undefined when it runs none.
++  const botTurnOrigin = (botId) => {
++    let found
++    for (const [id, entry] of live) {
++      if (entry.turn !== undefined && rt.selfOf(id) === botId) found = combine(found, settled(rt, id, entry) ?? OTHER)
++    }
++    return found
++  }
++
++  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, callDetail, stopRoomTurn })
+ }
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
 +++ b/src/host/usage.js
@@ -2620,3 +2820,49 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 +  // Another kind of room keeps whatever notice it was given.
 +  assert.match(shown(root, { sessionId: 'room' }), /Waiting for the owner/)
 +})
+diff --git a/test/work-dir.test.js b/test/work-dir.test.js
+--- a/test/work-dir.test.js
++++ b/test/work-dir.test.js
+@@ -241,6 +241,42 @@ test('a running Bot moves at its next step and carries that step\'s input along'
+   assert.equal(await preStep('s1'), 'next')
+ })
+ 
++test('a turn that moves to a fresh part half-way keeps whose request it answers, so its connector tools are not decided again by luck (#369)', async (t) => {
++  const { services } = approvalServices('allowed-once')
++  const { ctx, tool, preStep, agentOf, project, state, stop } = await start({ services })
++  t.after(stop)
++  const emit = (sessionId, type, data) => ctx.emitArgs('session/event', agentOf(sessionId).session, { type, data, time: Date.now() })
++  const text = value => [{ type: 'text', text: value }]
++  agentOf('b').status = 'running'
++  assert.match(await tool('update_bot', { work_dir: project }, 'b'), /^Updated Writer/)
++  await settle()
++  // The owner typed the message the turn answers; at its second step the Bot moves on.
++  emit('b', 'user/message', { source: { kind: 'user' }, content: text('Check my mail') })
++  emit('b', 'turn/start', { turn: 1 })
++  assert.deepEqual(await preStep('b', [], 2), { kind: 'reject' })
++  await until(() => state().bots.b.sessionId === 's1')
++  await until(() => agentOf('s1').calls.length >= 1)
++  const first = agentOf('s1').calls.map(([, message]) => message.source).find(source => source.resume === true)
++  assert.equal(first.origin, 'owner')
++  emit('b', 'turn/end', { reason: { kind: 'completed' } })
++
++  // A friend's message was in the turn: the resumed turn is someone else's.
++  emit('s1', 'user/message', { source: { kind: 'user' }, content: text('Check my mail') })
++  emit('s1', 'turn/start', { turn: 1 })
++  emit('s1', 'user/message', { source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'x', senderName: 'Bob', hop: 0, remote: { handle: '@bob.home' }, origin: 'other' }, content: text('and mine') })
++  const dir = join(project, 'two')
++  mkdirSync(dir)
++  agentOf('s1').status = 'running'
++  assert.match(await tool('update_bot', { work_dir: dir }, 's1'), /^Updated Writer/)
++  await settle()
++  assert.deepEqual(await preStep('s1', [], 2), { kind: 'reject' })
++  await until(() => state().bots.b.sessionId === 's2')
++  await until(() => agentOf('s2').calls.length >= 1)
++  const second = agentOf('s2').calls.map(([, message]) => message.source).find(source => source.resume === true)
++  assert.equal(second.origin, 'other')
++  assert.equal(second.remote.handle, '@bob.home', 'the turn goes on under its own trigger')
++})
++
+ test('a folder outside the team workspace needs the user\'s approval', async (t) => {
+   const rejected = approvalServices('rejected')
+   const first = await start({ services: rejected.services })

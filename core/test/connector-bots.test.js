@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // #335: the per-Bot connector switches (Bot settings and the Connectors page).
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { Card, SwitchRow } from './src/client/bot-settings.js'; export { BotConnectorsCard, ConnectorBots, ownBots, isOn, usageText } from './src/client/connector-bots.js'; export { DICTIONARY, hostText, installLocale } from './src/client/i18n.js'",
+    contents: "export { Card, SwitchRow } from './src/client/bot-settings.js'; export { BotConnectorsCard, ConnectorBots, ownBots, isOn, othersOn, usageText } from './src/client/connector-bots.js'; export { DICTIONARY, hostText, installLocale } from './src/client/i18n.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { Card, SwitchRow, BotConnectorsCard, ConnectorBots, ownBots, isOn, usageText, DICTIONARY, hostText, installLocale } = module.exports
+const { Card, SwitchRow, BotConnectorsCard, ConnectorBots, ownBots, isOn, othersOn, usageText, DICTIONARY, hostText, installLocale } = module.exports
 
 const expand = (node) => {
   if (node === null || node === undefined || typeof node === 'boolean') return null
@@ -41,43 +41,75 @@ const switches = tree => all(tree).filter(node => node.props?.role === 'switch')
 const github = { id: 'github', name: 'GitHub', state: 'ready', account: 'octo' }
 const composio = { id: 'composio', name: 'Composio', state: 'ready', account: null, apps: ['gmail'] }
 const bots = {
-  writer: { id: 'writer', name: 'Writer', connectors: { composio: true }, sharedWith: [] },
+  writer: { id: 'writer', name: 'Writer', connectors: { composio: false }, sharedWith: [] },
   chief: { id: 'chief', name: 'Chief', sharedWith: [] },
-  shared: { id: 'shared', name: 'Helper', connectors: { composio: true }, sharedWith: ['Bob'] },
+  // Shared with a friend: the owner's own use is untouched, others get it only when allowed.
+  shared: { id: 'shared', name: 'Helper', sharedWith: ['Bob (@bob.home)'] },
+  allowed: { id: 'allowed', name: 'Open', connectorsShared: { composio: true }, sharedWith: ['Bob (@bob.home)'] },
+  // A stale offer on a Bot the owner turned off for themselves never reads as on.
+  stale: { id: 'stale', name: 'Stale', connectors: { composio: false }, connectorsShared: { composio: true }, sharedWith: [] },
   friend: { id: 'friend', name: 'Friend Bot', remote: { handle: '@bob.home' } },
 }
 const roster = { bots: Object.values(bots), connectors: [github, composio], self: { memberId: 'me' } }
+const rowsOf = tree => switches(tree).map(row => [row.props['aria-label'], row.props['aria-checked'], row.props.disabled])
 
-test('the owner switches only their own local Bots, and a shared Bot never reads as on', () => {
-  assert.deepEqual(ownBots(roster).map(bot => bot.id), ['writer', 'chief', 'shared'])
+test('the owner switches only their own local Bots; on is the default, and only an explicit off reads as off', () => {
+  assert.deepEqual(ownBots(roster).map(bot => bot.id), ['writer', 'chief', 'shared', 'allowed', 'stale'])
   assert.deepEqual(ownBots({ ...roster, bots: [{ id: 'a', ownerId: 'me' }, { id: 'b', ownerId: 'other' }] }).map(bot => bot.id), ['a'])
-  assert.equal(isOn(bots.writer, 'composio'), true)
-  assert.equal(isOn(bots.writer, 'github'), false)
-  assert.equal(isOn(bots.chief, 'composio'), false)
-  assert.equal(isOn(bots.shared, 'composio'), false)
+  assert.equal(isOn(bots.chief, 'composio'), true, 'no record: on')
+  assert.equal(isOn(bots.chief, 'github'), true)
+  assert.equal(isOn(bots.writer, 'composio'), false)
+  assert.equal(isOn(bots.writer, 'github'), true)
+  // Sharing does not take the owner's own use away.
+  assert.equal(isOn(bots.shared, 'composio'), true)
+  assert.equal(othersOn(bots.chief, 'composio'), false, 'others: off by default')
+  assert.equal(othersOn(bots.shared, 'composio'), false)
+  assert.equal(othersOn(bots.allowed, 'composio'), true)
+  assert.equal(othersOn(bots.stale, 'composio'), false)
 })
 
-test('Bot settings: one switch per connected connector, off by default, disabled with the reason while shared', () => {
+test('Bot settings: two switches per connected connector, the second never disabled by sharing', () => {
   const calls = []
   const actions = { setBotConnector: (...args) => { calls.push(args); return Promise.resolve() } }
   const card = bot => expand(BotConnectorsCard({ bot, roster, actions, run: task => task, Card, SwitchRow }))
 
   const chief = card(bots.chief)
   assert.equal(text(chief).startsWith('Connectors'), true)
-  const rows = switches(chief)
-  assert.deepEqual(rows.map(row => [row.props['aria-label'], row.props['aria-checked'], row.props.disabled]), [['GitHub', false, false], ['Composio', false, false]])
-  assert.match(text(chief), /Off\. Turn on to let this Bot use it\./)
-  rows[1].props.onClick()
-  assert.deepEqual(calls, [['chief', 'composio', true]])
+  assert.deepEqual(rowsOf(chief), [
+    ['GitHub', true, false], ['GitHub: also when others use it', false, false],
+    ['Composio', true, false], ['Composio: also when others use it', false, false],
+  ])
+  assert.match(text(chief), /On\. This Bot can use it for you\./)
+  assert.match(text(chief), /Off\. If others use this Bot, they get it only when you turn this on\./)
+  const chiefRows = switches(chief)
+  chiefRows[2].props.onClick()
+  chiefRows[3].props.onClick()
+  assert.deepEqual(calls, [['chief', 'composio', false, 'owner'], ['chief', 'composio', true, 'shared']])
 
-  const writer = switches(card(bots.writer))
-  assert.deepEqual(writer.map(row => row.props['aria-checked']), [false, true])
-  writer[1].props.onClick()
-  assert.deepEqual(calls.at(-1), ['writer', 'composio', false])
-
+  // Shared with a friend: the first switch is the owner's and on; the second is enabled and explains itself.
   const shared = card(bots.shared)
-  assert.deepEqual(switches(shared).map(row => [row.props['aria-checked'], row.props.disabled]), [[false, true], [false, true]])
-  assert.match(text(shared), /Not available: shared with Bob\./)
+  assert.deepEqual(rowsOf(shared), [
+    ['GitHub', true, false], ['GitHub: also when others use it', false, false],
+    ['Composio', true, false], ['Composio: also when others use it', false, false],
+  ])
+  assert.match(text(shared), /Shared with Bob \(@bob\.home\)\. They cannot use it unless you turn this on\./)
+  assert.doesNotMatch(text(shared), /Unavailable|Not available|never gets/)
+  switches(shared)[3].props.onClick()
+  assert.deepEqual(calls.at(-1), ['shared', 'composio', true, 'shared'])
+
+  const allowed = card(bots.allowed)
+  assert.deepEqual(switches(allowed).map(row => row.props['aria-checked']), [true, false, true, true])
+  assert.match(text(allowed), /On: Bob \(@bob\.home\) can use it through this Bot\./)
+  switches(allowed)[3].props.onClick()
+  assert.deepEqual(calls.at(-1), ['allowed', 'composio', false, 'shared'])
+
+  // Off for the owner: the second switch has nothing to give and waits, with the reason.
+  const writer = card(bots.writer)
+  assert.deepEqual(rowsOf(writer).slice(2), [['Composio', false, false], ['Composio: also when others use it', false, true]])
+  assert.match(text(writer), /Turn it on for yourself first\./)
+  switches(writer)[2].props.onClick()
+  assert.deepEqual(calls.at(-1), ['writer', 'composio', true, 'owner'])
+  assert.deepEqual(switches(card(bots.stale)).map(row => row.props['aria-checked']).slice(2), [false, false])
 })
 
 test('Bot settings show no Connectors card until a connector is connected', () => {
@@ -86,27 +118,40 @@ test('Bot settings show no Connectors card until a connector is connected', () =
   assert.equal(BotConnectorsCard({ bot: bots.chief, roster: { bots: [] }, actions: {}, run() {}, Card, SwitchRow }), null)
 })
 
-test('Connectors page: a summary line and a switch per Bot, none enabled for a shared Bot', () => {
-  assert.equal(usageText(roster, 'composio'), 'On for 1 of 3 Bots')
-  assert.equal(usageText(roster, 'github'), 'Off for every Bot. Choose which Bots may use it.')
+test('Connectors page: a summary line and two switches per Bot, none disabled for a shared Bot', () => {
+  assert.equal(usageText(roster, 'composio'), 'On for 3 of 5 Bots · Allowed for others on 1')
+  assert.equal(usageText(roster, 'github'), 'On for all 5 Bots')
+  assert.equal(usageText({ ...roster, bots: [bots.writer] }, 'composio'), 'Off for every Bot. Choose which Bots may use it.')
+  assert.equal(usageText({ ...roster, bots: [bots.chief, bots.shared] }, 'composio'), 'On for all 2 Bots')
   const calls = []
   const list = expand(ConnectorBots({ connector: composio, roster, actions: { setBotConnector: (...args) => { calls.push(args); return Promise.resolve() } }, run: task => task, SwitchRow }))
+  assert.deepEqual(rowsOf(list), [
+    ['Writer', false, false], ['Writer: also when others use it', false, true],
+    ['Chief', true, false], ['Chief: also when others use it', false, false],
+    ['Helper', true, false], ['Helper: also when others use it', false, false],
+    ['Open', true, false], ['Open: also when others use it', true, false],
+    ['Stale', false, false], ['Stale: also when others use it', false, true],
+  ])
   const rows = switches(list)
-  assert.deepEqual(rows.map(row => [row.props['aria-label'], row.props['aria-checked'], row.props.disabled]), [['Writer', true, false], ['Chief', false, false], ['Helper', false, true]])
-  rows[1].props.onClick()
-  assert.deepEqual(calls, [['chief', 'composio', true]])
-  assert.match(text(list), /A Bot that is shared with anyone never gets connector tools\./)
+  rows[0].props.onClick()
+  rows[5].props.onClick()
+  assert.deepEqual(calls, [['writer', 'composio', true, 'owner'], ['shared', 'composio', true, 'shared']])
+  assert.match(text(list), /On by default for you\. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot\./)
+  assert.doesNotMatch(text(list), /never gets connector tools/)
 })
 
 test('the connector switches and their host messages have zh copy', () => {
   for (const key of [
-    'Choose Bots', 'Off for every Bot. Choose which Bots may use it.', 'On for {count} of {total} Bots', 'Off. Turn on to let this Bot use it.',
-    'This Bot can use it.', 'Not available: shared with {names}.', 'A Bot that is shared with anyone never gets connector tools.', 'No Bots', 'Connectors', 'Done',
-    'Composio did not give a session id', 'Say whether to turn it on or off',
+    'Choose Bots', 'Off for every Bot. Choose which Bots may use it.', 'On for {count} of {total} Bots', 'On for all {total} Bots', 'Allowed for others on {count}',
+    'On. This Bot can use it for you.', 'Off. This Bot will not use it for anyone.', '{name}: also when others use it', 'Turn it on for yourself first.',
+    'On: anyone who uses this Bot, such as a friend or another room member, can use it too.', 'On: {names} can use it through this Bot.',
+    'Off. If others use this Bot, they get it only when you turn this on.', 'Shared with {names}. They cannot use it unless you turn this on.',
+    'On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot.',
+    'No Bots', 'Connectors', 'Done', 'Composio did not give a session id', 'Say whether to turn it on or off', 'Say whose use it is: yours or other people\'s',
   ]) assert.ok(typeof DICTIONARY.zh[key] === 'string' && DICTIONARY.zh[key] !== '', key)
   const off = installLocale({ register: () => () => {}, bind: () => key => key, getLocale: () => ({ active: 'zh' }) })
   try {
-    assert.equal(hostText('Writer is shared with Bob, Ann, so it cannot use connectors. Stop sharing it first.'), 'Writer 已共享给 Bob, Ann，所以不能使用连接器。请先停止共享。')
+    assert.equal(hostText('Turn composio on for Writer first: other people only get what you have.'), '请先为 Writer 开启 composio：别人只能得到你已有的权限。')
   } finally {
     off()
   }

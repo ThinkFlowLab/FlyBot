@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SOURCE_KIND } from './constants.js'
+import { OWNER, OTHER, SCHEDULED } from './turn-origin.js'
 
 // Text from outside the team, marked so the Bot treats it as data. Marker fragments are
 // removed until none is left, so a nested "</untrusted-</untrusted-message>message>"
@@ -83,6 +84,18 @@ export function install(rt) {
     return `[Message from ${fromName}]`
   }
 
+  // Whose request a relay is (turn-origin.js). A friend's message is someone else's; the host's own
+  // (no sender: the user through the UI, a group round, a secret card) is the owner's; a Bot's is the
+  // request that Bot's own turn answered, and only when both Bots have one owner. A Bot that cannot say
+  // (no running turn found, or a sender that is not a local Bot) passes on nothing.
+  const originOf = ({ from, to, fromId, remote, given }) => {
+    if (remote?.handle) return OTHER
+    if (fromId === undefined) return given === OTHER ? OTHER : OWNER
+    if (from === undefined || to === undefined || from.remote !== undefined || from.ownerId !== to.ownerId) return OTHER
+    const said = given ?? rt.botTurnOrigin?.(fromId)
+    return said === OWNER || said === SCHEDULED ? OWNER : OTHER
+  }
+
   // Roles recorded as team exchanges.
   const EXCHANGE_ROLES = new Set(['request', 'reply', 'stopped'])
 
@@ -94,7 +107,7 @@ export function install(rt) {
   // exchange is recorded already too. `askedBy` is the member whose @mention called a
   // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
   // from; the reply goes back to that Session (turns.js).
-  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, fromName: givenName, untrusted = false, remote, attachments }) {
+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin }) {
     const from = rt.botOf(fromId)
     const to = rt.botOf(toId)
     if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -102,6 +115,7 @@ export function install(rt) {
     // `untrusted` text is fenced so the Bot reads it as data, not instructions.
     const fromName = from?.name ?? (givenName === undefined ? 'You' : untrusted ? cleanName(givenName) : givenName)
     const room = rt.roomOf(roomId)
+    const origin = originOf({ from, to, fromId, remote, given: givenOrigin })
     // Session events reject `undefined` members, so optional fields are omitted instead.
     const source = {
       kind: SOURCE_KIND,
@@ -110,6 +124,8 @@ export function install(rt) {
       exchangeId,
       senderName: fromName,
       hop,
+      // Whose request this is, for the connector tools (turn-origin.js): read by the receiving turn.
+      origin,
       ...(fromId ? { senderSessionId: fromId } : {}),
       ...(replyTo ? { replyTo } : {}),
       ...(roomId ? { roomId } : {}),

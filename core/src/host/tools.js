@@ -193,7 +193,7 @@ export function install(rt) {
       const toUser = args.reply_to === 'user'
       const working = rt.live.get(chat)?.turn !== undefined
       const steer = args.when !== 'queue' && !toUser
-      const exchangeId = await rt.deliver({ fromId: sender.id, toId: target.id, text: args.message, role: 'request', hop, steer, ...(toUser ? { audience: 'user' } : callerRoom(exec)) })
+      const exchangeId = await rt.deliver({ fromId: sender.id, toId: target.id, text: args.message, role: 'request', hop, steer, origin: rt.agentOrigin?.(exec.agent), ...(toUser ? { audience: 'user' } : callerRoom(exec)) })
       // FlyBot send policies (flybot.js) may hold the message for the owner or refuse it.
       const outcome = rt.flybot?.outcomeOf(exchangeId)
       if (outcome?.action === 'deny') refuse(`Not sent to ${target.name}: ${outcome.reason}`)
@@ -241,7 +241,7 @@ export function install(rt) {
         agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
       }
       const why = String(args.reason ?? '').trim() || 'Stop what you are doing; the previous turn was ended on purpose. Acknowledge briefly.'
-      await rt.deliver({ fromId: sender.id, toId: target.id, text: why, role: 'stopped', ...callerRoom(exec) })
+      await rt.deliver({ fromId: sender.id, toId: target.id, text: why, role: 'stopped', origin: rt.agentOrigin?.(exec.agent), ...callerRoom(exec) })
       return `Stopped ${target.name} in ${running.map(whereOf).join(' and ')}. It is told why in a new turn, whose reply comes back to you.`
     },
   }))

@@ -567,7 +567,7 @@ export function apply(ctx) {
     saveCapability: capability => after(call('capability-save', capability)),
     deleteCapability: name => after(call('capability-delete', { name })),
     approveCapability: name => after(call('capability-approve', { name })),
-    setBotConnector: (botId, connector, enabled) => after(call('bot-connectors', { botId, connector, enabled })),
+    setBotConnector: (botId, connector, enabled, scope = 'owner') => after(call('bot-connectors', { botId, connector, enabled, scope })),
     setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
     schedules: () => call('schedules'),
     scheduleCreate: task => call('schedule-create', task),

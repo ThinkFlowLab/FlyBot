@@ -802,7 +802,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const working = rt.live.get(chat)?.turn !== undefined
        const steer = args.when !== 'queue' && !toUser
 -      await rt.deliver({ fromId: sender.id, toId: target.id, text: args.message, role: 'request', hop, steer, ...(toUser ? { audience: 'user' } : callerRoom(exec)) })
-+      const exchangeId = await rt.deliver({ fromId: sender.id, toId: target.id, text: args.message, role: 'request', hop, steer, ...(toUser ? { audience: 'user' } : callerRoom(exec)) })
++      const exchangeId = await rt.deliver({ fromId: sender.id, toId: target.id, text: args.message, role: 'request', hop, steer, origin: rt.agentOrigin?.(exec.agent), ...(toUser ? { audience: 'user' } : callerRoom(exec)) })
 +      // FlyBot send policies (flybot.js) may hold the message for the owner or refuse it.
 +      const outcome = rt.flybot?.outcomeOf(exchangeId)
 +      if (outcome?.action === 'deny') refuse(`Not sent to ${target.name}: ${outcome.reason}`)
@@ -819,6 +819,15 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (target.id === sender.id) refuse('You cannot stop yourself.')
        const { running } = activeSessions(target.id)
        if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
+@@ -162,7 +162,7 @@ export function install(rt) {
+         agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
+       }
+       const why = String(args.reason ?? '').trim() || 'Stop what you are doing; the previous turn was ended on purpose. Acknowledge briefly.'
+-      await rt.deliver({ fromId: sender.id, toId: target.id, text: why, role: 'stopped', ...callerRoom(exec) })
++      await rt.deliver({ fromId: sender.id, toId: target.id, text: why, role: 'stopped', origin: rt.agentOrigin?.(exec.agent), ...callerRoom(exec) })
+       return `Stopped ${target.name} in ${running.map(whereOf).join(' and ')}. It is told why in a new turn, whose reply comes back to you.`
+     },
+   }))
 @@ -257,7 +257,7 @@ export function install(rt) {
      }
      return { bots, unknown }

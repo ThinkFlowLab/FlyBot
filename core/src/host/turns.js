@@ -5,6 +5,7 @@
 import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
 import { textOf } from './text.js'
 import { reminderText } from './schedules.js'
+import { OTHER, combine, originOfSource, settled } from './turn-origin.js'
 
 // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
 // error row, an AUTH failure loses its message: providers may echo part of the key.
@@ -51,9 +52,10 @@ export function install(rt) {
 
   // The retry goes where the turn's trigger came from: a group round's waiter or a
   // Bot's request keeps its exchange; anything else is a nudge in the Bot's own chat.
-  const retryWrittenCall = (id, info) => {
+  const retryWrittenCall = (id, info, origin) => {
     const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
     return rt.deliver({
+      origin,
       ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
       toId: rt.selfOf(id),
       sessionId: id,
@@ -70,7 +72,7 @@ export function install(rt) {
     })
   }
 
-  /** @type {Map<string, {turn?:number, pending?:any, info?:any, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
+  /** @type {Map<string, {turn?:number, pending?:any, info?:any, origin?:string, next?:string, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
   const live = new Map()
   /** @type {Map<string, {sessionId:string, resolve:(text:string|null)=>void, fail:(failure:any)=>void, touch:()=>void, approval:()=>void}>} member turn waiters keyed by exchange id */
   const roomWaiters = new Map()
@@ -306,6 +308,10 @@ export function install(rt) {
         entry.answers = false
         entry.opened = false
         entry.joined = []
+        // Whose request the turn answers (turn-origin.js): what its messages said before it began.
+        entry.origin = entry.next
+        entry.next = undefined
+        rt.connectorTurnChanged?.(id)
         if (entry.pending !== undefined) {
           claimTrigger(id, entry, entry.pending)
           entry.pending = undefined
@@ -313,6 +319,15 @@ export function install(rt) {
         break
       case 'user/message': {
         const source = event.data?.source
+        // The strictest verdict of everything the turn took in; one 'other' stays for the whole turn.
+        const verdict = originOfSource(source, rt.botOf(rt.selfOf(id)))
+        if (verdict !== undefined) {
+          if (entry.turn === undefined) entry.next = combine(entry.next, verdict)
+          else if (combine(entry.origin, verdict) !== entry.origin) {
+            entry.origin = combine(entry.origin, verdict)
+            rt.connectorTurnChanged?.(id)
+          }
+        }
         // A message that shares a step with a bare handoff package is what the turn
         // answers, so the turn is not a hidden acknowledgement.
         const bare = info => info?.handoff === true && info.resume !== true
@@ -408,6 +423,9 @@ export function install(rt) {
       case 'turn/end': {
         setActivity(id, undefined)
         const info = entry.info
+        // What the turn's replies and requests pass on: a Bot answering a friend's request does not
+        // hand the owner's connector tools to whoever reads the answer.
+        const origin = settled(rt, id, entry) ?? OTHER
         const joined = entry.joined ?? []
         const texts = entry.texts
         const { lastText, lastCalled } = entry
@@ -423,6 +441,8 @@ export function install(rt) {
         entry.calls = undefined
         entry.lastText = undefined
         entry.lastCalled = undefined
+        entry.origin = undefined
+        rt.connectorTurnChanged?.(id)
         const reason = event.data?.reason
         const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
         if (failure !== undefined) noteTurnFailure(id, failure)
@@ -433,7 +453,7 @@ export function install(rt) {
         // the call.
         const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
         const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
-        if (retry) void retryWrittenCall(id, info).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
+        if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
         const replyText = () => {
           const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
           return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
@@ -465,6 +485,7 @@ export function install(rt) {
               role: 'reply',
               hop: (source.hop ?? 0) + 1,
               replyTo: source.exchangeId,
+              origin,
             }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
           } else if (reply !== '' || reason?.kind === 'aborted') {
             // A turn stopped before it could answer still owes the sender a line,
@@ -477,6 +498,7 @@ export function install(rt) {
               role: 'reply',
               hop: (source.hop ?? 0) + 1,
               replyTo: source.exchangeId,
+              origin,
             }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
           }
         }
@@ -519,6 +541,7 @@ export function install(rt) {
             hop: request.info.hop ?? 0,
             exchangeId: request.info.exchangeId,
             ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
+            origin: request.info.origin,
             deferred: true,
           }).catch(error => rt.warn('ds-bot: deferred request delivery failed: %s', error))
         }
@@ -527,5 +550,15 @@ export function install(rt) {
     }
   })
 
-  Object.assign(rt, { live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, callDetail, stopRoomTurn })
+  // Whose request the Bot is working on across the turns it runs now: the owner's only when every
+  // one of them is; undefined when it runs none.
+  const botTurnOrigin = (botId) => {
+    let found
+    for (const [id, entry] of live) {
+      if (entry.turn !== undefined && rt.selfOf(id) === botId) found = combine(found, settled(rt, id, entry) ?? OTHER)
+    }
+    return found
+  }
+
+  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, callDetail, stopRoomTurn })
 }

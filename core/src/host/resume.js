@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SOURCE_KIND } from './constants.js'
+import { OTHER, settled } from './turn-origin.js'
 
 // Long enough for DSH to finish opening its workspaces after a start.
 const RESUME_DELAY_MS = 3000
@@ -51,7 +52,7 @@ export function install(rt) {
   // What the last run left; read before this run notes anything.
   let interrupted = readNotes(file)
 
-  /** @type {Record<string, {botId:string, roomId?:string, since:number, trigger?:any, approval?:{tool:string, reason:string}, resumed?:boolean}>} */
+  /** @type {Record<string, {botId:string, roomId?:string, since:number, origin?:string, trigger?:any, approval?:{tool:string, reason:string}, resumed?:boolean}>} */
   let turns = {}
   /** @type {Record<string, {at:number, args:any}[]>} deliveries no turn has taken up, by Session */
   let queued = {}
@@ -75,6 +76,10 @@ export function install(rt) {
       await mkdir(home, { recursive: true })
       await writeFile(file, snapshot, 'utf8')
     }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
+  }
+  const originNote = (id) => {
+    const origin = settled(rt, id)
+    return origin === undefined ? {} : { origin }
   }
   const update = (id, change) => {
     const next = change(turns[id])
@@ -137,10 +142,13 @@ export function install(rt) {
       case 'turn/start': {
         const owner = rt.groupOwners.get(id)
         const botId = owner?.botId ?? rt.chatOwners.get(id)
-        update(id, () => ({ botId, ...(owner ? { roomId: owner.roomId } : {}), since: event.time ?? Date.now() }))
+        update(id, () => ({ botId, ...(owner ? { roomId: owner.roomId } : {}), since: event.time ?? Date.now(), ...originNote(id) }))
         break
       }
       case 'user/message': {
+        // Whose request the turn answers, so a resumed turn keeps its connector tools only when it was the owner's.
+        const note = originNote(id)
+        update(id, record => (record === undefined || record.origin === note.origin ? record : (({ origin: _, ...rest }) => ({ ...rest, ...note }))(record)))
         if (event.data?.source?.kind !== SOURCE_KIND) break
         // turns.js, installed earlier, has already claimed the turn's trigger.
         const info = rt.live.get(id)?.info
@@ -173,17 +181,17 @@ export function install(rt) {
       // A turn already picked up once and cut off again stays stopped: a restart loop
       // must not run it forever.
       if (record.resumed) return
-      await rt.deliver({ toId: bot.id, sessionId: room.sessions?.[bot.id] ?? sessionId, role: 'room', roomId: room.id, note: 'picking up after a restart', resumed: true, text, ...(record.trigger?.askedBy ? { askedBy: record.trigger.askedBy } : {}) })
+      await rt.deliver({ toId: bot.id, sessionId: room.sessions?.[bot.id] ?? sessionId, role: 'room', roomId: room.id, note: 'picking up after a restart', resumed: true, origin: record.origin ?? OTHER, text, ...(record.trigger?.askedBy ? { askedBy: record.trigger.askedBy } : {}) })
       return
     }
     if (record.resumed) return
     const trigger = record.trigger
     if ((trigger?.role === 'request' || trigger?.role === 'stopped') && trigger.senderSessionId && trigger.audience !== 'user' && rt.botOf(trigger.senderSessionId)) {
       // The sender still waits for this turn's answer, so it goes on under the same exchange.
-      await rt.deliver({ fromId: trigger.senderSessionId, toId: bot.id, role: trigger.role, hop: trigger.hop ?? 0, ...(trigger.exchangeId ? { exchangeId: trigger.exchangeId } : {}), ...(trigger.senderRoomId ? { fromRoomId: trigger.senderRoomId } : {}), resumed: true, text })
+      await rt.deliver({ fromId: trigger.senderSessionId, toId: bot.id, role: trigger.role, hop: trigger.hop ?? 0, ...(trigger.exchangeId ? { exchangeId: trigger.exchangeId } : {}), ...(trigger.senderRoomId ? { fromRoomId: trigger.senderRoomId } : {}), resumed: true, origin: record.origin ?? OTHER, text })
       return
     }
-    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, text })
+    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, origin: record.origin ?? OTHER, text })
   }
 
   // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH

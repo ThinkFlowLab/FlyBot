@@ -6,6 +6,7 @@
     "src/host/prompt.js",
     "src/host/time-context.js",
     "src/host/turns.js",
+    "src/host/resume.js",
     "src/shared/mentions.js",
     "src/client/feedback.js",
     "src/client/text.js",
@@ -28,6 +29,7 @@
     "src/host/usage.js",
     "src/client/connectors.js",
     "test/connectors.test.js",
+    "test/work-dir.test.js",
     "README.md"
   ],
   "0002-flybot-api-host": [

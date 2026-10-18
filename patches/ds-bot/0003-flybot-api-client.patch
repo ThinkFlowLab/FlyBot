@@ -813,7 +813,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      saveCapability: capability => after(call('capability-save', capability)),
      deleteCapability: name => after(call('capability-delete', { name })),
      approveCapability: name => after(call('capability-approve', { name })),
-+    setBotConnector: (botId, connector, enabled) => after(call('bot-connectors', { botId, connector, enabled })),
++    setBotConnector: (botId, connector, enabled, scope = 'owner') => after(call('bot-connectors', { botId, connector, enabled, scope })),
      setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
      schedules: () => call('schedules'),
      scheduleCreate: task => call('schedule-create', task),
@@ -1660,7 +1660,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
-@@ -490,7 +490,10 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -490,7 +490,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-connector-form-row{display:flex;align-items:center;gap:6px}
@@ -1668,6 +1668,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
 +.bt-connector-uses{padding-left:48px;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
 +.bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
++.bt-connector-others{padding-left:20px}
  .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
  
  /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the

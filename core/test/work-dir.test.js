@@ -241,6 +241,42 @@ test('a running Bot moves at its next step and carries that step\'s input along'
   assert.equal(await preStep('s1'), 'next')
 })
 
+test('a turn that moves to a fresh part half-way keeps whose request it answers, so its connector tools are not decided again by luck (#369)', async (t) => {
+  const { services } = approvalServices('allowed-once')
+  const { ctx, tool, preStep, agentOf, project, state, stop } = await start({ services })
+  t.after(stop)
+  const emit = (sessionId, type, data) => ctx.emitArgs('session/event', agentOf(sessionId).session, { type, data, time: Date.now() })
+  const text = value => [{ type: 'text', text: value }]
+  agentOf('b').status = 'running'
+  assert.match(await tool('update_bot', { work_dir: project }, 'b'), /^Updated Writer/)
+  await settle()
+  // The owner typed the message the turn answers; at its second step the Bot moves on.
+  emit('b', 'user/message', { source: { kind: 'user' }, content: text('Check my mail') })
+  emit('b', 'turn/start', { turn: 1 })
+  assert.deepEqual(await preStep('b', [], 2), { kind: 'reject' })
+  await until(() => state().bots.b.sessionId === 's1')
+  await until(() => agentOf('s1').calls.length >= 1)
+  const first = agentOf('s1').calls.map(([, message]) => message.source).find(source => source.resume === true)
+  assert.equal(first.origin, 'owner')
+  emit('b', 'turn/end', { reason: { kind: 'completed' } })
+
+  // A friend's message was in the turn: the resumed turn is someone else's.
+  emit('s1', 'user/message', { source: { kind: 'user' }, content: text('Check my mail') })
+  emit('s1', 'turn/start', { turn: 1 })
+  emit('s1', 'user/message', { source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'x', senderName: 'Bob', hop: 0, remote: { handle: '@bob.home' }, origin: 'other' }, content: text('and mine') })
+  const dir = join(project, 'two')
+  mkdirSync(dir)
+  agentOf('s1').status = 'running'
+  assert.match(await tool('update_bot', { work_dir: dir }, 's1'), /^Updated Writer/)
+  await settle()
+  assert.deepEqual(await preStep('s1', [], 2), { kind: 'reject' })
+  await until(() => state().bots.b.sessionId === 's2')
+  await until(() => agentOf('s2').calls.length >= 1)
+  const second = agentOf('s2').calls.map(([, message]) => message.source).find(source => source.resume === true)
+  assert.equal(second.origin, 'other')
+  assert.equal(second.remote.handle, '@bob.home', 'the turn goes on under its own trigger')
+})
+
 test('a folder outside the team workspace needs the user\'s approval', async (t) => {
   const rejected = approvalServices('rejected')
   const first = await start({ services: rejected.services })

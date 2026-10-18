@@ -139,12 +139,29 @@ export function mayShareRoom(state, room, botId) {
 
 const label = value => String(value ?? '').replace(/\p{Cc}/gu, ' ').trim().slice(0, 60)
 
+// The people and Bots in one room that are not the Bot's owner's own (a friend's Bot, a person who
+// is not its owner, a Bot of another owner, a room joined by code), as short labels.
+export function othersInRoom(state, room, bot) {
+  const who = new Set()
+  if (room === undefined || bot === undefined || bot.remote !== undefined) return []
+  if ((room.members ?? []).includes(bot.id) && isCodeJoined(state, room.id, bot.id)) who.add('a room joined by code')
+  for (const p of currentParticipants(room)) {
+    if (p.kind === 'bot' && p.remote === true) who.add(label(p.displayName) || label(p.handle) || 'a friend')
+    else if (p.kind === 'human' && bot.ownerId !== undefined && p.id !== bot.ownerId) who.add(label(p.displayName) || 'another person')
+  }
+  for (const memberId of room.members ?? []) {
+    const other = state.bots?.[memberId]
+    if (other !== undefined && other.remote === undefined && other.ownerId !== bot.ownerId) who.add(label(other.name) || 'another person')
+  }
+  who.delete('')
+  return [...who]
+}
+
 // Everyone a local Bot is shared with right now, as short labels for the owner to read: the
-// friends and members it has a grant to, and the other people and Bots in the rooms it sits in
-// (a friend's Bot, a person who is not its owner, a Bot of another owner, a room joined by code).
-// Empty means it is the owner's alone. Nothing here decides reach; it is the single place that
-// says "this Bot is shared", which connector-access.js uses to keep the owner's connected apps
-// away from it (#335).
+// friends and members it has a grant to, and the other people and Bots in the rooms it sits in.
+// Empty means it is the owner's alone. Nothing here decides reach. It says "this Bot is shared"
+// for the Connectors page, and "this room has other people in it" decides whose request a Bot
+// turn in that room answers (connector-access.js, #335).
 export function sharedWith(state, botId) {
   const bot = state?.bots?.[botId]
   if (bot === undefined || bot.remote !== undefined) return []
@@ -152,15 +169,7 @@ export function sharedWith(state, botId) {
   for (const grant of grantsOf(state, botId)) who.add(label(grant.name) || label(grant.grantee) || 'a friend')
   for (const room of Object.values(state?.rooms ?? {})) {
     if (!(room.members ?? []).includes(botId)) continue
-    if (isCodeJoined(state, room.id, botId)) who.add('a room joined by code')
-    for (const p of currentParticipants(room)) {
-      if (p.kind === 'bot' && p.remote === true) who.add(label(p.displayName) || label(p.handle) || 'a friend')
-      else if (p.kind === 'human' && bot.ownerId !== undefined && p.id !== bot.ownerId) who.add(label(p.displayName) || 'another person')
-    }
-    for (const memberId of room.members ?? []) {
-      const other = state.bots?.[memberId]
-      if (other !== undefined && other.remote === undefined && other.ownerId !== bot.ownerId) who.add(label(other.name) || 'another person')
-    }
+    for (const name of othersInRoom(state, room, bot)) who.add(name)
   }
   who.delete('')
   return [...who]
@@ -227,6 +236,7 @@ export function install(rt) {
   rt.hasGrant = (botId, peer, roomId) => hasGrant(state, botId, peer, roomId)
   rt.hasAnyGrant = botId => hasAnyGrant(state, botId)
   rt.sharedWith = botId => sharedWith(state, botId)
+  rt.othersInRoom = (room, botId) => othersInRoom(state, room, state.bots?.[botId])
   rt.isGranted = (botId, peer, roomId) => isGranted(state, botId, peer, roomId)
   rt.isCodeJoined = (roomId, botId) => isCodeJoined(state, roomId, botId)
   rt.mayShareRoom = (room, botId) => mayShareRoom(state, room, botId)
@@ -252,9 +262,6 @@ export function install(rt) {
       }
     })
     const before = hasAnyGrant(state, botId)
-    // A Bot that is being shared drops its connector switches (#335); the owner turns them on
-    // again after it is no longer shared.
-    if (next.length > 0) delete bot.connectors
     state.grants ??= {}
     const changed = !grantsEqual(state.grants[botId], next)
     if (next.length) state.grants[botId] = next
