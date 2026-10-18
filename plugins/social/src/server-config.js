@@ -259,11 +259,13 @@ export function createServerController({ base, flybot, start, registerUnavailabl
         } catch (failure) {
           // Back to the server that worked: its identities, its files, its override.
           stop()
+          // A failed start leaves nothing of the new server worth parking: a failed park changes nothing here.
           if (target.server) await park(target.server).catch(() => undefined)
           writeOverride(previous)
           if (previous.server) await restore(previous.server)
           current = previous
           lastProbe = undefined
+          // launch() has already recorded the failure (state, error, the unavailable answers); the message below reports it.
           await launch(previous).catch(() => undefined)
           const why = cleanLine(failure?.message ?? failure, 200) || 'the server did not accept this FlyBot'
           throw refused(`Could not connect to the new server: ${why} The previous server is back${state === 'connected' ? '' : ', but it did not reconnect either'}.`, 'switch_failed')
