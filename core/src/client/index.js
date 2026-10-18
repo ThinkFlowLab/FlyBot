@@ -8,7 +8,7 @@ import { MENTION_ORIGIN, currentPart, landingPart } from './text.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 import { installBrandChrome, installTabTitle } from './brand.js'
 import { lookOf } from './mark.js'
-import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
+import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
 import { HeaderPill } from './header.js'
 import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 import { CHATS_SOURCE, atSources } from './at-menu.js'
@@ -560,7 +560,8 @@ export function apply(ctx) {
     secretCancel: requestId => after(call('secret-cancel', { requestId })),
     secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
     secretDelete: name => after(call('secret-delete', { name })),
-    connectorConnect: (id, token) => after(call('connector-connect', { id, token })),
+    connectorConnect: (id, token, apps) => after(call('connector-connect', { id, token, ...(apps !== undefined ? { apps } : {}) })),
+    connectorApps: (id, apps) => after(call('connector-apps', { id, apps })),
     connectorDisconnect: id => after(call('connector-disconnect', { id })),
     connectorRetry: id => after(call('connector-retry', { id })),
     saveCapability: capability => after(call('capability-save', capability)),
@@ -790,7 +791,7 @@ export function apply(ctx) {
     shadow('sidebar.brand.mark', { priority: -10 }, BrandMark),
     shadow('sidebar.brand.name', { priority: -10 }, BrandName),
     shadow('sidebar.footer.action', { id: 'bot-account', order: -200, inject: face }, FooterAccount),
-    shadow('sidebar.footer.action', { id: 'bot-connect', order: -100, inject: face }, ConnectPlugins),
+    shadow('sidebar.footer.action', { id: 'bot-connect', order: -100, inject: face }, ConnectApps),
     shadow('settings.trigger', { priority: -10 }, YouAvatar),
     // At priority -10 the whale wins the seat over a shell account plugin's own
     // launcher (the Desktop's "··· More"), which comes back in Agent mode.

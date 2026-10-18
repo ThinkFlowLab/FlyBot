@@ -373,6 +373,14 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          }
          case 'folders':
          case 'folder-pick':
+@@ -231,6 +231,7 @@ export function install(rt) {
+           await rt.load()
+           return ok(await rt.secretEndpoint(endpoint, body))
+         case 'connector-connect':
++        case 'connector-apps':
+         case 'connector-disconnect':
+         case 'connector-retry':
+           await rt.load()
 @@ -242,10 +242,15 @@ export function install(rt) {
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))

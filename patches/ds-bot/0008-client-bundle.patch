@@ -25,7 +25,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -84,14 +84,53 @@ var ZH = {
+@@ -84,14 +84,54 @@ var ZH = {
    "Remove Main Bot role": "取消主 Bot",
    "Bot settings": "Bot 设置",
    "Create group chat": "新建群聊",
@@ -75,12 +75,36 @@ diff --git a/client.js b/client.js
 +  "Expand": "展开",
 +  "Collapse": "收起",
    "Setting up your Main Bot…": "正在设置你的主 Bot…",
-   "Connect plugins": "连接插件",
+-  "Connect plugins": "连接插件",
 -  "Plugin compatibility is not fully verified.": "插件兼容性未完全验证",
++  "Connect apps": "连接应用",
++  Plugins: "插件",
    "Automation tasks": "自动化任务",
    Connectors: "连接器",
    "Search connectors": "搜索连接器",
-@@ -145,13 +145,15 @@ var ZH = {
+@@ -141,17 +141,37 @@ var ZH = {
+   "GitHub addresses must start with https://": "GitHub 地址必须以 https:// 开头",
+   "This DSH cannot load connectors": "这个 DSH 不能加载连接器",
+   "No such connector": "没有这个连接器",
++  "Gmail, Slack, Calendar, Notion and many more apps, through one Composio key": "Gmail、Slack、日历、Notion 等众多应用，一个 Composio key 就能连",
++  "Connected: {apps}": "已连接：{apps}",
++  "Composio API key": "Composio API key",
++  "Get a Composio API key": "去 Composio 获取 API key",
++  "More apps": "更多应用",
++  "More apps: type Composio app names, separated by commas": "更多应用：输入 Composio 应用名，用逗号隔开",
++  "Choose apps": "选择应用",
++  "Pick at least one app": "至少选一个应用",
++  'An app name has only lowercase letters, digits, "_" and "-"': "应用名只能含小写字母、数字、“_”和“-”",
++  "The first time a Bot uses an app, it shows a sign-in link in the chat.": "Bot 第一次用某个应用时，会在聊天里给出登录链接。",
++  "Paste a key first": "请先粘贴 key",
++  "Could not reach Composio": "连不上 Composio",
++  "Composio did not accept this API key": "Composio 不接受这个 API key",
++  "Composio did not give an MCP address": "Composio 没有返回 MCP 地址",
++  "Composio gave an MCP address on another host": "Composio 返回的 MCP 地址不在它自己的域名上",
++  "Composio addresses must start with https://": "Composio 地址必须以 https:// 开头",
++  "Connect Composio first": "请先连接 Composio",
++  "This connector has no apps to pick": "这个连接器没有可选的应用",
+   "Classic Agent mode": "经典 Agent 模式",
    "Switch": "切换",
    "Switch to classic Agent mode": "切换经典 Agent 模式",
    "{model} is not available anymore. Pick another model for me.": "{model} 已经不可用了。给我换一个模型吧。",
@@ -663,10 +687,15 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,482 @@ function maskOf(shape) {
- }
- var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
- 
+@@ -1238,9 +1238,485 @@ function maskOf(shape) {
+     mask = svgUrl(`<mask id="e" ${maskBox(def.size)}>${holes(def, def.eyes.map(eyeMarkup).join("").replaceAll('class="bt-eye"', 'fill="#000"'))}</mask>${def.wrap ? `<g transform="${def.wrap}">${body}</g>` : body}`, def.size);
+     maskCache.set(shape, mask);
+   }
+-  return mask;
++  return mask;
++}
++var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
++
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -1116,7 +1145,8 @@ diff --git a/client.js b/client.js
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
 +    ) : null
 +  );
-+}
+ }
+-var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 +var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 +var FLYBOT_CSS = `
 +.bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
@@ -1142,10 +1172,9 @@ diff --git a/client.js b/client.js
 +.bt-flybot-pointer-note { opacity: .65; white-space: nowrap; }
 +.bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 +`;
-+
+ 
  // src/client/sources.js
  function createSource(initial) {
-   let value = initial;
 @@ -1262,7 +1262,7 @@ function createSource(initial) {
      }
    };
@@ -1492,6 +1521,14 @@ diff --git a/client.js b/client.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
+@@ -2308,6 +2308,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+ .bt-connector-actions{flex:none;display:flex;gap:6px}
+ .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+ .bt-connector-form-row{display:flex;align-items:center;gap:6px}
++.bt-connector-apps{display:flex;flex-direction:column;gap:8px}
+ .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
+ .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
+ 
 @@ -2427,7 +2427,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
@@ -3312,7 +3349,8 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react7.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -3329,8 +3367,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -4122,16 +4159,18 @@ diff --git a/client.js b/client.js
              type: "button",
              className: "bt-update-go",
              disabled: dshPhase === "installing",
-@@ -5177,60 +5177,24 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -5176,61 +5176,25 @@ function UpdateButton({ useUpdate, actions }) {
+     ), document.body) : null
    );
  }
- function ConnectPlugins({ wide, actions }) {
+-function ConnectPlugins({ wide, actions }) {
 -  const tipId = (0, import_react8.useId)();
 -  const [tip, setTip] = (0, import_react8.useState)(false);
 -  const timer = (0, import_react8.useRef)(0);
 -  const button = (0, import_react8.useRef)(null);
 -  const [box, setBox] = (0, import_react8.useState)(null);
 -  (0, import_react8.useEffect)(() => () => clearTimeout(timer.current), []);
++function ConnectApps({ wide, actions }) {
    if (!wide) return null;
 -  const show = () => {
 -    clearTimeout(timer.current);
@@ -4174,9 +4213,9 @@ diff --git a/client.js b/client.js
 -      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
 -      t("Plugin compatibility is not fully verified.")
 -    ), document.body) : null
-+      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.selectPanel("plugins") },
++      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
 +      (0, import_react9.createElement)(PlugIcon),
-+      t("Connect plugins")
++      t("Connect apps")
 +    )
    );
  }
@@ -4233,6 +4272,14 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (event.target instanceof Element && (event.target.closest(".bt-account-menu") || button.current?.contains(event.target))) return;
+@@ -5342,6 +5342,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
+     [
+       [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],
+       [t("Connectors"), ConnectorIcon, () => actions.openConnectors()],
++      [t("Plugins"), PlugIcon, () => actions.selectPanel("plugins")],
+       [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],
+       [t("Bot settings"), GearIcon, () => actions.openSettings("general")]
+     ],
 @@ -5349,22 +5349,23 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
        [t("Switch to classic Agent mode"), SwitchIcon, () => actions.setSurface("agent")]
      ]
@@ -7596,7 +7643,8 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react24.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: seats.length }) },
 +      seats.map((seat) => (0, import_react24.createElement)(
 +        "div",
@@ -7610,8 +7658,7 @@ diff --git a/client.js b/client.js
 +      ))
 +    ) : null,
 +    face ? null : (0, import_react24.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react24.createElement)(
 +        "div",
@@ -8484,7 +8531,7 @@ diff --git a/client.js b/client.js
      body
    );
  }
-@@ -10157,12 +10157,12 @@ button.bt-us-row:hover{background:var(--bt-hover)}
+@@ -10157,26 +10157,80 @@ button.bt-us-row:hover{background:var(--bt-hover)}
  `;
  
  // src/client/connectors.js
@@ -8492,17 +8539,74 @@ diff --git a/client.js b/client.js
 +var import_react26 = require("react");
  var TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
 -var GitHubMark = () => (0, import_react25.createElement)(
++var COMPOSIO_KEY_URL = "https://platform.composio.dev/";
++var APPS = [
++  ["gmail", "Gmail"],
++  ["googlecalendar", "Google Calendar"],
++  ["googledrive", "Google Drive"],
++  ["googledocs", "Google Docs"],
++  ["googlesheets", "Google Sheets"],
++  ["outlook", "Outlook"],
++  ["slack", "Slack"],
++  ["microsoft_teams", "Microsoft Teams"],
++  ["discord", "Discord"],
++  ["telegram", "Telegram"],
++  ["whatsapp", "WhatsApp"],
++  ["notion", "Notion"],
++  ["linear", "Linear"],
++  ["jira", "Jira"],
++  ["asana", "Asana"],
++  ["trello", "Trello"],
++  ["todoist", "Todoist"],
++  ["airtable", "Airtable"],
++  ["dropbox", "Dropbox"],
++  ["hubspot", "HubSpot"],
++  ["salesforce", "Salesforce"],
++  ["stripe", "Stripe"],
++  ["zoom", "Zoom"],
++  ["calendly", "Calendly"],
++  ["figma", "Figma"],
++  ["twitter", "X (Twitter)"],
++  ["youtube", "YouTube"]
++];
++var KNOWN = new Set(APPS.map(([slug]) => slug));
++var appName = (slug) => APPS.find(([id]) => id === slug)?.[1] ?? slug;
 +var GitHubMark = () => (0, import_react26.createElement)(
    "svg",
    { width: 20, height: 20, viewBox: "0 0 16 16", fill: "currentColor", "aria-hidden": true },
 -  (0, import_react25.createElement)("path", { d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" })
 +  (0, import_react26.createElement)("path", { d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" })
  );
- var MARKS = { github: GitHubMark };
- var ABOUT = { github: () => t("Repositories, issues, and pull requests") };
-@@ -10173,10 +10173,10 @@ function statusText2(connector) {
+-var MARKS = { github: GitHubMark };
+-var ABOUT = { github: () => t("Repositories, issues, and pull requests") };
++var MARKS = { github: GitHubMark, composio: ConnectorIcon };
++var ABOUT = {
++  github: () => t("Repositories, issues, and pull requests"),
++  composio: () => t("Gmail, Slack, Calendar, Notion and many more apps, through one Composio key")
++};
+ function statusText2(connector) {
+   if (connector.state === "connecting") return t("Connecting…");
+   if (connector.state === "error") return t("Could not connect: {error}", { error: connector.error ?? "" });
++  if (connector.state === "ready" && connector.apps?.length > 0) return t("Connected: {apps}", { apps: connector.apps.map(appName).join(", ") });
+   if (connector.state === "ready") return connector.account ? t("Connected as {account}", { account: connector.account }) : t("Connected");
    return ABOUT[connector.id]?.() ?? "";
  }
++function AppPicker({ apps, onChange }) {
++  const [more, setMore] = (0, import_react26.useState)(() => apps.filter((app) => !KNOWN.has(app)).join(", "));
++  const picked = new Set(apps);
++  const toggle = (slug) => onChange(picked.has(slug) ? apps.filter((app) => app !== slug) : [...apps, slug]);
++  const typed = (text) => {
++    setMore(text);
++    const extra = text.split(/[\s,]+/).map((app) => app.trim().toLowerCase()).filter((app) => app !== "" && !KNOWN.has(app));
++    onChange([.../* @__PURE__ */ new Set([...apps.filter((app) => KNOWN.has(app)), ...extra])]);
++  };
++  return (0, import_react26.createElement)(
++    "div",
++    { className: "bt-connector-apps" },
++    (0, import_react26.createElement)("div", { className: "bt-states" }, APPS.map(([slug, name]) => (0, import_react26.createElement)("button", { key: slug, type: "button", className: "bt-state", "aria-pressed": picked.has(slug), onClick: () => toggle(slug) }, name))),
++    (0, import_react26.createElement)("input", { className: "bt-input", value: more, spellCheck: false, "aria-label": t("More apps"), placeholder: t("More apps: type Composio app names, separated by commas"), onChange: (event) => typed(event.target.value) })
++  );
++}
  function ConnectorRow({ connector, actions }) {
 -  const [form, setForm] = (0, import_react25.useState)(false);
 -  const [token, setToken] = (0, import_react25.useState)("");
@@ -8510,19 +8614,45 @@ diff --git a/client.js b/client.js
 -  const [error, setError] = (0, import_react25.useState)(null);
 +  const [form, setForm] = (0, import_react26.useState)(false);
 +  const [token, setToken] = (0, import_react26.useState)("");
++  const [apps, setApps] = (0, import_react26.useState)(() => connector.apps ?? []);
++  const [picking, setPicking] = (0, import_react26.useState)(false);
 +  const [busy, setBusy] = (0, import_react26.useState)(false);
 +  const [error, setError] = (0, import_react26.useState)(null);
    const run = (task, after) => {
      setBusy(true);
      setError(null);
-@@ -10193,63 +10193,63 @@ function ConnectorRow({ connector, actions }) {
+@@ -10184,72 +10184,106 @@ function ConnectorRow({ connector, actions }) {
+       after?.();
+     }, (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
    };
++  const gateway = connector.id === "composio";
+   const connect = () => {
+     if (busy || token.trim() === "") return;
+-    void run(actions.connectorConnect(connector.id, token), () => {
++    if (gateway && apps.length === 0) {
++      setError(t("Pick at least one app"));
++      return;
++    }
++    void run(actions.connectorConnect(connector.id, token, gateway ? apps : void 0), () => {
+       setToken("");
+       setForm(false);
+     });
+   };
++  const saveApps = () => {
++    if (busy) return;
++    if (apps.length === 0) {
++      setError(t("Pick at least one app"));
++      return;
++    }
++    void run(actions.connectorApps(connector.id, apps), () => setPicking(false));
++  };
    const on = connector.state !== "off";
    const Mark = MARKS[connector.id];
 -  const row = (0, import_react25.useRef)(null);
-+  const row = (0, import_react26.useRef)(null);
-   useMorph(row, `${form}:${error !== null}:${connector.state}`);
+-  useMorph(row, `${form}:${error !== null}:${connector.state}`);
 -  return (0, import_react25.createElement)(
++  const row = (0, import_react26.useRef)(null);
++  useMorph(row, `${form}:${picking}:${error !== null}:${connector.state}`);
 +  return (0, import_react26.createElement)(
      "div",
      { ref: row, className: "bt-connector", "data-state": connector.state },
@@ -8548,6 +8678,10 @@ diff --git a/client.js b/client.js
 -        connector.state === "error" ? (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t("Try again")) : null,
 -        on ? (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t("Disconnect")) : form ? null : (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setForm(true) }, t("Connect"))
 +        connector.state === "error" ? (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t("Try again")) : null,
++        on && gateway && !picking ? (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
++          setApps(connector.apps ?? []);
++          setPicking(true);
++        } }, t("Choose apps")) : null,
 +        on ? (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t("Disconnect")) : form ? null : (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setForm(true) }, t("Connect"))
        )
      ),
@@ -8557,13 +8691,14 @@ diff --git a/client.js b/client.js
        { className: "bt-connector-form" },
 -      (0, import_react25.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react25.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t("GitHub token"), autoFocus: true })),
 -      (0, import_react25.createElement)(
-+      (0, import_react26.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react26.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t("GitHub token"), autoFocus: true })),
++      (0, import_react26.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react26.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t("Composio API key") : t("GitHub token"), autoFocus: true })),
++      gateway ? (0, import_react26.createElement)(AppPicker, { apps, onChange: setApps }) : null,
 +      (0, import_react26.createElement)(
          "div",
          { className: "bt-connector-form-row" },
 -        (0, import_react25.createElement)("a", { className: "bt-connector-link", href: TOKEN_URL, target: "_blank", rel: "noopener noreferrer" }, t("Create a token on GitHub")),
 -        (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
-+        (0, import_react26.createElement)("a", { className: "bt-connector-link", href: TOKEN_URL, target: "_blank", rel: "noopener noreferrer" }, t("Create a token on GitHub")),
++        (0, import_react26.createElement)("a", { className: "bt-connector-link", href: gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: "_blank", rel: "noopener noreferrer" }, gateway ? t("Get a Composio API key") : t("Create a token on GitHub")),
 +        (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
            setForm(false);
            setToken("");
@@ -8571,6 +8706,22 @@ diff --git a/client.js b/client.js
          } }, t("Cancel")),
 -        (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
 +        (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
++      )
++    ) : null,
++    on && gateway && picking ? (0, import_react26.createElement)(
++      "div",
++      { className: "bt-connector-form" },
++      (0, import_react26.createElement)(AppPicker, { apps, onChange: setApps }),
++      (0, import_react26.createElement)("span", { className: "bt-set-hint" }, t("The first time a Bot uses an app, it shows a sign-in link in the chat.")),
++      (0, import_react26.createElement)(
++        "div",
++        { className: "bt-connector-form-row" },
++        (0, import_react26.createElement)("span", { className: "bt-connector-link" }),
++        (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
++          setPicking(false);
++          setError(null);
++        } }, t("Cancel")),
++        (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || apps.length === 0, onClick: saveApps }, busy ? t("Connecting…") : t("Save"))
        )
      ) : null,
 -    error ? (0, import_react25.createElement)("div", { className: "bt-connector-error", role: "alert" }, error) : null
@@ -10806,6 +10957,16 @@ diff --git a/client.js b/client.js
        }
        writeMode(mode);
        surface.set((state) => ({ ...state, mode }));
+@@ -13819,7 +13819,8 @@ function apply(ctx) {
+     secretCancel: (requestId) => after(call("secret-cancel", { requestId })),
+     secretUpdate: (name, scope) => after(call("secret-update", { name, scope })),
+     secretDelete: (name) => after(call("secret-delete", { name })),
+-    connectorConnect: (id, token) => after(call("connector-connect", { id, token })),
++    connectorConnect: (id, token, apps) => after(call("connector-connect", { id, token, ...apps !== void 0 ? { apps } : {} })),
++    connectorApps: (id, apps) => after(call("connector-apps", { id, apps })),
+     connectorDisconnect: (id) => after(call("connector-disconnect", { id })),
+     connectorRetry: (id) => after(call("connector-retry", { id })),
+     saveCapability: (capability) => after(call("capability-save", capability)),
 @@ -13846,6 +13846,8 @@ function apply(ctx) {
        noteClientError(where, error);
        ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
@@ -10846,7 +11007,15 @@ diff --git a/client.js b/client.js
      installCompiledStyles(MEMBER_CSS, "members"),
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
-@@ -14039,7 +14039,8 @@ function apply(ctx) {
+@@ -14032,14 +14032,15 @@ function apply(ctx) {
+     shadow("sidebar.brand.mark", { priority: -10 }, BrandMark),
+     shadow("sidebar.brand.name", { priority: -10 }, BrandName),
+     shadow("sidebar.footer.action", { id: "bot-account", order: -200, inject: face }, FooterAccount),
+-    shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ConnectPlugins),
++    shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ConnectApps),
+     shadow("settings.trigger", { priority: -10 }, YouAvatar),
+     // At priority -10 the whale wins the seat over a shell account plugin's own
+     // launcher (the Desktop's "··· More"), which comes back in Agent mode.
      shadow("settings.launcher", { priority: -10, inject: face }, AccountLauncher),
      shadow("shell.overlay", { id: "bot", order: 50, inject: face }, Overlays),
      shadow("shell.overlay", { id: "bot-signin", order: 55, inject: face }, DeepSeekSignIn),

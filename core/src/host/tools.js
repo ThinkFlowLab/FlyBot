@@ -604,7 +604,7 @@ export function install(rt) {
     name: 'save_capability',
     description: 'Create or update a shared MCP server, skill, or pack. Changes apply from your next message.',
     parameters: {
-      name: { type: 'string', required: true, description: 'Lowercase letters, digits, and single hyphens, up to 32 characters; "github" is reserved' },
+      name: { type: 'string', required: true, description: 'Lowercase letters, digits, and single hyphens, up to 32 characters; "github" and "composio" are reserved' },
       kind: { type: 'string', required: true, enum: ['mcp', 'skill', 'pack'] },
       description: { type: 'string', description: 'What this capability provides' },
       transport: { type: 'string', enum: ['stdio', 'streamable-http'], description: 'How to reach an MCP server: a local command or an HTTP URL' },

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { RESERVED_NAMES } from './connectors.js'
 
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -7,8 +8,8 @@ const ENSURE_TIMEOUT_MS = 15_000
 
 export function validateCapabilityName(value) {
   const name = String(value ?? '').trim()
-  if (name.length > 32 || !NAME.test(name) || name === 'github') {
-    throw new Error('Use a capability name with lowercase letters, digits, and single hyphens; "github" is reserved.')
+  if (name.length > 32 || !NAME.test(name) || RESERVED_NAMES.includes(name)) {
+    throw new Error('Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.')
   }
   return name
 }

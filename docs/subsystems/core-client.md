@@ -96,6 +96,7 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 ### New-chat menu
 
 - The + menu is a popover anchored next to the sidebar **+** (#195, #173): its `.bt-pane` carries `data-menu` and stays see-through, the menu is a 280px card at the top left with no title row, and a press on the pane outside the card (or Escape) closes it. New chat, Create group chat, Create Bot and plugin rows open their full pane as before.
+- The sidebar footer button (`ConnectApps` in `sidebar.js`, label **Connect apps** / 连接应用) opens Settings > Connectors through `actions.openConnectors()`, the same call as the account menu's **Connectors** row. The shell's plugin panel stays reachable in the Bot surface through the account menu's **Plugins** row (`actions.selectPanel('plugins')`, 插件), without switching to classic Agent mode.
 - Create Bot starts on the Main Bot's model (#230): `startModel()` (`bot-draft.js`) picks the Main Bot's chosen model, else the one it last ran on, when it is served; then `roster.defaultModel`, then the first served model. Only served models are picked, so a provider without a credential is never preselected.
 - Settings say each thing once (#230): the Model and Main Bot cards show no row label that repeats the card title (`SwitchRow` `showLabel: false` keeps the switch's accessible name), the Create Bot dialog has its Back / Close in the header only (the footer Back / Cancel is for the inline form), and the account menu is as wide as its longest item (`width:max-content`, capped to the viewport) instead of cutting `Switch to classic Agent mode`.
 - Slot `flybot.account.header` (`0003-flybot-api-client`) is a compact block at the top of the account menu (`FlyBotAccountHeader`); social uses it for the owner's own handle (#181).
@@ -110,6 +111,10 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 - FlyBot `restrict()`s DSH's `ask_user_question` off Bot sessions (`hideBlockingQuestion`). DSH then appends a developer `tool-removal` context row, and `@deepseek-ai/dsh-client-ui-chat` renders it as "Tool removed: {name}". `ContextCell` shadows `conversation.chat.node` `context` and returns null for those notices (`HIDDEN_REMOVED_TOOLS`). Other tool-change context (tool-added, unrelated removals) still shows; `tool-call` cells are unchanged. Empty shadowed nodes collapse via the existing `:empty` flow-item rule. Covered by `core/test/tool-cells.test.js`.
 
 - The held-send overlay (`FlyBotApprovals`, `flybot-slots.js`) runs every hook before its `if (pending.length === 0) return null`: a hook after that return made React throw on the first held message and no card ever drew (#254). `test/overlay-approvals.test.js` renders it with a stand-in that enforces React's hook-count rule.
+
+### Connectors page and the Composio row (#311)
+
+Settings → Connectors (`src/client/connectors.js`) lists one row per connector from `roster.connectors`. The GitHub row takes a token. The Composio row takes an API key and an app choice (pill buttons for common apps, plus a text box for any other Composio app name), then shows `Connected: <apps>` with **Choose apps** (changes the list through `connector-apps`, no key) and **Disconnect**. The key goes from the masked input to `connector-connect` and is never read back. Copy is English with a zh entry for every string in `i18n.js`.
 
 ### Discarded promise `.catch` (#213)
 

@@ -146,3 +146,25 @@ test('client UI (#19): every plugin slot renders inside an error boundary; appro
   // One remote list: the old built-in "Remote members" section is gone.
   assert.doesNotMatch(source, /Remote members/)
 })
+
+test('the sidebar footer button opens Settings > Connectors as "Connect apps"', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { DICTIONARY } = await import('../src/client/i18n.js')
+  const source = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const body = source.slice(source.indexOf('export function ConnectApps('), source.indexOf('export function YouAvatar'))
+  assert.match(body, /onClick: \(\) => actions\.openConnectors\(\)/)
+  assert.match(body, /t\('Connect apps'\)/)
+  assert.doesNotMatch(body, /selectPanel|Connect plugins/)
+  assert.equal(DICTIONARY.zh['Connect apps'], '连接应用')
+  assert.equal(Object.hasOwn(DICTIONARY.zh, 'Connect plugins'), false)
+})
+
+test('the account menu keeps a Plugins row that opens the shell plugin panel', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { DICTIONARY } = await import('../src/client/i18n.js')
+  const source = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const menu = source.slice(source.indexOf('const groups = ['), source.indexOf('return h(Fragment, null,', source.indexOf('const groups = [')))
+  assert.match(menu, /\[t\('Plugins'\), PlugIcon, \(\) => actions\.selectPanel\('plugins'\)\]/)
+  assert.match(menu, /\[t\('Connectors'\), ConnectorIcon, \(\) => actions\.openConnectors\(\)\]/)
+  assert.equal(DICTIONARY.zh.Plugins, '插件')
+})

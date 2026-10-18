@@ -448,13 +448,12 @@ function UpdateButton({ useUpdate, actions }) {
                 }, dshPhase === 'installing' ? t('Updating…') : dshPhase === 'failed' ? t('Try again') : t('Update')))) : null), document.body) : null)
 }
 
-// The footer entry to the shell's plugin panel, marked as not yet adapted: the red
-// badge and a hover tip explain that plugin support lands step by step.
-export function ConnectPlugins({ wide, actions }) {
+// The footer entry to Settings > Connectors, where a Bot's apps are connected.
+export function ConnectApps({ wide, actions }) {
   if (!wide) return null
   return h('span', { className: 'bt-connect-wrap' },
-    h('button', { type: 'button', className: 'bt-connect bt-connect-foot', onClick: () => actions.selectPanel('plugins') },
-      h(PlugIcon), t('Connect plugins')))
+    h('button', { type: 'button', className: 'bt-connect bt-connect-foot', onClick: () => actions.openConnectors() },
+      h(PlugIcon), t('Connect apps')))
 }
 
 // Account seat of the Settings trigger: the visible label stays for assistive tech only.
@@ -565,6 +564,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
     [
       [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
       [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
+      [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
       [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
       [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
     ],
@@ -652,7 +652,7 @@ export function BrandName() {
 }
 
 // With the whale holding the settings seat, the footer row is just the account menu
-// and Connect plugins; FooterAccount only shows when the seat went to no one. The
+// and Connect apps; FooterAccount only shows when the seat went to no one. The
 // shell's footer classes are CSS-module names, so they match on their stems.
 export const SIDEBAR_CSS = `
 .bt-side-top .bt-brand{cursor:default;padding-left:6px}

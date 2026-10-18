@@ -581,7 +581,8 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 +import { installBrandChrome, installTabTitle } from './brand.js'
  import { lookOf } from './mark.js'
- import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
+-import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
++import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
  import { HeaderPill } from './header.js'
 -import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 +import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
@@ -698,6 +699,16 @@ diff --git a/src/client/index.js b/src/client/index.js
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
+@@ -539,7 +539,8 @@ export function apply(ctx) {
+     secretCancel: requestId => after(call('secret-cancel', { requestId })),
+     secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
+     secretDelete: name => after(call('secret-delete', { name })),
+-    connectorConnect: (id, token) => after(call('connector-connect', { id, token })),
++    connectorConnect: (id, token, apps) => after(call('connector-connect', { id, token, ...(apps !== undefined ? { apps } : {}) })),
++    connectorApps: (id, apps) => after(call('connector-apps', { id, apps })),
+     connectorDisconnect: id => after(call('connector-disconnect', { id })),
+     connectorRetry: id => after(call('connector-retry', { id })),
+     saveCapability: capability => after(call('capability-save', capability)),
 @@ -566,6 +566,8 @@ export function apply(ctx) {
        noteClientError(where, error)
        ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
@@ -729,6 +740,15 @@ diff --git a/src/client/index.js b/src/client/index.js
      installCompiledStyles(MEMBER_CSS, 'members'),
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
+@@ -765,7 +765,7 @@ export function apply(ctx) {
+     shadow('sidebar.brand.mark', { priority: -10 }, BrandMark),
+     shadow('sidebar.brand.name', { priority: -10 }, BrandName),
+     shadow('sidebar.footer.action', { id: 'bot-account', order: -200, inject: face }, FooterAccount),
+-    shadow('sidebar.footer.action', { id: 'bot-connect', order: -100, inject: face }, ConnectPlugins),
++    shadow('sidebar.footer.action', { id: 'bot-connect', order: -100, inject: face }, ConnectApps),
+     shadow('settings.trigger', { priority: -10 }, YouAvatar),
+     // At priority -10 the whale wins the seat over a shell account plugin's own
+     // launcher (the Desktop's "··· More"), which comes back in Agent mode.
 @@ -773,6 +773,7 @@ export function apply(ctx) {
      shadow('shell.overlay', { id: 'bot', order: 50, inject: face }, Overlays),
      shadow('shell.overlay', { id: 'bot-signin', order: 55, inject: face }, DeepSeekSignIn),
@@ -1292,16 +1312,21 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
            : t('You have {version}.', { version: update.current })),
          message ? h('div', { className: 'bt-update-error', role: 'alert' }, t('The update did not finish: {reason}', { reason: message })) : null,
          h('div', { className: 'bt-update-actions' },
-@@ -375,33 +375,10 @@ function UpdateButton({ useUpdate, actions }) {
- // The footer entry to the shell's plugin panel, marked as not yet adapted: the red
- // badge and a hover tip explain that plugin support lands step by step.
- export function ConnectPlugins({ wide, actions }) {
+@@ -372,36 +372,12 @@ function UpdateButton({ useUpdate, actions }) {
+                 }, dshPhase === 'installing' ? t('Updating…') : dshPhase === 'failed' ? t('Try again') : t('Update')))) : null), document.body) : null)
+ }
+ 
+-// The footer entry to the shell's plugin panel, marked as not yet adapted: the red
+-// badge and a hover tip explain that plugin support lands step by step.
+-export function ConnectPlugins({ wide, actions }) {
 -  const tipId = useId()
 -  const [tip, setTip] = useState(false)
 -  const timer = useRef(0)
 -  const button = useRef(null)
 -  const [box, setBox] = useState(null)
 -  useEffect(() => () => clearTimeout(timer.current), [])
++// The footer entry to Settings > Connectors, where a Bot's apps are connected.
++export function ConnectApps({ wide, actions }) {
    if (!wide) return null
 -  const show = () => {
 -    clearTimeout(timer.current)
@@ -1323,11 +1348,19 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 -    h(PlugIcon), t('Connect plugins'), h('span', { className: 'bt-connect-warn', 'aria-hidden': true }, '!')),
 -    tip && box ? createPortal(h('span', { role: 'tooltip', id: tipId, className: 'bt-connect-tip', style: box },
 -      t('Plugin compatibility is not fully verified.')), document.body) : null)
-+    h('button', { type: 'button', className: 'bt-connect bt-connect-foot', onClick: () => actions.selectPanel('plugins') },
-+      h(PlugIcon), t('Connect plugins')))
++    h('button', { type: 'button', className: 'bt-connect bt-connect-foot', onClick: () => actions.openConnectors() },
++      h(PlugIcon), t('Connect apps')))
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
+@@ -512,6 +512,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+     [
+       [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
+       [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
++      [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
+       [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
+       [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
+     ],
 @@ -523,6 +523,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
      h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
        h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),
@@ -1359,7 +1392,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Agent mode has none of the shell-group styles, so the return button carries its own.
-@@ -582,18 +582,18 @@ export const RETURN_CSS = `
+@@ -582,22 +582,22 @@ export const RETURN_CSS = `
  .bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
  .bt-return:hover{background:rgba(127,127,127,.14)}
  .bt-return:active{transform:scale(.96)}
@@ -1382,6 +1415,11 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // With the whale holding the settings seat, the footer row is just the account menu
+-// and Connect plugins; FooterAccount only shows when the seat went to no one. The
++// and Connect apps; FooterAccount only shows when the seat went to no one. The
+ // shell's footer classes are CSS-module names, so they match on their stems.
+ export const SIDEBAR_CSS = `
+ .bt-side-top .bt-brand{cursor:default;padding-left:6px}
 @@ -658,4 +658,12 @@ export const SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
@@ -1506,6 +1544,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
+@@ -490,6 +490,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+ .bt-connector-actions{flex:none;display:flex;gap:6px}
+ .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+ .bt-connector-form-row{display:flex;align-items:center;gap:6px}
++.bt-connector-apps{display:flex;flex-direction:column;gap:8px}
+ .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
+ .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
+ 
 @@ -609,7 +609,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
