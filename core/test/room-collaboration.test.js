@@ -20,19 +20,21 @@ const incomplete = `export function totalPaid(orders, region) {
 }
 `
 
-async function start(t) {
+const BOT_NAMES = { chief: 'Chief', writer: 'Writer', observer: 'Observer' }
+
+async function start(t, { members = ['chief', 'writer'] } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const home = mkdtempSync(join(tmpdir(), 'flybot-room-pilot-'))
   const dirs = prepareFixture(join(home, 'fixture'))
-  const bots = Object.fromEntries(['chief', 'writer'].map(id => [id, {
-    id, name: id === 'chief' ? 'Chief' : 'Writer', sessionId: id,
+  const bots = Object.fromEntries(members.map(id => [id, {
+    id, name: BOT_NAMES[id] ?? id, sessionId: id,
     role: id, ownerId: 'owner', createdAt: 1, workDir: id === 'chief' ? dirs.verifier : dirs.worker,
   }]))
   writeFileSync(join(home, 'state.json'), JSON.stringify({
     version: 2, revision: 1, mainBotIds: ['chief'], bots,
     members: { owner: { id: 'owner', displayName: 'Operator', createdAt: 1, designatedChiefId: 'chief' } },
-    rooms: { ops: { id: 'ops', name: 'Pilot', members: ['chief', 'writer'], admin: 'chief', mode: 'admin', named: true,
-      sessions: { chief: 'room-chief', writer: 'room-writer' }, seen: {}, seq: 0, log: [] } },
+    rooms: { ops: { id: 'ops', name: 'Pilot', members, admin: 'chief', mode: 'admin', named: true,
+      sessions: Object.fromEntries(members.map(id => [id, `room-${id}`])), seen: {}, seq: 0, log: [] } },
     agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, grants: {},
   }))
   const ctx = fakeContext()
@@ -172,4 +174,51 @@ test('requester may reject a correctly verified result', async t => {
   assert.equal(result.independent.ok, true)
   assert.equal(result.final.status, 'cancelled')
   assert.deepEqual(result.final.result, result.returned.result)
+})
+
+// Drives one delegation round until the Writer holds open in-flight work and the
+// round has moved on (`working`). Timers are mocked, so real waiting must use
+// setImmediate, never delay(), to let fire-and-forget chains settle.
+async function untilWriterWorking(t, host) {
+  await host.emit('ops', 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: `@Chief ${requirement}` }] })
+  const running = host.ctx.registeredTools.get('group_relay').execute({}, { agent: { id: 'ops' }, callId: 'termination', signal: host.controller.signal })
+  t.after(() => running.catch(() => {}))
+  const chief = await host.next('chief', /totalPaid/)
+  await chief('@Writer Implement totalPaid in the isolated fixture. Ask me about omitted region before editing, then return actual test evidence.')
+  await host.next('writer', /Ask me about omitted region/)
+  await host.emit('room-writer', 'tool/call', { callId: 'termination-edit', name: 'shell', arguments: '{}' })
+  t.mock.timers.tick(ROOM_WORK_GRACE_MS)
+  return JSON.parse(await running)
+}
+
+const settle = () => new Promise(resolve => setImmediate(resolve))
+
+test('deleting the room mid-work stops dispatch; the late completion neither posts nor restarts', async t => {
+  const host = await start(t)
+  const round = await untilWriterWorking(t, host)
+  assert.deepEqual(round.replies.map(reply => [reply.botId, reply.kind ?? 'reply']), [['chief', 'reply'], ['writer', 'working']])
+  await host.ok('delete-room', { id: 'ops' })
+  assert.equal(host.rt.state.rooms.ops, undefined)
+  await host.emit('room-writer', 'assistant/message', { message: { content: [{ type: 'text', text: '@Chief Implemented totalPaid. Self-test passed.' }] } })
+  await host.emit('room-writer', 'turn/end', { reason: { kind: 'stop' } })
+  for (let i = 0; i < 20; i++) await settle()
+  assert.equal(host.pending.length, 0, 'no followup may reach the deleted room')
+  const refusal = JSON.parse(await host.ctx.registeredTools.get('group_relay').execute({}, { agent: { id: 'ops' }, callId: 'after-delete', signal: host.controller.signal }))
+  assert.equal(refusal.error, 'Not a group chat')
+  assert.equal(host.pending.length, 0, 'a relay attempt for the deleted room dispatches nothing')
+})
+
+test('a removed member\'s late completion neither posts into the room nor restarts a round', async t => {
+  const host = await start(t, { members: ['chief', 'writer', 'observer'] })
+  await untilWriterWorking(t, host)
+  await host.ok('update-room', { id: 'ops', remove: ['writer'] })
+  const room = host.rt.state.rooms.ops
+  assert.deepEqual(room.members, ['chief', 'observer'])
+  const logged = room.log.length
+  await host.emit('room-writer', 'assistant/message', { message: { content: [{ type: 'text', text: '@Chief Implemented totalPaid. Self-test passed.' }] } })
+  await host.emit('room-writer', 'turn/end', { reason: { kind: 'stop' } })
+  for (let i = 0; i < 20; i++) await settle()
+  assert.equal(host.pending.length, 0, 'a removed member may not nudge the room')
+  assert.equal(room.log.length, logged)
+  assert.equal(room.lateRounds ?? 0, 0)
 })
