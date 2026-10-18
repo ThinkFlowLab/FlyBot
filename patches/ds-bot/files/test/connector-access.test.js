@@ -611,6 +611,8 @@ test('the running turn notes whose request it answers, so a resumed turn keeps t
 // and the report that comes back are delivered by the host (no sender), so they used to read as the
 // owner's: a friend could reach the owner's connector tools through a post (found in review of #370).
 test('a Bot post carries whose request it is into the room\'s member turns and into the report', async (t) => {
+  // A real-time wait: a slow runner needs more than a few event-loop turns for a round to start.
+  const until = async (done, ms = 10_000) => { for (const end = Date.now() + ms; !done() && Date.now() < end;) await new Promise(resolve => setTimeout(resolve, 5)) }
   const run = async (source) => {
     const { ctx, rt, agentFor, sent, begin, take, end, stop } = await setup()
     t.after(stop)
@@ -628,12 +630,12 @@ test('a Bot post carries whose request it is into the room\'s member turns and i
     take('room', post.source, post.content[0].text)
     const controller = new AbortController()
     const running = ctx.registeredTools.get('group_relay').execute({}, { agent: { id: 'room', session: { id: 'room' } }, callId: 'round', signal: controller.signal })
-    for (let i = 0; i < 50 && !sent.some(message => message.source?.role === 'room'); i += 1) await tick()
+    await until(() => sent.some(message => message.source?.role === 'room'))
     const member = sent.find(message => message.source?.role === 'room')
     assert.ok(member, 'a member turn was delivered')
     controller.abort()
     await running.catch(() => {})
-    for (let i = 0; i < 50 && !sent.some(message => message.source?.role === 'report'); i += 1) await tick()
+    await until(() => sent.some(message => message.source?.role === 'report'))
     const report = sent.find(message => message.source?.role === 'report')
     assert.ok(report, 'the report came back to the poster')
     return { post: post.source.origin, member: member.source.origin, report: report.source.origin, rt }
