@@ -12,7 +12,7 @@
 //   flybot.bot.details      { id, order, component({ bot, roster, call }) }        in a Bot's settings
 //   flybot.approvals        { id, order, component({ approval, decide, call }) }   custom card for a held send
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
-//   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim }) }  above the composer;
+//   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim, t }) }  above the composer;
 //                            a dock that draws the cards of one approval policy sets `policy` and calls claim(ids) with the
 //                            approval ids it shows: the overlay then draws no second card for them (#260)
 //   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat; Face-to-face group, Add friend, Friend requests)
@@ -145,7 +145,7 @@ export function FlyBotSessionDock({ sessionId, useRoster, actions }) {
   const room = roster?.roomsById?.[sessionId]
   const bot = room ? undefined : roster?.byId?.[sessionId]
   return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-session-dock', 'data-flybot': entry.id },
-    h(Safe, { entry, props: { sessionId, roster, room, bot, actions, call, claim: ids => claimApprovals(`${entry.id}:${sessionId}`, ids) } }))))
+    h(Safe, { entry, props: { sessionId, roster, room, bot, actions, call, t, claim: ids => claimApprovals(`${entry.id}:${sessionId}`, ids) } }))))
 }
 
 export function FlyBotRoomOverview({ room, roster, actions }) {

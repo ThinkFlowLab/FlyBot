@@ -41,7 +41,8 @@ export function install(rt) {
     // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
     // `waiting`: the Bot holds its greeting until the user picks its model.
     bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
-      const pending = bot.remote ? (rt.listChatApprovals?.(bot, actor) ?? []) : []
+      // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
+      const pending = rt.listChatApprovals?.(bot, actor) ?? []
       return {
         ...bot,
         granted: rt.hasAnyGrant?.(bot.id) === true,

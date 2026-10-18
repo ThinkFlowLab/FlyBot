@@ -332,7 +332,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Automation tasks': '自动化任务',
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
-@@ -93,6 +93,35 @@ const ZH = {
+@@ -93,6 +93,42 @@ const ZH = {
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -340,6 +340,13 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Bot Social': 'Bot Social',
 +  'Bot Social server': 'Bot Social 服务器',
 +  'Connected as {handle}': '已连接：{handle}',
++  'Held for your approval: contains {reasons}': '已扣留，等待你批准：含{reasons}',
++  'commitment language': '承诺用语',
++  'a phone number': '手机号',
++  'an email address': '邮箱地址',
++  'a money amount': '金额',
++  'one of your sensitive terms': '你设置的敏感词',
++  'calendar details': '日程详情',
 +  'No server set. Friends and sharing are off until you set one.': '还没有设置服务器。设置之前，好友和分享功能不可用。',
 +  'Set here': '在这里设置',
 +  'Profile default': '配置文件默认值',

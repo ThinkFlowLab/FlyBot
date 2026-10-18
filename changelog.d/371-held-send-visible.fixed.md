@@ -1,0 +1,1 @@
+A message Bot Social holds for your approval is never invisible now: when the friend's chat it goes to is hidden, gone or not open, the Bot that wrote it shows the card in its own chat and a wait dot on its row, and the card says why it was held (for example *contains commitment language*, in English or 中文) ([#371](https://github.com/ThinkFlowLab/FlyBot/issues/371)).

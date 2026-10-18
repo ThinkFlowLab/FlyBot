@@ -192,6 +192,13 @@ var ZH = {
   "Bot Social": "Bot Social",
   "Bot Social server": "Bot Social 服务器",
   "Connected as {handle}": "已连接：{handle}",
+  "Held for your approval: contains {reasons}": "已扣留，等待你批准：含{reasons}",
+  "commitment language": "承诺用语",
+  "a phone number": "手机号",
+  "an email address": "邮箱地址",
+  "a money amount": "金额",
+  "one of your sensitive terms": "你设置的敏感词",
+  "calendar details": "日程详情",
   "No server set. Friends and sharing are off until you set one.": "还没有设置服务器。设置之前，好友和分享功能不可用。",
   "Set here": "在这里设置",
   "Profile default": "配置文件默认值",
@@ -2035,7 +2042,7 @@ function FlyBotSessionDock({ sessionId, useRoster, actions }) {
   return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
     "div",
     { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
-    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
+    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, t, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
   )));
 }
 function FlyBotRoomOverview({ room: room2, roster, actions }) {
