@@ -2296,7 +2296,7 @@ test('a friend\'s Bot settings uses Auto-send, not a second Auto-accept label', 
   assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.fs-friend-settings\{[^}]*max-width:280px/)
 })
 
-test('social section has no + Add; Add friend and Face-to-face group live on the sidebar + menu', () => {
+test('social section has no + Add; Add friend and Face-to-face room live on the sidebar + menu', () => {
   const sidebar = (adding) => {
     const { entries, walk, pluginOf } = loadSocialClient(async () => ({ connected: true, bots: [{ id: 'a', name: 'Chief', isMain: true }], homes: [], rooms: [] }))
     const plugin = pluginOf(['', adding, false])
@@ -2373,13 +2373,22 @@ test('social sidebar mount starts status without waiting on a friends roster', a
   assert.equal(started.includes('social/settings'), false)
 })
 
-test('the sidebar + menu gets a Face-to-face group action from social', () => {
+test('the sidebar + menu gets a Face-to-face room action from social', () => {
   const { entries, pluginOf } = loadSocialClient(async () => ({}))
   pluginOf([]).apply({})
   const row = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group')
   assert.ok(row)
-  assert.equal(row[1].label, 'Face-to-face group')
+  assert.equal(row[1].label, 'Face-to-face room')
   assert.match(row[1].hint, /6-digit/)
+  // #385: each social row has its own mark and a short one-line hint with no closing period.
+  const friend = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
+  assert.equal(typeof row[1].icon, 'function')
+  assert.equal(typeof friend[1].icon, 'function')
+  assert.notEqual(row[1].icon, friend[1].icon)
+  for (const hint of [row[1].hint, friend[1].hint]) {
+    assert.doesNotMatch(hint, /\.$/)
+    assert.ok(hint.length <= 45, hint)
+  }
   assert.equal(row[1].order, 15)
   assert.equal(typeof row[1].run, 'function')
 })
@@ -3223,7 +3232,7 @@ test('Bot settings: Manage access lists grants and revokes one', async () => {
   assert.ok(calls.some(([endpoint]) => endpoint === 'social/revoke-grant'))
 })
 
-test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter chat, errors', async () => {
+test('Face-to-face room (#92): pick Bots, join each once, live roster, Enter chat, errors', async () => {
   const calls = []
   const opened = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {

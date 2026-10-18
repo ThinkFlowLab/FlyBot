@@ -49,6 +49,15 @@ var ZH = {
   "Unread activity": "有未读",
   Search: "搜索",
   "New chat": "新对话",
+  "Message one of your Bots": "给你的一个 Bot 发消息",
+  "Set up a Bot with its own role": "创建一个有自己角色的 Bot",
+  "New group chat": "新建群聊",
+  "Chat with several of your Bots": "和你的几个 Bot 一起聊",
+  "Face-to-face room": "面对面房间",
+  "Meet people nearby with a 6-digit number": "用同一组 6 位数字和身边的人见面",
+  "Paste an invite link or code": "粘贴邀请链接或邀请码",
+  "A coding session without a Bot": "不带 Bot 的编码会话",
+  "New Bot “{name}”": "新建 Bot「{name}」",
   "New…": "新建",
   "Animation": "动画",
   "Bot animation": "Bot 动画",
@@ -112,10 +121,7 @@ var ZH = {
   "Invite link": "邀请链接",
   "Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.": "无法自动复制 {name} 的邀请链接。请手动复制下面的链接发给好友，对方接受后再重新建群。",
   "Could not create the invite. Use Bot settings → Invite to this Bot.": "无法创建邀请。请在 Bot 设置里使用 Invite to this Bot。",
-  "Face-to-face group": "面对面建群",
-  "Meet the people next to you. Pick your Bots and type the same 6-digit number.": "和身边的人建群。选你的 Bot，输入同一组 6 位数字。",
   "Add friend": "添加好友",
-  "Paste an invite link or code.": "粘贴邀请链接或邀请码。",
   "Friend requests": "好友请求",
   "Accept or decline incoming requests.": "接受或拒绝收到的请求。",
   "Accept invite": "接受邀请",
@@ -279,8 +285,6 @@ var ZH = {
   "Dismiss new messages": "关闭新消息提示",
   New: "新",
   // New chat
-  "Create new Bot": "新建 Bot",
-  "Create new Bot “{name}”": "新建 Bot「{name}」",
   "Add to group chat": "加入群聊",
   "Message Bot": "给 Bot 发消息",
   "To:": "发给：",
@@ -505,7 +509,6 @@ var ZH = {
   Pin: "置顶",
   Pinned: "已置顶",
   "Mark as Unread": "标为未读",
-  "Rename Bot": "重命名 Bot",
   "Group settings": "群设置",
   "Rename group": "重命名群聊",
   "Copy conversation ID": "复制对话 ID",
@@ -515,7 +518,6 @@ var ZH = {
   // stays in English.
   "Add DSH Agent": "添加 DSH Agent",
   "Add coding agent": "添加编码 Agent",
-  "A plain DSH session, not a Bot": "普通 DSH 会话，不是 Bot",
   "Add Agent": "添加 Agent",
   "Remove DSH Agent": "移除 DSH Agent",
   "New session": "新会话",
@@ -1452,6 +1454,7 @@ function newChatActionRows(context = {}) {
         order: entry.order ?? 0,
         label: entry.label,
         hint: entry.hint,
+        ...typeof entry.icon === "function" ? { icon: entry.icon } : {},
         run: entry.run ?? (() => {
         })
       });
@@ -4184,6 +4187,9 @@ var LinkIcon = lineIcon(["M8.5 11.5a3.5 3.5 0 0 0 5 0l2.5-2.5a3.5 3.5 0 0 0-5-5l
 var SlidersIcon = lineIcon(["M4 6.5h5M12.5 6.5H16M4 13.5h4M11.5 13.5H16", "M10.5 4.5v4M9.5 11.5v4"]);
 var MemoryIcon = lineIcon(["M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1.5h-8z", "M5.5 3.5v13", "M8.5 7.5h3.5M8.5 10.5h2.5", "M12 3.5v4l1-.8 1 .8"]);
 var FolderIcon = lineIcon(["M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"]);
+var ChatIcon = lineIcon(["M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3A1.5 1.5 0 0 1 4 11.5z"]);
+var BotIcon = lineIcon(["M6 7.5h8a2 2 0 0 1 2 2V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2z", "M10 4.5v3", "M10 3.5h.01", "M7.75 11.5h.01M12.25 11.5h.01"]);
+var TerminalIcon = lineIcon(["M4.5 4.5h11a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14V6a1.5 1.5 0 0 1 1.5-1.5z", "M6.5 8.25L8.75 10 6.5 11.75", "M10.5 12h3"]);
 var ChatsIcon = lineIcon(["M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z", "M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13"]);
 var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
 function FlyBotMark({ size = 24 }) {
@@ -9870,7 +9876,6 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
 
 // src/client/new-chat.js
 var import_react22 = require("react");
-var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
 function NewChat({ mode, roster, actions }) {
   const [query, setQuery] = (0, import_react22.useState)("");
   const [picked, setPicked] = (0, import_react22.useState)([]);
@@ -10017,14 +10022,14 @@ function NewChat({ mode, roster, actions }) {
   const options = [];
   if (!group && picked.length === 0 && mode !== "search" && wanted === "") {
     if (menuOnly) {
-      options.push({ key: "chat", icon: (0, import_react22.createElement)(PlusIcon), label: t("New chat"), run: () => {
+      options.push({ key: "chat", icon: (0, import_react22.createElement)(ChatIcon), label: t("New chat"), hint: t("Message one of your Bots"), run: () => {
         setCompose(true);
         setCursor(0);
         setTimeout(() => inputRef.current?.focus());
       } });
     }
-    options.push({ key: "new", icon: (0, import_react22.createElement)(PlusIcon), label: t("Create new Bot"), run: createBot });
-    options.push({ key: "group", icon: (0, import_react22.createElement)(PeopleIcon), label: t("Create group chat"), run: () => {
+    options.push({ key: "new", icon: (0, import_react22.createElement)(BotIcon), label: t("New Bot"), hint: t("Set up a Bot with its own role"), run: createBot });
+    options.push({ key: "group", icon: (0, import_react22.createElement)(PeopleIcon), label: t("New group chat"), hint: t("Chat with several of your Bots"), run: () => {
       setGroup(true);
       setCompose(true);
       setCursor(0);
@@ -10033,7 +10038,7 @@ function NewChat({ mode, roster, actions }) {
     for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
       options.push({
         key: action.key,
-        icon: (0, import_react22.createElement)(PeopleIcon),
+        icon: (0, import_react22.createElement)(action.icon ?? PeopleIcon),
         label: t(action.label),
         hint: action.hint ? t(action.hint) : void 0,
         run: () => {
@@ -10045,7 +10050,7 @@ function NewChat({ mode, roster, actions }) {
       });
     }
     if ((roster.agents ?? []).length === 0) {
-      options.push({ key: "agent", icon: (0, import_react22.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add coding agent"), hint: t("A plain DSH session, not a Bot"), run: () => run(async () => {
+      options.push({ key: "agent", icon: (0, import_react22.createElement)(TerminalIcon), label: t("Add coding agent"), hint: t("A coding session without a Bot"), run: () => run(async () => {
         await actions.addAgent();
         close();
       }) });
@@ -10056,7 +10061,7 @@ function NewChat({ mode, roster, actions }) {
       options.push({ key: bot.id, bot, label: pickerBotLabel(bot), hint: choosingAdmin ? t("Make admin") : group || picked.length > 0 ? t("Add to group chat") : void 0, run: () => openBot(bot) });
     }
   }
-  if (wanted !== "" && !exact && mode !== "search") options.push({ key: "create", icon: (0, import_react22.createElement)(PlusIcon), label: t("Create new Bot “{name}”", { name: query.trim() }), run: createBot });
+  if (wanted !== "" && !exact && mode !== "search") options.push({ key: "create", icon: (0, import_react22.createElement)(PlusIcon), label: t("New Bot “{name}”", { name: query.trim() }), run: createBot });
   const active = Math.min(cursor, Math.max(options.length - 1, 0));
   const listed = options.map((option) => option.key).join("\n");
   const glide = useGlide(`${active}
@@ -12750,7 +12755,7 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
       [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
     ],
     [
-      bot ? [t("Rename Bot"), PencilIcon, () => actions.renameBot(bot.id)] : null,
+      // One way to edit a Bot (#385): its name is edited in Edit Bot too.
       bot ? [t("Edit Bot"), GearIcon, () => actions.openSettings("bots", bot.id)] : null,
       room2 ? [t("Group settings"), GearIcon, () => actions.openSettings("groups", room2.id)] : null,
       room2 ? [t("Rename group"), PencilIcon, () => actions.renameBot(room2.id)] : null,

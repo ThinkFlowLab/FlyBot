@@ -592,7 +592,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
 +        ],
 +        [
-+          bot ? [t('Rename Bot'), PencilIcon, () => actions.renameBot(bot.id)] : null,
++          // One way to edit a Bot (#385): its name is edited in Edit Bot too.
 +          bot ? [t('Edit Bot'), GearIcon, () => actions.openSettings('bots', bot.id)] : null,
 +          room ? [t('Group settings'), GearIcon, () => actions.openSettings('groups', room.id)] : null,
 +          room ? [t('Rename group'), PencilIcon, () => actions.renameBot(room.id)] : null,
@@ -641,7 +641,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
  
  export function PlusIcon() {
    return h('svg', { width: 18, height: 18, viewBox: '0 0 20 20', 'aria-hidden': true }, h('path', { d: 'M10 3.5v13M3.5 10h13', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' }))
-@@ -81,6 +81,7 @@ export const CopyIcon = lineIcon(['M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1
+@@ -81,11 +81,31 @@ export const CopyIcon = lineIcon(['M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1
  export const HideIcon = lineIcon(['M3 3l14 14', 'M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4', 'M8.5 8.5a2 2 0 0 0 3 3'])
  export const TrashIcon = lineIcon(['M3.5 5.5h13', 'M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5', 'M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10', 'M8.5 9v4.5M11.5 9v4.5'])
  export const DuplicateIcon = lineIcon(['M7 7h8.5v9.5H7z', 'M4.5 13V3.5H13', 'M11.25 9.5v4.5M9 11.75h4.5'])
@@ -649,8 +649,13 @@ diff --git a/src/client/icons.js b/src/client/icons.js
  export const SlidersIcon = lineIcon(['M4 6.5h5M12.5 6.5H16M4 13.5h4M11.5 13.5H16', 'M10.5 4.5v4M9.5 11.5v4'])
  // A notebook with a ribbon: what a Bot remembers.
  export const MemoryIcon = lineIcon(['M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1.5h-8z', 'M5.5 3.5v13', 'M8.5 7.5h3.5M8.5 10.5h2.5', 'M12 3.5v4l1-.8 1 .8'])
-@@ -89,3 +89,18 @@ export const FolderIcon = lineIcon(['M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5
+ export const FolderIcon = lineIcon(['M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z'])
+ // Defined here, after the icons: SettingsDialog only reads them at render time.
  // Two speech bubbles, the back one peeking out: a group chat.
++// + menu rows (#385): each row has its own mark.
++export const ChatIcon = lineIcon(['M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3A1.5 1.5 0 0 1 4 11.5z'])
++export const BotIcon = lineIcon(['M6 7.5h8a2 2 0 0 1 2 2V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2z', 'M10 4.5v3', 'M10 3.5h.01', 'M7.75 11.5h.01M12.25 11.5h.01'])
++export const TerminalIcon = lineIcon(['M4.5 4.5h11a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14V6a1.5 1.5 0 0 1 1.5-1.5z', 'M6.5 8.25L8.75 10 6.5 11.75', 'M10.5 12h3'])
  export const ChatsIcon = lineIcon(['M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z', 'M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13'])
  export const SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon }
 +
@@ -894,7 +899,13 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -6,16 +6,26 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
+@@ -1,21 +1,30 @@
+ import { createElement as h, useRef, useState } from 'react'
+-import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
+-import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
++import { PlusIcon, PeopleIcon, ArrowUpIcon, BotIcon, ChatIcon, TerminalIcon } from './icons.js'
+ import { AdminStar, BotMark } from './mark.js'
+ import { useEscape, usePaneLeft } from './overlay-hooks.js'
  import { CreateBot } from './create-bot.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
  import { t } from './i18n.js'
@@ -995,7 +1006,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
      if (text) await actions.send(room.id, text)
      actions.openSession(room.id)
      close()
-@@ -87,22 +87,49 @@ export function NewChat({ mode, roster, actions }) {
+@@ -87,24 +87,51 @@ export function NewChat({ mode, roster, actions }) {
        close()
        return
      }
@@ -1013,17 +1024,18 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +  const menuOnly = mode === 'new' && !compose && !group && picked.length === 0 && wanted === ''
    const options = []
    if (!group && picked.length === 0 && mode !== 'search' && wanted === '') {
-+    if (menuOnly) {
-+      options.push({ key: 'chat', icon: h(PlusIcon), label: t('New chat'), run: () => { setCompose(true); setCursor(0); setTimeout(() => inputRef.current?.focus()) } })
-+    }
-     options.push({ key: 'new', icon: h(PlusIcon), label: t('Create new Bot'), run: createBot })
+-    options.push({ key: 'new', icon: h(PlusIcon), label: t('Create new Bot'), run: createBot })
 -    options.push({ key: 'group', icon: h(PeopleIcon), label: t('Create group chat'), run: () => { setGroup(true); setCursor(0); inputRef.current?.focus() } })
 -    // A team holds at most one DSH Agent; the entry exists only while there is none.
-+    options.push({ key: 'group', icon: h(PeopleIcon), label: t('Create group chat'), run: () => { setGroup(true); setCompose(true); setCursor(0); inputRef.current?.focus() } })
++    if (menuOnly) {
++      options.push({ key: 'chat', icon: h(ChatIcon), label: t('New chat'), hint: t('Message one of your Bots'), run: () => { setCompose(true); setCursor(0); setTimeout(() => inputRef.current?.focus()) } })
++    }
++    options.push({ key: 'new', icon: h(BotIcon), label: t('New Bot'), hint: t('Set up a Bot with its own role'), run: createBot })
++    options.push({ key: 'group', icon: h(PeopleIcon), label: t('New group chat'), hint: t('Chat with several of your Bots'), run: () => { setGroup(true); setCompose(true); setCursor(0); inputRef.current?.focus() } })
 +    for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
 +      options.push({
 +        key: action.key,
-+        icon: h(PeopleIcon),
++        icon: h(action.icon ?? PeopleIcon),
 +        label: t(action.label),
 +        hint: action.hint ? t(action.hint) : undefined,
 +        run: () => {
@@ -1037,7 +1049,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +    // A team holds at most one Agent; the entry exists only while there is none.
      if ((roster.agents ?? []).length === 0) {
 -      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
-+      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add coding agent'), hint: t('A plain DSH session, not a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
++      options.push({ key: 'agent', icon: h(TerminalIcon), label: t('Add coding agent'), hint: t('A coding session without a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
      }
    }
 -  for (const bot of matches) {
@@ -1049,8 +1061,11 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +      options.push({ key: bot.id, bot, label: pickerBotLabel(bot), hint: choosingAdmin ? t('Make admin') : group || picked.length > 0 ? t('Add to group chat') : undefined, run: () => openBot(bot) })
 +    }
    }
-   if (wanted !== '' && !exact && mode !== 'search') options.push({ key: 'create', icon: h(PlusIcon), label: t('Create new Bot “{name}”', { name: query.trim() }), run: createBot })
+-  if (wanted !== '' && !exact && mode !== 'search') options.push({ key: 'create', icon: h(PlusIcon), label: t('Create new Bot “{name}”', { name: query.trim() }), run: createBot })
++  if (wanted !== '' && !exact && mode !== 'search') options.push({ key: 'create', icon: h(PlusIcon), label: t('New Bot “{name}”', { name: query.trim() }), run: createBot })
    const active = Math.min(cursor, Math.max(options.length - 1, 0))
+   const listed = options.map(option => option.key).join('\n')
+   const glide = useGlide(`${active}\n${listed}`, { axis: 'y', ...QUICK_EDGES })
 @@ -126,9 +126,16 @@ export function NewChat({ mode, roster, actions }) {
      if (picked.length > 0) setPicked(current => current.slice(0, -1))
      else if (admin !== null) setAdmin(null)

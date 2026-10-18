@@ -545,7 +545,7 @@ window.__ModuleLoader__.load({
       if (id && typeof actions?.openSession === 'function') actions.openSession(id)
     }
 
-    // Separate Face-to-face group screen (#92): pick Bots, join by number, live waiting room.
+    // Separate Face-to-face room screen (#92): pick Bots, join by number, live waiting room.
     function FaceToFaceGroup({ actions, onClose, roster, remoteChats } = {}) {
       const [step, setStep] = useState('setup')
       const [bots, setBots] = useState([])
@@ -694,10 +694,10 @@ window.__ModuleLoader__.load({
       const members = room?.members ?? []
       const candidate = room?.status === 'candidate'
       const waiting = step === 'waiting' && room
-      return h('div', { className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': 'Face-to-face group' },
+      return h('div', { className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': 'Face-to-face room' },
         h('div', { className: 'fs-dialog' },
           h('div', { className: 'fs-dialog-head' },
-            h('div', { className: 'fs-name' }, 'Face-to-face group'),
+            h('div', { className: 'fs-name' }, 'Face-to-face room'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: () => onClose?.() }, 'Close')),
           waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
             h(FaceWaitCode, { code: faceWaitCode(room, code) }),
@@ -1744,6 +1744,13 @@ window.__ModuleLoader__.load({
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
+    // + menu marks (#385), drawn like the host's line icons: people nearby, and a person to add.
+    const lineMark = paths => function LineMark() {
+      return h('svg', { width: 15, height: 15, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        paths.map((d, index) => h('path', { key: index, d })))
+    }
+    const NearbyIcon = lineMark(['M10 10h.01', 'M7.5 7.5a3.5 3.5 0 0 0 0 5M12.5 7.5a3.5 3.5 0 0 1 0 5', 'M5 5a7 7 0 0 0 0 10M15 5a7 7 0 0 1 0 10'])
+    const AddPersonIcon = lineMark(['M8.5 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6z', 'M3 16.5a5.5 5.5 0 0 1 11 0', 'M16 6.5v5M13.5 9h5'])
     const SocialPageIcon = () => h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', 'aria-hidden': true },
       h('circle', { cx: 8, cy: 8, r: 6 }), h('path', { d: 'M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12' }))
 
@@ -1892,15 +1899,17 @@ window.__ModuleLoader__.load({
             slots().register('flybot.new-chat.action', {
               id: 'social-face-group',
               order: 15,
-              label: 'Face-to-face group',
-              hint: 'Meet the people next to you. Pick your Bots and type the same 6-digit number.',
+              label: 'Face-to-face room',
+              hint: 'Meet people nearby with a 6-digit number',
+              icon: NearbyIcon,
               run: ({ close } = {}) => { openFaceToFace(); close?.() },
             }),
             slots().register('flybot.new-chat.action', {
               id: 'social-add-friend',
               order: 16,
               label: 'Add friend',
-              hint: 'Paste an invite link or code.',
+              hint: 'Paste an invite link or code',
+              icon: AddPersonIcon,
               run: ({ close } = {}) => { openAddFriend(); close?.() },
             }),
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),

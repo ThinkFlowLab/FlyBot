@@ -245,6 +245,22 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
+@@ -12,6 +12,15 @@ const ZH = {
+   'Unread activity': '有未读',
+   Search: '搜索',
+   'New chat': '新对话',
++  'Message one of your Bots': '给你的一个 Bot 发消息',
++  'Set up a Bot with its own role': '创建一个有自己角色的 Bot',
++  'New group chat': '新建群聊',
++  'Chat with several of your Bots': '和你的几个 Bot 一起聊',
++  'Face-to-face room': '面对面房间',
++  'Meet people nearby with a 6-digit number': '用同一组 6 位数字和身边的人见面',
++  'Paste an invite link or code': '粘贴邀请链接或邀请码',
++  'A coding session without a Bot': '不带 Bot 的编码会话',
++  'New Bot “{name}”': '新建 Bot「{name}」',
+   'New…': '新建',
+   'Animation': '动画',
+   'Bot animation': 'Bot 动画',
 @@ -26,6 +26,21 @@ const ZH = {
    Duplicate: '复制一份',
    Hidden: '已隐藏',
@@ -267,7 +283,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,21 +41,65 @@ const ZH = {
+@@ -41,21 +41,62 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -290,10 +306,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Invite link': '邀请链接',
 +  'Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.': '无法自动复制 {name} 的邀请链接。请手动复制下面的链接发给好友，对方接受后再重新建群。',
 +  'Could not create the invite. Use Bot settings → Invite to this Bot.': '无法创建邀请。请在 Bot 设置里使用 Invite to this Bot。',
-+  'Face-to-face group': '面对面建群',
-+  'Meet the people next to you. Pick your Bots and type the same 6-digit number.': '和身边的人建群。选你的 Bot，输入同一组 6 位数字。',
 +  'Add friend': '添加好友',
-+  'Paste an invite link or code.': '粘贴邀请链接或邀请码。',
 +  'Friend requests': '好友请求',
 +  'Accept or decline incoming requests.': '接受或拒绝收到的请求。',
 +  'Accept invite': '接受邀请',
@@ -419,6 +432,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
+@@ -128,8 +128,6 @@ const ZH = {
+   New: '新',
+ 
+   // New chat
+-  'Create new Bot': '新建 Bot',
+-  'Create new Bot “{name}”': '新建 Bot「{name}」',
+   'Add to group chat': '加入群聊',
+   'Message Bot': '给 Bot 发消息',
+   'To:': '发给：',
 @@ -152,8 +152,10 @@ const ZH = {
    'Admin leads': '管理员主持',
    'Plain messages go to the admin, who calls others with @Name.': '普通消息先给管理员，由管理员用 @名字 点名其他成员。',
@@ -447,12 +469,19 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Settings pages': '设置页面',
    'Models, providers, and the rest of DeepSeek Harness': '模型、服务商和 DeepSeek Harness 的其他设置',
    'Harness settings': 'Harness 设置',
-@@ -333,6 +333,9 @@ const ZH = {
+@@ -324,7 +324,6 @@ const ZH = {
+   Pin: '置顶',
+   Pinned: '已置顶',
+   'Mark as Unread': '标为未读',
+-  'Rename Bot': '重命名 Bot',
+   'Group settings': '群设置',
+   'Rename group': '重命名群聊',
+   'Copy conversation ID': '复制对话 ID',
+@@ -333,6 +333,8 @@ const ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
 +  'Add coding agent': '添加编码 Agent',
-+  'A plain DSH session, not a Bot': '普通 DSH 会话，不是 Bot',
 +  'Add Agent': '添加 Agent',
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',

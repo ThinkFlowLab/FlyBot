@@ -467,9 +467,10 @@ export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
  * - `flybot.settings.page`: a page in the Settings list, after Connectors. `label` is an English
  *   key looked up with the host `t()`; the component receives the host `t`, `Section(title)` and
  *   `Row(label, hint)` so it matches the other pages and reads in the DSH language.
- * - `flybot.new-chat.action`: a row in the sidebar '+' new-chat menu, next to
- *   Create group chat (e.g. Face-to-face group, Add friend). `label` / `hint` are English keys
- *   looked up with the same `t()` map as the neighbouring rows.
+ * - `flybot.new-chat.action`: a row in the sidebar '+' new-chat menu, after
+ *   New group chat (e.g. Face-to-face room, Add friend). `label` / `hint` are English keys
+ *   looked up with the same `t()` map as the neighbouring rows; every row has a short one-line
+ *   `hint` with no closing period, and its own `icon` (a React component; default: people).
  */
 export interface FlyBotSlots {
   'flybot.sidebar.section': { id: string; order?: number; component(props: SidebarSectionProps): any }
@@ -500,6 +501,8 @@ export interface FlyBotSlots {
     order?: number
     label: string
     hint?: string
+    /** A React component drawn as the row's mark (default: the people mark). */
+    icon?: any
     visible?(context: { mode?: string; group?: boolean; picked?: string[]; query?: string; roster?: any }): boolean
     run(context: { close?: () => void; actions?: any; roster?: any }): void
   }

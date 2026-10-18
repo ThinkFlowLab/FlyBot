@@ -15,7 +15,7 @@
 //   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim, t }) }  above the composer;
 //                            a dock that draws the cards of one approval policy sets `policy` and calls claim(ids) with the
 //                            approval ids it shows: the overlay then draws no second card for them (#260)
-//   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat; Face-to-face group, Add friend, Friend requests)
+//   flybot.new-chat.action  { id, order, label, hint?, icon?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (after New group chat; Face-to-face room, Add friend)
 //   flybot.account.header   { id, order, component({ actions, call }) }   top of the account menu (the owner's own Bot Social handle)
 //   flybot.settings.page    { id, order, label, icon?, component({ roster, actions, call, run, t, Section, Row }) }   a page in the Settings list
 //                            (after Connectors); `label` is English and goes through the host's t(); the component gets the host's t(),

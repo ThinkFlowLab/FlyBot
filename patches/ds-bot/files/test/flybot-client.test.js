@@ -18,21 +18,22 @@ test('the client registry orders entries, replaces by id, and notifies', () => {
   assert.deepEqual(SLOTS, ['flybot.sidebar.section', 'flybot.sidebar.structure', 'flybot.composer.mention', 'flybot.bot.details', 'flybot.approvals', 'flybot.room.overview', 'flybot.session.dock', 'flybot.new-chat.action', 'flybot.account.header', 'flybot.settings.page'])
 })
 
-test('new-chat action rows sit next to Create group chat and skip a failing plugin', () => {
+test('new-chat action rows sit after New group chat and skip a failing plugin', () => {
   const slots = registry()
   const original = console.error
   console.error = () => {}
   const offs = [
     slots.register('flybot.new-chat.action', {
-      id: 'social-face-group', order: 15, label: 'Face-to-face group', hint: 'Meet next to you',
-      run: () => {},
+      id: 'social-face-group', order: 15, label: 'Face-to-face room', hint: 'Meet next to you',
+      icon: () => null, run: () => {},
     }),
     slots.register('flybot.new-chat.action', { id: 'broken', order: 1, label: 'x', visible: () => { throw new Error('x') } }),
   ]
   try {
     const rows = newChatActionRows({ mode: 'new' })
     assert.deepEqual(rows.map(row => row.key), ['social-face-group'])
-    assert.equal(rows[0].label, 'Face-to-face group')
+    assert.equal(rows[0].label, 'Face-to-face room')
+    assert.equal(typeof rows[0].icon, 'function')
     assert.equal(rows[0].hint, 'Meet next to you')
   } finally {
     console.error = original

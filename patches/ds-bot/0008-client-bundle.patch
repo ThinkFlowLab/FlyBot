@@ -3,6 +3,22 @@ FlyBot patch 0008-client-bundle on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gener
 diff --git a/client.js b/client.js
 --- a/client.js
 +++ b/client.js
+@@ -49,6 +49,15 @@ var ZH = {
+   "Unread activity": "有未读",
+   Search: "搜索",
+   "New chat": "新对话",
++  "Message one of your Bots": "给你的一个 Bot 发消息",
++  "Set up a Bot with its own role": "创建一个有自己角色的 Bot",
++  "New group chat": "新建群聊",
++  "Chat with several of your Bots": "和你的几个 Bot 一起聊",
++  "Face-to-face room": "面对面房间",
++  "Meet people nearby with a 6-digit number": "用同一组 6 位数字和身边的人见面",
++  "Paste an invite link or code": "粘贴邀请链接或邀请码",
++  "A coding session without a Bot": "不带 Bot 的编码会话",
++  "New Bot “{name}”": "新建 Bot「{name}」",
+   "New…": "新建",
+   "Animation": "动画",
+   "Bot animation": "Bot 动画",
 @@ -63,6 +63,21 @@ var ZH = {
    Duplicate: "复制一份",
    Hidden: "已隐藏",
@@ -25,7 +41,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,20 +78,64 @@ var ZH = {
+@@ -78,20 +78,61 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -48,10 +64,7 @@ diff --git a/client.js b/client.js
 +  "Invite link": "邀请链接",
 +  "Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.": "无法自动复制 {name} 的邀请链接。请手动复制下面的链接发给好友，对方接受后再重新建群。",
 +  "Could not create the invite. Use Bot settings → Invite to this Bot.": "无法创建邀请。请在 Bot 设置里使用 Invite to this Bot。",
-+  "Face-to-face group": "面对面建群",
-+  "Meet the people next to you. Pick your Bots and type the same 6-digit number.": "和身边的人建群。选你的 Bot，输入同一组 6 位数字。",
 +  "Add friend": "添加好友",
-+  "Paste an invite link or code.": "粘贴邀请链接或邀请码。",
 +  "Friend requests": "好友请求",
 +  "Accept or decline incoming requests.": "接受或拒绝收到的请求。",
 +  "Accept invite": "接受邀请",
@@ -176,6 +189,15 @@ diff --git a/client.js b/client.js
    // Header
    "Message {name}": "给 {name} 发消息",
    Message: "发消息",
+@@ -162,8 +162,6 @@ var ZH = {
+   "Dismiss new messages": "关闭新消息提示",
+   New: "新",
+   // New chat
+-  "Create new Bot": "新建 Bot",
+-  "Create new Bot “{name}”": "新建 Bot「{name}」",
+   "Add to group chat": "加入群聊",
+   "Message Bot": "给 Bot 发消息",
+   "To:": "发给：",
 @@ -185,8 +185,10 @@ var ZH = {
    "Admin leads": "管理员主持",
    "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
@@ -204,12 +226,19 @@ diff --git a/client.js b/client.js
    "Settings pages": "设置页面",
    "Models, providers, and the rest of DeepSeek Harness": "模型、服务商和 DeepSeek Harness 的其他设置",
    "Harness settings": "Harness 设置",
-@@ -394,6 +394,9 @@ var ZH = {
+@@ -385,7 +385,6 @@ var ZH = {
+   Pin: "置顶",
+   Pinned: "已置顶",
+   "Mark as Unread": "标为未读",
+-  "Rename Bot": "重命名 Bot",
+   "Group settings": "群设置",
+   "Rename group": "重命名群聊",
+   "Copy conversation ID": "复制对话 ID",
+@@ -394,6 +394,8 @@ var ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    "Add DSH Agent": "添加 DSH Agent",
 +  "Add coding agent": "添加编码 Agent",
-+  "A plain DSH session, not a Bot": "普通 DSH 会话，不是 Bot",
 +  "Add Agent": "添加 Agent",
    "Remove DSH Agent": "移除 DSH Agent",
    "New session": "新会话",
@@ -450,7 +479,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,313 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,314 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -622,6 +651,7 @@ diff --git a/client.js b/client.js
 +        order: entry.order ?? 0,
 +        label: entry.label,
 +        hint: entry.hint,
++        ...typeof entry.icon === "function" ? { icon: entry.icon } : {},
 +        run: entry.run ?? (() => {
 +        })
 +      });
@@ -2101,7 +2131,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
-@@ -3112,21 +3112,45 @@ var CopyIcon = lineIcon(["M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1-1.5 1.5h
+@@ -3112,21 +3112,48 @@ var CopyIcon = lineIcon(["M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1-1.5 1.5h
  var HideIcon = lineIcon(["M3 3l14 14", "M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4", "M8.5 8.5a2 2 0 0 0 3 3"]);
  var TrashIcon = lineIcon(["M3.5 5.5h13", "M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5", "M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10", "M8.5 9v4.5M11.5 9v4.5"]);
  var DuplicateIcon = lineIcon(["M7 7h8.5v9.5H7z", "M4.5 13V3.5H13", "M11.25 9.5v4.5M9 11.75h4.5"]);
@@ -2109,6 +2139,9 @@ diff --git a/client.js b/client.js
  var SlidersIcon = lineIcon(["M4 6.5h5M12.5 6.5H16M4 13.5h4M11.5 13.5H16", "M10.5 4.5v4M9.5 11.5v4"]);
  var MemoryIcon = lineIcon(["M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1.5h-8z", "M5.5 3.5v13", "M8.5 7.5h3.5M8.5 10.5h2.5", "M12 3.5v4l1-.8 1 .8"]);
  var FolderIcon = lineIcon(["M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"]);
++var ChatIcon = lineIcon(["M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3A1.5 1.5 0 0 1 4 11.5z"]);
++var BotIcon = lineIcon(["M6 7.5h8a2 2 0 0 1 2 2V14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2z", "M10 4.5v3", "M10 3.5h.01", "M7.75 11.5h.01M12.25 11.5h.01"]);
++var TerminalIcon = lineIcon(["M4.5 4.5h11a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14V6a1.5 1.5 0 0 1 1.5-1.5z", "M6.5 8.25L8.75 10 6.5 11.75", "M10.5 12h3"]);
  var ChatsIcon = lineIcon(["M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z", "M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13"]);
  var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
 +function FlyBotMark({ size = 24 }) {
@@ -7147,7 +7180,7 @@ diff --git a/client.js b/client.js
          className: "bt-input",
          autoFocus: !inline,
          value: name,
-@@ -8284,75 +8284,114 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
+@@ -8284,75 +8284,113 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
            }
          }
        }),
@@ -7205,8 +7238,8 @@ diff --git a/client.js b/client.js
  
  // src/client/new-chat.js
 -var import_react20 = require("react");
+-var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
 +var import_react22 = require("react");
- var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
  function NewChat({ mode, roster, actions }) {
 -  const [query, setQuery] = (0, import_react20.useState)("");
 -  const [picked, setPicked] = (0, import_react20.useState)([]);
@@ -7326,14 +7359,14 @@ diff --git a/client.js b/client.js
 -    options.push({ key: "new", icon: (0, import_react20.createElement)(PlusIcon), label: t("Create new Bot"), run: createBot });
 -    options.push({ key: "group", icon: (0, import_react20.createElement)(PeopleIcon), label: t("Create group chat"), run: () => {
 +    if (menuOnly) {
-+      options.push({ key: "chat", icon: (0, import_react22.createElement)(PlusIcon), label: t("New chat"), run: () => {
++      options.push({ key: "chat", icon: (0, import_react22.createElement)(ChatIcon), label: t("New chat"), hint: t("Message one of your Bots"), run: () => {
 +        setCompose(true);
 +        setCursor(0);
 +        setTimeout(() => inputRef.current?.focus());
 +      } });
 +    }
-+    options.push({ key: "new", icon: (0, import_react22.createElement)(PlusIcon), label: t("Create new Bot"), run: createBot });
-+    options.push({ key: "group", icon: (0, import_react22.createElement)(PeopleIcon), label: t("Create group chat"), run: () => {
++    options.push({ key: "new", icon: (0, import_react22.createElement)(BotIcon), label: t("New Bot"), hint: t("Set up a Bot with its own role"), run: createBot });
++    options.push({ key: "group", icon: (0, import_react22.createElement)(PeopleIcon), label: t("New group chat"), hint: t("Chat with several of your Bots"), run: () => {
        setGroup(true);
 +      setCompose(true);
        setCursor(0);
@@ -7342,7 +7375,7 @@ diff --git a/client.js b/client.js
 +    for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
 +      options.push({
 +        key: action.key,
-+        icon: (0, import_react22.createElement)(PeopleIcon),
++        icon: (0, import_react22.createElement)(action.icon ?? PeopleIcon),
 +        label: t(action.label),
 +        hint: action.hint ? t(action.hint) : void 0,
 +        run: () => {
@@ -7355,7 +7388,7 @@ diff --git a/client.js b/client.js
 +    }
      if ((roster.agents ?? []).length === 0) {
 -      options.push({ key: "agent", icon: (0, import_react20.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add DSH Agent"), run: () => run(async () => {
-+      options.push({ key: "agent", icon: (0, import_react22.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 16 }), label: t("Add coding agent"), hint: t("A plain DSH session, not a Bot"), run: () => run(async () => {
++      options.push({ key: "agent", icon: (0, import_react22.createElement)(TerminalIcon), label: t("Add coding agent"), hint: t("A coding session without a Bot"), run: () => run(async () => {
          await actions.addAgent();
          close();
        }) });
@@ -7369,7 +7402,7 @@ diff --git a/client.js b/client.js
 +    }
    }
 -  if (wanted !== "" && !exact && mode !== "search") options.push({ key: "create", icon: (0, import_react20.createElement)(PlusIcon), label: t("Create new Bot “{name}”", { name: query.trim() }), run: createBot });
-+  if (wanted !== "" && !exact && mode !== "search") options.push({ key: "create", icon: (0, import_react22.createElement)(PlusIcon), label: t("Create new Bot “{name}”", { name: query.trim() }), run: createBot });
++  if (wanted !== "" && !exact && mode !== "search") options.push({ key: "create", icon: (0, import_react22.createElement)(PlusIcon), label: t("New Bot “{name}”", { name: query.trim() }), run: createBot });
    const active = Math.min(cursor, Math.max(options.length - 1, 0));
    const listed = options.map((option) => option.key).join("\n");
    const glide = useGlide(`${active}
@@ -9807,7 +9840,7 @@ diff --git a/client.js b/client.js
    const bot = roster.byId[menu.id];
    const room2 = roster.roomsById[menu.id];
    const entry = bot ?? room2;
-@@ -10884,7 +10884,16 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
+@@ -10884,13 +10884,22 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
    const isMainBot = isMainOf(roster, menu.id);
    const isTile = roster.mainBotId === menu.id;
    const mainCount = (roster.mainBotIds ?? []).length;
@@ -9825,6 +9858,13 @@ diff --git a/client.js b/client.js
      [
        isTile ? null : [entry.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
        [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
+     ],
+     [
+-      bot ? [t("Rename Bot"), PencilIcon, () => actions.renameBot(bot.id)] : null,
++      // One way to edit a Bot (#385): its name is edited in Edit Bot too.
+       bot ? [t("Edit Bot"), GearIcon, () => actions.openSettings("bots", bot.id)] : null,
+       room2 ? [t("Group settings"), GearIcon, () => actions.openSettings("groups", room2.id)] : null,
+       room2 ? [t("Rename group"), PencilIcon, () => actions.renameBot(room2.id)] : null,
 @@ -10901,20 +10901,22 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
        bot && !isMainBot ? [t("Make Main Bot"), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
        bot && isMainBot && mainCount > 1 ? [t("Remove Main Bot role"), StarLineIcon, () => actions.setMain(bot.id, false)] : null
