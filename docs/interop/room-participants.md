@@ -52,3 +52,52 @@ evidence for deterministic room tests, mock HTTP compatibility, actual model
 execution and human acceptance. The current room suites exercise DSH scheduling
 with scripted events; they are not that complete fixture or a performance
 comparison. Real-model trials still require explicit model and budget approval.
+
+## Clarification contract (pinned v1 design, not yet implemented)
+
+Cross-runtime, "the member is blocked on a question" must be a structured,
+machine-checked signal. Prose that merely reads like a question creates no
+wait — the acceptance fixture's forced clarification must not depend on
+prompt phrasing surviving translation into another runtime.
+
+- An external participant's turn ends in exactly one observable state:
+  `reply` (text, done for now), `working` (execution evidence continues) or
+  `question` (blocked on requester input). The v1 encoding for an OpenCode
+  participant is a fenced `flybot-question` block carrying validated fields
+  (`taskId`, `turnId`, `text`), parsed by the adapter; unknown fields, a task
+  or turn that does not match the room's current state, or malformed content
+  degrade the turn to a plain reply with a warning, never to a wait.
+- Only the host opens `task-wait-input`; the driver cannot mint waits. A
+  question raised outside a task is an ordinary room reply.
+- An answer reaches the participant as room input for its next bounded turn,
+  with the `task-answer-input` bookkeeping beside it. Answers are untrusted
+  data and never widen permissions; approval stays a separate track.
+- The DSH participant satisfies this today through its exchange and waiter
+  machinery; this section is what an OpenCode adapter must provide at the
+  same seam. A native "ask" tool may replace the fenced block in a later
+  version once the pinned OpenCode SDK demonstrably supports one.
+
+## Supervised child lifecycle (pinned v1 design, not yet implemented)
+
+The participant driver owns the OpenCode process. Whoever starts a process
+can stop it, so the pilot allows no operator-started server.
+
+- **Start.** The driver spawns the pinned OpenCode version with an empty
+  per-room workspace, an environment inheriting no operator configuration,
+  plugins or credentials, and persists the
+  `roomId + botId + taskId → (child pid, runtime session)` mapping before
+  the first dispatch.
+- **Supervision.** The process handle is the driver's authority for
+  teardown. Health and status reads are observations; they never authorize
+  work or approval.
+- **Stop.** Round withdrawal, task cancellation, member removal, room close
+  or leave, and plugin unload each terminate the child (TERM, bounded wait,
+  KILL) and record the disposal state as `requested`, `observed` or
+  `uncertain`. Disposal never claims rollback of external side effects.
+- **Restart reconciliation.** On host restart, reconcile the durable mapping
+  against the process table and the runtime's own session history before any
+  new dispatch: live children are re-adopted or deliberately stopped,
+  orphans are stopped, and sessions whose state cannot be confirmed stay
+  `uncertain` with dispatch suppressed — never blind re-execution.
+- **Budget.** Turn, request and cost counters live in the host journal; a
+  child restart or replacement resets nothing.
