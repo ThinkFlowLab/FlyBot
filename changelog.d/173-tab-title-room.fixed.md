@@ -1,0 +1,1 @@
+The browser tab title now follows a face room or shared group that opened before the roster knew its name (the joiner's side), and follows a room's later rename, instead of keeping the previous Bot's title. ([#173](https://github.com/ThinkFlowLab/FlyBot/issues/173))

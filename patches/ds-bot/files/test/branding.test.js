@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { brandTitle, flybotMarkSvg, installBrandChrome } from '../src/client/brand.js'
+import { brandTitle, flybotMarkSvg, installBrandChrome, installTabTitle } from '../src/client/brand.js'
+import { createSource } from '../src/client/sources.js'
 import { DICTIONARY } from '../src/client/i18n.js'
 
 const src = name => readFileSync(new URL(`../src/client/${name}`, import.meta.url), 'utf8')
@@ -69,4 +70,24 @@ test('FlyBot mark SVG matches the docs logo; tab title and favicon follow', () =
     delete globalThis.document
     delete globalThis.MutationObserver
   }
+})
+
+test('#173: the tab title follows a room the roster learns after it opened', () => {
+  const sessions = createSource({ byId: { chief: { id: 'chief', retainedBy: { mainView: 1 } } } })
+  const roster = createSource({ byId: { chief: { name: 'Chief' } }, roomsById: {} })
+  const doc = { title: 'FlyBot' }
+  const off = installTabTitle(sessions, roster, doc)
+  assert.equal(doc.title, 'Chief — FlyBot')
+  // The joiner opens the face room before the roster has it: the title waits, it does not blank.
+  sessions.set({ byId: { chief: { id: 'chief' }, room1: { id: 'room1', retainedBy: { mainView: 1 } } } })
+  assert.equal(doc.title, 'Chief — FlyBot')
+  // The roster learns the room: the tab follows without another session change.
+  roster.set(current => ({ ...current, roomsById: { room1: { name: 'Face-to-face · Ann, Bob · Oct 18 10:00' } } }))
+  assert.equal(doc.title, 'Face-to-face · Ann, Bob · Oct 18 10:00 — FlyBot')
+  // A later rename follows too.
+  roster.set(current => ({ ...current, roomsById: { room1: { name: 'Face-to-face · Ann, Bob, Cy · Oct 18 10:00' } } }))
+  assert.equal(doc.title, 'Face-to-face · Ann, Bob, Cy · Oct 18 10:00 — FlyBot')
+  off()
+  roster.set(current => ({ ...current, roomsById: { room1: { name: 'after off' } } }))
+  assert.equal(doc.title, 'Face-to-face · Ann, Bob, Cy · Oct 18 10:00 — FlyBot', 'unsubscribed')
 })

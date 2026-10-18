@@ -3695,6 +3695,24 @@ function sessionTabLabel(roster, sessionId) {
   if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
   return bot?.name || "";
 }
+function installTabTitle(sessions, roster, doc = globalThis.document) {
+  if (!doc || !sessions || !roster) return () => {
+  };
+  const sync = () => {
+    const row = Object.values(sessions.getSnapshot().byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
+    const label = sessionTabLabel(roster.getSnapshot(), row?.id);
+    if (!label) return;
+    const next = brandTitle(`${label} — FlyBot`);
+    if (doc.title !== next) doc.title = next;
+  };
+  sync();
+  const offSessions = sessions.subscribe(sync);
+  const offRoster = roster.subscribe(sync);
+  return () => {
+    offSessions?.();
+    offRoster?.();
+  };
+}
 function installBrandChrome() {
   if (typeof document === "undefined") return () => {
   };
@@ -14655,19 +14673,7 @@ function apply(ctx) {
   ctx.effect(() => installLocale(ctx.get("locale")), "ds-bot: interface copy");
   ctx.effect(() => installBrandChrome(), "ds-bot: brand chrome");
   const roster = createSource(EMPTY_ROSTER);
-  ctx.effect(() => {
-    const sessions = ctx.sessions.list;
-    const sync = () => {
-      if (typeof document === "undefined") return;
-      const row = Object.values(sessions.getSnapshot().byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
-      const label = sessionTabLabel(roster.getSnapshot(), row?.id);
-      if (!label) return;
-      const next = brandTitle(`${label} — FlyBot`);
-      if (document.title !== next) document.title = next;
-    };
-    sync();
-    return sessions.subscribe(sync);
-  }, "ds-bot: tab title");
+  ctx.effect(() => installTabTitle(ctx.sessions.list, roster, typeof document === "undefined" ? void 0 : document), "ds-bot: tab title");
   migrateStorage();
   const UNREAD_KEY = STORAGE.unread;
   let savedUnread = {};

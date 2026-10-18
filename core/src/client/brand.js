@@ -42,6 +42,25 @@ export function sessionTabLabel(roster, sessionId) {
   return bot?.name || ''
 }
 
+// The tab title follows the conversation in the main view. It re-reads on session changes and on
+// roster changes: a face room or shared group can become the main view before the roster knows its
+// name (the joiner's side), and a room's title can change later; without the roster subscription
+// the tab kept the previous Bot's title (#173).
+export function installTabTitle(sessions, roster, doc = globalThis.document) {
+  if (!doc || !sessions || !roster) return () => {}
+  const sync = () => {
+    const row = Object.values(sessions.getSnapshot().byId ?? {}).find(session => (session?.retainedBy?.mainView ?? 0) > 0)
+    const label = sessionTabLabel(roster.getSnapshot(), row?.id)
+    if (!label) return
+    const next = brandTitle(`${label} — FlyBot`)
+    if (doc.title !== next) doc.title = next
+  }
+  sync()
+  const offSessions = sessions.subscribe(sync)
+  const offRoster = roster.subscribe(sync)
+  return () => { offSessions?.(); offRoster?.() }
+}
+
 export function installBrandChrome() {
   if (typeof document === 'undefined') return () => {}
   const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`

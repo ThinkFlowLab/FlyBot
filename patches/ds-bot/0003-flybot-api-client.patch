@@ -540,7 +540,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
  import { MENTION_ORIGIN, currentPart } from './text.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
-+import { brandTitle, installBrandChrome, sessionTabLabel } from './brand.js'
++import { installBrandChrome, installTabTitle } from './brand.js'
  import { lookOf } from './mark.js'
  import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
  import { HeaderPill } from './header.js'
@@ -562,7 +562,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { GROUP_SETTINGS_CSS } from './group-settings.js'
  import { FOLDER_CSS } from './folder-menu.js'
  import { USAGE_CSS } from './usage-page.js'
-@@ -37,8 +37,30 @@ import { noticeApprovals } from './approval-notices.js'
+@@ -37,8 +37,18 @@ import { noticeApprovals } from './approval-notices.js'
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
  export function apply(ctx) {
@@ -577,19 +577,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ctx.effect(() => installLocale(ctx.get('locale')), 'ds-bot: interface copy')
 +  ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
    const roster = createSource(EMPTY_ROSTER)
-+  ctx.effect(() => {
-+    const sessions = ctx.sessions.list
-+    const sync = () => {
-+      if (typeof document === 'undefined') return
-+      const row = Object.values(sessions.getSnapshot().byId ?? {}).find(session => (session?.retainedBy?.mainView ?? 0) > 0)
-+      const label = sessionTabLabel(roster.getSnapshot(), row?.id)
-+      if (!label) return
-+      const next = brandTitle(`${label} — FlyBot`)
-+      if (document.title !== next) document.title = next
-+    }
-+    sync()
-+    return sessions.subscribe(sync)
-+  }, 'ds-bot: tab title')
++  ctx.effect(() => installTabTitle(ctx.sessions.list, roster, typeof document === 'undefined' ? undefined : document), 'ds-bot: tab title')
    migrateStorage()
    const UNREAD_KEY = STORAGE.unread
    let savedUnread = {}

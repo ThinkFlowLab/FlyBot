@@ -1313,7 +1313,7 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
-@@ -2855,226 +2855,123 @@ function installCompiledStyles(text, tag) {
+@@ -2855,226 +2855,141 @@ function installCompiledStyles(text, tag) {
    };
  }
  
@@ -1467,7 +1467,27 @@ diff --git a/client.js b/client.js
    }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
--}
++  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
++  return bot?.name || "";
++}
++function installTabTitle(sessions, roster, doc = globalThis.document) {
++  if (!doc || !sessions || !roster) return () => {
++  };
++  const sync = () => {
++    const row = Object.values(sessions.getSnapshot().byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
++    const label = sessionTabLabel(roster.getSnapshot(), row?.id);
++    if (!label) return;
++    const next = brandTitle(`${label} — FlyBot`);
++    if (doc.title !== next) doc.title = next;
++  };
++  sync();
++  const offSessions = sessions.subscribe(sync);
++  const offRoster = roster.subscribe(sync);
++  return () => {
++    offSessions?.();
++    offRoster?.();
++  };
+ }
 -function RoomAvatar({ room: room2, roster, size = 36 }) {
 -  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
 -  const people = members.length === 1 ? [members[0], null] : members;
@@ -1480,9 +1500,6 @@ diff --git a/client.js b/client.js
 -      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 -      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 -    );
-+  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
-+  return bot?.name || "";
-+}
 +function installBrandChrome() {
 +  if (typeof document === "undefined") return () => {
 +  };
@@ -7189,8 +7206,7 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react24.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: seats.length }) },
 +      seats.map((seat) => (0, import_react24.createElement)(
 +        "div",
@@ -7204,7 +7220,8 @@ diff --git a/client.js b/client.js
 +      ))
 +    ) : null,
 +    face ? null : (0, import_react24.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react24.createElement)(
 +        "div",
@@ -10275,7 +10292,7 @@ diff --git a/client.js b/client.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
-@@ -13250,8 +13250,30 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
+@@ -13250,8 +13250,18 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
  // src/client/index.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
  function apply(ctx) {
@@ -10290,19 +10307,7 @@ diff --git a/client.js b/client.js
    ctx.effect(() => installLocale(ctx.get("locale")), "ds-bot: interface copy");
 +  ctx.effect(() => installBrandChrome(), "ds-bot: brand chrome");
    const roster = createSource(EMPTY_ROSTER);
-+  ctx.effect(() => {
-+    const sessions = ctx.sessions.list;
-+    const sync = () => {
-+      if (typeof document === "undefined") return;
-+      const row = Object.values(sessions.getSnapshot().byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
-+      const label = sessionTabLabel(roster.getSnapshot(), row?.id);
-+      if (!label) return;
-+      const next = brandTitle(`${label} — FlyBot`);
-+      if (document.title !== next) document.title = next;
-+    };
-+    sync();
-+    return sessions.subscribe(sync);
-+  }, "ds-bot: tab title");
++  ctx.effect(() => installTabTitle(ctx.sessions.list, roster, typeof document === "undefined" ? void 0 : document), "ds-bot: tab title");
    migrateStorage();
    const UNREAD_KEY = STORAGE.unread;
    let savedUnread = {};
