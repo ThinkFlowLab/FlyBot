@@ -26,7 +26,7 @@ When you report status on a change:
 
 ## Silent catches
 
-- A `catch` that swallows the error says why in a comment inside the block (or handles it); `check-empty-catch` in `.github/scripts/` fails the build on a bare one (#205).
+- A `catch` that swallows the error says why in a comment inside the block (or handles it); `check-empty-catch` in `.github/scripts/` fails the build on a bare one (#205). Text inside comments, strings, templates and regex literals is not code, so a `catch {}` written there is never reported (#213).
 - The `void p.catch(() => {})` promise form is a separate fire-and-forget idiom and test-helper retries stay out of the gate's scope.
 
 ## Security: fences and remote strings
