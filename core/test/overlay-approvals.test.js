@@ -120,7 +120,7 @@ test('#260: an approval no open chat shows becomes a pointer to its chat, after 
     const find = (node, pred) => (node && typeof node === 'object' ? (pred(node) ? [node] : [...(node.children ?? []), ...(Array.isArray(node) ? node : [])].flatMap(child => find(child, pred))) : [])
     const [review] = find(tree, node => node.type === 'button')
     review.props.onClick()
-    assert.deepEqual(opened, ['bot-helper'])
+    assert.deepEqual(opened, ['f1'], 'Review opens the friend\'s chat the message is addressed to, the one place it is drawn (#278)')
   } finally { off() }
 })
 

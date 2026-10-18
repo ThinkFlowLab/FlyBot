@@ -417,7 +417,10 @@ window.__ModuleLoader__.load({
       .tl-body { flex:0 1 auto; min-height:260px; overflow:auto; padding:12px 14px }
       .tl-note { margin:0 0 8px; padding:6px 10px; border-radius:6px; font-size:13px; background:var(--bt-hover, rgba(127,127,127,.12)) }
       .tl-note.err { background:rgba(220,38,38,.12); color:#b91c1c }
-      .tl-foot { flex:none; padding:7px 14px; border-top:1px solid var(--bt-line, #d0d7de); opacity:.85; font-size:13px }
+      .tl-foot { flex:none; display:flex; flex-wrap:wrap; gap:2px 22px; padding:10px 16px; border-top:1px solid var(--bt-line, #d0d7de); opacity:.8; font-size:13px; line-height:1.5 }
+      .tl-range { flex:none; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; padding:8px 16px 2px }
+      .tl-range-text { font-size:15px; font-weight:600; font-variant-numeric:tabular-nums }
+      .tl-range-live { font-size:13px; opacity:.7 }
       .tl-btn.live { display:inline-flex; align-items:center; gap:5px }
       .tl-btn.live[aria-pressed="true"] { border-color:#16a34a; color:#15803d; cursor:default }
       .tl-btn.live[aria-pressed="false"] { background:var(--bt-accent, #2563eb); border-color:var(--bt-accent, #2563eb); color:#fff }
@@ -562,6 +565,16 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // The window as "Oct 18 · 13:20:05 – 13:35:05 (15 min)": the date once, or on both ends across midnight (#279).
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const fmtDay = (t) => { const d = new Date(t); return Number.isFinite(d.getTime()) ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : '–' }
+    function fmtRange(from, to) {
+      if (!Number.isFinite(from) || !Number.isFinite(to)) return ''
+      const same = fmtDay(from) === fmtDay(to)
+      return same
+        ? `${fmtDay(from)} · ${fmtClock(from)} – ${fmtClock(to)} (${fmtDur(to - from)})`
+        : `${fmtDay(from)} ${fmtClock(from)} – ${fmtDay(to)} ${fmtClock(to)} (${fmtDur(to - from)})`
+    }
     const TABS = [['lanes', 'Swimlanes'], ['map', 'Who waits on whom'], ['util', 'Utilization']]
     function notesOf(snap) {
       const win = snap.window
@@ -608,8 +621,13 @@ window.__ModuleLoader__.load({
             h('button', { className: 'tl-btn', onClick: () => api.setWindow({ windowMs: snap.windowMs, to: (win ? win.to : Date.now()) - snap.windowMs / 2 }) }, 'Earlier'),
             h('button', { className: 'tl-btn live', 'aria-pressed': snap.to === undefined, title: snap.to === undefined ? 'Following the latest activity' : 'Back to the latest activity', onClick: () => { if (snap.to !== undefined) api.setWindow({ windowMs: snap.windowMs }) } }, h('i', { className: 'tl-dot', 'aria-hidden': 'true' }), 'Live'),
             h('button', { className: 'tl-btn', 'aria-label': 'Close', onClick: onClose }, '✕')),
+          win && h('div', { className: 'tl-range', 'data-flybot': 'timeline-range' },
+            h('span', { className: 'tl-range-text' }, fmtRange(win.from, win.to)),
+            h('span', { className: 'tl-range-live' }, win.live ? 'live, up to the latest activity' : 'earlier window, not live')),
           h('div', { className: 'tl-body' }, ...notesOf(snap).map((note, i) => h('p', { key: `n${i}`, className: note.err ? 'tl-note err' : 'tl-note', role: note.err ? 'alert' : undefined }, note.text)), body),
-          h('div', { className: 'tl-foot' }, 'Delivered means in the other Bot\'s log, not read; model time is turn time outside tools, not a measured latency.')))
+          h('div', { className: 'tl-foot' },
+            h('span', null, 'Delivered: in the other Bot\'s log, not read.'),
+            h('span', null, 'Model time: turn time outside tools.'))))
     }
 
     // The panel's open/closed state, shared by the sidebar row and the '+' menu entry.
@@ -652,7 +670,7 @@ window.__ModuleLoader__.load({
     }
     return {
       name: 'flybot-timeline', inject, apply, createStore, checkWindow, ENDPOINT, VERSION, POLL_MS, WINDOWS, CSS,
-      safe, fmtDur, fmtClock, makeScale, niceTicks, layoutSwimlanes, layoutMap, waitRows, utilizationRows, createPanelState,
+      safe, fmtDur, fmtClock, fmtRange, makeScale, niceTicks, layoutSwimlanes, layoutMap, waitRows, utilizationRows, createPanelState,
       Swimlanes, CommMap, Utilization, TimelinePanel, makeSection, notesOf,
     }
   },

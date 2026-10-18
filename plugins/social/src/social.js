@@ -1700,7 +1700,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (rooms.some(entry => entry.id === room.id)) continue
         const live = (room.participants ?? []).filter(p => p.leftSeq === undefined)
         const handles = new Set(live.map(p => p.handle && norm(p.handle)).filter(Boolean))
-        if ((faceId && room.face?.roomId === faceId) || (to && handles.has(to))) rooms.push({ id: room.id, face: room.origin === 'face-to-face' })
+        const face = room.origin === 'face-to-face'
+        // A Face-to-face room holds only lines held for its own room id: a Bot's direct message to a
+        // friend who is in it is not one of them (#278).
+        if ((faceId && room.face?.roomId === faceId) || (!face && to && handles.has(to))) rooms.push({ id: room.id, face })
       }
     }
     return rooms

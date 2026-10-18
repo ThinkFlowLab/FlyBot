@@ -1090,6 +1090,14 @@ function noteClientError(where, error) {
   entries.push({ time: now, level: "error", text, ...code ? { code } : {} });
   if (entries.length > MAX) entries.splice(0, entries.length - MAX);
 }
+function noteNavigation(how, target, from) {
+  if (typeof navigator === "undefined" || navigator.userActivation?.isActive !== false) return;
+  const stack = String(new Error().stack ?? "").split("\n").slice(2, 6).map((line) => line.trim().replace(/\(?https?:\/\/[^/\s)]+/, "(")).join(" < ");
+  const text = `navigation: ${how} to ${String(target).slice(0, 60)}${from ? ` from ${String(from).slice(0, 60)}` : ""} with no click (${stack.slice(0, 300)})`;
+  console.warn(`[flybot] ${text}`);
+  entries.push({ time: Date.now(), level: "warn", text });
+  if (entries.length > MAX) entries.splice(0, entries.length - MAX);
+}
 var quietly = (where) => (error) => noteClientError(where, error);
 var clearClientErrors = () => {
   entries.length = 0;
@@ -1955,11 +1963,15 @@ function FlyBotDetails({ bot, roster, actions }) {
 }
 var POLL_MS = 5e3;
 var POINTER_DELAY_MS = 1200;
-var chatOf = (approval) => approval.request?.meta?.roomId ?? (typeof approval.request?.from === "string" ? approval.request.from : void 0);
 var handleOf = (ref) => typeof ref === "object" && ref ? ref.handle : typeof ref === "string" && ref.startsWith("@") ? ref : void 0;
+var friendChatOf = (approval, roster) => {
+  const handle = handleOf(approval.request?.to);
+  return handle ? (roster?.bots ?? []).find((item) => item.remote && String(item.remote.handle ?? "").toLowerCase() === handle.toLowerCase()) : void 0;
+};
+var chatOf = (approval, roster) => approval.request?.meta?.roomId ?? friendChatOf(approval, roster)?.id ?? (typeof approval.request?.from === "string" ? approval.request.from : void 0);
 function recipientName(approval, roster) {
   const handle = handleOf(approval.request?.to);
-  const bot = handle ? (roster?.bots ?? []).find((item) => item.remote && String(item.remote.handle ?? "").toLowerCase() === handle.toLowerCase()) : void 0;
+  const bot = friendChatOf(approval, roster);
   if (bot) {
     const owner = bot.remote.owner || bot.remote.homeName;
     if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`;
@@ -1987,7 +1999,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
   const open = pending.filter((approval) => !claimed.has(approval.id));
   const cards = open.filter((approval) => !policies.has(approval.by));
   const inOpenChat = (approval) => {
-    const chat = chatOf(approval);
+    const chat = chatOf(approval, roster);
     return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
   };
   const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
@@ -2016,7 +2028,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
   };
   const byChat = /* @__PURE__ */ new Map();
   for (const approval of pointers) {
-    const key = chatOf(approval) ?? approval.id;
+    const key = chatOf(approval, roster) ?? approval.id;
     byChat.set(key, [...byChat.get(key) ?? [], approval]);
   }
   return (0, import_react2.createElement)(
@@ -2035,7 +2047,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
           list.length > 1 ? ` ${t("+{count} more", { count: list.length - 1 })}` : ""
         ),
         (0, import_react2.createElement)("span", { className: "bt-flybot-pointer-note" }, t("Waiting for approval")),
-        typeof actions?.openSession === "function" && chatOf(list[0]) ? (0, import_react2.createElement)("button", { type: "button", onClick: () => actions.openSession(chatOf(list[0])) }, t("Review")) : null
+        typeof actions?.openSession === "function" && chatOf(list[0], roster) ? (0, import_react2.createElement)("button", { type: "button", onClick: () => actions.openSession(chatOf(list[0], roster)) }, t("Review")) : null
       ))
     ) : null,
     cards.length > 0 ? (0, import_react2.createElement)(
@@ -2350,6 +2362,13 @@ function relativeShort(ms) {
 var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
 var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
 var currentPart = (bot) => bot.sessionId ?? bot.id;
+function landingPart(roster, last, mainId, { stay = false } = {}) {
+  const bot = last ? roster.byId[last.botId] : void 0;
+  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
+  if (bot && stay) return last.sessionId;
+  const main = roster.byId[mainId];
+  return main ? currentPart(main) : mainId;
+}
 function reminderPrompts(text) {
   const one = /^reminder_prompt_json: (.*)$/m.exec(text);
   const batch = /^reminders_json: (.*)$/m.exec(text);
@@ -4729,6 +4748,7 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
     })
   );
 }
+var WAITING_OTHERS_NOTICE = "Waiting for the owner's approval";
 var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 function useDismiss(open, close, refs) {
   (0, import_react7.useEffect)(() => {
@@ -5466,6 +5486,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       if (reply.kind === "stopped") {
         return (0, import_react7.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
       }
+      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
       if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
         return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
       }
@@ -6522,7 +6543,7 @@ function useLandOnMainBot(roster, useSessions, actions) {
       return void 0;
     }
     const last = lastBot.current;
-    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last), last ? 0 : 400);
+    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === "" }), last ? 0 : 400);
     return () => clearTimeout(timer);
   }, [mainView, roster]);
 }
@@ -15181,6 +15202,7 @@ function apply(ctx) {
     // or the click appears to do nothing.
     isAgentSession: (id) => isAgentSessionId(id),
     openSession: (id) => {
+      noteNavigation("openSession", id);
       if (isAgentSessionId(id)) return actions.openAgentSession(id);
       ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
       setPlain(false);
@@ -15246,12 +15268,12 @@ function apply(ctx) {
     },
     // `last` is the Bot conversation the view held before it cleared: when that part
     // was archived for a fresh one, the view goes on in the fresh one.
-    landOn: async (id, last) => {
+    landOn: async (id, last, { stay = false } = {}) => {
       if (last) await pull().catch(() => {
       });
-      const bot = last ? roster.getSnapshot().byId[last.botId] : void 0;
       setPlain(false);
-      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id);
+      const target = landingPart(roster.getSnapshot(), last, id, { stay });
+      noteNavigation("landOn", target, last?.sessionId);
       expected = target;
       ctx.uiWorkspace.openSession(target);
     },

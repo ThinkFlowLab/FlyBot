@@ -861,7 +861,7 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve')))
     }
 
-    function approvalsForOpenChat(items, { sessionId, room, bot } = {}) {
+    function approvalsForOpenChat(items, { sessionId, room, bot, roster } = {}) {
       const list = Array.isArray(items) ? items : []
       const handle = bot?.remote?.handle
       const faceId = room?.face?.roomId
@@ -877,7 +877,8 @@ window.__ModuleLoader__.load({
         if (room?.id && item.roomId === room.id) return true
         if (item.roomId) return false
         // A held reply or message a local Bot wrote shows in that Bot's own chat, where its owner is (#254).
-        if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return true
+        // One place per approval: once the friend's chat exists, that chat alone shows it (#278).
+        if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return !friendChatOf(roster, item.to)
         // A Bot's direct message to a friend belongs to the Bot's chat and the friend's chat, never to
         // a room that merely has that friend in it (#260). Bot Social's own holds still match by handle.
         if (item.source === 'local' && room) return false
@@ -889,11 +890,14 @@ window.__ModuleLoader__.load({
       })
     }
 
+    function friendChatOf(roster, handle) {
+      const want = String(handle ?? '').trim().toLowerCase()
+      if (!want.startsWith('@')) return undefined
+      return (roster?.bots ?? []).find(item => item?.remote && String(item.remote.handle ?? '').toLowerCase() === want)
+    }
     // A friend's Bot as the chat list names it: "UiA1415's Chief", "Helper · UiB1415's Bot" (#260).
     function friendLabel(roster, handle) {
-      const want = String(handle ?? '').trim().toLowerCase()
-      if (!want.startsWith('@')) return ''
-      const bot = (roster?.bots ?? []).find(item => item?.remote && String(item.remote.handle ?? '').toLowerCase() === want)
+      const bot = friendChatOf(roster, handle)
       if (!bot) return ''
       const owner = String(bot.remote.owner || bot.remote.homeName || '').trim()
       const name = String(bot.name ?? '').trim()

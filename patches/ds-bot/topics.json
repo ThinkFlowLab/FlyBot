@@ -14,6 +14,7 @@
     "test/model-menu.test.js",
     "test/home-lock.test.js",
     "test/client-bundle.test.js",
+    "test/tool-cells.test.js",
     "test/install.test.js",
     "src/client/bot-browsers.js",
     "src/client/memory-panel.js",

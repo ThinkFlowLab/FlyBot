@@ -164,12 +164,18 @@ const POLL_MS = 5000
 // may draw the card for its own policy's approvals. Same two lines on every card: what it is, then
 // "Sender → Recipient" (#260).
 const POINTER_DELAY_MS = 1200
-const chatOf = approval => approval.request?.meta?.roomId ?? (typeof approval.request?.from === 'string' ? approval.request.from : undefined)
 const handleOf = ref => (typeof ref === 'object' && ref ? ref.handle : typeof ref === 'string' && ref.startsWith('@') ? ref : undefined)
+const friendChatOf = (approval, roster) => {
+  const handle = handleOf(approval.request?.to)
+  return handle ? (roster?.bots ?? []).find(item => item.remote && String(item.remote.handle ?? '').toLowerCase() === handle.toLowerCase()) : undefined
+}
+// The one chat an approval belongs to: its room, else the friend's chat it is addressed to, else the
+// Bot that wrote it (#278). The chat's dock draws its card; the pointer opens that chat.
+const chatOf = (approval, roster) => approval.request?.meta?.roomId ?? friendChatOf(approval, roster)?.id ?? (typeof approval.request?.from === 'string' ? approval.request.from : undefined)
 // A friend's Bot by name and owner when the roster knows its chat; otherwise what the host called it.
 function recipientName(approval, roster) {
   const handle = handleOf(approval.request?.to)
-  const bot = handle ? (roster?.bots ?? []).find(item => item.remote && String(item.remote.handle ?? '').toLowerCase() === handle.toLowerCase()) : undefined
+  const bot = friendChatOf(approval, roster)
   if (bot) {
     const owner = bot.remote.owner || bot.remote.homeName
     if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`
@@ -198,7 +204,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
   const cards = open.filter(approval => !policies.has(approval.by))
   // An approval of the chat that is open is that chat's to show, never a pointer (#271).
   const inOpenChat = approval => {
-    const chat = chatOf(approval)
+    const chat = chatOf(approval, roster)
     return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true)
   }
   const away = open.filter(approval => policies.has(approval.by) && approval.status !== 'failed' && !inOpenChat(approval))
@@ -227,7 +233,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
   }
   const byChat = new Map()
   for (const approval of pointers) {
-    const key = chatOf(approval) ?? approval.id
+    const key = chatOf(approval, roster) ?? approval.id
     byChat.set(key, [...(byChat.get(key) ?? []), approval])
   }
   return h(Fragment, null,
@@ -237,7 +243,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
           t('{from} → {to}', { from: list[0].senderName ?? t('A Bot'), to: recipientName(list[0], roster) }),
           list.length > 1 ? ` ${t('+{count} more', { count: list.length - 1 })}` : ''),
         h('span', { className: 'bt-flybot-pointer-note' }, t('Waiting for approval')),
-        typeof actions?.openSession === 'function' && chatOf(list[0]) ? h('button', { type: 'button', onClick: () => actions.openSession(chatOf(list[0])) }, t('Review')) : null))) : null,
+        typeof actions?.openSession === 'function' && chatOf(list[0], roster) ? h('button', { type: 'button', onClick: () => actions.openSession(chatOf(list[0], roster)) }, t('Review')) : null))) : null,
     cards.length > 0 ? h('div', { className: 'bt-flybot-approvals', role: 'region', 'aria-label': t('Messages waiting for your approval') },
       cards.map((approval) => {
         const custom = entries.find(entry => entry.policy === undefined || entry.policy === approval.by)

@@ -390,9 +390,13 @@ test('polish (#249): no "( )" prefix, a short footer, labels that fit, and a dia
   assert.ok(!htmlOf(mount(client.Swimlanes, { win: long, compress: false }).tree).includes('A Bot with a really quite long name indeed</text>'))
   const view = mount(client.TimelinePanel, { api: fakeApi(okState()), onClose() {} })
   const foot = textOf(findAll(view.tree, node => node.props.className === 'tl-foot')[0])
-  assert.ok(foot.length < 140, `footer is ${foot.length} characters`)
-  assert.equal(foot.split(/[.!?](\s|$)/).filter(part => part.trim()).length, 1, 'one sentence')
+  assert.ok(foot.length < 100, `footer is ${foot.length} characters`)
   assert.match(foot, /not read/)
+  // #279: two short items, each its own span, not one long run-on line.
+  const items = findAll(view.tree, node => node.props.className === 'tl-foot')[0].children.filter(Boolean)
+  assert.equal(items.length, 2)
+  assert.ok(items.every(item => textOf(item).length < 50 && /^[A-Z][^.]*: .*\.$/.test(textOf(item))), items.map(textOf).join(' | '))
+  assert.match(client.CSS.match(/\.tl-foot \{[^}]*\}/)[0], /line-height:1\.5/)
   // The dialog shrinks to its content and hangs from the top, so switching tabs moves nothing above the body.
   assert.doesNotMatch(client.CSS.match(/\.tl-dialog \{[^}]*\}/)[0], /[^-]height:/)
   assert.match(client.CSS.match(/\.tl-overlay \{[^}]*\}/)[0], /align-items:flex-start/)
@@ -451,4 +455,22 @@ test('#255: wait labels stay inside the plot and never sit on each other; friend
   // The drawing is as tall as its lanes: three Bot lanes are shorter than seven.
   const few = client.layoutSwimlanes(win({}, [{ r: 'boot', t: at(0) }]), {}).height
   assert.ok(few < g.height)
+})
+
+test('#279: the window\'s time range is shown in plain view, with the date, its length, and whether it is live', () => {
+  const at0 = new Date(2026, 9, 18, 13, 20, 5).getTime()
+  assert.equal(client.fmtRange(at0, at0 + 900_000), 'Oct 18 · 13:20:05 – 13:35:05 (15 min)'.replace('(15 min)', `(${client.fmtDur(900_000)})`))
+  // Across midnight both ends carry their date.
+  const late = new Date(2026, 9, 18, 23, 50, 0).getTime()
+  assert.equal(client.fmtRange(late, late + 1_200_000), `Oct 18 23:50:00 – Oct 19 00:10:00 (${client.fmtDur(1_200_000)})`)
+  assert.equal(client.fmtRange(NaN, 1), '')
+  const live = mount(client.TimelinePanel, { api: fakeApi(okState()), onClose() {} })
+  const range = findAll(live.tree, node => node.props.className === 'tl-range')[0]
+  assert.ok(range, 'the range row is drawn')
+  const data = okState().window
+  assert.match(textOf(range), new RegExp(client.fmtRange(data.from, data.to).replace(/[()·–]/g, '\\$&').replace(/ /g, '\\s')))
+  assert.match(textOf(range), /live, up to the latest activity/)
+  const back = mount(client.TimelinePanel, { api: fakeApi({ ...okState(), window: { ...data, live: false } }), onClose() {} })
+  assert.match(textOf(findAll(back.tree, node => node.props.className === 'tl-range')[0]), /earlier window, not live/)
+  assert.equal(findAll(mount(client.TimelinePanel, { api: fakeApi({ status: 'loading' }), onClose() {} }).tree, node => node.props.className === 'tl-range').length, 0, 'nothing before the first answer')
 })

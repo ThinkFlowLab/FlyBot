@@ -67,6 +67,17 @@ export function relativeShort(ms) {
 export const contentText = content => (content ?? []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
 export const HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/
 export const currentPart = bot => bot.sessionId ?? bot.id
+// Where an emptied main view goes. `last` is the Bot conversation it held. A part archived for a fresh
+// one: the chat goes on in the fresh part. The view emptied while that part is still current (a session
+// list reload, not the user leaving): the same chat again, never the Main Bot (#261). Anything else:
+// the Main Bot.
+export function landingPart(roster, last, mainId, { stay = false } = {}) {
+  const bot = last ? roster.byId[last.botId] : undefined
+  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot)
+  if (bot && stay) return last.sessionId
+  const main = roster.byId[mainId]
+  return main ? currentPart(main) : mainId
+}
 // The prompts in a due scheduled task's message. DSH frames it for the model: one
 // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
 export function reminderPrompts(text) {

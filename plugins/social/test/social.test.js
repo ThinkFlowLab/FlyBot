@@ -1151,6 +1151,35 @@ test('#271: a Bot\'s direct message to a friend is not a line of a Face-to-face 
   assert.equal(provider({ id: 'group-1', participants: friend }).length, 1, 'other rooms keep matching by handle')
 })
 
+test('#278: "Waiting for the owner\'s approval" is posted into the rooms a hold belongs to, never a Face-to-face room that has the friend in it', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const posted = []
+  const scope = ctx.flybot.scope
+  ctx.flybot.scope = (name) => {
+    const scoped = scope(name)
+    const friend = [{ handle: '@coder.bob.home', remote: true }]
+    scoped.rooms = {
+      ...scoped.rooms,
+      list: () => [
+        { id: 'face-1', origin: 'face-to-face', participants: friend, face: { roomId: 'srv-face' } },
+        { id: 'group-1', origin: 'group', participants: friend },
+      ],
+      ofFace: () => undefined,
+      postNotice: (roomId, text) => posted.push([roomId, text]),
+    }
+    return scoped
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@bob.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  await call('flybot/social/status', {})
+  assert.deepEqual(posted.map(([room]) => room), ['group-1'])
+})
+
 const heldOutbound = {
   approval_id: 'apr-hold-1',
   kind: 'outbound_message',
@@ -2810,7 +2839,7 @@ test('in-chat hold card is a compact bubble with names, clamp, and Approve/Rejec
   assert.equal(longTree.filter(n => n.type === 'button' && (n.children.includes('Approve') || n.children.includes('Reject') || n.props['data-flybot'] === 'hold-expand' || n.props['data-flybot'] === 'hold-always')).length, 4)
 })
 
-test('#254: a Bot\'s held reply to a friend shows as a card in that Bot\'s own chat, and in the friend\'s chat', () => {
+test('#254: a Bot\'s held reply to a friend shows as a card in the friend\'s chat, or in that Bot\'s own chat until the friend\'s chat exists (#278)', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   // The shape the host's approvals endpoint serves for a Bot's auto-reply to a friend's Bot.
   const approval = {
@@ -2842,7 +2871,10 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   assert.equal(view.toName, "UiA1415's Chief", 'the friend by name and owner, as the chat list shows it')
   const dock = (props, claim) => walk(pluginOf([[], [view], ''], Boolean(claim)).ChatApprovalDock({ ...props, ...(claim ? { claim } : {}) }))
   // The sender Bot's own chat: the card names both sides the way the overlay does.
-  const own = dock({ bot: { id: 'session-helper', name: 'Helper' }, roster })
+  // One place per approval: the friend's chat is in the roster, so only that chat draws it (#278).
+  assert.equal(dock({ bot: { id: 'session-helper', name: 'Helper' }, roster }).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+  // Before that chat exists, the Bot that wrote it shows it.
+  const own = dock({ bot: { id: 'session-helper', name: 'Helper' }, roster: { bots: [] } })
   assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes("Helper → UiA1415's Chief")))
   // Two buttons decide; the standing choice is a quiet link, and there is no third button.
   const buttons = own.filter(n => n.type === 'button')
@@ -2871,7 +2903,7 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   assert.equal(walk(pluginOf([[held], [], '']).ChatApprovalDock({ room, sessionId: 'room-1' })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
   // What a chat shows is claimed, so the overlay draws no second card; leaving releases it.
   const claims = []
-  dock({ bot: { id: 'session-helper', name: 'Helper' }, roster }, ids => claims.push(ids))
+  dock({ bot: { id: 'f1', remote: { handle: '@chief.uia.home' } }, roster }, ids => claims.push(ids))
   assert.deepEqual([...claims[0]], ['apr-reply'])
 })
 

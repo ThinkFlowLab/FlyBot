@@ -167,6 +167,16 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { failureLabel } from './diagnostics.js'
  import { turnReasoning } from './turn-reasoning.js'
  
+@@ -45,6 +45,9 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId,
+     }))
+ }
+ 
++// A held send is shown by its card and the sidebar mark, not by a line in a Face-to-face room's history:
++// older rooms still hold this line from when the social plugin posted it for a direct message (#278).
++const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
+ const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
+ 
+ // Closes a popover on a press outside the given elements or on Escape.
 @@ -101,8 +101,10 @@ function MessageTools({ text, name, sessionId, react, actions }) {
  }
  
@@ -388,10 +398,11 @@ diff --git a/src/client/cells.js b/src/client/cells.js
            t('{name} could not answer: {reason}', { name: bot.name, reason: failureLabel(reply.code, reply.text) }))
        }
        if (reply.kind === 'lookup') {
-@@ -599,6 +599,22 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -599,6 +599,23 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
        if (reply.kind === 'stopped') {
          return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
        }
++      if (reply.kind === 'notice' && room?.origin === 'face-to-face' && String(reply.text ?? '').trim() === WAITING_OTHERS_NOTICE) return null
 +      if (reply.kind === 'notice' || reply.kind === 'joined' || reply.kind === 'left' || reply.kind === 'started') {
 +        return h('div', { key: `notice-${index}`, className: 'bt-event', 'data-flybot': 'face-notice' }, remoteMessageText(reply.text))
 +      }
@@ -552,14 +563,15 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,3 +1,4 @@
+@@ -1,25 +1,28 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
  import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
-@@ -5,21 +5,23 @@ import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } f
+ import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
- import { MENTION_ORIGIN, currentPart } from './text.js'
+-import { MENTION_ORIGIN, currentPart } from './text.js'
++import { MENTION_ORIGIN, currentPart, landingPart } from './text.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 +import { installBrandChrome, installTabTitle } from './brand.js'
  import { lookOf } from './mark.js'
@@ -583,6 +595,15 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { GROUP_SETTINGS_CSS } from './group-settings.js'
  import { FOLDER_CSS } from './folder-menu.js'
  import { USAGE_CSS } from './usage-page.js'
+@@ -27,7 +27,7 @@ import { SCHEDULE_CSS } from './schedules.js'
+ import { STORAGE, migrateStorage } from './storage.js'
+ import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
+ import { installLocale, language } from './i18n.js'
+-import { noteClientError, quietly } from './diagnostics.js'
++import { noteClientError, noteNavigation, quietly } from './diagnostics.js'
+ import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
+ import { ABOUT_CSS } from './about.js'
+ import { MEMBER_CSS, MemberDock } from './member-status.js'
 @@ -37,8 +37,18 @@ import { noticeApprovals } from './approval-notices.js'
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
@@ -620,15 +641,30 @@ diff --git a/src/client/index.js b/src/client/index.js
    // A Bot id, or any part of its chat, opens the Bot's current part.
    const partFor = (id) => {
      const bot = roster.getSnapshot().byId[id]
-@@ -410,7 +410,7 @@ export function apply(ctx) {
+@@ -342,6 +342,7 @@ export function apply(ctx) {
+     // or the click appears to do nothing.
+     isAgentSession: id => isAgentSessionId(id),
+     openSession: (id) => {
++      noteNavigation('openSession', id)
+       // A DSH Agent Session id lands on the plain surface, not the Bot skin.
+       if (isAgentSessionId(id)) return actions.openAgentSession(id)
+       ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
+@@ -409,11 +409,11 @@ export function apply(ctx) {
+     },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
-     landOn: async (id, last) => {
+-    landOn: async (id, last) => {
 -      if (last) await pull().catch(() => {})
+-      const bot = last ? roster.getSnapshot().byId[last.botId] : undefined
++    landOn: async (id, last, { stay = false } = {}) => {
 +      if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
-       const bot = last ? roster.getSnapshot().byId[last.botId] : undefined
        setPlain(false)
-       const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id)
+-      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id)
++      const target = landingPart(roster.getSnapshot(), last, id, { stay })
++      noteNavigation('landOn', target, last?.sessionId)
+       expected = target
+       ctx.uiWorkspace.openSession(target)
+     },
 @@ -444,8 +444,15 @@ export function apply(ctx) {
      // Opening the conversation would move focus to its composer and blur the name field.
      renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
@@ -1213,6 +1249,16 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
        groups.map((group, index) => h(Fragment, { key: index },
          index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
          group.map(([label, Icon, run, hint]) => h('button', {
+@@ -556,7 +556,8 @@ function useLandOnMainBot(roster, useSessions, actions) {
+       return undefined
+     }
+     const last = lastBot.current
+-    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last), last ? 0 : 400)
++    // An emptied view (id '') comes back to the chat it held; a blank New Session the user opened goes to the Main Bot.
++    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === '' }), last ? 0 : 400)
+     return () => clearTimeout(timer)
+   }, [mainView, roster])
+ }
 @@ -572,9 +572,9 @@ export function FooterAccount(props) {
  export function BotReturn({ wide, useSurface, actions }) {
    const mode = useSurface(value => value.mode)

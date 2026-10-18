@@ -4,7 +4,7 @@ import { isHex, inkText, paintCss } from './inks.js'
 import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
 import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
 import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
-import { MENTION_ORIGIN, currentPart } from './text.js'
+import { MENTION_ORIGIN, currentPart, landingPart } from './text.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 import { installBrandChrome, installTabTitle } from './brand.js'
 import { lookOf } from './mark.js'
@@ -30,7 +30,7 @@ import { SCHEDULE_CSS } from './schedules.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
 import { installLocale, language } from './i18n.js'
-import { noteClientError, quietly } from './diagnostics.js'
+import { noteClientError, noteNavigation, quietly } from './diagnostics.js'
 import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
 import { ABOUT_CSS } from './about.js'
 import { MEMBER_CSS, MemberDock } from './member-status.js'
@@ -355,6 +355,7 @@ export function apply(ctx) {
     // or the click appears to do nothing.
     isAgentSession: id => isAgentSessionId(id),
     openSession: (id) => {
+      noteNavigation('openSession', id)
       // A DSH Agent Session id lands on the plain surface, not the Bot skin.
       if (isAgentSessionId(id)) return actions.openAgentSession(id)
       ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
@@ -422,11 +423,11 @@ export function apply(ctx) {
     },
     // `last` is the Bot conversation the view held before it cleared: when that part
     // was archived for a fresh one, the view goes on in the fresh one.
-    landOn: async (id, last) => {
+    landOn: async (id, last, { stay = false } = {}) => {
       if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
-      const bot = last ? roster.getSnapshot().byId[last.botId] : undefined
       setPlain(false)
-      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id)
+      const target = landingPart(roster.getSnapshot(), last, id, { stay })
+      noteNavigation('landOn', target, last?.sessionId)
       expected = target
       ctx.uiWorkspace.openSession(target)
     },

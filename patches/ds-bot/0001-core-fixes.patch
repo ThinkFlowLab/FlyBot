@@ -413,6 +413,24 @@ diff --git a/src/client/text.js b/src/client/text.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' })
  }
+@@ -48,6 +48,17 @@ export function relativeShort(ms) {
+ export const contentText = content => (content ?? []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
+ export const HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/
+ export const currentPart = bot => bot.sessionId ?? bot.id
++// Where an emptied main view goes. `last` is the Bot conversation it held. A part archived for a fresh
++// one: the chat goes on in the fresh part. The view emptied while that part is still current (a session
++// list reload, not the user leaving): the same chat again, never the Main Bot (#261). Anything else:
++// the Main Bot.
++export function landingPart(roster, last, mainId, { stay = false } = {}) {
++  const bot = last ? roster.byId[last.botId] : undefined
++  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot)
++  if (bot && stay) return last.sessionId
++  const main = roster.byId[mainId]
++  return main ? currentPart(main) : mainId
++}
+ // The prompts in a due scheduled task's message. DSH frames it for the model: one
+ // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
+ export function reminderPrompts(text) {
 @@ -62,6 +62,15 @@ export function reminderPrompts(text) {
    }
  }
@@ -1137,4 +1155,25 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  const flat = JSON.stringify(gone, (key, value) => typeof value === 'function' ? value.name : value)
 +  assert.doesNotMatch(flat, /bt-model-chip|Pick another model/)
 +  assert.match(flat, /RemoteGoneDock/)
++})
+diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
+--- a/test/tool-cells.test.js
++++ b/test/tool-cells.test.js
+@@ -355,3 +355,17 @@ test('PTC secret and question cards show at their sub-calls and act on their own
+   assert.doesNotMatch(shown(program([call('ask_user', 'call-0-1:ptc:1')]), { roster }), /Which draft\?/)
+   assert.equal(shown(program([call('ask_user', 'call-1-2:ptc:1')]), { roster: team() }), '')
+ })
++
++test('#278: a Face-to-face room drops the old "Waiting for the owner\'s approval" line but keeps its other notices', () => {
++  const replies = [
++    { kind: 'notice', text: "Waiting for the owner's approval" },
++    { kind: 'notice', text: 'Bob joined the room' },
++  ]
++  const face = { ...room, origin: 'face-to-face' }
++  const root = call('group_relay', 'relay', { content: { replies } })
++  const inFace = shown(root, { sessionId: 'room', roster: team({ rooms: [face], roomsById: { room: face } }) })
++  assert.doesNotMatch(inFace, /Waiting for the owner/)
++  assert.match(inFace, /Bob joined the room/)
++  // Another kind of room keeps whatever notice it was given.
++  assert.match(shown(root, { sessionId: 'room' }), /Waiting for the owner/)
 +})

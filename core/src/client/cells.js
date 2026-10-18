@@ -49,6 +49,9 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
     }))
 }
 
+// A held send is shown by its card and the sidebar mark, not by a line in a Face-to-face room's history:
+// older rooms still hold this line from when the social plugin posted it for a direct message (#278).
+const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 
 // Closes a popover on a press outside the given elements or on Escape.
@@ -739,6 +742,7 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
       if (reply.kind === 'stopped') {
         return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
       }
+      if (reply.kind === 'notice' && room?.origin === 'face-to-face' && String(reply.text ?? '').trim() === WAITING_OTHERS_NOTICE) return null
       if (reply.kind === 'notice' || reply.kind === 'joined' || reply.kind === 'left' || reply.kind === 'started') {
         return h('div', { key: `notice-${index}`, className: 'bt-event', 'data-flybot': 'face-notice' }, remoteMessageText(reply.text))
       }

@@ -32,6 +32,17 @@ export function noteClientError(where, error) {
   if (entries.length > MAX) entries.splice(0, entries.length - MAX)
 }
 
+// A move of the main view with no click or key behind it is the kind of jump a user cannot explain (#261):
+// keep who moved it and where from, in the diagnostics and the console, so the next report says.
+export function noteNavigation(how, target, from) {
+  if (typeof navigator === 'undefined' || navigator.userActivation?.isActive !== false) return
+  const stack = String(new Error().stack ?? '').split('\n').slice(2, 6).map(line => line.trim().replace(/\(?https?:\/\/[^/\s)]+/, '(')).join(' < ')
+  const text = `navigation: ${how} to ${String(target).slice(0, 60)}${from ? ` from ${String(from).slice(0, 60)}` : ''} with no click (${stack.slice(0, 300)})`
+  console.warn(`[flybot] ${text}`)
+  entries.push({ time: Date.now(), level: 'warn', text })
+  if (entries.length > MAX) entries.splice(0, entries.length - MAX)
+}
+
 // A catch handler that keeps the failure without bothering the user.
 export const quietly = where => error => noteClientError(where, error)
 

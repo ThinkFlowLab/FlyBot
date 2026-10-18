@@ -244,6 +244,21 @@ diff --git a/client.js b/client.js
  };
  Object.assign(ZH, HOST_ZH);
  var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;
+@@ -1016,6 +1016,14 @@ function noteClientError(where, error) {
+   entries.push({ time: now, level: "error", text, ...code ? { code } : {} });
+   if (entries.length > MAX) entries.splice(0, entries.length - MAX);
+ }
++function noteNavigation(how, target, from) {
++  if (typeof navigator === "undefined" || navigator.userActivation?.isActive !== false) return;
++  const stack = String(new Error().stack ?? "").split("\n").slice(2, 6).map((line) => line.trim().replace(/\(?https?:\/\/[^/\s)]+/, "(")).join(" < ");
++  const text = `navigation: ${how} to ${String(target).slice(0, 60)}${from ? ` from ${String(from).slice(0, 60)}` : ""} with no click (${stack.slice(0, 300)})`;
++  console.warn(`[flybot] ${text}`);
++  entries.push({ time: Date.now(), level: "warn", text });
++  if (entries.length > MAX) entries.splice(0, entries.length - MAX);
++}
+ var quietly = (where) => (error) => noteClientError(where, error);
+ var clearClientErrors = () => {
+   entries.length = 0;
 @@ -1042,12 +1042,17 @@ var FAILURES = {
  };
  function failureLabel(code, message) {
@@ -613,7 +628,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,478 @@ function maskOf(shape) {
+@@ -1242,6 +1242,482 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -948,11 +963,15 @@ diff --git a/client.js b/client.js
 +}
 +var POLL_MS = 5e3;
 +var POINTER_DELAY_MS = 1200;
-+var chatOf = (approval) => approval.request?.meta?.roomId ?? (typeof approval.request?.from === "string" ? approval.request.from : void 0);
 +var handleOf = (ref) => typeof ref === "object" && ref ? ref.handle : typeof ref === "string" && ref.startsWith("@") ? ref : void 0;
++var friendChatOf = (approval, roster) => {
++  const handle = handleOf(approval.request?.to);
++  return handle ? (roster?.bots ?? []).find((item) => item.remote && String(item.remote.handle ?? "").toLowerCase() === handle.toLowerCase()) : void 0;
++};
++var chatOf = (approval, roster) => approval.request?.meta?.roomId ?? friendChatOf(approval, roster)?.id ?? (typeof approval.request?.from === "string" ? approval.request.from : void 0);
 +function recipientName(approval, roster) {
 +  const handle = handleOf(approval.request?.to);
-+  const bot = handle ? (roster?.bots ?? []).find((item) => item.remote && String(item.remote.handle ?? "").toLowerCase() === handle.toLowerCase()) : void 0;
++  const bot = friendChatOf(approval, roster);
 +  if (bot) {
 +    const owner = bot.remote.owner || bot.remote.homeName;
 +    if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`;
@@ -980,7 +999,7 @@ diff --git a/client.js b/client.js
 +  const open = pending.filter((approval) => !claimed.has(approval.id));
 +  const cards = open.filter((approval) => !policies.has(approval.by));
 +  const inOpenChat = (approval) => {
-+    const chat = chatOf(approval);
++    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
 +  };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
@@ -1009,7 +1028,7 @@ diff --git a/client.js b/client.js
 +  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
-+    const key = chatOf(approval) ?? approval.id;
++    const key = chatOf(approval, roster) ?? approval.id;
 +    byChat.set(key, [...byChat.get(key) ?? [], approval]);
 +  }
 +  return (0, import_react2.createElement)(
@@ -1028,7 +1047,7 @@ diff --git a/client.js b/client.js
 +          list.length > 1 ? ` ${t("+{count} more", { count: list.length - 1 })}` : ""
 +        ),
 +        (0, import_react2.createElement)("span", { className: "bt-flybot-pointer-note" }, t("Waiting for approval")),
-+        typeof actions?.openSession === "function" && chatOf(list[0]) ? (0, import_react2.createElement)("button", { type: "button", onClick: () => actions.openSession(chatOf(list[0])) }, t("Review")) : null
++        typeof actions?.openSession === "function" && chatOf(list[0], roster) ? (0, import_react2.createElement)("button", { type: "button", onClick: () => actions.openSession(chatOf(list[0], roster)) }, t("Review")) : null
 +      ))
 +    ) : null,
 +    cards.length > 0 ? (0, import_react2.createElement)(
@@ -1153,6 +1172,20 @@ diff --git a/client.js b/client.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
  }
+@@ -1483,6 +1483,13 @@ function relativeShort(ms) {
+ var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
+ var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
+ var currentPart = (bot) => bot.sessionId ?? bot.id;
++function landingPart(roster, last, mainId, { stay = false } = {}) {
++  const bot = last ? roster.byId[last.botId] : void 0;
++  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
++  if (bot && stay) return last.sessionId;
++  const main = roster.byId[mainId];
++  return main ? currentPart(main) : mainId;
++}
+ function reminderPrompts(text) {
+   const one = /^reminder_prompt_json: (.*)$/m.exec(text);
+   const batch = /^reminders_json: (.*)$/m.exec(text);
 @@ -1494,6 +1494,13 @@ function reminderPrompts(text) {
    }
  }
@@ -2537,8 +2570,11 @@ diff --git a/client.js b/client.js
            key: emoji,
            type: "button",
            className: "bt-react",
-@@ -3815,7 +3815,7 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
+@@ -3813,9 +3813,10 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
+     })
+   );
  }
++var WAITING_OTHERS_NOTICE = "Waiting for the owner's approval";
  var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
  function useDismiss(open, close, refs) {
 -  (0, import_react6.useEffect)(() => {
@@ -3110,7 +3146,7 @@ diff --git a/client.js b/client.js
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4366,66 +4366,91 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -4366,66 +4366,92 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
    const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
    if (replies.length === 0 && pending.length === 0) return null;
    const room2 = roster.roomsById[sessionId];
@@ -3189,6 +3225,7 @@ diff --git a/client.js b/client.js
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react7.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +      }
++      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
 +      }
@@ -4160,7 +4197,15 @@ diff --git a/client.js b/client.js
      if (!roster.ready || !roster.mainBotId) return void 0;
      const [id, blank3] = mainView.split("|");
      const bot = id === "" ? void 0 : roster.byId[id];
-@@ -5404,33 +5404,33 @@ function useLandOnMainBot(roster, useSessions, actions) {
+@@ -5397,40 +5397,40 @@ function useLandOnMainBot(roster, useSessions, actions) {
+       return void 0;
+     }
+     const last = lastBot.current;
+-    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last), last ? 0 : 400);
++    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === "" }), last ? 0 : 400);
+     return () => clearTimeout(timer);
+   }, [mainView, roster]);
+ }
  function FooterAccount(props) {
    const seated = props.useUi((value) => value.accountSeated === true);
    if (seated) return null;
@@ -10539,6 +10584,30 @@ diff --git a/client.js b/client.js
      return () => {
        offRoster();
        offRegistry();
+@@ -13588,6 +13588,7 @@ function apply(ctx) {
+     // or the click appears to do nothing.
+     isAgentSession: (id) => isAgentSessionId(id),
+     openSession: (id) => {
++      noteNavigation("openSession", id);
+       if (isAgentSessionId(id)) return actions.openAgentSession(id);
+       ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
+       setPlain(false);
+@@ -13653,12 +13653,12 @@ function apply(ctx) {
+     },
+     // `last` is the Bot conversation the view held before it cleared: when that part
+     // was archived for a fresh one, the view goes on in the fresh one.
+-    landOn: async (id, last) => {
++    landOn: async (id, last, { stay = false } = {}) => {
+       if (last) await pull().catch(() => {
+       });
+-      const bot = last ? roster.getSnapshot().byId[last.botId] : void 0;
+       setPlain(false);
+-      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id);
++      const target = landingPart(roster.getSnapshot(), last, id, { stay });
++      noteNavigation("landOn", target, last?.sessionId);
+       expected = target;
+       ctx.uiWorkspace.openSession(target);
+     },
 @@ -13708,10 +13708,15 @@ function apply(ctx) {
      },
      // `id` opens one Bot (page 'bots') or one group chat (page 'groups').

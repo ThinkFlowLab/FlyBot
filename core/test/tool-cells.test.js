@@ -355,3 +355,17 @@ test('PTC secret and question cards show at their sub-calls and act on their own
   assert.doesNotMatch(shown(program([call('ask_user', 'call-0-1:ptc:1')]), { roster }), /Which draft\?/)
   assert.equal(shown(program([call('ask_user', 'call-1-2:ptc:1')]), { roster: team() }), '')
 })
+
+test('#278: a Face-to-face room drops the old "Waiting for the owner\'s approval" line but keeps its other notices', () => {
+  const replies = [
+    { kind: 'notice', text: "Waiting for the owner's approval" },
+    { kind: 'notice', text: 'Bob joined the room' },
+  ]
+  const face = { ...room, origin: 'face-to-face' }
+  const root = call('group_relay', 'relay', { content: { replies } })
+  const inFace = shown(root, { sessionId: 'room', roster: team({ rooms: [face], roomsById: { room: face } }) })
+  assert.doesNotMatch(inFace, /Waiting for the owner/)
+  assert.match(inFace, /Bob joined the room/)
+  // Another kind of room keeps whatever notice it was given.
+  assert.match(shown(root, { sessionId: 'room' }), /Waiting for the owner/)
+})
