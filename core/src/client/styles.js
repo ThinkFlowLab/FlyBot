@@ -520,6 +520,8 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-connector-form-row{display:flex;align-items:center;gap:6px}
 .bt-connector-apps{display:flex;flex-direction:column;gap:8px}
 .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
+.bt-connector-uses{padding-left:48px;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
 
 /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the

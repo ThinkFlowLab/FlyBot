@@ -45,6 +45,8 @@ export function install(rt) {
       return {
         ...bot,
         granted: rt.hasAnyGrant?.(bot.id) === true,
+        // Who the Bot is shared with (at most three labels): a shared Bot cannot use connectors (#335).
+        ...(bot.remote ? {} : { sharedWith: rt.sharedWith?.(bot.id).slice(0, 3) ?? [] }),
         sessionId: rt.chatOf(bot.id),
         parts: (segments ?? []).map(segment => segment.sessionId),
         pendingCount: pending.length,
@@ -327,6 +329,8 @@ export function install(rt) {
         case 'bot-capability':
           await rt.load()
           return ok(await rt.capabilityEndpoint(endpoint, body))
+        case 'bot-connectors':
+          return ok(await rt.botConnectorEndpoint(body))
         case 'schedules':
         case 'schedule-delete':
           await rt.load()

@@ -174,7 +174,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      revision: state.revision,
      workspaceId: state.workspaceId ?? null,
      // `mainBotId` is the first Main Bot, which the sidebar shows as its tile.
-@@ -36,17 +36,42 @@ export function install(rt) {
+@@ -36,17 +36,44 @@ export function install(rt) {
      mainBotIds: state.mainBotIds,
      // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
      // `waiting`: the Bot holds its greeting until the user picks its model.
@@ -186,6 +186,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      return {
 +        ...bot,
 +        granted: rt.hasAnyGrant?.(bot.id) === true,
++        // Who the Bot is shared with (at most three labels): a shared Bot cannot use connectors (#335).
++        ...(bot.remote ? {} : { sharedWith: rt.sharedWith?.(bot.id).slice(0, 3) ?? [] }),
 +        sessionId: rt.chatOf(bot.id),
 +        parts: (segments ?? []).map(segment => segment.sessionId),
 +        pendingCount: pending.length,
@@ -381,9 +383,12 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -242,10 +242,15 @@ export function install(rt) {
+@@ -241,11 +241,18 @@ export function install(rt) {
+         case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
++        case 'bot-connectors':
++          return ok(await rt.botConnectorEndpoint(body))
          case 'schedules':
 -        case 'schedule-create':
          case 'schedule-delete':
@@ -632,11 +637,12 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
  export function install(rt) {
    const { ctx, state } = rt
  
-@@ -10,6 +10,7 @@ export function install(rt) {
+@@ -10,6 +10,8 @@ export function install(rt) {
      const resolved = await ctx.sessionController.resolveAgent(sessionId)
      if ('error' in resolved) throw new Error(resolved.error?.message ?? 'Session unavailable')
      rt.hideBlockingQuestion(resolved.agent)
 +    rt.flybotHideTools?.(resolved.agent)
++    rt.hideConnectorTools?.(resolved.agent)
      return resolved.agent
    }
  

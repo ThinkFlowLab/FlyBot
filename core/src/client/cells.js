@@ -532,11 +532,15 @@ export function Nothing() { return null }
 // `ask_user_question` off Bot sessions. The chat then shows "Tool removed: …".
 // Hide only those notices; other context (tool-added, unrelated removals) stays.
 export const HIDDEN_REMOVED_TOOLS = new Set(['ask_user_question'])
+// Connector tools come and go with a Bot's connector switch (#335), not with anything the Bot did.
+const isConnectorTool = name => typeof name === 'string' && /^mcp__(github|composio)__/.test(name)
+const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName)))
+  || (block?.type === 'tool-addition' && isConnectorTool(block.toolName))
 
 export function isHiddenToolRemoval(node) {
   const content = node?.data?.content
   if (!Array.isArray(content) || content.length === 0) return false
-  return content.every(block => block?.type === 'tool-removal' && HIDDEN_REMOVED_TOOLS.has(block.toolName))
+  return content.every(isHiddenNotice)
 }
 
 export function ContextCell({ node }) {
@@ -544,7 +548,7 @@ export function ContextCell({ node }) {
   const content = Array.isArray(node?.data?.content) ? node.data.content : []
   const parts = []
   for (const block of content) {
-    if (block?.type === 'tool-removal' && HIDDEN_REMOVED_TOOLS.has(block.toolName)) continue
+    if (isHiddenNotice(block)) continue
     if (block?.type === 'tool-removal' && block.toolName) parts.push(`Tool removed: ${block.toolName}`)
     else if (block?.type === 'tool-addition' && block.toolName) parts.push(`Tool added: ${block.toolName}`)
   }
