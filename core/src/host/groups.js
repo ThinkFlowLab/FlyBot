@@ -111,6 +111,9 @@ export const referenceNote = references => (references?.length
   : '')
 
 const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
+// Words that address the whole room: a plain line with one of them may get an answer from each Bot (#299).
+const ROOM_EVERYONE = /大家|你们|各位|所有人|所有 ?[Bb]ot|每个人|每位|各自|分别|everyone|everybody|y'?all|you all|all of you|each of you|introduce yourselves/i
+const ROOM_REPLY_FORCED = 'Reply with your message for the group, no name prefix, short. Do not reply [PASS].'
 const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
 
 const slotLabel = (slot) => {
@@ -167,6 +170,27 @@ export function install(rt) {
     return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
   }
 
+  // A plain line in a face-to-face room (#299): the Bots decide who answers. Each gets this note, so one
+  // Bot answers a specific question, a follow-up goes to the Bot that just spoke, and a line to everyone may
+  // get a short answer from each. A pass posts nothing.
+  function routeNote(room, member, round) {
+    const { broadcast, last, forced } = round.route
+    if (forced === member.id) return 'The user asked this and nobody else answered. Answer now: if the line is plainly for another owner\'s Bot, say that in one short sentence.'
+    const everyone = room.members.map(rt.botOf).filter(Boolean)
+    const roles = everyone.filter(bot => bot.role).map(bot => `${bot.name}${bot.id === member.id ? ' (you)' : ''}: ${String(bot.role).slice(0, 80)}`)
+    const friends = currentParticipants(room).filter(p => p.kind === 'bot' && p.remote).map(p => p.label || p.displayName).filter(Boolean)
+    return [
+      'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
+      broadcast
+        ? 'It is addressed to everyone (introductions, what each of you can do, a round of opinions): give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
+        : 'Answer only if it is for you: it names you or your role, or it fits what you do best and nobody before you has answered it, or nobody has answered yet and you can add something genuinely new. Reply [PASS] when a Bot before you already answered it, when it is for another Bot by name or role, or when it follows up on another Bot\'s answer.',
+      last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
+      roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
+      friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
+      '[PASS] posts nothing and nobody sees it: never explain a pass.',
+    ].filter(Boolean).join(' ')
+  }
+
   // Lines from before the round's opening message are kept apart from this round, so
   // an earlier round (an old count-off, say) never reads as part of the current one.
   function roomPrompt(room, member, round) {
@@ -196,7 +220,8 @@ export function install(rt) {
       working.length > 0 ? `Still at work on what they were asked; each posts here when done: ${working.map(item => `${item.bot.name} (${minutesSince(item.since)} min)`).join(', ')}.` : '',
       `Speaking order for this round: ${round.slots.map(slotLabel).join(' → ')}.`,
       `You are number ${index + 1} of ${round.slots.length}. ${before === 0 ? 'Nobody spoke before you' : `${before} went before you`}${after === 0 ? ', and you are the last.' : `; ${after} after you will see your message.`}`,
-      ROOM_REPLY,
+      round.route ? routeNote(room, member, round) : '',
+      round.route?.forced === member.id ? ROOM_REPLY_FORCED : ROOM_REPLY,
     ].filter(Boolean).join('\n\n')
   }
 
@@ -253,6 +278,8 @@ export function install(rt) {
     if (lines.length === 0) return 0
     const before = round.slots.length
     const members = room.members.map(rt.botOf).filter(Boolean)
+    // A line the user adds mid-round is answered by the rule for its own opening, so this round stops routing.
+    delete round.route
     for (const line of lines) {
       if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
       round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
@@ -267,14 +294,44 @@ export function install(rt) {
     return round.slots.length - before
   }
 
+  // True once a routed round ended with every Bot silent on the owner's own line (a friend's line is not
+  // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer.
+  function fallbackDue(round) {
+    const route = round.route
+    if (!route?.fallback || route.forced !== undefined || (route.last?.remote && !route.broadcast)) return false
+    const states = round.slots.map(slot => slot.status)
+    return !states.some(status => status === 'posted' || status === 'working' || status === 'waiting-approval' || status === 'speaking' || status === 'waiting')
+      && states.some(status => status === 'passed' || status === 'missed')
+  }
+
+  // The Bot that answered the exchange right before this line (a Bot's post, once the person's own line or
+  // lines are set aside), for follow-ups such as "then what did you say about X?" (#299).
+  function recentSpeaker(room, startSeq) {
+    const lines = (room.log ?? []).filter(line => !line.kind)
+    let at = lines.length - 1
+    while (at >= 0 && (lines[at].seq ?? 0) >= startSeq) at -= 1
+    while (at >= 0 && lines[at].authorKind === 'human' && !lines[at].botId) at -= 1
+    const line = lines[at]
+    if (!line?.botId) return undefined
+    const local = rt.botOf(line.botId)
+    return local && room.members.includes(local.id) ? { id: local.id, name: local.name, remote: false } : { id: line.botId, name: line.who, remote: true }
+  }
+
   async function runRound(room, round, signal, agent) {
     let limit = round.slots.length + ROOM_EXTRA_TURNS + (room.admin ? ROOM_ADMIN_EXTRA_TURNS : 0)
     const turns = new Map()
     // The inbox check keeps a message sent during the last speaker's turn inside
     // this round: it drains at the loop's head even once the slots ran out.
-    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0) && round.turns < limit; index += 1) {
+    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(round)) && round.turns < limit; index += 1) {
       if (signal.aborted) break
       limit += drainRoomInbox(room, round, turns, index, agent)
+      // Everyone passed on the owner's own plain line: the first Bot that passed answers, so the user is never ignored (#299).
+      if (index >= round.slots.length && fallbackDue(round)) {
+        const first = round.slots.find(slot => slot.status === 'passed' || slot.status === 'missed')
+        round.route.forced = first.id
+        round.slots.push({ id: first.id, name: first.name, status: 'waiting', note: 'nobody answered yet' })
+        limit += 1
+      }
       if (index >= round.slots.length) break
       const slot = round.slots[index]
       const member = rt.botOf(slot.id)
@@ -387,13 +444,22 @@ export function install(rt) {
       const references = posts.flatMap(post => post.references ?? [])
       // A member a Bot's post calls by name works for that Bot.
       const named = opener.botId === undefined ? [] : mentionsIn(opener.text ?? '', room.members.map(rt.botOf).filter(Boolean)).found
+      // A person's plain line (not @all) in a face-to-face room: the Bots decide who answers (#299). The
+      // owner's own line is never left unanswered; a friend's attested line is answered by their home too.
+      const routed = isPlainFaceLine(room, opener) && !opener.everyone
+      const broadcast = routed && ROOM_EVERYONE.test(opener.text ?? '')
+      const route = routed ? { broadcast, fallback: opener.plain !== true, last: broadcast ? undefined : recentSpeaker(room, startSeq) } : undefined
+      const speakers = openingSpeakers(room, opener)
+      const lastAt = route?.last && !route.last.remote ? speakers.findIndex(bot => bot.id === route.last.id) : -1
+      if (lastAt > 0) speakers.unshift(...speakers.splice(lastAt, 1))
       const round = {
         roomId: room.id,
         members: room.members,
+        ...(route ? { route } : {}),
         startSeq,
         ...(opener.kickoff ? { kickoff: true } : {}),
         ...(references.length > 0 ? { references, shown: [] } : {}),
-        slots: openingSpeakers(room, opener).map(member => ({
+        slots: speakers.map(member => ({
           id: member.id, name: member.name, status: 'waiting',
           ...(opener.kickoff ? { note: 'the group was just created' } : {}),
           ...(named.includes(member) ? { by: opener.botId } : {}),

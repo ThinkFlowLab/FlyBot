@@ -963,7 +963,7 @@ export function install(rt) {
         // A line that names nobody (or @all) is for the whole room (#295): this home's Bots answer it too, in one pass,
         // but only when the server attests the person typed it; a line that names a friend's Bot calls none here.
         const plain = attested === true && said !== undefined && callIds.length === 0 && (said.all || said.friends.length === 0)
-        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who }, ...(callIds.length > 0 ? { callIds } : {}), ...(plain ? { plain: true } : {}) })
+        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who }, ...(callIds.length > 0 ? { callIds } : {}), ...(plain ? { plain: true } : {}), ...(plain && said?.all ? { everyone: true } : {}) })
       },
       postRemote: (roomId, { handle, name, text } = {}) => {
         const room = rt.roomOf(roomId)

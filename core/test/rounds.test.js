@@ -608,3 +608,171 @@ test('a message sent between rounds still opens a full round', async (t) => {
   const result = JSON.parse(await running)
   assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer'])
 })
+
+// A face-to-face room with my Chief and Writer and a friend's Chief; `plain` helpers for #299.
+async function routedRoom(ctxs, id) {
+  const { call, rt, sent } = ctxs
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  await call('update-bot', { id: writer, role: 'Writes docs and copy' })
+  const hosted = await rt.upsertFaceRoom({
+    roomId: `frm_${id}`,
+    localId: `face-${id}`,
+    status: 'open',
+    members: [
+      { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+      { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
+      { handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob', published: false },
+    ],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }, { id: writer, handle: '@writer.me.home', name: 'Writer' }],
+  })
+  sent.length = 0
+  return { hosted, chief, writer }
+}
+const roomTurns = sent => sent.filter(entry => entry.message?.source?.role === 'room')
+const promptOf = turn => turn.message.content[0].text
+const friendPlain = text => ({ type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, plain: true, human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text }] } })
+
+test('#299: a plain line lets the Bots decide who answers: the passes post nothing and one Bot answers a specific question', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, chief, writer } = await routedRoom(env, 'route')
+  await emit(hosted.id, userMessage('帮我看看文档怎么写'))
+  const running = relay(hosted.id, 'route-1')
+  const first = await turnFor(sent)
+  assert.match(promptOf(first), /names no Bot/, 'the line is routed: each Bot decides whether it is theirs')
+  assert.match(promptOf(first), /\[PASS\]/)
+  assert.match(promptOf(first), /Writer: Writes docs and copy/, 'members see what each does')
+  assert.match(promptOf(first), /Bob's Chief|Chief/, 'friend\'s Bots are named as answering for themselves')
+  await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
+  const second = await turnFor(sent, first)
+  assert.ok(second)
+  await answer(second.sessionId, second.message.source.exchangeId, 'Here is how I would write it.', 2)
+  const done = JSON.parse(await running)
+  assert.deepEqual(done.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['Here is how I would write it.'])
+  assert.deepEqual(done.replies.filter(reply => reply.kind !== undefined && reply.kind !== 'user'), [], 'a pass shows no line')
+  assert.equal(done.passed.length, 1)
+  assert.equal(hosted.log.filter(line => /PASS/.test(line.text ?? '')).length, 0, 'a pass is never logged')
+  assert.equal(roomTurns(sent).length, 2)
+  assert.ok(chief && writer)
+})
+
+test('#299: a line to everyone (introductions) is marked so each Bot may answer; @Name and @all are not routed', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'every')
+  await emit(hosted.id, userMessage('大家介绍一下自己'))
+  const running = relay(hosted.id, 'every-1')
+  const first = await turnFor(sent)
+  assert.match(promptOf(first), /addressed to everyone/)
+  await answer(first.sessionId, first.message.source.exchangeId, 'I am the Chief.', 1)
+  const second = await turnFor(sent, first)
+  await answer(second.sessionId, second.message.source.exchangeId, 'I write docs.', 2)
+  const done = JSON.parse(await running)
+  assert.equal(done.replies.filter(reply => reply.kind === undefined).length, 2, 'an open call for everyone may get one answer from each')
+
+  // "@Name" targets exactly that Bot and is not routed; the prompt carries no pass-by-intent note.
+  sent.length = 0
+  await emit(hosted.id, userMessage('@Writer 你是谁'))
+  const named = relay(hosted.id, 'every-2')
+  const only = await turnFor(sent)
+  assert.equal(only.sessionId, hosted.sessions[writer])
+  assert.doesNotMatch(promptOf(only), /names no Bot/)
+  await answer(only.sessionId, only.message.source.exchangeId, 'Writer here', 3)
+  await named
+  assert.equal(roomTurns(sent).length, 1)
+
+  // A friend's @all: everyone answers as before (one pass, no routing).
+  sent.length = 0
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, plain: true, everyone: true, human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text: '@all hi' }] } })
+  const all = relay(hosted.id, 'every-3')
+  const a = await turnFor(sent)
+  assert.doesNotMatch(promptOf(a), /names no Bot/)
+  await answer(a.sessionId, a.message.source.exchangeId, 'hi 1', 4)
+  const b = await turnFor(sent, a)
+  await answer(b.sessionId, b.message.source.exchangeId, 'hi 2', 5)
+  await all
+})
+
+test('#299: when every Bot passes on the owner\'s own line the first one answers; a friend\'s line is not forced', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted } = await routedRoom(env, 'fall')
+  await emit(hosted.id, userMessage('随便问一句'))
+  const running = relay(hosted.id, 'fall-1')
+  const first = await turnFor(sent)
+  await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
+  const second = await turnFor(sent, first)
+  await answer(second.sessionId, second.message.source.exchangeId, '(pass)', 2)
+  const forced = await turnFor(sent, first, second)
+  assert.ok(forced, 'nobody answered, so the first Bot is asked again')
+  assert.equal(forced.sessionId, first.sessionId, 'admin first')
+  assert.match(promptOf(forced), /nobody else answered/)
+  assert.doesNotMatch(promptOf(forced), /Reply \[PASS\]/)
+  // Its own @ starts nothing: no loop.
+  await answer(forced.sessionId, forced.message.source.exchangeId, 'I will take it. @Writer ok?', 3)
+  const done = JSON.parse(await running)
+  assert.deepEqual(done.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['I will take it. @Writer ok?'])
+  assert.equal(roomTurns(sent).length, 3, 'no follow-up turns from the reply\'s @')
+
+  // A friend's attested line: both Bots pass and nothing is forced (their own home answers it).
+  sent.length = 0
+  await emit(hosted.id, friendPlain('他们的问题'))
+  const theirs = relay(hosted.id, 'fall-2')
+  const a = await turnFor(sent)
+  await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 4)
+  const b = await turnFor(sent, a)
+  await answer(b.sessionId, b.message.source.exchangeId, '[PASS]', 5)
+  const result = JSON.parse(await theirs)
+  assert.equal(roomTurns(sent).length, 2)
+  assert.deepEqual(result.replies.filter(reply => reply.kind === undefined), [])
+})
+
+test('#299: a follow-up goes to the Bot that spoke last, who is asked first; one that follows a friend\'s Bot is not forced on mine', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'follow')
+  await emit(hosted.id, userMessage('文档怎么写'))
+  const one = relay(hosted.id, 'follow-1')
+  const a = await turnFor(sent)
+  await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 1)
+  const b = await turnFor(sent, a)
+  assert.equal(b.sessionId, hosted.sessions[writer])
+  await answer(b.sessionId, b.message.source.exchangeId, 'Start with an outline.', 2)
+  await one
+
+  // "then what did you say about it?" right after: the Writer is first, not the admin.
+  sent.length = 0
+  await emit(hosted.id, userMessage('那你刚才说的大纲具体怎么写'))
+  const two = relay(hosted.id, 'follow-2')
+  const c = await turnFor(sent)
+  assert.equal(c.sessionId, hosted.sessions[writer], 'the last speaker is asked first')
+  assert.match(promptOf(c), /Writer spoke last before this line/)
+  await answer(c.sessionId, c.message.source.exchangeId, 'Three headings, then fill in.', 3)
+  const d = await turnFor(sent, c)
+  assert.ok(d, 'the other Bot is still asked and sees the answer, so it can pass')
+  await answer(d.sessionId, d.message.source.exchangeId, '[PASS]', 4)
+  const done = JSON.parse(await two)
+  assert.deepEqual(done.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['Three headings, then fill in.'])
+
+  // The friend's Bot spoke last: my Bots may pass, and nothing is forced on the owner's home.
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: '@chief.bob.home', senderName: "Bob's Chief", remote: { handle: '@chief.bob.home' } }, content: [{ type: 'text', text: 'I can see the whole room.' }] } })
+  await relay(hosted.id, 'follow-3')
+  sent.length = 0
+  await emit(hosted.id, userMessage('那你说说群里都聊了啥'))
+  const three = relay(hosted.id, 'follow-4')
+  const e = await turnFor(sent)
+  assert.match(promptOf(e), /Chief spoke last before this line/)
+  await answer(e.sessionId, e.message.source.exchangeId, '[PASS]', 5)
+  const f = await turnFor(sent, e)
+  await answer(f.sessionId, f.message.source.exchangeId, '[PASS]', 6)
+  await three
+  assert.equal(roomTurns(sent).length, 2, 'no forced answer when the follow-up is to a friend\'s Bot')
+})
