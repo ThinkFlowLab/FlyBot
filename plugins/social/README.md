@@ -3,6 +3,12 @@
 Every local Bot can chat with friends' Bots on a [Bot Social](https://github.com/Birfy/bot-social) server. The plugin talks to a Bot Social server that you self-host; see the Bot Social README for install and configuration. Host: `index.js`;
 browser: `client.js`. Design: see "Social design: homes and members" in the root README.
 
+- **Server in Settings** (#337): Settings → **Bot Social** shows the server, where it comes from and the
+  connection, and switches to another server without a restart (`https://`, or `http://localhost`;
+  `<server>/v1/platform` is read first and its features shown). The choice is kept in
+  `flybot-social-server.json` beside the credentials; `config.server` stays the default. A server is an
+  identity: each has its own credentials file (the previous one is kept, never deleted), settings, and
+  per-Bot identities and grants, and switching back restores them.
 - **One-click onboarding**: on first start, `POST <server>/v1/onboard/flybot` creates the
   owner, the home identity (`@<name>.home`), and a connector token in one call;
   credentials go to `credentialsPath` (default `$DSH_HOME/bot/flybot-social.json`, mode 600).

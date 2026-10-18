@@ -182,6 +182,35 @@ var ZH = {
   "Connecting…": "正在连接…",
   "Could not connect: {error}": "连接失败：{error}",
   "Connected as {account}": "已连接：{account}",
+  // Settings → Bot Social (@flybot/social, #337)
+  "Bot Social": "Bot Social",
+  "Bot Social server": "Bot Social 服务器",
+  "Connected as {handle}": "已连接：{handle}",
+  "No server set. Friends and sharing are off until you set one.": "还没有设置服务器。设置之前，好友和分享功能不可用。",
+  "Set here": "在这里设置",
+  "Profile default": "配置文件默认值",
+  "Not set": "未设置",
+  "No server": "没有服务器",
+  "Change server": "更换服务器",
+  "Features": "功能",
+  "No optional features listed.": "服务器没有列出可选功能。",
+  "Reachability": "连通性",
+  "Read-only": "只读",
+  "Another FlyBot window holds this team. Change the server there.": "另一个 FlyBot 窗口正在使用这个团队，请在那里更换服务器。",
+  "Switch server": "切换服务器",
+  "Server address": "服务器地址",
+  "Used before:": "用过的服务器：",
+  "{host} (profile default)": "{host}（配置文件默认值）",
+  "Name for your home (optional)": "你的主页名称（可选）",
+  "Switching servers changes who you are": "换服务器，就是换一个身份",
+  "You used this server before. Your saved identity, friends and settings for it come back.": "你以前用过这台服务器，它上面保存的身份、好友和设置会恢复。",
+  "You get a new identity on this server. The friends and sharing you have now stay on the current server; they do not move.": "你会在这台服务器上得到一个新身份。现在的好友和分享留在当前服务器上，不会搬过去。",
+  "Your current sign-in is kept as a backup on this computer and is never deleted. Switch back any time.": "当前的登录凭据会作为备份保留在这台电脑上，不会被删除。随时可以切换回来。",
+  "Your Bots stop being shared with friends until you share them again on the new server.": "在新服务器上重新分享之前，你的 Bot 不再与好友共享。",
+  "This is the server you already use.": "这就是你正在用的服务器。",
+  "Switching…": "正在切换…",
+  "Switch to this server": "切换到这台服务器",
+  "Check": "检查",
   Connected: "已连接",
   Disconnect: "断开",
   Connect: "连接",
@@ -1319,7 +1348,7 @@ function ungrantedLocalFix(details) {
 }
 
 // src/client/flybot-registry.js
-var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header"];
+var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header", "flybot.settings.page"];
 function createRegistry() {
   const entries2 = new Map(SLOTS.map((name) => [name, []]));
   const listeners2 = /* @__PURE__ */ new Set();
@@ -1909,6 +1938,12 @@ var SlotBoundary = class extends import_react2.Component {
 };
 function Safe({ entry, props }) {
   return (0, import_react2.createElement)(SlotBoundary, { id: entry.id }, (0, import_react2.createElement)(entry.component, props));
+}
+function useSettingsPages() {
+  return useSlot("flybot.settings.page");
+}
+function SettingsPageSlot({ entry, props }) {
+  return (0, import_react2.createElement)(Safe, { entry, props });
 }
 function useSidebarStructure() {
   return useSlot("flybot.sidebar.structure")[0];
@@ -12349,9 +12384,12 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
   });
   const bot = page === "bots" && id ? roster.byId[id] : void 0;
   const room2 = page === "groups" && id ? roster.roomsById[id] : void 0;
-  const shown = SETTINGS_PAGES.some(([key]) => key === page) ? page : "general";
+  const extra = useSettingsPages().map((entry) => ({ entry, key: `plugin:${entry.id}` }));
+  const pages = SETTINGS_PAGES.flatMap((item) => item[0] === "connectors" ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item]);
+  const shown = pages.some(([key]) => key === page) ? page : "general";
+  const pluginPage = extra.find(({ key }) => key === shown)?.entry;
   const usageFocus = shown === "usage" && id ? id : null;
-  const label = t(SETTINGS_PAGES.find(([key]) => key === shown)[1]);
+  const label = t(pages.find(([key]) => key === shown)[1]);
   const back = bot ? t("Back to Bots") : room2 ? t("Back to group chats") : usageFocus ? t("All usage") : null;
   const nav = useGlide(shown, { axis: "y" });
   const pageKey = `${shown}:${bot?.id ?? room2?.id ?? ""}`;
@@ -12374,13 +12412,13 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
         "nav",
         { ref: nav.box, className: "bt-settings-nav", "aria-label": t("Settings pages") },
         (0, import_react29.createElement)("span", { ref: nav.thumb, className: "bt-thumb", "aria-hidden": true }),
-        SETTINGS_PAGES.map(([key, text]) => (0, import_react29.createElement)("button", {
+        pages.map(([key, text]) => (0, import_react29.createElement)("button", {
           key,
           type: "button",
           className: "bt-settings-item",
           "aria-current": shown === key ? "page" : void 0,
           onClick: () => actions.openSettings(key)
-        }, (0, import_react29.createElement)(PAGE_ICONS[key]), t(text))),
+        }, (0, import_react29.createElement)(extra.find((item) => item.key === key)?.entry.icon ?? PAGE_ICONS[key] ?? ConnectorIcon), t(text))),
         (0, import_react29.createElement)("button", {
           type: "button",
           className: "bt-settings-item bt-settings-shell",
@@ -12410,6 +12448,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           room2 ? (0, import_react29.createElement)("div", { className: "bt-settings-form" }, (0, import_react29.createElement)(GroupSettingsForm, { key: room2.id, room: room2, roster, actions, run })) : null,
           shown === "groups" && !room2 ? (0, import_react29.createElement)(GroupsPage, { roster, actions, run }) : null,
           shown === "connectors" ? (0, import_react29.createElement)(ConnectorsPage, { roster, actions }) : null,
+          pluginPage ? (0, import_react29.createElement)(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call: call2, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === "capabilities" ? (0, import_react29.createElement)(CapabilitiesPage, { roster, actions, run }) : null,
           shown === "schedules" ? (0, import_react29.createElement)(SchedulesPage, { roster, actions, start: id ?? void 0 }) : null,
           shown === "secrets" ? (0, import_react29.createElement)(SecretsPage, { roster, actions, run, Section: SetSection }) : null,

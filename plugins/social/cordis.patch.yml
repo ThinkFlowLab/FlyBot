@@ -2,7 +2,8 @@
 # Set the Bot Social server in your profile patch, for example:
 #   - id: flybot-social
 #     config: { server: https://social.example, displayName: Me }
-# Without a server it does not onboard and stays idle.
+# Without a server it does not onboard and stays idle. Settings → Bot Social can pick another server
+# later (kept beside the credentials); the value here stays the default.
 - insert:
     - id: flybot-social
       name: '@flybot/social'

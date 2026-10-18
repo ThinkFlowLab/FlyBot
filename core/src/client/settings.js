@@ -5,6 +5,7 @@ import { allThemes } from './themes.js'
 import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
 import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
+import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
 import { useEscape } from './overlay-hooks.js'
 import { BotSettingsForm } from './bot-settings.js'
 import { Segmented, useGlide } from './motion.js'
@@ -161,9 +162,13 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   // A Bot or group deleted while its form is open leaves its page on the list.
   const bot = page === 'bots' && id ? roster.byId[id] : undefined
   const room = page === 'groups' && id ? roster.roomsById[id] : undefined
-  const shown = SETTINGS_PAGES.some(([key]) => key === page) ? page : 'general'
+  // Plugin pages (flybot.settings.page) sit after Connectors; a page whose plugin is gone falls back to General.
+  const extra = useSettingsPages().map(entry => ({ entry, key: `plugin:${entry.id}` }))
+  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'connectors' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item]))
+  const shown = pages.some(([key]) => key === page) ? page : 'general'
+  const pluginPage = extra.find(({ key }) => key === shown)?.entry
   const usageFocus = shown === 'usage' && id ? id : null
-  const label = t(SETTINGS_PAGES.find(([key]) => key === shown)[1])
+  const label = t(pages.find(([key]) => key === shown)[1])
   const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
   const nav = useGlide(shown, { axis: 'y' })
   // A page enters from the right when it is one level in, from the left when it comes
@@ -186,9 +191,9 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
     h('div', { className: 'bt-settings', role: 'dialog', 'aria-modal': true, 'aria-label': t('FlyBot settings'), 'data-wide': shown === 'usage' ? '' : undefined },
       h('nav', { ref: nav.box, className: 'bt-settings-nav', 'aria-label': t('Settings pages') },
         h('span', { ref: nav.thumb, className: 'bt-thumb', 'aria-hidden': true }),
-        SETTINGS_PAGES.map(([key, text]) => h('button', {
+        pages.map(([key, text]) => h('button', {
           key, type: 'button', className: 'bt-settings-item', 'aria-current': shown === key ? 'page' : undefined, onClick: () => actions.openSettings(key),
-        }, h(PAGE_ICONS[key]), t(text))),
+        }, h(extra.find(item => item.key === key)?.entry.icon ?? PAGE_ICONS[key] ?? ConnectorIcon), t(text))),
         h('button', {
           type: 'button', className: 'bt-settings-item bt-settings-shell', title: t('Models, providers, and the rest of DeepSeek Harness'),
           onClick: () => { close(); openHarnessSettings() },
@@ -205,6 +210,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           room ? h('div', { className: 'bt-settings-form' }, h(GroupSettingsForm, { key: room.id, room, roster, actions, run })) : null,
           shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
           shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
+          pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
           shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,
           shown === 'secrets' ? h(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
