@@ -136,7 +136,7 @@ var ZH = {
   "Expand": "展开",
   "Collapse": "收起",
   "Setting up your Main Bot…": "正在设置你的主 Bot…",
-  "Connect plugins": "连接插件",
+  "Connect apps": "连接应用",
   "Automation tasks": "自动化任务",
   Connectors: "连接器",
   "Search connectors": "搜索连接器",
@@ -6403,16 +6403,16 @@ function UpdateButton({ useUpdate, actions }) {
     ), document.body) : null
   );
 }
-function ConnectPlugins({ wide, actions }) {
+function ConnectApps({ wide, actions }) {
   if (!wide) return null;
   return (0, import_react9.createElement)(
     "span",
     { className: "bt-connect-wrap" },
     (0, import_react9.createElement)(
       "button",
-      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.selectPanel("plugins") },
+      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
       (0, import_react9.createElement)(PlugIcon),
-      t("Connect plugins")
+      t("Connect apps")
     )
   );
 }
@@ -15811,7 +15811,7 @@ function apply(ctx) {
     shadow("sidebar.brand.mark", { priority: -10 }, BrandMark),
     shadow("sidebar.brand.name", { priority: -10 }, BrandName),
     shadow("sidebar.footer.action", { id: "bot-account", order: -200, inject: face }, FooterAccount),
-    shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ConnectPlugins),
+    shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ConnectApps),
     shadow("settings.trigger", { priority: -10 }, YouAvatar),
     // At priority -10 the whale wins the seat over a shell account plugin's own
     // launcher (the Desktop's "··· More"), which comes back in Agent mode.

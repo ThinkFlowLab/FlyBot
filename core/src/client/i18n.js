@@ -100,7 +100,7 @@ const ZH = {
   'Expand': '展开',
   'Collapse': '收起',
   'Setting up your Main Bot…': '正在设置你的主 Bot…',
-  'Connect plugins': '连接插件',
+  'Connect apps': '连接应用',
   'Automation tasks': '自动化任务',
   Connectors: '连接器',
   'Search connectors': '搜索连接器',
