@@ -5015,12 +5015,14 @@ function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
   return (0, import_react7.createElement)("div", { className: "bt-event" }, parts);
 }
 var heldForm = (text) => String(text ?? "").replace(/\s+/g, " ").trim().replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, "").trim();
-function isHeldLine(room2, text) {
+var sameName = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === String(b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+function isHeldLine(room2, text, bot) {
   if (room2?.origin !== "face-to-face") return false;
   const line = heldForm(text);
   if (!line) return false;
   return (room2.pendingApprovals ?? []).some((item) => {
     if (item?.kind !== "face_room_message") return false;
+    if (bot !== void 0 && String(item.from ?? "").trim() !== "" && !sameName(item.from, bot.name)) return false;
     const held = heldForm(item.text);
     return held !== "" && (held === line || held.length >= 799 && line.startsWith(held));
   });
@@ -5037,7 +5039,7 @@ function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }
     bot.name,
     room2?.admin === bot.id ? (0, import_react7.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
   );
-  if (isHeldLine(room2, text)) {
+  if (isHeldLine(room2, text, bot)) {
     return (0, import_react7.createElement)(
       "div",
       { className: "bt-group-msg" },

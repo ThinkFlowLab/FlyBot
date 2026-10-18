@@ -90,6 +90,25 @@ test('the held text matches however the card cleaned it: spacing, the "To the ro
   assert.equal(isHeldLine(roomWith([held('')]), ''), false)
 })
 
+test('the held line waits only for the Bot that sent it: another Bot saying the same words stays a full bubble', () => {
+  const writer = { id: 'writer', name: 'Writer', color: 'blue' }
+  const room = { id: 'g1', origin: 'face-to-face', members: ['chief', 'writer'], participants: [], pendingApprovals: [held('Draft: ship it on Friday')] }
+  const roster = { bots: [chief, writer], byId: { chief, writer }, roomsById: { g1: room } }
+  const content = [{ type: 'text', text: JSON.stringify({ replies: [
+    { botId: 'writer', name: 'Writer', text: 'Draft: ship it on Friday' },
+    { botId: 'chief', name: 'Chief', text: 'Draft: ship it on Friday' },
+  ] }) }]
+  const drawn = expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles'])
+  assert.equal(find(drawn, node => node.props?.['data-flybot'] === 'held-line').length, 1, 'only Chief\'s line waits')
+  assert.deepEqual(shownText(drawn), ['Draft: ship it on Friday'], 'Writer\'s identical line is drawn')
+  assert.equal(isHeldLine(room, 'Draft: ship it on Friday', writer), false)
+  assert.equal(isHeldLine(room, 'Draft: ship it on Friday', chief), true)
+  assert.equal(isHeldLine(room, 'Draft: ship it on Friday', { id: 'chief', name: '  chief ' }), true, 'names compare without case or spacing')
+  // A card that names no sender still matches by text.
+  const unnamed = { ...room, pendingApprovals: [held('Draft: ship it on Friday', { from: '' })] }
+  assert.equal(isHeldLine(unnamed, 'Draft: ship it on Friday', writer), true)
+})
+
 test('only a Face-to-face room hides a held line, and only for a held room line', () => {
   assert.equal(isHeldLine(roomWith([held('hello')], 'group'), 'hello'), false)
   assert.equal(isHeldLine(roomWith([held('hello', { kind: 'outbound_message' })]), 'hello'), false)
