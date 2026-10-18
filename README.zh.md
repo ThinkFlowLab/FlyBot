@@ -149,6 +149,8 @@ export PORT=8787
 
 首次启动会调用 `POST <server>/v1/onboard/flybot`，登记你家（`@<名字>.home`），凭证写在 `$DSH_HOME/bot/flybot-social.json`（权限 600）。在你授权之前，没有任何 Bot 被共享。若家句柄已被占用，会自动试 `你的名字2`…。侧栏 **+** → **复制我的 handle** 复制当前已连接的句柄。若 Social 没起来，界面会显示 **Social is not running:** 及原因（也会进 Settings → Feedback）。
 
+**之后换服务器**不用改 YAML：设置 → **Bot Social** 显示当前服务器和连接状态，**更换服务器**会先检查新地址（`https://`；开发时可用 `http://localhost`；FlyBot 读取 `<server>/v1/platform` 并列出它的功能），经过明确的警告确认后无需重启即可切换。换服务器等于**换一个新身份**：好友和分享留在旧服务器上，旧的凭证文件作为备份保留、不会被删除，切换回去即可恢复。`cordis.patch.yml` 里的值仍是默认值。
+
 **分享某一个 Bot：** 该 Bot 设置 → **Sharing** → **Invite to this Bot**（或 **复制邀请链接**），把链接发给对方；对方侧栏 **+** → **添加好友** 粘贴链接或码并接受——**只授权这一个 Bot**。**People with access** 可查看并 **Revoke**。
 
 **私聊：** 点侧栏里对方的 Bot。对方来信立刻到。你这边发出去的内容停在该聊天等批准（除非对该好友开了 **Auto-send**，默认关）。对方看不到回复时，先看 **to approve / 待批准** 角标。

@@ -660,6 +660,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   let fetchedAt = 0
   // Every Bot Social lists for us, before the shared-with-us filter: a reply may go back to one (#272).
   let serverRoster = []
+  // True once a home roster has been applied, so an empty roster ("no friends yet") still counts as
+  // fetched: the first friend to accept an invite arrives on a roster that was [] (#303).
+  let rosterFetched = false
+  // Bots a roster listed but we did not publish because the grant sync before them failed (fail
+  // closed). They stay "unseen" for the next fetch and out of the grant re-filter until a sync succeeds.
+  const withheldRemotes = new Set()
   // Roster fetches are numbered when they ask, not when they land (#224): an answer that lands
   // after a newer one (the background refresh hide-remote starts, a slow link) is dropped, so it
   // cannot put back a roster the server has since changed — nor count toward forgetting a hide.
@@ -767,6 +773,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (settings.roomBots?.[key]) return false
     return true
   }
+  const isWithheld = bot => withheldRemotes.has(bot.handle) && !settings.inboundBots?.[bot.handle]
   function mapRemoteBot(bot, homeHandle) {
     const look = lookFromServer({
       ...bot,
@@ -802,11 +809,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // The grant a joiner's own Bot carries for talking through to a shared Bot: same
   // relationship, the Bot is one this friendship covers, and the grantee is a Bot the friend
   // shared with us. It is not us sharing that Bot (#178).
-  function isTalkThroughGrant(member, grant) {
+  function isTalkThroughGrant(member, grant, homes = remote.homes) {
     const rid = grant.relationshipId
     const grantee = memberHandleOf(grant.grantee)
     if (!rid || !grantee || !member?.handle || !settings.inboundBots?.[grantee]) return false
-    return remote.homes.some(entry => entry.relationshipId === rid && entry.via.includes(norm(member.handle)))
+    return homes.some(entry => entry.relationshipId === rid && entry.via.includes(norm(member.handle)))
   }
   function listedRemoteBots() {
     return remote.homes.flatMap(entry => entry.bots.map(bot => ({
@@ -834,16 +841,36 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     let result
     const source = home ? 'home' : 'legacy'
     let unfiltered
+    let grantsFresh = false
     const rosterAt = ++rosterAsked
     try {
       if (home) {
         result = await client.callTool('list_remote_bots', { home: home.id })
         if (rosterAt < rosterApplied) return remote
         const mapped = mapRemoteHomes(result?.homes)
+        // A Bot that appears on a roster we already had, and that nobody shared with us, may be the
+        // Bot that just joined our invite, which the grant sync would hide (#138 / #161). Publishing it
+        // first opened a chat for it on this home that was marked gone seconds later (#303), so sync
+        // grants before such a Bot is published. The first fetch stays fast (#92; registerAll has
+        // synced grants at start), and known Bots and Bots shared with us never wait. "Had a roster"
+        // is the explicit flag, not non-emptiness: the first friend arrives on an empty roster.
+        // The sync classifies against the fresh roster (talk-through grants), and if it fails the
+        // unseen Bots are withheld from this publish (fail closed) and the background sync still runs.
+        const seen = new Set(serverRoster.flatMap(entry => entry.bots.map(bot => bot.handle)))
+        for (const handle of withheldRemotes) seen.delete(handle)
+        const unseenHandles = !rosterFetched ? [] : mapped.flatMap(entry => entry.bots)
+          .filter(bot => !seen.has(bot.handle) && !settings.inboundBots?.[bot.handle]).map(bot => bot.handle)
+        if (unseenHandles.length && typeof flybot.grants?.set === 'function') {
+          grantsFresh = await syncOutgoingGrants({ roster: mapped }).catch(error => { warn('grants not synced', error); return false })
+          if (rosterAt < rosterApplied) return remote
+          withheldRemotes.clear()
+          if (!grantsFresh) for (const handle of unseenHandles) withheldRemotes.add(handle)
+        }
         serverRoster = mapped
+        rosterFetched = true
         forgetDeclinedIfGone(mapped)
         backfillInboundFromRoster(mapped)
-        unfiltered = { homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }
+        unfiltered = { homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot) && !isWithheld(bot)) })) }
       } else {
         // Per-bot identity (legacy): each active friend is its own "home" of one Bot.
         const overview = await client.callTool('list_friends', config.botId ? { bot_id: config.botId } : {})
@@ -872,11 +899,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (home) void syncServerAutoApprove((result?.homes ?? []))
     // Grant listing is N HTTP calls; do not block Friends' Bots on it. Re-filter
     // once grants arrive so reverse-friends of our invites drop (#138).
-    void syncOutgoingGrants().then(() => {
+    if (!grantsFresh) void syncOutgoingGrants().then((synced) => {
       if (rosterApplied !== rosterAt || !home || !result) return
+      if (synced) withheldRemotes.clear()
       const mapped = mapRemoteHomes(result.homes)
       forgetDeclinedIfGone(mapped)
-      applyRemoteRoster({ homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }, { source, ok: true, refilter: true })
+      applyRemoteRoster({ homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot) && !isWithheld(bot)) })) }, { source, ok: true, refilter: true })
     }).catch(error => warn('grants not synced', error))
     const published = applyRemoteRoster(unfiltered, { source, ok: true })
     if (published && typeof published.then === 'function') await published.catch(error => warn('remote chats not synced', error))
@@ -1033,9 +1061,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return rooms
   }
 
-  // `only`: one Bot's grants (an open People with access refreshes just that Bot).
-  async function syncOutgoingGrants({ only } = {}) {
-    if (typeof flybot.grants?.set !== 'function') return
+  // `only`: one Bot's grants (an open People with access refreshes just that Bot). `roster`: the
+  // friends' homes to classify talk-through grants against, when they are newer than `remote`.
+  // Resolves true only when every Bot's grants were listed and stored; a failure is warned, not thrown.
+  async function syncOutgoingGrants({ only, roster } = {}) {
+    if (typeof flybot.grants?.set !== 'function') return false
+    let ok = true
     const bots = flybot.bot.list().filter(bot => {
       if (only && bot.id !== only) return false
       const member = memberOf(bot.id)
@@ -1046,7 +1077,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       try {
         const listed = await api.listGrants({ botId: member.bot_id })
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
-        const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant)).map(grant => {
+        const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
           const view = grantPersonView(grant)
           // Core normGrantee cannot match decorated non-@ values; persist a canonical @handle.
           const canonical = view.member || view.home || memberHandleOf(grant.grantee)
@@ -1062,9 +1093,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         }).filter(Boolean)
         await flybot.grants.set(bot.id, [...people, ...roomScoped])
       } catch (error) {
+        ok = false
         warn(`${bot.name} grants not synced`, error)
       }
     })
+    return ok
   }
 
   async function setRoomGrant(botId, room, { faceRoomId, name } = {}) {
