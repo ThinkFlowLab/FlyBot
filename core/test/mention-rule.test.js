@@ -104,3 +104,34 @@ test('a Bot name is something "@" can call without a second reading', () => {
   for (const name of ['a@b', 'x`y', 'two\nlines']) assert.equal(nameProblem(name), 'A Bot name cannot contain @, ` or a line break')
   assert.match(nameProblem('All'), /calls everyone in a group/)
 })
+
+test('#305: a face-room mention chips on both homes under one name, and a typed space after it is not doubled', () => {
+  // On B: B's own Chief and A's Chief (a friend's seat). On A: the same room seen from A.
+  const seatA = { kind: 'bot', remote: true, handle: '@chief.selfa.home', id: '@chief.selfa.home', displayName: 'Chief', ownerName: 'SelfA', isChief: true }
+  const seatB = { kind: 'bot', id: 'b1', handle: '@chief.selfb.home', displayName: 'Chief', ownerName: 'SelfB' }
+  const chiefB = { id: 'b1', name: 'Chief' }
+  const onB = { self: { displayName: 'SelfB' }, bots: [chiefB], byId: { b1: chiefB }, roomsById: { r: { origin: 'face-to-face', members: ['b1'], participants: [seatB, seatA] } } }
+  const sent = "@SelfA's Chief  what is 2+2?"
+  const partsB = userTextParts(sent, mentionableBots(onB, 'r'))
+  assert.equal(partsB[0].bot.id, '@chief.selfa.home')
+  assert.equal(partsB[0].bot.mentionLabel, 'SelfA · Chief')
+  assert.deepEqual(plain(partsB[1]), { text: ' what is 2+2?' })
+  // A bare "@Chief" typed on B is B's own Chief.
+  assert.equal(userTextParts('@Chief hi', mentionableBots(onB, 'r'))[0].bot.id, 'b1')
+
+  const seatA2 = { kind: 'bot', id: 'a1', handle: '@chief.selfa.home', displayName: 'Chief', ownerName: 'SelfA' }
+  const seatB2 = { kind: 'bot', remote: true, handle: '@chief.selfb.home', id: '@chief.selfb.home', displayName: 'Chief', ownerName: 'SelfB', isChief: true }
+  const chiefA = { id: 'a1', name: 'Chief' }
+  const onA = { self: { displayName: 'SelfA' }, bots: [chiefA], byId: { a1: chiefA }, roomsById: { r: { origin: 'face-to-face', members: ['a1'], participants: [seatA2, seatB2] } } }
+  // The same line arrives on A: "SelfA's Chief" is A's own Chief, drawn as the same kind of chip.
+  const partsA = userTextParts(sent, mentionableBots(onA, 'r', { fromFriend: true }))
+  assert.equal(partsA[0].bot.id, 'a1')
+  assert.equal(partsA[0].label, "SelfA's Chief")
+  assert.match(partsA[0].bot.mentionLabel, /^SelfA .* · Chief$/)
+  // A friend's bare "@Chief" is the friend's own Chief, not mine.
+  assert.equal(userTextParts('@Chief hi', mentionableBots(onA, 'r', { fromFriend: true }))[0].bot.id, '@chief.selfb.home')
+  // A friend's Bot that is not in this room is not offered here.
+  const outside = { id: 'f', name: 'Writer', remote: { handle: '@writer.selfc.home' } }
+  const withOutside = { ...onA, bots: [chiefA, outside], byId: { a1: chiefA, f: outside } }
+  assert.equal(userTextParts('@writer.selfc.home hi', mentionableBots(withOutside, 'r')).some(part => part.bot), false)
+})

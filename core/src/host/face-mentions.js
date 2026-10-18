@@ -4,24 +4,19 @@
 // A friend's Bot is only ever matched here to be told apart from a local one: the local home
 // never starts a turn for it. Pure: the room and the Bot lookup come in.
 import { mentionSpans, unmatchedMentions } from '../shared/mentions.js'
-import { remoteBotTitle } from '../shared/remote-label.js'
+import { faceAliases } from '../shared/remote-label.js'
 import { currentParticipants, isRemoteParticipant } from './room-membership.js'
 
 const clean = value => String(value ?? '').trim()
+
+// The aliases are shared with the chat bubble, which draws the same names as chips (#305).
+export { faceAliases }
 
 // A handle as one comparable key ("@Chief.Bob" and "chief.bob" are the same Bot), or ''.
 export const handleKey = value => clean(value).replace(/^@+/, '').toLowerCase()
 // The handle a mention list carries: lowercase, with the "@" Bot Social writes.
 const wireHandle = value => (handleKey(value) === '' ? '' : `@${handleKey(value)}`)
 
-// Every name one participant answers to, longest first is left to mentionSpans.
-export function faceAliases(participant, name) {
-  const owner = clean(participant.ownerName)
-  const handle = clean(participant.handle).replace(/^@+/, '')
-  const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle })
-  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : '', owner ? `${name} · ${owner}'s Bot` : '', handle]
-  return [...new Set(names.map(clean).filter(Boolean))]
-}
 
 // { local: [{ name, bot }], remote: [{ name, participant }] }: one entry per alias.
 export function faceCandidates(room, botOf, { fromFriend = false } = {}) {

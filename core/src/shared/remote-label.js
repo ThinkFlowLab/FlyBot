@@ -138,3 +138,16 @@ export async function copiedToClipboard(text, nav = globalThis.navigator) {
     return false
   }
 }
+
+const trimmed = value => String(value ?? '').trim()
+
+// Every name one face-room participant answers to (#287): its own name, the label the picker gave
+// it, the other home's title for it, `Bot · Person` and the bare handle. Longest first is left to
+// mentionSpans. The host routes on these and the bubble draws them as one chip (#305).
+export function faceAliases(participant, name) {
+  const owner = trimmed(participant.ownerName)
+  const handle = trimmed(participant.handle).replace(/^@+/, '')
+  const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle })
+  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : '', owner ? `${name} · ${owner}'s Bot` : '', handle]
+  return [...new Set(names.map(trimmed).filter(Boolean))]
+}

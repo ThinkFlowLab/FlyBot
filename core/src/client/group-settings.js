@@ -6,7 +6,7 @@ import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
-import { cleanPeerName, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
+import { ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
   ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
@@ -16,34 +16,10 @@ export const ROOM_MODES = [
 // Without an admin the host answers as everyone, whatever the stored mode says.
 export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
 
-// A face-to-face room lists people, each with the Bot they brought, named one way for every
-// member: "Bob · Chief", "Ann (you) · Chief" (#229). Names come from the participant records
-// (server member fields for a friend, the roster for my own Bot), never from message text.
-export function faceSeats(room, roster) {
-  const live = (room.presentedParticipants ?? room.participants ?? []).filter(p => p.kind !== 'human' && p.leftSeq === undefined)
-  const seats = live.map((p) => {
-    const local = p.remote ? undefined : roster.byId[p.id]
-    return {
-      key: p.handle || p.id,
-      local,
-      record: p,
-      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, '') : ownerNameOf(p),
-      bot: local ? local.name : cleanPeerName(p.displayName || p.name, 'Bot'),
-      mine: Boolean(local),
-    }
-  })
-  for (const id of room.members ?? []) {
-    const bot = roster.byId[id]
-    if (!bot || seats.some(seat => seat.local?.id === id)) continue
-    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ''), bot: bot.name, mine: true })
-  }
-  return seats
-}
+// faceSeats and faceSeatLabel live in face-seats.js so the chat bubble can name a mention the same way.
+import { faceSeats, faceSeatLabel } from './face-seats.js'
 
-export function faceSeatLabel(seat) {
-  if (!seat.person) return seat.bot
-  return `${seat.mine ? t('{name} (you)', { name: seat.person }) : seat.person} · ${seat.bot}`
-}
+export { faceSeats, faceSeatLabel }
 
 const personKey = (seat) => {
   const record = seat.record ?? {}

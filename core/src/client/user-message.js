@@ -4,7 +4,8 @@ import { mentionSpans } from '../shared/mentions.js'
 import { BotMark, PersonMark } from './mark.js'
 import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
-import { remoteBotTitle } from '../shared/remote-label.js'
+import { faceAliases, remoteBotTitle } from '../shared/remote-label.js'
+import { faceSeatLabel, faceSeats } from './face-seats.js'
 
 // -------------------------------------------------------------------------
 // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -32,8 +33,9 @@ export function contentParts(content) {
 // A friend's remote Bot is also called by its handle — the @ menu inserts "@<handle>"
 // and the host delivers on it — so the handle joins as a second name of the same Bot,
 // and the chip reads the display name (mentionLabel) from the roster.
-export function mentionableBots(roster, sessionId) {
+export function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
   const room = roster.roomsById[sessionId]
+  if (room?.origin === 'face-to-face') return faceMentionables(room, roster, fromFriend)
   const bots = room ? room.members.map(id => roster.byId[id]).filter(Boolean)
     : roster.byId[sessionId] ? roster.bots : []
   const humans = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
@@ -42,6 +44,24 @@ export function mentionableBots(roster, sessionId) {
     .map(p => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }))
   return bots.concat(humans, remotes, bots.filter(bot => typeof bot?.remote?.handle === 'string')
     .map(bot => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ''), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })))
+}
+
+// A face-to-face line was typed on either home, so a Bot is matched by every name the room
+// host routes on (faceAliases: "SelfA's Chief" typed on B is A's own Chief on A) and the chip
+// reads as the Members panel names it, "SelfA · Chief", the same on both homes (#305).
+// A bare "@Chief" means the writer's own Chief: a friend's line tries the friend's Bots first.
+function faceMentionables(room, roster, fromFriend) {
+  const humans = (room.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
+    .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
+  const seats = faceSeats(room, roster)
+  const ordered = fromFriend ? [...seats.filter(seat => !seat.mine), ...seats.filter(seat => seat.mine)] : seats
+  const bots = ordered.flatMap((seat) => {
+    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
+    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
+    const mentionLabel = faceSeatLabel(seat)
+    return faceAliases(record, seat.bot).map(name => ({ ...target, name, mentionLabel }))
+  })
+  return bots.concat(humans)
 }
 
 export function messageAuthor(data, roster, sessionId) {
@@ -69,6 +89,9 @@ export function userTextParts(text, bots, referenceLabels = []) {
     if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) })
     parts.push({ bot: span.bot, label: text.slice(span.start + 1, span.end) })
     cursor = span.end
+    // The @ menu inserts "@Name " with its space, so a typed space after it makes two; the chip
+    // is followed by one (#305).
+    if (text.startsWith('  ', cursor)) cursor += 1
   }
   if (cursor < text.length) parts.push({ text: text.slice(cursor) })
   return parts
@@ -77,7 +100,7 @@ export function userTextParts(text, bots, referenceLabels = []) {
 function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
   return userTextParts(text, bots, referenceLabels).map((part, index) => (part.bot
     ? h('button', { key: index, type: 'button', className: 'bt-umention', title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
-      h(BotMark, { bot: part.bot, size: 16 }), part.bot.mentionLabel ?? part.label)
+      h(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`)
     : h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))))
 }
 
@@ -134,7 +157,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
       author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
       attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
       text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
-        h(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
+        h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
         rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
       referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
     text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))

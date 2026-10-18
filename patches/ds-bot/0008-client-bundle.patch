@@ -411,7 +411,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,305 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,313 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -525,6 +525,14 @@ diff --git a/client.js b/client.js
 +  } catch {
 +    return false;
 +  }
++}
++var trimmed = (value) => String(value ?? "").trim();
++function faceAliases(participant, name) {
++  const owner = trimmed(participant.ownerName);
++  const handle = trimmed(participant.handle).replace(/^@+/, "");
++  const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle });
++  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : "", owner ? `${name} · ${owner}'s Bot` : "", handle];
++  return [...new Set(names.map(trimmed).filter(Boolean))];
 +}
 +
 +// src/client/flybot-registry.js
@@ -3470,8 +3478,7 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react7.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -3488,7 +3495,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -7642,7 +7650,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,123 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,125 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -7704,14 +7712,7 @@ diff --git a/client.js b/client.js
    );
  }
  
- // src/client/group-settings.js
--var import_react23 = require("react");
-+var import_react25 = require("react");
- var ROOM_MODES = [
-   ["admin", "Admin leads", "Plain messages go to the admin, who calls others with @Name."],
-   ["everyone", "Everyone", "Every member answers in turn, admin first."]
- ];
- var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
++// src/client/face-seats.js
 +function faceSeats(room2, roster) {
 +  const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human" && p.leftSeq === void 0);
 +  const seats = live.map((p) => {
@@ -7736,6 +7737,15 @@ diff --git a/client.js b/client.js
 +  if (!seat.person) return seat.bot;
 +  return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
 +}
++
+ // src/client/group-settings.js
+-var import_react23 = require("react");
++var import_react25 = require("react");
+ var ROOM_MODES = [
+   ["admin", "Admin leads", "Plain messages go to the admin, who calls others with @Name."],
+   ["everyone", "Everyone", "Every member answers in turn, admin first."]
+ ];
+ var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
 +var personKey = (seat) => {
 +  const record = seat.record ?? {};
 +  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
@@ -7956,10 +7966,7 @@ diff --git a/client.js b/client.js
 +          (0, import_react25.createElement)(BotMark, { bot, size: 22 }),
 +          (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, bot.name)),
 +          (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("Add"))
-         )),
--        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
--      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
--      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
++        )),
 +        ...outsideRemotes.map((bot) => (0, import_react25.createElement)(
 +          "button",
 +          { key: bot.handle, type: "button", className: "bt-set-row bt-bs-row bt-gs-pick", onClick: () => {
@@ -7969,7 +7976,10 @@ diff --git a/client.js b/client.js
 +          (0, import_react25.createElement)(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
 +          (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
 +          (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("Add friend's Bot"))
-+        )),
+         )),
+-        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
+-      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
+-      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
 +        (0, import_react25.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
 +      ] : outside.length + outsidePeople.length + outsideRemotes.length > 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react25.createElement)(PlusIcon), t("Add member")) : null,
 +      (0, import_react25.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react25.createElement)(
@@ -8086,6 +8096,22 @@ diff --git a/client.js b/client.js
 +      (0, import_react25.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy || admin === null || members.length === 0, onClick: () => void create() }, t("Create group chat"))
      )
    );
+ }
+@@ -9277,13 +9277,13 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
+   }
+   return result;
+ }
+-function trimmed(value) {
++function trimmed2(value) {
+   const text = value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2);
+   return text.includes(".") ? text.replace(/\.?0+$/, "") : text;
+ }
+ function compact(count) {
+   for (const [size, unit] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
+-    if (count >= size * 0.9995) return `${trimmed(count / size)}${unit}`;
++    if (count >= size * 0.9995) return `${trimmed2(count / size)}${unit}`;
+   }
+   return String(Math.round(count));
  }
 @@ -9294,7 +9294,7 @@ function percent(part, whole) {
  }
@@ -10956,16 +10982,32 @@ diff --git a/client.js b/client.js
  var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
  var canDrawUserMessages = () => typeof ui.projectUserText === "function";
  function contentParts(content) {
-@@ -13121,8 +13121,25 @@ function contentParts(content) {
+@@ -13119,10 +13119,40 @@ function contentParts(content) {
+   }
+   return { text: texts2.join("\n"), attachments, rest };
  }
- function mentionableBots(roster, sessionId) {
+-function mentionableBots(roster, sessionId) {
++function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
    const room2 = roster.roomsById[sessionId];
 -  if (room2) return room2.members.map((id) => roster.byId[id]).filter(Boolean);
 -  return roster.byId[sessionId] ? roster.bots : [];
++  if (room2?.origin === "face-to-face") return faceMentionables(room2, roster, fromFriend);
 +  const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
 +  const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
 +  const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
 +  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })));
++}
++function faceMentionables(room2, roster, fromFriend) {
++  const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
++  const seats = faceSeats(room2, roster);
++  const ordered = fromFriend ? [...seats.filter((seat) => !seat.mine), ...seats.filter((seat) => seat.mine)] : seats;
++  const bots = ordered.flatMap((seat) => {
++    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: "bot", remote: seat.record };
++    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person };
++    const mentionLabel = faceSeatLabel(seat);
++    return faceAliases(record, seat.bot).map((name) => ({ ...target, name, mentionLabel }));
++  });
++  return bots.concat(humans);
 +}
 +function messageAuthor(data, roster, sessionId) {
 +  const source = data?.source ?? {};
@@ -10984,7 +11026,13 @@ diff --git a/client.js b/client.js
  }
  function userTextParts(text, bots, referenceLabels = []) {
    const parts = [];
-@@ -13137,38 +13137,38 @@ function userTextParts(text, bots, referenceLabels = []) {
+@@ -13132,43 +13132,44 @@ function userTextParts(text, bots, referenceLabels = []) {
+     if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) });
+     parts.push({ bot: span.bot, label: text.slice(span.start + 1, span.end) });
+     cursor = span.end;
++    if (text.startsWith("  ", cursor)) cursor += 1;
+   }
+   if (cursor < text.length) parts.push({ text: text.slice(cursor) });
    return parts;
  }
  function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
@@ -10996,7 +11044,7 @@ diff --git a/client.js b/client.js
 -    part.label
 -  ) : (0, import_react34.createElement)(import_react34.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references)));
 +    (0, import_react37.createElement)(BotMark, { bot: part.bot, size: 16 }),
-+    part.bot.mentionLabel ?? part.label
++    `@${part.bot.mentionLabel ?? part.label}`
 +  ) : (0, import_react37.createElement)(import_react37.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references)));
  }
  function Attachments({ attachments, renderMessageImages }) {
@@ -11070,7 +11118,7 @@ diff --git a/client.js b/client.js
          { className: "bt-ubody", title: clock3(data.time) },
 -        (0, import_react34.createElement)(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
 -        rest.map((block, index) => ui.JsonBlock ? (0, import_react34.createElement)(ui.JsonBlock, { key: index, label: t("Content"), payload: block }) : null)
-+        (0, import_react37.createElement)(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
++        (0, import_react37.createElement)(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
 +        rest.map((block, index) => ui.JsonBlock ? (0, import_react37.createElement)(ui.JsonBlock, { key: index, label: t("Content"), payload: block }) : null)
        ) : null,
 -      referenceLabels.length > 0 ? (0, import_react34.createElement)("div", { className: "bt-urefs" }, t("Referenced {labels}", { labels: referenceLabels.join(t(", ")) })) : null

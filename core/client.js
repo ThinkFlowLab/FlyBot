@@ -1374,6 +1374,14 @@ async function copiedToClipboard(text, nav = globalThis.navigator) {
     return false;
   }
 }
+var trimmed = (value) => String(value ?? "").trim();
+function faceAliases(participant, name) {
+  const owner = trimmed(participant.ownerName);
+  const handle = trimmed(participant.handle).replace(/^@+/, "");
+  const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle });
+  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : "", owner ? `${name} · ${owner}'s Bot` : "", handle];
+  return [...new Set(names.map(trimmed).filter(Boolean))];
+}
 
 // src/client/flybot-registry.js
 var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header", "flybot.settings.page"];
@@ -10512,13 +10520,7 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
   );
 }
 
-// src/client/group-settings.js
-var import_react25 = require("react");
-var ROOM_MODES = [
-  ["admin", "Admin leads", "Plain messages go to the admin, who calls others with @Name."],
-  ["everyone", "Everyone", "Every member answers in turn, admin first."]
-];
-var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
+// src/client/face-seats.js
 function faceSeats(room2, roster) {
   const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human" && p.leftSeq === void 0);
   const seats = live.map((p) => {
@@ -10543,6 +10545,14 @@ function faceSeatLabel(seat) {
   if (!seat.person) return seat.bot;
   return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
 }
+
+// src/client/group-settings.js
+var import_react25 = require("react");
+var ROOM_MODES = [
+  ["admin", "Admin leads", "Plain messages go to the admin, who calls others with @Name."],
+  ["everyone", "Everyone", "Every member answers in turn, admin first."]
+];
+var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
 var personKey = (seat) => {
   const record = seat.record ?? {};
   const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
@@ -10984,13 +10994,13 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
   }
   return result;
 }
-function trimmed(value) {
+function trimmed2(value) {
   const text = value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2);
   return text.includes(".") ? text.replace(/\.?0+$/, "") : text;
 }
 function compact(count) {
   for (const [size, unit] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
-    if (count >= size * 0.9995) return `${trimmed(count / size)}${unit}`;
+    if (count >= size * 0.9995) return `${trimmed2(count / size)}${unit}`;
   }
   return String(Math.round(count));
 }
@@ -15111,12 +15121,25 @@ function contentParts(content) {
   }
   return { text: texts2.join("\n"), attachments, rest };
 }
-function mentionableBots(roster, sessionId) {
+function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
   const room2 = roster.roomsById[sessionId];
+  if (room2?.origin === "face-to-face") return faceMentionables(room2, roster, fromFriend);
   const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
   const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
   const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
   return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })));
+}
+function faceMentionables(room2, roster, fromFriend) {
+  const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
+  const seats = faceSeats(room2, roster);
+  const ordered = fromFriend ? [...seats.filter((seat) => !seat.mine), ...seats.filter((seat) => seat.mine)] : seats;
+  const bots = ordered.flatMap((seat) => {
+    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: "bot", remote: seat.record };
+    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person };
+    const mentionLabel = faceSeatLabel(seat);
+    return faceAliases(record, seat.bot).map((name) => ({ ...target, name, mentionLabel }));
+  });
+  return bots.concat(humans);
 }
 function messageAuthor(data, roster, sessionId) {
   const source = data?.source ?? {};
@@ -15141,6 +15164,7 @@ function userTextParts(text, bots, referenceLabels = []) {
     if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) });
     parts.push({ bot: span.bot, label: text.slice(span.start + 1, span.end) });
     cursor = span.end;
+    if (text.startsWith("  ", cursor)) cursor += 1;
   }
   if (cursor < text.length) parts.push({ text: text.slice(cursor) });
   return parts;
@@ -15150,7 +15174,7 @@ function UserText({ text, bots, referenceLabels, skillNames, references, actions
     "button",
     { key: index, type: "button", className: "bt-umention", title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
     (0, import_react37.createElement)(BotMark, { bot: part.bot, size: 16 }),
-    part.bot.mentionLabel ?? part.label
+    `@${part.bot.mentionLabel ?? part.label}`
   ) : (0, import_react37.createElement)(import_react37.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references)));
 }
 function Attachments({ attachments, renderMessageImages }) {
@@ -15212,7 +15236,7 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
       text !== "" || rest.length > 0 ? (0, import_react37.createElement)(
         "div",
         { className: "bt-ubody", title: clock3(data.time) },
-        (0, import_react37.createElement)(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
+        (0, import_react37.createElement)(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
         rest.map((block, index) => ui.JsonBlock ? (0, import_react37.createElement)(ui.JsonBlock, { key: index, label: t("Content"), payload: block }) : null)
       ) : null,
       referenceLabels.length > 0 ? (0, import_react37.createElement)("div", { className: "bt-urefs" }, t("Referenced {labels}", { labels: referenceLabels.join(t(", ")) })) : null
