@@ -65,6 +65,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 ### Sidebar + friend actions
 
+- `hooks.js` hands a transport `approved: true` (never read from the message) when the owner approved that send on a FlyBot card; social uses it to finish Bot Social's own hold with the same click (#258).
 - Social registers a second `flybot.session.dock` entry, `social-room-end` (`FaceRoomStatus`, order 40): the plain ended-room line for a left/closed face room (#191).
 - Social also registers `flybot.account.header` (`MyHandle`): my own Bot Social handle plus Copy at the top of the account menu (#181), hidden while not connected.
 - Social registers two `flybot.new-chat.action` rows (Face-to-face group, Add friend). Each `run` closes the picker. Copying an invite and seeing your own handle happen inside the Add friend panel (#181). Still not team mode.

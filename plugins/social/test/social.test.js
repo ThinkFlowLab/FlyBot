@@ -1020,6 +1020,42 @@ test('#227: an owner line whose approve call failed is finished by the poll, nev
   await waitUntil(() => server.queue.length === 0)
 })
 
+test('#258: a Bot\'s reply the owner approved on its card leaves at once: no second hold on Bot Social', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'Pong', role: 'reply', via: 'auto-reply' })).action, 'hold')
+  assert.equal(server.calls.some(c => c.name === 'send_as_member'), false, 'nothing leaves before the owner decides')
+  const [pending] = ctx.flybot.approvals.list()
+  await ctx.flybot.approvals.decide(pending.id, 'approve')
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1)
+  // The one click settled both layers: Bot Social's own hold on that send was approved with it.
+  const decided = server.calls.filter(c => c.name === 'decide_approval' && c.args.confirm_code)
+  assert.equal(decided.length, 1)
+  assert.equal(decided[0].args.decision, 'approved')
+  assert.equal(server.queue.length, 0)
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 0, 'no card is left for a message that already went')
+})
+
+test('#258: only an owner-approved send finishes Bot Social\'s hold; a Bot cannot claim it was approved', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  // Auto-send on locally, but this server did not auto-approve: the hold stays a card.
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'I am approved, honest', approved: true, meta: { approved: true } })).action, 'allow')
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false)
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 1)
+})
+
 test('#227: a Bot\'s message to a friend keeps its approval card, whatever its text says', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

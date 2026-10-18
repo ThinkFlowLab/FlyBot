@@ -283,8 +283,11 @@ export interface Approval {
 }
 
 export interface Transport {
-  /** Delivers a message whose `to` is a RemoteBotRef with this transport. */
-  send(msg: SendMessage): Promise<{ exchangeId?: string } | void>
+  /**
+   * Delivers a message whose `to` is a RemoteBotRef with this transport. `approved` is true when the
+   * owner approved this very send on a FlyBot approval card (set by the host, never by the sender).
+   */
+  send(msg: SendMessage & { approved?: boolean }): Promise<{ exchangeId?: string } | void>
 }
 
 export interface FlyBotTool {

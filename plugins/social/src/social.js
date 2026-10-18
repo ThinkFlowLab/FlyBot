@@ -1097,7 +1097,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (!member) throw new Error(`${flybot.bot.get(msg.from)?.name ?? 'this Bot'} has no grant to that Bot, so it cannot message friends' Bots`)
         const attachments = await uploadAll(msg.attachments, member.bot_id)
         const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}) })
-        if (sent?.message?.status === 'pending_approval') pendingCache.at = 0
+        if (sent?.message?.status === 'pending_approval') {
+          pendingCache.at = 0
+          // The owner already approved this very send on a FlyBot card (the host says so, never the
+          // text): Bot Social's own hold on it would ask the same question a second time, on a card
+          // nobody sees in the Bot's chat, and the reply would never leave (#258). Room lines are
+          // different (the friend's owner decides those), so they keep their hold.
+          if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
+        }
         return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
       }
       // Legacy per-bot identity.

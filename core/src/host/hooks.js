@@ -359,13 +359,16 @@ export function install(rt) {
   }
 
   let innerDeliver
-  const dispatch = async (msg) => {
+  // `approved` is set here only, never read from the message: a transport that holds sends of its
+  // own (Bot Social's outbound hold) may finish the hold at once when the owner already said yes to
+  // this very send on a FlyBot card (#258). A Bot-supplied `approved` is overwritten.
+  const dispatch = async (msg, { approved = false } = {}) => {
     if (isRemote(msg.to)) {
       const kind = msg.to.transport ?? 'bot-social'
       const transport = transports.get(kind)
       if (transport === undefined) throw new Error(`flybot: no transport ${kind}`)
       const { deliverArgs, ...plain } = msg
-      const result = await transport.send(clone(plain))
+      const result = await transport.send({ ...clone(plain), approved })
       return result?.exchangeId ?? msg.exchangeId
     }
     return innerDeliver({ ...msg.deliverArgs, flybotChecked: true })
@@ -439,7 +442,7 @@ export function install(rt) {
       return
     }
     try {
-      approval.exchangeId = await dispatch(approval.request)
+      approval.exchangeId = await dispatch(approval.request, { approved: true })
     } catch (error) {
       approval.status = 'failed'
       approval.error = error?.message ?? String(error)
