@@ -110,6 +110,7 @@ credentials and team mode remain separate work under #55/#198.
 - Another member's own face-room line arrives through `flybot.rooms.postHuman` (#180): a quiet `postToRoom` post carrying `source.human { authorId, name }`. `group_relay` turns it into a round reply `{ kind: 'user', other: true, name, authorId }` (not the grey `notice`), so it draws as a left-hand bubble from that person; it asks no Bot to answer. `postNotice` stays for system events (joined, left, started). Covered by `core/test/rounds.test.js`.
 - `flybot.chatApprovals.changed()` saves the team (moving the revision) so `bot.pendingCount` reaches the browser at once when a hold arrives or is decided (#226). Covered by `core/test/flybot.test.js`.
 - The DSH composer still prompts the group Session (`user/message` → `group_relay`). For a face-to-face room, `openingSpeakers` returns no Bots unless the line `@Name`s a member or `@all`, so a plain human line is logged and does not start a Chief/Bot model turn (#167). Covered by `core/test/rounds.test.js`.
+- Group Session models (#289): `applyModel` does not trust `appliedModel` while a Bot is `modelStale`. A failed model selection in a group Session (from `applyModel` or from `room-participant.js` `open()`) marks the Bot stale; the next apply (model-list change, restart, or the Bot's next turn in a known group Session) selects every Session again and clears the mark once all took it. Covered by `core/test/models.test.js`.
 
 ### Face-to-face participant look
 

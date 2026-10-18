@@ -152,13 +152,18 @@ export function install(rt) {
     const ref = await desiredModel(bot)
     if (ref === undefined) return ref
     const effort = await desiredEffort(bot, ref)
-    if (!force && bot.appliedModel === ref && (bot.appliedEffort ?? undefined) === effort) return ref
+    if (!force && !bot.modelStale && bot.appliedModel === ref && (bot.appliedEffort ?? undefined) === effort) return ref
     const route = { ...splitRef(ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) }
     await selectSessionModel(rt.chatOf(bot.id), route)
+    // A group Session that did not take the model keeps the Bot "stale", so the next apply (a model
+    // list change, a restart, its next group turn) tries it again instead of trusting appliedModel (#289).
+    let stale = false
     for (const sessionId of rt.groupSessionsOf(bot.id)) {
       await selectSessionModel(sessionId, route)
-        .catch(error => rt.warn('ds-bot: model for %s in a group not applied: %s', bot.name, error))
+        .catch((error) => { stale = true; rt.warn('ds-bot: model for %s in a group not applied: %s', bot.name, error) })
     }
+    if (stale) bot.modelStale = true
+    else delete bot.modelStale
     bot.appliedModel = ref
     if (effort === undefined) delete bot.appliedEffort
     else bot.appliedEffort = effort

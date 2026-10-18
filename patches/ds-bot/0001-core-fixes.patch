@@ -754,6 +754,27 @@ diff --git a/src/host/models.js b/src/host/models.js
      if (!bot.model) return undefined
      const entries = await catalog()
      const served = new Set(entries.map(entry => entry.ref))
+@@ -149,13 +149,18 @@ export function install(rt) {
+     const ref = await desiredModel(bot)
+     if (ref === undefined) return ref
+     const effort = await desiredEffort(bot, ref)
+-    if (!force && bot.appliedModel === ref && (bot.appliedEffort ?? undefined) === effort) return ref
++    if (!force && !bot.modelStale && bot.appliedModel === ref && (bot.appliedEffort ?? undefined) === effort) return ref
+     const route = { ...splitRef(ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+     await selectSessionModel(rt.chatOf(bot.id), route)
++    // A group Session that did not take the model keeps the Bot "stale", so the next apply (a model
++    // list change, a restart, its next group turn) tries it again instead of trusting appliedModel (#289).
++    let stale = false
+     for (const sessionId of rt.groupSessionsOf(bot.id)) {
+       await selectSessionModel(sessionId, route)
+-        .catch(error => rt.warn('ds-bot: model for %s in a group not applied: %s', bot.name, error))
++        .catch((error) => { stale = true; rt.warn('ds-bot: model for %s in a group not applied: %s', bot.name, error) })
+     }
++    if (stale) bot.modelStale = true
++    else delete bot.modelStale
+     bot.appliedModel = ref
+     if (effort === undefined) delete bot.appliedEffort
+     else bot.appliedEffort = effort
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
@@ -1158,6 +1179,40 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  assert.doesNotMatch(flat, /bt-model-chip|Pick another model/)
 +  assert.match(flat, /RemoteGoneDock/)
 +})
+diff --git a/test/models.test.js b/test/models.test.js
+--- a/test/models.test.js
++++ b/test/models.test.js
+@@ -144,6 +144,30 @@ test('a Bot model applies its thinking level, and only re-selects on a change',
+   assert.equal(bot.appliedEffort, undefined)
+ })
+ 
++test('a group Session that did not take the model keeps the Bot stale and is retried (#289)', async () => {
++  const { rt, selected } = bench()
++  let failing = true
++  rt.groupSessionsOf = () => ['g1']
++  const select = rt.ctx.sessionController.selectModel
++  rt.ctx.sessionController.selectModel = async (request) => {
++    if (failing && request.sessionId === 'g1') throw new Error('no adapter')
++    return select(request)
++  }
++  const bot = { id: 'b1', model: 'deepseek/v4-flash' }
++  await rt.applyModel(bot)
++  assert.equal(bot.appliedModel, 'deepseek/v4-flash')
++  assert.equal(bot.modelStale, true)
++  // Nothing changed, yet the next apply goes back to the group Session.
++  failing = false
++  await rt.applyModel(bot)
++  assert.equal(selected.filter(item => item.startsWith('g1:')).length, 1)
++  assert.equal('modelStale' in bot, false)
++  // Settled: the early return is back.
++  const before = selected.length
++  await rt.applyModel(bot)
++  assert.equal(selected.length, before)
++})
++
+ test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
+   const { rt } = bench({ reasoning: {
+     'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js

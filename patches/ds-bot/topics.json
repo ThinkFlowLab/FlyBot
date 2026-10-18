@@ -11,6 +11,7 @@
     "src/client/i18n.js",
     "src/client/model-menu.js",
     "test/memory.test.js",
+    "test/models.test.js",
     "test/model-menu.test.js",
     "test/home-lock.test.js",
     "test/client-bundle.test.js",

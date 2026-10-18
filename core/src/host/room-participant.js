@@ -9,6 +9,8 @@ export function createDshRoomParticipant(rt) {
     room.sessions ??= {}
     const known = room.sessions[member.id]
     if (known !== undefined) {
+      // A failed model selection left this Bot stale (#289): try again before it speaks.
+      if (member.modelStale) await rt.applyModel(member).catch(error => rt.warn('ds-bot: model for %s in %s not repaired: %s', member.name, room.name, error))
       await rt.ensureCapabilities(known)
       return { id: known, created: false }
     }
@@ -19,7 +21,7 @@ export function createDshRoomParticipant(rt) {
     const ref = await rt.desiredModel(member)
     if (ref !== undefined) {
       await rt.selectSessionModel(id, splitRef(ref))
-        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
+        .catch((error) => { member.modelStale = true; rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error) })
     }
     await rt.applyPermission(member, id)
       .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))

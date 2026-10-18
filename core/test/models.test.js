@@ -144,6 +144,30 @@ test('a Bot model applies its thinking level, and only re-selects on a change', 
   assert.equal(bot.appliedEffort, undefined)
 })
 
+test('a group Session that did not take the model keeps the Bot stale and is retried (#289)', async () => {
+  const { rt, selected } = bench()
+  let failing = true
+  rt.groupSessionsOf = () => ['g1']
+  const select = rt.ctx.sessionController.selectModel
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (failing && request.sessionId === 'g1') throw new Error('no adapter')
+    return select(request)
+  }
+  const bot = { id: 'b1', model: 'deepseek/v4-flash' }
+  await rt.applyModel(bot)
+  assert.equal(bot.appliedModel, 'deepseek/v4-flash')
+  assert.equal(bot.modelStale, true)
+  // Nothing changed, yet the next apply goes back to the group Session.
+  failing = false
+  await rt.applyModel(bot)
+  assert.equal(selected.filter(item => item.startsWith('g1:')).length, 1)
+  assert.equal('modelStale' in bot, false)
+  // Settled: the early return is back.
+  const before = selected.length
+  await rt.applyModel(bot)
+  assert.equal(selected.length, before)
+})
+
 test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
   const { rt } = bench({ reasoning: {
     'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },

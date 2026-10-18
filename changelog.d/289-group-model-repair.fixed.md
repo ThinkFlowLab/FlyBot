@@ -1,0 +1,1 @@
+A group chat whose Bot did not get its model the first time (a model failed to select, or the provider was not ready) is now repaired on the next model refresh, restart or turn instead of staying on the wrong model. (#289)
