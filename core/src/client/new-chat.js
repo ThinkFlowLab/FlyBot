@@ -164,12 +164,16 @@ export function NewChat({ mode, roster, actions }) {
     if (picked.length > 0) setPicked(current => current.slice(0, -1))
     else if (admin !== null) setAdmin(null)
   }
-  return h('div', { className: 'bt-pane', style: { left: paneLeft } },
-    h('div', { className: 'bt-newchat', role: 'dialog', 'aria-label': mode === 'search' ? t('Search') : t('New chat'), 'data-menu': menuOnly || undefined },
-      menuOnly ? h('div', { className: 'bt-to' },
-        h('span', { className: 'bt-to-label' }, t('New…')),
-        h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Close new chat'), onClick: close }, '×'))
-      : h('div', { className: 'bt-to' },
+  // Sidebar + is a compact popover anchored next to it (#173): the pane under it stays
+  // see-through and a press outside the menu closes it. New chat, Create Bot and the
+  // rest open their full pane as before.
+  return h('div', {
+    className: 'bt-pane', style: { left: paneLeft }, 'data-menu': menuOnly || undefined,
+    onMouseDown: menuOnly ? (event) => { if (event.target === event.currentTarget) close() } : undefined,
+  },
+    h('div', { className: 'bt-newchat', role: 'dialog', 'aria-label': mode === 'search' ? t('Search') : menuOnly ? t('New…') : t('New chat'), 'data-menu': menuOnly || undefined },
+      // The popover needs no title row: Escape or a press outside closes it.
+      menuOnly ? null : h('div', { className: 'bt-to' },
         h('span', { className: 'bt-to-label' }, t('To:')),
         adminBot ? h('span', { key: adminBot.id, className: 'bt-token bt-token-admin', title: t('Admin') },
           h(BotMark, { bot: adminBot, size: 16 }), adminBot.name, h(AdminStar),

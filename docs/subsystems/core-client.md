@@ -89,7 +89,7 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 
 ### New-chat menu
 
-- The + menu (`.bt-newchat[data-menu] .bt-drop`) is capped at 360px so it reads as a popover, not a full-width bar (#195).
+- The + menu is a popover anchored next to the sidebar **+** (#195, #173): its `.bt-pane` carries `data-menu` and stays see-through, the menu is a 280px card at the top left with no title row, and a press on the pane outside the card (or Escape) closes it. New chat, Create group chat, Create Bot and plugin rows open their full pane as before.
 - Create Bot starts on the Main Bot's model (#230): `startModel()` (`bot-draft.js`) picks the Main Bot's chosen model, else the one it last ran on, when it is served; then `roster.defaultModel`, then the first served model. Only served models are picked, so a provider without a credential is never preselected.
 - Settings say each thing once (#230): the Model and Main Bot cards show no row label that repeats the card title (`SwitchRow` `showLabel: false` keeps the switch's accessible name), the Create Bot dialog has its Back / Close in the header only (the footer Back / Cancel is for the inline form), and the account menu is as wide as its longest item (`width:max-content`, capped to the viewport) instead of cutting `Switch to classic Agent mode`.
 - Slot `flybot.account.header` (`0003-flybot-api-client`) is a compact block at the top of the account menu (`FlyBotAccountHeader`); social uses it for the owner's own handle (#181).

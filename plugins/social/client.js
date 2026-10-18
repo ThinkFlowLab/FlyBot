@@ -111,7 +111,7 @@ window.__ModuleLoader__.load({
 .fs-pending-one{flex:1 1 auto;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .fs-draft{font-size:13px;line-height:18px;color:var(--bt-ink,#141414);white-space:pre-wrap;overflow-wrap:anywhere;max-height:96px;overflow:auto}
 .fs-digits{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:16px;letter-spacing:.24em;font-variant-numeric:tabular-nums;outline:none;text-align:center}
-.fs-digits::placeholder{color:var(--bt-ink-3,rgba(20,20,20,.36));opacity:1;font-weight:400;letter-spacing:.24em}
+.fs-digits::placeholder{color:var(--bt-ink-3,rgba(20,20,20,.36));opacity:.75;font-weight:400;font-size:13px;letter-spacing:normal}
 .fs-digits:focus{border-color:var(--bt-accent,#4d6bfe)}
 .fs-sharing{display:flex;flex-direction:column;gap:10px}
 .fs-label-plain{text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
@@ -694,7 +694,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'fs-line' },
               h('input', {
                 className: 'fs-digits', value: code, inputMode: 'numeric', autoComplete: 'off', maxLength: 6,
-                placeholder: '000000', 'aria-label': '6-digit room number',
+                placeholder: '6 digits', 'aria-label': '6-digit room number',
                 onChange: e => setCode(String(e.target.value).replace(/\D/g, '').slice(0, 6)),
               }),
               h('button', {

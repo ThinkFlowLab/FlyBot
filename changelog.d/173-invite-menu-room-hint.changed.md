@@ -1,0 +1,1 @@
+A Bot's right-click menu has one **Copy invite link** entry (the invite with instructions stays in Sharing), and the face-to-face room number field shows a light `6 digits` hint instead of a pre-filled-looking `000000` ([#173](https://github.com/ThinkFlowLab/FlyBot/issues/173)).

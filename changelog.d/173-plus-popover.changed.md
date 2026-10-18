@@ -1,0 +1,1 @@
+The sidebar **+** menu is now a small popover next to the **+** button instead of a full-pane `New…` tab; Escape or a click outside closes it ([#173](https://github.com/ThinkFlowLab/FlyBot/issues/173)).

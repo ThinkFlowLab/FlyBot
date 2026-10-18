@@ -2929,6 +2929,10 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
   assert.ok(picker.some(n => n.type === 'input' && n.props.type === 'checkbox' && n.props['aria-label'] === 'Chief' && n.props.checked === true))
   assert.ok(picker.some(n => n.type === 'input' && n.props.type === 'checkbox' && n.props['aria-label'] === 'Writer' && n.props.checked === false))
   assert.equal(picker.filter(n => n.props['data-flybot'] === 'face-pick-check').length, 1)
+  // The room number field starts empty with a light word hint, not a pre-filled-looking 000000 (#173).
+  const digits = picker.find(n => n.type === 'input' && n.props.className === 'fs-digits')
+  assert.equal(digits.props.value, '')
+  assert.equal(digits.props.placeholder, '6 digits')
 
   const short = setup(['setup', bots, ['a'], '12ab', false, null, [], null, 0])
   await short.find(n => n.type === 'form' && n.props['data-flybot'] === 'face-join').props.onSubmit({ preventDefault() {} })

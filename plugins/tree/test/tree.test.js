@@ -679,7 +679,7 @@ test('sidebar structure: parents from forestOf; retired and outside Bots have no
   dispose()
 })
 
-// ---- per-node "Copy invite link" (bare URL) and "Copy invite with instructions"
+// ---- per-node "Copy invite link" (bare URL); copyInvite's 'text' kind (full message) stays for callers
 const withNavigator = async (nav, fn) => {
   const before = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true, writable: true })
@@ -687,7 +687,7 @@ const withNavigator = async (nav, fn) => {
 }
 const inviteButtons = (mod, flybot, bot) => findAll(reactStub.createElement(mod.makeInviteAction(flybot), { bot }), n => n.props.className === 'flybot-tree-invite')
 
-test('menu item: structure entry carries menuItems with copy-invite, visible only when canInvite(bot.id)', async () => {
+test('menu item: structure entry carries one copy-invite menu item, visible only when canInvite(bot.id)', async () => {
   const mod = loadClient()
   const entries = []
   const dispose = mod.registerStructure({ slots: { register: (n, e) => { entries.push(e); return () => {} } }, bots: async () => [] })
@@ -698,10 +698,10 @@ test('menu item: structure entry carries menuItems with copy-invite, visible onl
   delete globalThis.__flybot__
   const items = flybot => mod.makeMenuItems(flybot)({ bot: b })
   const item = flybot => items(flybot)[0]
-  const full = flybot => items(flybot)[1]
-  assert.deepEqual(items({}).map(i => [i.id, i.label]), [['copy-invite', 'Copy invite link'], ['copy-invite-text', 'Copy invite with instructions']])
+  // The menu offers one Copy invite entry; the invite with instructions is in Sharing (#173).
+  const full = flybot => ({ run: async ({ bot }) => { const r = await mod.copyInvite(flybot, bot.id, 'text'); if (r.tone === 'error') throw new Error(r.text); return `Invite for ${bot.name} copied, with instructions` } })
+  assert.deepEqual(items({}).map(i => [i.id, i.label]), [['copy-invite', 'Copy invite link']])
   assert.equal(item({}).visible, false)
-  assert.equal(full({}).visible, false)
   assert.equal(item({ social: { canInvite: () => false } }).visible, false)
   assert.equal(item({ social: { canInvite: () => { throw new Error('x') } } }).visible, false)
   const seen = []
@@ -712,7 +712,7 @@ test('menu item: structure entry carries menuItems with copy-invite, visible onl
   await withNavigator({ clipboard: { writeText: async t => { copied.push(t) } } }, async () => {
     // "Copy invite link": the bare URL only, no instructions.
     assert.equal(await item({ social }).run({ bot: b }), 'Invite link for 研究员 copied')
-    // "Copy invite with instructions": the full message.
+    // copyInvite 'text': the full message.
     assert.equal(await full({ social }).run({ bot: b }), 'Invite for 研究员 copied, with instructions')
   })
   assert.deepEqual(copied, ['https://s/i/X', 'join b1 at https://s/i/X'])

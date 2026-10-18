@@ -208,8 +208,9 @@ window.__ModuleLoader__.load({
       }
     }
     /**
-     * Right-click menu items for a tree node, shown when social.canInvite(bot.id) is true:
-     * "Copy invite link" (bare URL) and "Copy invite with instructions" (full message).
+     * The right-click menu item for a tree node, shown when social.canInvite(bot.id) is
+     * true: one "Copy invite link" (bare URL). The invite with instructions stays in the
+     * Bot's Sharing section, so the menu does not offer two copies of the same invite (#173).
      */
     function makeMenuItems(flybot) {
       return function menuItems({ bot }) {
@@ -225,16 +226,6 @@ window.__ModuleLoader__.load({
               const result = await copyInvite(flybot, id, 'link')
               if (result.tone === 'error') throw new Error(`Could not copy the invite link: ${result.text}`)
               return `Invite link for ${bot.name} copied`
-            },
-          },
-          {
-            id: 'copy-invite-text',
-            label: 'Copy invite with instructions',
-            visible: can,
-            run: async () => {
-              const result = await copyInvite(flybot, id, 'text')
-              if (result.tone === 'error') throw new Error(`Could not copy the invite: ${result.text}`)
-              return `Invite for ${bot.name} copied, with instructions`
             },
           },
         ]

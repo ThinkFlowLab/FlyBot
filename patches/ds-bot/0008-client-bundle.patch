@@ -1262,7 +1262,7 @@ diff --git a/client.js b/client.js
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  
  .bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
-+.bt-newchat[data-menu] .bt-drop{position:relative;top:0;left:0;width:auto;max-height:none;margin:8px 12px;box-shadow:none;max-width:360px}
++.bt-pane[data-menu]{background:transparent}.bt-pane[data-menu] .bt-newchat{flex:none;align-self:flex-start;width:min(280px,calc(100% - 16px));max-height:calc(100% - 16px);margin:8px;overflow:auto;background:var(--bt-card);border:1px solid var(--bt-line-2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.14),0 2px 6px rgba(0,0,0,.06)}.bt-newchat[data-menu] .bt-drop{position:relative;top:0;left:0;width:auto;max-height:none;margin:0;box-shadow:none;border:0;max-width:none}
  .bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
  .bt-to-label{color:var(--bt-ink-2)}
  .bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
@@ -6768,30 +6768,34 @@ diff --git a/client.js b/client.js
          roster,
          actions,
          start: draft,
-@@ -8467,33 +8467,38 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
+@@ -8467,33 +8467,41 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
      if (picked.length > 0) setPicked((current) => current.slice(0, -1));
      else if (admin !== null) setAdmin(null);
    };
 -  return (0, import_react20.createElement)(
 +  return (0, import_react21.createElement)(
      "div",
-     { className: "bt-pane", style: { left: paneLeft } },
+-    { className: "bt-pane", style: { left: paneLeft } },
 -    (0, import_react20.createElement)(
++    {
++      className: "bt-pane",
++      style: { left: paneLeft },
++      "data-menu": menuOnly || void 0,
++      onMouseDown: menuOnly ? (event) => {
++        if (event.target === event.currentTarget) close();
++      } : void 0
++    },
 +    (0, import_react21.createElement)(
        "div",
 -      { className: "bt-newchat", role: "dialog", "aria-label": mode === "search" ? t("Search") : t("New chat") },
 -      (0, import_react20.createElement)(
-+      { className: "bt-newchat", role: "dialog", "aria-label": mode === "search" ? t("Search") : t("New chat"), "data-menu": menuOnly || void 0 },
-+      menuOnly ? (0, import_react21.createElement)(
++      { className: "bt-newchat", role: "dialog", "aria-label": mode === "search" ? t("Search") : menuOnly ? t("New…") : t("New chat"), "data-menu": menuOnly || void 0 },
++      // The popover needs no title row: Escape or a press outside closes it.
++      menuOnly ? null : (0, import_react21.createElement)(
          "div",
          { className: "bt-to" },
 -        (0, import_react20.createElement)("span", { className: "bt-to-label" }, t("To:")),
 -        adminBot ? (0, import_react20.createElement)(
-+        (0, import_react21.createElement)("span", { className: "bt-to-label" }, t("New…")),
-+        (0, import_react21.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Close new chat"), onClick: close }, "×")
-+      ) : (0, import_react21.createElement)(
-+        "div",
-+        { className: "bt-to" },
 +        (0, import_react21.createElement)("span", { className: "bt-to-label" }, t("To:")),
 +        adminBot ? (0, import_react21.createElement)(
            "span",

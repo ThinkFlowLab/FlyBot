@@ -77,3 +77,18 @@ test('the sidebar + menu wires plugin actions in after Create group chat', () =>
   assert.match(src, /if \(!menuOnly\)/)
   assert.match(src, /actions\.notify/)
 })
+
+test('the sidebar + menu is a compact popover next to +, closed by a press outside (#173)', () => {
+  const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
+  const styles = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8')
+  // The pane itself carries data-menu while only the menu shows, and a press on the
+  // pane outside the menu closes it.
+  assert.match(src, /className: 'bt-pane', style: \{ left: paneLeft \}, 'data-menu': menuOnly \|\| undefined/)
+  assert.match(src, /onMouseDown: menuOnly \? \(event\) => \{ if \(event\.target === event\.currentTarget\) close\(\) \} : undefined/)
+  // No title row with its own × in the popover.
+  assert.match(src, /menuOnly \? null : h\('div', \{ className: 'bt-to' \}/)
+  assert.doesNotMatch(src, /t\('New…'\)\),\s*h\('button'/)
+  // See-through pane, a small card anchored at the top left, next to the sidebar +.
+  assert.match(styles, /\.bt-pane\[data-menu\]\{background:transparent\}/)
+  assert.match(styles, /\.bt-pane\[data-menu\] \.bt-newchat\{flex:none;align-self:flex-start;width:min\(280px,/)
+})
