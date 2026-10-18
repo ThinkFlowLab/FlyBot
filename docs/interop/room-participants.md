@@ -6,6 +6,10 @@ Social DM bridge alone does not satisfy it. The [earlier pilot
 contract](opencode-pilot.md) and offline harness remain useful transport and
 recovery foundations; their DM scope does not define the room integration.
 
+Phase-1 decisions (2026-10-18, recorded on #198): single-owner pilot, option
+A through this participant path, the isolated fixture task with edit+test
+tools and no network, and a driver-owned supervised OpenCode child process.
+
 ## Current DSH boundary (#216)
 
 `groups.js` uses `createDshRoomParticipant(rt)` from `room-participant.js`.
@@ -38,13 +42,16 @@ they do **not** provide `roomId + botId + taskId` isolation. Before enabling an
 external backend, add a versioned durable binding and migration that cannot
 reuse a DSH session ID as an OpenCode session ID or cross task boundaries.
 
-An OpenCode participant also needs an operator-controlled installation binding,
-normalized execution and permission events, observed cancellation state,
-restart reconciliation and durable resource accounting. Peer text cannot choose
-an endpoint, workspace, model, credential or tool policy. A runtime selector
-must reject unsupported kinds rather than silently executing through DSH.
-Closing/leaving a room, changing membership or revoking authority must prevent
-new dispatch and stale callbacks. None of these external paths are enabled here.
+An OpenCode participant is a supervised child process owned by the participant
+driver: the driver pins and starts it, stops it with the room, reconciles
+after restarts, and validates its installation binding (version, empty
+disposable workspace, no inherited configuration). The driver also normalizes
+execution and permission events, observed cancellation state and durable
+resource accounting. Peer text cannot choose an endpoint, workspace, model,
+credential or tool policy. A runtime selector must reject unsupported kinds
+rather than silently executing through DSH. Closing/leaving a room, changing
+membership or revoking authority must prevent new dispatch and stale
+callbacks. None of these external paths are enabled here.
 
 The acceptance fixture must force a clarification, use isolated code and
 independent tests, and end with human acceptance/rejection. Keep separate

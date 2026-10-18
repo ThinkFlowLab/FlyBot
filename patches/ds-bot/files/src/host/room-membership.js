@@ -464,10 +464,28 @@ export function install(rt) {
     return { ...line, who: name, ...(id ? { authorId: id, authorKind: 'human' } : {}) }
   }
 
-  const REMOTE_ROOM_MESSAGE = 'Only a Bot you granted (or one that joined with the room code) may be in a room with friends\' Bots'
   const hasRemote = room => currentParticipants(room).some(isRemoteParticipant)
   // Local members that may not stay in a room with remote participants or other owners.
   const unsharable = room => currentParticipants(room).filter(p => p.kind === 'bot' && !p.remote && !mayShareRoom(state, room, p.id))
+
+  // Why a friend's Bot and a local Bot with no grant to that friend cannot share a group.
+  // A group with a friend's Bot is projected to the friend's home: its lines, and the replies of
+  // every local Bot that may speak there, are sent on (fanoutRoomLine). Only a Bot the owner
+  // shared with that friend (a per-Bot grant, or a room-code join) may be in it; the grant is made
+  // by the friend accepting an invite to that Bot, so this refusal names the Bot, the friend and the
+  // two ways out instead of a bare rule. `details` is for the client (an invite button), not trusted input.
+  function ungrantedRefusal(room, bots, extraRemote) {
+    const remotes = [
+      ...currentParticipants(room).filter(isRemoteParticipant).map(p => ({ handle: p.handle || p.id, name: cleanPeerName(p.displayName, p.handle || p.id), owner: ownerNameSafe(p) })),
+      ...(extraRemote ? [{ handle: extraRemote.handle, name: cleanPeerName(extraRemote.name, extraRemote.handle), owner: cleanPeerName(extraRemote.homeName || extraRemote.owner || extraRemote.home, '') }] : []),
+    ].filter((p, i, all) => all.findIndex(other => other.handle === p.handle) === i)
+    const localBots = bots.map(id => ({ id, name: state.bots?.[id]?.name ?? id }))
+    const names = localBots.map(bot => bot.name).join(', ')
+    const friends = [...new Set(remotes.map(p => p.owner || p.name))].join(', ') || 'a friend'
+    const many = localBots.length > 1
+    const message = `${names} ${many ? 'are' : 'is'} not shared with ${friends}, so ${many ? 'they' : 'it'} cannot be in a group with their Bot: the group's messages go to ${friends}'s home. Share ${many ? 'them' : 'it'} with ${friends} (Bot settings → Invite to this Bot), or leave ${many ? 'them' : 'it'} out.`
+    return Object.assign(forbidden(message), { details: { reason: 'ungranted-local', bots: localBots, remotes } })
+  }
 
   // `viaCode` (a room-code join, #83) is an internal option: it is never read from a request body.
   function assertAddable(room, draft, actor, { viaCode = false } = {}) {
@@ -476,7 +494,8 @@ export function install(rt) {
       const published = publishedRemoteOf(state, draft.handle || draft.id)
       if (!published) throw forbidden('Only a Bot granted to you may join a shared room')
       if (participantOf(room, 'bot', published.handle)) throw invalid('That participant is already in the room')
-      if (unsharable(room).length > 0) throw forbidden(REMOTE_ROOM_MESSAGE)
+      const blocked = unsharable(room)
+      if (blocked.length > 0) throw ungrantedRefusal(room, blocked.map(p => p.id), published)
       return published
     }
     if (typeof draft.id !== 'string' || draft.id === '') throw invalid('A participant needs an id')
@@ -507,7 +526,7 @@ export function install(rt) {
       }
       throw forbidden('Only a granted Bot of a room member may join a shared room')
     }
-    if (hasRemote(room) && !viaCode && !mayShareRoom(state, room, draft.id)) throw forbidden(REMOTE_ROOM_MESSAGE)
+    if (hasRemote(room) && !viaCode && !mayShareRoom(state, room, draft.id)) throw ungrantedRefusal(room, [draft.id])
     const nextOwners = new Set(humans)
     if (nextOwners.size > 1) {
       for (const p of currentParticipants(room).filter(item => item.kind === 'bot' && !item.remote)) {
@@ -775,7 +794,10 @@ export function install(rt) {
       }
     }
     // A room with a friend's Bot takes only granted local Bots (a room code cannot be used here).
-    if (hasRemote(room) && unsharable(room).length > 0) throw forbidden(REMOTE_ROOM_MESSAGE)
+    if (hasRemote(room)) {
+      const blocked = unsharable(room)
+      if (blocked.length > 0) throw ungrantedRefusal(room, blocked.map(p => p.id))
+    }
     syncMembers(room)
     return room
   }

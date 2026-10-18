@@ -24,9 +24,9 @@ The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/cl
 | File | Role |
 | --- | --- |
 | `core/src/client/` | Client sources → build to `core/client.js`. |
-| `core/src/client/new-chat.js` | Sidebar **+** picker. Plugin rows via `flybot.new-chat.action` (`newChatActionRows` in `flybot-registry.js`); social adds Face-to-face group and Add friend (copy actions live inside Add friend, #181). The DSH Agent row reads **Add coding agent** (hint "A plain DSH session, not a Bot") so it is not mistaken for **Create new Bot** (#181). The short + menu does not list individual Bots. |
+| `core/src/client/new-chat.js` | Sidebar **+** picker. Plugin rows via `flybot.new-chat.action` (`newChatActionRows` in `flybot-registry.js`); social adds Face-to-face group and Add friend (copy actions live inside Add friend, #181). The DSH Agent row reads **Add coding agent** (hint "A plain DSH session, not a Bot") so it is not mistaken for **Create new Bot** (#181). The short + menu does not list individual Bots. A group the host refuses because one of my Bots is not shared with the friend whose Bot is in it (`error.details.reason === 'ungranted-local'`, put on the error by `client/api.js`) is drawn as a card, not a red line: it names the Bot(s) and friend(s), and offers **Copy invite link for {Bot}** (`__flybot__.social.createInvite`; shown only when social is loaded and can invite that Bot, nothing is granted by the click) and **Leave {Bot} out** (`ungrantedLocalFix`, `shared/remote-label.js`). |
 | `core/test/new-chat-menu.test.js` | **+** menu rows (#283): an action row's description is its own line under the title, an inline Bot hint is capped, so hovering never hides a title. |
-| `core/test/new-chat.test.js` | Picker filters and the **+** short action menu (`data-menu`; New chat, then Create group chat, plugin actions, then Add Agent). |
+| `core/test/new-chat.test.js` | Picker filters and the **+** short action menu (`data-menu`; New chat, then Create group chat, plugin actions, then Add Agent). `ungrantedLocalFix` and the refusal card (invite and leave-out actions, no grant written by the client). |
 
 ## Invariants
 
@@ -42,7 +42,7 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 ### New group chat with a friend's Bot
 
-- 新建群聊 (`new-chat.js`) picks a local Bot as admin; a friend's remote chat is split into `participants: [{ kind: 'bot', remote: true, handle }]` (`splitRoomPicks`). The host also converts remote chat ids passed as members, so the friend's owner gets the inbound-share projection instead of a silent local-only member.
+- 新建群聊 (`new-chat.js`) picks a local Bot as admin; a friend's remote chat is split into `participants: [{ kind: 'bot', remote: true, handle }]` (`splitRoomPicks`). The host also converts remote chat ids passed as members, so the friend's owner gets the inbound-share projection instead of a silent local-only member. If the host refuses the group because one of my Bots is not shared with that friend, the screen keeps the picks and shows the refusal card with the invite / leave-out actions (see the `new-chat.js` row).
 
 ### Main view landing and navigation trace (#261)
 
