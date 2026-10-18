@@ -980,7 +980,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { showsDshRow } from './dsh-offer.js'
  
  // -------------------------------------------------------------------------
-@@ -37,56 +37,88 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,56 +37,90 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -1042,8 +1042,10 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      awayLine ? h('span', { className: 'bt-row-preview' }, awayLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
 -  wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
 +  unreadMark)
-+  const settings = wide && bot.remote ? h('button', {
-+    type: 'button', className: 'bt-row-settings', 'aria-label': t('Bot settings'), title: t('Bot settings'),
++  // Hover/focus gear on every wide row (#276/#173): own Bots and friends' Bots alike.
++  const settingsLabel = bot.remote ? t('Bot settings') : t('Edit Bot')
++  const settings = wide ? h('button', {
++    type: 'button', className: 'bt-row-settings', 'aria-label': settingsLabel, title: settingsLabel,
 +    onClick: (event) => { event.stopPropagation(); actions.openSettings('bots', id) },
 +  }, h(GearIcon)) : null
 +  if (settings) return h('div', { className: 'bt-row-wrap', 'data-bot-id': id }, row, settings)
@@ -1596,7 +1598,7 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js
-@@ -40,7 +40,24 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
+@@ -40,7 +40,27 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
    assert.match(text('palette.js'), /title: t\('Bot settings'\), run: \(\) => actions\.openSettings\('general'\)/)
    // One Bot's own entries open that Bot, so they read Edit Bot instead.
    assert.match(text('context-menu.js'), /\[t\('Edit Bot'\), GearIcon, \(\) => actions\.openSettings\('bots', bot\.id\)\]/)
@@ -1613,6 +1615,9 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 +  assert.match(text('remote-bot-settings.js'), /focus\?\.\(\{ preventScroll: true \}\)/)
 +  assert.match(text('sidebar.js'), /\.bt-tree-item>\.bt-row-wrap\{flex:1 1 auto;width:auto;min-width:0\}/)
 +  assert.match(text('sidebar.js'), /bt-row-settings/)
++  // #276: gear is on every wide Bot row (own and friends'), not only remotes.
++  assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
++  assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
 +  assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
 +  assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
 +  // #276: only the user's own Bots are offered as a Main Bot, in both selects.

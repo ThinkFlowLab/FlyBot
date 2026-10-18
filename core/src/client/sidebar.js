@@ -87,8 +87,10 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, shown), bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
     awayLine ? h('span', { className: 'bt-row-preview' }, awayLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   unreadMark)
-  const settings = wide && bot.remote ? h('button', {
-    type: 'button', className: 'bt-row-settings', 'aria-label': t('Bot settings'), title: t('Bot settings'),
+  // Hover/focus gear on every wide row (#276/#173): own Bots and friends' Bots alike.
+  const settingsLabel = bot.remote ? t('Bot settings') : t('Edit Bot')
+  const settings = wide ? h('button', {
+    type: 'button', className: 'bt-row-settings', 'aria-label': settingsLabel, title: settingsLabel,
     onClick: (event) => { event.stopPropagation(); actions.openSettings('bots', id) },
   }, h(GearIcon)) : null
   if (settings) return h('div', { className: 'bt-row-wrap', 'data-bot-id': id }, row, settings)

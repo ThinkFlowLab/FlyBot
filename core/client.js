@@ -5928,11 +5928,12 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     ) : null,
     unreadMark
   );
-  const settings = wide && bot.remote ? (0, import_react9.createElement)("button", {
+  const settingsLabel = bot.remote ? t("Bot settings") : t("Edit Bot");
+  const settings = wide ? (0, import_react9.createElement)("button", {
     type: "button",
     className: "bt-row-settings",
-    "aria-label": t("Bot settings"),
-    title: t("Bot settings"),
+    "aria-label": settingsLabel,
+    title: settingsLabel,
     onClick: (event) => {
       event.stopPropagation();
       actions.openSettings("bots", id);

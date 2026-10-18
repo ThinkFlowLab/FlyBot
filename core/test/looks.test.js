@@ -52,6 +52,9 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
   assert.match(text('remote-bot-settings.js'), /focus\?\.\(\{ preventScroll: true \}\)/)
   assert.match(text('sidebar.js'), /\.bt-tree-item>\.bt-row-wrap\{flex:1 1 auto;width:auto;min-width:0\}/)
   assert.match(text('sidebar.js'), /bt-row-settings/)
+  // #276: gear is on every wide Bot row (own and friends'), not only remotes.
+  assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
+  assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
   assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
   assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
   // #276: only the user's own Bots are offered as a Main Bot, in both selects.

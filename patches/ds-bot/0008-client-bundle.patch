@@ -3644,7 +3644,7 @@ diff --git a/client.js b/client.js
      "button",
      {
        type: "button",
-@@ -4802,21 +4802,65 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4802,21 +4802,66 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
        onClick: () => actions.openSession(id),
        onContextMenu
      },
@@ -3664,11 +3664,12 @@ diff --git a/client.js b/client.js
 -    wide && unread && !active ? (0, import_react8.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
 +    unreadMark
 +  );
-+  const settings = wide && bot.remote ? (0, import_react9.createElement)("button", {
++  const settingsLabel = bot.remote ? t("Bot settings") : t("Edit Bot");
++  const settings = wide ? (0, import_react9.createElement)("button", {
 +    type: "button",
 +    className: "bt-row-settings",
-+    "aria-label": t("Bot settings"),
-+    title: t("Bot settings"),
++    "aria-label": settingsLabel,
++    title: settingsLabel,
 +    onClick: (event) => {
 +      event.stopPropagation();
 +      actions.openSettings("bots", id);
