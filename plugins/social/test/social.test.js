@@ -248,8 +248,14 @@ test('#90: an ungranted Bot (Chief included) is not registered or polled; invite
   assert.deepEqual(server.calls.filter(c => c.name === 'add_home_member').map(c => c.args.name), [])
   await social.pollInbox()
   assert.deepEqual(polled, [], 'no ungranted Bot is polled')
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /has no grant|has not been granted/)
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'a'), /has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'a'), /is not shared with that friend|has not been granted/)
+  // #273: the model gets the setting that exists and is told to relay it, not to guess one.
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'a'), (error) => {
+    assert.match(error.message, /^Not sent: Chief is not shared with that friend, so it cannot message their Bots\. To allow it, share Chief with them in its settings → Sharing\./)
+    assert.match(error.message, /do not point to any other setting/)
+    return true
+  })
   assert.equal(ctx.flybot.approvals.list().length, 0)
   assert.equal(server.calls.some(c => c.name === 'send_as_member'), false)
   const status = (await call('flybot/social/status', {})).value
@@ -269,7 +275,7 @@ test('#90: an ungranted Bot (Chief included) is not registered or polled; invite
   assert.deepEqual(polled.sort(), ['m1', 'm2'])
   await ctx.flybot.grants.set('b', [])
   // Revoking the grant keeps the identity (invite already registered it) but reach() denies.
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
   assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm2', handle: '@writer.danyang.home' })
   assert.deepEqual(received.get('b') ?? [], [])
 })
@@ -295,7 +301,7 @@ test('any local Bot can message any Bot of a friend home; the send is held, then
   assert.equal(pending.by, 'social')
   await ctx.flybot.approvals.decide(pending.id, 'approve')
   assert.deepEqual(server.calls.at(-1).args, { from_bot_id: 'm2', to: '@coder.bob.home', text: 'review my PR?' })
-  await assert.rejects(tool('message_friend_bot', { to: '@mallory.evil.home', message: 'hi' }, 'a'), /not a Bot of a friend|has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@mallory.evil.home', message: 'hi' }, 'a'), /not a Bot a friend shared with you|is not shared with that friend|has not been granted/)
 })
 
 test('approval: home-level setting with a per-Bot override', async (t) => {
@@ -490,7 +496,7 @@ test('legacy per-bot identity still works without a home', async (t) => {
   await grantTeam(ctx.flybot, '@bob.bot')
   assert.match(await tool('message_friend_bot', { to: '@bob.bot', message: 'hi' }, 'a'), /^Sent to @bob\.bot/)
   assert.deepEqual(server.calls.at(-1).args, { friend: '@bob.bot', text: 'hi', bot_id: 'b0' })
-  await assert.rejects(tool('message_friend_bot', { to: '@eve.bot', message: 'hi' }, 'a'), /not a Bot of a friend|has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@eve.bot', message: 'hi' }, 'a'), /not a Bot a friend shared with you|is not shared with that friend|has not been granted/)
 })
 
 test('the MCP client rejects a bad token and needs its config', async () => {
@@ -3335,7 +3341,7 @@ test('face-to-face join registers an ungranted Bot for that room only', async (t
   polled.length = 0
   await social.pollInbox()
   assert.equal(polled.includes('m1'), false, 'room-only identity is not polled')
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
 
   const again = (await call('flybot/social/face-join', { code: '123456', botId: 'b' })).value
   assert.equal(again.joinedAs.botId, 'b')

@@ -1039,7 +1039,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     async handle(msg) {
       if (msg.target?.remote !== true || (msg.to?.transport ?? 'bot-social') !== 'bot-social') return undefined
       const bot = await sendTarget(msg)
-      if (bot === undefined) return { action: 'deny', reason: `${msg.target.handle} is not a Bot of a friend on Bot Social` }
+      if (bot === undefined) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
       if (home && typeof msg.from === 'string' && !covered(await friendEntry(bot.home), msg.from)) {
         return { action: 'deny', reason: `${flybot.bot.get(msg.from)?.name ?? 'this Bot'} is not friends with ${bot.home}: that friendship is with ${(await friendEntry(bot.home)).via.join(', ')} only` }
       }
@@ -1076,7 +1076,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (/no Bot of yours is friends|no_relationship|no active relationship/i.test(blob)) {
       return new Error('you are not friends with this Bot. Add them from + Add friend.')
     }
-    if (/has no grant|has not been granted|cannot message friends/i.test(blob)) {
+    if (/has no grant|has not been granted|cannot message friends|cannot message their Bots/i.test(blob)) {
       return new Error('none of your Bots is invited to this friend. Invite them from Bot settings.')
     }
     if (/not connected|no token|no server URL/i.test(blob)) {
@@ -1110,7 +1110,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (bot === undefined) throw new Error(`${msg.target.handle} is no longer reachable`)
       if (home) {
         const member = typeof msg.from === 'string' ? activeMember(msg.from) : undefined
-        if (!member) throw new Error(`${flybot.bot.get(msg.from)?.name ?? 'this Bot'} has no grant to that Bot, so it cannot message friends' Bots`)
+        if (!member) {
+          const name = flybot.bot.get(msg.from)?.name ?? 'This Bot'
+          throw new Error(`${name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${name} with them in its settings → Sharing.`)
+        }
         const attachments = await uploadAll(msg.attachments, member.bot_id)
         const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}) })
         if (sent?.message?.status === 'pending_approval') {
@@ -1409,7 +1412,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const to = norm(args.to)
       const attachments = await describeFiles(args.files)
       const result = await flybot.bot.send({ from: botId, to, text: String(args.message ?? ''), ...(attachments.length ? { attachments } : {}) })
-      if (result.action === 'deny') throw new Error(`Not sent: ${result.reason}`)
+      // Relayed as is: the reason names the one setting that exists (#273).
+      if (result.action === 'deny') throw new Error(`Not sent: ${result.reason} Tell the user this as written; do not point to any other setting.`)
       if (result.action === 'hold') return `Waiting for the user's approval before it goes to ${to}. Do not resend.`
       return `Sent to ${to}. A reply arrives later as a new message.`
     },

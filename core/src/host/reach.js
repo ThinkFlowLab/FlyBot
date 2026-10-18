@@ -169,7 +169,8 @@ export function reach(state, { from, to, roomId } = {}) {
     if (hasGrant(state, from, to, roomId) || (roomId !== undefined && isCodeJoined(state, roomId, from))) return ALLOW
     // The owner already put this friend's Bot in the room: talking to it here is that share.
     if (roomId !== undefined && inRoom(state, roomId, from) && remoteInRoom(state, roomId, to)) return ALLOW
-    return deny(`${sender.name} has no grant to that Bot, so it cannot message friends' Bots`)
+    // Name the step that exists (#273): the sending Bot is the one not shared with that friend.
+    return deny(`${sender.name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${sender.name} with them in its settings → Sharing.`)
   }
   const target = state.bots?.[to]
   if (target === undefined) return ALLOW

@@ -794,7 +794,7 @@ export function install(rt) {
       const name = cleanName(known.get(handle)?.name, handle)
       const why = line(reason)
       if (action === 'deny') {
-        const grant = /has no grant to that Bot|has not been granted/i.test(why)
+        const grant = /has no grant to that Bot|has not been granted|cannot message their Bots/i.test(why)
         const shown = grant ? 'invite that Bot from Bot settings, or add it to this group first' : why
         return `${name}: not sent${shown ? ` — ${shown}` : ''}`
       }
