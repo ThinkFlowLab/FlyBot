@@ -822,6 +822,15 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    const groupNames = self => visibleRooms(self).map(room => `"${room.name}"`).join(', ') || 'none'
    const pickRoom = (ref, self) => {
      const matches = rt.findRooms(ref).filter(room => visibleRooms(self).includes(room))
+@@ -525,7 +525,7 @@ export function install(rt) {
+     name: 'save_capability',
+     description: 'Create or update a shared MCP server, skill, or pack. Changes apply from your next message.',
+     parameters: {
+-      name: { type: 'string', required: true, description: 'Lowercase letters, digits, and single hyphens, up to 32 characters; "github" is reserved' },
++      name: { type: 'string', required: true, description: 'Lowercase letters, digits, and single hyphens, up to 32 characters; "github" and "composio" are reserved' },
+       kind: { type: 'string', required: true, enum: ['mcp', 'skill', 'pack'] },
+       description: { type: 'string', description: 'What this capability provides' },
+       transport: { type: 'string', enum: ['stdio', 'streamable-http'], description: 'How to reach an MCP server: a local command or an HTTP URL' },
 @@ -545,7 +545,7 @@ export function install(rt) {
        try {
          const item = await rt.capabilitySave(args, { botId: self })

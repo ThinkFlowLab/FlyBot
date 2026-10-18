@@ -316,6 +316,7 @@ export function install(rt) {
           await rt.load()
           return ok(await rt.secretEndpoint(endpoint, body))
         case 'connector-connect':
+        case 'connector-apps':
         case 'connector-disconnect':
         case 'connector-retry':
           await rt.load()

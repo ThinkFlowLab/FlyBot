@@ -26,6 +26,8 @@
     "src/host/chat-index.js",
     "src/host/connectors.js",
     "src/host/usage.js",
+    "src/client/connectors.js",
+    "test/connectors.test.js",
     "README.md"
   ],
   "0002-flybot-api-host": [

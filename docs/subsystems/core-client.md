@@ -111,6 +111,10 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 - The held-send overlay (`FlyBotApprovals`, `flybot-slots.js`) runs every hook before its `if (pending.length === 0) return null`: a hook after that return made React throw on the first held message and no card ever drew (#254). `test/overlay-approvals.test.js` renders it with a stand-in that enforces React's hook-count rule.
 
+### Connectors page and the Composio row (#311)
+
+Settings → Connectors (`src/client/connectors.js`) lists one row per connector from `roster.connectors`. The GitHub row takes a token. The Composio row takes an API key and an app choice (pill buttons for common apps, plus a text box for any other Composio app name), then shows `Connected: <apps>` with **Choose apps** (changes the list through `connector-apps`, no key) and **Disconnect**. The key goes from the masked input to `connector-connect` and is never read back. Copy is English with a zh entry for every string in `i18n.js`.
+
 ### Discarded promise `.catch` (#213)
 
 A discarded `.catch(() => {})` in the client sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).

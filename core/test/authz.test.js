@@ -142,7 +142,7 @@ test('shared resources blocked with two members', async (t) => {
   const sessionA = await redeemOwner(rt)
   await redeemOwner(rt)
   const actorA = await rt.authenticate(sessionA.sessionToken)
-  for (const ep of ['secret-set', 'connector-connect', 'folders', 'set-prefs', 'diagnostics-log']) {
+  for (const ep of ['secret-set', 'connector-connect', 'connector-apps', 'folders', 'set-prefs', 'diagnostics-log']) {
     const gate = rt.authorize(actorA, ep, {})
     assert.equal(gate.ok, false, ep)
     assert.equal(gate.code, 'bot/blocked-shared', ep)

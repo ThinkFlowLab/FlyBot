@@ -3,6 +3,22 @@ FlyBot patch 0001-core-fixes on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Generate
 diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
+@@ -27,6 +27,7 @@ Tested with dsh `0.2.0-rc.2` (Web and Desktop) on Linux.
+ - **Bot browser (dsh Desktop only)**: see [Bot browser](#bot-browser).
+ - **Images**: for a model that cannot read images, a vision model first turns the image into text.
+ - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
++- **Connectors**: Settings → Connectors connects outside apps. GitHub takes a token. Composio takes one API key and the apps you pick (Gmail, Google Calendar, Slack, Notion and more); the tools appear as `mcp__composio__*`, and Composio shows a sign-in link in the chat the first time a Bot needs an app. The key is kept as a secret that no Bot shell can read.
+ - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
+ - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
+ 
+@@ -74,6 +74,7 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+     updateCheck: true               # look for a newer DS Bot when a window opens; default true
+     updateRegistry: https://registry.example/   # ask only this npm registry for updates
+     github: false                   # hide the GitHub connector; default shown in Connectors
++    composio: false                 # hide the Composio connector; default shown in Connectors
+ ```
+ 
+ **Updates**: when a window opens, DS Bot asks where it was installed from for a newer release: the npm registry (the one the DSH plugin manager installs from, then its fallbacks), or the latest GitHub release for a `github:…#vX.Y.Z` install. A newer version shows a cloud button at the top right of the sidebar; **Update** reinstalls DS Bot through the DSH plugin manager, and the new version runs from the next DSH start. A linked or local checkout is never offered an update. Settings → About DS Bot shows the same state, with **Check for updates** to ask again at once.
 @@ -82,7 +82,7 @@ The same card can carry DSH itself: a DS Bot release may name the DSH release it
  
  ## Models
@@ -42,6 +58,125 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
        if (shown === tabId) await show(null)
        await release(tabId)
        owner.delete(tabId)
+diff --git a/src/client/connectors.js b/src/client/connectors.js
+--- a/src/client/connectors.js
++++ b/src/client/connectors.js
+@@ -1,26 +1,62 @@
+ import { createElement as h, useRef, useState } from 'react'
+ import { useMorph } from './motion.js'
+ import { MaskedInput } from './secret-card.js'
++import { ConnectorIcon } from './icons.js'
+ import { t } from './i18n.js'
+ 
+ const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
++const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
++
++// Common apps; any other Composio app name can be typed under "More apps".
++const APPS = [
++  ['gmail', 'Gmail'], ['googlecalendar', 'Google Calendar'], ['googledrive', 'Google Drive'], ['googledocs', 'Google Docs'],
++  ['googlesheets', 'Google Sheets'], ['outlook', 'Outlook'], ['slack', 'Slack'], ['microsoft_teams', 'Microsoft Teams'],
++  ['discord', 'Discord'], ['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'], ['notion', 'Notion'], ['linear', 'Linear'],
++  ['jira', 'Jira'], ['asana', 'Asana'], ['trello', 'Trello'], ['todoist', 'Todoist'], ['airtable', 'Airtable'],
++  ['dropbox', 'Dropbox'], ['hubspot', 'HubSpot'], ['salesforce', 'Salesforce'], ['stripe', 'Stripe'],
++  ['zoom', 'Zoom'], ['calendly', 'Calendly'], ['figma', 'Figma'], ['twitter', 'X (Twitter)'], ['youtube', 'YouTube'],
++]
++const KNOWN = new Set(APPS.map(([slug]) => slug))
++const appName = slug => APPS.find(([id]) => id === slug)?.[1] ?? slug
+ 
+ export const GitHubMark = () => h('svg', { width: 20, height: 20, viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': true },
+   h('path', { d: 'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z' }))
+ 
+-const MARKS = { github: GitHubMark }
+-const ABOUT = { github: () => t('Repositories, issues, and pull requests') }
++const MARKS = { github: GitHubMark, composio: ConnectorIcon }
++const ABOUT = {
++  github: () => t('Repositories, issues, and pull requests'),
++  composio: () => t('Gmail, Slack, Calendar, Notion and many more apps, through one Composio key'),
++}
+ 
+ function statusText(connector) {
+   if (connector.state === 'connecting') return t('Connecting…')
+   if (connector.state === 'error') return t('Could not connect: {error}', { error: connector.error ?? '' })
++  if (connector.state === 'ready' && connector.apps?.length > 0) return t('Connected: {apps}', { apps: connector.apps.map(appName).join(', ') })
+   if (connector.state === 'ready') return connector.account ? t('Connected as {account}', { account: connector.account }) : t('Connected')
+   return ABOUT[connector.id]?.() ?? ''
+ }
+ 
++function AppPicker({ apps, onChange }) {
++  const [more, setMore] = useState(() => apps.filter(app => !KNOWN.has(app)).join(', '))
++  const picked = new Set(apps)
++  const toggle = slug => onChange(picked.has(slug) ? apps.filter(app => app !== slug) : [...apps, slug])
++  // The typed names replace the earlier typed ones; the buttons above keep theirs.
++  const typed = text => {
++    setMore(text)
++    const extra = text.split(/[\s,]+/).map(app => app.trim().toLowerCase()).filter(app => app !== '' && !KNOWN.has(app))
++    onChange([...new Set([...apps.filter(app => KNOWN.has(app)), ...extra])])
++  }
++  return h('div', { className: 'bt-connector-apps' },
++    h('div', { className: 'bt-states' }, APPS.map(([slug, name]) =>
++      h('button', { key: slug, type: 'button', className: 'bt-state', 'aria-pressed': picked.has(slug), onClick: () => toggle(slug) }, name))),
++    h('input', { className: 'bt-input', value: more, spellCheck: false, 'aria-label': t('More apps'), placeholder: t('More apps: type Composio app names, separated by commas'), onChange: event => typed(event.target.value) }))
++}
++
+ function ConnectorRow({ connector, actions }) {
+   const [form, setForm] = useState(false)
+   const [token, setToken] = useState('')
++  const [apps, setApps] = useState(() => connector.apps ?? [])
++  const [picking, setPicking] = useState(false)
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState(null)
+   const run = (task, after) => {
+@@ -28,14 +28,21 @@ function ConnectorRow({ connector, actions }) {
+     setError(null)
+     return task.then(() => { after?.() }, failure => setError(failure?.message ?? String(failure))).finally(() => setBusy(false))
+   }
++  const gateway = connector.id === 'composio'
+   const connect = () => {
+     if (busy || token.trim() === '') return
+-    void run(actions.connectorConnect(connector.id, token), () => { setToken(''); setForm(false) })
++    if (gateway && apps.length === 0) { setError(t('Pick at least one app')); return }
++    void run(actions.connectorConnect(connector.id, token, gateway ? apps : undefined), () => { setToken(''); setForm(false) })
++  }
++  const saveApps = () => {
++    if (busy) return
++    if (apps.length === 0) { setError(t('Pick at least one app')); return }
++    void run(actions.connectorApps(connector.id, apps), () => setPicking(false))
+   }
+   const on = connector.state !== 'off'
+   const Mark = MARKS[connector.id]
+   const row = useRef(null)
+-  useMorph(row, `${form}:${error !== null}:${connector.state}`)
++  useMorph(row, `${form}:${picking}:${error !== null}:${connector.state}`)
+   return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
+     h('div', { className: 'bt-connector-head' },
+       h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
+@@ -44,15 +44,24 @@ function ConnectorRow({ connector, actions }) {
+         h('span', { className: 'bt-connector-status' }, statusText(connector))),
+       h('span', { className: 'bt-connector-actions' },
+         connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
++        on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
+         on
+           ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
+           : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
+     !on && form ? h('div', { className: 'bt-connector-form' },
+-      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t('GitHub token'), autoFocus: true })),
++      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t('Composio API key') : t('GitHub token'), autoFocus: true })),
++      gateway ? h(AppPicker, { apps, onChange: setApps }) : null,
+       h('div', { className: 'bt-connector-form-row' },
+-        h('a', { className: 'bt-connector-link', href: TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, t('Create a token on GitHub')),
++        h('a', { className: 'bt-connector-link', href: gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, gateway ? t('Get a Composio API key') : t('Create a token on GitHub')),
+         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setError(null) } }, t('Cancel')),
+         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || token.trim() === '', onClick: connect }, busy ? t('Connecting…') : t('Connect')))) : null,
++    on && gateway && picking ? h('div', { className: 'bt-connector-form' },
++      h(AppPicker, { apps, onChange: setApps }),
++      h('span', { className: 'bt-set-hint' }, t('The first time a Bot uses an app, it shows a sign-in link in the chat.')),
++      h('div', { className: 'bt-connector-form-row' },
++        h('span', { className: 'bt-connector-link' }),
++        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setPicking(false); setError(null) } }, t('Cancel')),
++        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || apps.length === 0, onClick: saveApps }, busy ? t('Connecting…') : t('Save')))) : null,
+     error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
+ }
+ 
 diff --git a/src/client/feedback.js b/src/client/feedback.js
 --- a/src/client/feedback.js
 +++ b/src/client/feedback.js
@@ -162,7 +297,29 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Automation tasks': '自动化任务',
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
-@@ -109,13 +109,15 @@ const ZH = {
+@@ -105,17 +105,37 @@ const ZH = {
+   'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
+   'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
+   'No such connector': '没有这个连接器',
++  'Gmail, Slack, Calendar, Notion and many more apps, through one Composio key': 'Gmail、Slack、日历、Notion 等众多应用，一个 Composio key 就能连',
++  'Connected: {apps}': '已连接：{apps}',
++  'Composio API key': 'Composio API key',
++  'Get a Composio API key': '去 Composio 获取 API key',
++  'More apps': '更多应用',
++  'More apps: type Composio app names, separated by commas': '更多应用：输入 Composio 应用名，用逗号隔开',
++  'Choose apps': '选择应用',
++  'Pick at least one app': '至少选一个应用',
++  'An app name has only lowercase letters, digits, "_" and "-"': '应用名只能含小写字母、数字、“_”和“-”',
++  'The first time a Bot uses an app, it shows a sign-in link in the chat.': 'Bot 第一次用某个应用时，会在聊天里给出登录链接。',
++  'Paste a key first': '请先粘贴 key',
++  'Could not reach Composio': '连不上 Composio',
++  'Composio did not accept this API key': 'Composio 不接受这个 API key',
++  'Composio did not give an MCP address': 'Composio 没有返回 MCP 地址',
++  'Composio gave an MCP address on another host': 'Composio 返回的 MCP 地址不在它自己的域名上',
++  'Composio addresses must start with https://': 'Composio 地址必须以 https:// 开头',
++  'Connect Composio first': '请先连接 Composio',
++  'This connector has no apps to pick': '这个连接器没有可选的应用',
+   'Classic Agent mode': '经典 Agent 模式',
    'Switch': '切换',
    'Switch to classic Agent mode': '切换经典 Agent 模式',
    '{model} is not available anymore. Pick another model for me.': '{model} 已经不可用了。给我换一个模型吧。',
@@ -500,6 +657,23 @@ diff --git a/src/host/agents.js b/src/host/agents.js
 diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
+@@ -1,4 +1,5 @@
+ import { createHash } from 'node:crypto'
++import { RESERVED_NAMES } from './connectors.js'
+ 
+ const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
+ const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+@@ -7,8 +7,8 @@ const ENSURE_TIMEOUT_MS = 15_000
+ 
+ export function validateCapabilityName(value) {
+   const name = String(value ?? '').trim()
+-  if (name.length > 32 || !NAME.test(name) || name === 'github') {
+-    throw new Error('Use a capability name with lowercase letters, digits, and single hyphens; "github" is reserved.')
++  if (name.length > 32 || !NAME.test(name) || RESERVED_NAMES.includes(name)) {
++    throw new Error('Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.')
+   }
+   return name
+ }
 @@ -264,7 +264,7 @@ export function install(rt) {
      return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
    }
@@ -524,15 +698,375 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -51,7 +51,7 @@ export function install(rt) {
-   const unmount = async () => {
-     const fiber = mount?.fiber
-     mount = null
+@@ -1,27 +1,41 @@
+-// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
+-// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
+-// so every Bot and Session gets them as mcp__github__<tool>.
++// Connectors: outside services every Bot can use. Their tools come from an MCP server
++// through DSH's own MCP client, mounted on the plugin context, so every Bot and Session
++// gets them as mcp__<connector>__<tool>.
+ //
+-// The token is the GITHUB_TOKEN secret (secrets.js keeps it, redacts it, and offers it to
+-// the shell). It reaches GitHub only in the MCP request headers, built here in memory,
+-// never written to the DSH profile. A new token is shared with no Bot's shell: the tools
+-// do not need it there, and a Bot that reads a planted instruction in an issue could
+-// send it anywhere. The Secrets page can still share it. Signing in is `signIn` alone, so a browser login can
++// GitHub is the first one: GitHub's own MCP server. Composio is the second: one API key
++// opens a gateway to many apps (Gmail, Slack, Calendar, Notion, ...). The user picks the
++// apps here; Composio asks for each app's sign-in the first time a Bot needs it, so its
++// tools arrive as mcp__composio__COMPOSIO_*.
++//
++// A secret (GITHUB_TOKEN, COMPOSIO_API_KEY) is kept and redacted by secrets.js. It reaches
++// the service only in the MCP request headers, built here in memory, never written to the
++// DSH profile. A new secret is shared with no Bot's shell: the tools do not need it there,
++// and a Bot that reads a planted instruction in an issue or a mail could send it anywhere.
++// The Secrets page can still share it. Signing in is `check` alone, so a browser login can
+ // take its place later without touching the mount.
+ 
++import { randomUUID } from 'node:crypto'
++
+ export const GITHUB = 'github'
+ export const GITHUB_SECRET = 'GITHUB_TOKEN'
++export const COMPOSIO = 'composio'
++export const COMPOSIO_SECRET = 'COMPOSIO_API_KEY'
++// Names a saved capability may not take, because the mount already uses them.
++export const RESERVED_NAMES = [GITHUB, COMPOSIO]
+ const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
+-const DEFAULTS = {
++const GITHUB_DEFAULTS = {
+   url: 'https://api.githubcopilot.com/mcp/',
+   api: 'https://api.github.com',
+   toolsets: 'context,repos,issues,pull_requests',
+ }
++const COMPOSIO_DEFAULTS = { api: 'https://backend.composio.dev/api/v3.1' }
+ const CHECK_TIMEOUT_MS = 15_000
+-const INSECURE = 'GitHub addresses must start with https://'
++const INSECURE = name => `${name} addresses must start with https://`
++const APP_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
++const MAX_APPS = 40
+ 
+ // Asks GitHub who the token belongs to. Any token GitHub accepts passes.
+-export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch } = {}) {
++export async function signIn(token, { api = GITHUB_DEFAULTS.api, fetch: request = fetch } = {}) {
+   let response
+   try {
+     response = await request(`${api.replace(/\/$/, '')}/user`, {
+@@ -38,20 +38,115 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+   return { login: user.login }
+ }
+ 
++export function cleanApps(value) {
++  const list = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\s,]+/) : []
++  const apps = [...new Set(list.map(app => String(app).trim().toLowerCase()).filter(app => app !== ''))]
++  if (apps.length === 0) throw new Error('Pick at least one app')
++  if (apps.length > MAX_APPS) throw new Error(`Pick up to ${MAX_APPS} apps`)
++  const bad = apps.find(app => !APP_SLUG.test(app))
++  if (bad !== undefined) throw new Error('An app name has only lowercase letters, digits, "_" and "-"')
++  return apps
++}
++
++// Asks Composio for a tool-router session that is limited to `apps`, and returns the MCP
++// address of that session. It also proves the key. The key goes only to the API address
++// and to an MCP address on the same host, never to one that the answer names elsewhere.
++export async function composioSession(apiKey, { api = COMPOSIO_DEFAULTS.api, userId, apps, fetch: request = fetch } = {}) {
++  const base = api.replace(/\/$/, '')
++  let response
++  try {
++    response = await request(`${base}/tool_router/session`, {
++      method: 'POST',
++      headers: { 'x-api-key': apiKey, 'content-type': 'application/json', accept: 'application/json', 'user-agent': 'ds-bot' },
++      body: JSON.stringify({ user_id: userId, toolkits: { enable: apps }, workbench: { enable: false }, manage_connections: { enable: true } }),
++      redirect: 'error',
++      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
++    })
++  } catch {
++    throw new Error('Could not reach Composio')
++  }
++  const body = await response.json().catch(() => ({}))
++  if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
++  if (!response.ok) {
++    const detail = typeof body?.error?.message === 'string' ? `: ${body.error.message.slice(0, 200)}` : ''
++    throw new Error(`Composio answered ${response.status}${detail}`)
++  }
++  let url
++  try {
++    url = new URL(body?.mcp?.url)
++  } catch {
++    throw new Error('Composio did not give an MCP address')
++  }
++  if (url.protocol !== 'https:' || url.origin !== new URL(base).origin) throw new Error('Composio gave an MCP address on another host')
++  return { url: url.href }
++}
++
++const DEFINITIONS = {
++  [GITHUB]: {
++    id: GITHUB,
++    name: 'GitHub',
++    secret: GITHUB_SECRET,
++    purpose: 'GitHub connector',
++    defaults: GITHUB_DEFAULTS,
++    addresses: options => [options.url, options.api],
++    async check({ token, options }) {
++      const { login } = await signIn(token, { api: options.api })
++      return { login }
++    },
++    async mountConfig(token, options) {
++      return { url: options.url, headers: { Authorization: `Bearer ${token}`, 'X-MCP-Toolsets': options.toolsets } }
++    },
++    mountKey: () => '',
++    account: saved => saved?.login ?? null,
++  },
++  [COMPOSIO]: {
++    id: COMPOSIO,
++    name: 'Composio',
++    secret: COMPOSIO_SECRET,
++    purpose: 'Composio connector',
++    defaults: COMPOSIO_DEFAULTS,
++    addresses: options => [options.api],
++    // The user id names this FlyBot to Composio, so the apps signed in once stay signed in.
++    async check({ token, options, saved, body }) {
++      const apps = cleanApps(body.apps ?? saved?.apps)
++      const userId = saved?.userId ?? `flybot-${randomUUID()}`
++      await composioSession(token, { api: options.api, userId, apps })
++      return { userId, apps }
++    },
++    async mountConfig(token, options, saved) {
++      const { url } = await composioSession(token, { api: options.api, userId: saved.userId, apps: saved.apps })
++      return { url, headers: { 'x-api-key': token } }
++    },
++    mountKey: saved => JSON.stringify([saved?.userId, saved?.apps]),
++    account: () => null,
++    extra: saved => ({ apps: saved?.apps ?? [] }),
++    // Keeps the user id: a new key for the same FlyBot finds the apps already signed in.
++    afterDisconnect: saved => saved?.userId === undefined ? undefined : { userId: saved.userId },
++  },
++}
++
+ export function install(rt) {
+   const { ctx, state } = rt
+-  const options = rt.config.github === false ? null : { ...DEFAULTS, ...rt.config.github }
+-  const insecure = options !== null && [options.url, options.api].some(address => !/^https:\/\//i.test(String(address)))
+-  // `token` is what the current mount was made with, so a changed secret mounts again.
+-  let mount = null
+-  let status = { state: 'off' }
+-  let queue = Promise.resolve()
+   let stopped = false
+ 
+-  const unmount = async () => {
+-    const fiber = mount?.fiber
+-    mount = null
 -    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => {})
++  const connectors = Object.values(DEFINITIONS).map(def => {
++    const options = rt.config[def.id] === false ? null : { ...def.defaults, ...rt.config[def.id] }
++    return {
++      def,
++      options,
++      insecure: options !== null && def.addresses(options).some(address => !/^https:\/\//i.test(String(address))),
++      // `key` is what the current mount was made with, so a changed secret or app list mounts again.
++      mount: null,
++      status: { state: 'off' },
++      queue: Promise.resolve(),
++    }
++  })
++
++  const saved = c => state.connectors?.[c.def.id]
++  const unmount = async (c) => {
++    const fiber = c.mount?.fiber
++    c.mount = null
 +    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
    }
  
    // The MCP client wraps the server's answer (a 401, say) as the cause.
+@@ -60,96 +60,125 @@ export function install(rt) {
+     return rt.redactSecrets(text || 'error').slice(0, 300)
+   }
+ 
+-  async function reconcile(force) {
+-    const token = options !== null && !stopped ? rt.secretValue(GITHUB_SECRET) : undefined
+-    if (!force && mount !== null && mount.token === token) return
+-    await unmount()
++  async function reconcile(c, force) {
++    const { def, options } = c
++    const token = options !== null && !stopped ? rt.secretValue(def.secret) : undefined
++    const key = token === undefined ? undefined : `${token}\n${def.mountKey(saved(c))}`
++    if (!force && c.mount !== null && c.mount.key === key) return
++    await unmount(c)
+     if (token === undefined) {
+-      status = { state: 'off' }
++      c.status = { state: 'off' }
+       return
+     }
+-    if (insecure) {
+-      mount = { token }
+-      status = { state: 'error', error: INSECURE }
++    if (c.insecure) {
++      c.mount = { key }
++      c.status = { state: 'error', error: INSECURE(def.name) }
+       return
+     }
+-    status = { state: 'connecting' }
++    c.status = { state: 'connecting' }
+     const loader = ctx.get?.('loader')
+     if (typeof loader?.import !== 'function' || typeof ctx.plugin !== 'function') {
+-      mount = { token }
+-      status = { state: 'error', error: 'This DSH cannot load connectors' }
++      c.mount = { key }
++      c.status = { state: 'error', error: 'This DSH cannot load connectors' }
+       return
+     }
+     try {
++      const { url, headers } = await def.mountConfig(token, options, saved(c))
++      if (stopped) return
+       const exports = await loader.import(MCP_CLIENT)
+       const plugin = loader.unwrapExports?.(exports) ?? exports?.default ?? exports
+       const fiber = ctx.plugin(plugin, {
+         transport: 'streamable-http',
+-        serverName: GITHUB,
+-        url: options.url,
+-        headers: { Authorization: `Bearer ${token}`, 'X-MCP-Toolsets': options.toolsets },
++        serverName: def.id,
++        url,
++        headers,
+         failOnStartupError: true,
+       })
+-      mount = { token, fiber }
++      c.mount = { key, fiber }
+       await fiber.await()
+-      if (mount?.fiber !== fiber) return
+-      status = { state: 'ready' }
++      if (c.mount?.fiber !== fiber) return
++      c.status = { state: 'ready' }
+     } catch (error) {
+-      await unmount()
+-      mount = { token }
+-      status = { state: 'error', error: reason(error) }
+-      rt.warn('ds-bot: GitHub connector failed: %s', status.error)
++      await unmount(c)
++      c.mount = { key }
++      c.status = { state: 'error', error: reason(error) }
++      rt.warn('ds-bot: %s connector failed: %s', def.name, c.status.error)
+     }
+   }
+ 
+-  // One change at a time; `force` connects again even when the token is the same.
+-  const sync = (force = false) => {
+-    queue = queue.then(() => reconcile(force)).catch(error => { rt.warn('ds-bot: connectors: %s', reason(error)) })
+-    return queue
++  // One change at a time per connector; `force` connects again even when nothing changed.
++  const sync = (c, force = false) => {
++    c.queue = c.queue.then(() => reconcile(c, force)).catch(error => { rt.warn('ds-bot: connectors: %s', reason(error)) })
++    return c.queue
+   }
++  const syncAll = () => Promise.all(connectors.map(c => sync(c)))
+ 
+-  const connectorsView = () => options === null ? [] : [{
+-    id: GITHUB,
+-    name: 'GitHub',
+-    state: status.state,
+-    ...(status.error !== undefined ? { error: status.error } : {}),
+-    account: rt.secretValue(GITHUB_SECRET) !== undefined ? state.connectors?.[GITHUB]?.login ?? null : null,
+-  }]
++  const view = (c) => ({
++    id: c.def.id,
++    name: c.def.name,
++    state: c.status.state,
++    ...(c.status.error !== undefined ? { error: c.status.error } : {}),
++    account: rt.secretValue(c.def.secret) !== undefined ? c.def.account(saved(c)) : null,
++    ...(c.def.extra !== undefined ? c.def.extra(rt.secretValue(c.def.secret) !== undefined ? saved(c) : undefined) : {}),
++  })
++  const connectorsView = () => connectors.filter(c => c.options !== null).map(view)
+ 
+   const known = id => {
+-    if (options === null || id !== GITHUB) throw new Error('No such connector')
++    const c = connectors.find(entry => entry.def.id === id)
++    if (c === undefined || c.options === null) throw new Error('No such connector')
++    return c
++  }
++
++  const keep = async (c, record) => {
++    state.connectors = { ...state.connectors, [c.def.id]: { ...record, connectedAt: saved(c)?.connectedAt ?? Date.now() } }
++    await rt.save()
+   }
+ 
+   const endpoints = {
+     async 'connector-connect'(body) {
+-      known(body.id)
++      const c = known(body.id)
+       const token = typeof body.token === 'string' ? body.token.trim() : ''
+-      if (token === '') throw new Error('Paste a token first')
+-      if (insecure) throw new Error(INSECURE)
++      if (token === '') throw new Error(c.def.id === GITHUB ? 'Paste a token first' : 'Paste a key first')
++      if (c.insecure) throw new Error(INSECURE(c.def.name))
+       await rt.loadSecrets()
+-      const kept = rt.secretValue(GITHUB_SECRET) !== undefined
+-      const { login } = await signIn(token, { api: options.api })
+-      await rt.secretEndpoint('secret-set', { name: GITHUB_SECRET, value: token, purpose: 'GitHub connector', ...(kept ? {} : { scope: [] }) })
+-      state.connectors = { ...state.connectors, [GITHUB]: { login, connectedAt: Date.now() } }
++      const kept = rt.secretValue(c.def.secret) !== undefined
++      const record = await c.def.check({ token, options: c.options, saved: saved(c), body })
++      await rt.secretEndpoint('secret-set', { name: c.def.secret, value: token, purpose: c.def.purpose, ...(kept ? {} : { scope: [] }) })
++      state.connectors = { ...state.connectors, [c.def.id]: { ...record, connectedAt: Date.now() } }
+       await rt.save()
+-      await sync()
++      await sync(c)
++      return connectorsView()
++    },
++    // Changes which apps a connected gateway offers, without asking for the key again.
++    async 'connector-apps'(body) {
++      const c = known(body.id)
++      if (c.def.id !== COMPOSIO) throw new Error('This connector has no apps to pick')
++      await rt.loadSecrets()
++      const token = rt.secretValue(c.def.secret)
++      if (token === undefined) throw new Error('Connect Composio first')
++      if (c.insecure) throw new Error(INSECURE(c.def.name))
++      const record = await c.def.check({ token, options: c.options, saved: saved(c), body })
++      await keep(c, record)
++      await sync(c)
+       return connectorsView()
+     },
+     async 'connector-disconnect'(body) {
+-      known(body.id)
++      const c = known(body.id)
+       await rt.loadSecrets()
+-      if (rt.secretValue(GITHUB_SECRET) !== undefined) await rt.secretEndpoint('secret-delete', { name: GITHUB_SECRET })
+-      if (state.connectors?.[GITHUB] !== undefined) {
+-        delete state.connectors[GITHUB]
++      if (rt.secretValue(c.def.secret) !== undefined) await rt.secretEndpoint('secret-delete', { name: c.def.secret })
++      if (saved(c) !== undefined) {
++        const rest = c.def.afterDisconnect?.(saved(c))
++        if (rest === undefined) delete state.connectors[c.def.id]
++        else state.connectors[c.def.id] = rest
+         await rt.save()
+       }
+-      await sync()
++      await sync(c)
+       return connectorsView()
+     },
+     async 'connector-retry'(body) {
+-      known(body.id)
++      const c = known(body.id)
+       await rt.loadSecrets()
+-      await sync(true)
++      await sync(c, true)
+       return connectorsView()
+     },
+   }
+@@ -158,12 +158,12 @@ export function install(rt) {
+ 
+   ctx.effect(() => {
+     stopped = false
+-    void rt.loadSecrets().then(() => sync())
++    void rt.loadSecrets().then(syncAll)
+     return () => {
+       stopped = true
+-      void unmount()
++      for (const c of connectors) void unmount(c)
+     }
+   }, 'ds-bot: connectors')
+ 
+-  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void sync() } })
++  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void syncAll() } })
+ }
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
@@ -940,6 +1474,284 @@ diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
      'react-dom': { createPortal: node => node },
      '@deepseek-ai/dsh-client-ui-primitives': { MarkdownText: () => null },
    }
+diff --git a/test/connectors.test.js b/test/connectors.test.js
+--- a/test/connectors.test.js
++++ b/test/connectors.test.js
+@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+ import { apply } from '../index.js'
+-import { signIn } from '../src/host/connectors.js'
++import { cleanApps, composioSession, signIn } from '../src/host/connectors.js'
+ import { fakeContext } from './fake-ctx.js'
+ 
+ const fresh = () => `ghp_${randomBytes(16).toString('hex')}`
+@@ -41,7 +41,7 @@ const teamHome = () => {
+ }
+ 
+ // A loader that hands out a fake MCP client and records each mount.
+-function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
++function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' } } = {}) {
+   const home = teamHome()
+   const mounts = []
+   const plugin = { name: 'mcp-client', apply() {} }
+@@ -60,7 +60,7 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
+     }
+   }
+   capture(ctx)
+-  apply(ctx, { home, github })
++  apply(ctx, { home, github, composio })
+   return { ctx, home, mounts }
+ }
+ 
+@@ -84,11 +84,11 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
+   const token = fresh()
+ 
+   const before = await call(ctx, 'state', {})
+-  assert.deepEqual(before.value.connectors, [{ id: 'github', name: 'GitHub', state: 'off', account: null }])
++  assert.deepEqual(before.value.connectors[0], { id: 'github', name: 'GitHub', state: 'off', account: null })
+ 
+   const connected = await call(ctx, 'connector-connect', { id: 'github', token: ` ${token} ` })
+   assert.equal(connected.ok, true, JSON.stringify(connected))
+-  assert.deepEqual(connected.value, [{ id: 'github', name: 'GitHub', state: 'ready', account: 'octo' }])
++  assert.deepEqual(connected.value[0], { id: 'github', name: 'GitHub', state: 'ready', account: 'octo' })
+   assert.equal(mounts.length, 1)
+   assert.deepEqual(mounts[0].config, {
+     transport: 'streamable-http',
+@@ -103,7 +103,7 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
+   assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(token))
+ 
+   const off = await call(ctx, 'connector-disconnect', { id: 'github' })
+-  assert.deepEqual(off.value, [{ id: 'github', name: 'GitHub', state: 'off', account: null }])
++  assert.deepEqual(off.value[0], { id: 'github', name: 'GitHub', state: 'off', account: null })
+   assert.equal(mounts[0].disposed, true)
+   assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
+ })
+@@ -129,7 +129,7 @@ test('a failed MCP connection shows the error without the token, and Try again m
+   t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+   const token = fresh()
+   const result = await call(ctx, 'connector-connect', { id: 'github', token })
+-  const [github] = result.value
++  const github = result.value.find(entry => entry.id === 'github')
+   assert.equal(github.state, 'error')
+   assert.ok(!github.error.includes(token), github.error)
+   assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
+@@ -150,13 +150,19 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
+   assert.equal(state.value.connectors[0].state, 'off')
+ })
+ 
+-test('github: false hides the connector', async (t) => {
++test('github: false and composio: false hide the connectors', async (t) => {
+   const home = teamHome()
+   const ctx = fakeContext()
+   capture(ctx)
+   apply(ctx, { home, github: false })
+   t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+-  assert.deepEqual((await call(ctx, 'state', {})).value.connectors, [])
++  assert.deepEqual((await call(ctx, 'state', {})).value.connectors.map(entry => entry.id), ['composio'])
++  const other = teamHome()
++  const second = fakeContext()
++  capture(second)
++  apply(second, { home: other, github: false, composio: false })
++  t.after(async () => { await second.dispose(); rmSync(other, { recursive: true, force: true, maxRetries: 5 }) })
++  assert.deepEqual((await call(second, 'state', {})).value.connectors, [])
+ })
+ 
+ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -172,3 +172,193 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+   assert.equal(asked, false)
+   assert.equal(mounts.length, 0)
+ })
++
++
++// --- Composio: one API key, many apps, through the tool-router MCP gateway ---
++
++const composioKey = () => `cmp_${randomBytes(16).toString('hex')}`
++const SESSION = { session_id: 's1', mcp: { type: 'http', url: 'https://composio.test/tool_router/s1/mcp' } }
++
++// Records each session request; `answers` can replace the reply.
++function fakeComposio(reply = () => answer(201, SESSION)) {
++  const requests = []
++  const fetch = async (url, init) => {
++    requests.push({ url, init, body: JSON.parse(init.body) })
++    return reply(init)
++  }
++  return { requests, fetch }
++}
++
++test('cleanApps takes a list or a text, lowercases, de-duplicates and refuses nothing or odd names', () => {
++  assert.deepEqual(cleanApps(['Gmail', 'gmail', ' slack ']), ['gmail', 'slack'])
++  assert.deepEqual(cleanApps('gmail, Slack  notion'), ['gmail', 'slack', 'notion'])
++  assert.throws(() => cleanApps([]), /at least one app/)
++  assert.throws(() => cleanApps(undefined), /at least one app/)
++  assert.throws(() => cleanApps(['bad name!']), /lowercase letters/)
++  assert.throws(() => cleanApps(['../x']), /lowercase letters/)
++  assert.throws(() => cleanApps(Array.from({ length: 41 }, (_, index) => `app${index}`)), /up to 40/)
++})
++
++test('composioSession limits the session to the apps, proves the key, and keeps the key on Composio\'s own host', async () => {
++  const key = composioKey()
++  const sent = fakeComposio()
++  const session = await composioSession(key, { api: 'https://composio.test/api/v3.1/', userId: 'flybot-1', apps: ['gmail', 'slack'], fetch: sent.fetch })
++  assert.deepEqual(session, { url: 'https://composio.test/tool_router/s1/mcp' })
++  const [request] = sent.requests
++  assert.equal(request.url, 'https://composio.test/api/v3.1/tool_router/session')
++  assert.equal(request.init.method, 'POST')
++  assert.equal(request.init.headers['x-api-key'], key)
++  assert.equal(request.init.redirect, 'error')
++  assert.deepEqual(request.body.toolkits, { enable: ['gmail', 'slack'] })
++  assert.equal(request.body.user_id, 'flybot-1')
++  assert.deepEqual(request.body.workbench, { enable: false })
++  assert.ok(!JSON.stringify(request.body).includes(key))
++  const options = { api: 'https://composio.test/api/v3.1', userId: 'u', apps: ['gmail'] }
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(401, {})).fetch }), /did not accept/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(403, {})).fetch }), /did not accept/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(400, { error: { message: 'Unknown toolkit nope' } })).fetch }), /answered 400: Unknown toolkit nope/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(500, {})).fetch }), /answered 500/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, {})).fetch }), /did not give an MCP address/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, { mcp: { url: 'https://evil.test/mcp' } })).fetch }), /another host/)
++  await assert.rejects(composioSession(key, { ...options, fetch: fakeComposio(() => answer(201, { mcp: { url: 'http://composio.test/mcp' } })).fetch }), /another host/)
++  await assert.rejects(composioSession(key, { ...options, fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
++})
++
++test('connecting Composio keeps the key out of every Bot shell and the profile, mounts mcp__composio__ tools, and disconnecting undoes it', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  const sent = fakeComposio()
++  globalThis.fetch = sent.fetch
++  const { ctx, home, mounts } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const key = composioKey()
++
++  const before = (await call(ctx, 'state', {})).value.connectors.find(entry => entry.id === 'composio')
++  assert.deepEqual(before, { id: 'composio', name: 'Composio', state: 'off', account: null, apps: [] })
++
++  const none = await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: [] })
++  assert.equal(none.ok, false)
++  assert.match(none.error.message, /at least one app/)
++  assert.equal(sent.requests.length, 0)
++  const empty = await call(ctx, 'connector-connect', { id: 'composio', token: '  ', apps: ['gmail'] })
++  assert.equal(empty.ok, false)
++  assert.match(empty.error.message, /Paste a key first/)
++
++  const connected = await call(ctx, 'connector-connect', { id: 'composio', token: ` ${key} `, apps: ['Gmail', 'slack'] })
++  assert.equal(connected.ok, true, JSON.stringify(connected))
++  assert.deepEqual(connected.value.find(entry => entry.id === 'composio'), { id: 'composio', name: 'Composio', state: 'ready', account: null, apps: ['gmail', 'slack'] })
++  assert.equal(mounts.length, 1)
++  assert.deepEqual(mounts[0].config, {
++    transport: 'streamable-http',
++    serverName: 'composio',
++    url: 'https://composio.test/tool_router/s1/mcp',
++    headers: { 'x-api-key': key },
++    failOnStartupError: true,
++  })
++  const userIds = new Set(sent.requests.map(request => request.body.user_id))
++  assert.equal(userIds.size, 1)
++  assert.match([...userIds][0], /^flybot-[0-9a-f-]{36}$/)
++
++  const state = await call(ctx, 'state', {})
++  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['COMPOSIO_API_KEY', []]])
++  assert.ok(!JSON.stringify(state).includes(key))
++  assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(key))
++  assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.apps, ['gmail', 'slack'])
++
++  const off = await call(ctx, 'connector-disconnect', { id: 'composio' })
++  assert.deepEqual(off.value.find(entry => entry.id === 'composio'), { id: 'composio', name: 'Composio', state: 'off', account: null, apps: [] })
++  assert.equal(mounts[0].disposed, true)
++  assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
++  // The same FlyBot id comes back, so apps signed in earlier stay signed in.
++  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
++  assert.equal(new Set(sent.requests.map(request => request.body.user_id)).size, 1)
++})
++
++test('Choose apps mounts again with the new list and needs no key; an unknown app name is refused by Composio and keeps the old list', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  let refuse = false
++  const sent = fakeComposio(() => refuse ? answer(400, { error: { message: 'Unknown toolkit nope' } }) : answer(201, SESSION))
++  globalThis.fetch = sent.fetch
++  const { ctx, home, mounts } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const early = await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail'] })
++  assert.equal(early.ok, false)
++  assert.match(early.error.message, /Connect Composio first/)
++  const key = composioKey()
++  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
++  const changed = await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail', 'notion'] })
++  assert.equal(changed.ok, true, JSON.stringify(changed))
++  assert.deepEqual(changed.value.find(entry => entry.id === 'composio').apps, ['gmail', 'notion'])
++  assert.equal(mounts.length, 2)
++  assert.equal(mounts[0].disposed, true)
++  assert.deepEqual(sent.requests.at(-1).body.toolkits, { enable: ['gmail', 'notion'] })
++  refuse = true
++  const refused = await call(ctx, 'connector-apps', { id: 'composio', apps: ['nope'] })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Unknown toolkit nope/)
++  const view = (await call(ctx, 'state', {})).value.connectors.find(entry => entry.id === 'composio')
++  assert.deepEqual(view.apps, ['gmail', 'notion'])
++  assert.equal(view.state, 'ready')
++  assert.equal(mounts.length, 2)
++  const github = await call(ctx, 'connector-apps', { id: 'github', apps: ['gmail'] })
++  assert.equal(github.ok, false)
++})
++
++test('a key Composio refuses is not saved', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = fakeComposio(() => answer(401, {})).fetch
++  const { ctx, home, mounts } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const result = await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
++  assert.equal(result.ok, false)
++  assert.match(result.error.message, /did not accept/)
++  assert.equal(mounts.length, 0)
++  assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
++})
++
++test('a failed Composio MCP connection shows an error without the key, and Try again mounts again', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = fakeComposio().fetch
++  const { ctx, home, mounts } = setup({ fail: true })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const key = composioKey()
++  const result = await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
++  const composio = result.value.find(entry => entry.id === 'composio')
++  assert.equal(composio.state, 'error')
++  assert.ok(!JSON.stringify(result).includes(key))
++  await call(ctx, 'connector-retry', { id: 'composio' })
++  assert.equal(mounts.length, 2)
++})
++
++test('deleting COMPOSIO_API_KEY on the Secrets page unmounts Composio, and GitHub is untouched', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = async (url, init) => url.startsWith('https://gh.test') ? answer(200, { login: 'octo' }) : fakeComposio().fetch(url, init)
++  const { ctx, home, mounts } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
++  await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
++  assert.deepEqual(mounts.map(mount => mount.config.serverName), ['github', 'composio'])
++  await call(ctx, 'secret-delete', { name: 'COMPOSIO_API_KEY' })
++  const view = (await call(ctx, 'state', {})).value.connectors
++  assert.equal(mounts[1].disposed, true)
++  assert.equal(mounts[0].disposed, false)
++  assert.deepEqual(view.map(entry => [entry.id, entry.state]), [['github', 'ready'], ['composio', 'off']])
++})
++
++test('a Composio address without https refuses to send the key', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  let asked = false
++  globalThis.fetch = async () => { asked = true; return answer(201, SESSION) }
++  const { ctx, home, mounts } = setup({ composio: { api: 'http://composio.test/api/v3.1' } })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const refused = await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /https/)
++  assert.equal(asked, false)
++  assert.equal(mounts.length, 0)
++})
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js

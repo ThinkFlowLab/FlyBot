@@ -698,6 +698,16 @@ diff --git a/src/client/index.js b/src/client/index.js
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
+@@ -539,7 +539,8 @@ export function apply(ctx) {
+     secretCancel: requestId => after(call('secret-cancel', { requestId })),
+     secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
+     secretDelete: name => after(call('secret-delete', { name })),
+-    connectorConnect: (id, token) => after(call('connector-connect', { id, token })),
++    connectorConnect: (id, token, apps) => after(call('connector-connect', { id, token, ...(apps !== undefined ? { apps } : {}) })),
++    connectorApps: (id, apps) => after(call('connector-apps', { id, apps })),
+     connectorDisconnect: id => after(call('connector-disconnect', { id })),
+     connectorRetry: id => after(call('connector-retry', { id })),
+     saveCapability: capability => after(call('capability-save', capability)),
 @@ -566,6 +566,8 @@ export function apply(ctx) {
        noteClientError(where, error)
        ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
@@ -1425,6 +1435,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
+@@ -490,6 +490,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+ .bt-connector-actions{flex:none;display:flex;gap:6px}
+ .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+ .bt-connector-form-row{display:flex;align-items:center;gap:6px}
++.bt-connector-apps{display:flex;flex-direction:column;gap:8px}
+ .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
+ .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
+ 
 @@ -609,7 +609,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
