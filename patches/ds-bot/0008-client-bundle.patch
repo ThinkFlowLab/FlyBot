@@ -25,7 +25,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,20 +78,64 @@ var ZH = {
+@@ -78,21 +78,64 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -87,11 +87,12 @@ diff --git a/client.js b/client.js
    "Setting up your Main Bot…": "正在设置你的主 Bot…",
 -  "Connect plugins": "连接插件",
 -  "Plugin compatibility is not fully verified.": "插件兼容性未完全验证",
+-  "Automation tasks": "自动化任务",
 +  "Connect apps": "连接应用",
 +  Plugins: "插件",
-   "Automation tasks": "自动化任务",
    Connectors: "连接器",
    "Search connectors": "搜索连接器",
+   "No connectors": "暂无连接器",
 @@ -129,6 +129,42 @@ var ZH = {
    "Connecting…": "正在连接…",
    "Could not connect: {error}": "连接失败：{error}",
@@ -135,10 +136,12 @@ diff --git a/client.js b/client.js
    Connected: "已连接",
    Disconnect: "断开",
    Connect: "连接",
-@@ -141,17 +141,39 @@ var ZH = {
+@@ -141,17 +141,36 @@ var ZH = {
    "GitHub addresses must start with https://": "GitHub 地址必须以 https:// 开头",
    "This DSH cannot load connectors": "这个 DSH 不能加载连接器",
    "No such connector": "没有这个连接器",
+-  "Classic Agent mode": "经典 Agent 模式",
+-  "Switch": "切换",
 +  "Gmail, Slack, Calendar, Notion and many more apps, through one Composio key": "Gmail、Slack、日历、Notion 等众多应用，一个 Composio key 就能连",
 +  "Connected: {apps}": "已连接：{apps}",
 +  "Composio API key": "Composio API key",
@@ -159,14 +162,12 @@ diff --git a/client.js b/client.js
 +  "Composio addresses must start with https://": "Composio 地址必须以 https:// 开头",
 +  "Connect Composio first": "请先连接 Composio",
 +  "This connector has no apps to pick": "这个连接器没有可选的应用",
-   "Classic Agent mode": "经典 Agent 模式",
-   "Switch": "切换",
    "Switch to classic Agent mode": "切换经典 Agent 模式",
    "{model} is not available anymore. Pick another model for me.": "{model} 已经不可用了。给我换一个模型吧。",
 +  "{name} ({handle}) is no longer shared with you, so messages to it cannot be delivered. It runs on its owner's machine, so another model cannot stand in. Ask its owner for a new invite.": "{name}（{handle}）已不再与你共享，消息无法送达。它运行在主人的机器上，不能换用其他模型。请向它的主人要一个新的邀请。",
    "Hi, I'm {name}. I don't have a model yet. How do you want to set one up?": "你好，我是 {name}。我还没有可用的模型。你想怎么配置？",
    "Hi, I'm {name}. Pick a model for me first. You can change it later in my details.": "你好，我是 {name}。先给我选一个模型吧，以后可以在我的详情里换。",
-   "Mode": "模式",
+-  "Mode": "模式",
    "Sign in to DeepSeek": "登录 DeepSeek 账号",
    "Enter a DeepSeek API key": "填入 DeepSeek API key",
    "Open settings to set up a custom model": "打开设置配置自定义模型",
@@ -4449,15 +4450,19 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (event.target instanceof Element && (event.target.closest(".bt-account-menu") || button.current?.contains(event.target))) return;
-@@ -5342,6 +5342,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
+@@ -5341,30 +5341,32 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
+   const groups = [
      [
        [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],
-       [t("Connectors"), ConnectorIcon, () => actions.openConnectors()],
+-      [t("Connectors"), ConnectorIcon, () => actions.openConnectors()],
+-      [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],
+-      [t("Bot settings"), GearIcon, () => actions.openSettings("general")]
++      [t("Connect apps"), ConnectorIcon, () => actions.openConnectors()],
 +      [t("Plugins"), PlugIcon, () => actions.selectPanel("plugins")],
-       [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],
-       [t("Bot settings"), GearIcon, () => actions.openSettings("general")]
++      [t("Scheduled tasks"), ClockIcon, () => actions.openSettings("schedules")],
++      [t("Settings"), GearIcon, () => actions.openSettings("general")]
      ],
-@@ -5349,22 +5349,23 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
+     [
        [t("Switch to classic Agent mode"), SwitchIcon, () => actions.setSurface("agent")]
      ]
    ];
@@ -5124,7 +5129,7 @@ diff --git a/client.js b/client.js
 +    { key: "cmd:new", icon: (0, import_react13.createElement)(PlusIcon), title: t("New chat"), run: () => actions.openNewChat("new") },
 +    { key: "cmd:bot", icon: (0, import_react13.createElement)(PlusIcon), title: t("Create Bot"), run: () => actions.openNewChat("create") },
 +    { key: "cmd:group", icon: (0, import_react13.createElement)(PeopleIcon), title: t("Create group chat"), run: () => actions.openNewChat("group") },
-+    { key: "cmd:settings", icon: (0, import_react13.createElement)(GearIcon), title: t("Bot settings"), run: () => actions.openSettings("general") }
++    { key: "cmd:settings", icon: (0, import_react13.createElement)(GearIcon), title: t("Settings"), run: () => actions.openSettings("general") }
    ].filter((command) => matchesName(command.title));
    if (commands.length) sections.push([t("Commands"), commands]);
    const rows = sections.flatMap(([, items]) => items);
@@ -9461,7 +9466,7 @@ diff --git a/client.js b/client.js
              key: ink,
              type: "button",
              className: "bt-swatch",
-@@ -10626,21 +10626,21 @@ function GeneralPage({ roster, actions, run }) {
+@@ -10626,75 +10626,67 @@ function GeneralPage({ roster, actions, run }) {
              style: { background: INKS[ink][0] },
              onClick: () => run(actions.setPrefs({ accent: INKS[ink][0] }))
            })),
@@ -9474,21 +9479,18 @@ diff --git a/client.js b/client.js
            )
          )
        )
-     ),
+-    ),
 -    (0, import_react28.createElement)(
-+    (0, import_react30.createElement)(
-       SetSection,
-       { key: "mode", title: t("Mode") },
+-      SetSection,
+-      { key: "mode", title: t("Mode") },
 -      (0, import_react28.createElement)(
-+      (0, import_react30.createElement)(
-         SetRow,
-         { label: t("Classic Agent mode") },
+-        SetRow,
+-        { label: t("Classic Agent mode") },
 -        (0, import_react28.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.setSurface("agent") }, t("Switch"))
-+        (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.setSurface("agent") }, t("Switch"))
-       )
+-      )
      )
    ];
-@@ -10648,53 +10648,54 @@ function GeneralPage({ roster, actions, run }) {
+ }
  function MainBotsSection({ roster, actions, run }) {
    const mains = (roster.mainBotIds ?? []).map((id) => roster.byId[id]).filter(Boolean);
    const [first, ...others] = mains;

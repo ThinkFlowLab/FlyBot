@@ -165,8 +165,30 @@ test('the account menu keeps a Plugins row that opens the shell plugin panel', a
   const source = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   const menu = source.slice(source.indexOf('const groups = ['), source.indexOf('return h(Fragment, null,', source.indexOf('const groups = [')))
   assert.match(menu, /\[t\('Plugins'\), PlugIcon, \(\) => actions\.selectPanel\('plugins'\)\]/)
-  assert.match(menu, /\[t\('Connectors'\), ConnectorIcon, \(\) => actions\.openConnectors\(\)\]/)
+  assert.match(menu, /\[t\('Connect apps'\), ConnectorIcon, \(\) => actions\.openConnectors\(\)\]/)
   assert.equal(DICTIONARY.zh.Plugins, '插件')
+})
+
+test('the account menu names each destination as it is named elsewhere (#392, #393, #394)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { DICTIONARY } = await import('../src/client/i18n.js')
+  const source = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const settings = readFileSync(new URL('../src/client/settings.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const menu = source.slice(source.indexOf('const groups = ['), source.indexOf('return h(Fragment, null,', source.indexOf('const groups = [')))
+  const labels = [...menu.matchAll(/\[t\('([^']+)'\)/g)].map(match => match[1])
+  assert.deepEqual(labels, ['Usage', 'Connect apps', 'Plugins', 'Scheduled tasks', 'Settings', 'Switch to classic Agent mode'])
+  // Connectors: the footer button's words, not the second name "Connectors".
+  assert.doesNotMatch(menu, /t\('Connectors'\)/)
+  // Scheduled tasks: the Settings page and a Bot's details use that name, and the row opens that page.
+  assert.match(menu, /\[t\('Scheduled tasks'\), ClockIcon, \(\) => actions\.openSettings\('schedules'\)\]/)
+  assert.doesNotMatch(menu, /Automation tasks|selectPanel\('schedules'\)/)
+  assert.match(settings, /\['schedules', 'Scheduled tasks'\]/)
+  // Classic Agent mode: one way in, the account menu; Settings → General is Appearance only.
+  const general = settings.slice(settings.indexOf('function GeneralPage('), settings.indexOf('function MainBotsSection('))
+  assert.doesNotMatch(general, /setSurface|Classic Agent mode/)
+  assert.equal(DICTIONARY.zh.Settings, '设置')
+  assert.equal(DICTIONARY.zh['Scheduled tasks'], '定时任务')
+  for (const gone of ['Automation tasks', 'Classic Agent mode', 'Switch', 'Mode']) assert.equal(Object.hasOwn(DICTIONARY.zh, gone), false, gone)
 })
 
 test('a face-room sidebar row stays on one line and shows its full title on hover (#304)', async () => {

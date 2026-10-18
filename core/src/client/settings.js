@@ -36,6 +36,7 @@ function SetRow({ label, hint, children }) {
     children ? h('div', { className: 'bt-set-control' }, children) : null)
 }
 
+// General is Appearance only; the switch to classic Agent mode is the account menu's (#393).
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {}
   const themes = allThemes()
@@ -62,9 +63,6 @@ function GeneralPage({ roster, actions, run }) {
           })),
           h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
             h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
-    h(SetSection, { key: 'mode', title: t('Mode') },
-      h(SetRow, { label: t('Classic Agent mode') },
-        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => actions.setSurface('agent') }, t('Switch')))),
   ]
 }
 

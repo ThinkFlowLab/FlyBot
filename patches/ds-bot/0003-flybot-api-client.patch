@@ -1154,6 +1154,15 @@ diff --git a/src/client/palette.js b/src/client/palette.js
        subtitle: [bot.role, isMainOf(roster, bot.id) ? t('Main Bot') : ''].filter(Boolean).join(' · '), badge: bot.hidden ? t('Hidden') : undefined,
        run: async () => { if (bot.hidden) await actions.setFlags(bot.id, { hidden: false }); actions.openSession(bot.id) },
      })),
+@@ -81,7 +81,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+     { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
+     { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
+     { key: 'cmd:group', icon: h(PeopleIcon), title: t('Create group chat'), run: () => actions.openNewChat('group') },
+-    { key: 'cmd:settings', icon: h(GearIcon), title: t('Bot settings'), run: () => actions.openSettings('general') },
++    { key: 'cmd:settings', icon: h(GearIcon), title: t('Settings'), run: () => actions.openSettings('general') },
+   ].filter(command => matchesName(command.title))
+   if (commands.length) sections.push([t('Commands'), commands])
+   const rows = sections.flatMap(([, items]) => items)
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
@@ -1465,14 +1474,35 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
-@@ -512,6 +512,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+@@ -466,8 +466,12 @@ function pressSettingsShortcut() {
+   }))
+ }
+ 
+-// The footer avatar opens an account menu above itself, with Bot settings as one
+-// entry. Shell panels hidden from the Bot sidebar (plugins, automation) live here too.
++// The footer avatar opens an account menu above itself, with Settings as one entry.
++// Each row uses the name its destination has elsewhere (#392-#394): Connect apps as on
++// the footer button, Scheduled tasks as in Settings and a Bot's details, and Settings
++// for the whole dialog, since Bot settings / Edit Bot open one Bot. The shell's
++// Plugins panel, hidden from the Bot sidebar, lives here too; the switch to classic
++// Agent mode lives only here.
+ // `seat` is the shell's settings.launcher seat: at priority -10 the whale wins it
+ // over a shell account plugin's own launcher (the Desktop's "··· More"), which comes
+ // back in Agent mode; FooterAccount stands in while no seat exists at all.
+@@ -511,9 +511,10 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+   const groups = [
      [
        [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
-       [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
+-      [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
+-      [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
+-      [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
++      [t('Connect apps'), ConnectorIcon, () => actions.openConnectors()],
 +      [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
-       [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
-       [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
++      [t('Scheduled tasks'), ClockIcon, () => actions.openSettings('schedules')],
++      [t('Settings'), GearIcon, () => actions.openSettings('general')],
      ],
+     [
+       [t('Switch to classic Agent mode'), SwitchIcon, () => actions.setSurface('agent')],
 @@ -523,6 +523,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
      h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
        h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),
@@ -1885,8 +1915,25 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js
-@@ -40,7 +40,27 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
-   assert.match(text('palette.js'), /title: t\('Bot settings'\), run: \(\) => actions\.openSettings\('general'\)/)
+@@ -29,18 +29,41 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
+   assert.equal(photo.shape, defaultShape('chief'))
+ })
+ 
+-test('Bot settings is the only settings entry; nothing is called Team settings', () => {
++test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot settings; nothing is called Team settings', () => {
+   const dir = new URL('../src/client/', import.meta.url)
+   const sources = readdirSync(dir).filter(name => name.endsWith('.js')).map(name => [name, readFileSync(new URL(name, dir), 'utf8')])
+   for (const [name, text] of [...sources, ['client.js', readFileSync(new URL('../client.js', import.meta.url), 'utf8')]]) {
+     assert.ok(!text.includes('Team settings'), `${name} still names Team settings`)
+   }
+   const text = name => sources.find(([file]) => file === name)[1]
+-  assert.match(text('sidebar.js'), /\[t\('Bot settings'\), GearIcon, \(\) => actions\.openSettings\('general'\)\]/)
+-  assert.match(text('palette.js'), /title: t\('Bot settings'\), run: \(\) => actions\.openSettings\('general'\)/)
++  // #392: the account menu and palette open the whole dialog, so they do not say Bot settings.
++  assert.match(text('sidebar.js'), /\[t\('Settings'\), GearIcon, \(\) => actions\.openSettings\('general'\)\]/)
++  assert.match(text('palette.js'), /title: t\('Settings'\), run: \(\) => actions\.openSettings\('general'\)/)
++  assert.doesNotMatch(text('sidebar.js'), /t\('Bot settings'\), GearIcon, \(\) => actions\.openSettings\('general'\)/)
++  assert.doesNotMatch(text('palette.js'), /t\('Bot settings'\)/)
    // One Bot's own entries open that Bot, so they read Edit Bot instead.
    assert.match(text('context-menu.js'), /\[t\('Edit Bot'\), GearIcon, \(\) => actions\.openSettings\('bots', bot\.id\)\]/)
 -  assert.match(text('details-drawer.js'), /'aria-label': bot \? t\('Edit Bot'\) : t\('Group settings'\), title: bot \? t\('Edit Bot'\) : t\('Group settings'\)/)

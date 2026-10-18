@@ -151,7 +151,6 @@ var ZH = {
   "Setting up your Main Bot…": "正在设置你的主 Bot…",
   "Connect apps": "连接应用",
   Plugins: "插件",
-  "Automation tasks": "自动化任务",
   Connectors: "连接器",
   "Search connectors": "搜索连接器",
   "No connectors": "暂无连接器",
@@ -256,14 +255,11 @@ var ZH = {
   "Composio addresses must start with https://": "Composio 地址必须以 https:// 开头",
   "Connect Composio first": "请先连接 Composio",
   "This connector has no apps to pick": "这个连接器没有可选的应用",
-  "Classic Agent mode": "经典 Agent 模式",
-  "Switch": "切换",
   "Switch to classic Agent mode": "切换经典 Agent 模式",
   "{model} is not available anymore. Pick another model for me.": "{model} 已经不可用了。给我换一个模型吧。",
   "{name} ({handle}) is no longer shared with you, so messages to it cannot be delivered. It runs on its owner's machine, so another model cannot stand in. Ask its owner for a new invite.": "{name}（{handle}）已不再与你共享，消息无法送达。它运行在主人的机器上，不能换用其他模型。请向它的主人要一个新的邀请。",
   "Hi, I'm {name}. I don't have a model yet. How do you want to set one up?": "你好，我是 {name}。我还没有可用的模型。你想怎么配置？",
   "Hi, I'm {name}. Pick a model for me first. You can change it later in my details.": "你好，我是 {name}。先给我选一个模型吧，以后可以在我的详情里换。",
-  "Mode": "模式",
   "Sign in to DeepSeek": "登录 DeepSeek 账号",
   "Enter a DeepSeek API key": "填入 DeepSeek API key",
   "Open settings to set up a custom model": "打开设置配置自定义模型",
@@ -6686,10 +6682,10 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
   const groups = [
     [
       [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],
-      [t("Connectors"), ConnectorIcon, () => actions.openConnectors()],
+      [t("Connect apps"), ConnectorIcon, () => actions.openConnectors()],
       [t("Plugins"), PlugIcon, () => actions.selectPanel("plugins")],
-      [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],
-      [t("Bot settings"), GearIcon, () => actions.openSettings("general")]
+      [t("Scheduled tasks"), ClockIcon, () => actions.openSettings("schedules")],
+      [t("Settings"), GearIcon, () => actions.openSettings("general")]
     ],
     [
       [t("Switch to classic Agent mode"), SwitchIcon, () => actions.setSurface("agent")]
@@ -7689,7 +7685,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     { key: "cmd:new", icon: (0, import_react13.createElement)(PlusIcon), title: t("New chat"), run: () => actions.openNewChat("new") },
     { key: "cmd:bot", icon: (0, import_react13.createElement)(PlusIcon), title: t("Create Bot"), run: () => actions.openNewChat("create") },
     { key: "cmd:group", icon: (0, import_react13.createElement)(PeopleIcon), title: t("Create group chat"), run: () => actions.openNewChat("group") },
-    { key: "cmd:settings", icon: (0, import_react13.createElement)(GearIcon), title: t("Bot settings"), run: () => actions.openSettings("general") }
+    { key: "cmd:settings", icon: (0, import_react13.createElement)(GearIcon), title: t("Settings"), run: () => actions.openSettings("general") }
   ].filter((command) => matchesName(command.title));
   if (commands.length) sections.push([t("Commands"), commands]);
   const rows = sections.flatMap(([, items]) => items);
@@ -12477,15 +12473,6 @@ function GeneralPage({ roster, actions, run }) {
             (0, import_react30.createElement)("input", { type: "color", value: custom, "aria-label": t("Custom accent"), onChange: (event) => pickCustom(event.target.value) })
           )
         )
-      )
-    ),
-    (0, import_react30.createElement)(
-      SetSection,
-      { key: "mode", title: t("Mode") },
-      (0, import_react30.createElement)(
-        SetRow,
-        { label: t("Classic Agent mode") },
-        (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.setSurface("agent") }, t("Switch"))
       )
     )
   ];

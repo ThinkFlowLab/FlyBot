@@ -29,15 +29,18 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
   assert.equal(photo.shape, defaultShape('chief'))
 })
 
-test('Bot settings is the only settings entry; nothing is called Team settings', () => {
+test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot settings; nothing is called Team settings', () => {
   const dir = new URL('../src/client/', import.meta.url)
   const sources = readdirSync(dir).filter(name => name.endsWith('.js')).map(name => [name, readFileSync(new URL(name, dir), 'utf8')])
   for (const [name, text] of [...sources, ['client.js', readFileSync(new URL('../client.js', import.meta.url), 'utf8')]]) {
     assert.ok(!text.includes('Team settings'), `${name} still names Team settings`)
   }
   const text = name => sources.find(([file]) => file === name)[1]
-  assert.match(text('sidebar.js'), /\[t\('Bot settings'\), GearIcon, \(\) => actions\.openSettings\('general'\)\]/)
-  assert.match(text('palette.js'), /title: t\('Bot settings'\), run: \(\) => actions\.openSettings\('general'\)/)
+  // #392: the account menu and palette open the whole dialog, so they do not say Bot settings.
+  assert.match(text('sidebar.js'), /\[t\('Settings'\), GearIcon, \(\) => actions\.openSettings\('general'\)\]/)
+  assert.match(text('palette.js'), /title: t\('Settings'\), run: \(\) => actions\.openSettings\('general'\)/)
+  assert.doesNotMatch(text('sidebar.js'), /t\('Bot settings'\), GearIcon, \(\) => actions\.openSettings\('general'\)/)
+  assert.doesNotMatch(text('palette.js'), /t\('Bot settings'\)/)
   // One Bot's own entries open that Bot, so they read Edit Bot instead.
   assert.match(text('context-menu.js'), /\[t\('Edit Bot'\), GearIcon, \(\) => actions\.openSettings\('bots', bot\.id\)\]/)
   assert.match(text('context-menu.js'), /bot\?\.remote/)

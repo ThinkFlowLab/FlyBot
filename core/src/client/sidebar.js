@@ -521,8 +521,12 @@ function pressSettingsShortcut() {
   }))
 }
 
-// The footer avatar opens an account menu above itself, with Bot settings as one
-// entry. Shell panels hidden from the Bot sidebar (plugins, automation) live here too.
+// The footer avatar opens an account menu above itself, with Settings as one entry.
+// Each row uses the name its destination has elsewhere (#392-#394): Connect apps as on
+// the footer button, Scheduled tasks as in Settings and a Bot's details, and Settings
+// for the whole dialog, since Bot settings / Edit Bot open one Bot. The shell's
+// Plugins panel, hidden from the Bot sidebar, lives here too; the switch to classic
+// Agent mode lives only here.
 // `seat` is the shell's settings.launcher seat: at priority -10 the whale wins it
 // over a shell account plugin's own launcher (the Desktop's "··· More"), which comes
 // back in Agent mode; FooterAccount stands in while no seat exists at all.
@@ -566,10 +570,10 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
   const groups = [
     [
       [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
-      [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
+      [t('Connect apps'), ConnectorIcon, () => actions.openConnectors()],
       [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
-      [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
-      [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
+      [t('Scheduled tasks'), ClockIcon, () => actions.openSettings('schedules')],
+      [t('Settings'), GearIcon, () => actions.openSettings('general')],
     ],
     [
       [t('Switch to classic Agent mode'), SwitchIcon, () => actions.setSurface('agent')],
