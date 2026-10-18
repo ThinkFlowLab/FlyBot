@@ -1132,9 +1132,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         const epoch = grantEpoch(bot.id)
         const listed = await api.listGrants({ botId: member.bot_id })
         // A revoke of this Bot's grants started or ran while this list was in flight: the list may
-        // still name a grant it deletes, and writing it would bring the person back. Skip; the revoke's
-        // own refresh lists again once it is done (Codex P1 on #387).
-        if (revoking.get(bot.id) || grantEpoch(bot.id) !== epoch) return
+        // still name a grant it deletes, and writing it would bring the person back. Skip, and report
+        // the sync as not fresh so a roster refresh withholds unseen Bots (fail closed); the revoke's
+        // own refresh lists again once it is done (Codex P1/P2 on #387).
+        if (revoking.get(bot.id) || grantEpoch(bot.id) !== epoch) { ok = false; return }
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
         const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
           const view = grantPersonView(grant)
