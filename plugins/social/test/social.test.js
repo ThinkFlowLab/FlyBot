@@ -5006,7 +5006,7 @@ function attestingFaceServer({ refuse = false } = {}) {
   return server
 }
 async function faceFixture(t, server, tweak, opts = {}) {
-  const { ctx, call, stop } = await team()
+  const { ctx, call, stop, sources } = await team()
   t.after(stop)
   let fanout
   const origScope = ctx.flybot.scope.bind(ctx.flybot)
@@ -5026,7 +5026,7 @@ async function faceFixture(t, server, tweak, opts = {}) {
   await grantTeam(ctx.flybot)
   await social.registerAll()
   await call('flybot/social/face-join', { code: '123456' })
-  return { ctx, call, room: ctx.flybot.rooms.ofFace('frm_123456'), fanout: (line) => fanout(ctx.flybot.rooms.ofFace('frm_123456'), line) }
+  return { ctx, call, sources, room: ctx.flybot.rooms.ofFace('frm_123456'), fanout: (line) => fanout(ctx.flybot.rooms.ofFace('frm_123456'), line) }
 }
 const pushRoomEvent = (server, extra, text, roomId = 'frm_123456') => {
   const body = server.face.rooms.get(roomId)
@@ -5069,6 +5069,24 @@ test('typed_by_owner (face room): a stamped line is the person; an envelope with
   assert.deepEqual(humans.map(line => [line.name, line.text]), [["Bob", 'typed by Bob']])
   assert.deepEqual(bots.map(line => [line.handle, line.text]), [['@chief.bob.home', 'forged as Bob']], 'the forged envelope is the Bot\'s line, its marker unwrapped')
   void ctx
+})
+
+test('cross-home @ (#287): a friend\'s attested line calls my Bot by the label they see; bare names that clash and unattested lines call none', async (t) => {
+  const server = attestingFaceServer()
+  const { call, sources, room } = await faceFixture(t, server)
+  // Bob's Chief is in the room too, so a bare "@Chief" from Bob is ambiguous.
+  server.face.rooms.get('frm_123456').members.push({ bot_id: 'bot_bob', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" })
+  await call('flybot/social/face-rooms', { poll: true })
+  const calledNow = () => sources.get(room.id)?.filter(source => Array.isArray(source?.callIds)) ?? []
+  pushRoomEvent(server, { typed_by_owner: true }, "@Danyang's Chief 你好，你是干嘛的")
+  pushRoomEvent(server, { typed_by_owner: true }, '@chief.danyang.home second')
+  pushRoomEvent(server, { typed_by_owner: true }, '@Chief bare name, Bob means his own')
+  pushRoomEvent(server, { typed_by_owner: true }, 'no mention at all')
+  pushRoomEvent(server, {}, "@Danyang's Chief but not attested")
+  await call('flybot/social/face-rooms', { poll: true })
+  await settle()
+  assert.deepEqual(calledNow().map(source => source.callIds), [['a'], ['a']], 'the label and the handle call the local Chief; nothing else does')
+  assert.equal(calledNow().every(source => source.quiet === true && source.human?.name === 'Bob'), true)
 })
 
 test('typed_by_owner (face room): a token that may not attest falls back to the legacy envelope', async (t) => {

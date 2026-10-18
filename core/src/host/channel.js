@@ -4,8 +4,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { questionReply } from './parts.js'
 import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 import { isFaceRoom } from './room-membership.js'
+import { faceMentions } from './face-mentions.js'
 import { unwrapUntrusted } from './delivery.js'
-import { mentionSpans } from '../shared/mentions.js'
 
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
 
@@ -381,14 +381,21 @@ export function install(rt) {
             // Face rooms must not go through sessionController.prompt: that starts a local
             // bot round (turns/steps) and never fans the line to the other FlyBot instance.
             const line = await rt.postRoomMessage(room.id, { text, displayName: actor?.displayName }, actor)
+            rt.notePostedLine?.(room.id, text)
             const who = line?.who || actor?.displayName || 'You'
             if (typeof rt.postToRoom === 'function') {
               await rt.postToRoom(room, { id: 'face-notice', name: who }, `${who}: ${text}`, { quiet: true, notice: true })
                 .catch(error => rt.warn?.('ds-bot: face-room line not shown locally: %s', error))
             }
-            const bots = (room.members ?? []).map(id => rt.botOf(id)).filter(bot => bot?.name)
-            const named = mentionSpans(text, bots).some(span => span.bot)
-            if (!named) return ok(true)
+            // The line is in the room and on its way to the other home. The group Session then runs
+            // the round: an @mention picks the Bot, a plain line the room's opening speaker (#287).
+            // An @ that names nobody in the room gets one quiet line instead of silence.
+            const missing = faceMentions(room, text, rt.botOf).unmatched
+            if (missing.length > 0 && typeof rt.postToRoom === 'function') {
+              const shown = [...new Set(missing)].slice(0, 3).map(word => word.replace(/[<>[\]`]/g, '')).join(', ')
+              await rt.postToRoom(room, { id: 'face-notice', name: 'Room' }, `No one in this room is called ${shown}. Pick a name after @, or write @all to ask every Bot.`, { quiet: true, notice: true })
+                .catch(error => rt.warn?.('ds-bot: face-room hint not shown: %s', error))
+            }
           } else if (room && actor) {
             if (rt.authzEnforced() && !rt.roomMemberOf(actor, room.id)) return fail('You are not a member of that room', 'bot/forbidden')
             await rt.postRoomMessage(room.id, { text, displayName: actor.displayName }, actor)

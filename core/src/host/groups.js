@@ -25,6 +25,7 @@ import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
 import { failureLine } from './turns.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
+import { faceMentions } from './face-mentions.js'
 import { stripSessionChips } from './delivery.js'
 import { createDshRoomParticipant } from './room-participant.js'
 
@@ -52,6 +53,17 @@ const appendRoom = (room, line) => {
   const stamped = { ...line, seq: room.seq }
   room.log = [...room.log, stamped].slice(-ROOM_LOG_MAX)
   void fanoutRoomLine(room, stamped)
+}
+
+// Lines a face-room send already put in the log and on the wire; the round that answers them
+// reads them from the Session too and must not append them a second time (#287).
+const postedLines = new Map()
+const takePosted = (roomId, text) => {
+  const list = postedLines.get(roomId) ?? []
+  const at = list.indexOf(text)
+  if (at === -1) return false
+  postedLines.set(roomId, list.toSpliced(at, 1))
+  return true
 }
 
 // A member's own lines are already in its Session, so only the others' are news.
@@ -126,6 +138,7 @@ export function install(rt) {
   const { ctx } = rt
   const participant = createDshRoomParticipant(rt)
   fanoutRoomLine = (room, line) => rt.fanoutRoomLine?.(room, line)
+  rt.notePostedLine = (roomId, text) => postedLines.set(roomId, [...(postedLines.get(roomId) ?? []), text].slice(-20))
 
   // A member's group Session, created on its first turn there. A new one starts with
   // a fresh look at the log and a brief of the member's own chat; the brief is the
@@ -239,7 +252,7 @@ export function install(rt) {
     const before = round.slots.length
     const members = room.members.map(rt.botOf).filter(Boolean)
     for (const line of lines) {
-        appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
+      if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
       round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
       const { all, found } = mentionsIn(line.text, members)
       const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
@@ -353,6 +366,8 @@ export function install(rt) {
       for (const post of posts.filter(item => !item.kickoff && !event(item))) {
         // Image readings go into the log only; `@` names are picked from what the user typed.
         const text = post.images === undefined ? post.text : [post.text, ...await rt.imagesForGroup(post.images, room.id)].filter(Boolean).join('\n')
+        // A face-room line the send path already logged and sent is not logged or sent again (#287).
+        if (!post.botId && takePosted(room.id, post.text)) continue
         appendRoom(room, rt.authoredRoomLine?.(room, post.botId
           ? { who: rt.botOf(post.botId)?.name ?? post.name ?? 'Bot', botId: post.botId, authorId: post.botId, authorKind: 'bot', text }
           : { who: post.authorName || 'User', text, authorId: post.authorId, authorKind: post.authorKind || 'human' })
@@ -513,12 +528,30 @@ export function install(rt) {
     const members = everyone.filter(bot => bot.id !== opener.botId)
     const admin = members.find(bot => rt.isAdminOf(room, bot.id))
     if (opener.kickoff) return admin ? [admin] : []
+    // A friend's own typed line that @-calls Bots here (#287): only those Bots answer. The caller
+    // resolved the names and only passes lines the server attests as typed by that person.
+    if (opener.callIds?.length > 0) return members.filter(bot => opener.callIds.includes(bot.id))
     if (opener.quiet) return []
     const { all, found: named } = mentionsIn(opener.text, everyone, opener.references)
     const found = named.filter(bot => bot.id !== opener.botId)
     if (opener.late) return found.length > 0 ? found : members.filter(bot => bot.id === opener.askedBy)
+    // Face-to-face, the room's own person typing (#167, #287): @Name, the label the picker shows
+    // ("Friend's Chief") or a handle picks that local Bot; a line to a friend's Bot starts none
+    // here; a plain line gets ONE local speaker, the admin else the first member, never every Bot
+    // at once. @all stays everyone. Another person's line (postHuman) is quiet and never gets here
+    // without callIds, and a Bot's post keeps the old rule below, so Bots in two homes cannot set
+    // each other off.
+    if (isFaceRoom(room) && opener.botId === undefined) {
+      const said = faceMentions(room, opener.text, rt.botOf, { references: (opener.references ?? []).flatMap(reference => reference.labels) })
+      if (!said.all) {
+        const called = said.bots.filter(bot => bot.id !== opener.botId)
+        if (called.length > 0) return called
+        if (said.friends.length > 0) return []
+        return admin ? [admin] : members.slice(0, 1)
+      }
+    }
     if (found.length > 0 && !all) return found
-    // Face-to-face: a plain human line stays in the room. Only @Name / @all starts a Bot turn (#167).
+    // Face-to-face Bot posts: a plain one stays in the room; only @Name / @all calls a Bot (#167).
     if (isFaceRoom(room) && !all) return []
     if (!all && room.mode === 'admin' && admin) return [admin]
     return admin ? [admin, ...members.filter(bot => bot !== admin)] : members

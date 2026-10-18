@@ -2311,6 +2311,27 @@ function mentionSpans(text, bots, { references = [] } = {}) {
   }
   return spans;
 }
+function unmatchedMentions(text, bots, { references = [] } = {}) {
+  const value = String(text ?? "");
+  const skip = [
+    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
+    ...referenceSpans(value, references)
+  ];
+  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
+  const missing = [];
+  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
+    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
+    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
+    const all = bot ? void 0 : ALL_WORDS.find((word2) => fitsAt(value, at + 1, word2));
+    if (bot || all) {
+      at += 1 + (bot ? bot.name.length : all.length) - 1;
+      continue;
+    }
+    const word = /^[^\s@,，。.!?！？:：;；、()（）"'“”]{1,40}/.exec(value.slice(at + 1))?.[0];
+    if (word) missing.push(`@${word}`);
+  }
+  return missing;
+}
 
 // src/client/text.js
 var MENTION_ORIGIN = "https://bots.local/";

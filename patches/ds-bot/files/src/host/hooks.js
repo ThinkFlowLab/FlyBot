@@ -15,7 +15,8 @@ import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
 import { SOURCE_KIND } from './constants.js'
-import { currentParticipants } from './room-membership.js'
+import { currentParticipants, isFaceRoom } from './room-membership.js'
+import { faceMentions } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -938,7 +939,10 @@ export function install(rt) {
         const room = rt.roomOf(roomId)
         if (!room || typeof rt.postToRoom !== 'function') return
         const who = String(name || 'Someone')
-        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who } })
+        // The friend's own typed line @-calls my Bots by the labels they see ("<owner>'s Chief", handle):
+        // only those local Bots answer (#287). A line that calls nobody here stays a bubble.
+        const callIds = isFaceRoom(room) && typeof rt.botOf === 'function' ? faceMentions(room, String(text ?? ''), rt.botOf, { fromFriend: true }).bots.map(bot => bot.id) : []
+        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who }, ...(callIds.length > 0 ? { callIds } : {}) })
       },
       postRemote: (roomId, { handle, name, text } = {}) => {
         const room = rt.roomOf(roomId)

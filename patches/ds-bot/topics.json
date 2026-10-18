@@ -6,6 +6,7 @@
     "src/host/prompt.js",
     "src/host/time-context.js",
     "src/host/turns.js",
+    "src/shared/mentions.js",
     "src/client/feedback.js",
     "src/client/text.js",
     "src/client/i18n.js",

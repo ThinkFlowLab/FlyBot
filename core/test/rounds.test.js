@@ -343,7 +343,7 @@ test('a stopped round leaves a waiting message for the next round', async (t) =>
   assert.equal(inboxOf(room.id).nextTurn.length, 1)
 })
 
-test('a face-to-face send posts a human line and does not start a bot round', async (t) => {
+test('a face-to-face send posts the human line once and runs the opening Bot (#287)', async (t) => {
   const { call, stop, sent, ctx, rt } = start()
   t.after(stop)
   await team(call, sent)
@@ -365,17 +365,16 @@ test('a face-to-face send posts a human line and does not start a bot round', as
   sent.length = 0
   const result = await call('send', { sessionId: hosted.id, text: 'hello from the owner' })
   assert.equal(result.ok, true)
-  assert.equal(prompts.length, 0)
+  assert.equal(prompts.length, 1)
   const line = hosted.log.find(item => item.text === 'hello from the owner')
   assert.ok(line)
   assert.equal(line.authorKind, 'human')
-  assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false)
   const named = await call('send', { sessionId: hosted.id, text: '@Chief ping' })
   assert.equal(named.ok, true)
-  assert.equal(prompts.length, 1)
+  assert.equal(prompts.length, 2)
 })
 
-test('#167: a plain face-to-face human line does not start a Bot turn', async (t) => {
+test('#167, #287: a plain face-to-face human line starts the opening Bot only; another person\'s line starts none', async (t) => {
   const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
   t.after(stop)
   await team(call, sent)
@@ -391,8 +390,20 @@ test('#167: a plain face-to-face human line does not start a Bot turn', async (t
   assert.ok((hosted.members ?? []).includes(chief))
   sent.length = 0
   await emit(hosted.id, userMessage('hello from the owner'))
-  const silent = JSON.parse(await relay(hosted.id, 'plain-face'))
-  assert.equal((silent.replies ?? []).filter(reply => reply.kind === undefined).length, 0)
+  const plain = relay(hosted.id, 'plain-face')
+  const opener = await turnFor(sent)
+  assert.ok(opener, 'a plain line from the owner starts a Bot turn without an @')
+  assert.equal(opener.sessionId, hosted.sessions[chief])
+  await answer(opener.sessionId, opener.message.source.exchangeId, 'Hi there', 1)
+  const done = JSON.parse(await plain)
+  assert.equal(done.replies.filter(reply => reply.botId === chief).length, 1)
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room' && entry.sessionId === opener.sessionId).length, 1, 'one speaker, one turn')
+
+  // A quiet post (another person's line from the other home) never starts a turn.
+  sent.length = 0
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, human: { authorId: '@bob.friend.home', name: 'Bob' } }, content: [{ type: 'text', text: 'hi all' }] } })
+  const silent = JSON.parse(await relay(hosted.id, 'quiet-face'))
+  assert.equal((silent.replies ?? []).filter(reply => reply.botId !== undefined).length, 0)
   assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false)
 
   sent.length = 0
@@ -402,6 +413,86 @@ test('#167: a plain face-to-face human line does not start a Bot turn', async (t
   assert.ok(first, 'an @mention still starts that Bot\'s turn')
   await answer(first.sessionId, first.message.source.exchangeId, 'pong', 1)
   await running
+})
+
+test('#287: in a face room an @ to a friend\'s Bot starts no local turn, an @ to my Bot by its label does, and an @ to nobody says so', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_at',
+    localId: 'face-at',
+    status: 'open',
+    members: [
+      { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+      { handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob', published: false },
+    ],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }],
+  })
+  sent.length = 0
+  await emit(hosted.id, userMessage("@Bob's Chief 你好，你是干嘛的"))
+  const toFriend = JSON.parse(await relay(hosted.id, 'to-friend'))
+  assert.equal((toFriend.replies ?? []).filter(reply => reply.botId !== undefined).length, 0)
+  assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false, "the line is for Bob's Chief, so none of mine answers")
+
+  sent.length = 0
+  await emit(hosted.id, userMessage("@Me's Chief and you?"))
+  const mine = relay(hosted.id, 'to-mine')
+  const turn = await turnFor(sent)
+  assert.ok(turn, 'my own Bot, called by the label the picker shows, answers')
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'here', 1)
+  await mine
+
+  sent.length = 0
+  const result = await call('send', { sessionId: hosted.id, text: 'hello @Nobody there' })
+  assert.equal(result.ok, true)
+  const hint = sent.find(entry => /No one in this room is called @Nobody/.test(entry.message?.content?.[0]?.text ?? ''))
+  assert.ok(hint, 'an @ that names nobody gets one quiet line')
+  assert.equal(hint.message.source.quiet, true)
+  const none = sent.length
+  await call('send', { sessionId: hosted.id, text: "hello @Bob's Chief" })
+  assert.equal(sent.slice(none).some(entry => /No one in this room/.test(entry.message?.content?.[0]?.text ?? '')), false)
+})
+
+test('#287: a face-room line the send path posted is logged and sent once, whether the round starts on it or drains it', async (t) => {
+  const { call, emit, relay, inboxOf, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_dup',
+    localId: 'face-dup',
+    status: 'open',
+    members: [{ handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false }],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }],
+  })
+  const wire = []
+  rt.faceRoomFanout = async (room, line) => { wire.push(line.text) }
+  const count = text => [hosted.log.filter(line => line.text === text).length, wire.filter(item => item === text).length]
+  // The round starts on the line: the Session event queues it, the relay must not append it again.
+  await call('send', { sessionId: hosted.id, text: 'first line' })
+  const queued = inboxOf(hosted.id).nextTurn.splice(0).at(-1)
+  await emit(hosted.id, { type: 'user/message', data: { source: queued.source, content: queued.content } })
+  sent.length = 0
+  const running = relay(hosted.id, 'dup-1')
+  const turn = await turnFor(sent)
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'ok', 1)
+  await running
+  assert.deepEqual(count('first line'), [1, 1])
+  // The line arrives while a round runs: it is drained into it, and still logged once.
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'opener' }] } })
+  sent.length = 0
+  const second = relay(hosted.id, 'dup-2')
+  const first = await turnFor(sent)
+  await call('send', { sessionId: hosted.id, text: 'second line' })
+  await answer(first.sessionId, first.message.source.exchangeId, 'one', 2)
+  const next = await turnFor(sent, first)
+  if (next) await answer(next.sessionId, next.message.source.exchangeId, 'two', 3)
+  await second
+  assert.deepEqual(count('second line'), [1, 1])
 })
 
 test('a message sent between rounds still opens a full round', async (t) => {
