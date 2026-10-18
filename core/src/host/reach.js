@@ -137,7 +137,7 @@ export function mayShareRoom(state, room, botId) {
   return false
 }
 
-const label = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 60)
+const label = value => String(value ?? '').replace(/\p{Cc}/gu, ' ').trim().slice(0, 60)
 
 // Everyone a local Bot is shared with right now, as short labels for the owner to read: the
 // friends and members it has a grant to, and the other people and Bots in the rooms it sits in
