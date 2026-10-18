@@ -1324,7 +1324,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-line' },
             h('input', { className: 'fs-input', value: code, placeholder: 'Paste invite link', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite')),
-          mine.length ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: 'Your friend only sees this Bot unless you invite them to another.' },
+          // Accepting grants only the invited Bot to you. The Bot you talk through is not shared, so
+          // there is nothing to pick with one Bot (#228).
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: "Talks for you. Not shared: your friend can't use it unless you invite them to it." },
             h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null),
@@ -1372,6 +1374,7 @@ window.__ModuleLoader__.load({
       return Boolean(status.value?.connected && status.value.bots.some(bot => bot.id === botId))
     }
 
+    const ACCESS_POLL_MS = 5000
     const ACCESS_NOTE = 'One person per grant. Revoke anyone without affecting the rest. Default: nobody, Chief included.'
     function ManageAccess({ bot }) {
       const [view, setView] = useState(null)
@@ -1380,11 +1383,19 @@ window.__ModuleLoader__.load({
       const load = async () => {
         if (!bot?.id) return
         try {
-          setView(await call('social/access', { botId: bot.id }))
+          const next = await call('social/access', { botId: bot.id })
+          setView(previous => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next))
           setError('')
         } catch (e) { setError(errorText(e)) }
       }
-      useEffect(() => { void load() }, [bot?.id])
+      // A friend who accepts while this page is open shows up without reopening it (#228).
+      useEffect(() => {
+        void load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, ACCESS_POLL_MS)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [bot?.id])
       if (!bot?.id) return null
       const revoke = async (grant) => {
         setBusy(grant.id)

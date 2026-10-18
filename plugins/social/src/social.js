@@ -593,6 +593,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // ------------------------------------------------------------ remote roster
   let remote = { homes: [] }
   let fetchedAt = 0
+  // Counts roster fetches: a late grant re-filter of an older fetch must not overwrite a newer
+  // roster, even when both landed in the same millisecond (#228).
+  let rosterFetches = 0
   // Handles we declined this session. Not persisted (that is the old-server local hide).
   // Keeps a stale grant re-filter or a mock/lagging list_remote_bots from putting the
   // Bot back before the server drops it. Cleared when the handle is absent from a
@@ -788,12 +791,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       throw error
     }
     fetchedAt = now()
-    const rosterAt = fetchedAt
+    const rosterAt = ++rosterFetches
     if (home) void syncServerAutoApprove((result?.homes ?? []))
     // Grant listing is N HTTP calls; do not block Friends' Bots on it. Re-filter
     // once grants arrive so reverse-friends of our invites drop (#138).
     void syncOutgoingGrants().then(() => {
-      if (fetchedAt !== rosterAt || !home || !result) return
+      if (rosterFetches !== rosterAt || !home || !result) return
       const mapped = mapRemoteHomes(result.homes)
       forgetDeclinedIfGone(mapped)
       applyRemoteRoster({ homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }, { source, ok: true })
@@ -940,9 +943,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return rooms
   }
 
-  async function syncOutgoingGrants() {
+  // `only`: one Bot's grants (an open People with access refreshes just that Bot).
+  async function syncOutgoingGrants({ only } = {}) {
     if (typeof flybot.grants?.set !== 'function') return
     const bots = flybot.bot.list().filter(bot => {
+      if (only && bot.id !== only) return false
       const member = memberOf(bot.id)
       return member && !member.roomOnly
     })
@@ -1490,6 +1495,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     const offered = joined.bot ?? joined.inviter?.bot ?? joined.offered_bot
     const offeredHandle = offered?.handle ? norm(offered.handle) : ''
+    // Mark the shared Bot inbound before the first refresh: the grant sync that refresh starts
+    // must already see the talk-through grant on our Bot as talk-through, or it stores it as us
+    // sharing that Bot back and the re-filter drops the shared Bot until the next refresh (#228).
+    if (offeredHandle) rememberInbound(offeredHandle)
     if (offeredHandle) unhideDeclined([offeredHandle])
     const unhide = revealHiddenIfPresent(settings, offeredHandle ? [offeredHandle] : [])
     if (unhide !== settings) { settings = unhide; saveSettings() }
@@ -1565,7 +1574,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/access', async ({ botId } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
-    await syncOutgoingGrants().catch(() => {})
+    await syncOutgoingGrants({ only: bot.id }).catch(() => {})
     const grants = (flybot.grants?.of?.(bot.id) ?? []).filter(grant => !grant.roomId)
     const rooms = roomsUsing(bot.id)
     return {
