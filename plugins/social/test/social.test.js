@@ -5203,7 +5203,14 @@ test('#182: a new Bot Social identity for the same Bot gets its look again', asy
   const painted = await call('update-bot', { id: 'a', color: 'deepseek', avatar: { shape: 'whale' } })
   assert.equal(painted.ok, true, painted.error?.message)
   const server = mockServer()
-  server.tools.update_bot_profile = (a) => ({ bot_id: a.bot_id, avatar: a.avatar, color: a.color, avatar_kind: 'preset' })
+  // The answer's shape is Bot Social's: Birfy/bot-social 59ed07a, src/platform.ts `updateBotProfile` returns
+  // `publicBot(bot, true)` = { bot_id, handle, display_name, owner_display_name, owner_verified } plus
+  // src/bot-look.ts `lookOf` = { avatar, avatar_kind, color, avatar_updated_at }. FlyBot reads none of it
+  // beyond "the call succeeded".
+  server.tools.update_bot_profile = (a) => ({
+    bot_id: a.bot_id, handle: '@chief.danyang.home', display_name: 'Chief', owner_display_name: 'Danyang', owner_verified: true,
+    avatar: a.avatar ?? null, avatar_kind: a.avatar ? 'preset' : null, color: a.color ?? null, avatar_updated_at: '2026-10-19T00:00:00.000Z',
+  })
   const settingsPath = join(home, 'flybot-social-settings.json')
   const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
     client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
