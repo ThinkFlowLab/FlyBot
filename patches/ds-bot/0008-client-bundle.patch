@@ -25,7 +25,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -84,14 +84,43 @@ var ZH = {
+@@ -84,14 +84,44 @@ var ZH = {
    "Remove Main Bot role": "取消主 Bot",
    "Bot settings": "Bot 设置",
    "Create group chat": "新建群聊",
@@ -53,11 +53,12 @@ diff --git a/client.js b/client.js
 +  "Bot tree": "Bot 树",
 +  "no longer shared": "已不再共享",
 +  "Messages waiting for your approval": "等你批准的消息",
-+  "Sent by {sender}": "由 {sender} 发送",
-+  "Sent by {sender} · delegated": "由 {sender} 发送 · 委托转达",
-+  "Not sent to {to} · {reason}": "未发给 {to} · {reason}",
-+  "Message to {to} · {reason}": "发给 {to} 的消息 · {reason}",
-+  failed: "失败",
++  "Waiting for approval": "等待批准",
++  "Not sent": "未发出",
++  "{from} → {to}": "{from} → {to}",
++  "+{count} more": "另有 {count} 条",
++  delegated: "委托转达",
++  Review: "查看",
 +  "Attached files": "附件",
 +  Retry: "重试",
 +  Approve: "批准",
@@ -612,7 +613,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,380 @@ function maskOf(shape) {
+@@ -1242,6 +1242,462 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -874,6 +875,26 @@ diff --git a/client.js b/client.js
 +    (0, import_react2.createElement)(Safe, { entry, props: { roster, actions, call: call2, renderBot, remoteChats } })
 +  )));
 +}
++var claims = /* @__PURE__ */ new Map();
++var claimListeners = /* @__PURE__ */ new Set();
++var claimedIds = () => new Set([...claims.values()].flatMap((ids) => [...ids]));
++function claimApprovals(owner, ids) {
++  if (!Array.isArray(ids) || ids.length === 0) claims.delete(owner);
++  else claims.set(owner, new Set(ids.map(String)));
++  for (const fn of [...claimListeners]) fn();
++}
++function useClaimed() {
++  const [claimed, setClaimed] = (0, import_react2.useState)(claimedIds);
++  (0, import_react2.useEffect)(() => {
++    const fn = () => setClaimed(claimedIds());
++    claimListeners.add(fn);
++    fn();
++    return () => {
++      claimListeners.delete(fn);
++    };
++  }, []);
++  return claimed;
++}
 +function FlyBotSessionDock({ sessionId, useRoster, actions }) {
 +  const entries2 = useSlot("flybot.session.dock");
 +  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
@@ -883,7 +904,7 @@ diff --git a/client.js b/client.js
 +  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
 +    "div",
 +    { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
-+    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2 } })
++    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
 +  )));
 +}
 +function FlyBotRoomOverview({ room: room2, roster, actions }) {
@@ -914,11 +935,28 @@ diff --git a/client.js b/client.js
 +  )));
 +}
 +var POLL_MS = 5e3;
-+function FlyBotApprovals() {
++var POINTER_DELAY_MS = 1200;
++var chatOf = (approval) => approval.request?.meta?.roomId ?? (typeof approval.request?.from === "string" ? approval.request.from : void 0);
++var handleOf = (ref) => typeof ref === "object" && ref ? ref.handle : typeof ref === "string" && ref.startsWith("@") ? ref : void 0;
++function recipientName(approval, roster) {
++  const handle = handleOf(approval.request?.to);
++  const bot = handle ? (roster?.bots ?? []).find((item) => item.remote && String(item.remote.handle ?? "").toLowerCase() === handle.toLowerCase()) : void 0;
++  if (bot) {
++    const owner = bot.remote.owner || bot.remote.homeName;
++    if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`;
++    return bot.name;
++  }
++  return approval.targetName ?? handle ?? String(approval.request?.to ?? "");
++}
++function FlyBotApprovals({ useRoster, actions } = {}) {
 +  const entries2 = useSlot("flybot.approvals");
++  const docks = useSlot("flybot.session.dock");
++  const claimed = useClaimed();
++  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
 +  const [pending, setPending] = (0, import_react2.useState)([]);
 +  const [busy, setBusy] = (0, import_react2.useState)("");
 +  const [error, setError] = (0, import_react2.useState)("");
++  const [shown, setShown] = (0, import_react2.useState)("");
 +  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
 +  });
 +  (0, import_react2.useEffect)(() => {
@@ -926,7 +964,21 @@ diff --git a/client.js b/client.js
 +    const timer = setInterval(refresh, POLL_MS);
 +    return () => clearInterval(timer);
 +  }, []);
-+  if (pending.length === 0) return null;
++  const policies = new Set(docks.map((entry) => entry.policy).filter(Boolean));
++  const open = pending.filter((approval) => !claimed.has(approval.id));
++  const cards = open.filter((approval) => !policies.has(approval.by));
++  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed");
++  const awayKey = away.map((approval) => approval.id).join(",");
++  (0, import_react2.useEffect)(() => {
++    if (!awayKey) {
++      setShown("");
++      return void 0;
++    }
++    const timer = setTimeout(() => setShown(awayKey), POINTER_DELAY_MS);
++    return () => clearTimeout(timer);
++  }, [awayKey]);
++  const pointers = shown === awayKey && awayKey ? away : [];
++  if (cards.length === 0 && pointers.length === 0) return null;
 +  const decide = async (id, decision) => {
 +    setBusy(id);
 +    setError("");
@@ -939,35 +991,60 @@ diff --git a/client.js b/client.js
 +      await refresh();
 +    }
 +  };
++  const byChat = /* @__PURE__ */ new Map();
++  for (const approval of pointers) {
++    const key = chatOf(approval) ?? approval.id;
++    byChat.set(key, [...byChat.get(key) ?? [], approval]);
++  }
 +  return (0, import_react2.createElement)(
-+    "div",
-+    { className: "bt-flybot-approvals", role: "region", "aria-label": t("Messages waiting for your approval") },
-+    pending.map((approval) => {
-+      const custom = entries2.find((entry) => entry.policy === void 0 || entry.policy === approval.by);
-+      if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
-+      const to = approval.targetName ?? (typeof approval.request.to === "object" ? approval.request.to.handle : approval.request.to);
-+      return (0, import_react2.createElement)(
++    import_react2.Fragment,
++    null,
++    byChat.size > 0 ? (0, import_react2.createElement)(
++      "div",
++      { className: "bt-flybot-pointers", role: "status", "aria-label": t("Messages waiting for your approval") },
++      [...byChat].map(([chat, list]) => (0, import_react2.createElement)(
 +        "div",
-+        { key: approval.id, className: "bt-flybot-approval" },
-+        (0, import_react2.createElement)("div", { className: "bt-flybot-approval-head" }, approval.status === "failed" ? t("Not sent to {to} · {reason}", { to, reason: approval.error ?? t("failed") }) : t("Message to {to} · {reason}", { to, reason: approval.reason })),
-+        // Where the request came from (#52): the sending Bot, and when it was relayed.
-+        approval.senderName !== void 0 ? (0, import_react2.createElement)(
-+          "div",
-+          { className: "bt-flybot-approval-origin" },
-+          approval.request.hop > 0 ? t("Sent by {sender} · delegated", { sender: approval.senderName }) : t("Sent by {sender}", { sender: approval.senderName })
-+        ) : null,
-+        (0, import_react2.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
-+        approval.request.attachments?.length ? (0, import_react2.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react2.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
++        { key: chat, className: "bt-flybot-pointer" },
 +        (0, import_react2.createElement)(
++          "span",
++          { className: "bt-flybot-pointer-text" },
++          t("{from} → {to}", { from: list[0].senderName ?? t("A Bot"), to: recipientName(list[0], roster) }),
++          list.length > 1 ? ` ${t("+{count} more", { count: list.length - 1 })}` : ""
++        ),
++        (0, import_react2.createElement)("span", { className: "bt-flybot-pointer-note" }, t("Waiting for approval")),
++        typeof actions?.openSession === "function" && chatOf(list[0]) ? (0, import_react2.createElement)("button", { type: "button", onClick: () => actions.openSession(chatOf(list[0])) }, t("Review")) : null
++      ))
++    ) : null,
++    cards.length > 0 ? (0, import_react2.createElement)(
++      "div",
++      { className: "bt-flybot-approvals", role: "region", "aria-label": t("Messages waiting for your approval") },
++      cards.map((approval) => {
++        const custom = entries2.find((entry) => entry.policy === void 0 || entry.policy === approval.by);
++        if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
++        const failed = approval.status === "failed";
++        return (0, import_react2.createElement)(
 +          "div",
-+          { className: "bt-flybot-approval-actions" },
-+          approval.status === "failed" ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
-+          approval.status === "failed" ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")),
-+          approval.status === "failed" ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject"))
-+        )
-+      );
-+    }),
-+    error ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
++          { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
++          (0, import_react2.createElement)("div", { className: "bt-flybot-approval-head" }, failed ? t("Not sent") : t("Waiting for approval")),
++          (0, import_react2.createElement)(
++            "div",
++            { className: "bt-flybot-approval-origin" },
++            t("{from} → {to}", { from: approval.senderName ?? t("A Bot"), to: recipientName(approval, roster) }),
++            approval.request.hop > 0 ? ` · ${t("delegated")}` : ""
++          ),
++          failed && approval.error ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-error" }, approval.error) : null,
++          (0, import_react2.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
++          approval.request.attachments?.length ? (0, import_react2.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react2.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react2.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
++          (0, import_react2.createElement)(
++            "div",
++            { className: "bt-flybot-approval-actions" },
++            failed ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
++            failed ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")),
++            failed ? null : (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve"))
++          )
++        );
++      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
++    ) : null
 +  );
 +}
 +var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
@@ -988,6 +1065,12 @@ diff --git a/client.js b/client.js
 +.bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
 +.bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 +.bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }
++.bt-flybot-approve { font-weight: 600; }
++.bt-flybot-pointers { position: fixed; top: 12px; right: 16px; z-index: 50; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; max-width: 360px; }
++.bt-flybot-pointer { display: flex; align-items: center; gap: 8px; background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 999px; padding: 5px 6px 5px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.1); font-size: 12px; }
++.bt-flybot-pointer-text { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
++.bt-flybot-pointer-note { opacity: .65; white-space: nowrap; }
++.bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 +`;
 +
  // src/client/sources.js

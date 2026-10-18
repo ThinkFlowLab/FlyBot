@@ -45,7 +45,7 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 ### Held-send approval card
 
-The default card (`flybot-slots.js`) shows where a held request came from: `senderName` / `targetName` resolved server-side, plus a delegated marker when the send was relayed (`hop > 0`). The strings live in `i18n.js` (`Sent by {sender}`, `Sent by {sender} · delegated`). The decision itself is owner-bound in the host (#52); see [core-host](core-host.md).
+The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second copy (#260): an approval whose policy a `flybot.session.dock` entry declares (`policy`, e.g. social) is drawn by that dock in its chat, which reports the ids it shows through `claim(ids)`; the overlay skips claimed ids. A docked approval no open chat shows becomes a small pointer (`Sender → Recipient`, `Waiting for approval`, **Review** opens the chat via `actions.openSession`) after 1.2 s, so moving between chats never flashes it. Any other policy's approval is a card in the overlay, with the same two lines as the dock's card (`Waiting for approval` / `Not sent`, then `Sender → Recipient`; the policy's long reason is the tooltip) and Approve / Reject (Retry for a failed send). The recipient is named from the roster (`UiA1415's Chief`, `Helper · UiB1415's Bot`) when the friend's chat is known, else as the host named it. `senderName` / `targetName` are resolved server-side and a delegated marker follows a relayed send (`hop > 0`). The decision itself is owner-bound in the host (#52); see [core-host](core-host.md).
 
 ### Room avatars in face-to-face chats
 

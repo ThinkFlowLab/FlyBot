@@ -2806,6 +2806,37 @@ test('#254: a Bot\'s held reply to a friend shows as a card in that Bot\'s own c
   assert.equal(walk(pluginOf([[], [typed], '']).ChatApprovalDock({ bot: { id: 'session-helper' } })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
 })
 
+test('#260: one place per context, the same words, two decision buttons', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const approval = {
+    id: 'apr-reply', status: 'pending', by: 'social', senderName: 'Helper', targetName: '@chief.uia.home',
+    request: { from: 'session-helper', to: { kind: 'remote', handle: '@chief.uia.home', home: '@uia.home' }, text: 'Pong', role: 'reply', via: 'auto-reply' },
+  }
+  const roster = { bots: [{ id: 'f1', name: 'Chief', remote: { handle: '@chief.uia.home', owner: 'UiA1415' } }] }
+  const view = pluginOf([[], []]).localHoldView(approval, roster)
+  assert.equal(view.toName, "UiA1415's Chief", 'the friend by name and owner, as the chat list shows it')
+  const dock = (props, claim) => walk(pluginOf([[], [view], ''], Boolean(claim)).ChatApprovalDock({ ...props, ...(claim ? { claim } : {}) }))
+  // The sender Bot's own chat: the card names both sides the way the overlay does.
+  const own = dock({ bot: { id: 'session-helper', name: 'Helper' }, roster })
+  assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes("Helper → UiA1415's Chief")))
+  // Two buttons decide; the standing choice is a quiet link, and there is no third button.
+  const buttons = own.filter(n => n.type === 'button')
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Always approve'])
+  assert.equal(buttons.filter(n => /fs-btn/.test(n.props.className ?? '')).length, 2)
+  assert.match(buttons.at(-1).props.className, /fs-link/)
+  // A room that merely has that friend in it does not get the Bot's direct message (it showed in the
+  // Face-to-face room instead of the Bot's own chat).
+  const room = { id: 'room-1', participants: [{ handle: '@chief.uia.home', remote: true }] }
+  assert.equal(dock({ room, sessionId: 'room-1', roster }).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+  // Server holds keep matching a room by its participants' handles.
+  const held = { id: 'srv-1', from: 'Helper', to: '@chief.uia.home', text: 'x' }
+  assert.equal(walk(pluginOf([[held], [], '']).ChatApprovalDock({ room, sessionId: 'room-1' })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
+  // What a chat shows is claimed, so the overlay draws no second card; leaving releases it.
+  const claims = []
+  dock({ bot: { id: 'session-helper', name: 'Helper' }, roster }, ids => claims.push(ids))
+  assert.deepEqual([...claims[0]], ['apr-reply'])
+})
+
 test('Always approve is owner-only and toasts Auto-send for that pair', async () => {
   const calls = []
   const notes = []

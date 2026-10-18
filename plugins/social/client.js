@@ -161,6 +161,7 @@ window.__ModuleLoader__.load({
 .fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:8px;flex-wrap:nowrap}
 .fs-hold .fs-btn{flex:none;height:28px;padding:0 12px;border-radius:999px;font-size:12px}
 .fs-hold .fs-btn-primary{width:auto;color:#fff}
+.fs-hold .fs-hold-always{order:-1;margin-right:auto;white-space:nowrap}
 .fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
 .fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
@@ -852,8 +853,9 @@ window.__ModuleLoader__.load({
         }, open ? 'Show less' : 'Show more') : null,
         h('div', { className: 'fs-actions fs-chat-actions' },
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve'),
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')))
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject'),
+          // Two buttons are the decision; the standing choice is a quiet link, not a third button (#260).
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve')))
     }
 
     function approvalsForOpenChat(items, { sessionId, room, bot } = {}) {
@@ -873,13 +875,27 @@ window.__ModuleLoader__.load({
         if (item.roomId) return false
         // A held reply or message a local Bot wrote shows in that Bot's own chat, where its owner is (#254).
         if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return true
+        // A Bot's direct message to a friend belongs to the Bot's chat and the friend's chat, never to
+        // a room that merely has that friend in it (#260). Bot Social's own holds still match by handle.
+        if (item.source === 'local' && room) return false
         if (item.to && handles.has(item.to)) return true
         if (sessionId && item.sessionId === sessionId) return true
         return false
       })
     }
 
-    function localHoldView(approval) {
+    // A friend's Bot as the chat list names it: "UiA1415's Chief", "Helper · UiB1415's Bot" (#260).
+    function friendLabel(roster, handle) {
+      const want = String(handle ?? '').trim().toLowerCase()
+      if (!want.startsWith('@')) return ''
+      const bot = (roster?.bots ?? []).find(item => item?.remote && String(item.remote.handle ?? '').toLowerCase() === want)
+      if (!bot) return ''
+      const owner = String(bot.remote.owner || bot.remote.homeName || '').trim()
+      const name = String(bot.name ?? '').trim()
+      if (!owner) return name
+      return /^chief$/i.test(name) ? `${owner}'s Chief` : `${name} · ${owner}'s Bot`
+    }
+    function localHoldView(approval, roster) {
       if (!approval?.id) return undefined
       const to = approval.targetName ?? (typeof approval.request?.to === 'object' ? approval.request.to.handle : approval.request?.to)
       const composer = approval.request?.via === 'composer'
@@ -890,7 +906,7 @@ window.__ModuleLoader__.load({
         // The local Bot that wrote it (not a line you typed): its own chat shows the card (#254).
         ...(!composer && typeof approval.request?.from === 'string' ? { fromId: approval.request.from } : {}),
         to,
-        toName: approval.targetName || to,
+        toName: friendLabel(roster, to) || approval.targetName || to,
         text: approval.request?.text || approval.reason,
         // A friend's handle is an object, never a room: only a room id may sit here.
         roomId: approval.request?.meta?.roomId || (typeof approval.request?.to === 'string' ? approval.request.to : undefined),
@@ -936,7 +952,7 @@ window.__ModuleLoader__.load({
       return text ? h('div', { className: 'fs-room-end', 'data-flybot': 'face-room-end', role: 'status' }, text) : null
     }
 
-    function ChatApprovalDock({ sessionId, roster, room, bot, actions } = {}) {
+    function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim } = {}) {
       useStyles()
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
@@ -957,10 +973,19 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
+      // The friend's Bot by name and owner, as the chat list shows it.
+      const named = list => list.map((item) => { const label = friendLabel(roster, item.to); return label ? { ...item, toName: label } : item })
       const mine = [
-        ...approvalsForOpenChat(items, session),
-        ...approvalsForOpenChat(local, session),
+        ...approvalsForOpenChat(named(items), session),
+        ...approvalsForOpenChat(named(local), session),
       ]
+      // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
+      const shownIds = mine.map(item => item.id).join(',')
+      useEffect(() => {
+        if (typeof claim !== 'function') return undefined
+        claim(shownIds ? shownIds.split(',') : [])
+        return () => claim([])
+      }, [shownIds, sessionId])
       const waitingOthers = mine.length === 0 && (room?.pendingCount ?? 0) > 0
       if (!mine.length && !waitingOthers) return null
       const decide = async (item, decision) => {
@@ -1569,6 +1594,7 @@ window.__ModuleLoader__.load({
       ChatApprovalDock,
       approvalsForOpenChat,
       localHoldView,
+      friendLabel,
       MyHandle,
       FaceRoomStatus,
       FriendBotRow,
@@ -1611,7 +1637,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
-            slots().register('flybot.session.dock', { id: 'social-approval', order: 50, component: ChatApprovalDock }),
+            slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
           ]
           // For other plugins (the tree's per-node "Copy invite link"): ctx.flybot.social.canInvite(botId)
           // is synchronous; flybot.call('social.createInvite', { botId }) returns { link, text, ... }.

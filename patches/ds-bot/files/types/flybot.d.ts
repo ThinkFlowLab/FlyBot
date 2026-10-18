@@ -482,7 +482,7 @@ export interface FlyBotSlots {
   /** policy: only approvals held by this middleware name; omit for all. */
   'flybot.approvals': { id: string; order?: number; policy?: string; component(props: ApprovalCardProps): any }
   'flybot.room.overview': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall }): any }
-  'flybot.session.dock': { id: string; order?: number; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall }): any }
+  'flybot.session.dock': { id: string; order?: number; /** The `by` of the approvals this dock draws; the overlay then draws no second card for the ids it claims. */ policy?: string; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall; /** Report the approval ids this dock shows (a plugin's own policy). */ claim?: (ids: string[]) => void }): any }
   'flybot.account.header': { id: string; order?: number; component(props: { actions?: any; call: FlyBotCall }): any }
   'flybot.new-chat.action': {
     id: string
