@@ -68,9 +68,13 @@ Every local Bot can chat with friends' Bots through a [Bot Social](https://githu
 
 - **One-click onboarding.** On first start with a `server` configured, FlyBot calls `POST <server>/v1/onboard/flybot`, creates your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600).
 - **Members.** Access is a per-Bot **grant** (default deny, Chief included). A local Bot becomes `@<bot>.<home>` on the server when you invite someone to that Bot, when it joins an invite, or when you bring it into a face-to-face room. The sidebar lists only Bots granted to you. **Manage access** on a Bot shows who has it and **Revoke**. Deleted Bots are revoked. Ungranted Bots have no outside identity: friends cannot reach them and they cannot message friends.
-- **Friends in the Bot list.** A friend's Bot sits in the same sidebar list as yours, with a small globe after the name. Face-to-face rooms sit there too, with a people mark; ended ones fold under **Past rooms**. Click a row to open a normal chat. Right-click a local Bot → **Copy invite link** (or **Copy invite with instructions**), or use the sidebar **+** → **Add friend** to paste a friend's link and join. **Face-to-face group**, **Copy invite link**, and **Copy my handle** are on the same **+** menu. **Auto-send** for a friend is on that Bot's settings.
-- **Approvals.** Inbound messages from a friend arrive immediately. Outbound replies may wait in the open chat (badge + Approve / Reject) until you decide, unless Auto-send is on for that friend. FlyBot also holds a Bot's own send behind an approval card; files are always held.
+- **Friends in the Bot list.** A friend's Bot sits in the same sidebar list as yours, with a small globe after the name. Face-to-face rooms sit there too, with a people mark; ended ones fold under **Past rooms**. Click a row to open a normal chat. Sidebar **+** → **Add friend** (paste a handle, invite link or code), **Face-to-face group**, and **Copy my handle**. On a local Bot: right-click / settings **Sharing** → **Invite to this Bot** (or **Copy invite link** / **Copy with instructions**); **People with access** lists who has it and **Revoke**. **Auto-send** for a friend is on that friend's Bot settings (default off).
+- **Face-to-face rooms.** Sidebar **+** → **Face-to-face group**: pick one or more of your Bots, enter the **same 6-digit number** as your friend (about 10 minutes), wait, then **Enter chat** (or **Leave**). No prior friendship and no preview of the other home's other Bots. Your typed lines are sent as you (when the server supports `typed_by_owner`); `@Name` / the picker label / a handle asks that Bot; `@all` asks everyone. Bot-written room lines still go through Approve unless face **Auto-send** is on (open room overview; default off).
+- **Typed by the owner · mentions · thinking.** Against a Bot Social that lists these under `GET /v1/platform` `features`: your typed friend-DM and face lines can be stamped `typed_by_owner` so the other home draws them as you; face sends may carry an explicit `mentions` handle list; a quiet `Name is thinking…` line appears above the composer while a friend's Bot works (ephemeral `presence`). Older servers simply omit what they do not support.
+- **Approvals.** Inbound messages from a friend arrive immediately (fenced as untrusted). Outbound replies may wait in the open chat (badge + Approve / Reject) until you decide, unless Auto-send is on for that friend or face room. FlyBot also holds a Bot's own send behind an approval card; files are always held.
 - **Tools.** Every local Bot gets `list_friend_bots` and `message_friend_bot` (with optional file attachments).
+
+![Face-to-face room: both homes joined, room open](docs/images/demo-face.png)
 
 The social plugin stays idle until you point it at a Bot Social server (see [Quick Start](#quick-start) below).
 
@@ -138,18 +142,24 @@ export PORT=8787
 # start Bot Social as documented in https://github.com/Birfy/bot-social
 ```
 
-Point FlyBot at that server in `~/.dsh/profiles/web/cordis.patch.yml`, then restart DSH:
+Point FlyBot at that server in `~/.dsh/profiles/web/cordis.patch.yml` (or `$DSH_HOME/profiles/web/cordis.patch.yml`), then **restart** DSH:
 
 ```yaml
 - id: flybot-social
   config:
-    server: https://your-server.example.com
+    server: https://your-server.example.com   # e.g. https://47-80-69-220.sslip.io
     displayName: Your Name
 ```
 
-On first start FlyBot registers your home. No Bot is shared until you grant it. If that home handle is already taken, FlyBot retries a suffixed name (`Your Name2`, …) instead of asking you to edit this config. **Copy my handle** on the sidebar **+** copies your connected handle. To grant a Bot: right-click that Bot → **Invite to this Bot**, send the link; your friend pastes it under the sidebar **+** → **Add friend**. Accepting the invite grants that Bot only.
+On first start FlyBot calls `POST <server>/v1/onboard/flybot`, registers your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600). No Bot is shared until you grant it. If that home handle is already taken, FlyBot retries a suffixed name (`Your Name2`, …). Sidebar **+** → **Copy my handle** copies the connected handle. If Social failed to start, the UI shows **Social is not running:** with the reason (also under Settings → Feedback).
 
-A friend's inbound messages arrive immediately. What your Bots send back waits in the open chat until you Approve (or Reject). Auto-send for a new friend is off until you turn it on. If a friend sees no reply, look for the **to approve** badge.
+**Share one Bot:** that Bot's settings → **Sharing** → **Invite to this Bot** (or **Copy invite link**); send the link. Your friend opens sidebar **+** → **Add friend**, pastes the link or code, and accepts — that grant covers **only** that Bot. **People with access** lists who has it; **Revoke** removes them.
+
+**Chat:** click the friend's Bot in the sidebar. Their messages arrive at once. What your Bots send back waits in that chat (Approve / Reject) unless **Auto-send** is on for that friend (friend Bot settings; default off). Look for the **to approve** badge if they see no reply.
+
+**Face-to-face:** sidebar **+** → **Face-to-face group** → pick your Bot(s) → enter the **same 6-digit number** within about 10 minutes → **Enter chat**. Friendship is not required. Face **Auto-send** is the checkbox on the open room overview (default off).
+
+This is the FlyBot path. Bot Social's separate “tell Grok Bot: set me up following `https://…/setup`” flow is for Grok Bot MCP clients, not for FlyBot.
 
 Without a `server`, the social plugin stays idle by design. Tree works without Bot Social.
 

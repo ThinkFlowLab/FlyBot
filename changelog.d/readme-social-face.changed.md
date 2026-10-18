@@ -1,0 +1,1 @@
+README: document face-to-face rooms, typed_by_owner / mentions / presence, Sharing grants, and the exact FlyBot → Bot Social setup steps (cordis `server` + onboard, invites, face 6-digit join). Demo still: `docs/images/demo-social.mp4` (friend DM) plus a face-room still `docs/images/demo-face.png`. Timeline stays optional and off by default.
