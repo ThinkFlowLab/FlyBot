@@ -221,19 +221,25 @@ export function remoteSpeaker(source, roster) {
     handle, displayName: name, color: member?.color,
     avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : undefined),
   }, roster)
-  return { bot, member, name, handle, chatId: chat ? currentPart(chat) : undefined }
+  // The carrying Bot's own name, when this home knows that Bot; never the sender label the
+  // plugin builds for the model ("X (typed via @…, Bot Social)", #275).
+  const carrier = cleanCarrier(chat?.name ?? member?.name)
+  return { bot, member, name, handle, carrier, chatId: chat ? currentPart(chat) : undefined }
 }
 
+const cleanCarrier = value => (typeof value === 'string' && value.trim() && !/[@()]/.test(value) ? value.trim() : '')
+
 export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
-  const { bot, member, name, handle, chatId } = remoteSpeaker(source, roster)
+  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster)
   const files = Array.isArray(source.attachments) ? source.attachments : []
   // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
   // person's, with their name and a person mark, and the Bot that carried it only named as the route.
   const person = typeof source.remote.typedBy === 'string' ? source.remote.typedBy : ''
   if (person) {
     return h('div', { className: 'bt-group-msg bt-person-msg bt-remote-msg', 'data-person': person, 'data-remote': handle },
-      h('span', { className: 'bt-group-name' }, person,
-        h('span', { className: 'bt-remote-handle', title: handle }, t('via {name}', { name }))),
+      // One short header: the person, and the Bot that carried the line only when it is known (#275).
+      h('span', { className: 'bt-group-name', title: handle }, person,
+        carrier ? h('span', { className: 'bt-remote-handle' }, t('via {name}', { name: carrier })) : null),
       h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark)) }),
       files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
   }

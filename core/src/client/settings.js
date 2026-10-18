@@ -72,7 +72,9 @@ function GeneralPage({ roster, actions, run }) {
 function MainBotsSection({ roster, actions, run }) {
   const mains = (roster.mainBotIds ?? []).map(id => roster.byId[id]).filter(Boolean)
   const [first, ...others] = mains
-  const candidates = roster.bots.filter(bot => !isMainOf(roster, bot.id))
+  // Only the user's own Bots can hold the role; a friend's Bot is never offered (#276).
+  const own = roster.bots.filter(bot => !bot.remote)
+  const candidates = own.filter(bot => !isMainOf(roster, bot.id))
   return h(SetSection, { title: t('Main Bot') },
     h(SetRow, {
       label: t('Main Bot'),
@@ -81,7 +83,7 @@ function MainBotsSection({ roster, actions, run }) {
     h('select', {
       className: 'bt-select', 'aria-label': t('Main Bot'), value: first?.id ?? '',
       onChange: event => run(actions.setMain(event.target.value, true, first ? { replace: first.id } : {})),
-    }, first ? null : h('option', { value: '' }, t('Choose a Bot…')), roster.bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))),
+    }, first ? null : h('option', { value: '' }, t('Choose a Bot…')), own.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))),
     others.map(bot => h(SetRow, { key: bot.id, label: bot.name, hint: t('Also a Main Bot.') },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setMain(bot.id, true, { primary: true })) }, t('Move to first')),
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setMain(bot.id, false)) }, t('Remove Main Bot role')))),

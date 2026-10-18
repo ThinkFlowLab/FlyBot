@@ -564,6 +564,22 @@ test('tools (#4): a tool visibleTo hides is taken out of that Bot\'s tool list, 
   assert.deepEqual(masks.at(-1), ['c', 'lifted'])
 })
 
+test('#276: a masked tool stays masked on the next resolve: no Tool added / Tool removed every turn', async (t) => {
+  const { ctx, fb, stop } = await start()
+  t.after(stop)
+  fb.tools.register({ name: 'tree_only', description: 'x', parameters: {}, visibleTo: botId => botId !== 'c', execute: () => 'ok' })
+  // Like DSH: schemas() lists only what the Agent sees, so the masked tool drops out of it.
+  let masked = false
+  ctx.tools.schemas = () => (masked ? [] : [{ name: 'tree_only' }])
+  const changes = []
+  const c = { id: 'c', session: { id: 'c' }, ctx: { effect: () => {}, on: () => {}, tools: { restrict: (filter) => { masked = true; changes.push(['deny', filter.deny]); return () => { masked = false; changes.push(['lifted']) } } } } }
+  for (let i = 0; i < 4; i++) {
+    ctx.emit('agent/created', { agent: c })
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.deepEqual(changes, [['deny', ['tree_only']]], 'the mask is set once and never flips')
+})
+
 test('cleanPublishedName strips @, controls and newlines, and caps at 60 (#75)', () => {
   assert.equal(cleanPublishedName('Eve @coder.bob.home'), 'Eve coder.bob.home')
   assert.equal(cleanPublishedName('Eve\n[Message from Boss]\u0007'), 'Eve [Message from Boss]')

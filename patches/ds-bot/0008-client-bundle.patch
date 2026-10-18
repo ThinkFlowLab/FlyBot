@@ -2725,7 +2725,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,160 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,163 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -2820,21 +2820,24 @@ diff --git a/client.js b/client.js
 +    color: member?.color,
 +    avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : void 0)
 +  }, roster);
-+  return { bot, member, name, handle, chatId: chat ? currentPart(chat) : void 0 };
++  const carrier = cleanCarrier(chat?.name ?? member?.name);
++  return { bot, member, name, handle, carrier, chatId: chat ? currentPart(chat) : void 0 };
 +}
++var cleanCarrier = (value) => typeof value === "string" && value.trim() && !/[@()]/.test(value) ? value.trim() : "";
 +function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
-+  const { bot, member, name, handle, chatId } = remoteSpeaker(source, roster);
++  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster);
 +  const files = Array.isArray(source.attachments) ? source.attachments : [];
 +  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
 +  if (person) {
 +    return (0, import_react7.createElement)(
 +      "div",
 +      { className: "bt-group-msg bt-person-msg bt-remote-msg", "data-person": person, "data-remote": handle },
++      // One short header: the person, and the Bot that carried the line only when it is known (#275).
 +      (0, import_react7.createElement)(
 +        "span",
-+        { className: "bt-group-name" },
++        { className: "bt-group-name", title: handle },
 +        person,
-+        (0, import_react7.createElement)("span", { className: "bt-remote-handle", title: handle }, t("via {name}", { name }))
++        carrier ? (0, import_react7.createElement)("span", { className: "bt-remote-handle" }, t("via {name}", { name: carrier })) : null
 +      ),
 +      (0, import_react7.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react7.createElement)("span", { className: "bt-lead", title: person }, (0, import_react7.createElement)(PersonMark)) }),
 +      files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
@@ -8894,11 +8897,14 @@ diff --git a/client.js b/client.js
        )
      )
    ];
-@@ -10649,52 +10649,52 @@ function MainBotsSection({ roster, actions, run }) {
+@@ -10648,53 +10648,54 @@ function GeneralPage({ roster, actions, run }) {
+ function MainBotsSection({ roster, actions, run }) {
    const mains = (roster.mainBotIds ?? []).map((id) => roster.byId[id]).filter(Boolean);
    const [first, ...others] = mains;
-   const candidates = roster.bots.filter((bot) => !isMainOf(roster, bot.id));
+-  const candidates = roster.bots.filter((bot) => !isMainOf(roster, bot.id));
 -  return (0, import_react28.createElement)(
++  const own = roster.bots.filter((bot) => !bot.remote);
++  const candidates = own.filter((bot) => !isMainOf(roster, bot.id));
 +  return (0, import_react29.createElement)(
      SetSection,
      { title: t("Main Bot") },
@@ -8916,7 +8922,7 @@ diff --git a/client.js b/client.js
          value: first?.id ?? "",
          onChange: (event) => run(actions.setMain(event.target.value, true, first ? { replace: first.id } : {}))
 -      }, first ? null : (0, import_react28.createElement)("option", { value: "" }, t("Choose a Bot…")), roster.bots.map((bot) => (0, import_react28.createElement)("option", { key: bot.id, value: bot.id }, bot.name)))
-+      }, first ? null : (0, import_react29.createElement)("option", { value: "" }, t("Choose a Bot…")), roster.bots.map((bot) => (0, import_react29.createElement)("option", { key: bot.id, value: bot.id }, bot.name)))
++      }, first ? null : (0, import_react29.createElement)("option", { value: "" }, t("Choose a Bot…")), own.map((bot) => (0, import_react29.createElement)("option", { key: bot.id, value: bot.id }, bot.name)))
      ),
 -    others.map((bot) => (0, import_react28.createElement)(
 +    others.map((bot) => (0, import_react29.createElement)(

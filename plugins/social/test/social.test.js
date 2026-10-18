@@ -3979,7 +3979,8 @@ test('social/access labels an object-shaped list_bot_grants grantee, not @object
   const row = access.grants.find(g => g.home === '@bob.home' || g.grantee === '@bob.home' || /coder\.bob/.test(String(g.grantee)))
   assert.ok(row, `expected a Bob grant, got ${JSON.stringify(access.grants)}`)
   assert.equal(row.home, '@bob.home')
-  assert.equal(row.name, 'bob (@bob.home)')
+  // The owner's display name from Bot Social, not the handle in lowercase (#275).
+  assert.equal(row.name, 'Bob (@bob.home)')
   assert.doesNotMatch(String(row.name), /object/i)
   assert.doesNotMatch(String(row.grantee), /object/i)
 })
@@ -4252,6 +4253,16 @@ test('#136 / #138: grant labels use the person home, not a raw member handle', (
   assert.equal(normalized.home, '@bob.home')
   assert.equal(normalized.member, '@chief.bob.home')
   assert.equal(normalized.grantee, '@chief.bob.home', 'core grants need a canonical @handle, not decorated text')
+})
+
+test('#275: a grant synced twice keeps the friend\'s display name, not the lowercase handle', () => {
+  const once = normalizeGrant({ grant_id: 'g1', grantee: { handle: '@chief.selfb1220.home', display_name: 'Chief', owner_display_name: 'SelfB1220' }, relationship_id: 'r1' })
+  assert.equal(once.name, 'SelfB1220 (@selfb1220.home)')
+  // syncOutgoingGrants reads the normalized grant again.
+  assert.equal(grantPersonView(once).label, 'SelfB1220 (@selfb1220.home)')
+  assert.equal(grantPersonView(once).person, 'SelfB1220')
+  // A bare handle still falls back to the home.
+  assert.equal(grantPersonView({ grantee: '@chief.selfb1220.home', name: '@chief.selfb1220.home' }).label, 'selfb1220 (@selfb1220.home)')
 })
 
 test('grantPersonView reads handle and owner name from a Bot Social grantee object', () => {

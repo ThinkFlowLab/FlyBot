@@ -54,6 +54,10 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
   assert.match(text('sidebar.js'), /bt-row-settings/)
   assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
   assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
+  // #276: only the user's own Bots are offered as a Main Bot, in both selects.
+  assert.match(text('settings.js'), /const own = roster\.bots\.filter\(bot => !bot\.remote\)/)
+  assert.match(text('settings.js'), /const candidates = own\.filter/)
+  assert.match(text('settings.js'), /own\.map\(bot => h\('option'/)
   // A group chat's entries open its own settings the same way.
   assert.match(text('context-menu.js'), /\[t\('Group settings'\), GearIcon, \(\) => actions\.openSettings\('groups', room\.id\)\]/)
   assert.ok(!text('mark.js').includes('WhaleLogo'))

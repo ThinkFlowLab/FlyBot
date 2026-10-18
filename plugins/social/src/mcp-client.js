@@ -232,7 +232,9 @@ export function grantPersonView(grant) {
     || handleText(grant?.handle)
   const member = memberHandleOf(raw)
   const home = personHomeOf(raw)
-  const rawName = personNameOf(grant?.name) || personNameOf(peer) || personNameOf(grant)
+  // A label this module already made ("SelfB1220 (@selfb1220.home)") keeps its name when the
+  // grant is synced again; only a bare handle falls back to the home (#275).
+  const rawName = (personNameOf(grant?.name) || personNameOf(peer) || personNameOf(grant)).replace(/\s*\(@[^()\s]+\)\s*$/, '')
   const nameLooksLikeHandle = /@/.test(rawName) || /[a-z0-9]+@[a-z0-9.]/i.test(rawName)
   const person = (!nameLooksLikeHandle && rawName) ? rawName.replace(/\s+/g, ' ').trim().slice(0, 60) : titleHome(home)
   const label = home ? `${person} (${home})` : person

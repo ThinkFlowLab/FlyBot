@@ -655,13 +655,17 @@ export function install(rt) {
     if (bot === undefined) return
     let known
     try { known = new Set(ctx.tools.schemas(agent).map(schema => schema.name)) } catch { return }
+    const current = masks.get(agent)
+    // schemas() lists what the Agent sees, so a tool this mask hides is missing from it: count
+    // it as known, or every other resolve lifts the mask and the next sets it again, and the
+    // chat shows "Tool added" / "Tool removed" on each turn (#276).
+    for (const name of current?.deny ?? []) known.add(name)
     const deny = [...gatedTools.values()].filter(def => known.has(def.name) && !visible(def, bot.id)).map(def => def.name).sort()
     const key = deny.join(',')
-    const current = masks.get(agent)
     if ((current?.key ?? '') === key) return
     try {
       current?.dispose?.()
-      masks.set(agent, { key, dispose: deny.length ? agent.ctx.tools.restrict({ deny }) : undefined })
+      masks.set(agent, { key, deny, dispose: deny.length ? agent.ctx.tools.restrict({ deny }) : undefined })
     } catch (error) {
       warn('flybot: tools stay listed for %s: %s', bot.name, error)
     }
