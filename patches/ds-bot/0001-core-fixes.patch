@@ -516,6 +516,19 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
+@@ -711,6 +711,12 @@ const ZH = {
+   'Update checks are off.': '已关闭更新检查。',
+   'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
+   'Updates are not offered for this install.': '这种安装方式不提供更新。',
++  'Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.': '从 GitHub 安装（{where}）。更新由维护者发布：重新安装 FlyBot 即可升级。',
++  'Up to date with {branch}.': '已是 {branch} 的最新提交。',
++  '1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.': '落后 {branch} 1 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。',
++  '{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.': '落后 {branch} {count} 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。',
++  'Could not compare with {branch}. Updates come from the maintainer: reinstall FlyBot to get them.': '没能和 {branch} 比较。更新由维护者发布：重新安装 FlyBot 即可升级。',
++  'DeepSeek Harness (underlying)': 'DeepSeek Harness（底层）',
+   Links: '链接',
+   'Source code': '源代码',
+   'Release notes': '发布说明',
 @@ -726,7 +726,7 @@ const ZH = {
    Show: '查看',
    Hide: '收起',
@@ -1330,6 +1343,15 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
+@@ -16,7 +16,7 @@ const LOG_MAX_BYTES = 1 << 20
+ const STACK_LINES = 8
+ const TEXT_MAX = 2000
+ export const REPORT_ENTRIES = 20
+-export const ISSUES_URL = 'https://github.com/Fei2411/DeepSeek-Bot/issues/new'
++export const ISSUES_URL = 'https://github.com/ThinkFlowLab/FlyBot/issues/new'
+ 
+ const quote = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+ 
 @@ -66,7 +66,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
    const lines = [
      '| | |',

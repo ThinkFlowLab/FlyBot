@@ -2,8 +2,9 @@
 // installed from (the npm registry, or a GitHub tag for a versioned git install)
 // and, when the user asks, reinstall it through DSH's plugin manager. A new version
 // runs from the next DSH start. A linked or local checkout is never offered one.
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const PKG = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
 export const OFFICIAL_REGISTRY = 'https://registry.npmjs.org/'
@@ -51,6 +52,8 @@ export function sourceOf(spec) {
     return {
       kind: 'git', owner: github[1], repo: github[2],
       ...(cleanVersion(ref) ? { ref } : {}),
+      // A branch (or other non-version ref) the install follows: `#main`.
+      ...(ref !== '' && !cleanVersion(ref) ? { branch: ref } : {}),
       rest: parts.filter(part => part !== ref),
     }
   }
@@ -95,6 +98,34 @@ export async function installSpecOf(ctx) {
   } catch { return undefined }
 }
 
+// The commit a git install runs, when the profile says so. pnpm keeps a git dependency in a directory
+// named after the tarball address it resolved (`...codeload.github.com+ThinkFlowLab+FlyBot+tar.gz+<sha>...`)
+// so a 40-hex commit next to the repository's name in the running package's real path is its commit. The
+// profile's lockfile is not read: it can hold several entries of one repository (the core and each plugin
+// installed at other times), and a wrong commit is worse than none. Best effort: no match gives null and
+// the page shows no commit.
+export function commitIn(text, repo) {
+  const name = String(repo ?? '').replace(/[^\w.-]/g, '')
+  if (name === '' || typeof text !== 'string') return null
+  const escaped = name.replaceAll('.', '\\.')
+  const sha = '(?<![0-9a-f])([0-9a-f]{40})(?![0-9a-f])'
+  // The commit follows the name in a tarball address and precedes it in `{commit: <sha>, repo: <url>}`.
+  for (const pattern of [`${escaped}[^\\n]{0,80}?${sha}`, `${sha}[^\\n]{0,80}?${escaped}`]) {
+    const found = new RegExp(pattern, 'i').exec(text)
+    if (found) return found[1].toLowerCase()
+  }
+  return null
+}
+
+// `where` is the real path to read; the running package's own by default (tests pass another).
+export function installedCommit(source, where) {
+  if (source?.kind !== 'git' || source.repo === undefined) return null
+  try {
+    const here = where ?? realpathSync(fileURLToPath(new URL('../../package.json', import.meta.url)))
+    return commitIn(String(here).replaceAll('\\', '/'), source.repo)
+  } catch { return null }
+}
+
 // The public repository the releases live in, for tags and the "what's new" link.
 export const repoSlug = () =>
   /github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?$/i.exec(String(PKG.repository?.url ?? PKG.repository ?? ''))?.[1] ?? null
@@ -118,6 +149,9 @@ export function install(rt) {
   const status = {
     name: PKG.name, current: PKG.version, latest: null, source: 'unknown', notesUrl: releasesUrl(),
     checkedAt: 0, phase: 'idle', installed: null, error: null,
+    // A git install: the branch it follows and the short commit it runs, and how many commits that branch is
+    // ahead of it (null until a check can say). The page tells the user how it is updated.
+    build: null, behind: null,
   }
   // Where the newest version was found, and the spec that installs it.
   let target = null
@@ -127,6 +161,7 @@ export function install(rt) {
     name: status.name, current: status.current, latest: status.latest, source: status.source, notesUrl: status.notesUrl,
     repoUrl: repoUrl(), enabled,
     checkedAt: status.checkedAt, phase: status.phase, installed: status.installed, error: status.error,
+    build: status.build, behind: status.behind,
     available: status.phase !== 'installed' && target !== null && status.latest !== null && newer(status.latest, status.current),
   })
 
@@ -169,9 +204,27 @@ export function install(rt) {
     return { version, spec: `github:${owner}/${repo}#${fragment}` }
   }
 
+  // Which commit a git install runs and, for one that follows a branch, how far the branch has moved on.
+  // One unauthenticated compare call; a failed answer leaves "unknown", never a guess.
+  async function describeBuild(source) {
+    const commit = installedCommit(source, config.packagePath)
+    status.build = source.kind === 'git' && (source.branch !== undefined || commit !== null)
+      ? { ...(source.branch !== undefined ? { branch: source.branch } : {}), ...(commit !== null ? { commit: commit.slice(0, 7) } : {}) }
+      : null
+    status.behind = null
+    if (commit === null || source.branch === undefined || !/^[\w./-]+$/.test(source.branch)) return
+    try {
+      const answer = await fetchJson(`https://api.github.com/repos/${source.owner}/${source.repo}/compare/${commit}...${source.branch}`, { 'user-agent': `${PKG.name}/${PKG.version}` })
+      if (Number.isInteger(answer?.ahead_by) && answer.status !== 'diverged') status.behind = answer.ahead_by
+    } catch (error) {
+      rt.warn('ds-bot: comparing with %s failed: %s', source.branch, error?.message ?? error)
+    }
+  }
+
   async function runCheck() {
     const source = sourceOf(await installSpecOf(ctx))
     status.source = source.kind
+    await describeBuild(source)
     let found = null
     try {
       if (source.kind === 'registry') found = await newestFromRegistry()

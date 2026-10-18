@@ -17,11 +17,28 @@ function botHint(update) {
   if (update.available) return t('FlyBot core {version} is available', { version: update.latest })
   if (update.enabled === false) return t('Update checks are off.')
   if (update.source === 'path') return t('Installed from a local folder; update it there.')
+  if (update.source === 'git' && update.build?.branch !== undefined) return branchHint(update)
   if (!update.checkedAt) return null
   if (!update.latest && update.source !== 'registry') return t('Updates are not offered for this install.')
   const checked = t('Checked {time}', { time: whenText(update.checkedAt) })
   return `${update.latest ? t('Up to date') : t('Could not check for updates.')} · ${checked}`
 }
+
+// A git install that follows a branch (the README's `#main`): nothing is offered to install, so the row says
+// where it came from, how far the branch has moved on when that is known, and how it is updated.
+function branchHint({ build, behind, checkedAt }) {
+  const where = [build.branch, build.commit].filter(Boolean).join(' ')
+  if (build.commit === undefined || !checkedAt) return t('Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.', { where })
+  const checked = t('Checked {time}', { time: whenText(checkedAt) })
+  const state = behind === null ? t('Could not compare with {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', { branch: build.branch })
+    : behind === 0 ? t('Up to date with {branch}.', { branch: build.branch })
+      : behind === 1 ? t('1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', { branch: build.branch })
+        : t('{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', { count: behind, branch: build.branch })
+  return `${state} · ${checked}`
+}
+
+// "Version 0.1.5-flybot.1 · main 082563a": the core's version and, for a git install, the branch and commit it runs.
+const versionLine = update => [t('Version {version}', { version: update.current }), [update.build?.branch, update.build?.commit].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
 
 function dshHint(dsh, shown) {
   if (dsh.phase === 'installing') return t('Updating DSH…')
@@ -71,7 +88,7 @@ export function AboutPage({ useUpdate, actions, run, Section, Row }) {
       h('span', { className: 'bt-about-mark' }, h(FlyBotMark, { size: 52 })),
       h('div', { className: 'bt-about-copy' },
         h('span', { className: 'bt-about-name' }, t('FlyBot')),
-        update.current ? h('span', { className: 'bt-about-version' }, t('Version {version}', { version: update.current })) : null),
+        update.current ? h('span', { className: 'bt-about-version' }, versionLine(update)) : null),
       repo ? h('a', {
         className: 'bt-star', href: repo, target: '_blank', rel: 'noopener noreferrer', title: t('Star FlyBot on GitHub'),
         'aria-label': stars === null ? t('Star FlyBot on GitHub') : `${t('Star FlyBot on GitHub')} · ${t('{count} stars', { count: stars })}`,
@@ -81,7 +98,7 @@ export function AboutPage({ useUpdate, actions, run, Section, Row }) {
     repo ? h('p', { key: 'ask', className: 'bt-about-ask' }, t('If FlyBot helps you, a star on GitHub helps more people find it.')) : null,
     h(Section, { key: 'updates', title: t('Updates') },
       h(Row, { label: t('FlyBot core'), hint: botHint(update) }, botControl, update.available && update.notesUrl ? h('a', linkProps(update.notesUrl), t("What's new")) : null),
-      dsh?.current ? h(Row, { label: 'DeepSeek Harness', hint: dshHint(dsh, dshShown) }, dshControl) : null),
+      dsh?.current ? h(Row, { label: t('DeepSeek Harness (underlying)'), hint: dshHint(dsh, dshShown) }, dshControl) : null),
     h(Section, { key: 'links', title: t('Links') },
       repo ? h(Row, { label: t('Source code'), hint: repo.replace(/^https:\/\//, '') }, h('a', linkProps(repo), h(GitHubMark), t('Open'))) : null,
       update.notesUrl ? h(Row, { label: t('Release notes') }, h('a', linkProps(update.notesUrl), t('Open'))) : null,

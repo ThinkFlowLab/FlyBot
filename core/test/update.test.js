@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
-import { cleanVersion, install, newer, sourceOf } from '../src/host/update.js'
+import { cleanVersion, commitIn, install, installedCommit, newer, sourceOf } from '../src/host/update.js'
 
 const PKG = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const flush = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve() }
@@ -58,7 +58,10 @@ test('the install source decides where a newer version is looked for', () => {
   assert.deepEqual(sourceOf('github:Fei2411/DeepSeek-Bot#v0.1.0&path:/ds-bot'),
     { kind: 'git', owner: 'Fei2411', repo: 'DeepSeek-Bot', ref: 'v0.1.0', rest: ['path:/ds-bot'] })
   assert.deepEqual(sourceOf('git+https://github.com/Fei2411/DeepSeek-Bot.git#main'),
-    { kind: 'git', owner: 'Fei2411', repo: 'DeepSeek-Bot', rest: [] })
+    { kind: 'git', owner: 'Fei2411', repo: 'DeepSeek-Bot', branch: 'main', rest: [] })
+  // The README's install: a branch, and the core's folder.
+  assert.deepEqual(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core'),
+    { kind: 'git', owner: 'ThinkFlowLab', repo: 'FlyBot', branch: 'main', rest: ['path:/core'] })
   assert.deepEqual(sourceOf('https://example.com/ds-bot-0.1.0.tgz'), { kind: 'tarball' })
   assert.deepEqual(sourceOf(undefined), { kind: 'unknown' })
 })
@@ -78,7 +81,7 @@ test('a registry install finds the newest version on the next registry and insta
   assert.equal(view.latest, '9.0.0')
   assert.equal(view.current, PKG.version)
   assert.equal(view.source, 'registry')
-  assert.equal(view.notesUrl, 'https://github.com/Fei2411/DeepSeek-Bot/releases')
+  assert.equal(view.notesUrl, 'https://github.com/ThinkFlowLab/FlyBot/releases')
   assert.equal(rt.updateStart().phase, 'installing')
   await flush()
   assert.deepEqual(installs, [[`${PKG.name}@9.0.0`, { registry: 'https://registry.npmmirror.com/' }]])
@@ -148,10 +151,10 @@ test('a linked checkout, an unversioned git install, or a disabled check never a
 })
 
 test('the star count comes from the repository, is kept for an hour, and survives a failed answer', async () => {
-  const repo = 'https://api.github.com/repos/Fei2411/DeepSeek-Bot'
+  const repo = 'https://api.github.com/repos/ThinkFlowLab/FlyBot'
   const answers = { [repo]: new Error('offline') }
   const { rt, fetched } = start({ source: `${PKG.name}@^${PKG.version}`, answers })
-  assert.equal(rt.updateView().repoUrl, 'https://github.com/Fei2411/DeepSeek-Bot')
+  assert.equal(rt.updateView().repoUrl, 'https://github.com/ThinkFlowLab/FlyBot')
   assert.equal(await rt.repoStars(), null)
   answers[repo] = { stargazers_count: 42 }
   assert.equal(await rt.repoStars(), 42)
@@ -222,4 +225,63 @@ test('a failed install reports why and can be tried again', async () => {
   assert.equal((await rt.updateCheck()).phase, 'installed')
   assert.equal(installs.length, 2)
   assert.deepEqual(installs[0][1], { registry: 'https://registry.example/' })
+})
+
+const SHA = '082563a1b2c3d4e5f60718293a4b5c6d7e8f9012'
+
+test('the commit a git install runs is read from the package\'s real path, and a wrong one is never guessed', () => {
+  const pnpm = `/home/u/.dsh/profiles/web/node_modules/.pnpm/ds-bot@github.com+ThinkFlowLab+FlyBot+${SHA}_react@19/node_modules/ds-bot/package.json`
+  assert.equal(commitIn(pnpm, 'FlyBot'), SHA)
+  assert.equal(commitIn(`/x/codeload.github.com+ThinkFlowLab+FlyBot+tar.gz+${SHA.toUpperCase()}/ds-bot`, 'FlyBot'), SHA, 'lower-cased')
+  assert.equal(commitIn(`{commit: ${SHA}, repo: https://github.com/ThinkFlowLab/FlyBot.git, type: git}`, 'FlyBot'), SHA, 'commit before the name')
+  // No commit, a shorter hash, a longer hex run, another repository's commit: nothing.
+  assert.equal(commitIn('/home/u/work/FlyBot/core/package.json', 'FlyBot'), null)
+  assert.equal(commitIn(`/x/FlyBot+${SHA.slice(0, 12)}/y`, 'FlyBot'), null)
+  assert.equal(commitIn(`/x/FlyBot+${SHA}abcd/y`, 'FlyBot'), null)
+  assert.equal(commitIn(`/x/Other+${SHA}/y`, 'FlyBot'), null)
+  assert.equal(commitIn(undefined, 'FlyBot'), null)
+  // Only a git install has one, and the running package's own path is the default (this checkout has none).
+  assert.equal(installedCommit(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core'), pnpm), SHA)
+  assert.equal(installedCommit(sourceOf('ds-bot@^0.1.0'), pnpm), null)
+  assert.equal(installedCommit(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core')), null)
+})
+
+test('a git install on a branch reports its branch and commit, and how many commits the branch is ahead', async () => {
+  const spec = 'github:ThinkFlowLab/FlyBot#main&path:/core'
+  const path = `/p/node_modules/.pnpm/ds-bot@github.com+ThinkFlowLab+FlyBot+${SHA}/node_modules/ds-bot/package.json`
+  const compare = `https://api.github.com/repos/ThinkFlowLab/FlyBot/compare/${SHA}...main`
+  const { rt, fetched, installs } = start({ source: spec, config: { packagePath: path }, answers: { [compare]: { status: 'ahead', ahead_by: 4 } } })
+  assert.deepEqual([rt.updateView().build, rt.updateView().behind], [null, null], 'nothing before a check')
+  const view = await rt.updateCheck()
+  assert.deepEqual(view.build, { branch: 'main', commit: '082563a' })
+  assert.equal(view.behind, 4)
+  assert.equal(view.available, false, 'a branch install is never offered an install')
+  assert.deepEqual(fetched, [compare])
+  assert.throws(() => rt.updateStart(), /No FlyBot core update/)
+  assert.deepEqual(installs, [])
+
+  // Up to date, a branch that moved away from the commit, and an unreachable API: never a made-up number.
+  for (const [answer, behind] of [[{ status: 'identical', ahead_by: 0 }, 0], [{ status: 'diverged', ahead_by: 3 }, null], [new Error('offline'), null], [{}, null]]) {
+    const run = start({ source: spec, config: { packagePath: path }, answers: { [compare]: answer } })
+    assert.equal((await run.rt.updateCheck()).behind, behind)
+  }
+})
+
+test('without a commit in the path a branch install still names its branch and compares nothing; other sources have no build', async () => {
+  const noCommit = start({ source: 'github:ThinkFlowLab/FlyBot#main&path:/core' })
+  const view = await noCommit.rt.updateCheck()
+  assert.deepEqual(view.build, { branch: 'main' })
+  assert.equal(view.behind, null)
+  assert.deepEqual(noCommit.fetched, [])
+  for (const source of [`${PKG.name}@^${PKG.version}`, 'link:/work/core']) {
+    const run = start({ source, answers: { [`https://registry.npmjs.org/${PKG.name}/latest`]: { version: PKG.version } } })
+    assert.equal((await run.rt.updateCheck()).build, null)
+  }
+})
+
+test('the package names FlyBot\'s own repository, not the upstream DS Bot', () => {
+  assert.equal(PKG.repository.url, 'git+https://github.com/ThinkFlowLab/FlyBot.git')
+  assert.equal(PKG.repository.directory, 'core')
+  assert.equal(PKG.homepage, 'https://github.com/ThinkFlowLab/FlyBot#readme')
+  assert.equal(PKG.bugs.url, 'https://github.com/ThinkFlowLab/FlyBot/issues')
 })

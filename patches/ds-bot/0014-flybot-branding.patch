@@ -3,7 +3,7 @@ FlyBot patch 0014-flybot-branding on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gen
 diff --git a/src/client/about.js b/src/client/about.js
 --- a/src/client/about.js
 +++ b/src/client/about.js
-@@ -1,25 +1,20 @@
+@@ -1,38 +1,50 @@
 -// Settings → About DS Bot: the version, updates for DS Bot and DSH, and the links to
 +// Settings → About FlyBot: the version, updates for FlyBot core and DSH, and the links to
  // the repository. The sidebar's cloud button shows the same update state.
@@ -33,8 +33,30 @@ diff --git a/src/client/about.js b/src/client/about.js
 +  if (update.available) return t('FlyBot core {version} is available', { version: update.latest })
    if (update.enabled === false) return t('Update checks are off.')
    if (update.source === 'path') return t('Installed from a local folder; update it there.')
++  if (update.source === 'git' && update.build?.branch !== undefined) return branchHint(update)
    if (!update.checkedAt) return null
-@@ -32,7 +32,7 @@ function dshHint(dsh, shown) {
+   if (!update.latest && update.source !== 'registry') return t('Updates are not offered for this install.')
+   const checked = t('Checked {time}', { time: whenText(update.checkedAt) })
+   return `${update.latest ? t('Up to date') : t('Could not check for updates.')} · ${checked}`
+ }
+ 
++// A git install that follows a branch (the README's `#main`): nothing is offered to install, so the row says
++// where it came from, how far the branch has moved on when that is known, and how it is updated.
++function branchHint({ build, behind, checkedAt }) {
++  const where = [build.branch, build.commit].filter(Boolean).join(' ')
++  if (build.commit === undefined || !checkedAt) return t('Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.', { where })
++  const checked = t('Checked {time}', { time: whenText(checkedAt) })
++  const state = behind === null ? t('Could not compare with {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', { branch: build.branch })
++    : behind === 0 ? t('Up to date with {branch}.', { branch: build.branch })
++      : behind === 1 ? t('1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', { branch: build.branch })
++        : t('{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', { count: behind, branch: build.branch })
++  return `${state} · ${checked}`
++}
++
++// "Version 0.1.5-flybot.1 · main 082563a": the core's version and, for a git install, the branch and commit it runs.
++const versionLine = update => [t('Version {version}', { version: update.current }), [update.build?.branch, update.build?.commit].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
++
+ function dshHint(dsh, shown) {
    if (dsh.phase === 'installing') return t('Updating DSH…')
    if (dsh.phase === 'installed') return t('Restart DSH to start using DSH {version}.', { version: dsh.installed ?? dsh.verified })
    if (dsh.phase === 'failed') return t('The update did not finish: {reason}', { reason: hostText(dsh.error ?? '') })
@@ -67,7 +89,7 @@ diff --git a/src/client/about.js b/src/client/about.js
    // Same rule as the sidebar card.
    const dshNew = showsDshRow(dsh, update.app)
    const dshShown = dshNew && dsh.available
-@@ -82,19 +82,19 @@ export function AboutPage({ useUpdate, actions, run, Section, Row }) {
+@@ -82,20 +82,20 @@ export function AboutPage({ useUpdate, actions, run, Section, Row }) {
    const repo = update.repoUrl
    return [
      h('div', { key: 'hero', className: 'bt-about-hero' },
@@ -75,8 +97,9 @@ diff --git a/src/client/about.js b/src/client/about.js
 +      h('span', { className: 'bt-about-mark' }, h(FlyBotMark, { size: 52 })),
        h('div', { className: 'bt-about-copy' },
 -        h('span', { className: 'bt-about-name' }, 'DS Bot'),
+-        update.current ? h('span', { className: 'bt-about-version' }, t('Version {version}', { version: update.current })) : null),
 +        h('span', { className: 'bt-about-name' }, t('FlyBot')),
-         update.current ? h('span', { className: 'bt-about-version' }, t('Version {version}', { version: update.current })) : null),
++        update.current ? h('span', { className: 'bt-about-version' }, versionLine(update)) : null),
        repo ? h('a', {
 -        className: 'bt-star', href: repo, target: '_blank', rel: 'noopener noreferrer', title: t('Star DS Bot on GitHub'),
 -        'aria-label': stars === null ? t('Star DS Bot on GitHub') : `${t('Star DS Bot on GitHub')} · ${t('{count} stars', { count: stars })}`,
@@ -89,10 +112,12 @@ diff --git a/src/client/about.js b/src/client/about.js
 +    repo ? h('p', { key: 'ask', className: 'bt-about-ask' }, t('If FlyBot helps you, a star on GitHub helps more people find it.')) : null,
      h(Section, { key: 'updates', title: t('Updates') },
 -      h(Row, { label: 'DS Bot', hint: botHint(update) }, botControl, update.available && update.notesUrl ? h('a', linkProps(update.notesUrl), t("What's new")) : null),
+-      dsh?.current ? h(Row, { label: 'DeepSeek Harness', hint: dshHint(dsh, dshShown) }, dshControl) : null),
 +      h(Row, { label: t('FlyBot core'), hint: botHint(update) }, botControl, update.available && update.notesUrl ? h('a', linkProps(update.notesUrl), t("What's new")) : null),
-       dsh?.current ? h(Row, { label: 'DeepSeek Harness', hint: dshHint(dsh, dshShown) }, dshControl) : null),
++      dsh?.current ? h(Row, { label: t('DeepSeek Harness (underlying)'), hint: dshHint(dsh, dshShown) }, dshControl) : null),
      h(Section, { key: 'links', title: t('Links') },
        repo ? h(Row, { label: t('Source code'), hint: repo.replace(/^https:\/\//, '') }, h('a', linkProps(repo), h(GitHubMark), t('Open'))) : null,
+       update.notesUrl ? h(Row, { label: t('Release notes') }, h('a', linkProps(update.notesUrl), t('Open'))) : null,
 @@ -105,11 +105,7 @@ export function AboutPage({ useUpdate, actions, run, Section, Row }) {
  
  export const ABOUT_CSS = `
@@ -253,6 +278,18 @@ diff --git a/src/host/browser.js b/src/host/browser.js
      clients.clear()
    }
  
+diff --git a/src/host/dsh-update.js b/src/host/dsh-update.js
+--- a/src/host/dsh-update.js
++++ b/src/host/dsh-update.js
+@@ -92,7 +92,7 @@ export function install(rt) {
+       const release = await fetchJson(`https://api.github.com/repos/${repo}/releases/latest`, { 'user-agent': `${PKG.name}/${PKG.version}` })
+       const tag = cleanVersion(release?.tag_name)
+       if (!tag) return null
+-      const manifest = await fetchJson(`https://raw.githubusercontent.com/${repo}/${release.tag_name}/ds-bot/package.json`, { 'user-agent': `${PKG.name}/${PKG.version}` })
++      const manifest = await fetchJson(`https://raw.githubusercontent.com/${repo}/${release.tag_name}/core/package.json`, { 'user-agent': `${PKG.name}/${PKG.version}` })
+       return manifest?.dsBot?.verifiedDsh ? manifest.dsBot : null
+     } catch { return null }
+   }
 diff --git a/src/host/parts.js b/src/host/parts.js
 --- a/src/host/parts.js
 +++ b/src/host/parts.js
@@ -371,6 +408,107 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
 diff --git a/src/host/update.js b/src/host/update.js
 --- a/src/host/update.js
 +++ b/src/host/update.js
+@@ -2,8 +2,9 @@
+ // installed from (the npm registry, or a GitHub tag for a versioned git install)
+ // and, when the user asks, reinstall it through DSH's plugin manager. A new version
+ // runs from the next DSH start. A linked or local checkout is never offered one.
+-import { readFileSync } from 'node:fs'
++import { readFileSync, realpathSync } from 'node:fs'
+ import { join } from 'node:path'
++import { fileURLToPath } from 'node:url'
+ 
+ const PKG = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+ export const OFFICIAL_REGISTRY = 'https://registry.npmjs.org/'
+@@ -51,6 +51,8 @@ export function sourceOf(spec) {
+     return {
+       kind: 'git', owner: github[1], repo: github[2],
+       ...(cleanVersion(ref) ? { ref } : {}),
++      // A branch (or other non-version ref) the install follows: `#main`.
++      ...(ref !== '' && !cleanVersion(ref) ? { branch: ref } : {}),
+       rest: parts.filter(part => part !== ref),
+     }
+   }
+@@ -95,6 +95,34 @@ export async function installSpecOf(ctx) {
+   } catch { return undefined }
+ }
+ 
++// The commit a git install runs, when the profile says so. pnpm keeps a git dependency in a directory
++// named after the tarball address it resolved (`...codeload.github.com+ThinkFlowLab+FlyBot+tar.gz+<sha>...`)
++// so a 40-hex commit next to the repository's name in the running package's real path is its commit. The
++// profile's lockfile is not read: it can hold several entries of one repository (the core and each plugin
++// installed at other times), and a wrong commit is worse than none. Best effort: no match gives null and
++// the page shows no commit.
++export function commitIn(text, repo) {
++  const name = String(repo ?? '').replace(/[^\w.-]/g, '')
++  if (name === '' || typeof text !== 'string') return null
++  const escaped = name.replaceAll('.', '\\.')
++  const sha = '(?<![0-9a-f])([0-9a-f]{40})(?![0-9a-f])'
++  // The commit follows the name in a tarball address and precedes it in `{commit: <sha>, repo: <url>}`.
++  for (const pattern of [`${escaped}[^\\n]{0,80}?${sha}`, `${sha}[^\\n]{0,80}?${escaped}`]) {
++    const found = new RegExp(pattern, 'i').exec(text)
++    if (found) return found[1].toLowerCase()
++  }
++  return null
++}
++
++// `where` is the real path to read; the running package's own by default (tests pass another).
++export function installedCommit(source, where) {
++  if (source?.kind !== 'git' || source.repo === undefined) return null
++  try {
++    const here = where ?? realpathSync(fileURLToPath(new URL('../../package.json', import.meta.url)))
++    return commitIn(String(here).replaceAll('\\', '/'), source.repo)
++  } catch { return null }
++}
++
+ // The public repository the releases live in, for tags and the "what's new" link.
+ export const repoSlug = () =>
+   /github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?$/i.exec(String(PKG.repository?.url ?? PKG.repository ?? ''))?.[1] ?? null
+@@ -118,6 +118,9 @@ export function install(rt) {
+   const status = {
+     name: PKG.name, current: PKG.version, latest: null, source: 'unknown', notesUrl: releasesUrl(),
+     checkedAt: 0, phase: 'idle', installed: null, error: null,
++    // A git install: the branch it follows and the short commit it runs, and how many commits that branch is
++    // ahead of it (null until a check can say). The page tells the user how it is updated.
++    build: null, behind: null,
+   }
+   // Where the newest version was found, and the spec that installs it.
+   let target = null
+@@ -127,6 +127,7 @@ export function install(rt) {
+     name: status.name, current: status.current, latest: status.latest, source: status.source, notesUrl: status.notesUrl,
+     repoUrl: repoUrl(), enabled,
+     checkedAt: status.checkedAt, phase: status.phase, installed: status.installed, error: status.error,
++    build: status.build, behind: status.behind,
+     available: status.phase !== 'installed' && target !== null && status.latest !== null && newer(status.latest, status.current),
+   })
+ 
+@@ -169,9 +169,27 @@ export function install(rt) {
+     return { version, spec: `github:${owner}/${repo}#${fragment}` }
+   }
+ 
++  // Which commit a git install runs and, for one that follows a branch, how far the branch has moved on.
++  // One unauthenticated compare call; a failed answer leaves "unknown", never a guess.
++  async function describeBuild(source) {
++    const commit = installedCommit(source, config.packagePath)
++    status.build = source.kind === 'git' && (source.branch !== undefined || commit !== null)
++      ? { ...(source.branch !== undefined ? { branch: source.branch } : {}), ...(commit !== null ? { commit: commit.slice(0, 7) } : {}) }
++      : null
++    status.behind = null
++    if (commit === null || source.branch === undefined || !/^[\w./-]+$/.test(source.branch)) return
++    try {
++      const answer = await fetchJson(`https://api.github.com/repos/${source.owner}/${source.repo}/compare/${commit}...${source.branch}`, { 'user-agent': `${PKG.name}/${PKG.version}` })
++      if (Number.isInteger(answer?.ahead_by) && answer.status !== 'diverged') status.behind = answer.ahead_by
++    } catch (error) {
++      rt.warn('ds-bot: comparing with %s failed: %s', source.branch, error?.message ?? error)
++    }
++  }
++
+   async function runCheck() {
+     const source = sourceOf(await installSpecOf(ctx))
+     status.source = source.kind
++    await describeBuild(source)
+     let found = null
+     try {
+       if (source.kind === 'registry') found = await newestFromRegistry()
 @@ -205,7 +205,7 @@ export function install(rt) {
    /** Start reinstalling the newest version; the answer comes back through `check`. */
    function start() {
@@ -401,6 +539,37 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
  })
  
  test('read-only secret reload does not requeue capability reconciliation', async t => {
+diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
+--- a/test/dsh-update.test.js
++++ b/test/dsh-update.test.js
+@@ -51,8 +51,8 @@ function fakeChild(code) {
+ 
+ const registryLatest = dsBot => ({ [`https://registry.npmjs.org/${PKG.name}/latest`]: { version: PKG.version, dsBot } })
+ const githubLatest = (tag, manifest) => ({
+-  'https://api.github.com/repos/Fei2411/DeepSeek-Bot/releases/latest': { tag_name: tag },
+-  [`https://raw.githubusercontent.com/Fei2411/DeepSeek-Bot/${tag}/ds-bot/package.json`]: manifest,
++  'https://api.github.com/repos/ThinkFlowLab/FlyBot/releases/latest': { tag_name: tag },
++  [`https://raw.githubusercontent.com/ThinkFlowLab/FlyBot/${tag}/core/package.json`]: manifest,
+ })
+ 
+ test('the newest released bot declares the verified DSH, offered to an older npm install', async () => {
+@@ -98,13 +98,13 @@ test('a minBot newer than the running bot gates the DSH update until the bot goe
+ })
+ 
+ test('a git or local install asks the public repo\'s latest release for its declaration', async () => {
+-  for (const source of ['github:Fei2411/DeepSeek-Bot#v0.1.0&path:/ds-bot', 'link:/work/ds-bot', undefined]) {
++  for (const source of ['github:ThinkFlowLab/FlyBot#v0.1.0&path:/core', 'link:/work/ds-bot', undefined]) {
+     const { rt, fetched } = start({ source, answers: githubLatest('v9.0.0', { dsBot: { verifiedDsh: '8.8.8' } }) })
+     const view = await rt.dshUpdateCheck()
+     assert.equal(view.verified, '8.8.8')
+     assert.deepEqual(fetched, [
+-      'https://api.github.com/repos/Fei2411/DeepSeek-Bot/releases/latest',
+-      'https://raw.githubusercontent.com/Fei2411/DeepSeek-Bot/v9.0.0/ds-bot/package.json',
++      'https://api.github.com/repos/ThinkFlowLab/FlyBot/releases/latest',
++      'https://raw.githubusercontent.com/ThinkFlowLab/FlyBot/v9.0.0/core/package.json',
+     ])
+   }
+ })
 diff --git a/test/secrets.test.js b/test/secrets.test.js
 --- a/test/secrets.test.js
 +++ b/test/secrets.test.js
@@ -428,6 +597,36 @@ diff --git a/test/store.test.js b/test/store.test.js
 diff --git a/test/update.test.js b/test/update.test.js
 --- a/test/update.test.js
 +++ b/test/update.test.js
+@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { afterEach, test } from 'node:test'
+-import { cleanVersion, install, newer, sourceOf } from '../src/host/update.js'
++import { cleanVersion, commitIn, install, installedCommit, newer, sourceOf } from '../src/host/update.js'
+ 
+ const PKG = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+ const flush = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve() }
+@@ -58,7 +58,10 @@ test('the install source decides where a newer version is looked for', () => {
+   assert.deepEqual(sourceOf('github:Fei2411/DeepSeek-Bot#v0.1.0&path:/ds-bot'),
+     { kind: 'git', owner: 'Fei2411', repo: 'DeepSeek-Bot', ref: 'v0.1.0', rest: ['path:/ds-bot'] })
+   assert.deepEqual(sourceOf('git+https://github.com/Fei2411/DeepSeek-Bot.git#main'),
+-    { kind: 'git', owner: 'Fei2411', repo: 'DeepSeek-Bot', rest: [] })
++    { kind: 'git', owner: 'Fei2411', repo: 'DeepSeek-Bot', branch: 'main', rest: [] })
++  // The README's install: a branch, and the core's folder.
++  assert.deepEqual(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core'),
++    { kind: 'git', owner: 'ThinkFlowLab', repo: 'FlyBot', branch: 'main', rest: ['path:/core'] })
+   assert.deepEqual(sourceOf('https://example.com/ds-bot-0.1.0.tgz'), { kind: 'tarball' })
+   assert.deepEqual(sourceOf(undefined), { kind: 'unknown' })
+ })
+@@ -78,7 +78,7 @@ test('a registry install finds the newest version on the next registry and insta
+   assert.equal(view.latest, '9.0.0')
+   assert.equal(view.current, PKG.version)
+   assert.equal(view.source, 'registry')
+-  assert.equal(view.notesUrl, 'https://github.com/Fei2411/DeepSeek-Bot/releases')
++  assert.equal(view.notesUrl, 'https://github.com/ThinkFlowLab/FlyBot/releases')
+   assert.equal(rt.updateStart().phase, 'installing')
+   await flush()
+   assert.deepEqual(installs, [[`${PKG.name}@9.0.0`, { registry: 'https://registry.npmmirror.com/' }]])
 @@ -140,7 +140,7 @@ test('a linked checkout, an unversioned git install, or a disabled check never a
      const view = await rt.updateCheck()
      assert.equal(view.available, false)
@@ -437,6 +636,19 @@ diff --git a/test/update.test.js b/test/update.test.js
    }
    const { rt, fetched } = start({ source: `${PKG.name}@^${PKG.version}`, config: { updateCheck: false } })
    assert.equal((await rt.updateCheck({ fresh: true })).available, false)
+@@ -148,10 +148,10 @@ test('a linked checkout, an unversioned git install, or a disabled check never a
+ })
+ 
+ test('the star count comes from the repository, is kept for an hour, and survives a failed answer', async () => {
+-  const repo = 'https://api.github.com/repos/Fei2411/DeepSeek-Bot'
++  const repo = 'https://api.github.com/repos/ThinkFlowLab/FlyBot'
+   const answers = { [repo]: new Error('offline') }
+   const { rt, fetched } = start({ source: `${PKG.name}@^${PKG.version}`, answers })
+-  assert.equal(rt.updateView().repoUrl, 'https://github.com/Fei2411/DeepSeek-Bot')
++  assert.equal(rt.updateView().repoUrl, 'https://github.com/ThinkFlowLab/FlyBot')
+   assert.equal(await rt.repoStars(), null)
+   answers[repo] = { stargazers_count: 42 }
+   assert.equal(await rt.repoStars(), 42)
 @@ -190,7 +190,7 @@ test('a check that finds nothing clears the version a check before it found', as
    const linked = await rt.updateCheck({ fresh: true })
    assert.equal(linked.available, false)
@@ -446,3 +658,66 @@ diff --git a/test/update.test.js b/test/update.test.js
    // Back on the registry with no copy answering: the offer stays cleared.
    delete answers[latest]
    setSource(`^${PKG.version}`)
+@@ -223,3 +223,62 @@ test('a failed install reports why and can be tried again', async () => {
+   assert.equal(installs.length, 2)
+   assert.deepEqual(installs[0][1], { registry: 'https://registry.example/' })
+ })
++
++const SHA = '082563a1b2c3d4e5f60718293a4b5c6d7e8f9012'
++
++test('the commit a git install runs is read from the package\'s real path, and a wrong one is never guessed', () => {
++  const pnpm = `/home/u/.dsh/profiles/web/node_modules/.pnpm/ds-bot@github.com+ThinkFlowLab+FlyBot+${SHA}_react@19/node_modules/ds-bot/package.json`
++  assert.equal(commitIn(pnpm, 'FlyBot'), SHA)
++  assert.equal(commitIn(`/x/codeload.github.com+ThinkFlowLab+FlyBot+tar.gz+${SHA.toUpperCase()}/ds-bot`, 'FlyBot'), SHA, 'lower-cased')
++  assert.equal(commitIn(`{commit: ${SHA}, repo: https://github.com/ThinkFlowLab/FlyBot.git, type: git}`, 'FlyBot'), SHA, 'commit before the name')
++  // No commit, a shorter hash, a longer hex run, another repository's commit: nothing.
++  assert.equal(commitIn('/home/u/work/FlyBot/core/package.json', 'FlyBot'), null)
++  assert.equal(commitIn(`/x/FlyBot+${SHA.slice(0, 12)}/y`, 'FlyBot'), null)
++  assert.equal(commitIn(`/x/FlyBot+${SHA}abcd/y`, 'FlyBot'), null)
++  assert.equal(commitIn(`/x/Other+${SHA}/y`, 'FlyBot'), null)
++  assert.equal(commitIn(undefined, 'FlyBot'), null)
++  // Only a git install has one, and the running package's own path is the default (this checkout has none).
++  assert.equal(installedCommit(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core'), pnpm), SHA)
++  assert.equal(installedCommit(sourceOf('ds-bot@^0.1.0'), pnpm), null)
++  assert.equal(installedCommit(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core')), null)
++})
++
++test('a git install on a branch reports its branch and commit, and how many commits the branch is ahead', async () => {
++  const spec = 'github:ThinkFlowLab/FlyBot#main&path:/core'
++  const path = `/p/node_modules/.pnpm/ds-bot@github.com+ThinkFlowLab+FlyBot+${SHA}/node_modules/ds-bot/package.json`
++  const compare = `https://api.github.com/repos/ThinkFlowLab/FlyBot/compare/${SHA}...main`
++  const { rt, fetched, installs } = start({ source: spec, config: { packagePath: path }, answers: { [compare]: { status: 'ahead', ahead_by: 4 } } })
++  assert.deepEqual([rt.updateView().build, rt.updateView().behind], [null, null], 'nothing before a check')
++  const view = await rt.updateCheck()
++  assert.deepEqual(view.build, { branch: 'main', commit: '082563a' })
++  assert.equal(view.behind, 4)
++  assert.equal(view.available, false, 'a branch install is never offered an install')
++  assert.deepEqual(fetched, [compare])
++  assert.throws(() => rt.updateStart(), /No FlyBot core update/)
++  assert.deepEqual(installs, [])
++
++  // Up to date, a branch that moved away from the commit, and an unreachable API: never a made-up number.
++  for (const [answer, behind] of [[{ status: 'identical', ahead_by: 0 }, 0], [{ status: 'diverged', ahead_by: 3 }, null], [new Error('offline'), null], [{}, null]]) {
++    const run = start({ source: spec, config: { packagePath: path }, answers: { [compare]: answer } })
++    assert.equal((await run.rt.updateCheck()).behind, behind)
++  }
++})
++
++test('without a commit in the path a branch install still names its branch and compares nothing; other sources have no build', async () => {
++  const noCommit = start({ source: 'github:ThinkFlowLab/FlyBot#main&path:/core' })
++  const view = await noCommit.rt.updateCheck()
++  assert.deepEqual(view.build, { branch: 'main' })
++  assert.equal(view.behind, null)
++  assert.deepEqual(noCommit.fetched, [])
++  for (const source of [`${PKG.name}@^${PKG.version}`, 'link:/work/core']) {
++    const run = start({ source, answers: { [`https://registry.npmjs.org/${PKG.name}/latest`]: { version: PKG.version } } })
++    assert.equal((await run.rt.updateCheck()).build, null)
++  }
++})
++
++test('the package names FlyBot\'s own repository, not the upstream DS Bot', () => {
++  assert.equal(PKG.repository.url, 'git+https://github.com/ThinkFlowLab/FlyBot.git')
++  assert.equal(PKG.repository.directory, 'core')
++  assert.equal(PKG.homepage, 'https://github.com/ThinkFlowLab/FlyBot#readme')
++  assert.equal(PKG.bugs.url, 'https://github.com/ThinkFlowLab/FlyBot/issues')
++})

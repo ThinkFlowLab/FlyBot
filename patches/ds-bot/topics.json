@@ -96,10 +96,12 @@
     "src/client/settings.js",
     "src/client/diagnostics.js",
     "src/host/update.js",
+    "src/host/dsh-update.js",
     "src/host/parts.js",
     "src/host/browser.js",
     "src/host/secrets.js",
     "test/update.test.js",
+    "test/dsh-update.test.js",
     "test/store.test.js",
     "test/secrets.test.js",
     "test/capabilities.test.js"

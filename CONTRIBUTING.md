@@ -124,7 +124,7 @@ For a change to the Bot browser, check it in DSH Desktop. On Linux, the scripts 
 
 ## Report a problem
 
-The easiest way is from FlyBot itself: open **Settings → Feedback**, write what happened and select **Report on GitHub**. It opens a new issue with the core (`ds-bot`) and DSH versions, your system, the models and the recent errors already filled in. **Copy** puts the same text on the clipboard, and **Download** saves the full error log (`<DSH_HOME>/bot/logs/diagnostics.jsonl`). For now the core's **Report on GitHub** button opens the issue form of the upstream `ds-bot` repository (Fei2411/DeepSeek-Bot). Problems with FlyBot or its plugins belong in [ThinkFlowLab/FlyBot issues](https://github.com/ThinkFlowLab/FlyBot/issues): copy the report there instead (see #33 / #34).
+The easiest way is from FlyBot itself: open **Settings → Feedback**, write what happened and select **Report on GitHub**. It opens a new issue with the core (`ds-bot`) and DSH versions, your system, the models and the recent errors already filled in. **Copy** puts the same text on the clipboard, and **Download** saves the full error log (`<DSH_HOME>/bot/logs/diagnostics.jsonl`). **Report on GitHub** opens the issue form of [ThinkFlowLab/FlyBot](https://github.com/ThinkFlowLab/FlyBot/issues/new). A problem that is only in the upstream DS Bot core can still be reported to its repository (Fei2411/DeepSeek-Bot).
 
 If you open an issue by hand, include:
 

@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { cleanText, install as installDiagnostics, reportMarkdown } from '../src/host/diagnostics.js'
+import { ISSUES_URL, cleanText, install as installDiagnostics, reportMarkdown } from '../src/host/diagnostics.js'
 import { failureLine, install as installTurns, turnFailure } from '../src/host/turns.js'
 import { errorCode } from '../src/host/channel.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
@@ -233,7 +233,7 @@ test('a failed group turn fails its waiter; a stopped one counts as no answer', 
 
 test('issueUrl fills the issue form, keeps the versions when the errors are too long, and falls back to the clipboard', async () => {
   const { issueUrl } = await import('../src/client/diagnostics.js')
-  const base = 'https://github.com/Fei2411/DeepSeek-Bot/issues/new'
+  const base = 'https://github.com/ThinkFlowLab/FlyBot/issues/new'
   const short = issueUrl(base, { what: 'Writer failed\nin the group', diagnostics: '| DS Bot | 0.1.0 |' })
   assert.equal(short.inline, true)
   const params = new URL(short.url).searchParams
@@ -269,4 +269,8 @@ test('a browser error is noted once, repeats are counted, and clear empties the 
   assert.deepEqual(clientErrors().map(entry => entry.text), ['state: HTTP 502 (×2)'])
   clearClientErrors()
   assert.equal(clientErrors().length, 0)
+})
+
+test('Report on GitHub opens a new issue in FlyBot\'s own repository', () => {
+  assert.equal(ISSUES_URL, 'https://github.com/ThinkFlowLab/FlyBot/issues/new')
 })

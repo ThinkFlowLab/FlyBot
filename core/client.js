@@ -888,6 +888,12 @@ var ZH = {
   "Update checks are off.": "已关闭更新检查。",
   "Installed from a local folder; update it there.": "从本地文件夹安装，请在那里更新。",
   "Updates are not offered for this install.": "这种安装方式不提供更新。",
+  "Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.": "从 GitHub 安装（{where}）。更新由维护者发布：重新安装 FlyBot 即可升级。",
+  "Up to date with {branch}.": "已是 {branch} 的最新提交。",
+  "1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.": "落后 {branch} 1 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。",
+  "{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.": "落后 {branch} {count} 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。",
+  "Could not compare with {branch}. Updates come from the maintainer: reinstall FlyBot to get them.": "没能和 {branch} 比较。更新由维护者发布：重新安装 FlyBot 即可升级。",
+  "DeepSeek Harness (underlying)": "DeepSeek Harness（底层）",
   Links: "链接",
   "Source code": "源代码",
   "Release notes": "发布说明",
@@ -12277,11 +12283,20 @@ function botHint(update) {
   if (update.available) return t("FlyBot core {version} is available", { version: update.latest });
   if (update.enabled === false) return t("Update checks are off.");
   if (update.source === "path") return t("Installed from a local folder; update it there.");
+  if (update.source === "git" && update.build?.branch !== void 0) return branchHint(update);
   if (!update.checkedAt) return null;
   if (!update.latest && update.source !== "registry") return t("Updates are not offered for this install.");
   const checked = t("Checked {time}", { time: whenText(update.checkedAt) });
   return `${update.latest ? t("Up to date") : t("Could not check for updates.")} · ${checked}`;
 }
+function branchHint({ build, behind, checkedAt }) {
+  const where = [build.branch, build.commit].filter(Boolean).join(" ");
+  if (build.commit === void 0 || !checkedAt) return t("Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.", { where });
+  const checked = t("Checked {time}", { time: whenText(checkedAt) });
+  const state = behind === null ? t("Could not compare with {branch}. Updates come from the maintainer: reinstall FlyBot to get them.", { branch: build.branch }) : behind === 0 ? t("Up to date with {branch}.", { branch: build.branch }) : behind === 1 ? t("1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.", { branch: build.branch }) : t("{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.", { count: behind, branch: build.branch });
+  return `${state} · ${checked}`;
+}
+var versionLine = (update) => [t("Version {version}", { version: update.current }), [update.build?.branch, update.build?.commit].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
 function dshHint(dsh, shown) {
   if (dsh.phase === "installing") return t("Updating DSH…");
   if (dsh.phase === "installed") return t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified });
@@ -12336,7 +12351,7 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
         "div",
         { className: "bt-about-copy" },
         (0, import_react29.createElement)("span", { className: "bt-about-name" }, t("FlyBot")),
-        update.current ? (0, import_react29.createElement)("span", { className: "bt-about-version" }, t("Version {version}", { version: update.current })) : null
+        update.current ? (0, import_react29.createElement)("span", { className: "bt-about-version" }, versionLine(update)) : null
       ),
       repo ? (0, import_react29.createElement)(
         "a",
@@ -12357,7 +12372,7 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
       Section,
       { key: "updates", title: t("Updates") },
       (0, import_react29.createElement)(Row3, { label: t("FlyBot core"), hint: botHint(update) }, botControl, update.available && update.notesUrl ? (0, import_react29.createElement)("a", linkProps(update.notesUrl), t("What's new")) : null),
-      dsh?.current ? (0, import_react29.createElement)(Row3, { label: "DeepSeek Harness", hint: dshHint(dsh, dshShown) }, dshControl) : null
+      dsh?.current ? (0, import_react29.createElement)(Row3, { label: t("DeepSeek Harness (underlying)"), hint: dshHint(dsh, dshShown) }, dshControl) : null
     ),
     (0, import_react29.createElement)(
       Section,
