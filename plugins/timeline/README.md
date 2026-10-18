@@ -2,6 +2,24 @@
 
 Where time goes across your local Bot team: which Bot was running, for how long, how much of that was tool calls, and how long a Bot waited for another Bot's answer. Built on ds-bot's team activity feed (`ctx.flybot.on('turn.start' | 'turn.end' | 'tool.start' | 'tool.end' | 'exchange.delivered')`); it never reads raw DSH session events.
 
+## The panel
+
+A **Timeline** row under the Bot list (and an entry in the sidebar **+** menu) opens a dialog with three views, polled every 2 s only while it is open and the page visible:
+
+- **Swimlanes**: a lane for you, each Bot (Main Bot first) and each group. A turn is a bar with its tool calls inside (a failed call is darker); a turn that is still running reaches the right edge with a dashed outline. A group's round is drawn as round brackets on the group's lane, and the members' turns inside it are outlined on their own Bots' lanes. Arrows are deliveries: dashed requests, solid replies, a blue dashed arrow for what you asked; the line above a lane shows how long the sender waited for the answer ("reply 4.5 s", "answer 4.8 s"), and an open request counts up in red ("waiting 12 s"). **Skip quiet time** shrinks long stretches with nothing happening.
+- **Who waits on whom**: the requests between Bots as a directed map (median wait per edge, red dashed where something is unanswered) and a table with requests, answered, not yet answered, median, slowest and total wait, longest total wait first.
+- **Utilization**: per Bot, how much of the window was model time, tool time and no running turn.
+
+The window can be 1 min to 24 h, and **Earlier** looks back (then **Live** returns). Notes above the view say when the trace is shorter than the window, when it is truncated, when it is not being saved to disk, and when the host cannot be reached (the last good data stays on screen). Everything shown is text from the trace, cleaned on the host and again in the browser, and drawn as text only.
+
+![Swimlanes](../../docs/images/timeline-swimlanes.png)
+![Who waits on whom](../../docs/images/timeline-map.png)
+![Utilization](../../docs/images/timeline-utilization.png)
+
+*Screenshots are rendered from a scripted team run (synthetic data) with real React, not from a live team.*
+
+Config for the browser entry: `sidebarSection: false` hides the sidebar row (the **+** menu entry stays); `windowMs` sets the initial window.
+
 ## What it records
 
 Bot turns, tool calls (name and duration only), and Bot-to-Bot / user-to-Bot deliveries (who, to whom, role, message length). Group rooms appear as the room's own round with the members' turns inside. Never message text, tool arguments or tool output.

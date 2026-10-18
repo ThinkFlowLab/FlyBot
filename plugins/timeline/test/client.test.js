@@ -4,9 +4,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
+const react = { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }), useState: v => [v, () => {}], useEffect() {}, useCallback: f => f }
 function loadClient() {
   const modules = new Map()
-  const window = { __ModuleLoader__: { load: ({ id, factory }) => modules.set(id, factory(() => ({}))) } }
+  const window = { __ModuleLoader__: { load: ({ id, factory }) => modules.set(id, factory(name => (name === 'react' ? react : {}))) } }
   new Function('window', readFileSync(new URL('../client.js', import.meta.url), 'utf8'))(window)
   return modules
 }

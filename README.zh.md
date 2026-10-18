@@ -16,7 +16,7 @@
 
 <p align="center"><a href="README.md">English</a> | 中文</p>
 
-FlyBot 是在固定版本的 [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) 核心之上，为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 准备的两个插件：
+FlyBot 是在固定版本的 [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) 核心之上，为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 准备的三个插件：
 
 - **`@flybot/tree`**：递归 Bot 树，把请求拆成几块，按层委托，再汇总答案。
 - **`@flybot/social`**：通过你自己部署的 [Bot Social](https://github.com/Birfy/bot-social) 服务器，把 Bot 加为好友并聊天（带主人审批）。
@@ -69,6 +69,23 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 在指向 Bot Social 服务器之前，社交插件会保持空闲（见下方快速开始）。
 
+### 时间线插件（`@flybot/timeline`）
+
+在侧栏 Bot 列表下的 **Timeline**（或 **+** 菜单）里，看本地 Bot 团队的时间花在哪。它读核心的活动事件流，保存一份有上限的记录（约 3000 段或 24 小时），只存 id、时间和名称，不存消息正文、工具参数和输出。
+
+![时间线插件：泳道里的回合、工具调用、请求/回复箭头及其耗时（示意数据）](docs/images/timeline-swimlanes.png)
+
+- **泳道**：你、每个 Bot、每个群各一条（群的一轮用圆括号标出）。每个回合是一条横条，工具调用画在里面；箭头是消息（虚线请求、实线回复），标出等到回答的时间，没回的请求显示已等多久。
+- **谁在等谁**：Bot 之间请求的关系图，每条边标中位等待时间，下面的表列出最慢和仍未回答的。
+- **利用率**：每个 Bot 的模型时间、工具时间和“没有运行中回合”的时间。
+- **如实的数字**：时间指消息到达对方 Bot 记录的时刻，不是被读到的时刻；“没有运行中回合”不等于“在等”；“模型”时间是回合里工具之外的时间，不是实测的模型延迟。
+
+安装（需要核心）：
+
+```bash
+npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
+```
+
 ## 快速开始
 
 ### 1. 环境
@@ -83,6 +100,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
+npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
 ```
 
 第一行是核心（包名 `ds-bot`）。桌面版：侧栏 **插件 → 添加插件**，粘贴上面的 `github:` 地址后安装并启用。

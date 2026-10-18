@@ -10,7 +10,7 @@ Where time goes across the local Bot team (#241). The plugin records Bot turns, 
 
 ## Owns
 
-Everything in `plugins/timeline/`: the recorder, the trace file, the read model behind the endpoint and the browser entry (`client.js`: data layer now, the panel in the next change).
+Everything in `plugins/timeline/`: the recorder, the trace file, the read model behind the endpoint and the browser entry (`client.js`: data layer and the panel).
 
 ## Does not own
 
@@ -27,7 +27,7 @@ Everything in `plugins/timeline/`: the recorder, the trace file, the read model 
 | `plugins/timeline/src/recorder.js` | Feed events to compact trace records; rebuilds every field from a strict alphabet. |
 | `plugins/timeline/src/store.js` | The trace: single writer, write-tmp + fsync + rename, capped segments. |
 | `plugins/timeline/src/window.js` | Pure read model: records to lanes, turns, tools, arrows, edges, utilization. |
-| `plugins/timeline/client.js` | Browser entry (`@flybot/timeline`): the 2 s poller exposed as `ctx.flybot.timeline`; the panel draws from it. |
+| `plugins/timeline/client.js` | Browser entry (`@flybot/timeline`): the 2 s poller exposed as `ctx.flybot.timeline`, the geometry functions (`layoutSwimlanes`, `layoutMap`, `waitRows`, `utilizationRows`) and the panel (swimlanes, who waits on whom, utilization), opened from a `flybot.sidebar.section` row or a `flybot.new-chat.action` entry. |
 | `plugins/timeline/src/sanitize.js` | The cleaners for ids, labels, codes, times, counts. |
 
 ## Entry points
@@ -44,11 +44,12 @@ Everything in `plugins/timeline/`: the recorder, the trace file, the read model 
 5. Honest numbers. "Delivered" is when a message reached the recipient's log; there are no read stamps. "Idle" means no running turn; a Bot waiting on a model call or a slow tool is busy. "Model" time is turn time outside tool calls (queueing and host overhead included), not a measured model latency. A turn an earlier run left open is closed at the last record before the restart and marked `lost`. "You asked" latency is the length of the turn it started.
 6. Local team only: arrows to or from a friend's (remote) Bot are not recorded. Group rooms are the room Session's own turn (the round), with the members' hidden group turns inside it.
 7. The browser poller runs only while a panel holds it open and the page is visible, one request in flight, backing off on errors (4 s to 30 s) and keeping the last good window; a reply of another version is an error state, never drawn from.
-8. The endpoint reads only. It does not start, stop, send or change anything.
+8. The panel draws text only: every string is a React text child or an SVG text node, never markup, and is cleaned again in the browser (`safe`). It polls only while open, shows the last good data under an error, and says in a note when the trace is shorter than the window, truncated, memory-only or looking back. Its footnote repeats the honesty rules of invariant 5.
+9. The endpoint reads only. It does not start, stop, send or change anything.
 
 ## Tests
 
-`plugins/timeline/test/`: sanitizers, trace store (rotation, retention, lock, crash-safe replace), recorder (negative tests), read model, and a host test on the real `ctx.flybot` with a mini agent loop on `core/dev/mock-llm.mjs`. Run `npm test` in `plugins/timeline` (CI job `plugins (timeline)`).
+`plugins/timeline/test/`: panel (geometry, a small hook renderer for open/close, tabs and poll hold, hostile-name negatives), sanitizers, trace store (rotation, retention, lock, crash-safe replace), recorder (negative tests), read model, and a host test on the real `ctx.flybot` with a mini agent loop on `core/dev/mock-llm.mjs`. Run `npm test` in `plugins/timeline` (CI job `plugins (timeline)`).
 
 ## Common mistakes
 

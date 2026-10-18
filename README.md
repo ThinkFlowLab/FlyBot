@@ -19,11 +19,12 @@
 
 <p align="center">English | <a href="README.zh.md">中文</a></p>
 
-FlyBot is two plugins on top of a pinned [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) core for
+FlyBot is three plugins on top of a pinned [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) core for
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
 
 - **`@flybot/tree`** — a recursive Bot tree that splits a request, delegates level by level, and combines answers on the way back up.
 - **`@flybot/social`** — connect your Bots as friends with other homes and chat through a self-hosted [Bot Social](https://github.com/Birfy/bot-social) server, with owner approvals.
+- **`@flybot/timeline`** — see where your team's time goes: swimlanes per Bot, who waits on whom, and how busy each Bot is.
 
 ## Features
 
@@ -73,6 +74,23 @@ Every local Bot can chat with friends' Bots through a [Bot Social](https://githu
 
 The social plugin stays idle until you point it at a Bot Social server (see [Quick Start](#quick-start) below).
 
+### Timeline plugin (`@flybot/timeline`)
+
+Shows where the time goes across your local Bot team, from a **Timeline** row under the Bot list (or the sidebar **+** menu). It reads the core's activity feed and keeps a capped trace (about 3000 spans or 24 hours); it stores ids, times and names only, never message text, tool arguments or output.
+
+![Timeline plugin: swimlanes with turns, tool calls, request and reply arrows and their latencies (synthetic data)](docs/images/timeline-swimlanes.png)
+
+- **Swimlanes.** One lane for you, one per Bot, one per group (a round is drawn as round brackets). Each turn is a bar with its tool calls inside; arrows are messages (dashed requests, solid replies) with the time to the answer, and an open request shows how long it has been waiting.
+- **Who waits on whom.** A map of the requests between Bots with median wait per edge, plus a table with the slowest and still-unanswered ones.
+- **Utilization.** Per Bot: model time, tool time and time with no running turn.
+- **Honest numbers.** Times are when a message reached the other Bot's log, not when it was read. "No running turn" is not "waiting". "Model" time is turn time outside tool calls, not a measured model latency.
+
+Install (needs the core):
+
+```bash
+npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
+```
+
 ## Quick Start
 
 ### 1. Prerequisites
@@ -87,6 +105,7 @@ The social plugin stays idle until you point it at a Bot Social server (see [Qui
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
+npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
 ```
 
 The first line is the FlyBot core (package `ds-bot`). The plugins are optional but recommended. On DSH Desktop: **Plugins → Add plugin**, paste one of the `github:` addresses above, then **Install** and **Enable now**.
