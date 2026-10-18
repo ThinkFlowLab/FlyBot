@@ -4360,6 +4360,79 @@ test('#303: the Bot that just joined our invite is never published, not even bef
   assert.equal(Object.values(state.bots ?? {}).some(bot => bot.remote?.handle === '@chief.bob.home'), false)
 })
 
+async function joinerTeam(t, { initial, settings = { inboundBackfilled: true, inboundBots: {} } }) {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const state = { grants: [], homes: initial, failGrants: false }
+  server.tools.list_bot_grants = () => {
+    if (state.failGrants) throw new Error('Bot Social list_bot_grants: unavailable')
+    return { grants: state.grants }
+  }
+  server.tools.list_remote_bots = () => ({ homes: state.homes })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify(settings))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const published = () => Object.values(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).flybot?.remote ?? {}).flat()
+  return { ctx, call, state, published }
+}
+const bobHome = bots => ({ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' }, bots })
+const chiefBot = { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief' }
+const reverseGrant = { id: 'g-rev', grantee: 'Chief@chief.bob.home', name: 'Chief@chief.bob.home', relationship_id: 'r1' }
+
+test('#303: the first friend to accept an invite (empty prior roster) never has their Bot published before the grant sync', async (t) => {
+  const { call, state, published } = await joinerTeam(t, { initial: [] })
+  assert.deepEqual((await call('flybot/social/remote-bots', { fresh: true })).value.homes, [], 'no friends yet')
+  state.homes = [bobHome([chiefBot])]
+  state.grants = [reverseGrant]
+  const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(listed.homes.flatMap(entry => entry.bots).some(bot => bot.handle === '@chief.bob.home'), false)
+  assert.equal(published().some(bot => bot.handle === '@chief.bob.home'), false, 'the host was never given the joiner\'s Bot')
+})
+
+test('#303: a failed grant sync fails closed: the unseen Bot is withheld until a sync succeeds', async (t) => {
+  const { call, state, published } = await joinerTeam(t, { initial: [bobHome([{ bot_id: 'x2', handle: '@coder.bob.home', display_name: 'Coder' }])] })
+  const handles = value => value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  assert.deepEqual(handles((await call('flybot/social/remote-bots', { fresh: true })).value), ['@coder.bob.home'])
+  state.homes = [bobHome([{ bot_id: 'x2', handle: '@coder.bob.home', display_name: 'Coder' }, chiefBot])]
+  state.grants = [reverseGrant]
+  state.failGrants = true
+  assert.deepEqual(handles((await call('flybot/social/remote-bots', { fresh: true })).value), ['@coder.bob.home'], 'withheld while grants are unknown')
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(published().some(bot => bot.handle === '@chief.bob.home'), false, 'not published by the background re-filter either')
+  // Still withheld on the next fetch while the sync keeps failing, not "seen" because it was listed once.
+  assert.deepEqual(handles((await call('flybot/social/remote-bots', { fresh: true })).value), ['@coder.bob.home'])
+  // Grants recover: the joiner's Bot stays out, a Bot that really was shared appears.
+  state.failGrants = false
+  state.homes = [bobHome([{ bot_id: 'x2', handle: '@coder.bob.home', display_name: 'Coder' }, chiefBot, { bot_id: 'x3', handle: '@helper.bob.home', display_name: 'Helper' }])]
+  assert.deepEqual(handles((await call('flybot/social/remote-bots', { fresh: true })).value).sort(), ['@coder.bob.home', '@helper.bob.home'])
+  assert.equal(published().some(bot => bot.handle === '@chief.bob.home'), false)
+})
+
+test('#303: the awaited grant sync classifies talk-through grants against the fresh roster', async (t) => {
+  const { ctx, call, state } = await joinerTeam(t, {
+    initial: [{ relationship_id: 'r0', home: { bot_id: 'h3', handle: '@carol.home', display_name: 'Carol', owner_display_name: 'Carol' }, bots: [{ bot_id: 'c1', handle: '@writer.carol.home', display_name: 'Writer' }] }],
+    settings: { inboundBackfilled: true, inboundBots: { '@helper.bob.home': true } },
+  })
+  await call('flybot/social/remote-bots', { fresh: true })
+  // Joining Bob's invite as Chief: the refresh brings Bob's shared Helper (inbound, our Chief's grant to it
+  // is the talk-through grant) and, in the same answer, another new Bot nobody shared with us.
+  state.grants = [{ id: 'g-tt', grantee: '@helper.bob.home', name: 'bob (@bob.home)', relationship_id: 'r1' }]
+  state.homes = [
+    ...state.homes,
+    { ...bobHome([{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in' }, chiefBot]), via: ['@chief.danyang.home'] },
+  ]
+  await call('flybot/social/remote-bots', { fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.grantee === '@helper.bob.home'), false, 'a talk-through grant is not stored as our grant')
+})
+
 test('#138: joining an invite marks that Bot inbound and does not auto-send', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
