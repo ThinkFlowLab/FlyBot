@@ -14,7 +14,6 @@ With `sidebarSection: true`, a **Timeline** row under the Bot list (the one entr
 
 The window can be 1 min to 24 h, and **Earlier** looks back (**Live** is always shown: lit while following, press it to return). Notes above the view say when the trace is shorter than the window, when it is truncated, when it is not being saved to disk, and when the host cannot be reached (the last good data stays on screen). Everything shown is text from the trace, cleaned on the host and again in the browser, and drawn as text only.
 
-![Swimlanes](../../docs/images/timeline-swimlanes.png)
 ![Who waits on whom](../../docs/images/timeline-map.png)
 ![Utilization](../../docs/images/timeline-utilization.png)
 

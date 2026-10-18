@@ -29,6 +29,8 @@ FlyBot 是在固定版本的 [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) �
 
 ![树插件：Chief 把杭州行程拆给 Travel、Food、Budget](docs/images/demo-tree.gif)
 
+*演示：侧栏里一开始只有 Chief；它建出子 Bot Travel、Food、Budget，各分一块，再把答案汇总成一份行程。等待的部分做了加速。* [观看完整视频（MP4）](docs/images/demo-tree.mp4)
+
 - **一个根。** 树的根是主 Bot（Chief），不会再新建一个根。只有团队里有 Bot、却没有主 Bot 时，才会单独建一个 `Root`。已有的本地 Bot 会挂到根下面作子节点，数量不超过 `maxChildren`。
 - **按需生子。** 树中的任意 Bot（不只是主 Bot / 根）调用 `create_child_bot(name, role_description)`，在**自己**下面直接建子 Bot；工具没有 parent 参数。同一父节点的调用串行处理，避免超限或重名。规则：
   - 名称 1–40 个字符；同级重名会被拒绝（忽略大小写和空格）；
@@ -57,9 +59,9 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 每个本地 Bot 都可以通过你**自己部署**的 [Bot Social](https://github.com/Birfy/bot-social) 服务器，和朋友的 Bot 聊天。邀请按 Bot 计；你的 Bot 主动发出的消息可以等你审批；好友 Bot 写的内容一律放进不可信围栏。
 
-![社交插件：添加好友、和对方的 Bot 聊天、在 Bot Social 里批准被暂扣的回复、回复送达](docs/images/demo-social.gif)
+![社交插件：邀请好友、给对方的 Bot 发消息、批准被暂扣的回复、回复送达](docs/images/demo-social.gif)
 
-*演示：添加好友、给对方的 Bot 发消息，回复因含金额被 Bot Social 暂扣，好友的主人批准后送达对话。* [观看完整视频（MP4）](docs/images/demo-social.mp4)
+*演示：一方在 **Sharing（分享）** 里邀请好友使用自己的 Chief；好友在 **添加好友** 里粘贴链接（视频里链接已隐藏）并给这个 Chief 发消息。Chief 的回复停在主人的聊天里，出现 **Approve（批准）** 卡片，批准后到达好友的聊天。等待的部分做了加速。* [观看完整视频（MP4）](docs/images/demo-social.mp4)
 
 - **一键入驻。** 配置好 `server` 后首次启动会调用 `POST <server>/v1/onboard/flybot`，创建家（`@<name>.home`），凭证写在 `$DSH_HOME/bot/flybot-social.json`（权限 600）。
 - **成员。** 访问是按 Bot 的**授权**（默认拒绝，Chief 也一样）。本地 Bot 在你邀请别人使用它、它加入邀请、或你把它带进面对面房间时，才会在服务器上成为 `@<bot>.<home>`。侧栏只列出别人授权给你的 Bot。每个 Bot 的 **管理访问** 列出谁有它，并可 **撤销**。删除 Bot 会撤销其身份。未授权的 Bot 没有对外身份：朋友够不到它，它也不能给朋友发消息。
@@ -69,15 +71,15 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 - **审批。** 好友发来的消息会立刻送达（按不可信内容处理）。你的 Bot 发出的回复可能停在当前聊天里等你批准（或拒绝），除非对该好友或该面对面房间开了自动发送。FlyBot 本地也会暂扣 Bot 自己发起的发送；文件一律先审批。
 - **工具。** 每个本地 Bot 都有 `list_friend_bots` 与 `message_friend_bot`（可带附件）。
 
-![面对面房间：两家已加入且房间已打开](docs/images/demo-face.png)
+![面对面房间：两家输入同一组 6 位数字加入房间，和各自的 Bot 聊天](docs/images/demo-face.gif)
+
+*演示：双方在 **+** → **面对面建群** 里各选自己的 Bot、输入同一组 6 位数字，再点 **Enter chat（进入聊天）**。普通一句话由房间里的 Bot 回答；**@Planner** 只由那个 Bot 回答。演示中开了 Auto-send，所以 Bot 的消息不会被暂扣。等待的部分做了加速。* [观看完整视频（MP4）](docs/images/demo-face.mp4)
 
 在指向 Bot Social 服务器之前，社交插件会保持空闲（见下方快速开始）。
 
 ### 时间线插件（`@flybot/timeline`）
 
 **可选，默认关闭。** 只安装不会显示或记录任何东西，需要手动开启（见下）。开启后，在侧栏 Bot 列表下的 **Timeline** 一行里，看本地 Bot 团队的时间花在哪。它读核心的活动事件流，保存一份有上限的记录（约 3000 段或 24 小时），只存 id、时间和名称，不存消息正文、工具参数和输出。
-
-![时间线插件：泳道里的回合、工具调用、请求/回复箭头及其耗时（示意数据）](docs/images/timeline-swimlanes.png)
 
 - **泳道**：你、每个 Bot、每个群各一条（群的一轮用圆括号标出）。每个回合是一条横条，工具调用画在里面；箭头是消息（虚线请求、实线回复），标出等到回答的时间，没回的请求显示已等多久。
 - **谁在等谁**：Bot 之间请求的关系图，每条边标中位等待时间，下面的表列出最慢和仍未回答的。

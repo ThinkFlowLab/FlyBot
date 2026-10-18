@@ -34,6 +34,8 @@ Turns your Bots into one recursive tree that splits a request into parts, sends 
 
 ![Tree plugin: Chief splits a Hangzhou trip across Travel, Food, and Budget](docs/images/demo-tree.gif)
 
+*Demo: Chief starts alone in the sidebar, creates the child Bots Travel, Food and Budget, hands each one a part, and then combines their answers into one plan. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-tree.mp4)
+
 - **One root.** The tree's root is the Main Bot (Chief); no new bot is created for it. A separate `Root` bot is created only if the team has Bots but no Main Bot. Existing local Bots join under the root as its children, up to `maxChildren`.
 - **Children on demand.** Any tree Bot (not only the Main/root) calls `create_child_bot(name, role_description)` to make a child directly under *itself*; the tool takes no parent argument. Calls are handled one at a time per parent, so parallel calls never go over the limits or create two siblings with the same name. The rules:
   - names are 1–40 characters, and duplicate sibling names are rejected (case and spaces ignored);
@@ -62,9 +64,9 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 Every local Bot can chat with friends' Bots through a [Bot Social](https://github.com/Birfy/bot-social) server that **you self-host**. Invites are per Bot; what your Bots send on their own can wait for your approval; everything a friend's Bot writes arrives fenced as untrusted text.
 
-![Social plugin: add a friend, chat with their Bot, approve a held reply in Bot Social, and see it arrive](docs/images/demo-social.gif)
+![Social plugin: invite a friend, message their Bot, approve the held reply, and see it arrive](docs/images/demo-social.gif)
 
-*Demo: add a friend, message their Bot, the reply is held by Bot Social because it mentions money, the friend's owner approves it, and it appears in the chat.* [Watch the full video (MP4)](docs/images/demo-social.mp4)
+*Demo: one owner invites a friend to their Chief from **Sharing**; the friend pastes the link in **Add friend** (the link is hidden in the video) and messages that Chief. The Chief's reply waits in the owner's chat with an **Approve** card, and after **Approve** it arrives in the friend's chat. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-social.mp4)
 
 - **One-click onboarding.** On first start with a `server` configured, FlyBot calls `POST <server>/v1/onboard/flybot`, creates your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600).
 - **Members.** Access is a per-Bot **grant** (default deny, Chief included). A local Bot becomes `@<bot>.<home>` on the server when you invite someone to that Bot, when it joins an invite, or when you bring it into a face-to-face room. The sidebar lists only Bots granted to you. **Manage access** on a Bot shows who has it and **Revoke**. Deleted Bots are revoked. Ungranted Bots have no outside identity: friends cannot reach them and they cannot message friends.
@@ -74,15 +76,15 @@ Every local Bot can chat with friends' Bots through a [Bot Social](https://githu
 - **Approvals.** Inbound messages from a friend arrive immediately (fenced as untrusted). Outbound replies may wait in the open chat (badge + Approve / Reject) until you decide, unless Auto-send is on for that friend or face room. FlyBot also holds a Bot's own send behind an approval card; files are always held.
 - **Tools.** Every local Bot gets `list_friend_bots` and `message_friend_bot` (with optional file attachments).
 
-![Face-to-face room: both homes joined, room open](docs/images/demo-face.png)
+![Face-to-face room: two homes join with the same 6-digit number and chat with their Bots](docs/images/demo-face.gif)
+
+*Demo: each home picks its Bots in **+** → **Face-to-face group** and types the same 6-digit number, then **Enter chat**. A plain line is answered by Bots in the room; **@Planner** is answered by that Bot alone. Auto-send was on in this demo so Bot lines post without a hold. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-face.mp4)
 
 The social plugin stays idle until you point it at a Bot Social server (see [Quick Start](#quick-start) below).
 
 ### Timeline plugin (`@flybot/timeline`)
 
 **Optional and off by default.** Installing the package does not show anything or record anything; you turn it on (see below). When on, it shows where the time goes across your local Bot team, from a **Timeline** row under the Bot list. It reads the core's activity feed and keeps a capped trace (about 3000 spans or 24 hours); it stores ids, times and names only, never message text, tool arguments or output.
-
-![Timeline plugin: swimlanes with turns, tool calls, request and reply arrows and their latencies (synthetic data)](docs/images/timeline-swimlanes.png)
 
 - **Swimlanes.** One lane for you, one per Bot, one per group (a round is drawn as round brackets). Each turn is a bar with its tool calls inside; arrows are messages (dashed requests, solid replies) with the time to the answer, and an open request shows how long it has been waiting.
 - **Who waits on whom.** A map of the requests between Bots with median wait per edge, plus a table with the slowest and still-unanswered ones.
