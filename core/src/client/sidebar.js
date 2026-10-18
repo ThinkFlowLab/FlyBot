@@ -69,7 +69,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   // A friend's Bot row (#384): its name, then its owner, on one line like every other row; the
   // second line is the preview, or "Friend's Bot" before the first message. The full title is on hover.
   const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown
-  const owner = remoteRecord ? ownerNameOf(remoteRecord) : ''
+  // A plain per-Bot identity (@alice.bot) names no owner: its handle tells two "Helper" rows apart.
+  const owner = remoteRecord ? ownerNameOf(remoteRecord) || cleanPeerName(bot.remote.handle) : ''
   const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : '')
   const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
   if (tile && wide) {

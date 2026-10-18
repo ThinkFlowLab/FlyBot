@@ -190,6 +190,7 @@ test("a friend's Bot sidebar row is its name and owner on one line, with a secon
   assert.match(row, /const rowName = remoteRecord \? cleanPeerName\(bot\.name, shown\) : shown/)
   assert.match(row, /h\('span', \{ className: 'bt-row-title' \}, rowName\)/)
   assert.match(row, /owner \? h\('span', \{ className: 'bt-row-owner' \}, owner\) : null/)
+  assert.match(row, /const owner = remoteRecord \? ownerNameOf\(remoteRecord\) \|\| cleanPeerName\(bot\.remote\.handle\) : ''/)
   // Before the first message the second line still says what the row is.
   assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remoteRecord \? t\("Friend's Bot"\) : ''\)/)
   // The full "Helper · Bob's Bot" title is on hover and in the label.

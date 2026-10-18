@@ -6058,7 +6058,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
   const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name;
   const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown;
-  const owner = remoteRecord ? ownerNameOf(remoteRecord) : "";
+  const owner = remoteRecord ? ownerNameOf(remoteRecord) || cleanPeerName(bot.remote.handle) : "";
   const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : "");
   const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
