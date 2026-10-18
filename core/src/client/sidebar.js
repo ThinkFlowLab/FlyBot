@@ -564,6 +564,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
     [
       [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
       [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
+      [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
       [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
       [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
     ],

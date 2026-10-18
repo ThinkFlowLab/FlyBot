@@ -25,7 +25,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -84,14 +84,44 @@ var ZH = {
+@@ -84,14 +84,45 @@ var ZH = {
    "Remove Main Bot role": "取消主 Bot",
    "Bot settings": "Bot 设置",
    "Create group chat": "新建群聊",
@@ -69,6 +69,7 @@ diff --git a/client.js b/client.js
 -  "Connect plugins": "连接插件",
 -  "Plugin compatibility is not fully verified.": "插件兼容性未完全验证",
 +  "Connect apps": "连接应用",
++  Plugins: "插件",
    "Automation tasks": "自动化任务",
    Connectors: "连接器",
    "Search connectors": "搜索连接器",
@@ -4220,6 +4221,14 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (event.target instanceof Element && (event.target.closest(".bt-account-menu") || button.current?.contains(event.target))) return;
+@@ -5342,6 +5342,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
+     [
+       [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],
+       [t("Connectors"), ConnectorIcon, () => actions.openConnectors()],
++      [t("Plugins"), PlugIcon, () => actions.selectPanel("plugins")],
+       [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],
+       [t("Bot settings"), GearIcon, () => actions.openSettings("general")]
+     ],
 @@ -5349,22 +5349,23 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
        [t("Switch to classic Agent mode"), SwitchIcon, () => actions.setSurface("agent")]
      ]

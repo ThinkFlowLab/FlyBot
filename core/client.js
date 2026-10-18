@@ -137,6 +137,7 @@ var ZH = {
   "Collapse": "收起",
   "Setting up your Main Bot…": "正在设置你的主 Bot…",
   "Connect apps": "连接应用",
+  Plugins: "插件",
   "Automation tasks": "自动化任务",
   Connectors: "连接器",
   "Search connectors": "搜索连接器",
@@ -6533,6 +6534,7 @@ function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboardi
     [
       [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],
       [t("Connectors"), ConnectorIcon, () => actions.openConnectors()],
+      [t("Plugins"), PlugIcon, () => actions.selectPanel("plugins")],
       [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],
       [t("Bot settings"), GearIcon, () => actions.openSettings("general")]
     ],

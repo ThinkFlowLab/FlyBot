@@ -1283,6 +1283,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
+@@ -512,6 +512,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+     [
+       [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
+       [t('Connectors'), ConnectorIcon, () => actions.openConnectors()],
++      [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
+       [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
+       [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
+     ],
 @@ -523,6 +523,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
      h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
        h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),

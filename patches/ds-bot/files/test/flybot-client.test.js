@@ -158,3 +158,13 @@ test('the sidebar footer button opens Settings > Connectors as "Connect apps"', 
   assert.equal(DICTIONARY.zh['Connect apps'], '连接应用')
   assert.equal(Object.hasOwn(DICTIONARY.zh, 'Connect plugins'), false)
 })
+
+test('the account menu keeps a Plugins row that opens the shell plugin panel', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { DICTIONARY } = await import('../src/client/i18n.js')
+  const source = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const menu = source.slice(source.indexOf('const groups = ['), source.indexOf('return h(Fragment, null,', source.indexOf('const groups = [')))
+  assert.match(menu, /\[t\('Plugins'\), PlugIcon, \(\) => actions\.selectPanel\('plugins'\)\]/)
+  assert.match(menu, /\[t\('Connectors'\), ConnectorIcon, \(\) => actions\.openConnectors\(\)\]/)
+  assert.equal(DICTIONARY.zh.Plugins, '插件')
+})
