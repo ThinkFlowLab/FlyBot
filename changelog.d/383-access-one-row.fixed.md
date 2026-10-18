@@ -1,0 +1,1 @@
+People with access lists each person once: the talk-through grant a shared Bot gets when it joins the same friend's invite is no longer shown as a second share, and one Revoke removes every share of that Bot to that person while the Bot can still talk to the friend's Bot it joined. ([#383](https://github.com/ThinkFlowLab/FlyBot/issues/383))

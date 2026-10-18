@@ -827,17 +827,20 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // as one Bot); empty when it covers this whole home. Only they can talk to this friend.
         via: (entry.via ?? []).map(norm),
         ...(entry.relationship_id ? { relationshipId: String(entry.relationship_id) } : {}),
+        // Every friendship with this home: two invites between the same people are two
+        // relationships, and Bot Social names only the first one in `relationship_id` (#383).
+        relationshipIds: [...new Set([...(entry.relationship_ids ?? []), ...(entry.relationship_id ? [entry.relationship_id] : [])].map(String))],
       }
     })
   }
-  // The grant a joiner's own Bot carries for talking through to a shared Bot: same
-  // relationship, the Bot is one this friendship covers, and the grantee is a Bot the friend
+  // The grant a joiner's own Bot carries for talking through to a shared Bot: one of the
+  // friendship's relationships (not only the first, #383), the Bot is one this friendship covers, and the grantee is a Bot the friend
   // shared with us. It is not us sharing that Bot (#178).
   function isTalkThroughGrant(member, grant, homes = remote.homes) {
     const rid = grant.relationshipId
     const grantee = memberHandleOf(grant.grantee)
     if (!rid || !grantee || !member?.handle || !settings.inboundBots?.[grantee]) return false
-    return homes.some(entry => entry.relationshipId === rid && entry.via.includes(norm(member.handle)))
+    return homes.some(entry => (entry.relationshipId === rid || entry.relationshipIds?.includes(rid)) && entry.via.includes(norm(member.handle)))
   }
   function listedRemoteBots() {
     return remote.homes.flatMap(entry => entry.bots.map(bot => ({
@@ -1792,6 +1795,34 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }))
   disposers.push(flybot.api.handle('social/remote-bots', async payload => remoteBots({ fresh: payload?.fresh === true }), { read: true }))
   disposers.push(flybot.api.handle('social/hide-remote', async ({ handle } = {}) => hideRemote(handle)))
+  // People with access is one row per person (#383): two grants of one Bot to the same person
+  // (two invites, joined by two of their Bots) are one row, and its Revoke removes both.
+  function accessRows(botId, grants) {
+    const rows = new Map()
+    for (const grant of grants) {
+      const view = grantPersonView(grant)
+      const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
+      const grantee = home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : '')
+      const key = norm(grantee) || String(grant.id)
+      const rooms = roomsUsing(botId, view.member || grant.grantee)
+      const row = rows.get(key)
+      if (row) {
+        row.grantIds.push(grant.id)
+        for (const room of rooms) if (!row.rooms.some(seen => seen.id === room.id)) row.rooms.push(room)
+        continue
+      }
+      rows.set(key, {
+        id: grant.id,
+        grantIds: [grant.id],
+        grantee,
+        name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
+        home,
+        relationshipId: grant.relationshipId,
+        rooms: [...rooms],
+      })
+    }
+    return [...rows.values()]
+  }
   disposers.push(flybot.api.handle('social/access', async ({ botId } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
@@ -1802,24 +1833,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       botId: bot.id,
       botName: bot.name,
       granted: hasPersonGrant(bot.id),
-      grants: grants.map(grant => {
-        const view = grantPersonView(grant)
-        const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
-        return {
-          id: grant.id,
-          grantee: home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : ''),
-          name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
-          home,
-          relationshipId: grant.relationshipId,
-          rooms: roomsUsing(bot.id, view.member || grant.grantee),
-        }
-      }),
+      grants: accessRows(bot.id, grants),
       rooms,
     }
   }, { read: true }))
-  disposers.push(flybot.api.handle('social/revoke-grant', async ({ botId, grantId, relationshipId, grantee } = {}) => {
+  disposers.push(flybot.api.handle('social/revoke-grant', async ({ botId, grantId, grantIds, relationshipId, grantee } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
+    // A merged People with access row (#383) revokes each of the person's grants in turn.
+    const more = Array.isArray(grantIds) ? [...new Set(grantIds.filter(id => typeof id === 'string' && id && id !== grantId))] : []
+    if (more.length) {
+      const first = grantId ? [grantId] : []
+      let last
+      for (const id of [...first, ...more]) last = await revokeOne(bot, { grantId: id })
+      return last
+    }
+    return revokeOne(bot, { grantId, relationshipId, grantee })
+  }))
+  async function revokeOne(bot, { grantId, relationshipId, grantee }) {
     const current = flybot.grants?.of?.(bot.id) ?? []
     const target = current.find(grant =>
       (grantId && grant.id === grantId)
@@ -1839,7 +1870,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     fetchedAt = 0
     void remoteBots({ fresh: true }).catch(() => {})
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }
-  }))
+  }
   disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots), { read: true }))
   disposers.push(flybot.api.handle('social/auto-approve', async ({ botId, home: friendHome, on }) => {
     flybot.fields.set(botId, 'autoApprove', { ...(flybot.fields.get(botId, 'autoApprove') ?? {}), [norm(friendHome)]: on === null ? undefined : Boolean(on) })

@@ -1583,7 +1583,7 @@ window.__ModuleLoader__.load({
     }
 
     const ACCESS_POLL_MS = 5000
-    const ACCESS_NOTE = 'One person per grant. Revoke anyone without affecting the rest. Default: nobody, Chief included.'
+    const ACCESS_NOTE = 'One row per person. Revoke anyone without affecting the rest. Default: nobody, Chief included.'
     function ManageAccess({ bot }) {
       const [view, setView] = useState(null)
       const [busy, setBusy] = useState('')
@@ -1609,7 +1609,7 @@ window.__ModuleLoader__.load({
         setBusy(grant.id)
         setError('')
         try {
-          setView(await call('social/revoke-grant', { botId: bot.id, grantId: grant.id, relationshipId: grant.relationshipId, grantee: grant.grantee }))
+          setView(await call('social/revoke-grant', { botId: bot.id, grantId: grant.id, ...((grant.grantIds ?? []).length > 1 ? { grantIds: grant.grantIds } : {}), relationshipId: grant.relationshipId, grantee: grant.grantee }))
           const next = await call('social/access', { botId: bot.id })
           setView(next)
         } catch (e) { setError(errorText(e)) }
