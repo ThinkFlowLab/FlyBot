@@ -155,6 +155,8 @@ Point FlyBot at that server in `~/.dsh/profiles/web/cordis.patch.yml` (or `$DSH_
 
 On first start FlyBot calls `POST <server>/v1/onboard/flybot`, registers your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600). No Bot is shared until you grant it. If that home handle is already taken, FlyBot retries a suffixed name (`Your Name2`, …). Sidebar **+** → **Copy my handle** copies the connected handle. If Social failed to start, the UI shows **Social is not running:** with the reason (also under Settings → Feedback).
 
+**Change the server later** without editing YAML: Settings → **Bot Social** shows the server and its connection status, **Change server** checks the new address (`https://`, or `http://localhost` for development; FlyBot reads `<server>/v1/platform` and shows its features) and, after a clear warning, switches without a restart. A new server is a **new identity**: your friends and sharing stay on the old server, your old credentials file is kept as a backup and never deleted, and switching back restores them. The `cordis.patch.yml` value stays the default.
+
 **Share one Bot:** that Bot's settings → **Sharing** → **Invite to this Bot** (or **Copy invite link**); send the link. Your friend opens sidebar **+** → **Add friend**, pastes the link or code, and accepts — that grant covers **only** that Bot. **People with access** lists who has it; **Revoke** removes them.
 
 **Chat:** click the friend's Bot in the sidebar. Their messages arrive at once. What your Bots send back waits in that chat (Approve / Reject) unless **Auto-send** is on for that friend (friend Bot settings; default off). Look for the **to approve** badge if they see no reply.

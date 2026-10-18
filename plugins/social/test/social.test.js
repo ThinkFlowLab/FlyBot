@@ -518,7 +518,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -837,7 +837,7 @@ test('invite card: "Copy link" copies the bare URL; "Copy with instructions" the
 // A client.js component tree with a scripted useState order.
 function clientPlugin(initial = [], { call = async () => ({}) } = {}) {
   const registered = []
-  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, navigator: {} }
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, navigator: {}, URL }
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = { slots: { register: () => () => {} }, call }
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
@@ -5624,4 +5624,348 @@ test('#310: Copy invite link always carries the /i/ segment', () => {
   assert.equal(inviteLink({ code: 'ABC', url: 'http://127.0.0.1:8787/ABC' }), 'http://127.0.0.1:8787/i/ABC')
   assert.equal(inviteLink({ code: 'ABC' }), undefined)
   assert.equal(inviteLink({ url: 'not a url' }), 'not a url')
+})
+
+// ---------------------------------------------------------------- the server in Settings (#337)
+import { createServerController, parseServerUrl, probeServer, serverKey, serverTag } from '../src/server-config.js'
+
+// Several Bot Social servers behind one fetch, told apart by origin. `platform: false` makes one answer 404.
+function fleet(spec) {
+  const servers = Object.fromEntries(Object.entries(spec).map(([origin, options]) => [origin, { ...options, mock: options.onboardFails ? undefined : mockServer({ token: options.token }) }]))
+  const seen = []
+  const fetch = async (url, init = {}) => {
+    const text = String(url)
+    const origin = Object.keys(servers).find(item => text === item || text.startsWith(`${item}/`))
+    seen.push({ url: text, redirect: init.redirect })
+    if (!origin) throw Object.assign(new Error('fetch failed'), { cause: { code: 'ENOTFOUND' } })
+    const server = servers[origin]
+    if (text.endsWith('/v1/platform')) {
+      if (server.platform === false) return new Response('{"error":"nope"}', { status: 404 })
+      if (server.redirect) return new Response('', { status: 302, headers: { location: 'https://elsewhere.test/' } })
+      return new Response(JSON.stringify({ name: 'Bot Social', version: '0.2.0', features: ['presence', 'mentions'] }), { status: 200 })
+    }
+    if (server.onboardFails && text.endsWith('/v1/onboard/flybot')) return new Response(JSON.stringify({ message: 'registration is closed' }), { status: 403 })
+    return server.mock.fetch(url, init)
+  }
+  return { fetch, servers, seen, mock: origin => servers[origin].mock }
+}
+
+const serverFiles = home => readdirSync(home).filter(file => file.startsWith('flybot-social'))
+
+test('parseServerUrl: https only, http for localhost, no credentials or query, normalized', () => {
+  assert.equal(parseServerUrl('https://Social.Example/'), 'https://social.example')
+  assert.equal(parseServerUrl('social.example'), 'https://social.example')
+  assert.equal(parseServerUrl(' https://social.example:8443/bs/ '), 'https://social.example:8443/bs')
+  assert.equal(parseServerUrl('http://localhost:8787'), 'http://localhost:8787')
+  assert.equal(parseServerUrl('localhost:8787'), 'http://localhost:8787')
+  assert.equal(parseServerUrl('http://127.0.0.1:3000/'), 'http://127.0.0.1:3000')
+  assert.equal(parseServerUrl('http://[::1]:3000'), 'http://[::1]:3000')
+  for (const bad of ['', '   ', 'http://social.example', 'http://localhost.evil.example', 'ftp://social.example', 'https://user:pw@social.example', 'https://social.example/?a=1', 'https://social.example/#x', 'https://', 'not a url', `https://${'a'.repeat(250)}.example`]) {
+    assert.throws(() => parseServerUrl(bad), (error) => error.code === 'bot/refused' && error.message.length > 0, bad)
+  }
+  assert.equal(serverKey('https://A.test/'), 'https://a.test')
+  assert.match(serverTag('https://A.test/'), /^[0-9a-f]{8}$/)
+})
+
+test('probeServer reads /v1/platform without following redirects and refuses what is not Bot Social', async () => {
+  const seen = []
+  const answer = (status, body) => async (url, init) => { seen.push({ url, init }); return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }) }
+  const info = await probeServer('https://s.test', { fetch: answer(200, { name: 'Bot Social', version: '1', features: ['presence', '<b>x</b>\n', 7] }) })
+  assert.deepEqual(info, { name: 'Bot Social', version: '1', features: ['presence', 'b x /b', '7'] })
+  assert.equal(seen[0].url, 'https://s.test/v1/platform')
+  assert.equal(seen[0].init.redirect, 'manual')
+  assert.equal(seen[0].init.headers.authorization, undefined)
+  // The platform document of a server without a feature list is still Bot Social.
+  assert.deepEqual(await probeServer('https://s.test', { fetch: answer(200, { name: 'Bot Social', platform_key: { alg: 'Ed25519' } }) }), { name: 'Bot Social', version: undefined, features: [] })
+  await assert.rejects(probeServer('https://s.test', { fetch: answer(200, '<html>hello</html>') }), /did not answer like a Bot Social server/)
+  await assert.rejects(probeServer('https://s.test', { fetch: answer(200, '[1]') }), /did not answer like a Bot Social server/)
+  await assert.rejects(probeServer('https://s.test', { fetch: answer(404, '{}') }), /HTTP 404/)
+  await assert.rejects(probeServer('https://s.test', { fetch: answer(302, '') }), /redirects somewhere else/)
+  await assert.rejects(probeServer('https://s.test', { fetch: async () => { throw Object.assign(new Error('x'), { cause: { code: 'ECONNREFUSED' } }) } }), /Could not reach s\.test: ECONNREFUSED/)
+  await assert.rejects(probeServer('https://s.test', { timeoutMs: 5, fetch: (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' })))) }), /did not answer in time/)
+})
+
+test('Settings server: status, check and switch with the old credentials kept, then back without a second onboarding', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' }, 'https://b.test': { token: 'tok-b' } })
+  const credentialsPath = join(home, 'flybot-social.json')
+  await applySocial(ctx, { server: 'https://a.test', credentialsPath, fetch: servers.fetch, inboxPollMs: 0, displayName: 'Danyang' })
+  const flybot = ctx.flybot.scope('social')
+  const view = async () => (await call('flybot/social/server', {})).value
+
+  let status = await view()
+  assert.equal(status.server, 'https://a.test')
+  assert.equal(status.source, 'config')
+  assert.equal(status.state, 'connected')
+  assert.equal(status.handle, '@danyang.home')
+  assert.equal(status.canChange, true)
+  assert.doesNotMatch(JSON.stringify(status), /tok-a/)
+  const credentialsA = readFileSync(credentialsPath, 'utf8')
+
+  // A Bot with a friend on server A: its identity, grant and Auto-send mark belong to A.
+  await flybot.grants.set('a', [{ id: 'g1', grantee: '@bob.home', name: 'Bob' }])
+  flybot.fields.set('a', 'autoApprove', { '@bob.home': true })
+  await ctx.flybot.scope('social').fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home' })
+
+  // Check: nothing is saved, the platform's features are shown; refused addresses never reach the network.
+  const before = servers.seen.length
+  const bad = await call('flybot/social/server-check', { server: 'http://b.test' })
+  assert.equal(bad.ok, false)
+  assert.match(bad.error.message, /https:\/\//)
+  assert.equal(servers.seen.length, before)
+  const checked = (await call('flybot/social/server-check', { server: 'https://b.test/' })).value
+  assert.deepEqual({ server: checked.server, name: checked.name, features: checked.features, same: checked.same, known: checked.known }, { server: 'https://b.test', name: 'Bot Social', features: ['presence', 'mentions'], same: false, known: false })
+  assert.equal(servers.seen.at(-1).redirect, 'manual')
+  assert.equal(serverFiles(home).includes('flybot-social-server.json'), false)
+
+  // Switching needs the confirm; without it nothing changes.
+  const unconfirmed = await call('flybot/social/server-set', { server: 'https://b.test' })
+  assert.equal(unconfirmed.ok, false)
+  assert.match(unconfirmed.error.message, /Confirm/)
+  assert.equal((await view()).server, 'https://a.test')
+  // A server that is not Bot Social is refused before anything moves.
+  servers.servers['https://c.test'] = { platform: false, mock: mockServer({ token: 'tok-c' }) }
+  const refused = await call('flybot/social/server-set', { server: 'https://c.test', confirm: true })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /HTTP 404/)
+  assert.equal(flybot.fields.get('a', 'member').bot_id, 'm1')
+
+  const switched = await call('flybot/social/server-set', { server: 'https://b.test', displayName: 'Danyang B', confirm: true })
+  assert.equal(switched.ok, true, JSON.stringify(switched))
+  status = switched.value
+  assert.equal(status.server, 'https://b.test')
+  assert.equal(status.source, 'settings')
+  assert.equal(status.state, 'connected')
+  assert.equal(status.defaultServer, 'https://a.test')
+  assert.deepEqual(status.known, ['https://a.test'])
+  assert.deepEqual(status.platform.features, ['presence', 'mentions'])
+  assert.doesNotMatch(JSON.stringify(status), /tok-[abc]/)
+  // The old credentials file is byte for byte what it was; the new server has a file of its own.
+  assert.equal(readFileSync(credentialsPath, 'utf8'), credentialsA)
+  const credentialsB = join(home, `flybot-social.json.${serverTag('https://b.test')}`)
+  assert.equal(JSON.parse(readFileSync(credentialsB, 'utf8')).server, 'https://b.test')
+  assert.equal(JSON.parse(readFileSync(credentialsB, 'utf8')).token, 'tok-b')
+  if (process.platform !== 'win32') for (const file of [credentialsB, join(home, 'flybot-social-server.json')]) assert.equal(statSync(file).mode & 0o777, 0o600)
+  assert.equal(servers.mock('https://a.test').onboarded(), 1)
+  assert.equal(servers.mock('https://b.test').onboarded(), 1)
+  // Server A's identities are parked, not carried over.
+  assert.equal(flybot.fields.get('a', 'member'), undefined)
+  assert.equal(flybot.fields.get('a', 'autoApprove'), undefined)
+  assert.deepEqual(ctx.flybot.grants.of('a'), [])
+  const parked = JSON.parse(readFileSync(join(home, `flybot-social-bots.${serverTag('https://a.test')}.json`), 'utf8'))
+  assert.equal(parked.bots.a.member.bot_id, 'm1')
+  assert.doesNotMatch(JSON.stringify(parked), /tok-/)
+  // The social endpoints answer on the new server (the restart left no duplicate or missing handler).
+  assert.equal((await call('flybot/social/status', {})).ok, true)
+
+  // Same address again: nothing to do.
+  assert.equal((await call('flybot/social/server-set', { server: 'https://B.test/' })).value.server, 'https://b.test')
+  assert.equal(servers.mock('https://b.test').onboarded(), 1)
+
+  // Back to the default: the saved credentials and identities return, with no second onboarding.
+  const back = await call('flybot/social/server-set', { server: 'https://a.test', confirm: true })
+  assert.equal(back.ok, true, JSON.stringify(back))
+  assert.equal(back.value.source, 'config')
+  assert.equal(back.value.state, 'connected')
+  assert.equal(serverFiles(home).includes('flybot-social-server.json'), false)
+  assert.equal(servers.mock('https://a.test').onboarded(), 1)
+  assert.equal(flybot.fields.get('a', 'member').bot_id, 'm1')
+  assert.deepEqual(flybot.fields.get('a', 'autoApprove'), { '@bob.home': true })
+  assert.deepEqual(ctx.flybot.grants.of('a').map(grant => grant.grantee), ['@bob.home'])
+  assert.equal(readFileSync(credentialsPath, 'utf8'), credentialsA)
+  assert.equal(JSON.parse(readFileSync(credentialsB, 'utf8')).token, 'tok-b')
+})
+
+test('Settings server: a switch that fails puts the previous server back, with its files and identities', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' }, 'https://closed.test': { onboardFails: true } })
+  const credentialsPath = join(home, 'flybot-social.json')
+  const warned = []
+  const originalWarn = console.warn
+  console.warn = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.warn = originalWarn })
+  await applySocial(ctx, { server: 'https://a.test', credentialsPath, fetch: servers.fetch, inboxPollMs: 0 })
+  const flybot = ctx.flybot.scope('social')
+  await flybot.grants.set('a', [{ id: 'g1', grantee: '@bob.home' }])
+  flybot.fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home' })
+  const credentialsA = readFileSync(credentialsPath, 'utf8')
+
+  const failed = await call('flybot/social/server-set', { server: 'https://closed.test', confirm: true })
+  assert.equal(failed.ok, false)
+  assert.match(failed.error.message, /Could not connect to the new server: .*registration is closed/)
+  assert.match(failed.error.message, /previous server is back/)
+  const status = (await call('flybot/social/server', {})).value
+  assert.equal(status.server, 'https://a.test')
+  assert.equal(status.state, 'connected')
+  assert.equal(status.source, 'config')
+  assert.equal(serverFiles(home).includes('flybot-social-server.json'), false)
+  assert.equal(readFileSync(credentialsPath, 'utf8'), credentialsA)
+  assert.equal(flybot.fields.get('a', 'member').bot_id, 'm1')
+  assert.deepEqual(ctx.flybot.grants.of('a').map(grant => grant.grantee), ['@bob.home'])
+  assert.equal(servers.mock('https://a.test').onboarded(), 1)
+  assert.equal((await call('flybot/social/status', {})).ok, true)
+  assert.doesNotMatch(warned.join('\n'), /tok-a/)
+})
+
+test('Settings server: nothing configured is unchanged, and a first server can be set from Settings', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' } })
+  const credentialsPath = join(home, 'flybot-social.json')
+  await applySocial(ctx, { credentialsPath, fetch: servers.fetch, inboxPollMs: 0 })
+  assert.deepEqual(serverFiles(home), [])
+  let status = (await call('flybot/social/server', {})).value
+  assert.deepEqual({ server: status.server, source: status.source, state: status.state, handle: status.handle, defaultServer: status.defaultServer }, { server: null, source: 'none', state: 'not-configured', handle: null, defaultServer: null })
+  assert.equal(servers.seen.length, 0)
+  assert.equal((await call('flybot/social/server-check', {})).ok, false)
+
+  const set = await call('flybot/social/server-set', { server: 'https://a.test', confirm: true })
+  assert.equal(set.ok, true, JSON.stringify(set))
+  status = set.value
+  assert.deepEqual({ server: status.server, source: status.source, state: status.state, handle: status.handle }, { server: 'https://a.test', source: 'settings', state: 'connected', handle: '@danyang.home' })
+  // Not the default server, so its credentials sit under the server's own name and the default file stays free.
+  assert.equal(JSON.parse(readFileSync(`${credentialsPath}.${serverTag('https://a.test')}`, 'utf8')).token, 'tok-a')
+  assert.equal(serverFiles(home).includes('flybot-social.json'), false)
+  assert.equal(servers.mock('https://a.test').onboarded(), 1)
+})
+
+test('Settings server: a restart keeps the chosen server; the profile value is only the default', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' }, 'https://b.test': { token: 'tok-b' } })
+  const config = { server: 'https://a.test', credentialsPath: join(home, 'flybot-social.json'), fetch: servers.fetch, inboxPollMs: 0 }
+  await applySocial(ctx, config)
+  assert.equal((await call('flybot/social/server-set', { server: 'https://b.test', confirm: true })).ok, true)
+  await ctx.dispose()
+  const second = fakeContext()
+  Object.assign(second, { flybot: ctx.flybot })
+  await applySocial(second, config)
+  const status = (await call('flybot/social/server', {})).value
+  assert.equal(status.server, 'https://b.test')
+  assert.equal(status.source, 'settings')
+  assert.equal(status.defaultServer, 'https://a.test')
+  assert.equal(servers.mock('https://b.test').onboarded(), 1)
+  await second.dispose()
+})
+
+test('server controller: per-server files, a hung start is replaced and its late result disposed, read-only refuses', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'flybot-social-ctl-'))
+  const starts = []
+  const disposed = []
+  let hang
+  const fly = (readOnly = false) => ({ bot: { list: () => [], get: () => undefined }, fields: { get: () => undefined, set() {} }, grants: { of: () => [], set: async () => {} }, readOnly: () => readOnly })
+  const base = { server: 'https://a.test', credentialsPath: join(home, 'flybot-social.json'), displayName: 'Me' }
+  const probe = async server => ({ name: 'Bot Social', features: [], server })
+  const start = async (config) => {
+    starts.push(config)
+    if (config.server === 'https://slow.test') return new Promise((resolve) => { hang = () => resolve({ home: { handle: '@late.home' }, dispose: () => disposed.push('late') }) })
+    return { home: { handle: '@me.home' }, dispose: () => disposed.push(config.server) }
+  }
+  try {
+    const controller = createServerController({ base, flybot: fly(), start, probe, startTimeoutMs: 20 })
+    await controller.ready()
+    assert.equal(starts[0].credentialsPath, base.credentialsPath)
+    assert.equal(starts[0].settingsPath, undefined)
+    assert.equal(controller.status().state, 'connected')
+    // A start that never answers: refused after the deadline, the previous server is started again, the late social is disposed.
+    await assert.rejects(controller.set({ server: 'https://slow.test', confirm: true }), /did not finish connecting in time.*previous server is back/)
+    hang()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.deepEqual(disposed, ['https://a.test', 'late'])
+    assert.equal(controller.status().server, 'https://a.test')
+    assert.equal(controller.status().state, 'connected')
+    // Another server starts with its own credentials and settings paths.
+    await controller.set({ server: 'https://b.test', confirm: true })
+    const other = starts.at(-1)
+    assert.equal(other.credentialsPath, `${base.credentialsPath}.${serverTag('https://b.test')}`)
+    assert.equal(other.settingsPath, join(home, `flybot-social-settings.${serverTag('https://b.test')}.json`))
+    assert.equal(other.displayName, 'Me')
+    controller.dispose()
+    // A read-only host (another window holds the team) changes nothing.
+    const readOnly = createServerController({ base, flybot: fly(true), start, probe })
+    assert.equal(readOnly.status().canChange, false)
+    await assert.rejects(readOnly.set({ server: 'https://b.test', confirm: true }), /Another FlyBot window/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// state order in SocialServerSettings: view, loadError, live, form, address, name, checked, busy, error
+const serverView = (extra = {}) => ({ server: 'https://a.test', source: 'config', defaultServer: 'https://a.test', displayName: 'Me', state: 'connected', handle: '@me.home', error: null, canChange: true, known: [], ...extra })
+const pageProps = { Section: 'section', Row: 'row', t: (text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')) }
+const nodeBy = (nodes, id) => nodes.find(node => node.props?.['data-flybot'] === id)
+
+test('Settings → Bot Social page: shows server, source and status; the switch form opens from Change server', () => {
+  {
+    const { plugin, all, text } = clientPlugin([serverView(), null, { ok: true, features: ['presence'] }])
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    const rows = nodes.filter(node => node.type === 'row')
+    assert.equal(rows[0].props.label, 'https://a.test')
+    assert.equal(rows[0].props.hint, 'Connected as @me.home')
+    assert.match(text(rows[0]), /Profile default/)
+    assert.equal(rows.find(row => row.props.label === 'Features').props.hint, 'presence')
+    assert.ok(nodeBy(nodes, 'server-change'))
+    assert.equal(nodeBy(nodes, 'server-address'), undefined)
+  }
+  {
+    const { plugin, all } = clientPlugin([serverView({ state: 'error', error: 'HTTP 500' }), null, null, true])
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    assert.equal(nodes.find(node => node.type === 'row').props.hint, 'Could not connect: HTTP 500')
+    assert.ok(nodeBy(nodes, 'server-address'))
+    assert.equal(nodeBy(nodes, 'server-warning'), undefined)
+    assert.ok(nodeBy(nodes, 'server-check'))
+    assert.equal(nodeBy(nodes, 'server-confirm'), undefined)
+  }
+  {
+    const { plugin, all } = clientPlugin([serverView({ server: null, source: 'none', state: 'not-configured', handle: null, defaultServer: null })])
+    const row = all(plugin.SocialServerSettings(pageProps)).find(node => node.type === 'row')
+    assert.equal(row.props.label, 'No server')
+    assert.match(row.props.hint, /No server set/)
+  }
+  {
+    const { plugin, all } = clientPlugin([serverView({ canChange: false })])
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    assert.equal(nodeBy(nodes, 'server-change'), undefined)
+    assert.ok(nodes.some(node => node.type === 'row' && node.props.label === 'Read-only'))
+  }
+})
+
+test('Settings → Bot Social page: a checked server shows the identity warning and a confirm; a known one says it comes back', () => {
+  const checked = { server: 'https://b.test', name: 'Bot Social', version: '0.2.0', features: ['presence', 'mentions'], same: false, known: false }
+  {
+    const { plugin, all, text } = clientPlugin([serverView(), null, null, true, 'https://b.test', '', checked])
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    const warning = nodeBy(nodes, 'server-warning')
+    assert.match(text(warning), /Switching servers changes who you are/)
+    assert.match(text(warning), /new identity/)
+    assert.match(text(warning), /backup on this computer and is never deleted/)
+    assert.match(text(nodeBy(nodes, 'server-checked')), /Bot Social 0\.2\.0 · b\.test/)
+    assert.match(text(nodeBy(nodes, 'server-checked')), /presence, mentions/)
+    assert.equal(text(nodeBy(nodes, 'server-confirm')), 'Switch to this server')
+    assert.equal(nodeBy(nodes, 'server-check'), undefined)
+  }
+  {
+    const { plugin, all, text } = clientPlugin([serverView(), null, null, true, 'https://b.test', '', { ...checked, known: true }])
+    assert.match(text(nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-warning')), /come back/)
+  }
+  {
+    const { plugin, all } = clientPlugin([serverView(), null, null, true, 'https://a.test', '', { ...checked, server: 'https://a.test', same: true }])
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    assert.equal(nodeBy(nodes, 'server-warning'), undefined)
+    assert.equal(nodeBy(nodes, 'server-confirm'), undefined)
+  }
+})
+
+test('Settings → Bot Social page: every English line it passes to t() has a Chinese entry in the host dictionary', async () => {
+  const { DICTIONARY } = await import('../../../core/src/client/i18n.js')
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const start = source.indexOf('const STATE_TEXT')
+  const end = source.indexOf('let cache = { at: 0, list: [] }')
+  const page = source.slice(start, end)
+  const keys = [...page.matchAll(/\bt\(\s*(['"])((?:\\.|(?!\1).)*)\1/g)].map(match => match[2].replace(/\\'/g, "'"))
+  assert.ok(keys.length > 20)
+  assert.deepEqual(keys.filter(key => !Object.hasOwn(DICTIONARY.zh, key)), [])
+  assert.ok(Object.hasOwn(DICTIONARY.zh, 'Bot Social'))
 })

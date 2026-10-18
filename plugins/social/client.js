@@ -136,6 +136,12 @@ window.__ModuleLoader__.load({
 .fs-stack .fs-face-mark:first-child,.fs-stack [data-flybot=face-card-member]:first-child{margin-left:0}
 .fs-stack [data-flybot=face-card-member]{display:inline-flex;border-radius:50%;box-shadow:0 0 0 2px var(--bt-card,#fff)}
 .fs-stack-more{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));margin-left:4px}
+.fs-srv-form{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
+.fs-srv-quick{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.fs-srv-checked{display:flex;flex-direction:column;gap:2px}
+.fs-srv-warn{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));font-size:12px;line-height:17px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-srv-warn strong{color:var(--bt-ink,#141414);font-size:13px}
+.fs-srv-actions{display:flex;gap:6px;justify-content:flex-end}
 .fs-chip{flex:none;font-size:11px;line-height:14px;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.56));white-space:nowrap}
 .fs-chip-status{min-width:44px;text-align:center;font-weight:600;letter-spacing:.01em}
 .fs-chip-status[data-status=open],.fs-chip-status[data-status=closed],.fs-chip-status[data-status=left]{font-size:12px;line-height:16px;padding:2px 8px;color:var(--bt-ink-2,rgba(20,20,20,.72));background:var(--bt-hover,rgba(119,119,119,.12))}
@@ -1639,6 +1645,97 @@ window.__ModuleLoader__.load({
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
+    const SocialPageIcon = () => h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', 'aria-hidden': true },
+      h('circle', { cx: 8, cy: 8, r: 6 }), h('path', { d: 'M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12' }))
+
+    // Settings → Bot Social (#337): the server this FlyBot talks to. `t` is the host's translator (zh in a zh UI),
+    // `Section` / `Row` the host's Settings layout, so the page looks like Connectors.
+    const STATE_TEXT = {
+      connected: (t, view) => (view.handle ? t('Connected as {handle}', { handle: view.handle }) : t('Connected')),
+      connecting: t => t('Connecting…'),
+      'not-configured': t => t('No server set. Friends and sharing are off until you set one.'),
+      error: (t, view) => t('Could not connect: {error}', { error: view.error ?? '' }),
+    }
+    const serverHost = (address) => { try { return new URL(address).host } catch { return String(address ?? '') } }
+    function SocialServerSettings({ t: given, Section, Row } = {}) {
+      useStyles()
+      const t = given ?? ((text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+      const [view, setView] = useState(null)
+      const [loadError, setLoadError] = useState(null)
+      const [live, setLive] = useState(null)
+      const [form, setForm] = useState(false)
+      const [address, setAddress] = useState('')
+      const [name, setName] = useState('')
+      const [checked, setChecked] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState(null)
+      const refresh = async () => {
+        try { setView(await call('social/server', {})); setLoadError(null) } catch (e) { setLoadError(errorText(e)) }
+      }
+      useEffect(() => { void refresh() }, [])
+      // A server that is still connecting is read again until it settles.
+      useEffect(() => {
+        if (view?.state !== 'connecting' || typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { void refresh() }, 2000)
+        return () => clearInterval(timer)
+      }, [view?.state])
+      // What the current server lists, read once the page shows it.
+      useEffect(() => {
+        if (!view?.server || view.state === 'not-configured') return undefined
+        let off = false
+        call('social/server-check', {}).then(info => { if (!off) setLive({ ok: true, ...info }) }, e => { if (!off) setLive({ ok: false, error: errorText(e) }) })
+        return () => { off = true }
+      }, [view?.server, view?.state === 'connected'])
+      const platform = live?.ok ? live : view?.platform
+      const open = (value = '') => { setForm(true); setAddress(value); setChecked(null); setError(null) }
+      const close = () => { setForm(false); setChecked(null); setError(null); setBusy(false) }
+      const check = async (value = address) => {
+        setBusy(true); setError(null); setChecked(null)
+        try { setChecked(await call('social/server-check', { server: value })); setAddress(value) } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+      }
+      const change = async () => {
+        setBusy(true); setError(null)
+        try {
+          setView(await call('social/server-set', { server: checked.server, displayName: name.trim() || undefined, confirm: true }))
+          setLive(null)
+          close()
+        } catch (e) { setError(errorText(e)); void refresh() } finally { setBusy(false) }
+      }
+      if (!view) return h('div', { className: 'fs-status', 'data-tone': loadError ? 'error' : undefined, 'data-flybot': 'social-server' }, loadError ?? t('Loading…'))
+      const source = view.source === 'settings' ? t('Set here') : view.source === 'config' ? t('Profile default') : t('Not set')
+      const status = (STATE_TEXT[view.state] ?? STATE_TEXT.connecting)(t, view)
+      const quick = [...(view.defaultServer && view.source === 'settings' ? [view.defaultServer] : []), ...view.known].filter((item, at, all) => all.indexOf(item) === at)
+      return h('div', { 'data-flybot': 'social-server' },
+        h(Section, { title: t('Bot Social server') },
+          h(Row, { label: view.server ?? t('No server'), hint: status },
+            h('span', { className: 'fs-tag' }, source),
+            view.canChange && !form ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-flybot': 'server-change', onClick: () => open() }, t('Change server')) : null),
+          platform ? h(Row, { label: t('Features'), hint: platform.features?.length ? platform.features.join(', ') : t('No optional features listed.') }, null) : null,
+          live && !live.ok ? h(Row, { label: t('Reachability'), hint: live.error }, null) : null,
+          !view.canChange ? h(Row, { label: t('Read-only'), hint: t('Another FlyBot window holds this team. Change the server there.') }, null) : null),
+        form ? h(Section, { title: t('Switch server') },
+          h('div', { className: 'fs-srv-form' },
+            h('input', { className: 'bt-input', value: address, spellCheck: false, autoFocus: true, 'aria-label': t('Server address'), placeholder: 'https://social.example', 'data-flybot': 'server-address', onChange: e => { setAddress(e.target.value); setChecked(null); setError(null) }, onKeyDown: e => { if (e.key === 'Enter' && address.trim() && !busy) void check() } }),
+            quick.length ? h('div', { className: 'fs-srv-quick' }, h('span', { className: 'bt-set-hint' }, t('Used before:')), quick.map(item => h('button', { key: item, type: 'button', className: 'fs-link', onClick: () => { setAddress(item); void check(item) } }, item === view.defaultServer ? t('{host} (profile default)', { host: serverHost(item) }) : serverHost(item)))) : null,
+            h('input', { className: 'bt-input', value: name, spellCheck: false, 'aria-label': t('Name for your home (optional)'), placeholder: t('Name for your home (optional)'), maxLength: 40, onChange: e => setName(e.target.value) }),
+            checked ? h('div', { className: 'fs-srv-checked', 'data-flybot': 'server-checked' },
+              h('div', { className: 'fs-status' }, `${checked.name}${checked.version ? ` ${checked.version}` : ''} · ${serverHost(checked.server)}`),
+              h('div', { className: 'fs-status' }, checked.features?.length ? `${t('Features')}: ${checked.features.join(', ')}` : t('No optional features listed.'))) : null,
+            checked && !checked.same ? h('div', { className: 'fs-srv-warn', role: 'alert', 'data-flybot': 'server-warning' },
+              h('strong', null, t('Switching servers changes who you are')),
+              h('span', null, checked.known ? t('You used this server before. Your saved identity, friends and settings for it come back.') : t('You get a new identity on this server. The friends and sharing you have now stay on the current server; they do not move.')),
+              h('span', null, t('Your current sign-in is kept as a backup on this computer and is never deleted. Switch back any time.')),
+              h('span', null, t('Your Bots stop being shared with friends until you share them again on the new server.'))) : null,
+            checked && checked.same ? h('div', { className: 'fs-status' }, t('This is the server you already use.')) : null,
+            error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null,
+            h('div', { className: 'fs-srv-actions' },
+              h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: close }, t('Cancel')),
+              checked && !checked.same
+                ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'data-flybot': 'server-confirm', onClick: () => void change() }, busy ? t('Switching…') : t('Switch to this server'))
+                : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || address.trim() === '', 'data-flybot': 'server-check', onClick: () => void check() }, busy ? t('Checking…') : t('Check')))))
+          : null)
+    }
+
     let cache = { at: 0, list: [] }
     const friendRows = async (query) => {
       if (Date.now() - cache.at > 30_000) cache = { at: Date.now(), list: await call('social/friends', {}) }
@@ -1657,6 +1754,7 @@ window.__ModuleLoader__.load({
       InviteToBot,
       ManageAccess,
       BotSocialDetails,
+      SocialServerSettings,
       AddFriend,
       PendingApprovals,
       ChatApproval,
@@ -1707,6 +1805,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),
             (() => { try { return slots().register('flybot.account.header', { id: 'social-handle', order: 10, component: MyHandle }) } catch { return () => {} } })(),
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
+            slots().register('flybot.settings.page', { id: 'social', order: 100, label: 'Bot Social', icon: SocialPageIcon, component: SocialServerSettings }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
