@@ -5197,6 +5197,42 @@ test('#137: owner look is sent with update_bot_profile; old servers are skipped'
   assert.ok(JSON.parse(readFileSync(settingsPath, 'utf8')).lookSynced?.a)
 })
 
+test('#182: a new Bot Social identity for the same Bot gets its look again', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const painted = await call('update-bot', { id: 'a', color: 'deepseek', avatar: { shape: 'whale' } })
+  assert.equal(painted.ok, true, painted.error?.message)
+  const server = mockServer()
+  server.tools.update_bot_profile = (a) => ({ bot_id: a.bot_id, avatar: a.avatar, color: a.color, avatar_kind: 'preset' })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  const fields = ctx.flybot.scope('social').fields
+  const first = fields.get('a', 'member')
+  assert.ok(first?.bot_id)
+  const sentTo = () => server.calls.filter(c => c.name === 'update_bot_profile').map(c => c.args.bot_id)
+  assert.ok(sentTo().includes(first.bot_id))
+  // Same look, same identity: nothing more is sent.
+  const before = sentTo().length
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.equal(sentTo().length, before)
+  // The identity was released and a new one registered (room-only, next face room): the look goes to it.
+  fields.set('a', 'member', { bot_id: 'bot_new_identity', handle: first.handle, roomOnly: true })
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  const last = server.calls.filter(c => c.name === 'update_bot_profile').at(-1)
+  assert.equal(last.args.bot_id, 'bot_new_identity')
+  assert.equal(last.args.avatar, 'whale')
+  assert.equal(last.args.color, '#4d6bfe')
+})
+
 test('#139: decline_bot_grant on Remove; grant_not_found is already gone', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
