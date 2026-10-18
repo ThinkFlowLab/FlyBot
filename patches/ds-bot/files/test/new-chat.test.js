@@ -39,10 +39,10 @@ test('new-chat splits a friend\'s Bot out of local members into remote participa
   assert.deepEqual(remotes, [{ kind: 'bot', remote: true, handle: '@assistant.friend.home' }])
 })
 
-test('the sidebar + menu wires plugin actions in after Create group chat', () => {
+test('the sidebar + menu wires plugin actions in after New group chat', () => {
   const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
   const menu = src.indexOf('menuOnly')
-  const group = src.indexOf("t('Create group chat')")
+  const group = src.indexOf("t('New group chat')")
   const actions = src.indexOf('for (const action of newChatActionRows')
   const agent = src.indexOf("t('Add coding agent')")
   assert.ok(menu > 0, 'sidebar + starts as a short action menu')
@@ -65,15 +65,15 @@ test('the sidebar + menu wires plugin actions in after Create group chat', () =>
   assert.match(sidebar, /order\.filter\(entry => !\(tree && inTree\(entry\)\)\)/)
   assert.equal(DICTIONARY.zh['Copy my handle'], '复制我的 handle')
   assert.equal(DICTIONARY.zh['Face-to-face'], '面对面')
-  assert.equal(DICTIONARY.zh['Face-to-face group'], '面对面建群')
-  assert.equal(DICTIONARY.zh['Create group chat'], '新建群聊')
-  assert.match(DICTIONARY.zh['Meet the people next to you. Pick your Bots and type the same 6-digit number.'], /身边/)
+  assert.equal(DICTIONARY.zh['Face-to-face room'], '面对面房间')
+  assert.equal(DICTIONARY.zh['New group chat'], '新建群聊')
+  assert.match(DICTIONARY.zh['Meet people nearby with a 6-digit number'], /身边/)
   assert.equal(DICTIONARY.zh['Add friend'], '添加好友')
   assert.equal(DICTIONARY.zh['Friend requests'], '好友请求')
   assert.equal(DICTIONARY.zh['Accept invite'], '接受邀请')
   assert.equal(DICTIONARY.zh['Copy invite link'], '复制邀请链接')
   assert.equal(DICTIONARY.zh['Add coding agent'], '添加编码 Agent')
-  assert.match(DICTIONARY.zh['Paste an invite link or code.'], /邀请/)
+  assert.match(DICTIONARY.zh['Paste an invite link or code'], /邀请/)
   assert.match(src, /if \(!menuOnly\)/)
   assert.match(src, /actions\.notify/)
 })
@@ -155,4 +155,30 @@ test('Copy invite link says copied only after a real copy, else shows the link t
   for (const key of ['Invite link', 'Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.']) {
     assert.ok(DICTIONARY.zh[key], `ZH entry for ${key}`)
   }
+})
+
+test('#385: the + menu rows have their own marks, one verb style and short hints; a Bot menu has one way to edit it', () => {
+  const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
+  const rows = [
+    ["key: 'chat'", 'ChatIcon', 'New chat', 'Message one of your Bots'],
+    ["key: 'new'", 'BotIcon', 'New Bot', 'Set up a Bot with its own role'],
+    ["key: 'group'", 'PeopleIcon', 'New group chat', 'Chat with several of your Bots'],
+    ["key: 'agent'", 'TerminalIcon', 'Add coding agent', 'A coding session without a Bot'],
+  ]
+  for (const [key, icon, label, hint] of rows) {
+    const line = src.split('\n').find(text => text.includes(key))
+    assert.ok(line, key)
+    assert.match(line, new RegExp(`icon: h\\(${icon}`), `${label} mark`)
+    assert.ok(line.includes(`t('${label}')`), label)
+    assert.ok(line.includes(`t('${hint}')`), hint)
+    assert.ok(DICTIONARY.zh[label] && DICTIONARY.zh[hint], `${label} zh`)
+  }
+  assert.doesNotMatch(src, /Create new Bot|DSH session/)
+  // A plugin's mark renders behind its own boundary and falls back to the people mark (Codex P2).
+  assert.match(src, /icon: action\.icon \? h\(SlotIcon, \{ id: action\.key, icon: action\.icon, fallback: h\(PeopleIcon\) \}\) : h\(PeopleIcon\)/)
+  const slotsSrc = readFileSync(new URL('../src/client/flybot-slots.js', import.meta.url), 'utf8')
+  assert.match(slotsSrc, /this\.state\.failed \? \(this\.props\.fallback \?\? null\)/)
+  const menu = readFileSync(new URL('../src/client/context-menu.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(menu, /t\('Rename Bot'\)/)
+  assert.match(menu, /t\('Edit Bot'\)/)
 })

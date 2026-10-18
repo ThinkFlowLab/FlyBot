@@ -114,7 +114,7 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
     const body = JSON.parse(init.body)
     calls.push({ url, name: body.params.name, args: body.params.arguments })
     const tool = tools[body.params.name]
-    const result = tool ? { content: [{ type: 'text', text: JSON.stringify(tool(body.params.arguments)) }] } : { isError: true, content: [{ type: 'text', text: '{"code":"unknown","message":"no tool"}' }] }
+    const result = tool ? { content: [{ type: 'text', text: JSON.stringify(await tool(body.params.arguments)) }] } : { isError: true, content: [{ type: 'text', text: '{"code":"unknown","message":"no tool"}' }] }
     return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result }), { status: 200 })
   }
   return { fetch, calls, events, members, uploads, tools, me, onboarded: () => onboarded }
@@ -2296,7 +2296,7 @@ test('a friend\'s Bot settings uses Auto-send, not a second Auto-accept label', 
   assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.fs-friend-settings\{[^}]*max-width:280px/)
 })
 
-test('social section has no + Add; Add friend and Face-to-face group live on the sidebar + menu', () => {
+test('social section has no + Add; Add friend and Face-to-face room live on the sidebar + menu', () => {
   const sidebar = (adding) => {
     const { entries, walk, pluginOf } = loadSocialClient(async () => ({ connected: true, bots: [{ id: 'a', name: 'Chief', isMain: true }], homes: [], rooms: [] }))
     const plugin = pluginOf(['', adding, false])
@@ -2373,13 +2373,22 @@ test('social sidebar mount starts status without waiting on a friends roster', a
   assert.equal(started.includes('social/settings'), false)
 })
 
-test('the sidebar + menu gets a Face-to-face group action from social', () => {
+test('the sidebar + menu gets a Face-to-face room action from social', () => {
   const { entries, pluginOf } = loadSocialClient(async () => ({}))
   pluginOf([]).apply({})
   const row = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group')
   assert.ok(row)
-  assert.equal(row[1].label, 'Face-to-face group')
+  assert.equal(row[1].label, 'Face-to-face room')
   assert.match(row[1].hint, /6-digit/)
+  // #385: each social row has its own mark and a short one-line hint with no closing period.
+  const friend = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
+  assert.equal(typeof row[1].icon, 'function')
+  assert.equal(typeof friend[1].icon, 'function')
+  assert.notEqual(row[1].icon, friend[1].icon)
+  for (const hint of [row[1].hint, friend[1].hint]) {
+    assert.doesNotMatch(hint, /\.$/)
+    assert.ok(hint.length <= 45, hint)
+  }
   assert.equal(row[1].order, 15)
   assert.equal(typeof row[1].run, 'function')
 })
@@ -3223,7 +3232,7 @@ test('Bot settings: Manage access lists grants and revokes one', async () => {
   assert.ok(calls.some(([endpoint]) => endpoint === 'social/revoke-grant'))
 })
 
-test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter chat, errors', async () => {
+test('Face-to-face room (#92): pick Bots, join each once, live roster, Enter chat, errors', async () => {
   const calls = []
   const opened = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
@@ -4816,6 +4825,252 @@ test('#178: the Bot a friend shared shows for the grantee although our Bot carri
   assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.grantee === '@helper.bob.home'), false)
 })
 
+test('#383: a talk-through grant on an already-shared Bot is hidden when the friendship has two relationships', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // Invite 1 (r1): we shared Chief, Bob's Chief joined. Invite 2 (r2): Bob shared Helper, our Chief joins it here.
+  let joined = false
+  server.tools.join_invite = () => {
+    joined = true
+    // Real Bot Social joinInvite answer (59ed07a src/platform.ts): inviter is the invited Bot, no `bot` field.
+    return { relationship_id: 'r2', status: 'active', inviter: { bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', owner_display_name: 'Bob' }, awaiting: null }
+  }
+  server.tools.list_bot_grants = () => ({
+    grants: [
+      { id: 'g-share', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+      ...(joined ? [{ id: 'g-tt', grantee: '@helper.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r2' }] : []),
+    ],
+  })
+  // Real list_remote_bots home entry (59ed07a src/platform.ts listRemoteBots): relationship_id is the first
+  // relationship, relationship_ids all of them. Bob's Chief (joiner of r1) carries a talk-through grant to our
+  // Chief, so it is on our roster too.
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      relationship_ids: joined ? ['r1', 'r2'] : ['r1'],
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [
+        { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief', grant_id: 'g-in-1' },
+        ...(joined ? [{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in-2' }] : []),
+      ],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((await call('flybot/social/join-invite', { code: 'H2', botId: chief.id })).ok, true)
+  for (let n = 0; n < 30; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(JSON.parse(readFileSync(settingsPath, 'utf8')).joinedRelationships?.r2, true, 'the join is recorded')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(access.grants.length, 1, 'one row for Bob')
+  assert.equal(access.grants[0].id, 'g-share', 'the row is the real share, not the talk-through grant')
+  assert.deepEqual(access.grants[0].grantIds, ['g-share'])
+  assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.id === 'g-tt'), false, 'the talk-through grant is not stored as ours')
+  // Revoke removes the share and leaves the talk-through grant our Chief needs to talk to Helper.
+  assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: access.grants[0].id, grantIds: access.grants[0].grantIds })).ok, true)
+  const revoked = server.calls.filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
+  assert.equal(revoked.some(args => args.includes('g-share')), true)
+  assert.equal(revoked.some(args => args.includes('g-tt')), false)
+})
+
+test('#383: a friend\'s Bot shared with us that later joins OUR invite keeps our share listed', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // r1: Bob shared Coder, our Writer joined. r2: we invited for Chief, Bob's Coder joined: our Chief's
+  // grant to Coder is a real share, although Coder is a Bot shared with us and r2 is on Bob's home entry.
+  server.tools.list_bot_grants = () => ({ grants: [{ id: 'g-share', grantee: '@coder.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r2' }] })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      relationship_ids: ['r1', 'r2'],
+      via: ['@writer.danyang.home', '@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x3', handle: '@coder.bob.home', display_name: 'Coder', grant_id: 'g-in' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: { '@coder.bob.home': true }, joinedRelationships: { r1: true } }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.deepEqual(access.grants.map(row => row.id), ['g-share'], 'our real share of Chief stays listed')
+})
+
+test('#383: a possible talk-through grant from an older join keeps its own row, so the person\'s Revoke leaves it', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // r1: we shared Chief, Bob's Chief joined. r2: our Chief joined Bob's invite for Helper before joins were
+  // recorded, so nothing says r2 is the talk-through side.
+  server.tools.list_bot_grants = () => ({
+    grants: [
+      { id: 'g-share', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+      { id: 'g-tt', grantee: '@helper.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r2' },
+    ],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      relationship_ids: ['r1', 'r2'],
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in-2' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: { '@helper.bob.home': true } }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  const share = access.grants.find(row => row.id === 'g-share')
+  assert.deepEqual(share.grantIds, ['g-share'], 'the possible talk-through grant is not merged into the share row')
+  const before = server.calls.length
+  assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: share.id, grantIds: share.grantIds })).ok, true)
+  const revoked = server.calls.slice(before).filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
+  assert.equal(revoked.some(args => args.includes('g-share')), true)
+  assert.equal(revoked.some(args => args.includes('g-tt')), false, 'the chat with Helper keeps working')
+})
+
+test('#383: People with access shows one row per person; its Revoke removes each of their grants', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // Two invites for our Chief, joined by two of Bob's Bots: two real shares to one person.
+  let listed = [
+    { id: 'g-1', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+    { id: 'g-2', grantee: '@coder.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r3' },
+    { id: 'g-3', grantee: '@carol.home', name: 'Carol (@carol.home)', relationship_id: 'r4' },
+  ]
+  server.tools.list_bot_grants = () => ({ grants: listed })
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.deepEqual(access.grants.map(row => row.grantee), ['@bob.home', '@carol.home'])
+  const bob = access.grants[0]
+  assert.deepEqual(bob.grantIds, ['g-1', 'g-2'])
+  const before = server.calls.length
+  assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: bob.id, grantIds: bob.grantIds })).ok, true)
+  // One roster refresh for the whole batch, started after the last delete (Codex P1).
+  const batch = server.calls.slice(before).map(c => c.name)
+  assert.equal(batch.filter(name => name === 'list_remote_bots').length <= 1, true, batch.join(','))
+  const lastDelete = batch.findLastIndex(name => /revoke|DELETE/i.test(name))
+  assert.equal(batch.slice(0, lastDelete).includes('list_remote_bots'), false, 'no refresh between the deletes')
+  const revoked = server.calls.slice(before).filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
+  assert.equal(revoked.some(args => args.includes('g-1')), true)
+  assert.equal(revoked.some(args => args.includes('g-2')), true)
+  assert.equal(revoked.some(args => args.includes('g-3')), false, 'Carol keeps her access')
+  listed = listed.filter(grant => grant.id === 'g-3')
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'])
+})
+
+test('#383: the join is recorded before the owner-approval round trip, so a lost approval answer keeps it', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.join_invite = () => ({ relationship_id: 'r2', status: 'pending_requester_owner', awaiting: 'your_owner_approval', approval_id: 'apr2', inviter: { bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', owner_display_name: 'Bob' } })
+  // Bot Social applies the approval, but its answer never arrives.
+  server.tools.decide_approval = () => { throw Object.assign(new Error('Bot Social decide_approval: network'), { code: 'unavailable' }) }
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((await call('flybot/social/join-invite', { code: 'H2', botId: chief.id })).ok, false)
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.joinedRelationships?.r2, true, 'the joined relationship is recorded')
+  assert.equal(saved.inboundBots?.['@helper.bob.home'], true, 'the offered Bot is recorded as shared with us')
+})
+
+test('#383: a grant list taken while a merged Revoke runs is not written back (Manage access loader)', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let listed = [
+    { id: 'g-1', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+    { id: 'g-2', grantee: '@coder.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r3' },
+    { id: 'g-3', grantee: '@carol.home', name: 'Carol (@carol.home)', relationship_id: 'r4' },
+  ]
+  // The next list answer is held: it is taken now (all three grants) and lands only when released.
+  let hold
+  server.tools.list_bot_grants = () => {
+    const snapshot = { grants: [...listed] }
+    if (!hold) return snapshot
+    return new Promise(resolve => { hold.release = () => resolve(snapshot) })
+  }
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const bob = (await call('flybot/social/access', { botId: chief.id })).value.grants[0]
+  assert.deepEqual(bob.grantIds, ['g-1', 'g-2'])
+  // The open dialog's 5-second loader asks again; its list is in flight when Revoke starts.
+  hold = {}
+  const loader = call('flybot/social/access', { botId: chief.id })
+  for (let n = 0; n < 40 && !hold.release; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  const release = hold.release
+  assert.equal(typeof release, 'function', 'the loader is listing')
+  hold = undefined
+  // Bot Social deletes for real: later lists no longer name a revoked grant.
+  server.tools.revoke_bot_grant = (args) => { listed = listed.filter(grant => grant.id !== args.grant_id); return { ok: true } }
+  const batch = await call('flybot/social/revoke-grant', { botId: chief.id, grantId: bob.id, grantIds: bob.grantIds })
+  assert.equal(batch.ok, true)
+  listed = listed.filter(grant => grant.id === 'g-3')
+  for (let n = 0; n < 20; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'])
+  // The stale answer (still naming g-1 and g-2) lands after the batch: it must not bring Bob back.
+  release()
+  assert.equal((await loader).ok, true)
+  for (let n = 0; n < 20; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'], 'Bob stays revoked')
+})
+
 test('#140: respond Auto-send follows the accepted relationship, not the first roster home', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
@@ -4940,14 +5195,19 @@ test('#297: the thinking line is a plain session dock below the approval card, s
 
 test('#297: social/typing answers from Bot Social only when the server lists presence, and a friend\'s message clears the line', async (t) => {
   const withPresence = attestingFaceServer({ features: ['typed_by_owner', 'presence'] })
-  const stamp = () => new Date().toISOString()
-  withPresence.tools.list_presence = () => ({
-    server_time: stamp(),
-    presence: [
-      { scope: 'face_room', room_id: 'frm_123456', bot: { handle: '@chief.bob.home', display_name: 'Chief' }, state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
-      { scope: 'direct', bot: { handle: '@coder.bob.home', display_name: 'Coder' }, to: '@chief.danyang.home', state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
-    ],
-  })
+  // One clock reading per answer: separate Date.now() calls could straddle a millisecond and give
+  // 20 001 ms left, which failed the `<= 20_000` check below now and then.
+  withPresence.tools.list_presence = () => {
+    const at = Date.now()
+    const expires = new Date(at + 20_000).toISOString()
+    return {
+      server_time: new Date(at).toISOString(),
+      presence: [
+        { scope: 'face_room', room_id: 'frm_123456', bot: { handle: '@chief.bob.home', display_name: 'Chief' }, state: 'thinking', expires_at: expires },
+        { scope: 'direct', bot: { handle: '@coder.bob.home', display_name: 'Coder' }, to: '@chief.danyang.home', state: 'thinking', expires_at: expires },
+      ],
+    }
+  }
   const { call } = await faceFixture(t, withPresence)
   const first = await call('flybot/social/typing', {})
   assert.equal(first.ok, true)

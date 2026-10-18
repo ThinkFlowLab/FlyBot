@@ -41,7 +41,7 @@ export function registry() {
 }
 
 // Extra "@" rows from plugins (remote Bots and the like), after the team's own Bots.
-// Extra rows in the sidebar '+' new-chat menu (Create new Bot / Create group chat / …).
+// Extra rows in the sidebar '+' new-chat menu (after New Bot / New group chat).
 export function newChatActionRows(context = {}) {
   const rows = []
   for (const entry of registry().entries('flybot.new-chat.action')) {
@@ -52,6 +52,8 @@ export function newChatActionRows(context = {}) {
         order: entry.order ?? 0,
         label: entry.label,
         hint: entry.hint,
+        // A component: a function, or memo / forwardRef objects (React marks those with $$typeof).
+        ...(typeof entry.icon === 'function' || (entry.icon && typeof entry.icon === 'object' && '$$typeof' in entry.icon) ? { icon: entry.icon } : {}),
         run: entry.run ?? (() => {}),
       })
     } catch (error) {

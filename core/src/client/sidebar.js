@@ -11,7 +11,7 @@ import { reducedMotion } from './activity-row.js'
 import { Shimmer, workPhrase } from './cells.js'
 import { springEasing, SPRING_SHAPE } from './motion.js'
 import { hostText, t } from './i18n.js'
-import { remoteBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
+import { cleanPeerName, ownerNameOf, remoteBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
 import { showsDshRow } from './dsh-offer.js'
 
 // -------------------------------------------------------------------------
@@ -64,7 +64,14 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     actions.openMenu({ kind: 'bot', id, x: event.clientX, y: event.clientY })
   }
   const pinned = bot.pinned === true && !tile
-  const shown = bot.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : bot.name
+  const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null
+  const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name
+  // A friend's Bot row (#384): its name, then its owner, on one line like every other row; the
+  // second line is the preview, or "Friend's Bot" before the first message. The full title is on hover.
+  const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown
+  // A plain per-Bot identity (@alice.bot) names no owner: its handle tells two "Helper" rows apart.
+  const owner = remoteRecord ? ownerNameOf(remoteRecord) || cleanPeerName(bot.remote.handle) : ''
+  const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : '')
   const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
   if (tile && wide) {
     return h('div', { className: 'bt-tile-wrap' }, h('button', {
@@ -79,13 +86,16 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null
   const row = h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
-    'data-bot-id': id, title: wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
+    'data-bot-id': id, title: remoteRecord ? shown : wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
   },
   h(BotAvatar, { bot, size: 36, state, main }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, shown), bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
-    awayLine ? h('span', { className: 'bt-row-preview' }, awayLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
+    h('span', { className: 'bt-row-name' },
+      h('span', { className: 'bt-row-title' }, rowName),
+      owner ? h('span', { className: 'bt-row-owner' }, owner) : null,
+      bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
+    secondLine ? h('span', { className: 'bt-row-preview' }, secondLine) : null) : null,
   unreadMark)
   // Hover/focus gear on every wide row (#276/#173): own Bots and friends' Bots alike.
   const settingsLabel = bot.remote ? t('Bot settings') : t('Edit Bot')
@@ -97,7 +107,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   return row
 }
 
-// A friend's Bot: a small globe after the name, its handle on hover.
+// A friend's Bot: a globe after its owner's name, its handle on hover.
 function RemoteMark({ remote }) {
   return h('span', { className: 'bt-row-remote', title: remote.gone ? `${remote.handle} · ${t('no longer shared')}` : remote.handle, 'aria-label': t('Friend\'s Bot') },
     h('svg', { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },

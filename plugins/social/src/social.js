@@ -723,6 +723,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     settings.inboundBots[key] = true
     saveSettings()
   }
+  // Relationships this home joined (talk-through side), by id (#383).
+  function rememberJoined(relationshipId) {
+    const rid = String(relationshipId ?? '')
+    if (!rid) return
+    settings.joinedRelationships ??= {}
+    if (settings.joinedRelationships[rid]) return
+    settings.joinedRelationships[rid] = true
+    saveSettings()
+  }
   function markRoomRemote(handle, faceId) {
     const key = norm(handle)
     const room = String(faceId ?? '')
@@ -837,6 +846,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const rid = grant.relationshipId
     const grantee = memberHandleOf(grant.grantee)
     if (!rid || !grantee || !member?.handle || !settings.inboundBots?.[grantee]) return false
+    // A relationship this home joined is decided: our grant in it is the talk-through side (#383). It
+    // is recorded at the join because Bot Social lists a friendship's relationships without saying who
+    // joined, and both sides of one hold a grant that names the other's Bot.
+    if (settings.joinedRelationships?.[rid]) return true
+    // Joins from before that record: only the home's first relationship can be matched, so a later
+    // relationship in which the friend's Bot joined OUR invite stays our real share.
     return homes.some(entry => entry.relationshipId === rid && entry.via.includes(norm(member.handle)))
   }
   function listedRemoteBots() {
@@ -1085,6 +1100,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return rooms
   }
 
+  // Per Bot: revokes in flight, and a count bumped by each revoke, so a grant sync can tell that a
+  // revoke ran while it listed (#383).
+  const revoking = new Map()
+  const revokeEpochs = new Map()
+  const grantEpoch = botId => revokeEpochs.get(botId) ?? 0
+  async function fencedRevoke(botId, run) {
+    revoking.set(botId, (revoking.get(botId) ?? 0) + 1)
+    revokeEpochs.set(botId, grantEpoch(botId) + 1)
+    try { return await run() } finally {
+      revokeEpochs.set(botId, grantEpoch(botId) + 1)
+      const left = (revoking.get(botId) ?? 1) - 1
+      if (left > 0) revoking.set(botId, left)
+      else revoking.delete(botId)
+    }
+  }
   // `only`: one Bot's grants (an open People with access refreshes just that Bot). `roster`: the
   // friends' homes to classify talk-through grants against, when they are newer than `remote`.
   // Resolves true only when every Bot's grants were listed and stored; a failure is warned, not thrown.
@@ -1099,7 +1129,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     await mapPool(bots, GRANT_CONCURRENCY, async (bot) => {
       const member = memberOf(bot.id)
       try {
+        const epoch = grantEpoch(bot.id)
         const listed = await api.listGrants({ botId: member.bot_id })
+        // A revoke of this Bot's grants started or ran while this list was in flight: the list may
+        // still name a grant it deletes, and writing it would bring the person back. Skip, and report
+        // the sync as not fresh so a roster refresh withholds unseen Bots (fail closed); the revoke's
+        // own refresh lists again once it is done (Codex P1/P2 on #387).
+        if (revoking.get(bot.id) || grantEpoch(bot.id) !== epoch) { ok = false; return }
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
         const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
           const view = grantPersonView(grant)
@@ -1705,11 +1741,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
       throw mapped
     }
-    let status = joined.status
-    if (joined.awaiting === 'your_owner_approval' && joined.approval_id) {
-      await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
-      status = 'pending_target'
-    }
     // Bot Social answers with `inviter` = the invited Bot itself (a member handle, @chief.bob.home) and
     // no separate `bot` field; older shapes name it in `bot`, `inviter.bot` or `offered_bot` and
     // keep `inviter` at the home (#342). Only a member-level inviter is the Bot shared with us.
@@ -1720,6 +1751,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // must already see the talk-through grant on our Bot as talk-through, or it stores it as us
     // sharing that Bot back and the re-filter drops the shared Bot until the next refresh (#228).
     if (offeredHandle) rememberInbound(offeredHandle)
+    if (joined.relationship_id) rememberJoined(joined.relationship_id)
+    // Recorded before the approval round trip below: if that answer is lost after Bot Social applied
+    // it, the relationship can still become active, and a retry answers relationship_exists without
+    // reaching this point again (Codex P2 on #387).
+    let status = joined.status
+    if (joined.awaiting === 'your_owner_approval' && joined.approval_id) {
+      await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
+      status = 'pending_target'
+    }
     if (offeredHandle) unhideDeclined([offeredHandle])
     const unhide = revealHiddenIfPresent(settings, offeredHandle ? [offeredHandle] : [])
     if (unhide !== settings) { settings = unhide; saveSettings() }
@@ -1792,6 +1832,39 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }))
   disposers.push(flybot.api.handle('social/remote-bots', async payload => remoteBots({ fresh: payload?.fresh === true }), { read: true }))
   disposers.push(flybot.api.handle('social/hide-remote', async ({ handle } = {}) => hideRemote(handle)))
+  // People with access is one row per person (#383): two grants of one Bot to the same person
+  // (two invites, joined by two of their Bots) are one row, and its Revoke removes both.
+  function accessRows(botId, grants) {
+    const rows = new Map()
+    for (const grant of grants) {
+      const view = grantPersonView(grant)
+      const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
+      const grantee = home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : '')
+      // A grant to a Bot shared with us, in a relationship not recorded as joined here, may be a
+      // talk-through grant from a join made before that record (#383): it keeps a row of its own, so
+      // Revoke on the person's row never takes it along and breaks that chat (Codex P1 on #387).
+      const toInbound = Boolean(settings.inboundBots?.[memberHandleOf(grant.grantee)])
+      const unsure = toInbound && !(grant.relationshipId && settings.joinedRelationships?.[grant.relationshipId])
+      const key = unsure ? `grant:${grant.id}` : (norm(grantee) || String(grant.id))
+      const rooms = roomsUsing(botId, view.member || grant.grantee)
+      const row = rows.get(key)
+      if (row) {
+        row.grantIds.push(grant.id)
+        for (const room of rooms) if (!row.rooms.some(seen => seen.id === room.id)) row.rooms.push(room)
+        continue
+      }
+      rows.set(key, {
+        id: grant.id,
+        grantIds: [grant.id],
+        grantee,
+        name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
+        home,
+        relationshipId: grant.relationshipId,
+        rooms: [...rooms],
+      })
+    }
+    return [...rows.values()]
+  }
   disposers.push(flybot.api.handle('social/access', async ({ botId } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
@@ -1802,24 +1875,30 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       botId: bot.id,
       botName: bot.name,
       granted: hasPersonGrant(bot.id),
-      grants: grants.map(grant => {
-        const view = grantPersonView(grant)
-        const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
-        return {
-          id: grant.id,
-          grantee: home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : ''),
-          name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
-          home,
-          relationshipId: grant.relationshipId,
-          rooms: roomsUsing(bot.id, view.member || grant.grantee),
-        }
-      }),
+      grants: accessRows(bot.id, grants),
       rooms,
     }
   }, { read: true }))
-  disposers.push(flybot.api.handle('social/revoke-grant', async ({ botId, grantId, relationshipId, grantee } = {}) => {
+  disposers.push(flybot.api.handle('social/revoke-grant', async ({ botId, grantId, grantIds, relationshipId, grantee } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
+    // A merged People with access row (#383) revokes each of the person's grants in turn. Every grant
+    // sync for this Bot waits out the whole batch (the 5-second Manage access loader's included), so a
+    // list taken between two deletes is never written back; the roster refreshes once after the last
+    // delete (Codex P1 on #387).
+    const more = Array.isArray(grantIds) ? [...new Set(grantIds.filter(id => typeof id === 'string' && id && id !== grantId))] : []
+    const result = await fencedRevoke(bot.id, async () => {
+      if (!more.length) return revokeOne(bot, { grantId, relationshipId, grantee })
+      let last
+      for (const id of [...(grantId ? [grantId] : []), ...more]) last = await revokeOne(bot, { grantId: id })
+      return last
+    })
+    fetchedAt = 0
+    void remoteBots({ fresh: true }).catch(() => {})
+    return result
+  }))
+  // One grant's delete; the caller fences it and refreshes the roster once afterwards.
+  async function revokeOne(bot, { grantId, relationshipId, grantee }) {
     const current = flybot.grants?.of?.(bot.id) ?? []
     const target = current.find(grant =>
       (grantId && grant.id === grantId)
@@ -1836,10 +1915,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (typeof flybot.grants?.set === 'function') await flybot.grants.set(bot.id, next)
     const invited = memberOf(bot.id)?.handle
     void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
-    fetchedAt = 0
-    void remoteBots({ fresh: true }).catch(() => {})
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }
-  }))
+  }
   disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots), { read: true }))
   disposers.push(flybot.api.handle('social/auto-approve', async ({ botId, home: friendHome, on }) => {
     flybot.fields.set(botId, 'autoApprove', { ...(flybot.fields.get(botId, 'autoApprove') ?? {}), [norm(friendHome)]: on === null ? undefined : Boolean(on) })

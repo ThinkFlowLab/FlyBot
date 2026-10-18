@@ -1,12 +1,12 @@
 import { createElement as h, useRef, useState } from 'react'
-import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
-import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
+import { PlusIcon, PeopleIcon, ArrowUpIcon, BotIcon, ChatIcon, TerminalIcon } from './icons.js'
 import { AdminStar, BotMark } from './mark.js'
 import { useEscape, usePaneLeft } from './overlay-hooks.js'
 import { CreateBot } from './create-bot.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
+import { SlotIcon } from './flybot-slots.js'
 import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
 
 export function NewChat({ mode, roster, actions }) {
@@ -157,14 +157,14 @@ export function NewChat({ mode, roster, actions }) {
   const options = []
   if (!group && picked.length === 0 && mode !== 'search' && wanted === '') {
     if (menuOnly) {
-      options.push({ key: 'chat', icon: h(PlusIcon), label: t('New chat'), run: () => { setCompose(true); setCursor(0); setTimeout(() => inputRef.current?.focus()) } })
+      options.push({ key: 'chat', icon: h(ChatIcon), label: t('New chat'), hint: t('Message one of your Bots'), run: () => { setCompose(true); setCursor(0); setTimeout(() => inputRef.current?.focus()) } })
     }
-    options.push({ key: 'new', icon: h(PlusIcon), label: t('Create new Bot'), run: createBot })
-    options.push({ key: 'group', icon: h(PeopleIcon), label: t('Create group chat'), run: () => { setGroup(true); setCompose(true); setCursor(0); inputRef.current?.focus() } })
+    options.push({ key: 'new', icon: h(BotIcon), label: t('New Bot'), hint: t('Set up a Bot with its own role'), run: createBot })
+    options.push({ key: 'group', icon: h(PeopleIcon), label: t('New group chat'), hint: t('Chat with several of your Bots'), run: () => { setGroup(true); setCompose(true); setCursor(0); inputRef.current?.focus() } })
     for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
       options.push({
         key: action.key,
-        icon: h(PeopleIcon),
+        icon: action.icon ? h(SlotIcon, { id: action.key, icon: action.icon, fallback: h(PeopleIcon) }) : h(PeopleIcon),
         label: t(action.label),
         hint: action.hint ? t(action.hint) : undefined,
         run: () => {
@@ -177,7 +177,7 @@ export function NewChat({ mode, roster, actions }) {
     }
     // A team holds at most one Agent; the entry exists only while there is none.
     if ((roster.agents ?? []).length === 0) {
-      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add coding agent'), hint: t('A plain DSH session, not a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
+      options.push({ key: 'agent', icon: h(TerminalIcon), label: t('Add coding agent'), hint: t('A coding session without a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
     }
   }
   // The + menu is a short action list. Individual Bots (Chief and the rest) belong on
@@ -187,7 +187,7 @@ export function NewChat({ mode, roster, actions }) {
       options.push({ key: bot.id, bot, label: pickerBotLabel(bot), hint: choosingAdmin ? t('Make admin') : group || picked.length > 0 ? t('Add to group chat') : undefined, run: () => openBot(bot) })
     }
   }
-  if (wanted !== '' && !exact && mode !== 'search') options.push({ key: 'create', icon: h(PlusIcon), label: t('Create new Bot “{name}”', { name: query.trim() }), run: createBot })
+  if (wanted !== '' && !exact && mode !== 'search') options.push({ key: 'create', icon: h(PlusIcon), label: t('New Bot “{name}”', { name: query.trim() }), run: createBot })
   const active = Math.min(cursor, Math.max(options.length - 1, 0))
   const listed = options.map(option => option.key).join('\n')
   const glide = useGlide(`${active}\n${listed}`, { axis: 'y', ...QUICK_EDGES })

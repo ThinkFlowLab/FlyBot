@@ -87,12 +87,22 @@ test('a git install that follows a branch says how it is updated, and how far be
   assert.equal(hint({ build: { branch: 'main', commit: '082563a' }, enabled: false }), 'Update checks are off.')
 })
 
+test('an install pinned to a commit shows the short commit, no branch, and says it is pinned (#379)', () => {
+  const pinned = { build: { commit: '6d04db6', pinned: true }, behind: null, checkedAt: Date.now() }
+  assert.equal(page({ ...base, ...pinned }).version, 'Version 0.1.5-flybot.1 · 6d04db6')
+  assert.equal(page({ ...base, ...pinned }).hint('FlyBot core'), `Pinned to commit 6d04db6. ${MAINTAINER}`)
+  assert.equal(page({ ...base, ...pinned, enabled: false }).hint('FlyBot core'), 'Update checks are off.')
+  // A commit read from the lockfile for a tag install is just a commit: no pinned wording.
+  assert.equal(page({ ...base, build: { commit: '6d04db6' }, checkedAt: Date.now(), latest: null }).hint('FlyBot core'), 'Updates are not offered for this install.')
+})
+
 test('the new About wording has zh copy', () => {
   for (const key of [
     'Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.', 'Up to date with {branch}.',
     '1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.',
     '{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.',
     'Could not compare with {branch}. Updates come from the maintainer: reinstall FlyBot to get them.', 'DeepSeek Harness (underlying)',
+    'Pinned to commit {commit}. Updates come from the maintainer: reinstall FlyBot to get them.',
   ]) assert.ok(typeof DICTIONARY.zh[key] === 'string' && DICTIONARY.zh[key] !== '', key)
   const translate = (key, params = {}) => (DICTIONARY.zh[key] ?? key).replace(/\{(\w+)\}/g, (_m, name) => params[name] ?? `{${name}}`)
   const off = installLocale({ register: () => () => {}, bind: () => translate, getLocale: () => ({ active: 'zh' }) })

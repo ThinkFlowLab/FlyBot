@@ -48,7 +48,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
           [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
         ],
         [
-          bot ? [t('Rename Bot'), PencilIcon, () => actions.renameBot(bot.id)] : null,
+          // One way to edit a Bot (#385): its name is edited in Edit Bot too.
           bot ? [t('Edit Bot'), GearIcon, () => actions.openSettings('bots', bot.id)] : null,
           room ? [t('Group settings'), GearIcon, () => actions.openSettings('groups', room.id)] : null,
           room ? [t('Rename group'), PencilIcon, () => actions.renameBot(room.id)] : null,
