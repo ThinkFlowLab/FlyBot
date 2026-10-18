@@ -723,6 +723,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     settings.inboundBots[key] = true
     saveSettings()
   }
+  // Relationships this home joined (talk-through side), by id (#383).
+  function rememberJoined(relationshipId) {
+    const rid = String(relationshipId ?? '')
+    if (!rid) return
+    settings.joinedRelationships ??= {}
+    if (settings.joinedRelationships[rid]) return
+    settings.joinedRelationships[rid] = true
+    saveSettings()
+  }
   function markRoomRemote(handle, faceId) {
     const key = norm(handle)
     const room = String(faceId ?? '')
@@ -827,20 +836,23 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // as one Bot); empty when it covers this whole home. Only they can talk to this friend.
         via: (entry.via ?? []).map(norm),
         ...(entry.relationship_id ? { relationshipId: String(entry.relationship_id) } : {}),
-        // Every friendship with this home: two invites between the same people are two
-        // relationships, and Bot Social names only the first one in `relationship_id` (#383).
-        relationshipIds: [...new Set([...(entry.relationship_ids ?? []), ...(entry.relationship_id ? [entry.relationship_id] : [])].map(String))],
       }
     })
   }
-  // The grant a joiner's own Bot carries for talking through to a shared Bot: one of the
-  // friendship's relationships (not only the first, #383), the Bot is one this friendship covers, and the grantee is a Bot the friend
+  // The grant a joiner's own Bot carries for talking through to a shared Bot: same
+  // relationship, the Bot is one this friendship covers, and the grantee is a Bot the friend
   // shared with us. It is not us sharing that Bot (#178).
   function isTalkThroughGrant(member, grant, homes = remote.homes) {
     const rid = grant.relationshipId
     const grantee = memberHandleOf(grant.grantee)
     if (!rid || !grantee || !member?.handle || !settings.inboundBots?.[grantee]) return false
-    return homes.some(entry => (entry.relationshipId === rid || entry.relationshipIds?.includes(rid)) && entry.via.includes(norm(member.handle)))
+    // A relationship this home joined is decided: our grant in it is the talk-through side (#383). It
+    // is recorded at the join because Bot Social lists a friendship's relationships without saying who
+    // joined, and both sides of one hold a grant that names the other's Bot.
+    if (settings.joinedRelationships?.[rid]) return true
+    // Joins from before that record: only the home's first relationship can be matched, so a later
+    // relationship in which the friend's Bot joined OUR invite stays our real share.
+    return homes.some(entry => entry.relationshipId === rid && entry.via.includes(norm(member.handle)))
   }
   function listedRemoteBots() {
     return remote.homes.flatMap(entry => entry.bots.map(bot => ({
@@ -1723,6 +1735,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // must already see the talk-through grant on our Bot as talk-through, or it stores it as us
     // sharing that Bot back and the re-filter drops the shared Bot until the next refresh (#228).
     if (offeredHandle) rememberInbound(offeredHandle)
+    if (joined.relationship_id) rememberJoined(joined.relationship_id)
     if (offeredHandle) unhideDeclined([offeredHandle])
     const unhide = revealHiddenIfPresent(settings, offeredHandle ? [offeredHandle] : [])
     if (unhide !== settings) { settings = unhide; saveSettings() }
