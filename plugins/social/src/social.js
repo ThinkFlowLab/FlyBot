@@ -593,9 +593,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // ------------------------------------------------------------ remote roster
   let remote = { homes: [] }
   let fetchedAt = 0
-  // Counts roster fetches: a late grant re-filter of an older fetch must not overwrite a newer
-  // roster, even when both landed in the same millisecond (#228).
-  let rosterFetches = 0
+  // Roster fetches are numbered when they ask, not when they land (#224): an answer that lands
+  // after a newer one (the background refresh hide-remote starts, a slow link) is dropped, so it
+  // cannot put back a roster the server has since changed — nor count toward forgetting a hide.
+  // A late grant re-filter of an older fetch must not overwrite a newer roster either, even
+  // when both landed in the same millisecond (#228).
+  let rosterAsked = 0
+  let rosterApplied = 0
   // Handles we declined this session. Not persisted (that is the old-server local hide).
   // Keeps a stale grant re-filter or a mock/lagging list_remote_bots from putting the
   // Bot back before the server drops it. Cleared when the handle is absent from a
@@ -745,8 +749,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       ...(bot.avatarUpdatedAt ? { avatarUpdatedAt: bot.avatarUpdatedAt } : {}),
     })))
   }
-  function applyRemoteRoster(unfiltered, { source, ok }) {
-    const next = forgetHiddenIfGone(settings, presentRemoteHandles(unfiltered.homes), { source, ok, homes: unfiltered.homes })
+  // `refilter`: the same server answer applied again once grants arrive; it is not a new fetch,
+  // so it does not count toward forgetting a hide (two absent fetches in a row, #90).
+  function applyRemoteRoster(unfiltered, { source, ok, refilter = false }) {
+    const next = refilter ? settings : forgetHiddenIfGone(settings, presentRemoteHandles(unfiltered.homes), { source, ok, homes: unfiltered.homes })
     if (next !== settings) { settings = next; saveSettings() }
     const dropped = declinedRemotes.size
       ? unfiltered.homes.map(entry => ({ ...entry, bots: (entry.bots ?? []).filter(bot => !declinedRemotes.has(norm(bot.handle))) }))
@@ -761,9 +767,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     let result
     const source = home ? 'home' : 'legacy'
     let unfiltered
+    const rosterAt = ++rosterAsked
     try {
       if (home) {
         result = await client.callTool('list_remote_bots', { home: home.id })
+        if (rosterAt < rosterApplied) return remote
         const mapped = mapRemoteHomes(result?.homes)
         forgetDeclinedIfGone(mapped)
         backfillInboundFromRoster(mapped)
@@ -771,6 +779,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       } else {
         // Per-bot identity (legacy): each active friend is its own "home" of one Bot.
         const overview = await client.callTool('list_friends', config.botId ? { bot_id: config.botId } : {})
+        if (rosterAt < rosterApplied) return remote
         unfiltered = {
           homes: (overview?.friends ?? []).filter(item => item.status === 'active').map(item => ({
             home: norm(item.peer?.handle), name: cleanText(item.peer?.display_name), owner: cleanText(item.peer?.owner_display_name),
@@ -790,16 +799,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (fetchedAt || remote.homes.length) return remote
       throw error
     }
+    rosterApplied = rosterAt
     fetchedAt = now()
-    const rosterAt = ++rosterFetches
     if (home) void syncServerAutoApprove((result?.homes ?? []))
     // Grant listing is N HTTP calls; do not block Friends' Bots on it. Re-filter
     // once grants arrive so reverse-friends of our invites drop (#138).
     void syncOutgoingGrants().then(() => {
-      if (rosterFetches !== rosterAt || !home || !result) return
+      if (rosterApplied !== rosterAt || !home || !result) return
       const mapped = mapRemoteHomes(result.homes)
       forgetDeclinedIfGone(mapped)
-      applyRemoteRoster({ homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }, { source, ok: true })
+      applyRemoteRoster({ homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }, { source, ok: true, refilter: true })
     }).catch(error => warn('grants not synced', error))
     const published = applyRemoteRoster(unfiltered, { source, ok: true })
     if (published && typeof published.then === 'function') await published.catch(error => warn('remote chats not synced', error))

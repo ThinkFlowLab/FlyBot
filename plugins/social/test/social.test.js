@@ -3454,6 +3454,81 @@ test('#90: a hidden Bot shows again only after the owner re-shares it', async (t
   assert.equal(reshared.homes[0].bots.some(b => b.handle === '@coder.bob.home'), true)
 })
 
+test('#224: a roster answer that lands after a newer one is dropped, and cannot hide a re-shared Bot', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const withCoder = [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ handle: '@coder.bob.home', display_name: 'Coder' }, { handle: '@writer.bob.home', display_name: 'Writer' }] }]
+  const withoutCoder = [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ handle: '@writer.bob.home', display_name: 'Writer' }] }]
+  let list = withoutCoder
+  server.tools.list_remote_bots = () => ({ homes: list })
+  // Hold the next list_remote_bots answer: the server read the list when asked, the reply is late.
+  let hold
+  const inner = server.fetch
+  server.fetch = async (url, init) => {
+    const name = init?.body ? JSON.parse(init.body).params?.name : undefined
+    const response = await inner(url, init)
+    if (name === 'list_remote_bots' && hold) {
+      const gate = hold
+      hold = undefined
+      gate.asked()
+      await gate.released
+    }
+    return response
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  let release
+  const asked = new Promise(resolve => { hold = { asked: resolve, released: new Promise(r => { release = r }) } })
+  // An older fetch (e.g. the one hide-remote starts in the background) asks while Coder is not shared...
+  const stale = social.remoteBots({ fresh: true })
+  await asked
+  // ...the owner re-shares, and a newer fetch asks and lands first.
+  list = withCoder
+  const fresh = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(fresh.homes[0].bots.some(b => b.handle === '@coder.bob.home'), true)
+  // The older answer lands last: it must not put the roster back to "Coder not shared".
+  release()
+  const late = await stale
+  assert.equal(late.homes[0].bots.some(b => b.handle === '@coder.bob.home'), true, 'the late answer returns the newer roster')
+  const cached = (await call('flybot/social/remote-bots', {})).value
+  assert.equal(cached.homes[0].bots.some(b => b.handle === '@coder.bob.home'), true, 'the roster keeps the newer answer')
+})
+
+test('#224: the grant re-filter of one answer does not count as a second absent fetch', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let list = [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ handle: '@coder.bob.home', display_name: 'Coder' }, { handle: '@writer.bob.home', display_name: 'Writer' }] }]
+  server.tools.list_remote_bots = () => ({ homes: list })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  const base = createSocialApi({ server: 'https://s', token: 'owner-token', fetch: server.fetch })
+  let grantsListed = 0
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    api: { ...base, listGrants: async () => { grantsListed += 1; return [] } },
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/hide-remote', { handle: '@coder.bob.home' })
+  await call('flybot/social/remote-bots', { fresh: true })
+  list = [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ handle: '@writer.bob.home', display_name: 'Writer' }] }]
+  const before = grantsListed
+  await call('flybot/social/remote-bots', { fresh: true })
+  for (let i = 0; i < 20 && grantsListed === before; i++) await new Promise(resolve => setTimeout(resolve, 5))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.ok(grantsListed > before, 'the grant re-filter ran')
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.hiddenRemotes?.['@coder.bob.home']?.absentFetches, 1, 'one absent answer counts once')
+})
+
 test('#90: in-chat approval copy is owner-only; others see a waiting line', () => {
   assert.equal(chatApprovalTitle(true), WAITING_OWNER)
   assert.equal(chatApprovalTitle(false), WAITING_OTHERS)
