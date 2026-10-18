@@ -6107,6 +6107,13 @@ test('parseServerUrl: https only, http for localhost, no credentials or query, n
   assert.match(serverTag('https://A.test/'), /^[0-9a-f]{8}$/)
 })
 
+// The probe and start deadlines are unref'd timers (AbortSignal.timeout, timeout.unref()), and these fakes hold no socket:
+// keep one ref'd timer alive while such a deadline is the only thing pending, or Node 22's runner sees an idle loop and cancels the test.
+const holdLoop = async (run) => {
+  const hold = setTimeout(() => {}, 10_000)
+  try { return await run() } finally { clearTimeout(hold) }
+}
+
 test('probeServer reads /v1/platform without following redirects and refuses what is not Bot Social', async () => {
   const seen = []
   const answer = (status, body) => async (url, init) => { seen.push({ url, init }); return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }) }
@@ -6122,7 +6129,7 @@ test('probeServer reads /v1/platform without following redirects and refuses wha
   await assert.rejects(probeServer('https://s.test', { fetch: answer(404, '{}') }), /HTTP 404/)
   await assert.rejects(probeServer('https://s.test', { fetch: answer(302, '') }), /redirects somewhere else/)
   await assert.rejects(probeServer('https://s.test', { fetch: async () => { throw Object.assign(new Error('x'), { cause: { code: 'ECONNREFUSED' } }) } }), /Could not reach s\.test: ECONNREFUSED/)
-  await assert.rejects(probeServer('https://s.test', { timeoutMs: 5, fetch: (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' })))) }), /did not answer in time/)
+  await holdLoop(() => assert.rejects(probeServer('https://s.test', { timeoutMs: 5, fetch: (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' })))) }), /did not answer in time/))
 })
 
 test('Settings server: status, check and switch with the old credentials kept, then back without a second onboarding', async (t) => {
@@ -6310,7 +6317,7 @@ test('server controller: per-server files, a hung start is replaced and its late
     assert.equal(starts[0].settingsPath, undefined)
     assert.equal(controller.status().state, 'connected')
     // A start that never answers: refused after the deadline, the previous server is started again, the late social is disposed.
-    await assert.rejects(controller.set({ server: 'https://slow.test', confirm: true }), /did not finish connecting in time.*previous server is back/)
+    await holdLoop(() => assert.rejects(controller.set({ server: 'https://slow.test', confirm: true }), /did not finish connecting in time.*previous server is back/))
     hang()
     await new Promise(resolve => setTimeout(resolve, 10))
     assert.deepEqual(disposed, ['https://a.test', 'late'])
