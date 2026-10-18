@@ -1,0 +1,1 @@
+A friend's Bot in the sidebar reads like your own Bots: its name and its owner on one line (no more two-line wrap), the last message (or *Friend's Bot*) on the second line, a globe you can see, and the full name on hover. ([#384](https://github.com/ThinkFlowLab/FlyBot/issues/384))

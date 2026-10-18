@@ -3010,9 +3010,8 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
 .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
 .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
-.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name{align-items:flex-start}
-.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.bt-row-owner{flex:0 100 auto;min-width:24px;font-size:13px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
 .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-unread{width:8px;height:8px;border-radius:50%;background:#1084fe;flex:none;margin-right:2px;animation:bt-fade .13s cubic-bezier(.22,1,.36,1)}
@@ -6056,7 +6055,11 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
   };
   const pinned = bot.pinned === true && !tile;
-  const shown = bot.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : bot.name;
+  const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
+  const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name;
+  const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown;
+  const owner = remoteRecord ? ownerNameOf(remoteRecord) : "";
+  const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : "");
   const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
     return (0, import_react9.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react9.createElement)(
@@ -6085,7 +6088,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
       "data-bot-id": id,
-      title: wide ? void 0 : bot.name,
+      title: remoteRecord ? shown : wide ? void 0 : bot.name,
       onClick: () => actions.openSession(id),
       onContextMenu
     },
@@ -6094,8 +6097,15 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     wide ? (0, import_react9.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react9.createElement)("span", { className: "bt-row-name" }, (0, import_react9.createElement)("span", { className: "bt-row-title" }, shown), bot.remote ? (0, import_react9.createElement)(RemoteMark, { remote: bot.remote }) : null, pinned ? (0, import_react9.createElement)(PinMark) : null),
-      awayLine ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, awayLine) : preview ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, preview) : null
+      (0, import_react9.createElement)(
+        "span",
+        { className: "bt-row-name" },
+        (0, import_react9.createElement)("span", { className: "bt-row-title" }, rowName),
+        owner ? (0, import_react9.createElement)("span", { className: "bt-row-owner" }, owner) : null,
+        bot.remote ? (0, import_react9.createElement)(RemoteMark, { remote: bot.remote }) : null,
+        pinned ? (0, import_react9.createElement)(PinMark) : null
+      ),
+      secondLine ? (0, import_react9.createElement)("span", { className: "bt-row-preview" }, secondLine) : null
     ) : null,
     unreadMark
   );

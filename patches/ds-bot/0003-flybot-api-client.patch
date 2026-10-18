@@ -1174,11 +1174,11 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { Shimmer, workPhrase } from './cells.js'
  import { springEasing, SPRING_SHAPE } from './motion.js'
  import { hostText, t } from './i18n.js'
-+import { remoteBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
++import { cleanPeerName, ownerNameOf, remoteBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
  import { showsDshRow } from './dsh-offer.js'
  
  // -------------------------------------------------------------------------
-@@ -37,56 +37,91 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,56 +37,100 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -1213,7 +1213,13 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    }
    const pinned = bot.pinned === true && !tile
 -  const label = [bot.name, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', approval ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
-+  const shown = bot.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : bot.name
++  const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null
++  const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name
++  // A friend's Bot row (#384): its name, then its owner, on one line like every other row; the
++  // second line is the preview, or "Friend's Bot" before the first message. The full title is on hover.
++  const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown
++  const owner = remoteRecord ? ownerNameOf(remoteRecord) : ''
++  const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : '')
 +  const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
    if (tile && wide) {
      return h('div', { className: 'bt-tile-wrap' }, h('button', {
@@ -1230,15 +1236,20 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +    : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null
 +  const row = h('button', {
      type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
-     'data-bot-id': id, title: wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
+-    'data-bot-id': id, title: wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
++    'data-bot-id': id, title: remoteRecord ? shown : wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
    },
    h(BotAvatar, { bot, size: 36, state, main }),
    pinned && !wide ? h(PinMark) : null,
    wide ? h('span', { className: 'bt-row-body' },
 -    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, bot.name), pinned ? h(PinMark) : null),
-+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, shown), bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
-     awayLine ? h('span', { className: 'bt-row-preview' }, awayLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
+-    awayLine ? h('span', { className: 'bt-row-preview' }, awayLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
 -  wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
++    h('span', { className: 'bt-row-name' },
++      h('span', { className: 'bt-row-title' }, rowName),
++      owner ? h('span', { className: 'bt-row-owner' }, owner) : null,
++      bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
++    secondLine ? h('span', { className: 'bt-row-preview' }, secondLine) : null) : null,
 +  unreadMark)
 +  // Hover/focus gear on every wide row (#276/#173): own Bots and friends' Bots alike.
 +  const settingsLabel = bot.remote ? t('Bot settings') : t('Edit Bot')
@@ -1250,7 +1261,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  return row
 +}
 +
-+// A friend's Bot: a small globe after the name, its handle on hover.
++// A friend's Bot: a globe after its owner's name, its handle on hover.
 +function RemoteMark({ remote }) {
 +  return h('span', { className: 'bt-row-remote', title: remote.gone ? `${remote.handle} · ${t('no longer shared')}` : remote.handle, 'aria-label': t('Friend\'s Bot') },
 +    h('svg', { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
@@ -1587,13 +1598,12 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
  .bt-round:hover{background:var(--bt-hover)}
  .bt-round:active{transform:scale(.94)}
-@@ -132,21 +132,25 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -132,21 +132,24 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-+.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
-+.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name{align-items:flex-start}
-+.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-3,rgba(20,20,20,.36))}
++.bt-row-owner{flex:0 100 auto;min-width:24px;font-size:13px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
  .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bt-unread{width:8px;height:8px;border-radius:50%;background:#1084fe;flex:none;margin-right:2px;animation:bt-fade .13s cubic-bezier(.22,1,.36,1)}

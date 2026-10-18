@@ -177,10 +177,25 @@ test('a face-room sidebar row stays on one line and shows its full title on hove
   assert.match(mark, /className: 'bt-row-remote bt-row-face'/)
   const row = sidebar.slice(sidebar.indexOf('function RoomRow('), sidebar.indexOf('function AgentSessionRow('))
   assert.match(row, /'aria-current': active \? 'page' : undefined,\n(\s*\/\/[^\n]*\n)?\s*title,\n/)
-  // The two-line clamp is for a friend's Bot marker only, never the face-room people mark.
-  const clamp = styles.split('\n').filter(line => line.includes('-webkit-line-clamp:2') && line.includes('.bt-row-remote'))
-  assert.ok(clamp.length > 0)
-  for (const line of clamp) assert.doesNotMatch(line, /:has\(\.bt-row-remote\)/)
-  assert.match(styles, /\.bt-row:has\(\.bt-row-remote:not\(\.bt-row-face\)\) \.bt-row-title/)
+  // No sidebar row wraps its title (#384 dropped the friend's Bot two-line clamp too).
+  assert.equal(styles.split('\n').some(line => line.includes('-webkit-line-clamp:2') && line.includes('.bt-row-')), false)
   assert.match(styles, /\.bt-row-title\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)
+})
+
+test("a friend's Bot sidebar row is its name and owner on one line, with a second line like own rows (#384)", async () => {
+  const { readFileSync } = await import('node:fs')
+  const sidebar = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const styles = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const row = sidebar.slice(sidebar.indexOf('function BotRow('), sidebar.indexOf('function RemoteMark('))
+  assert.match(row, /const rowName = remoteRecord \? cleanPeerName\(bot\.name, shown\) : shown/)
+  assert.match(row, /h\('span', \{ className: 'bt-row-title' \}, rowName\)/)
+  assert.match(row, /owner \? h\('span', \{ className: 'bt-row-owner' \}, owner\) : null/)
+  // Before the first message the second line still says what the row is.
+  assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remoteRecord \? t\("Friend's Bot"\) : ''\)/)
+  // The full "Helper · Bob's Bot" title is on hover and in the label.
+  assert.match(row, /title: remoteRecord \? shown :/)
+  assert.match(styles, /\.bt-row-owner\{flex:0 100 auto;[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)
+  assert.match(styles, /\.bt-row-remote\{[^}]*color:var\(--bt-ink-2\)\}/)
+  const { DICTIONARY } = await import('../src/client/i18n.js')
+  assert.equal(DICTIONARY.zh["Friend's Bot"], '好友的 Bot')
 })
