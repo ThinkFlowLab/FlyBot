@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -158,4 +158,29 @@ test('handles equal modulo @ and case share one look; a stored look still wins',
   const owned = lookOf({ id: 'c', remote: { handle: '@bot.x.home' }, color: 'green', avatar: { shape: 'kitty' } })
   assert.equal(owned.shape, 'kitty')
   assert.equal(owned.color, 'green')
+})
+
+const flat = (node, out = []) => {
+  if (node === null || node === undefined || typeof node === 'string') return out
+  if (Array.isArray(node)) { node.forEach(child => flat(child, out)); return out }
+  out.push(node)
+  flat(node.props?.children, out)
+  return out
+}
+
+test("#236 follow-up: a friend's line Bot Social attested as typed by them is drawn as the person, not as their Bot", () => {
+  const roster = { bots: [], remoteBots: [{ handle: '@chief.danyang.home', name: 'Chief' }], byId: {} }
+  const props = { roster, actions: {}, sessionId: 's', msgKey: 'k', useUi: () => ({}), text: 'hello Helper' }
+  const typedLine = flat(RemoteMessage({ ...props, source: { remote: { handle: '@chief.danyang.home', typedBy: 'Danyang' }, senderName: 'Chief' } }))
+  const wrap = typedLine[0]
+  assert.match(wrap.props.className, /bt-person-msg/)
+  assert.equal(wrap.props['data-person'], 'Danyang')
+  assert.ok(typedLine.some(n => n.props?.className === 'bt-group-name' && n.props.children[0] === 'Danyang'), 'the name is the person\'s')
+  const leadOf = nodes => flat(nodes.find(n => n.props?.lead !== undefined)?.props.lead)
+  assert.equal(leadOf(typedLine).some(n => n.props?.bot !== undefined), false, 'no Bot avatar in the lead')
+  assert.ok(leadOf(typedLine).some(n => typeof n.type === 'function' && n.type.name === 'PersonMark'), 'a person mark leads')
+  const botLine = flat(RemoteMessage({ ...props, source: { remote: { handle: '@chief.danyang.home' }, senderName: 'Chief' } }))
+  assert.doesNotMatch(botLine[0].props.className, /bt-person-msg/)
+  assert.equal(botLine[0].props['data-remote'], '@chief.danyang.home')
+  assert.ok(leadOf(botLine).some(n => n.props?.bot !== undefined), 'a Bot line keeps the Bot avatar')
 })

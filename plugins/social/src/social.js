@@ -1271,7 +1271,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           continue
         }
         const outcome = await flybot.bot.send({
-          from: { kind: 'remote', handle, home: event.from?.home_handle ? norm(event.from.home_handle) : undefined, name: typedBy ? `${typedBy} (typed via ${handle}, Bot Social)` : `${cleanText(event.from?.display_name, handle)} (${handle}, Bot Social)` },
+          from: { kind: 'remote', handle, home: event.from?.home_handle ? norm(event.from.home_handle) : undefined, name: typedBy ? `${typedBy} (typed via ${handle}, Bot Social)` : `${cleanText(event.from?.display_name, handle)} (${handle}, Bot Social)`, ...(typedBy ? { typedBy } : {}) },
           to: local.id,
           text,
           meta: { conversationId: event.conversation_id ?? null },

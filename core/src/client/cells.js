@@ -221,9 +221,19 @@ export function remoteSpeaker(source, roster) {
   return { bot, member, name, handle, chatId: chat ? currentPart(chat) : undefined }
 }
 
-function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
+export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
   const { bot, member, name, handle, chatId } = remoteSpeaker(source, roster)
   const files = Array.isArray(source.attachments) ? source.attachments : []
+  // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
+  // person's, with their name and a person mark, and the Bot that carried it only named as the route.
+  const person = typeof source.remote.typedBy === 'string' ? source.remote.typedBy : ''
+  if (person) {
+    return h('div', { className: 'bt-group-msg bt-person-msg bt-remote-msg', 'data-person': person, 'data-remote': handle },
+      h('span', { className: 'bt-group-name' }, person,
+        h('span', { className: 'bt-remote-handle', title: handle }, t('via {name}', { name }))),
+      h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark)) }),
+      files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
+  }
   const mark = h(BotMark, { bot, size: 22 })
   const lead = chatId
     ? h('button', { type: 'button', className: 'bt-lead', title: handle, 'aria-label': t("Open {name}'s chat", { name }), onClick: () => actions.openSession(chatId) }, mark)

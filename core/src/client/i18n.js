@@ -454,6 +454,7 @@ const ZH = {
   'Replies from': '群聊回复：',
   'Reply from': '收到回复：',
   'Message from': '收到消息：',
+  'via {name}': '经由 {name}',
   'Stopped by': '叫停者：',
   '{count} messages with': '{count} 条消息，来自',
   'Routine started': '例行任务开始',

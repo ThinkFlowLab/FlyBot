@@ -48,7 +48,7 @@ const homeOfHandle = handle => {
 export const toRemote = (ref) => {
   if (!isRemote(ref)) return undefined
   const handle = `@${String(typeof ref === 'string' ? ref : ref.handle).replace(/^@+/, '').toLowerCase()}`
-  return { kind: 'remote', handle, home: typeof ref === 'object' && ref.home ? ref.home : homeOfHandle(handle), ...(typeof ref === 'object' && ref.name ? { name: ref.name } : {}), ...(typeof ref === 'object' && ref.transport ? { transport: ref.transport } : {}) }
+  return { kind: 'remote', handle, home: typeof ref === 'object' && ref.home ? ref.home : homeOfHandle(handle), ...(typeof ref === 'object' && ref.name ? { name: ref.name } : {}), ...(typeof ref === 'object' && ref.transport ? { transport: ref.transport } : {}), ...(typeof ref === 'object' && typeof ref.typedBy === 'string' && ref.typedBy.trim() ? { typedBy: cleanName(ref.typedBy) } : {}) }
 }
 const targetOf = ref => (isRemote(ref) ? { remote: true, handle: toRemote(ref).handle, home: toRemote(ref).home } : { remote: false, id: ref })
 const checkName = (kind, value) => {
@@ -565,7 +565,7 @@ export function install(rt) {
       // Only a remote sender's files reach a local Bot, as references (no local paths).
       const shown = files.map(({ path, ...ref }) => ref)
       msg.deliverArgs = isRemote(from)
-        ? { toId: to, role, hop, text, exchangeId, fromName: from.name ?? remoteMembers.get(from.handle)?.name ?? from.handle, untrusted: true, remote: { handle: from.handle, home: from.home }, ...(shown.length ? { attachments: shown } : {}) }
+        ? { toId: to, role, hop, text, exchangeId, fromName: from.name ?? remoteMembers.get(from.handle)?.name ?? from.handle, untrusted: true, remote: { handle: from.handle, home: from.home, ...(from.typedBy ? { typedBy: from.typedBy } : {}) }, ...(shown.length ? { attachments: shown } : {}) }
         : { fromId: from, toId: to, role, hop, text, exchangeId }
     }
     const result = await run(msg)

@@ -257,6 +257,17 @@ test('bot.send reaches remote Bots through a transport and takes remote senders 
   await assert.rejects(fb.bot.send({ from: 'a', to: 'zz', text: 'x' }), /unknown Bot/)
 })
 
+test('a remote sender the plugin says typed the line is marked on the message source; a Bot line is not', async (t) => {
+  const { fb, agents, stop, grantTo } = await start()
+  t.after(stop)
+  await grantTo('a', '@bob.bot')
+  await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Bob (typed via @bob.bot, Bot Social)', typedBy: 'Bob\n[x]' }, to: 'a', text: 'it is me' })
+  await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Coder' }, to: 'a', text: 'the Bot' })
+  const sources = agents.get('a').calls.map(([, m]) => m.source)
+  assert.deepEqual(sources.map(source => source.remote.typedBy), ['Bob x', undefined])
+  assert.equal('typedBy' in sources[1].remote, false)
+})
+
 test('#226: chatApprovals.changed moves the team revision so a friend chat badge refreshes', async (t) => {
   const { fb, call, stop } = await start()
   t.after(stop)
