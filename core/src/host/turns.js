@@ -369,6 +369,8 @@ export function install(rt) {
             ...(source.again ? { again: true } : {}),
             ...(source.stopped ? { stopped: true } : {}),
             ...(source.askedBy ? { askedBy: source.askedBy } : {}),
+            // Whose request the post carries on (turn-origin.js): the round's member turns answer it.
+            ...(typeof source.origin === 'string' ? { origin: source.origin } : {}),
           })
         } else if (source?.kind === SOURCE_KIND && source.role === 'kickoff' && rt.roomOf(id)) {
           queueRoomMessage(id, { text: '', kickoff: true })
@@ -513,14 +515,14 @@ export function install(rt) {
           } else if (!stopped && reason?.kind !== 'aborted') {
             // The round moved on without this member; how its turn ends still reaches the group.
             if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
-            else void rt.lateRoomReply?.(id, info, replyText())
+            else void rt.lateRoomReply?.(id, info, replyText(), origin)
           }
         } else if (!retry && info !== undefined) {
           // A group Session speaks only in its group: the turn that takes a reply to a
           // message it sent from there posts what it ends with.
           if (rt.groupOwners.has(id) && (info.role === 'reply' || info.role === 'retry')) {
             if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
-            else if (reason?.kind !== 'aborted') void rt.lateRoomReply?.(id, info, replyText())
+            else if (reason?.kind !== 'aborted') void rt.lateRoomReply?.(id, info, replyText(), origin)
           } else {
             answer(info, replyText())
           }

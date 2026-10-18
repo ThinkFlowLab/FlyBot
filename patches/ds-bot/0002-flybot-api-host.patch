@@ -837,6 +837,15 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    const groupNames = self => visibleRooms(self).map(room => `"${room.name}"`).join(', ') || 'none'
    const pickRoom = (ref, self) => {
      const matches = rt.findRooms(ref).filter(room => visibleRooms(self).includes(room))
+@@ -400,7 +400,7 @@ export function install(rt) {
+       await rt.save()
+       const reportBack = args.report_back === true
+       try {
+-        await rt.postToRoom(room, sender, text, { hop: info?.hop ?? 0, ...(reportBack ? { reportBack: true } : {}) })
++        await rt.postToRoom(room, sender, text, { hop: info?.hop ?? 0, origin: rt.agentOrigin?.(exec.agent) ?? 'other', ...(reportBack ? { reportBack: true } : {}) })
+       } catch (failure) {
+         return `Could not post in "${room.name}": ${failure.message}`
+       }
 @@ -525,7 +525,7 @@ export function install(rt) {
      name: 'save_capability',
      description: 'Create or update a shared MCP server, skill, or pack. Changes apply from your next message.',

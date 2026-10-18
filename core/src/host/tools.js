@@ -479,7 +479,7 @@ export function install(rt) {
       await rt.save()
       const reportBack = args.report_back === true
       try {
-        await rt.postToRoom(room, sender, text, { hop: info?.hop ?? 0, ...(reportBack ? { reportBack: true } : {}) })
+        await rt.postToRoom(room, sender, text, { hop: info?.hop ?? 0, origin: rt.agentOrigin?.(exec.agent) ?? 'other', ...(reportBack ? { reportBack: true } : {}) })
       } catch (failure) {
         return `Could not post in "${room.name}": ${failure.message}`
       }

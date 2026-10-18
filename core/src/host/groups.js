@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ROOM_LATE_ROUNDS, SOURCE_KIND } from './constants.js'
+import { OWNER, OTHER, SCHEDULED, combine } from './turn-origin.js'
 import { escapeRegExp, textOf } from './text.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
@@ -348,6 +349,22 @@ export function install(rt) {
     return local && room.members.includes(local.id) ? { id: local.id, name: local.name, remote: false } : { id: line.botId, name: line.who, remote: true }
   }
 
+  // Whose request a round answers (turn-origin.js). Its member turns are delivered by the host, which
+  // would stamp them as the owner's, so the round carries the strictest verdict of the Bot posts that
+  // opened it: a Bot post that was itself asked by someone else (a friend driving a Main Bot that posts
+  // here) makes every member turn of the round someone else's, and so does a post nobody vouched for.
+  // A person's own line has no verdict here: other people in the room are caught when the turn is
+  // judged (settled() reads the room at the moment of each call).
+  const roundOrigins = new WeakMap()
+  const postOrigin = (post) => {
+    if (post.kickoff || post.notice || post.failed || post.resumed || post.stopped || post.botId === 'face-notice') return undefined
+    if (post.botId === undefined) return undefined
+    const bot = rt.botOf(post.botId)
+    if (bot === undefined || bot.remote !== undefined) return OTHER
+    return post.origin === OWNER || post.origin === SCHEDULED ? OWNER : OTHER
+  }
+  const originOfPosts = posts => posts.reduce((verdict, post) => combine(verdict, postOrigin(post)), undefined)
+
   async function runRound(room, round, signal, agent) {
     let limit = round.slots.length + ROOM_EXTRA_TURNS + (room.admin ? ROOM_ADMIN_EXTRA_TURNS : 0)
     const turns = new Map()
@@ -397,7 +414,7 @@ export function install(rt) {
       round.shown?.push(member.id)
       const text = session.brief === undefined ? prompt : `${session.brief}\n\n${prompt}`
       if (!signal.aborted) room.seen[member.id] = room.seq
-      const result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by })
+      const result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by, origin: roundOrigins.get(round) })
       const reply = result === null || typeof result === 'object' ? result : stripOwnName(member.name, String(result ?? '').trim())
       round.speaking = null
       if (reply?.failure !== undefined) {
@@ -507,6 +524,7 @@ export function install(rt) {
         failed: [],
         started: [],
       }
+      roundOrigins.set(round, originOfPosts(posts))
       for (const post of posts.filter(item => item.failed)) {
         const bot = rt.botOf(post.botId)
         const { code, status, message } = post.failed
@@ -695,7 +713,7 @@ export function install(rt) {
   // approval) posts what its turn ended with. The member that asked for it and anyone
   // it names answer; past the late round limit nobody does, so late posts cannot keep a
   // group talking.
-  async function lateRoomReply(sessionId, info, reply) {
+  async function lateRoomReply(sessionId, info, reply, origin) {
     const owner = rt.groupOwners.get(sessionId)
     const room = rt.roomOf(owner?.roomId ?? info.roomId)
     const member = rt.botOf(owner?.botId)
@@ -705,7 +723,7 @@ export function install(rt) {
     const quiet = (room.lateRounds ?? 0) >= ROOM_LATE_ROUNDS
     if (!quiet) room.lateRounds = (room.lateRounds ?? 0) + 1
     await rt.save()
-    await postToRoom(room, member, text, { late: true, ...(info.askedBy ? { askedBy: info.askedBy } : {}), ...(quiet ? { quiet: true } : {}) })
+    await postToRoom(room, member, text, { late: true, origin: origin ?? OTHER, ...(info.askedBy ? { askedBy: info.askedBy } : {}), ...(quiet ? { quiet: true } : {}) })
       .catch(error => rt.warn('ds-bot: late group reply from %s failed: %s', member.name, error))
   }
   rt.lateRoomReply = lateRoomReply
@@ -765,7 +783,11 @@ export function install(rt) {
       round.passed.length > 0 ? `Stayed silent: ${round.passed.join(', ')}.` : '',
       round.failed.length > 0 ? `Could not answer because their model call failed: ${round.replies.filter(reply => reply.kind === 'failed').map(reply => `${reply.name} (${failureLine({ code: reply.code, status: reply.status, message: reply.text })})`).join(', ')}.` : '',
     ].filter(Boolean).join('\n\n')
-    await rt.deliver({ toId: post.botId, role: 'report', roomId: room.id, text, hop: (post.hop ?? 0) + 1 })
+    // The replies are what the room's members said, so the report is the owner's request only when the
+    // round was and nobody but the owner's own Bots is in the room.
+    const poster = rt.botOf(post.botId)
+    const origin = roundOrigins.get(round) === OTHER || poster === undefined || rt.othersInRoom(room, poster).length > 0 ? OTHER : OWNER
+    await rt.deliver({ toId: post.botId, role: 'report', roomId: room.id, text, hop: (post.hop ?? 0) + 1, origin })
       .catch(error => rt.warn('ds-bot: group report to %s failed: %s', post.name, error))
   }
 

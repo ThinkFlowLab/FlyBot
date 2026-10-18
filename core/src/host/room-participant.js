@@ -36,7 +36,7 @@ export function createDshRoomParticipant(rt) {
   // round, or null when the round was stopped. The wait restarts on each event of the
   // member's Session, so a member at work is never cut off. `by` is the member that
   // called it, which answers what the turn posts after the round moved on.
-  async function runTurn({ room, member, sessionId, text, note, signal, started, by }) {
+  async function runTurn({ room, member, sessionId, text, note, signal, started, by, origin }) {
     if (signal.aborted) return null
     const exchangeId = randomUUID()
     const turn = { botId: member.id, sessionId, exchangeId }
@@ -64,7 +64,7 @@ export function createDshRoomParticipant(rt) {
       signal.addEventListener('abort', abort, { once: true })
     })
     try {
-      await rt.deliver({ fromId: undefined, toId: member.id, sessionId, role: 'room', roomId: room.id, exchangeId, note, text, ...(by ? { askedBy: by } : {}) })
+      await rt.deliver({ fromId: undefined, toId: member.id, sessionId, role: 'room', roomId: room.id, exchangeId, note, text, ...(by ? { askedBy: by } : {}), ...(origin ? { origin } : {}) })
       // Still held by an earlier request: this turn cannot start until the user answers.
       if (rt.waitsForApproval?.(sessionId)) rt.roomWaiters.get(exchangeId)?.approval()
       // Still at earlier work: the call waits in its inbox and is answered after that.

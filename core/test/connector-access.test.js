@@ -530,6 +530,17 @@ test('the tool list follows a person or friend joining and leaving a room, witho
   await rt.save()
   await tick()
   assert.deepEqual([...hiddenFrom('room-writer')], [], 'alone again: listed again')
+  // The same when the Bot is also granted to a friend of the same name, so the labels do not change
+  // (found in review of #370): who is in the room is what is compared, not the names shown.
+  await rt.setGrants('writer', [{ grantee: '@bob.home', name: 'Bob' }])
+  rt.state.rooms.room.participants.push({ kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob', role: 'member', joinedSeq: 6 })
+  await rt.save()
+  await tick()
+  assert.deepEqual(sorted(hiddenFrom('room-writer')), ALL, 'Bob is in the room again')
+  rt.state.rooms.room.participants.at(-1).leftSeq = 9
+  await rt.save()
+  await tick()
+  assert.deepEqual([...hiddenFrom('room-writer')], [], 'Bob left, and the grant still says Bob: listed again')
   end('room-writer')
 })
 
@@ -594,4 +605,39 @@ test('the running turn notes whose request it answers, so a resumed turn keeps t
   assert.equal((await noted()).writer.origin, 'other', 'a friend\'s line later in the turn is noted too')
   end('writer')
   end('chief')
+})
+
+// A Main Bot that a friend drives posts into a room of the owner's own Bots. The room's member turns
+// and the report that comes back are delivered by the host (no sender), so they used to read as the
+// owner's: a friend could reach the owner's connector tools through a post (found in review of #370).
+test('a Bot post carries whose request it is into the room\'s member turns and into the report', async (t) => {
+  const run = async (source) => {
+    const { ctx, rt, agentFor, sent, begin, take, end, stop } = await setup()
+    t.after(stop)
+    await agentFor('chief')
+    await agentFor('room')
+    const chief = { id: 'chief', session: { id: 'chief' } }
+    take('chief', source)
+    begin('chief')
+    const posted = await ctx.registeredTools.get('post_to_group').execute({ group: 'room', message: 'please do it', report_back: true }, { agent: chief })
+    assert.match(posted, /^Posted in/)
+    end('chief')
+    const post = sent.find(message => message.source?.role === 'post')
+    assert.ok(post, 'the post reached the room Session')
+    // The room Session takes the post in, like DSH tells the plugin; the round then relays it.
+    take('room', post.source, post.content[0].text)
+    const controller = new AbortController()
+    const running = ctx.registeredTools.get('group_relay').execute({}, { agent: { id: 'room', session: { id: 'room' } }, callId: 'round', signal: controller.signal })
+    for (let i = 0; i < 50 && !sent.some(message => message.source?.role === 'room'); i += 1) await tick()
+    const member = sent.find(message => message.source?.role === 'room')
+    assert.ok(member, 'a member turn was delivered')
+    controller.abort()
+    await running.catch(() => {})
+    for (let i = 0; i < 50 && !sent.some(message => message.source?.role === 'report'); i += 1) await tick()
+    const report = sent.find(message => message.source?.role === 'report')
+    assert.ok(report, 'the report came back to the poster')
+    return { post: post.source.origin, member: member.source.origin, report: report.source.origin, rt }
+  }
+  assert.deepEqual(await run(TYPED).then(({ post, member, report }) => ({ post, member, report })), { post: 'owner', member: 'owner', report: 'owner' })
+  assert.deepEqual(await run(FRIEND).then(({ post, member, report }) => ({ post, member, report })), { post: 'other', member: 'other', report: 'other' }, 'a friend-driven poster makes the whole round someone else\'s')
 })

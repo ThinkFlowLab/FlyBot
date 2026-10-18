@@ -102,7 +102,12 @@ export function install(rt) {
   const masks = new WeakMap()
   // Who each local Bot was shared with the last time its Agents were looked at (see followSharing).
   const sharedBefore = new Map()
-  const sharingOf = botId => rt.sharedWith(botId).join('\n')
+  // Labels alone can stay equal when the people change (two people with one name), so the rooms the Bot
+  // sits in and who is in them are part of what is compared.
+  const sharingOf = botId => [
+    ...rt.sharedWith(botId),
+    ...Object.values(state.rooms ?? {}).filter(room => (room.members ?? []).includes(botId)).map(room => `${room.id}:${(room.members ?? []).join(',')}:${(room.participants ?? []).filter(p => p?.leftSeq === undefined).map(p => p?.id ?? p?.handle).join(',')}`),
+  ].join('\n')
   const seen = new WeakSet()
   const refs = []
   const track = (agent) => {
