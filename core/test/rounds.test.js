@@ -832,3 +832,51 @@ test('#299: the first Bot that answers a routed line ends it; a line to everyone
   await answer(b.sessionId, b.message.source.exchangeId, 'mine too', 3)
   await all
 })
+
+// How the owner's own line really reaches a face round: `send` logs it and posts the quiet "name: text" notice, and the
+// composer's message waits in the Session inbox, so the round opens on the notice and drains the line (#299, live finding).
+test('#299: the owner\'s own line, drained from the Session inbox, is routed: one answer, last speaker first, first Bot as fallback', async (t) => {
+  const env = start()
+  const { call, emit, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, writer, chief } = await routedRoom(env, 'drain')
+  const say = async (text, id) => {
+    await call('send', { sessionId: hosted.id, text })
+    await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Me', quiet: true, notice: true, human: { authorId: 'owner-1', name: 'Me' } }, content: [{ type: 'text', text: `Me: ${text}` }] } })
+    return { running: relay(hosted.id, id) }
+  }
+  const { running: one } = await say('文档怎么写', 'drain-1')
+  const a = await turnFor(sent)
+  assert.match(promptOf(a), /names no Bot/, 'the drained line is routed')
+  await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 1)
+  const b = await turnFor(sent, a)
+  assert.equal(b.sessionId, hosted.sessions[writer])
+  await answer(b.sessionId, b.message.source.exchangeId, 'Start with an outline. @Chief ok?', 2)
+  const first = JSON.parse(await one)
+  assert.deepEqual(first.replies.filter(reply => reply.kind === undefined).map(reply => reply.botId), [writer])
+  assert.equal(roomTurns(sent).length, 2, 'the answer\'s @ starts no follow-up')
+
+  // Follow-up: the Writer is first, answers, and the Chief is not asked.
+  sent.length = 0
+  const { running: two } = await say('那你刚才说的大纲具体怎么写', 'drain-2')
+  const c = await turnFor(sent)
+  assert.equal(c.sessionId, hosted.sessions[writer])
+  await answer(c.sessionId, c.message.source.exchangeId, 'Three headings.', 3)
+  const second = JSON.parse(await two)
+  assert.deepEqual(second.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['Three headings.'])
+  assert.equal(roomTurns(sent).length, 1)
+
+  // Everyone passes: the first Bot (the Writer spoke last, so it is first) answers.
+  sent.length = 0
+  const { running: three } = await say('随便问问', 'drain-3')
+  const d = await turnFor(sent)
+  await answer(d.sessionId, d.message.source.exchangeId, '[PASS]', 4)
+  const e = await turnFor(sent, d)
+  await answer(e.sessionId, e.message.source.exchangeId, '[PASS]', 5)
+  const f = await turnFor(sent, d, e)
+  assert.ok(f, 'nobody answered, so the first Bot is asked again')
+  assert.match(promptOf(f), /nobody else answered/)
+  await answer(f.sessionId, f.message.source.exchangeId, 'Fine.', 6)
+  await three
+  assert.ok(chief)
+})

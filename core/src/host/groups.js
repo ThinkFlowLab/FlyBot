@@ -278,20 +278,46 @@ export function install(rt) {
     if (lines.length === 0) return 0
     const before = round.slots.length
     const members = room.members.map(rt.botOf).filter(Boolean)
-    // A line the user adds mid-round is answered by the rule for its own opening, so this round stops routing.
+    // The owner's own typed line reaches a face round through the Session inbox, not as the round's opener (the opener
+    // is the quiet "name: text" notice), so it is routed here (#299). A line added to a round that already routes
+    // is answered by the rule for its own opening, so that round stops routing.
+    const starting = round.route === undefined && round.slots.length === 0 && lines.length === 1
     delete round.route
     for (const line of lines) {
       if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
       round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
       const { all, found } = mentionsIn(line.text, members)
       const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
-      callMembers(round, turns, index - 1, openingSpeakers(room, { text: line.text }), note, ROOM_ADMIN_TURNS_EACH)
+      let speakers = openingSpeakers(room, { text: line.text })
+      if (starting) {
+        const route = routeFor(room, { text: line.text }, round.startSeq)
+        if (route) {
+          round.route = route
+          round.single = true
+          speakers = lastFirst(speakers, route)
+        }
+      }
+      callMembers(round, turns, index - 1, speakers, note, ROOM_ADMIN_TURNS_EACH)
     }
     // The user spoke in this room, so Bots may start their own rounds again.
     room.botRounds = 0
     room.lateRounds = 0
     void rt.save().catch(() => {})
     return round.slots.length - before
+  }
+
+  // The routing of a person's plain line in a face-to-face room (not @all): who decides, whether it is to everyone,
+  // who spoke last, and whether the user must be answered if every Bot passes (the owner's own line, not a friend's).
+  function routeFor(room, opener, startSeq) {
+    if (!isPlainFaceLine(room, opener) || opener.everyone) return undefined
+    const broadcast = ROOM_EVERYONE.test(opener.text ?? '')
+    return { broadcast, fallback: opener.plain !== true, last: broadcast ? undefined : recentSpeaker(room, startSeq) }
+  }
+  // The Bot that spoke last is asked first.
+  function lastFirst(speakers, route) {
+    const at = route?.last && !route.last.remote ? speakers.findIndex(bot => bot.id === route.last.id) : -1
+    if (at > 0) speakers.unshift(...speakers.splice(at, 1))
+    return speakers
   }
 
   // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval.
@@ -457,12 +483,8 @@ export function install(rt) {
       const named = opener.botId === undefined ? [] : mentionsIn(opener.text ?? '', room.members.map(rt.botOf).filter(Boolean)).found
       // A person's plain line (not @all) in a face-to-face room: the Bots decide who answers (#299). The
       // owner's own line is never left unanswered; a friend's attested line is answered by their home too.
-      const routed = isPlainFaceLine(room, opener) && !opener.everyone
-      const broadcast = routed && ROOM_EVERYONE.test(opener.text ?? '')
-      const route = routed ? { broadcast, fallback: opener.plain !== true, last: broadcast ? undefined : recentSpeaker(room, startSeq) } : undefined
-      const speakers = openingSpeakers(room, opener)
-      const lastAt = route?.last && !route.last.remote ? speakers.findIndex(bot => bot.id === route.last.id) : -1
-      if (lastAt > 0) speakers.unshift(...speakers.splice(lastAt, 1))
+      const route = routeFor(room, opener, startSeq)
+      const speakers = lastFirst(openingSpeakers(room, opener), route)
       const round = {
         roomId: room.id,
         members: room.members,
