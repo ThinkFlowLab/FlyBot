@@ -11000,7 +11000,7 @@ diff --git a/client.js b/client.js
 +function faceMentionables(room2, roster, fromFriend) {
 +  const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
 +  const seats = faceSeats(room2, roster);
-+  const ordered = fromFriend ? [...seats.filter((seat) => !seat.mine), ...seats.filter((seat) => seat.mine)] : seats;
++  const ordered = [...seats.filter((seat) => seat.mine !== fromFriend), ...seats.filter((seat) => seat.mine === fromFriend)];
 +  const bots = ordered.flatMap((seat) => {
 +    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: "bot", remote: seat.record };
 +    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person };

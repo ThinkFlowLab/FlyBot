@@ -1725,7 +1725,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
-@@ -28,10 +28,54 @@ export function contentParts(content) {
+@@ -28,10 +28,55 @@ export function contentParts(content) {
  }
  
  // In a group only its members are called; elsewhere a mention opens that Bot's chat.
@@ -1751,12 +1751,13 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +// A face-to-face line was typed on either home, so a Bot is matched by every name the room
 +// host routes on (faceAliases: "SelfA's Chief" typed on B is A's own Chief on A) and the chip
 +// reads as the Members panel names it, "SelfA · Chief", the same on both homes (#305).
-+// A bare "@Chief" means the writer's own Chief: a friend's line tries the friend's Bots first.
++// A bare "@Chief" means the writer's own Chief: my line tries my Bots first (as the host does,
++// whatever order the room lists its seats in), a friend's line the friend's Bots.
 +function faceMentionables(room, roster, fromFriend) {
 +  const humans = (room.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
 +    .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
 +  const seats = faceSeats(room, roster)
-+  const ordered = fromFriend ? [...seats.filter(seat => !seat.mine), ...seats.filter(seat => seat.mine)] : seats
++  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend)]
 +  const bots = ordered.flatMap((seat) => {
 +    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
 +    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
@@ -1911,7 +1912,7 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 --- a/test/mention-rule.test.js
 +++ b/test/mention-rule.test.js
-@@ -83,9 +83,55 @@ test('the user bubble keeps the text around a mention, and a group only calls it
+@@ -83,9 +83,57 @@ test('the user bubble keeps the text around a mention, and a group only calls it
    assert.equal(canDrawUserMessages(), false)
  })
  
@@ -1948,8 +1949,10 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  assert.equal(partsB[0].bot.id, '@chief.selfa.home')
 +  assert.equal(partsB[0].bot.mentionLabel, 'SelfA · Chief')
 +  assert.deepEqual(plain(partsB[1]), { text: ' what is 2+2?' })
-+  // A bare "@Chief" typed on B is B's own Chief.
++  // A bare "@Chief" typed on B is B's own Chief, even when the room lists the friend's seat first.
 +  assert.equal(userTextParts('@Chief hi', mentionableBots(onB, 'r'))[0].bot.id, 'b1')
++  const friendFirst = { ...onB, roomsById: { r: { ...onB.roomsById.r, participants: [seatA, seatB] } } }
++  assert.equal(userTextParts('@Chief hi', mentionableBots(friendFirst, 'r'))[0].bot.id, 'b1')
 +
 +  const seatA2 = { kind: 'bot', id: 'a1', handle: '@chief.selfa.home', displayName: 'Chief', ownerName: 'SelfA' }
 +  const seatB2 = { kind: 'bot', remote: true, handle: '@chief.selfb.home', id: '@chief.selfb.home', displayName: 'Chief', ownerName: 'SelfB', isChief: true }

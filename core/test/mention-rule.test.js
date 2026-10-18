@@ -116,8 +116,10 @@ test('#305: a face-room mention chips on both homes under one name, and a typed 
   assert.equal(partsB[0].bot.id, '@chief.selfa.home')
   assert.equal(partsB[0].bot.mentionLabel, 'SelfA · Chief')
   assert.deepEqual(plain(partsB[1]), { text: ' what is 2+2?' })
-  // A bare "@Chief" typed on B is B's own Chief.
+  // A bare "@Chief" typed on B is B's own Chief, even when the room lists the friend's seat first.
   assert.equal(userTextParts('@Chief hi', mentionableBots(onB, 'r'))[0].bot.id, 'b1')
+  const friendFirst = { ...onB, roomsById: { r: { ...onB.roomsById.r, participants: [seatA, seatB] } } }
+  assert.equal(userTextParts('@Chief hi', mentionableBots(friendFirst, 'r'))[0].bot.id, 'b1')
 
   const seatA2 = { kind: 'bot', id: 'a1', handle: '@chief.selfa.home', displayName: 'Chief', ownerName: 'SelfA' }
   const seatB2 = { kind: 'bot', remote: true, handle: '@chief.selfb.home', id: '@chief.selfb.home', displayName: 'Chief', ownerName: 'SelfB', isChief: true }

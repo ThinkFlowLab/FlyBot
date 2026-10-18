@@ -49,12 +49,13 @@ export function mentionableBots(roster, sessionId, { fromFriend = false } = {}) 
 // A face-to-face line was typed on either home, so a Bot is matched by every name the room
 // host routes on (faceAliases: "SelfA's Chief" typed on B is A's own Chief on A) and the chip
 // reads as the Members panel names it, "SelfA · Chief", the same on both homes (#305).
-// A bare "@Chief" means the writer's own Chief: a friend's line tries the friend's Bots first.
+// A bare "@Chief" means the writer's own Chief: my line tries my Bots first (as the host does,
+// whatever order the room lists its seats in), a friend's line the friend's Bots.
 function faceMentionables(room, roster, fromFriend) {
   const humans = (room.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
     .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
   const seats = faceSeats(room, roster)
-  const ordered = fromFriend ? [...seats.filter(seat => !seat.mine), ...seats.filter(seat => seat.mine)] : seats
+  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend)]
   const bots = ordered.flatMap((seat) => {
     const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
     const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
