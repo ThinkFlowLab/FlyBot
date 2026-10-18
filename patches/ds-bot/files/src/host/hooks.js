@@ -16,6 +16,7 @@ import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
 import { SOURCE_KIND } from './constants.js'
 import { currentParticipants } from './room-membership.js'
+import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const FLYBOT_API_VERSION = 1
@@ -101,7 +102,7 @@ export function install(rt) {
   const emit = (name, payload) => { try { ctx.emit?.(name, payload) } catch (error) { warn('flybot: %s listener failed: %s', name, error) } }
 
   // ---------------------------------------------------------------- events
-  const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set() }
+  const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set(), ...Object.fromEntries(FEED_EVENTS.map(name => [name, new Set()])) }
   const changes = []
   let changeSeq = 0
   // A new host process starts a new epoch: the browser resets its watermark on a change.
@@ -119,11 +120,14 @@ export function install(rt) {
   // Cordis-style subscription, returns a disposer. 'change' listeners hear their own
   // plugin's fields unless they pass { all: true }; 'bot.removed' hears every removal.
   const onFor = plugin => (event, fn, { all = false } = {}) => {
-    if (!listeners[event]) throw new Error(`flybot: unknown event ${event}; use 'change', 'bot.created', 'bot.removed', or 'bot.grants'`)
+    if (!listeners[event]) throw new Error(`flybot: unknown event ${event}; use 'change', 'bot.created', 'bot.removed', 'bot.grants', or one of ${FEED_EVENTS.map(name => `'${name}'`).join(', ')}`)
     const listener = event === 'change' && !all ? change => { if (change.plugin === plugin) fn(change) } : fn
     listeners[event].add(listener)
     return () => listeners[event].delete(listener)
   }
+
+  // Turns, tool calls and deliveries (flybot-feed.js): metadata folded from session events.
+  installFeed(rt, fire)
 
   // ---------------------------------------------------------------- bots
   // The team: every Bot but friends' Bots, which are chats of their own (remote-chat.js).

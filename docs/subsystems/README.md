@@ -7,7 +7,7 @@ Detail pages for each FlyBot subsystem. Each page lists `owned_paths`, what the 
 | ds-bot-core | [ds-bot-core.md](ds-bot-core.md) | `core/dev/`, `core/types/`, `ds-bot/`, `ds-bot.pin.json`, `patches/ds-bot/README.md`, `scripts/ds-bot-patches.mjs` (pin, patch format, dev tooling; generated patches are not owned) |
 | core-host | [core-host.md](core-host.md) | `core/index.js`, `core/src/host/`, `core/src/shared/`, `core/web-search.js`, host tests |
 | core-client | [core-client.md](core-client.md) | `core/src/client/`, `core/client.js` |
-| plugin-runtime | [plugin-runtime.md](plugin-runtime.md) | `core/src/host/hooks.js`, `core/src/client/flybot-slots.js`, `core/src/client/flybot-registry.js`, `core/types/flybot.d.ts`, flybot tests |
+| plugin-runtime | [plugin-runtime.md](plugin-runtime.md) | `core/src/host/hooks.js`, `core/src/host/flybot-feed.js`, `core/src/client/flybot-slots.js`, `core/src/client/flybot-registry.js`, `core/types/flybot.d.ts`, flybot tests |
 | tree | [tree.md](tree.md) | `plugins/tree/` |
 | social | [social.md](social.md) | `plugins/social/` |
 | install | [install.md](install.md) | `core/scripts/`, arch-doc tests, `plugins/README.md` |

@@ -61,6 +61,96 @@ export interface BotRemoved {
   bot: BotView
 }
 
+/** Who a delivery came from. A user line, a Bot, a group (a round's call), or a friend's Bot. */
+export type FeedParty = { kind: 'user' } | { kind: 'bot'; botId: BotId } | { kind: 'room'; roomId: string } | { kind: 'remote'; handle: string }
+
+/**
+ * Where a Session speaks: a Bot's own chat ('chat'), a Bot's hidden Session in a group
+ * ('group'), or the group's own Session ('room': its turn is one round and has no botId).
+ */
+export interface FeedPlace {
+  place: 'chat' | 'group' | 'room'
+  /** Absent for place 'room'. */
+  botId?: BotId
+  /** Set for 'group' and 'room'. */
+  roomId?: string
+  sessionId: string
+}
+
+/** The message a turn started from, when one arrived while the Session was idle. */
+export interface TurnTrigger {
+  exchangeId: string
+  from: FeedParty
+  role: string
+  hop: number
+  replyTo?: string
+}
+
+export interface TurnStarted extends FeedPlace {
+  /** `<sessionId>#<turn>`; tool events of the turn carry the same id. */
+  turnId: string
+  turn: number
+  /** Epoch ms of the session event. */
+  time: number
+  seq?: number
+  trigger?: TurnTrigger
+}
+
+export interface TurnEnded extends FeedPlace {
+  turnId: string
+  turn: number
+  time: number
+  seq?: number
+  /** 'aborted' = stopped; 'error' carries `errorCode` only (no message text). */
+  outcome: 'completed' | 'aborted' | 'error'
+  errorCode?: string
+  /** True when the turn never reported its end and a newer turn closed it. */
+  interrupted?: boolean
+}
+
+export interface ToolStarted extends FeedPlace {
+  turnId: string
+  callId: string
+  /** Cleaned label (one line, at most 80 characters). Arguments are never in the feed. */
+  name: string
+  time: number
+}
+
+export interface ToolEnded extends FeedPlace {
+  turnId: string
+  callId: string
+  name: string
+  time: number
+  durationMs: number
+  /** False for an error result, and for a call its turn ended before it returned. */
+  ok: boolean
+  /** True when the turn ended while the call was still running. */
+  interrupted?: boolean
+}
+
+/**
+ * A message delivered into a Session's log (not "read"; the feed cannot see that).
+ * `exchangeId` matches `state.exchanges` and the `replyTo` of the answer, so send to
+ * reply latency is the difference of two deliveries' `time`. Text is never in the feed.
+ */
+export interface ExchangeDelivered {
+  exchangeId: string
+  from: FeedParty
+  to: { botId?: BotId; roomId?: string }
+  sessionId: string
+  place: 'chat' | 'group' | 'room'
+  /** 'user' for a typed line; else request, reply, stopped, report, room, post or mention. */
+  role: string
+  hop: number
+  time: number
+  seq?: number
+  replyTo?: string
+  roomId?: string
+  audience?: 'user'
+  /** Characters of text the message carried. */
+  textLength: number
+}
+
 export interface FlyBotEvents {
   'change': FieldChange
   /** A new local Bot (UI, create_bot, or a plugin's bot.create); payload is its record. */
@@ -68,6 +158,16 @@ export interface FlyBotEvents {
   'bot.removed': BotRemoved
   /** This Bot's grant list changed; payload is its record. */
   'bot.grants': BotView
+  /**
+   * Team activity feed, folded from session events: metadata only (ids, times, outcomes),
+   * never message text, tool arguments or output. Not replayed: a listener hears what
+   * happens after it subscribes. Listeners cannot affect the Session.
+   */
+  'turn.start': TurnStarted
+  'turn.end': TurnEnded
+  'tool.start': ToolStarted
+  'tool.end': ToolEnded
+  'exchange.delivered': ExchangeDelivered
 }
 export type On = <K extends keyof FlyBotEvents>(event: K, listener: (payload: FlyBotEvents[K]) => void, options?: { all?: boolean }) => () => void
 

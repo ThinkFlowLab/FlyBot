@@ -2,10 +2,12 @@
 subsystem: plugin-runtime
 owned_paths:
   - core/src/host/hooks.js
+  - core/src/host/flybot-feed.js
   - core/src/client/flybot-slots.js
   - core/src/client/flybot-registry.js
   - core/types/flybot.d.ts
   - core/test/flybot.test.js
+  - core/test/flybot-feed.test.js
   - core/test/flybot-client.test.js
 ---
 
@@ -16,10 +18,11 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 ## Owns
 
 - `core/src/host/hooks.js` — host-side plugin hooks.
+- `core/src/host/flybot-feed.js` — the team activity feed (`turn.*`, `tool.*`, `exchange.delivered`) folded from `session/event` (#241).
 - `core/src/client/flybot-slots.js` — client slot registry.
 - `core/src/client/flybot-registry.js` — plugin discovery/registration.
 - `core/types/flybot.d.ts` — public types.
-- Flybot unit tests (`flybot.test.js`, `flybot-client.test.js`).
+- Flybot unit tests (`flybot.test.js`, `flybot-client.test.js`, `flybot-feed.test.js`).
 
 ## Does not own
 
@@ -31,6 +34,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 | File | Role |
 | --- | --- |
 | `core/src/host/hooks.js` | Host hook points: send middleware, transports, grants, the owner-bound held-send approvals (#52), and task hold/decide/delete seams (#54). |
+| `core/src/host/flybot-feed.js` | Activity feed: folds a Bot Session's `session/event`s into `flybot.on('turn.start' \| 'turn.end' \| 'tool.start' \| 'tool.end' \| 'exchange.delivered')` (#241). |
 | `core/src/client/flybot-slots.js` | Client slots, including the approval card queue (`flybot.approvals`, `flybot/decide`). |
 | `core/src/client/flybot-registry.js` | Registry. |
 | `core/types/flybot.d.ts` | Types. |
@@ -53,6 +57,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 9. `flybot.rooms` hosts a Bot Social face-to-face matching room as a native room (`upsertFace` / `applyFaceLine` / `ofFace` / `dropFace` / `onFaceLine` / `postNotice` / `postHuman` / `postRemote`; `postHuman` draws another member's typed line as a chat bubble from that person, #180). Slot `flybot.room.overview` is a block at the top of a group's overview: while joining, a tile grid (avatar above name + owner) with **Leave** and **Enter chat** on one row; once open, compact **Leave** and Auto-send — not Open/Start/Leave together. Slot `flybot.new-chat.action` adds a row to the sidebar **+** short action menu (next to Create group chat; `label` / `hint` go through the same `t()` map). Still not team mode.
 10. Held sends are owner-bound (#52): a hold stamps server-derived provenance on the record — `requestId`, a sha256 `version` over the request content, `origin` (`via`/`hop`/audience) and the sender Bot's `ownerId`; message claims (`meta`, text) never confer authority. `flybot/decide` passes authz for any signed-in actor and hooks binds the decision to the sender Bot's owner's session; `release` revalidates and marks records `stale` (changed request, deleted sender/target Bot, changed owner — `deleteBot` invalidates eagerly; a demoted Chief's sender-side holds are invalidated eagerly on `setMain`, not inside `staleReason`). `release()` re-checks immediately before dispatch so an in-flight approve cannot go out after a concurrent invalidation. Unknown `invalidateFor` field values throw. The pending list is filtered per actor under member enforcement. The default approval card shows `senderName`/`targetName` and a delegated marker (`Approval.origin`).
 11. Task lifecycle (#54): `bot.send` stamps `meta.taskId` from the working task (`rt.taskIdForSend`); a held send then calls `rt.taskHeld` (blocks **that** task). The owner's `flybot/decide` calls `rt.taskDecided` (approve resumes, reject cancels); `deleteBot` of a local Bot calls `rt.taskBotDeleted` (open tasks fail). Incoming holds stay the owner's. The state machine lives in `tasks.js`; hooks only fire those three seams. Clarification and `workBotId` wait on #55.
+12. Activity feed (#241): plugins that want to see where team time goes subscribe through `flybot.on(...)` and never to raw DSH `session/event` (the maintainer decision on #241). Events: `turn.start` / `turn.end` (a Bot's own chat `place: 'chat'`, its hidden group Session `'group'`, or the group's own Session `'room'`, whose turn is one round), `tool.start` / `tool.end` (paired by `callId`, closed `interrupted` when their turn ends first) and `exchange.delivered` (a message arrived in a Session's log: `exchangeId` as in `state.exchanges`, `replyTo` of the answer, `from` a user / Bot / group / friend's Bot). The feed is metadata only: message text, tool arguments, tool output and model output never leave `flybot-feed.js`, so a consumer that stores it cannot persist a secret. Strings from outside the team (tool names, remote handles) go through `cleanLabel`, error outcomes carry a code and no message. Delivered means "in the recipient's log", not read; the feed cannot see read. Host nudges (retry, resume, kickoff, deferred and re-sent deliveries) are not deliveries. Not replayed: a listener hears events after it subscribes. Listeners get copies and a throwing one cannot reach the Session or the other listeners. Events fire in a read-only host too, since they only observe.
 
 ### Chat-row pending badge
 
