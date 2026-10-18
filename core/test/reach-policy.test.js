@@ -109,6 +109,15 @@ test('reach matrix: remote to local needs a grant on the target; local to remote
   assert.equal(reach(s, { from: remote, to: 'nobody' }).action, 'allow', 'an unknown target is refused where it is resolved')
 })
 
+test('#273: a Bot not shared with that friend is told which Bot and which setting, the right way round', () => {
+  const s = team()
+  const verdict = reach(s, { from: 'a2', to: '@coder.bob.home' })
+  assert.equal(verdict.action, 'deny')
+  assert.match(verdict.reason, /^A2 is not shared with that friend, so it cannot message their Bots\./)
+  assert.match(verdict.reason, /share A2 with them in its settings → Sharing/)
+  assert.doesNotMatch(verdict.reason, /grant to that Bot|permission/i)
+})
+
 test('reach matrix: other owners reach only granted Bots, never through the Chief; same owner is free', () => {
   const s = team()
   grant(s, 'a', 'bob')

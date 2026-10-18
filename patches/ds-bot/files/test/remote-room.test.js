@@ -586,7 +586,7 @@ test('#90: an ungranted local Bot cannot be added to a room that has a friend\'s
   const { alice } = await signAliceAndBob(rt)
   const actorA = await rt.authenticate(alice.sessionToken)
   await withRemote(rt, actorA)
-  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, actorA), /granted/)
+  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, actorA), /Writer A is not shared with Bob/)
   assert.equal(rt.state.rooms.war.members.includes('spec-a'), false)
   await grantToFriend(rt, 'spec-a')
   await rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, actorA)
@@ -602,7 +602,7 @@ test('#90: a friend\'s Bot cannot be added to a room that holds an ungranted loc
   publish(rt)
   await grantToFriend(rt, 'chief-a')
   await rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, actorA)
-  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA), /granted/)
+  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA), /Writer A is not shared with Bob/)
   assert.equal(rt.state.rooms.war.participants.some(p => p.remote), false)
   await grantToFriend(rt, 'spec-a')
   await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
@@ -622,7 +622,7 @@ test('#51: creating a room with a friend\'s Bot and an unpublished member is ref
     { kind: 'bot', id: 'spec-a' },
     { kind: 'bot', remote: true, handle: '@coder.bob.home' },
   ]
-  assert.throws(() => rt.applyParticipants(room, drafts, actorA), /granted/)
+  assert.throws(() => rt.applyParticipants(room, drafts, actorA), /Writer A is not shared with Bob/)
   rt.state.grants = { ...(rt.state.grants ?? {}), 'spec-a': [{ id: 'spec-a:@bob.home', grantee: '@bob.home' }] }
   assert.doesNotThrow(() => rt.applyParticipants({ id: 'new', members: [], participants: [], createdAt: 1 }, drafts, actorA))
 })
@@ -689,7 +689,7 @@ test('#51: a room code lets an unpublished Bot in, for that room only (internal 
   const { alice } = await signAliceAndBob(rt)
   const actorA = await rt.authenticate(alice.sessionToken)
   await withRemote(rt, actorA)
-  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a', viaCode: true }, actorA), /granted/)
+  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a', viaCode: true }, actorA), /not shared with Bob/)
   await rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, actorA, { viaCode: true })
   const entry = rt.state.rooms.war.participants.find(p => p.id === 'spec-a')
   assert.equal(entry.viaCode, true)
@@ -859,4 +859,100 @@ test('#98: an inbound-share human line from the other owner is fenced', async (t
   assert.ok(line, 'the human line landed')
   assert.match(String(line.text), /^<untrusted-message from="/)
   assert.equal(String(line.text).match(/<\/untrusted-message>/g).length, 1)
+})
+
+// ---- A group with a friend's Bot and a local Bot the owner has not shared with that friend
+
+// The group's lines, and the replies of every local Bot that may speak there, go to the friend's home
+// (fanoutRoomLine), so the rule stays: only a Bot shared with that friend sits in it. What was missing
+// is the way out: the refusal names the Bot and the friend, and carries them for the client's buttons.
+test('an ungranted local Bot refused next to a friend\'s Bot: the error names it, the friend and the way out', async (t) => {
+  const { rt } = host(t, TEAM)
+  rt.createRoom = undefined
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  const drafts = [
+    { kind: 'human', id: 'owner-1', role: 'admin' },
+    { kind: 'bot', id: 'spec-a', role: 'admin' },
+    { kind: 'bot', remote: true, handle: '@coder.bob.home' },
+  ]
+  await assert.rejects(async () => rt.applyParticipants({ id: 'new', members: [], participants: [], createdAt: 1 }, drafts, actorA), (error) => {
+    assert.equal(error.code, 'bot/forbidden')
+    assert.match(error.message, /^Writer A is not shared with Bob, so it cannot be in a group with their Bot/)
+    assert.match(error.message, /Invite to this Bot/)
+    assert.match(error.message, /leave it out/)
+    assert.deepEqual(error.details, {
+      reason: 'ungranted-local',
+      bots: [{ id: 'spec-a', name: 'Writer A' }],
+      remotes: [{ handle: '@coder.bob.home', name: 'Coder', owner: 'Bob' }],
+    })
+    return true
+  })
+})
+
+test('an ungranted local Bot refused when added to a room that has a friend\'s Bot carries the same details', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  await withRemote(rt, actorA)
+  await assert.rejects(() => rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, actorA), (error) => {
+    assert.equal(error.details.reason, 'ungranted-local')
+    assert.deepEqual(error.details.bots, [{ id: 'spec-a', name: 'Writer A' }])
+    assert.deepEqual(error.details.remotes.map(p => p.handle), ['@coder.bob.home'])
+    return true
+  })
+})
+
+test('sharing the Bot with the friend (the way out) lets the same group be made', async (t) => {
+  const { rt } = host(t, TEAM)
+  rt.createRoom = undefined
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  const drafts = [
+    { kind: 'human', id: 'owner-1', role: 'admin' },
+    { kind: 'bot', id: 'spec-a', role: 'admin' },
+    { kind: 'bot', remote: true, handle: '@coder.bob.home' },
+  ]
+  assert.throws(() => rt.applyParticipants({ id: 'a', members: [], participants: [], createdAt: 1 }, drafts, actorA), /not shared with Bob/)
+  await grantToFriend(rt, 'spec-a')
+  const room = { id: 'b', members: [], participants: [], createdAt: 1 }
+  rt.applyParticipants(room, drafts, actorA)
+  assert.deepEqual(room.members, ['spec-a'])
+  assert.equal(room.participants.some(p => p.remote && p.handle === '@coder.bob.home'), true)
+})
+
+test('an ungranted local Bot\'s lines never reach the friend, and a granted Bot in the same room still relays', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  await withRemote(rt, actorA)
+  const room = rt.state.rooms.war
+  const before = sent.length
+  await rt.fanoutRoomLine(room, { seq: 1, kind: 'message', authorKind: 'bot', authorId: 'chief-a', who: 'Chief A', text: 'granted reply' })
+  assert.equal(sent.length, before + 1)
+  await rt.fanoutRoomLine(room, { seq: 2, kind: 'message', authorKind: 'bot', authorId: 'spec-a', who: 'Writer A', text: 'private reply' })
+  assert.equal(sent.length, before + 1)
+})
+
+test('channel: a refused group carries its details to the client, an ordinary refusal carries none', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  const inviteA = (await call('auth-invite', {})).value
+  const alice = (await call('auth-redeem', { token: inviteA.token, displayName: 'Alice' })).value
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const refused = await call('update-room', { id: 'war', members: ['chief-a', 'chief-b'], addParticipants: [{ kind: 'bot', remote: true, handle: '@coder.bob.home' }, { kind: 'bot', id: 'spec-a' }] }, alice.sessionToken)
+  assert.equal(refused.ok, false)
+  assert.equal(refused.error.code, 'bot/forbidden')
+  assert.equal(refused.error.details.reason, 'ungranted-local')
+  assert.deepEqual(refused.error.details.bots.map(bot => bot.id), ['spec-a'])
+  const plain = await call('update-room', { id: 'nope', name: 'x' }, alice.sessionToken)
+  assert.equal(plain.ok, false)
+  assert.deepEqual(plain.error.details, {})
 })

@@ -7,7 +7,7 @@ import { CreateBot } from './create-bot.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
-import { listedChatBots, pickerBotLabel, splitRoomPicks } from '../shared/remote-label.js'
+import { listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
 
 export function NewChat({ mode, roster, actions }) {
   const [query, setQuery] = useState('')
@@ -20,6 +20,10 @@ export function NewChat({ mode, roster, actions }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // A group with a friend's Bot refused because one of my Bots is not shared with that friend:
+  // the Bots and friends named, so the error offers its two ways out (see ungrantedLocalFix).
+  const [fix, setFix] = useState(null)
+  const [fixNote, setFixNote] = useState('')
   const [cursor, setCursor] = useState(0)
   // The Create Bot form, opened straight from 'create' mode or from the list.
   const [draft, setDraft] = useState(mode === 'create' ? { name: '', fromList: false } : null)
@@ -37,8 +41,35 @@ export function NewChat({ mode, roster, actions }) {
   const run = async (task) => {
     if (busy) return
     setError('')
+    setFix(null)
+    setFixNote('')
     setBusy(true)
-    try { await task() } catch (failure) { setError(failure?.message ?? String(failure)) } finally { setBusy(false) }
+    try { await task() } catch (failure) {
+      setError(failure?.message ?? String(failure))
+      setFix(ungrantedLocalFix(failure?.details) ?? null)
+    } finally { setBusy(false) }
+  }
+  // Take a Bot out of the picks (the admin pick included) and clear the refusal.
+  const leaveOut = (id) => {
+    if (id === admin) setAdmin(null)
+    setPicked(current => current.filter(other => other !== id))
+    setError('')
+    setFix(null)
+    setFixNote('')
+  }
+  // Sharing is the friend's click on an invite to that Bot (Bot Social makes the grant when they accept),
+  // so the fix is the Bot's invite link; the group is made again once they have accepted it.
+  const copyInvite = async (bot) => {
+    const social = globalThis.__flybot__?.social
+    try {
+      const invite = await social.createInvite(bot.id)
+      const link = invite?.link || invite?.url
+      if (!link) throw new Error('no link')
+      await navigator.clipboard?.writeText(link)
+      setFixNote(t('Invite link for {name} copied. Send it to your friend; once they accept, create the group again.', { name: bot.name }))
+    } catch {
+      setFixNote(t('Could not create the invite. Use Bot settings → Invite to this Bot.'))
+    }
   }
   const pick = (bot) => {
     setPicked(current => [...current, bot.id])
@@ -215,7 +246,18 @@ export function NewChat({ mode, roster, actions }) {
               : h('span', { className: 'bt-option-copy' }, h('span', { className: 'bt-option-label' }, option.label), h('span', { className: 'bt-option-sub' }, option.hint)),
             option.bot && option.hint && index === active ? h('span', { className: 'bt-option-hint' }, option.hint) : null)))),
       menuOnly ? null : h('div', { className: 'bt-nc-spacer' }),
-      error ? h('div', { className: 'bt-error' }, error) : null,
+      error && fix ? h('div', { className: 'bt-error bt-fix', role: 'alert', 'data-fix': 'ungranted-local' },
+        h('div', null, fix.bots.length === 1
+          ? t('{name} is not shared with {friend}, so it cannot be in a group with their Bot: the group\'s messages go to their home.', { name: fix.bots[0].name, friend: fix.friends.join(', ') || t('that friend') })
+          : t('{name} are not shared with {friend}, so they cannot be in a group with their Bot: the group\'s messages go to their home.', { name: fix.bots.map(bot => bot.name).join(', '), friend: fix.friends.join(', ') || t('that friend') })),
+        h('div', { className: 'bt-fix-actions' }, fix.bots.flatMap(bot => [
+          typeof globalThis.__flybot__?.social?.createInvite === 'function' && globalThis.__flybot__.social.canInvite?.(bot.id) !== false
+            ? h('button', { key: `invite-${bot.id}`, type: 'button', className: 'bt-fix-btn', 'data-fix-action': 'invite', onClick: () => { void copyInvite(bot) } }, t('Copy invite link for {name}', { name: bot.name }))
+            : null,
+          h('button', { key: `out-${bot.id}`, type: 'button', className: 'bt-fix-btn', 'data-fix-action': 'leave-out', onClick: () => leaveOut(bot.id) }, t('Leave {name} out', { name: bot.name })),
+        ])),
+        fixNote ? h('div', { className: 'bt-note', role: 'status' }, fixNote) : null)
+        : error ? h('div', { className: 'bt-error' }, error) : null,
       menuOnly ? null : h('div', { className: 'bt-nc-compose' },
         h('div', { className: 'bt-nc-card' },
           h('span', { className: 'bt-nc-plus', 'aria-hidden': true }, h(PlusIcon)),

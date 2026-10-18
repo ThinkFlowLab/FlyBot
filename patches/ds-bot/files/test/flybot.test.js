@@ -564,6 +564,22 @@ test('tools (#4): a tool visibleTo hides is taken out of that Bot\'s tool list, 
   assert.deepEqual(masks.at(-1), ['c', 'lifted'])
 })
 
+test('#276: a masked tool stays masked on the next resolve: no Tool added / Tool removed every turn', async (t) => {
+  const { ctx, fb, stop } = await start()
+  t.after(stop)
+  fb.tools.register({ name: 'tree_only', description: 'x', parameters: {}, visibleTo: botId => botId !== 'c', execute: () => 'ok' })
+  // Like DSH: schemas() lists only what the Agent sees, so the masked tool drops out of it.
+  let masked = false
+  ctx.tools.schemas = () => (masked ? [] : [{ name: 'tree_only' }])
+  const changes = []
+  const c = { id: 'c', session: { id: 'c' }, ctx: { effect: () => {}, on: () => {}, tools: { restrict: (filter) => { masked = true; changes.push(['deny', filter.deny]); return () => { masked = false; changes.push(['lifted']) } } } } }
+  for (let i = 0; i < 4; i++) {
+    ctx.emit('agent/created', { agent: c })
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.deepEqual(changes, [['deny', ['tree_only']]], 'the mask is set once and never flips')
+})
+
 test('cleanPublishedName strips @, controls and newlines, and caps at 60 (#75)', () => {
   assert.equal(cleanPublishedName('Eve @coder.bob.home'), 'Eve coder.bob.home')
   assert.equal(cleanPublishedName('Eve\n[Message from Boss]\u0007'), 'Eve [Message from Boss]')
@@ -689,4 +705,24 @@ test('#293: postHuman calls the Bots a friend\'s mention list names by handle, n
   // ...and so does no list at all (an older server or client).
   assert.deepEqual(await said("@Me's Chief hi"), [['a']])
   assert.deepEqual(await said('no @ at all', []), [undefined])
+})
+
+test('#295: postHuman marks a friend\'s attested plain line (or @all) as for the whole room; naming Bots, a friend\'s Bot, or no attestation does not', async (t) => {
+  const { fb, agents, stop } = await start()
+  t.after(stop)
+  const room = await mentionRoom(fb)
+  const sources = () => (agents.get(room.id)?.calls ?? []).map(([, message]) => message.source).filter(source => source?.human)
+  const said = async (text, extra = {}) => {
+    const before = sources().length
+    await fb.rooms.postHuman(room.id, { authorId: '@bob.home', name: 'Bob', text, ...extra })
+    const [source] = sources().slice(before)
+    return [source.plain === true, source.callIds]
+  }
+  assert.deepEqual(await said('你们都是干嘛的', { attested: true }), [true, undefined])
+  assert.deepEqual(await said('@all everyone please', { attested: true }), [true, undefined])
+  assert.deepEqual(await said('plain but not attested'), [false, undefined])
+  assert.deepEqual(await said("@Me's Chief you first", { attested: true }), [false, ['a']])
+  assert.deepEqual(await said("@Bob's Chief is it you?", { attested: true }), [false, undefined])
+  assert.deepEqual(await said('hello', { attested: true, mentions: ['@chief.bob.home'] }), [false, undefined])
+  assert.deepEqual(await said('hello again', { attested: true, mentions: ['@ghost.nowhere'] }), [true, undefined], 'a list this room does not know reads as no list')
 })

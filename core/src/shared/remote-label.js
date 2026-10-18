@@ -111,3 +111,17 @@ export function disambiguatedRemoteTitle(record, others = []) {
   const clash = others.some(item => item !== record && cleanPeerName(item?.displayName || item?.name) === name && ownerNameOf(item) !== ownerNameOf(record))
   return clash ? title : title
 }
+
+// The host refuses a group that mixes a friend's Bot with one of my Bots that is not shared with
+// that friend, and says which (`details.reason === 'ungranted-local'`). Read it defensively: it is
+// a plain JSON object from the host, and the names inside are shown, never executed.
+export function ungrantedLocalFix(details) {
+  if (details?.reason !== 'ungranted-local' || !Array.isArray(details.bots)) return undefined
+  const bots = details.bots
+    .filter(bot => typeof bot?.id === 'string' && bot.id !== '')
+    .map(bot => ({ id: bot.id, name: cleanPeerName(bot.name, bot.id) }))
+  if (bots.length === 0) return undefined
+  const friends = [...new Set((Array.isArray(details.remotes) ? details.remotes : [])
+    .map(remote => cleanPeerName(remote?.owner || remote?.name, '')).filter(Boolean))]
+  return { bots, friends }
+}

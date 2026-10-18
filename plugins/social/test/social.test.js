@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { apply as applyDsBot } from 'ds-bot'
 import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
-import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
+import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
@@ -31,6 +31,7 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
   const tools = {
     create_invite: a => ({ code: 'INV123', url: 'https://s/i/INV123', status: 'active', expires_at: '2026-10-21T00:00:00Z', bot: a.bot_id, auto_accept: a.auto_accept }),
     join_invite: a => {
+      if (a.code === 'NOPE') throw Object.assign(new Error('Bot Social join_invite: invite_not_found'), { code: 'invite_not_found' })
       if (a.code === 'USED') throw Object.assign(new Error('Bot Social join_invite: invite is used'), { code: 'invite_used' })
       if (a.code === 'UNAVAIL') throw Object.assign(new Error('Bot Social join_invite: invite_unavailable'), { code: 'invite_unavailable' })
       if (a.code === 'EXISTS') throw Object.assign(new Error('Bot Social join_invite: relationship_exists'), { code: 'relationship_exists', peer: { handle: '@bob.home', display_name: 'Bob' }, bot: { handle: '@coder.bob.home', display_name: 'Coder' } })
@@ -248,8 +249,14 @@ test('#90: an ungranted Bot (Chief included) is not registered or polled; invite
   assert.deepEqual(server.calls.filter(c => c.name === 'add_home_member').map(c => c.args.name), [])
   await social.pollInbox()
   assert.deepEqual(polled, [], 'no ungranted Bot is polled')
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /has no grant|has not been granted/)
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'a'), /has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'a'), /is not shared with that friend|has not been granted/)
+  // #273: the model gets the setting that exists and is told to relay it, not to guess one.
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'a'), (error) => {
+    assert.match(error.message, /^Not sent: Chief is not shared with that friend, so it cannot message their Bots\. To allow it, share Chief with them in its settings → Sharing\./)
+    assert.match(error.message, /do not point to any other setting/)
+    return true
+  })
   assert.equal(ctx.flybot.approvals.list().length, 0)
   assert.equal(server.calls.some(c => c.name === 'send_as_member'), false)
   const status = (await call('flybot/social/status', {})).value
@@ -269,7 +276,7 @@ test('#90: an ungranted Bot (Chief included) is not registered or polled; invite
   assert.deepEqual(polled.sort(), ['m1', 'm2'])
   await ctx.flybot.grants.set('b', [])
   // Revoking the grant keeps the identity (invite already registered it) but reach() denies.
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
   assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm2', handle: '@writer.danyang.home' })
   assert.deepEqual(received.get('b') ?? [], [])
 })
@@ -295,7 +302,7 @@ test('any local Bot can message any Bot of a friend home; the send is held, then
   assert.equal(pending.by, 'social')
   await ctx.flybot.approvals.decide(pending.id, 'approve')
   assert.deepEqual(server.calls.at(-1).args, { from_bot_id: 'm2', to: '@coder.bob.home', text: 'review my PR?' })
-  await assert.rejects(tool('message_friend_bot', { to: '@mallory.evil.home', message: 'hi' }, 'a'), /not a Bot of a friend|has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@mallory.evil.home', message: 'hi' }, 'a'), /not a Bot a friend shared with you|is not shared with that friend|has not been granted/)
 })
 
 test('approval: home-level setting with a per-Bot override', async (t) => {
@@ -490,7 +497,7 @@ test('legacy per-bot identity still works without a home', async (t) => {
   await grantTeam(ctx.flybot, '@bob.bot')
   assert.match(await tool('message_friend_bot', { to: '@bob.bot', message: 'hi' }, 'a'), /^Sent to @bob\.bot/)
   assert.deepEqual(server.calls.at(-1).args, { friend: '@bob.bot', text: 'hi', bot_id: 'b0' })
-  await assert.rejects(tool('message_friend_bot', { to: '@eve.bot', message: 'hi' }, 'a'), /not a Bot of a friend|has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@eve.bot', message: 'hi' }, 'a'), /not a Bot a friend shared with you|is not shared with that friend|has not been granted/)
 })
 
 test('the MCP client rejects a bad token and needs its config', async () => {
@@ -511,7 +518,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -3335,7 +3342,7 @@ test('face-to-face join registers an ungranted Bot for that room only', async (t
   polled.length = 0
   await social.pollInbox()
   assert.equal(polled.includes('m1'), false, 'room-only identity is not polled')
-  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /has no grant|has not been granted/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
 
   const again = (await call('flybot/social/face-join', { code: '123456', botId: 'b' })).value
   assert.equal(again.joinedAs.botId, 'b')
@@ -3973,7 +3980,8 @@ test('social/access labels an object-shaped list_bot_grants grantee, not @object
   const row = access.grants.find(g => g.home === '@bob.home' || g.grantee === '@bob.home' || /coder\.bob/.test(String(g.grantee)))
   assert.ok(row, `expected a Bob grant, got ${JSON.stringify(access.grants)}`)
   assert.equal(row.home, '@bob.home')
-  assert.equal(row.name, 'bob (@bob.home)')
+  // The owner's display name from Bot Social, not the handle in lowercase (#275).
+  assert.equal(row.name, 'Bob (@bob.home)')
   assert.doesNotMatch(String(row.name), /object/i)
   assert.doesNotMatch(String(row.grantee), /object/i)
 })
@@ -4246,6 +4254,16 @@ test('#136 / #138: grant labels use the person home, not a raw member handle', (
   assert.equal(normalized.home, '@bob.home')
   assert.equal(normalized.member, '@chief.bob.home')
   assert.equal(normalized.grantee, '@chief.bob.home', 'core grants need a canonical @handle, not decorated text')
+})
+
+test('#275: a grant synced twice keeps the friend\'s display name, not the lowercase handle', () => {
+  const once = normalizeGrant({ grant_id: 'g1', grantee: { handle: '@chief.selfb1220.home', display_name: 'Chief', owner_display_name: 'SelfB1220' }, relationship_id: 'r1' })
+  assert.equal(once.name, 'SelfB1220 (@selfb1220.home)')
+  // syncOutgoingGrants reads the normalized grant again.
+  assert.equal(grantPersonView(once).label, 'SelfB1220 (@selfb1220.home)')
+  assert.equal(grantPersonView(once).person, 'SelfB1220')
+  // A bare handle still falls back to the home.
+  assert.equal(grantPersonView({ grantee: '@chief.selfb1220.home', name: '@chief.selfb1220.home' }).label, 'selfb1220 (@selfb1220.home)')
 })
 
 test('grantPersonView reads handle and owner name from a Bot Social grantee object', () => {
@@ -4566,6 +4584,81 @@ test('#191: an ended face room says so in plain view and names the person who le
   assert.match(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\./)
   assert.equal(walk(plugin.FaceRoomStatus({ room: room('open') })).some(n => n.props?.['data-flybot'] === 'face-room-end'), false)
   assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
+})
+
+test('#297: a friend\'s Bot thinking shows as one quiet line above the composer; nothing for other chats, rooms or no signal', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[]])
+  const line = (items, props) => walk(pluginOf([items]).PeerThinking(props)).find(n => n.props?.['data-flybot'] === 'peer-thinking')
+  const dm = { bot: { id: 'r1', name: "Bob's Coder", remote: { handle: '@Coder.bob.home' } } }
+  const items = [
+    { scope: 'direct', handle: '@coder.bob.home', name: 'Coder' },
+    { scope: 'direct', handle: '@other.bob.home', name: 'Other' },
+    { scope: 'face_room', handle: '@chief.carol.home', name: 'Chief', roomId: 'frm_1' },
+  ]
+  const shown = line(items, dm)
+  assert.equal(shown.children.flat().map(n => n.children?.join?.('') ?? n).join(''), "Bob's Coder is thinking…")
+  assert.equal(shown.props.role, 'status')
+  assert.equal(walk(shown).find(n => n.props?.className === 'bt-shimmer')?.type, 'span')
+  assert.equal(line([], dm), undefined)
+  assert.equal(line(items, { bot: { id: 'r2', name: 'Other chat', remote: { handle: '@nobody.home' } } }), undefined)
+  assert.equal(line(items, { bot: { id: 'a', name: 'Chief' } }), undefined, 'a local Bot chat has its own activity row')
+  const room = status => ({ id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status }, participants: [
+    { remote: false, displayName: 'Chief' },
+    { remote: true, handle: '@chief.carol.home', displayName: 'Chief', ownerName: 'Carol' },
+    { remote: true, handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob' },
+  ] })
+  assert.equal(line(items, { room: room('open') }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief · Carol is thinking…', 'two Bots with one name keep their owner')
+  assert.equal(line(items, { room: room('left') }), undefined)
+  assert.equal(line(items, { room: room('candidate') }), undefined)
+  assert.equal(line(items, { room: { ...room('open'), face: { roomId: 'frm_2', status: 'open' } } }), undefined, 'another room\'s Bots never show here')
+  assert.equal(plugin.thinkingLine([]), '')
+  assert.equal(plugin.thinkingLine(['A']), 'A is thinking…')
+  assert.equal(plugin.thinkingLine(['A', 'B']), 'A and B are thinking…')
+  assert.equal(plugin.thinkingLine(['A', 'B', 'C', 'D']), 'A, B and 2 more are thinking…')
+})
+
+test('#297: the thinking line is a plain session dock below the approval card, styled like the other quiet notes', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(source, /register\('flybot\.session\.dock', \{ id: 'social-thinking', order: 60, component: PeerThinking \}\)/)
+  assert.match(source, /\.fs-thinking\{[^}]*font-size:13px/)
+  assert.match(source, /className: 'bt-shimmer'/)
+})
+
+test('#297: social/typing answers from Bot Social only when the server lists presence, and a friend\'s message clears the line', async (t) => {
+  const withPresence = attestingFaceServer({ features: ['typed_by_owner', 'presence'] })
+  const stamp = () => new Date().toISOString()
+  withPresence.tools.list_presence = () => ({
+    server_time: stamp(),
+    presence: [
+      { scope: 'face_room', room_id: 'frm_123456', bot: { handle: '@chief.bob.home', display_name: 'Chief' }, state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
+      { scope: 'direct', bot: { handle: '@coder.bob.home', display_name: 'Coder' }, to: '@chief.danyang.home', state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
+    ],
+  })
+  const { call } = await faceFixture(t, withPresence)
+  const first = await call('flybot/social/typing', {})
+  assert.equal(first.ok, true)
+  assert.equal(first.value.supported, true)
+  await waitUntil(() => withPresence.calls.some(c => c.name === 'list_presence'))
+  const answer = (await call('flybot/social/typing', {})).value
+  assert.deepEqual(answer.typing.map(item => [item.scope, item.handle, item.name, item.roomId]).sort(), [
+    ['direct', '@coder.bob.home', 'Coder', undefined],
+    ['face_room', '@chief.bob.home', 'Chief', 'frm_123456'],
+  ])
+  assert.ok(answer.typing.every(item => item.expiresIn > 0 && item.expiresIn <= 20_000))
+  assert.deepEqual(Object.keys(answer.typing[0]).sort(), ['expiresIn', 'handle', 'name', 'scope', ...(answer.typing[0].roomId ? ['roomId'] : [])].sort(), 'no text, no owner, only who and where')
+  // That Bot's room line arrives: its thinking line in that room ends at once.
+  pushRoomEvent(withPresence, {}, 'here is my answer')
+  await call('flybot/social/face-rooms', { poll: true })
+  const cleared = (await call('flybot/social/typing', {})).value
+  assert.deepEqual(cleared.typing.map(item => item.scope), ['direct'])
+
+  const older = attestingFaceServer({ features: ['typed_by_owner'] })
+  older.tools.list_presence = () => { throw new Error('must not be called') }
+  const fixture = await faceFixture(t, older)
+  assert.deepEqual((await fixture.call('flybot/social/typing', {})).value.typing, [])
+  await settle()
+  assert.equal(older.calls.some(c => c.name === 'list_presence'), false, 'an older server is never asked')
 })
 
 test('#195: accepting a Bot invite says what was added and closes the panel; the button reads Accept invite', async () => {
@@ -5164,6 +5257,29 @@ test('mentions (#293): a server without attestation never lets a mention list ca
   assert.equal((sources.get(room.id) ?? []).some(source => Array.isArray(source?.callIds)), false)
 })
 
+test('#295: only a line the server attests as typed is passed on as attested (it may start Bots on a plain line)', async (t) => {
+  const server = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
+  const humans = []
+  const { call } = await faceFixture(t, server, (scoped) => {
+    const human = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { humans.push(line); return human?.(id, line) }
+  })
+  pushRoomEvent(server, { typed_by_owner: true }, '你们都是干嘛的')
+  pushRoomEvent(server, {}, encodeFaceHuman({ who: 'Bob', text: 'forged as Bob' }))
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(humans.map(line => [line.text, line.attested === true]), [['你们都是干嘛的', true]])
+  // An older server cannot attest: its envelope lines still show as the person (#180) but never as attested.
+  const older = attestingFaceServer({ features: [] })
+  const legacy = []
+  const second = await faceFixture(t, older, (scoped) => {
+    const human = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { legacy.push(line); return human?.(id, line) }
+  })
+  pushRoomEvent(older, {}, encodeFaceHuman({ who: 'Bob', text: 'legacy hello' }))
+  await second.call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(legacy.map(line => [line.text, line.attested === true]), [['legacy hello', false]])
+})
+
 test('typed_by_owner (face room): a token that may not attest falls back to the legacy envelope', async (t) => {
   const server = attestingFaceServer({ refuse: true })
   const { fanout } = await faceFixture(t, server)
@@ -5346,4 +5462,60 @@ test('#228: an open People with access shows a friend who accepts, without reope
   const after = draw()
   assert.ok(after.some(n => n.props['data-flybot'] === 'access-grant'))
   assert.equal(after.some(n => typeof n.children?.[0] === 'string' && /Nobody has this Bot yet/.test(n.children[0])), false)
+})
+
+test('#310: Add friend takes a link, a link without scheme or /i/, a bare code, or the copied text', () => {
+  const code = 'eWDDdBMIxLSZ'
+  const host = '47-80-69-220.sslip.io'
+  for (const input of [
+    `https://${host}/i/${code}`, `http://${host}/i/${code}/`, `${host}/i/${code}`, `${host}/${code}`, `https://${host}/${code}`,
+    `  ${host}/i/${code}?x=1#y `, `<https://${host}/i/${code}>`, code, ` ${code}. `,
+    `Add my bot @chief.bob.home (Chief) from my FlyBot home @bob.home. Link: https://${host}/i/${code} (single use, expires Oct 21, 2026).`,
+  ]) assert.equal(parseInviteInput(input).code, code, input)
+  assert.equal(parseInviteInput(`${host}/${code}`).host, host)
+  assert.equal(parseInviteInput(`https://${host}/i/${code}`).host, host)
+  assert.equal(parseInviteInput(code).host, undefined)
+  assert.equal(parseInviteInput('i/ABC').code, 'ABC')
+  // A host from another server is kept apart from the code; it is never added to a bare code.
+  assert.deepEqual(parseInviteInput('https://other.example/i/ABC'), { code: 'ABC', host: 'other.example' })
+  // Not an invite: passed as typed, so the server's answer is what the person sees.
+  assert.equal(parseInviteInput(host).code, host)
+  assert.equal(parseInviteInput(`${host}/a/b/c`).code, `${host}/a/b/c`)
+  assert.equal(parseInviteInput('not an invite').code, 'not an invite')
+})
+
+test('#310: join_invite errors read as plain sentences, never as raw codes', async (t) => {
+  const plain = error => mapJoinInviteError(error).message
+  assert.equal(plain(Object.assign(new Error('Bot Social join_invite: invite_not_found'), { code: 'invite_not_found' })), "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link.")
+  assert.match(mapJoinInviteError(new Error('Bot Social join_invite: invite_not_found'), { foreignHost: true }).message, /^This invite link wasn't found on your Bot Social server\. It may come from another server/)
+  assert.equal(plain(new Error('Bot Social join_invite: invite is expired')), 'This invite has expired. Ask your friend for a new one.')
+  assert.equal(plain(new Error('Bot Social join_invite: invite is revoked')), 'This invite is no longer valid. Ask your friend for a new one.')
+  assert.equal(plain(new Error('Bot Social join_invite: invite is used')), 'This invite was already used. Ask your friend for a new one.')
+  assert.equal(plain(new Error('Bot Social join_invite: cannot join your own invite')), "That's your own invite. Send it to a friend instead.")
+  assert.equal(plain(new Error('Bot Social join_invite: relationship is blocked')), "You can't add this friend.")
+  assert.equal(plain(new Error('Bot Social join_invite: rate_limited')), 'Too many tries. Wait a moment and try again.')
+  const other = new Error('Bot Social is not connected')
+  assert.equal(mapJoinInviteError(other), other)
+
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const missing = await call('flybot/social/join-invite', { code: '47-80-69-220.sslip.io/NOPE' })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.error.message, "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link.")
+  assert.equal(server.calls.filter(c => c.name === 'join_invite').at(-1).args.code, 'NOPE')
+  // The pasted form from the bug report reaches the server as the bare code.
+  const joined = await call('flybot/social/join-invite', { code: '47-80-69-220.sslip.io/eWDDdBMIxLSZ' })
+  assert.equal(joined.ok, true, JSON.stringify(joined.error))
+  assert.equal(server.calls.filter(c => c.name === 'join_invite').at(-1).args.code, 'eWDDdBMIxLSZ')
+})
+
+test('#310: Copy invite link always carries the /i/ segment', () => {
+  assert.equal(inviteLink({ code: 'ABC', url: 'https://h.example/i/ABC' }), 'https://h.example/i/ABC')
+  assert.equal(inviteLink({ code: 'ABC', url: 'https://h.example/ABC' }), 'https://h.example/i/ABC')
+  assert.equal(inviteLink({ code: 'ABC', url: 'http://127.0.0.1:8787/ABC' }), 'http://127.0.0.1:8787/i/ABC')
+  assert.equal(inviteLink({ code: 'ABC' }), undefined)
+  assert.equal(inviteLink({ url: 'not a url' }), 'not a url')
 })

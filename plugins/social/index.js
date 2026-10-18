@@ -11,6 +11,7 @@
 //   approval         { default: 'hold' | 'auto', homes: { '@bob.home': 'auto' } }
 //   inboxPollMs      poll members' inboxes this often while idle; 0 = off (default 15000)
 //   facePollMs       faster poll while a live face-to-face room is open (default 4000)
+//   presence         false turns off "Name is thinking…" for friends' Bots (Bot Social presence signal, #297; default on)
 //   token / botId    legacy per-bot identity (no home): owner connector token + bot id
 import { join } from 'node:path'
 import { registerUnavailable, startFailureReason, startSocial } from './src/social.js'

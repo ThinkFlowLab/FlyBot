@@ -32,7 +32,7 @@ export function notSentLine(error) {
   if (/paused|turn budget|loop detected|emergency stop/i.test(blob)) {
     return 'Not sent: this chat is paused. Open the Bot Social console to resume it.'
   }
-  if (/has no grant|has not been granted|cannot message friends/i.test(blob)) {
+  if (/has no grant|has not been granted|cannot message friends|cannot message their Bots/i.test(blob)) {
     return 'Not sent: none of your Bots is invited to this friend. Invite them from Bot settings.'
   }
   if (/no Bot of yours is friends|no_relationship|no active relationship/i.test(blob)) {

@@ -1,0 +1,1 @@
+Add friend now accepts an invite pasted as a full link, a link without `https://` or without `/i/`, a bare code, or the whole copied invite text,; the copied link always has its `/i/` part, and a missing, expired, used or own invite shows a short plain sentence instead of `Bot Social join_invite: invite_not_found`. ([#310](https://github.com/ThinkFlowLab/FlyBot/issues/310))

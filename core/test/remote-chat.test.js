@@ -87,6 +87,7 @@ test('a failed 1:1 send is one short English line with a next step', () => {
         'Not sent: Bot Social did not answer. Try again.',
     )
     assert.match(notSentLine(new Error('Chief has no grant to that Bot, so it cannot message friends\' Bots')), /Invite them from Bot settings/)
+    assert.match(notSentLine(new Error('Chief is not shared with that friend, so it cannot message their Bots. To allow it, share Chief with them in its settings → Sharing.')), /Invite them from Bot settings/)
     assert.match(notSentLine(new Error('no Bot of yours is friends with @x.y.home')), /Add them from \+ Add friend/)
     assert.equal(notSentLine(new Error('Not sent: already friendly.')), 'Not sent: already friendly.')
 });

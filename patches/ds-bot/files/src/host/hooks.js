@@ -655,13 +655,17 @@ export function install(rt) {
     if (bot === undefined) return
     let known
     try { known = new Set(ctx.tools.schemas(agent).map(schema => schema.name)) } catch { return }
+    const current = masks.get(agent)
+    // schemas() lists what the Agent sees, so a tool this mask hides is missing from it: count
+    // it as known, or every other resolve lifts the mask and the next sets it again, and the
+    // chat shows "Tool added" / "Tool removed" on each turn (#276).
+    for (const name of current?.deny ?? []) known.add(name)
     const deny = [...gatedTools.values()].filter(def => known.has(def.name) && !visible(def, bot.id)).map(def => def.name).sort()
     const key = deny.join(',')
-    const current = masks.get(agent)
     if ((current?.key ?? '') === key) return
     try {
       current?.dispose?.()
-      masks.set(agent, { key, dispose: deny.length ? agent.ctx.tools.restrict({ deny }) : undefined })
+      masks.set(agent, { key, deny, dispose: deny.length ? agent.ctx.tools.restrict({ deny }) : undefined })
     } catch (error) {
       warn('flybot: tools stay listed for %s: %s', bot.name, error)
     }
@@ -794,7 +798,7 @@ export function install(rt) {
       const name = cleanName(known.get(handle)?.name, handle)
       const why = line(reason)
       if (action === 'deny') {
-        const grant = /has no grant to that Bot|has not been granted/i.test(why)
+        const grant = /has no grant to that Bot|has not been granted|cannot message their Bots/i.test(why)
         const shown = grant ? 'invite that Bot from Bot settings, or add it to this group first' : why
         return `${name}: not sent${shown ? ` — ${shown}` : ''}`
       }
@@ -943,7 +947,7 @@ export function install(rt) {
         return rt.postToRoom(room, { id: 'face-notice', name: 'Room' }, String(text ?? ''), { quiet: true, notice: true })
       },
       // Another member's own typed line: a plain chat bubble from that person, no Bot turn (#180).
-      postHuman: (roomId, { authorId, name, text, mentions } = {}) => {
+      postHuman: (roomId, { authorId, name, text, mentions, attested } = {}) => {
         const room = rt.roomOf(roomId)
         if (!room || typeof rt.postToRoom !== 'function') return
         const who = String(name || 'Someone')
@@ -953,10 +957,13 @@ export function install(rt) {
         // ("<owner>'s Chief", handle) read from the text. Only attested lines carry a list here, so a Bot cannot
         // call another home's Bots this way. A line that calls nobody here stays a bubble.
         const listed = isFaceRoom(room) && typeof rt.botOf === 'function' && Array.isArray(mentions) && mentions.length > 0 ? mentionedByHandle(room, mentions, rt.botOf) : undefined
-        const callIds = listed !== undefined && listed.known > 0
-          ? listed.bots.map(bot => bot.id)
-          : isFaceRoom(room) && typeof rt.botOf === 'function' ? faceMentions(room, String(text ?? ''), rt.botOf, { fromFriend: true }).bots.map(bot => bot.id) : []
-        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who }, ...(callIds.length > 0 ? { callIds } : {}) })
+        const byList = listed !== undefined && listed.known > 0
+        const said = !byList && isFaceRoom(room) && typeof rt.botOf === 'function' ? faceMentions(room, String(text ?? ''), rt.botOf, { fromFriend: true }) : undefined
+        const callIds = byList ? listed.bots.map(bot => bot.id) : said ? said.bots.map(bot => bot.id) : []
+        // A line that names nobody (or @all) is for the whole room (#295): this home's Bots answer it too, in one pass,
+        // but only when the server attests the person typed it; a line that names a friend's Bot calls none here.
+        const plain = attested === true && said !== undefined && callIds.length === 0 && (said.all || said.friends.length === 0)
+        return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who }, ...(callIds.length > 0 ? { callIds } : {}), ...(plain ? { plain: true } : {}), ...(plain && said?.all ? { everyone: true } : {}) })
       },
       postRemote: (roomId, { handle, name, text } = {}) => {
         const room = rt.roomOf(roomId)

@@ -346,6 +346,8 @@ export function install(rt) {
             ...(source.quiet ? { quiet: true } : {}),
             ...(source.notice ? { notice: true } : {}),
             ...(source.human ? { human: source.human } : {}),
+            ...(source.plain ? { plain: true } : {}),
+            ...(source.everyone ? { everyone: true } : {}),
             ...(Array.isArray(source.callIds) && source.callIds.length > 0 ? { callIds: source.callIds.filter(id => typeof id === 'string') } : {}),
             ...(source.failed ? { failed: source.failed } : {}),
             ...(source.resumed ? { resumed: true } : {}),

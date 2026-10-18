@@ -184,3 +184,20 @@ test("#236 follow-up: a friend's line Bot Social attested as typed by them is dr
   assert.equal(botLine[0].props['data-remote'], '@chief.danyang.home')
   assert.ok(leadOf(botLine).some(n => n.props?.bot !== undefined), 'a Bot line keeps the Bot avatar')
 })
+
+test('#275: a typed line from a friend has one short header: the person, then "via <Bot>" only when that Bot is known', () => {
+  const props = { actions: {}, sessionId: 's', msgKey: 'k', useUi: () => ({}), text: 'Hi from B' }
+  const header = nodes => {
+    const name = nodes.find(n => n.props?.className === 'bt-group-name')
+    return flat(name.props.children).map(n => n.props?.children).flat().concat(name.props.children.filter(c => typeof c === 'string')).filter(c => typeof c === 'string').join(' ')
+  }
+  // This home was never shared the carrying Bot: the plugin's model-facing sender label is not shown.
+  const unknown = flat(RemoteMessage({ ...props, roster: { bots: [], remoteBots: [], byId: {} }, source: { remote: { handle: '@chief.selfb1220.home', typedBy: 'SelfB1220' }, senderName: 'SelfB1220 (typed via @chief.selfb1220.home, Bot Social)' } }))
+  assert.equal(header(unknown), 'SelfB1220')
+  assert.equal(unknown.some(n => n.props?.className === 'bt-remote-handle'), false)
+  // A Bot this home knows: its plain name, not "· owner's Bot".
+  const known = flat(RemoteMessage({ ...props, roster: { bots: [], remoteBots: [{ handle: '@helper.selfb1220.home', name: 'Helper' }], byId: {} }, source: { remote: { handle: '@helper.selfb1220.home', typedBy: 'SelfB1220' }, senderName: 'Helper' } }))
+  const via = known.find(n => n.props?.className === 'bt-remote-handle')
+  assert.ok(via)
+  assert.doesNotMatch(header(known), /typed via|Bot Social|'s Bot/)
+})

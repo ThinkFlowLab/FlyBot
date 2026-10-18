@@ -36,7 +36,7 @@ export const call = async (endpoint, payload, signal) => {
   if (!result.ok) {
     const code = result.error?.code ?? 'bot/error'
     const message = hostText(result.error?.message ?? 'Request failed')
-    const error = Object.assign(new Error(code === 'bot/internal' ? `${message} ${t('Settings → Feedback has the details.')}` : message), { code })
+    const error = Object.assign(new Error(code === 'bot/internal' ? `${message} ${t('Settings → Feedback has the details.')}` : message), { code, details: result.error?.details })
     if (!REFUSALS.has(code)) {
       noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? 'Request failed'), { code }))
       markNoted(error)
