@@ -530,8 +530,11 @@ window.__ModuleLoader__.load({
     }
     // Every Leave lands on the main Bot, not on the room just left (#182, #306).
     function openMainBot(roster, actions) {
-      const main = (roster?.bots ?? []).find(bot => bot.isMain) ?? roster?.bots?.[0]
-      if (main?.id && typeof actions?.openSession === 'function') actions.openSession(main.id)
+      // The roster names the Main Bot by id (`mainBotId`); its bot records carry no `isMain`.
+      const id = roster?.mainBotId
+        || (roster?.bots ?? []).find(bot => bot.isMain)?.id
+        || roster?.bots?.[0]?.id
+      if (id && typeof actions?.openSession === 'function') actions.openSession(id)
     }
 
     // Separate Face-to-face group screen (#92): pick Bots, join by number, live waiting room.

@@ -3345,8 +3345,7 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -3359,7 +3358,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -7410,7 +7410,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,115 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,123 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -7504,9 +7504,17 @@ diff --git a/client.js b/client.js
 +  if (!seat.person) return seat.bot;
 +  return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
 +}
++var personKey = (seat) => {
++  const record = seat.record ?? {};
++  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
++  if (home) return `home:${home}`;
++  const parts = String(record.handle || "").trim().toLowerCase().replace(/^@+/, "").split(".");
++  if (parts.length >= 3 && parts.at(-1) === "home") return `home:${parts.slice(-2).join(".")}`;
++  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`;
++};
 +function faceRoomCount(room2, roster) {
 +  const seats = faceSeats(room2, roster);
-+  const people = new Set(seats.map((seat) => seat.mine ? ":you" : (ownerNameOf(seat.record) || seat.person || seat.key).toLowerCase()));
++  const people = new Set(seats.map((seat) => seat.mine ? ":you" : personKey(seat)));
 +  const persons = people.size === 1 ? t("1 person") : t("{count} people", { count: people.size });
 +  const bots = seats.length === 1 ? t("1 Bot") : t("{count} Bots", { count: seats.length });
 +  return `${persons} · ${bots}`;

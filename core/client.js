@@ -10348,9 +10348,17 @@ function faceSeatLabel(seat) {
   if (!seat.person) return seat.bot;
   return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
 }
+var personKey = (seat) => {
+  const record = seat.record ?? {};
+  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
+  if (home) return `home:${home}`;
+  const parts = String(record.handle || "").trim().toLowerCase().replace(/^@+/, "").split(".");
+  if (parts.length >= 3 && parts.at(-1) === "home") return `home:${parts.slice(-2).join(".")}`;
+  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`;
+};
 function faceRoomCount(room2, roster) {
   const seats = faceSeats(room2, roster);
-  const people = new Set(seats.map((seat) => seat.mine ? ":you" : (ownerNameOf(seat.record) || seat.person || seat.key).toLowerCase()));
+  const people = new Set(seats.map((seat) => seat.mine ? ":you" : personKey(seat)));
   const persons = people.size === 1 ? t("1 person") : t("{count} people", { count: people.size });
   const bots = seats.length === 1 ? t("1 Bot") : t("{count} Bots", { count: seats.length });
   return `${persons} · ${bots}`;

@@ -2699,7 +2699,8 @@ test('#306: the waiting dialog asks before Leave, lands on the main Bot, and the
   const room = { roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z', members: [] }
   const opened = []
   const actions = { openSession: id => opened.push(id) }
-  const roster = { bots: [{ id: 'helper' }, { id: 'main', isMain: true }], byId: {} }
+  // The roster names the Main Bot by id; its records carry no isMain (Codex P2 on #338).
+  const roster = { bots: [{ id: 'helper' }, { id: 'main' }], mainBotId: 'main', byId: {} }
   const plugin = pluginOf(['waiting', [], [], '482913', false, null, [], room, 0], true)
   const tree = walk(plugin.FaceToFaceGroup({ actions, roster, onClose() {} }))
   // Leave asks first, like Leave in an open room.

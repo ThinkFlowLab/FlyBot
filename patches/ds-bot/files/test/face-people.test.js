@@ -95,6 +95,8 @@ test('#306: a face room counts people and Bots, not an ambiguous "members"', () 
     mine, coder, bot('@chief.ann.home', 'Ann'), bot('@coder.ann.home', 'Ann'),
     { kind: 'human', id: 'h1', ownerName: 'Ann' }, bot('@x.gone.home', 'Gone', { leftSeq: 2 }),
   ]), roster), '2 people · 4 Bots')
+  // Two owners who both call themselves Alex are two people (told apart by home).
+  assert.equal(roomSubtitle(room([mine, bot('@chief.alex1.home', 'Alex'), bot('@chief.alex2.home', 'Alex')]), roster), '3 people · 3 Bots')
 })
 
 test('another home member\'s line shows their person mark and a received surface', () => {
