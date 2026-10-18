@@ -363,6 +363,25 @@ test('approvals (#12): an approved hold resumes the chain, a later deny wins, fa
   assert.match(over.reason, /already wait/)
 })
 
+test('#258: a transport is told `approved` only for a send the owner approved on a card; a sender cannot claim it', async (t) => {
+  const { fb, stop, grantTo } = await start()
+  t.after(stop)
+  await grantTo('a', '@bob.bot')
+  const out = []
+  fb.transports.add('bot-social', { send: async msg => { out.push([msg.text, msg.approved]); return { exchangeId: `r${out.length}` } } })
+  // Straight through (no hold): not approved by anyone's click, whatever the sender writes.
+  await fb.bot.send({ from: 'a', to: '@bob.bot', text: 'direct', approved: true })
+  // Held, then approved on the card: the owner's yes.
+  let hold = true
+  fb.bot.send.use({ name: 'hold-some', handle: m => (hold && m.text === 'held' ? { action: 'hold', reason: 'check' } : undefined) })
+  const held = await fb.bot.send({ from: 'a', to: '@bob.bot', text: 'held', approved: false })
+  assert.equal(held.action, 'hold')
+  assert.equal(out.length, 1)
+  await fb.approvals.decide(held.approvalId, 'approve')
+  assert.deepEqual(out, [['direct', false], ['held', true]])
+  hold = false
+})
+
 test('mentions (#13): a friend\'s Bot named with @ gets the message once; code, quotes and unknown handles stay local', async (t) => {
   const { ctx, fb, stop, grantTo } = await start()
   t.after(stop)
