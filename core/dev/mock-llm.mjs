@@ -34,6 +34,9 @@
 //   提权 (members other than the admin run a shell command that asks for full access)
 //   写成文字 (members write their tool call as text instead of making it; also in a Bot's own chat)
 //   派活 N (the admin hands the first other member N seconds of work; the admin answers its result)
+//   协作任务 (same-room acceptance: the admin delegates, the member must ask about omitted region
+//   before editing, writes total.mjs and self-tests with a real shell call, reports late, and the
+//   admin independently verifies with its own cases)
 // A handoff turn answers "第 N 段接着做完了". Handoff notes and backend compaction each
 // return a full eight-section note marked "handoff 提示词" or "backend 提示词" (a Bot's
 // Session should only see the former; retries add "重试", merges add "合并了上一份笔记").
@@ -84,6 +87,49 @@ const tool = (name, input) => ({
 const think = value => ({ type: 'thinking', thinking: value })
 const ESCALATION = '提权测试：用户在群里要求'
 const HANDED_WORK = '群里派的活'
+// "协作任务" (the same-room acceptance choreography, #198): the admin delegates, the
+// member must ask about the omitted-region rule before editing, writes the module and
+// runs a narrow self-test with a real shell call, and the admin independently verifies
+// the returned code with its own cases instead of restating the member's claim.
+const COLLAB_WRITE_DESC = '写 total.mjs 并跑窄自测'
+const COLLAB_VERIFY_DESC = '独立核验 total.mjs'
+const COLLAB_FILES = {
+  'total.mjs': `export function totalPaid(orders, region) {
+  return orders.filter(row => row.status === 'paid' && (region === undefined || row.region === region))
+    .reduce((total, row) => total + row.amount, 0)
+}
+`,
+  'orders.json': `[
+  { "id": "A001", "region": "east", "status": "paid", "amount": 100 },
+  { "id": "A002", "region": "north", "status": "paid", "amount": 200 },
+  { "id": "A003", "region": "east", "status": "pending", "amount": 300 },
+  { "id": "A004", "region": "east", "status": "paid", "amount": 40 },
+  { "id": "A005", "region": "north", "status": "paid", "amount": 60 }
+]
+`,
+  'selftest.mjs': `import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { totalPaid } from './total.mjs'
+const orders = JSON.parse(readFileSync(new URL('./orders.json', import.meta.url), 'utf8'))
+assert.equal(totalPaid(orders, 'east'), 140)
+assert.equal(totalPaid([], 'east'), 0)
+`,
+  'verify.mjs': `import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { totalPaid } from './total.mjs'
+const orders = JSON.parse(readFileSync(new URL('./orders.json', import.meta.url), 'utf8'))
+assert.equal(totalPaid(orders), 400, 'omitted region includes every paid order')
+assert.equal(totalPaid(orders, 'north'), 260)
+assert.equal(totalPaid(orders, 'missing'), 0)
+assert.equal(totalPaid([]), 0)
+`,
+}
+const b64 = value => Buffer.from(value, 'utf8').toString('base64')
+const writeFiles = (names, run) => names
+  .map(name => `printf %s '${b64(COLLAB_FILES[name])}' | base64 -d > ${name}`).join(' && ')
+  + ` && ${run}`
+const COLLAB_WRITE = writeFiles(['total.mjs', 'orders.json', 'selftest.mjs'], 'node selftest.mjs; echo SELFTEST_EXIT:$?')
+const COLLAB_VERIFY = writeFiles(['verify.mjs'], 'node verify.mjs; echo VERIFY_EXIT:$?')
 const WRITTEN_CALL = '我先看一下目录。\n<tool_call>\n<function=pwsh>\n<parameter=command>\nGet-ChildItem\n</parameter>\n</function>\n</tool_call>'
 // Deterministic filler that grows a conversation by about `chars` characters.
 const filler = (chars, tag) => Array.from({ length: Math.ceil(chars / 20) }, (_, index) => `${tag}第${index + 1}段：这是一段用来撑长上下文的测试文字。`).join('').slice(0, chars)
@@ -204,6 +250,16 @@ function decide(body) {
       return [text(`终端输出里我看到的是：${resultText.replace(/\s+/g, ' ').trim().slice(0, 200)}`)]
     }
     if (used?.input?.justification === ESCALATION) return [text(result.is_error ? `没跑成：${resultText.slice(0, 80)}` : '命令跑完了，文件已经写好。')]
+    // "协作任务": the member reports its real self-test exit code; the admin reports its
+    // independent verification outcome without restating the member's claim.
+    if (used?.input?.description === COLLAB_WRITE_DESC) {
+      const exit = /SELFTEST_EXIT:(-?\d+)/.exec(resultText)?.[1] ?? 'unknown'
+      return [text(`@Chief 干完了：total.mjs 已写好，自测退出码 ${exit}。`)]
+    }
+    if (used?.input?.description === COLLAB_VERIFY_DESC) {
+      const exit = /VERIFY_EXIT:(-?\d+)/.exec(resultText)?.[1] ?? 'unknown'
+      return [text(exit === '0' ? '独立核验通过：我用自己的用例跑了 total.mjs（退出码 0），不是复述它的结论。等待用户验收。' : `独立核验失败（退出码 ${exit}），不建议验收。`)]
+    }
     const job = new RegExp(`^${HANDED_WORK}-(\\d+)-`).exec(used?.input?.pattern ?? '')
     if (job) return Object.assign([text(`干完了，用了 ${job[1]} 秒。`)], { delay: Number(job[1]) * 1000 })
     switch (used?.name) {
@@ -351,6 +407,31 @@ function decide(body) {
     if ((ask = /派活\s*(\d+)/.exec(userLine)) && leads && peer) return [text(`@${peer} 干活 ${ask[1]}`)]
     if (handed?.[1] === me && mentioner && lookup) return [tool(lookup, { pattern: `${HANDED_WORK}-${handed[2]}-*` })]
     if (/^\S+: 干完了/.test(userLine) && leads) return [text('收到，辛苦了。')]
+    // "协作任务": delegation → forced clarification → answer → real edit + narrow
+    // self-test → late report → independent verification. The round transcript
+    // (`lines`) tells each speaker which step is next; a "since your last message"
+    // round has no user opener, so steps key on the lines, not the user line, and
+    // `leads` keeps the admin out of the member's implementation step.
+    if (/协作任务|omitted region|total\.mjs/.test(lines.join('\n'))) {
+      // A member's late report keeps its whole turn text in one line, so match the
+      // marker anywhere in the line rather than at its start. A finished tool inside
+      // the work grace posts in-round; the requester then asks for verification.
+      if (leads && shell && (lines.some(line => line.includes('@Chief 干完了：total.mjs')) || /^User: @Chief 请?独立核验/.test(userLine))) {
+        return [text('收到。我不复述它的结论，自己跑一遍独立用例。'), tool(shell, { command: COLLAB_VERIFY, description: COLLAB_VERIFY_DESC })]
+      }
+      if (!leads && shell && lines.some(line => /: @Writer omitted region 按全部/.test(line)) && !lines.some(line => line.includes('干完了：total.mjs'))) {
+        return [text('按这个语义来实现：先写文件，再跑我自己的窄自测。'), tool(shell, { command: COLLAB_WRITE, description: COLLAB_WRITE_DESC })]
+      }
+      if (leads && lines.some(line => /^Writer: @Chief 追问/.test(line)) && !lines.some(line => /: @Writer omitted region 按全部/.test(line))) {
+        return [text('@Writer omitted region 按全部 region 合计；未知 region 返回 0。')]
+      }
+      if (!leads && lines.some(line => /^Chief: @Writer 实现协作任务/.test(line)) && !lines.some(line => /追问：omitted/.test(line))) {
+        return [text('@Chief 追问：omitted region 是按全部 region 合计，还是应当报错？')]
+      }
+      if (/^User: 协作任务/.test(userLine) && leads && peer) {
+        return [text(`@${peer} 实现协作任务：写 total.mjs 的 totalPaid(orders, region)，只合计 status 为 paid 的订单。动手之前必须先问我 omitted region 的含义。`)]
+      }
+    }
     // Ping-pong: whoever is mentioned mentions back, to exercise the per-member cap.
     if (/来回/.test(userLine)) return [text(mentioner ? `@${mentioner} 回你` : leads && peer ? `@${peer} 来回` : '[PASS]')]
     if (mentioner) return [text('进度正常，今天能交。')]

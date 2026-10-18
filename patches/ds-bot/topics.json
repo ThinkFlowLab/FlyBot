@@ -99,5 +99,8 @@
     "test/store.test.js",
     "test/secrets.test.js",
     "test/capabilities.test.js"
+  ],
+  "0016-room-collaboration-smoke": [
+    "dev/mock-llm.mjs"
   ]
 }

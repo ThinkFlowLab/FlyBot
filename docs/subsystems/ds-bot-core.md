@@ -70,6 +70,11 @@ artifact verification and simulated requester acceptance/rejection. Its reusable
 inputs/checks live in `core/dev/room-collaboration/`; the two test directories and
 Node process restrictions are not a full sandbox or a real-model trial.
 
+`core/dev/room-smoke.mjs` (#198) drives the same acceptance shape one tier up, on a
+real `dev/bench.sh` bench: actual DSH sessions, the scripted mock model, real shell
+tool writes and test runs, and the task API lifecycle to `accepted`. It is a manual,
+CI-optional smoke, still deterministic and token-free, not a real-model trial.
+
 ## Common mistakes
 
 - Hand-editing `ds-bot/` or `client.js`.

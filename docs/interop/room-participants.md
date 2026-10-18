@@ -49,6 +49,8 @@ new dispatch and stale callbacks. None of these external paths are enabled here.
 The acceptance fixture must force a clarification, use isolated code and
 independent tests, and end with human acceptance/rejection. Keep separate
 evidence for deterministic room tests, mock HTTP compatibility, actual model
-execution and human acceptance. The current room suites exercise DSH scheduling
-with scripted events; they are not that complete fixture or a performance
-comparison. Real-model trials still require explicit model and budget approval.
+execution and human acceptance. The room suites exercise DSH scheduling with
+scripted events, and `core/dev/room-smoke.mjs` runs the same acceptance shape
+through a real bench with actual DSH sessions and the mock model (real room
+entry, deterministic model — still not a real-model trial or a performance
+comparison). Real-model trials still require explicit model and budget approval.
