@@ -296,3 +296,62 @@ test('a new Bot and a copy start with every connector off', async (t) => {
   assert.equal(copy.connectors, undefined)
   assert.equal(rt.botOf(copy.id).connectors, undefined)
 })
+
+test('an Agent whose Bot cannot be determined gets no connector tools, even when the Bot has them on', async (t) => {
+  const { agentFor, hiddenFrom, guard, call, stop } = await setup()
+  t.after(stop)
+  await agentFor('writer')
+  await agentFor('plain')
+  assert.equal((await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true })).ok, true)
+  // A sub-agent whose parent Session is gone: the chain cannot be followed, so it may be a shared Bot's.
+  await agentFor('orphan', { parent: 'vanished' })
+  assert.deepEqual([...hiddenFrom('orphan')].sort(), [...COMPOSIO, ...GITHUB].sort())
+  for (const name of [...COMPOSIO, ...GITHUB]) assert.match(guard(name, 'orphan'), /could not be determined/)
+  assert.equal(guard('read', 'orphan'), undefined, 'only connector tools are refused')
+  // A chain as deep as the cap resolves; one step deeper fails closed instead of reading as a plain Session.
+  let parent = 'writer'
+  for (let depth = 1; depth <= 8; depth += 1) {
+    const id = `writer-d${depth}`
+    await agentFor(id, { parent })
+    parent = id
+    if (depth === 7) {
+      assert.equal(guard(COMPOSIO[0], id), undefined, 'seven levels still resolve to Writer, whose composio is on')
+      assert.match(guard(GITHUB[0], id), /not turned on for Writer/)
+    }
+  }
+  assert.match(guard(COMPOSIO[0], 'writer-d8'), /could not be determined/)
+  assert.deepEqual([...hiddenFrom('writer-d8')].sort(), [...COMPOSIO, ...GITHUB].sort())
+  // The same for a deep chain under a plain Session: unknown, not plain.
+  let plainParent = 'plain'
+  for (let depth = 1; depth <= 8; depth += 1) { await agentFor(`plain-d${depth}`, { parent: plainParent }); plainParent = `plain-d${depth}` }
+  assert.equal(guard(COMPOSIO[0], 'plain-d3'), undefined, 'a short chain under a plain Session keeps the tools')
+  assert.match(guard(COMPOSIO[0], 'plain-d8'), /could not be determined/)
+  // Resolved Agents are unchanged.
+  assert.equal(guard(COMPOSIO[0], 'writer'), undefined)
+  assert.equal(guard(COMPOSIO[0], 'plain'), undefined)
+})
+
+test('the tool list follows a person or friend joining and leaving a room, without a grant change', async (t) => {
+  const { rt, agentFor, hiddenFrom, call, stop } = await setup()
+  t.after(stop)
+  const owner = rt.botOf('writer').ownerId
+  rt.state.rooms.room.participants = [
+    { kind: 'human', id: owner, role: 'admin', displayName: 'You', joinedSeq: 0 },
+    { kind: 'bot', id: 'chief', role: 'member', joinedSeq: 0 },
+    { kind: 'bot', id: 'writer', role: 'member', joinedSeq: 0 },
+  ]
+  await agentFor('writer')
+  assert.equal((await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true })).ok, true)
+  await tick()
+  assert.deepEqual([...hiddenFrom('writer')].sort(), [...GITHUB].sort(), 'composio is on for Writer')
+  // A friend's Bot joins the room: the tools leave the list at once, not at the next restart.
+  rt.state.rooms.room.participants.push({ kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob', role: 'member', joinedSeq: 1 })
+  await rt.save()
+  await tick()
+  assert.deepEqual([...hiddenFrom('writer')].sort(), [...COMPOSIO, ...GITHUB].sort(), 'shared through the room: nothing listed')
+  // The friend leaves: the owner's switch is still on, so the tools come back.
+  rt.state.rooms.room.participants.at(-1).leftSeq = 5
+  await rt.save()
+  await tick()
+  assert.deepEqual([...hiddenFrom('writer')].sort(), [...GITHUB].sort(), 'alone again: composio is listed again')
+})

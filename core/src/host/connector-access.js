@@ -30,26 +30,41 @@ export function install(rt) {
   const allowed = (bot, id) => enabled(bot, id) && rt.sharedWith(bot.id).length === 0
 
   // The Bot an Agent works for: its own chat, a group Session and an earlier part resolve through
-  // selfOf; a sub-agent Session is followed up to its parent.
-  const botOfAgent = (agent) => {
+  // selfOf; a sub-agent Session is followed up to its parent. The answer has three shapes, and only
+  // the middle one keeps the tools:
+  //   { bot }      the Agent works for that Bot: its switch and its sharing decide;
+  //   { plain }    the chain ends at a Session that belongs to no Bot (the DSH Agent, a plain Session);
+  //   { unknown }  the chain cannot be followed to its end (a parent Session that is gone, a parent
+  //                chain deeper than MAX_DEPTH, a Bot id that no longer exists). It may well belong to
+  //                a shared Bot, so it fails CLOSED: no connector tools, every call refused.
+  const whoseAgent = (agent) => {
     let id = agent?.id ?? agent?.session?.id
     let header = agent?.session?.header
     for (let depth = 0; id !== undefined && depth < MAX_DEPTH; depth += 1) {
       const botId = rt.selfOf(id)
-      if (botId !== undefined) return rt.botOf(botId)
+      if (botId !== undefined) {
+        const bot = rt.botOf(botId)
+        return bot === undefined ? { unknown: true } : { bot }
+      }
+      // The Agent's own header is part of the call; a parent's header has to be found again.
+      if (depth > 0 && header === undefined) return { unknown: true }
       const parent = header?.parentSession
-      if (parent === undefined) return undefined
+      if (parent === undefined) return { plain: true }
       id = String(parent)
       header = ctx.sessions?.get?.(id)?.header
     }
-    return undefined
+    return id === undefined ? { plain: true } : { unknown: true }
   }
+  const botOfAgent = agent => whoseAgent(agent).bot
 
   ctx.tools.guard(exec => {
     const id = connectorOfTool(exec?.name)
     if (id === undefined) return undefined
-    const bot = botOfAgent(exec.agent)
-    if (bot === undefined || allowed(bot, id)) return undefined
+    const who = whoseAgent(exec.agent)
+    if (who.plain === true) return undefined
+    if (who.unknown === true) return `The ${id} connector is not available here: the Bot this Agent works for could not be determined.`
+    const { bot } = who
+    if (allowed(bot, id)) return undefined
     return enabled(bot, id)
       ? `The ${id} connector is not available to ${bot.name} while it is shared with other people.`
       : `The ${id} connector is not turned on for ${bot.name}. The owner can turn it on in this Bot's settings.`
@@ -57,6 +72,8 @@ export function install(rt) {
 
   // ---------------------------------------------------------------- the per-Agent tool list
   const masks = new WeakMap()
+  // Whether each local Bot was shared the last time its Agents were looked at (see followSharing).
+  const sharedBefore = new Map()
   const seen = new WeakSet()
   const refs = []
   const track = (agent) => {
@@ -67,30 +84,33 @@ export function install(rt) {
   const served = (agent) => {
     try { return new Set(ctx.tools.schemas(agent).map(schema => schema.name)) } catch { return undefined }
   }
-  const denied = (bot, names) => [...names].filter((name) => {
+  const denied = (who, names) => [...names].filter((name) => {
     const id = connectorOfTool(name)
-    return id !== undefined && (bot === undefined || !allowed(bot, id))
+    return id !== undefined && (who.bot === undefined || !allowed(who.bot, id))
   }).sort()
 
   function hideConnectorTools(agent) {
     track(agent)
     if (typeof agent?.ctx?.tools?.restrict !== 'function') return
-    const bot = botOfAgent(agent)
-    // An Agent that belongs to no Bot keeps the tools; so does one that never had a mask.
+    const who = whoseAgent(agent)
+    const bot = who.bot
+    if (bot !== undefined) sharedBefore.set(bot.id, rt.sharedWith(bot.id).length > 0)
+    // An Agent that belongs to no Bot keeps the tools, unless it already carries a mask; one whose Bot
+    // cannot be determined never gets them (see whoseAgent).
     const current = masks.get(agent)
-    if (bot === undefined && current === undefined) return
+    if (who.plain === true && current === undefined) return
     const names = served(agent)
     if (names === undefined) return
     // The mask hides its own names from schemas(), so count them as known (as hooks.js does).
     for (const name of current?.deny ?? []) names.add(name)
-    const key = denied(bot, names).join(',')
+    const key = denied(who, names).join(',')
     if ((current?.key ?? '') === key) return
     try {
       current?.dispose?.()
       masks.delete(agent)
       // After the old mask is lifted, schemas() lists what is really served now.
       const fresh = served(agent)
-      const deny = fresh === undefined ? [] : denied(bot, fresh)
+      const deny = fresh === undefined ? [] : denied(who, fresh)
       masks.set(agent, { key: deny.join(','), deny, dispose: deny.length > 0 ? agent.ctx.tools.restrict({ deny }) : undefined })
     } catch (error) {
       rt.warn('ds-bot: connector tools stay listed for %s: %s', bot?.name ?? agent?.id, error)
@@ -167,6 +187,32 @@ export function install(rt) {
 
   // A Bot's sharing changed (a grant was added or removed): apply it to the Agents it already has.
   const refreshConnectorTools = botId => eachAgent(agent => { if (botOfAgent(agent)?.id === botId) hideConnectorTools(agent) })
+
+  // Sharing also changes without a grant: a friend, another person or another owner's Bot joins or
+  // leaves a room, or a room is joined by code. Every such change is saved, so each save compares
+  // which local Bots are shared now with the last time and refreshes the Agents of those that
+  // flipped. (The call guard reads `sharedWith` at call time, so a refusal never waits for this; this
+  // keeps the tool list in step: no listed tool that is refused, no hidden tool once the person left.)
+  const followSharing = () => {
+    try {
+      const flipped = []
+      for (const bot of Object.values(state.bots ?? {})) {
+        if (bot.remote !== undefined) continue
+        const shared = rt.sharedWith(bot.id).length > 0
+        if (sharedBefore.get(bot.id) === !shared) flipped.push(bot.id)
+        sharedBefore.set(bot.id, shared)
+      }
+      for (const botId of flipped) refreshConnectorTools(botId)
+    } catch (error) {
+      rt.warn('ds-bot: connector tools after a sharing change: %s', error)
+    }
+  }
+  const save = rt.save
+  rt.save = async (...args) => {
+    const result = await save.apply(rt, args)
+    followSharing()
+    return result
+  }
 
   Object.assign(rt, { botConnectorEndpoint: setBotConnector, forgetConnector, hideConnectorTools, refreshConnectorTools })
 }
