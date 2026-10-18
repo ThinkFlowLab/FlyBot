@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
-import { cleanVersion, commitIn, install, installedCommit, newer, sourceOf } from '../src/host/update.js'
+import { cleanVersion, commitIn, commitOf, install, installedCommit, lockedCommit, newer, sourceOf } from '../src/host/update.js'
 
 const PKG = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const flush = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve() }
@@ -64,6 +64,18 @@ test('the install source decides where a newer version is looked for', () => {
     { kind: 'git', owner: 'ThinkFlowLab', repo: 'FlyBot', branch: 'main', rest: ['path:/core'] })
   assert.deepEqual(sourceOf('https://example.com/ds-bot-0.1.0.tgz'), { kind: 'tarball' })
   assert.deepEqual(sourceOf(undefined), { kind: 'unknown' })
+})
+
+test('a 40-hex ref in the spec is a commit, not a branch or a tag (#379)', () => {
+  const sha = '6d04db6682fa87033e58a176121f878b3ba293ce'
+  assert.deepEqual(sourceOf(`github:ThinkFlowLab/FlyBot#${sha}&path:/core`),
+    { kind: 'git', owner: 'ThinkFlowLab', repo: 'FlyBot', commit: sha, rest: ['path:/core'] })
+  assert.equal(sourceOf(`github:ThinkFlowLab/FlyBot#${sha.toUpperCase()}`).commit, sha, 'lower-cased')
+  assert.deepEqual(sourceOf(`git+https://github.com/ThinkFlowLab/FlyBot.git#${sha}`), { kind: 'git', owner: 'ThinkFlowLab', repo: 'FlyBot', commit: sha, rest: [] })
+  // A short hash, or a hex run that is longer, cannot be told from a branch name: it stays one.
+  assert.equal(sourceOf(`github:ThinkFlowLab/FlyBot#${sha.slice(0, 7)}`).branch, sha.slice(0, 7))
+  assert.equal(sourceOf(`github:ThinkFlowLab/FlyBot#${sha}ab`).branch, `${sha}ab`)
+  assert.equal(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core').commit, undefined)
 })
 
 test('a registry install finds the newest version on the next registry and installs it from there', async () => {
@@ -244,6 +256,95 @@ test('the commit a git install runs is read from the package\'s real path, and a
   assert.equal(installedCommit(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core'), pnpm), SHA)
   assert.equal(installedCommit(sourceOf('ds-bot@^0.1.0'), pnpm), null)
   assert.equal(installedCommit(sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core')), null)
+})
+
+const LOCK_SHA = '6d04db6682fa87033e58a176121f878b3ba293ce'
+// What pnpm 10 writes for `pnpm add "github:ThinkFlowLab/FlyBot#main&path:/core"` into a hoisted profile.
+const LOCK = `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      ds-bot:
+        specifier: github:ThinkFlowLab/FlyBot#main&path:/core
+        version: https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${LOCK_SHA}#path:/core
+
+packages:
+
+  ds-bot@https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${LOCK_SHA}#path:/core:
+    resolution: {gitHosted: true, integrity: sha512-DHaU, tarball: https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${LOCK_SHA}}
+    version: 0.1.5-flybot.1
+
+snapshots:
+
+  ds-bot@https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${LOCK_SHA}#path:/core: {}
+`
+
+test('the commit pnpm locked for ds-bot is read from the profile lockfile, and only for ds-bot (#379)', () => {
+  assert.equal(lockedCommit(LOCK, 'ds-bot'), LOCK_SHA)
+  // Quoted keys (a scoped name, or a key pnpm quotes) and the older leading slash.
+  assert.equal(lockedCommit(`packages:\n  'ds-bot@https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${LOCK_SHA}#path:/core':\n    version: 1\n`, 'ds-bot'), LOCK_SHA)
+  assert.equal(lockedCommit(`packages:\n  /ds-bot@https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${LOCK_SHA}:\n`, 'ds-bot'), LOCK_SHA)
+  // The social plugin from the same repository, at another commit, does not answer for the core.
+  const other = 'ffffffffffffffffffffffffffffffffffffffff'
+  const both = `${LOCK}\n  '@flybot/social@https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${other}#path:/plugins/social':\n    version: 0.1.0\n`
+  assert.equal(lockedCommit(both, 'ds-bot'), LOCK_SHA)
+  assert.equal(lockedCommit(both, '@flybot/social'), other, 'each package has its own entry')
+  // A package named ds-bot-extra is not ds-bot; a registry entry has no commit; two commits for ds-bot are none.
+  assert.equal(lockedCommit(`packages:\n  ds-bot-extra@https://codeload.github.com/x/y/tar.gz/${LOCK_SHA}:\n`, 'ds-bot'), null)
+  assert.equal(lockedCommit('packages:\n  ds-bot@0.1.5:\n    resolution: {integrity: sha512-x}\n', 'ds-bot'), null)
+  assert.equal(lockedCommit(`${LOCK}\n  ds-bot@https://codeload.github.com/ThinkFlowLab/FlyBot/tar.gz/${other}#path:/core: {}\n`, 'ds-bot'), null)
+  assert.equal(lockedCommit(LOCK.replaceAll(LOCK_SHA, LOCK_SHA.slice(0, 12)), 'ds-bot'), null, 'a short hash is not a commit')
+  assert.equal(lockedCommit(undefined, 'ds-bot'), null)
+  assert.equal(lockedCommit(LOCK, ''), null)
+})
+
+test('the commit comes from the spec first, then the lockfile, then the real path', () => {
+  const branch = sourceOf('github:ThinkFlowLab/FlyBot#main&path:/core')
+  const path = `/p/node_modules/.pnpm/ds-bot@github.com+ThinkFlowLab+FlyBot+${SHA}/node_modules/ds-bot/package.json`
+  assert.equal(commitOf(branch, { lockText: LOCK, where: path }), LOCK_SHA, 'the lockfile outranks the path')
+  assert.equal(commitOf(branch, { lockText: null, where: path }), SHA, 'no lockfile: the path')
+  assert.equal(commitOf(branch, { lockText: 'lockfileVersion: 9', where: '/p/node_modules/ds-bot/package.json' }), null)
+  assert.equal(commitOf(sourceOf(`github:ThinkFlowLab/FlyBot#${SHA}`), { lockText: LOCK, where: path }), SHA, 'the pinned hash outranks both')
+  assert.equal(commitOf(sourceOf('link:/work/core'), { lockText: LOCK }), null)
+  assert.equal(commitOf(sourceOf(`ds-bot@^0.1.0`), { lockText: LOCK }), null)
+})
+
+test('a hoisted git install shows the commit from the profile lockfile and compares it with its branch (#379)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsb-lock-'))
+  writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK)
+  const compare = `https://api.github.com/repos/ThinkFlowLab/FlyBot/compare/${LOCK_SHA}...main`
+  const run = start({
+    source: 'github:ThinkFlowLab/FlyBot#main&path:/core', profileDir: dir,
+    config: { packagePath: '/p/node_modules/ds-bot/package.json' },
+    answers: { [compare]: { status: 'ahead', ahead_by: 2 } },
+  })
+  const view = await run.rt.updateCheck()
+  assert.deepEqual(view.build, { branch: 'main', commit: '6d04db6' })
+  assert.equal(view.behind, 2)
+  assert.deepEqual(run.fetched, [compare])
+  // No lockfile in the profile: the branch alone, nothing compared.
+  const empty = mkdtempSync(join(tmpdir(), 'dsb-nolock-'))
+  const bare = start({ source: 'github:ThinkFlowLab/FlyBot#main&path:/core', profileDir: empty, config: { packagePath: '/p/node_modules/ds-bot/package.json' } })
+  assert.deepEqual((await bare.rt.updateCheck()).build, { branch: 'main' })
+  assert.deepEqual(bare.fetched, [])
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
+  rmSync(empty, { recursive: true, force: true, maxRetries: 5 })
+})
+
+test('an install pinned to a commit shows the commit, is no branch, and asks GitHub for nothing (#379)', async () => {
+  const run = start({ source: `github:ThinkFlowLab/FlyBot#${LOCK_SHA}&path:/core` })
+  const view = await run.rt.updateCheck()
+  assert.deepEqual(view.build, { commit: '6d04db6', pinned: true })
+  assert.equal(view.behind, null)
+  assert.equal(view.available, false)
+  assert.deepEqual(run.fetched, [])
+  assert.throws(() => run.rt.updateStart(), /No FlyBot core update/)
 })
 
 test('a git install on a branch reports its branch and commit, and how many commits the branch is ahead', async () => {

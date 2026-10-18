@@ -15,6 +15,7 @@ export const FETCH_TIMEOUT_MS = 8000
 // The first check waits until the host has settled its own start.
 const STARTUP_DELAY_MS = 15_000
 const VERSION = /^v?(\d+\.\d+\.\d+(?:-[\w.]+)?)(?:\+[\w.]+)?$/
+const COMMIT = /^[0-9a-f]{40}$/i
 
 /** A release version without its `v` and build metadata, or null. */
 export const cleanVersion = value => VERSION.exec(String(value ?? '').trim())?.[1] ?? null
@@ -49,11 +50,14 @@ export function sourceOf(spec) {
   if (github && (gitLike || !text.startsWith('@'))) {
     const parts = (github[3] ?? '').split('&').filter(Boolean)
     const ref = parts.find(part => !part.includes(':')) ?? ''
+    // A full commit hash pins the install to that commit; it is not a branch to follow or a tag to compare.
+    const commit = COMMIT.test(ref) ? ref.toLowerCase() : null
     return {
       kind: 'git', owner: github[1], repo: github[2],
       ...(cleanVersion(ref) ? { ref } : {}),
+      ...(commit !== null ? { commit } : {}),
       // A branch (or other non-version ref) the install follows: `#main`.
-      ...(ref !== '' && !cleanVersion(ref) ? { branch: ref } : {}),
+      ...(ref !== '' && commit === null && !cleanVersion(ref) ? { branch: ref } : {}),
       rest: parts.filter(part => part !== ref),
     }
   }
@@ -124,6 +128,35 @@ export function installedCommit(source, where) {
     const here = where ?? realpathSync(fileURLToPath(new URL('../../package.json', import.meta.url)))
     return commitIn(String(here).replaceAll('\\', '/'), source.repo)
   } catch { return null }
+}
+
+// The commit pnpm locked for this package: the profile's pnpm-lock.yaml names the git dependency's
+// tarball (`ds-bot@<codeload address>/<owner>/<repo>/tar.gz/<sha>#path:/core`), which is the
+// only place a hoisted install (`nodeLinker: hoisted`, what DSH profiles use) keeps it, because its
+// real path is plain `node_modules/ds-bot`. Only entries of this package count, so the other FlyBot
+// plugins installed from the same repository never answer for it, and two different commits for it
+// (a lockfile that disagrees with itself) give none: a wrong commit is worse than none.
+export function lockedCommit(lockText, name) {
+  if (typeof lockText !== 'string' || typeof name !== 'string' || name === '') return null
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const entry = new RegExp(`^[ \\t]*['"]?/?${escaped}@[^\\s'"]*?tar\\.gz/([0-9a-f]{40})(?![0-9a-f])`, 'gim')
+  const found = new Set([...lockText.matchAll(entry)].map(match => match[1].toLowerCase()))
+  return found.size === 1 ? [...found][0] : null
+}
+
+// The profile's lockfile text, or null when there is none to read.
+function readLock(dir) {
+  if (typeof dir !== 'string' || dir === '') return null
+  try {
+    return readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf8')
+  } catch { return null }
+}
+
+// The commit a git install runs, most certain first: the hash the spec itself pins, the one the profile's
+// lockfile locked, then the one in the package's real path. Null when none says.
+export function commitOf(source, { lockText, where } = {}) {
+  if (source?.kind !== 'git') return null
+  return source.commit ?? lockedCommit(lockText, PKG.name) ?? installedCommit(source, where)
 }
 
 // The public repository the releases live in, for tags and the "what's new" link.
@@ -207,9 +240,14 @@ export function install(rt) {
   // Which commit a git install runs and, for one that follows a branch, how far the branch has moved on.
   // One unauthenticated compare call; a failed answer leaves "unknown", never a guess.
   async function describeBuild(source) {
-    const commit = installedCommit(source, config.packagePath)
+    const commit = commitOf(source, { lockText: source.kind === 'git' ? readLock(ctx.get?.('profileContext')?.dir) : null, where: config.packagePath })
     status.build = source.kind === 'git' && (source.branch !== undefined || commit !== null)
-      ? { ...(source.branch !== undefined ? { branch: source.branch } : {}), ...(commit !== null ? { commit: commit.slice(0, 7) } : {}) }
+      ? {
+          ...(source.branch !== undefined ? { branch: source.branch } : {}),
+          ...(commit !== null ? { commit: commit.slice(0, 7) } : {}),
+          // The spec names one commit and follows nothing.
+          ...(source.commit !== undefined ? { pinned: true } : {}),
+        }
       : null
     status.behind = null
     if (commit === null || source.branch === undefined || !/^[\w./-]+$/.test(source.branch)) return

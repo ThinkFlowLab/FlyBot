@@ -839,6 +839,7 @@ const ZH = {
   'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
   'Updates are not offered for this install.': '这种安装方式不提供更新。',
   'Installed from GitHub ({where}). Updates come from the maintainer: reinstall FlyBot to get them.': '从 GitHub 安装（{where}）。更新由维护者发布：重新安装 FlyBot 即可升级。',
+  'Pinned to commit {commit}. Updates come from the maintainer: reinstall FlyBot to get them.': '固定在提交 {commit}。更新由维护者发布：重新安装 FlyBot 即可升级。',
   'Up to date with {branch}.': '已是 {branch} 的最新提交。',
   '1 commit behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.': '落后 {branch} 1 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。',
   '{count} commits behind {branch}. Updates come from the maintainer: reinstall FlyBot to get them.': '落后 {branch} {count} 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。',

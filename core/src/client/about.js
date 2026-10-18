@@ -18,6 +18,7 @@ function botHint(update) {
   if (update.enabled === false) return t('Update checks are off.')
   if (update.source === 'path') return t('Installed from a local folder; update it there.')
   if (update.source === 'git' && update.build?.branch !== undefined) return branchHint(update)
+  if (update.source === 'git' && update.build?.pinned) return t('Pinned to commit {commit}. Updates come from the maintainer: reinstall FlyBot to get them.', { commit: update.build.commit })
   if (!update.checkedAt) return null
   if (!update.latest && update.source !== 'registry') return t('Updates are not offered for this install.')
   const checked = t('Checked {time}', { time: whenText(update.checkedAt) })
