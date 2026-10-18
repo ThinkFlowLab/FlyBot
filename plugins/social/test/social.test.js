@@ -4866,6 +4866,26 @@ test('#343: accepting an invite keeps the panel open with the result; a join wit
   }
 })
 
+test('#343: a failed friend-list refresh does not replace the accepted-invite result; a long Bot name shrinks the button', async () => {
+  const { plugin, all, setters } = clientPlugin([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''], {
+    call: async (endpoint) => {
+      if (endpoint === 'social/join-invite') return { status: 'active', inviterName: 'Alice', inviterBotName: 'Helper' }
+      if (endpoint === 'social/overview') throw new Error('list_friends failed')
+      return {}
+    },
+  })
+  const nodes = all(plugin.AddFriend({}))
+  await nodes.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  const shown = setters.filter(([index, value]) => index === 2 && value !== null).map(([, value]) => value)
+  assert.deepEqual(shown.map(value => value.text), ['Alice shared Helper with you.'], 'only the join result was ever shown')
+  const long = 'A'.repeat(40)
+  const mint = all(clientPlugin([null, '', null, false, [{ id: 'a', name: long, isMain: true }], 'a', 'a', ''].slice(0)).plugin.AddFriend({})).find(n => n.props?.['data-flybot'] === 'mint-invite')
+  assert.equal(mint.props.title, `Invite a friend to ${long}`)
+  assert.equal(mint.props.style.overflow, 'hidden')
+  assert.equal(mint.props.style.textOverflow, 'ellipsis')
+})
+
 test('#343: Add friend puts accepting first, on a full-width paste box, and names the Bot an invite shares', () => {
   const { plugin, all, text } = clientPlugin([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''])
   const nodes = all(plugin.AddFriend({ onDone() {} }))

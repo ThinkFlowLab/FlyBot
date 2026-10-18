@@ -1366,7 +1366,9 @@ window.__ModuleLoader__.load({
       const [me, setMe] = useState('')
       // The link that was just made, kept on screen so it can be checked or copied by hand (#343).
       const [made, setMade] = useState(null)
-      const refresh = () => call('social/overview', {}).then(setOverview, e => setStatus({ tone: 'error', text: errorText(e) }))
+      // `keep`: a result is on screen (an accepted invite, say); a failed re-read of the friend list must not
+      // replace it with an error that looks like the action failed (#343).
+      const refresh = (keep = false) => call('social/overview', {}).then(setOverview, (e) => { if (!keep) setStatus({ tone: 'error', text: errorText(e) }) })
       useEffect(() => {
         refresh()
         call('social/status', {}).then(value => {
@@ -1391,7 +1393,7 @@ window.__ModuleLoader__.load({
         try {
           const message = await fn()
           if (message) setStatus({ tone: 'ok', text: message })
-          await refresh()
+          await refresh(Boolean(message))
           onChange?.()
         } catch (e) {
           const text = errorText(e)
@@ -1460,7 +1462,11 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-line', style: { padding: '4px 10px 0' }, 'data-flybot': 'invite-line' },
           mine.length > 1 ? h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
             mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))) : null,
-          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', disabled: busy, onClick: mint }, `Invite a friend to ${(mine.find(bot => bot.id === sharing) ?? mine.find(bot => bot.isMain) ?? mine[0])?.name || 'your Bot'}`)),
+          (() => {
+            const label = `Invite a friend to ${(mine.find(bot => bot.id === sharing) ?? mine.find(bot => bot.isMain) ?? mine[0])?.name || 'your Bot'}`
+            // A long Bot name shrinks the button with an ellipsis instead of being clipped by the sidebar, so the picker stays usable.
+            return h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', title: label, style: { flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }, disabled: busy, onClick: mint }, label)
+          })()),
         made ? h('div', { className: 'fs-line', style: { padding: '2px 10px 0' } },
           h('input', { className: 'fs-input', readOnly: true, value: made.link, 'aria-label': `Invite link for ${made.botName}`, 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() })) : null,
         status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone, style: { padding: '2px 10px' } }, status.text) : null,
