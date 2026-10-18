@@ -1353,7 +1353,7 @@ window.__ModuleLoader__.load({
     }
 
     // Add friend: join a friend's link and answer requests (invites are made from a Bot's right-click menu).
-    function AddFriend({ onChange, onDone, actions } = {}) {
+    function AddFriend({ onChange, onDone } = {}) {
       const [overview, setOverview] = useState(null)
       const [code, setCode] = useState('')
       const [status, setStatus] = useState(null)
@@ -1364,6 +1364,8 @@ window.__ModuleLoader__.load({
       // Which of my Bots the copied invite shares (default: the Main Bot), and my own handle (#181).
       const [sharing, setSharing] = useState('')
       const [me, setMe] = useState('')
+      // The link that was just made, kept on screen so it can be checked or copied by hand (#343).
+      const [made, setMade] = useState(null)
       const refresh = () => call('social/overview', {}).then(setOverview, e => setStatus({ tone: 'error', text: errorText(e) }))
       useEffect(() => {
         refresh()
@@ -1401,19 +1403,21 @@ window.__ModuleLoader__.load({
       const mint = () => run('Invite', async () => {
         const botId = sharing || mine.find(bot => bot.isMain)?.id || mine[0]?.id
         if (!botId) throw new Error('Choose one of your Bots to invite a friend to')
+        const botName = mine.find(bot => bot.id === botId)?.name || 'your Bot'
         const invite = await call('social/create-invite', { botId })
         const link = invite?.link || invite?.url
         if (!link) throw new Error('The invite came back without its link')
+        setMade({ link, botName })
         const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
         if (clip?.writeText) {
           try {
             await clip.writeText(link)
-            return 'Invite link copied. Send it to a friend.'
+            return `Invite link for ${botName} copied. Send it to a friend.`
           } catch {
-            return `Could not copy. Link: ${link}`
+            return `Could not copy. Copy the link below and send it to a friend.`
           }
         }
-        return `Invite link: ${link}`
+        return 'Copy the link below and send it to a friend.'
       })
       const join = e => {
         e.preventDefault()
@@ -1423,11 +1427,9 @@ window.__ModuleLoader__.load({
           const who = r.inviterName ?? r.inviter ?? 'Your friend'
           const shared = r.inviterBotName || r.sharedBot
           if (r.status === 'active') {
-            // The new Bot row is in the sidebar already: close this panel and say what was added,
-            // instead of leaving it open until Done (#195).
-            const text = shared ? `${who} shared ${shared} with you.` : `${who} shared a Bot with you.`
-            if (onDone && actions?.notify) { actions.notify(text); setTimeout(onDone, 0) }
-            return text
+            // The panel stays open with the result until Done, so it can be read (#343). A join that
+            // brought no Bot says so instead of claiming one was shared.
+            return shared ? `${who} shared ${shared} with you.` : `Joined ${who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.`
           }
           return `Request sent to ${who}. They show up here once they accept.`
         })
@@ -1443,13 +1445,10 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-label fs-label-plain' }, 'Add friend'),
           onDone ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, 'Done') : null),
         me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, `You are ${me}`) : null,
-        h('div', { className: 'fs-line', style: { padding: '4px 10px 0' }, 'data-flybot': 'invite-line' },
-          mine.length > 1 ? h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => setSharing(e.target.value) },
-            mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))) : null,
-          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', disabled: busy, onClick: mint }, 'Copy invite link')),
         h('form', { onSubmit: join, className: 'fs-card bt-social-join' },
+          // The paste box takes the full width on its own row, so the start of a link stays readable (#343).
+          h('input', { className: 'fs-input', style: { flex: '0 0 auto', width: '100%', boxSizing: 'border-box' }, value: code, placeholder: 'Paste invite link or code', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
           h('div', { className: 'fs-line' },
-            h('input', { className: 'fs-input', value: code, placeholder: 'Paste invite link', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite')),
           // Accepting grants only the invited Bot to you. The Bot you talk through is not shared, so
           // there is nothing to pick with one Bot (#228).
@@ -1457,6 +1456,13 @@ window.__ModuleLoader__.load({
             h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null),
+        // Inviting is its own named line: which Bot the link shares is always said, and the link is shown once made.
+        h('div', { className: 'fs-line', style: { padding: '4px 10px 0' }, 'data-flybot': 'invite-line' },
+          mine.length > 1 ? h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
+            mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))) : null,
+          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', disabled: busy, onClick: mint }, `Invite a friend to ${(mine.find(bot => bot.id === sharing) ?? mine.find(bot => bot.isMain) ?? mine[0])?.name || 'your Bot'}`)),
+        made ? h('div', { className: 'fs-line', style: { padding: '2px 10px 0' } },
+          h('input', { className: 'fs-input', readOnly: true, value: made.link, 'aria-label': `Invite link for ${made.botName}`, 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() })) : null,
         status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone, style: { padding: '2px 10px' } }, status.text) : null,
         incoming.length ? h('div', { className: 'bt-social-requests' },
           h('div', { className: 'fs-label' }, 'Friend requests', h('span', { className: 'fs-count' }, String(incoming.length))),

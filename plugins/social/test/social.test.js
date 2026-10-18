@@ -2759,7 +2759,7 @@ test('Add friend mints and copies an invite link in one click', async () => {
   const tree = walk(pluginOf([null, '', null, false, mine, 'a']).AddFriend({}))
   const mint = tree.find(n => n.props['data-flybot'] === 'mint-invite')
   assert.ok(mint)
-  assert.ok(mint.children.includes('Copy invite link'))
+  assert.ok(mint.children.includes('Invite a friend to Chief'), 'the button names the Bot it shares, even with one Bot (#343)')
   assert.equal(tree.some(n => n.props['data-flybot'] === 'invite-hint'), false, 'one paste field, one hint (#181)')
   await mint.props.onClick()
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/create-invite' && payload.botId === 'a'))
@@ -4846,23 +4846,47 @@ test('#297: social/typing answers from Bot Social only when the server lists pre
   assert.equal(older.calls.some(c => c.name === 'list_presence'), false, 'an older server is never asked')
 })
 
-test('#195: accepting a Bot invite says what was added and closes the panel; the button reads Accept invite', async () => {
-  const calls = []
-  const { walk, pluginOf } = loadSocialClient(async (endpoint) => {
-    calls.push(endpoint)
-    if (endpoint === 'social/join-invite') return { status: 'active', inviterName: 'Alice', inviterBotName: 'Helper' }
-    return {}
-  })
-  const notes = []
-  let closed = 0
-  const tree = walk(pluginOf([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', '']).AddFriend({ actions: { notify: text => notes.push(text) }, onDone: () => { closed += 1 } }))
-  const form = tree.find(n => n.type === 'form')
-  assert.ok(tree.some(n => n.type === 'button' && n.props.type === 'submit' && n.children.includes('Accept invite')))
-  await form.props.onSubmit({ preventDefault() {} })
-  await new Promise(resolve => setTimeout(resolve, 5))
-  assert.ok(calls.includes('social/join-invite'))
-  assert.deepEqual(notes, ['Alice shared Helper with you.'])
-  assert.equal(closed, 1)
+test('#343: accepting an invite keeps the panel open with the result; a join without a Bot says so', async () => {
+  const lastStatus = setters => setters.filter(([index, value]) => index === 2 && value !== null).at(-1)?.[1]
+  for (const [reply, expected] of [
+    [{ status: 'active', inviterName: 'Alice', inviterBotName: 'Helper' }, /^Alice shared Helper with you\.$/],
+    [{ status: 'active', inviterName: 'Alice' }, /^Joined Alice's invite, but their Bot hasn't loaded yet/],
+    [{ status: 'pending_target', inviterName: 'Alice' }, /^Request sent to Alice/],
+  ]) {
+    const { plugin, all, setters } = clientPlugin([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''], {
+      call: async endpoint => (endpoint === 'social/join-invite' ? reply : {}),
+    })
+    const notes = []
+    let closed = 0
+    const nodes = all(plugin.AddFriend({ actions: { notify: text => notes.push(text) }, onDone: () => { closed += 1 } }))
+    await nodes.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.match(lastStatus(setters)?.text ?? '', expected)
+    assert.equal(closed, 0, 'the panel stays open until Done')
+  }
+})
+
+test('#343: Add friend puts accepting first, on a full-width paste box, and names the Bot an invite shares', () => {
+  const { plugin, all, text } = clientPlugin([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''])
+  const nodes = all(plugin.AddFriend({ onDone() {} }))
+  const form = nodes.findIndex(n => n.type === 'form')
+  const invite = nodes.findIndex(n => n.props?.['data-flybot'] === 'invite-line')
+  assert.ok(form > 0 && invite > form, 'the paste form comes before the invite line')
+  const paste = nodes.find(n => n.type === 'input' && n.props['aria-label'] === 'Invite link or code')
+  assert.equal(paste.props.placeholder, 'Paste invite link or code')
+  assert.equal(paste.props.style.width, '100%', 'the paste box has its own full-width row')
+  assert.equal(text(nodes.find(n => n.props?.['data-flybot'] === 'mint-invite')), 'Invite a friend to Chief')
+  assert.equal(nodes.some(n => n.props?.['data-flybot'] === 'invite-link'), false, 'no link before one is made')
+})
+
+test('#343: the link that was just made stays on screen in a read-only field', () => {
+  const mine = [{ id: 'a', name: 'Chief', isMain: true }]
+  const { plugin, all } = clientPlugin([null, '', null, false, mine, 'a', 'a', '', { link: 'https://s/i/INV9', botName: 'Chief' }])
+  const field = all(plugin.AddFriend({})).find(n => n.props?.['data-flybot'] === 'invite-link')
+  assert.ok(field)
+  assert.equal(field.props.value, 'https://s/i/INV9')
+  assert.equal(field.props.readOnly, true)
+  assert.equal(field.props['aria-label'], 'Invite link for Chief')
 })
 
 test('#181: the account menu header shows my own handle with a Copy button', async () => {
