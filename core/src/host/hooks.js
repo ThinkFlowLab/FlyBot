@@ -16,7 +16,7 @@ import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
 import { SOURCE_KIND } from './constants.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
-import { faceMentions } from './face-mentions.js'
+import { faceMentions, mentionedByHandle } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -925,9 +925,17 @@ export function install(rt) {
       },
       ofFace: serverId => Object.values(state.rooms || {}).find(room => room.face?.roomId === serverId),
       dropFace: roomId => rt.dropFaceRoom?.(roomId),
+      // `fn(room, line, { mentions })`: for the room owner's own typed line, `mentions` is the server handle of
+      // every Bot its "@" names (the picker's labels read against this room), so the transport can send the
+      // explicit list with the line (#293). Bot lines carry none.
       onFaceLine(fn) {
-        rt.faceRoomFanout = typeof fn === 'function' ? fn : undefined
-        return () => { if (rt.faceRoomFanout === fn) rt.faceRoomFanout = undefined }
+        if (typeof fn !== 'function') { rt.faceRoomFanout = undefined; return () => {} }
+        const wrapped = (room, line) => {
+          const typed = line?.authorKind === 'human' && line.remote !== true && !line.kind && typeof rt.botOf === 'function'
+          return fn(room, line, { mentions: typed ? faceMentions(room, String(line.text ?? ''), rt.botOf).handles : [] })
+        }
+        rt.faceRoomFanout = wrapped
+        return () => { if (rt.faceRoomFanout === wrapped) rt.faceRoomFanout = undefined }
       },
       postNotice: (roomId, text) => {
         const room = rt.roomOf(roomId)
@@ -935,13 +943,19 @@ export function install(rt) {
         return rt.postToRoom(room, { id: 'face-notice', name: 'Room' }, String(text ?? ''), { quiet: true, notice: true })
       },
       // Another member's own typed line: a plain chat bubble from that person, no Bot turn (#180).
-      postHuman: (roomId, { authorId, name, text } = {}) => {
+      postHuman: (roomId, { authorId, name, text, mentions } = {}) => {
         const room = rt.roomOf(roomId)
         if (!room || typeof rt.postToRoom !== 'function') return
         const who = String(name || 'Someone')
-        // The friend's own typed line @-calls my Bots by the labels they see ("<owner>'s Chief", handle):
-        // only those local Bots answer (#287). A line that calls nobody here stays a bubble.
-        const callIds = isFaceRoom(room) && typeof rt.botOf === 'function' ? faceMentions(room, String(text ?? ''), rt.botOf, { fromFriend: true }).bots.map(bot => bot.id) : []
+        // The friend's own typed line calls my Bots (#287). When the server carried the sender's explicit mention
+        // list (`mentions`: handles, #293) the handles decide, matched against this room's Bots; a list that names
+        // nobody this room knows, or no list (an older server or client), falls back to the labels they see
+        // ("<owner>'s Chief", handle) read from the text. Only attested lines carry a list here, so a Bot cannot
+        // call another home's Bots this way. A line that calls nobody here stays a bubble.
+        const listed = isFaceRoom(room) && typeof rt.botOf === 'function' && Array.isArray(mentions) && mentions.length > 0 ? mentionedByHandle(room, mentions, rt.botOf) : undefined
+        const callIds = listed !== undefined && listed.known > 0
+          ? listed.bots.map(bot => bot.id)
+          : isFaceRoom(room) && typeof rt.botOf === 'function' ? faceMentions(room, String(text ?? ''), rt.botOf, { fromFriend: true }).bots.map(bot => bot.id) : []
         return rt.postToRoom(room, { id: 'face-notice', name: who }, String(text ?? ''), { quiet: true, notice: true, human: { authorId: String(authorId || who), name: who }, ...(callIds.length > 0 ? { callIds } : {}) })
       },
       postRemote: (roomId, { handle, name, text } = {}) => {

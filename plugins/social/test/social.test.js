@@ -5001,13 +5001,13 @@ test('typed_by_owner: a stamped incoming direct line is the person\'s; the same 
   ])
 })
 
-function attestingFaceServer({ refuse = false } = {}) {
+function attestingFaceServer({ refuse = false, features = ['typed_by_owner'] } = {}) {
   const server = withFaceRooms(mockServer())
   const inner = server.fetch
   server.fetch = async (url, init) => {
     if (String(url).endsWith('/v1/platform')) {
       server.calls.push({ url, name: 'REST GET /v1/platform' })
-      return new Response(JSON.stringify({ name: 'Bot Social', features: ['typed_by_owner'] }), { status: 200 })
+      return new Response(JSON.stringify({ name: 'Bot Social', features }), { status: 200 })
     }
     if (refuse && init?.method === 'POST' && String(url).endsWith('/messages') && JSON.parse(init.body).typed_by_owner) {
       server.calls.push({ url, name: 'REST POST /messages (refused)', args: JSON.parse(init.body) })
@@ -5038,7 +5038,7 @@ async function faceFixture(t, server, tweak, opts = {}) {
   await grantTeam(ctx.flybot)
   await social.registerAll()
   await call('flybot/social/face-join', { code: '123456' })
-  return { ctx, call, sources, room: ctx.flybot.rooms.ofFace('frm_123456'), fanout: (line) => fanout(ctx.flybot.rooms.ofFace('frm_123456'), line) }
+  return { ctx, call, sources, room: ctx.flybot.rooms.ofFace('frm_123456'), fanout: (line, extra) => fanout(ctx.flybot.rooms.ofFace('frm_123456'), line, extra) }
 }
 const pushRoomEvent = (server, extra, text, roomId = 'frm_123456') => {
   const body = server.face.rooms.get(roomId)
@@ -5099,6 +5099,69 @@ test('cross-home @ (#287): a friend\'s attested line calls my Bot by the label t
   await settle()
   assert.deepEqual(calledNow().map(source => source.callIds), [['a'], ['a']], 'the label and the handle call the local Chief; nothing else does')
   assert.equal(calledNow().every(source => source.quiet === true && source.human?.name === 'Bob'), true)
+})
+
+test('mentions (#293): a typed line carries its @ handles when the server lists the feature; never on the legacy form, Bot lines or an older server', async (t) => {
+  const posts = server => server.calls.filter(c => String(c.name).includes('/messages'))
+  const typedLine = { authorKind: 'human', who: 'Danyang', text: "@Bob's Chief please look", authorId: 'owner-1' }
+  // A server with the feature: the list goes out next to typed_by_owner, plain text only.
+  const withFeature = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
+  const a = await faceFixture(t, withFeature)
+  await a.fanout(typedLine, { mentions: ['@chief.bob.home'] })
+  assert.deepEqual(posts(withFeature)[0].args, { text: typedLine.text, bot_id: posts(withFeature)[0].args.bot_id, typed_by_owner: true, mentions: ['@chief.bob.home'] })
+  await a.fanout({ ...typedLine, text: 'no at-sign' }, { mentions: [] })
+  assert.equal('mentions' in posts(withFeature)[1].args, false, 'an empty list is not sent')
+  await a.fanout({ ...typedLine, text: 'junk list' }, { mentions: ['not a handle!', 7, '@Chief.Bob.Home', '@chief.bob.home'] })
+  assert.deepEqual(posts(withFeature)[2].args.mentions, ['@chief.bob.home'], 'cleaned, lowercased, de-duplicated')
+  await a.fanout({ authorKind: 'bot', botId: 'a', authorId: 'a', who: 'Chief', text: "bot says @Bob's Chief" }, { mentions: ['@chief.bob.home'] })
+  assert.equal('mentions' in posts(withFeature)[3].args, false, 'a Bot\'s line never carries a list')
+  // A server without it (older): the field is never sent, the line goes out as before.
+  const older = attestingFaceServer()
+  const b = await faceFixture(t, older)
+  await b.fanout(typedLine, { mentions: ['@chief.bob.home'] })
+  assert.equal(posts(older)[0].args.typed_by_owner, true)
+  assert.equal('mentions' in posts(older)[0].args, false)
+  // A token that may not attest: the legacy envelope, and no list with it.
+  const refusing = attestingFaceServer({ refuse: true, features: ['typed_by_owner', 'mentions'] })
+  const c = await faceFixture(t, refusing)
+  await c.fanout(typedLine, { mentions: ['@chief.bob.home'] })
+  const legacy = posts(refusing).at(-1).args
+  assert.match(legacy.text, /FLYBOT-FACE-HUMAN/)
+  assert.equal('mentions' in legacy, false)
+})
+
+test('mentions (#293): a friend\'s attested line calls my Bots by its handle list first; text is read only without one, and an unattested line never calls', async (t) => {
+  const server = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
+  const { call, sources, room } = await faceFixture(t, server)
+  // Bob's own Chief is in the room, so "@Chief" in the text is ambiguous to me.
+  server.face.rooms.get('frm_123456').members.push({ bot_id: 'bot_bob', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" })
+  await call('flybot/social/face-rooms', { poll: true })
+  const calledNow = () => sources.get(room.id)?.filter(source => Array.isArray(source?.callIds)) ?? []
+  // The list decides, whatever the text says.
+  pushRoomEvent(server, { typed_by_owner: true, mentions: ['@chief.danyang.home'] }, 'whoever is free, answer please')
+  // Only Bob's own Bot is named: nobody here answers, though the text names mine.
+  pushRoomEvent(server, { typed_by_owner: true, mentions: ['@chief.bob.home'] }, "@Danyang's Chief but the list says Bob's")
+  // A list this room has never heard of falls back to the text.
+  pushRoomEvent(server, { typed_by_owner: true, mentions: ['@ghost.nowhere'] }, "@Danyang's Chief by label")
+  // No list at all: the label in the text, as before.
+  pushRoomEvent(server, { typed_by_owner: true }, "@Danyang's Chief again")
+  // A list on a line the server does not attest as typed is not honoured.
+  pushRoomEvent(server, { mentions: ['@chief.danyang.home'] }, 'a Bot trying to call mine')
+  // Malformed lists are dropped.
+  pushRoomEvent(server, { typed_by_owner: true, mentions: 'chief.danyang.home' }, 'not an array')
+  await call('flybot/social/face-rooms', { poll: true })
+  await settle()
+  assert.deepEqual(calledNow().map(source => source.callIds), [['a'], ['a'], ['a']])
+  assert.deepEqual(calledNow().map(source => source.human?.name), ['Bob', 'Bob', 'Bob'])
+})
+
+test('mentions (#293): a server without attestation never lets a mention list call my Bots', async (t) => {
+  const server = attestingFaceServer({ features: [] })
+  const { call, sources, room } = await faceFixture(t, server)
+  pushRoomEvent(server, { typed_by_owner: true, mentions: ['@chief.danyang.home'] }, 'please answer')
+  await call('flybot/social/face-rooms', { poll: true })
+  await settle()
+  assert.equal((sources.get(room.id) ?? []).some(source => Array.isArray(source?.callIds)), false)
 })
 
 test('typed_by_owner (face room): a token that may not attest falls back to the legacy envelope', async (t) => {

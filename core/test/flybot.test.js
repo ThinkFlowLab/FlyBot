@@ -635,3 +635,58 @@ test('deleting a friend\'s Bot\'s chat reopens a fresh one at once, so its row n
   assert.equal(again.name, '助手')
   assert.equal(again.plugin, 'social')
 })
+
+// The explicit mention list of a face-room line (#293): the sender's host names the Bots a typed line
+// "@"s by server handle; the receiving host calls those first and reads the text only without a list.
+const mentionRoom = async (fb) => fb.rooms.upsertFace({
+  roomId: 'frm_men',
+  localId: 'face-men',
+  status: 'open',
+  members: [
+    { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+    { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
+    { handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob', published: false },
+  ],
+  localBots: [{ id: 'a', handle: '@chief.me.home', name: 'Chief' }, { id: 'b', handle: '@writer.me.home', name: 'Writer' }],
+})
+
+test('#293: onFaceLine tells the transport which handles a typed line @-names (mine and friends\'), and none for Bot lines or @all', async (t) => {
+  const { fb, call, stop } = await start()
+  t.after(stop)
+  const room = await mentionRoom(fb)
+  const seen = []
+  fb.rooms.onFaceLine((_room, line, extra) => { seen.push([line.text, extra.mentions]) })
+  await call('room-post', { roomId: room.id, text: "@Bob's Chief and @Writer, please look" })
+  await call('room-post', { roomId: room.id, text: 'no at-sign here' })
+  await call('room-post', { roomId: room.id, text: '@all hello' })
+  await call('room-post', { roomId: room.id, text: '@chief.bob.home twice @chief.bob.home' })
+  assert.deepEqual(seen, [
+    ["@Bob's Chief and @Writer, please look", ['@chief.bob.home', '@writer.me.home']],
+    ['no at-sign here', []],
+    ['@all hello', []],
+    ['@chief.bob.home twice @chief.bob.home', ['@chief.bob.home']],
+  ])
+})
+
+test('#293: postHuman calls the Bots a friend\'s mention list names by handle, not the ones the text happens to name', async (t) => {
+  const { fb, agents, stop } = await start()
+  t.after(stop)
+  const room = await mentionRoom(fb)
+  const calls = () => (agents.get(room.id)?.calls ?? []).map(([, message]) => message.source).filter(source => source?.human)
+  const said = async (text, mentions) => {
+    const before = calls().length
+    await fb.rooms.postHuman(room.id, { authorId: '@bob.home', name: 'Bob', text, ...(mentions ? { mentions } : {}) })
+    return calls().slice(before).map(source => source.callIds)
+  }
+  // The list decides: Writer is named in the list, the text only says "Chief".
+  assert.deepEqual(await said('@Chief what do you think', ['@WRITER.me.home']), [['b']])
+  // Handles with or without "@", any case.
+  assert.deepEqual(await said('hello', ['chief.me.home', '@Chief.Me.Home']), [['a']])
+  // A list that only names the friend's own Bot calls nobody here, even if the text names mine.
+  assert.deepEqual(await said("@Me's Chief hi", ['@chief.bob.home']), [undefined])
+  // A list of handles this room has never seen falls back to reading the text...
+  assert.deepEqual(await said("@Me's Chief hi", ['@ghost.nowhere']), [['a']])
+  // ...and so does no list at all (an older server or client).
+  assert.deepEqual(await said("@Me's Chief hi"), [['a']])
+  assert.deepEqual(await said('no @ at all', []), [undefined])
+})

@@ -1168,7 +1168,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // The probe is shared: while one is in flight every caller awaits its result (#234) — an early
   // "not attesting" from a probe that has not finished would render forgeable envelopes as person
   // lines and mark the events seen, with no self-heal once the probe lands.
-  const typed = { supported: false, forbidden: false, probedAt: 0, probeFailed: false, probing: undefined }
+  const typed = { supported: false, forbidden: false, mentions: false, probedAt: 0, probeFailed: false, probing: undefined }
   const TYPED_RECHECK_MS = 10 * 60_000
   // A probe that got no answer (features() → undefined: an unreachable or pre-platform server) is
   // not a "no": it is retried soon, not held for the recheck window.
@@ -1186,12 +1186,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       typed.probedAt = now()
       typed.probeFailed = features === undefined
       if (features?.includes('typed_by_owner')) typed.supported = true
+      if (features?.includes('mentions')) typed.mentions = true
       return typed.supported
     } finally {
       typed.probing = undefined
     }
   }
   const canAttest = async () => !typed.forbidden && await serverAttests()
+  // Whether this server carries the explicit mention list (Bot Social `mentions`, #293): learned from the
+  // same feature probe, shared with it. An older server, or one that has not answered, gets no field,
+  // and the other home reads the @ labels from the text as before.
+  async function serverMentions() {
+    if (typed.mentions || !faceApi?.features) return typed.mentions
+    if (typed.probing) await typed.probing
+    else if (!typed.probedAt || now() - typed.probedAt >= (typed.probeFailed ? TYPED_RETRY_MS : TYPED_RECHECK_MS)) await (typed.probing = probeTypedSupport())
+    return typed.mentions
+  }
   const isAttestRefused = error => error?.code === 'typed_attestation_forbidden' || /typed_attestation_forbidden/.test(String(error?.message ?? ''))
   // The owner's own typed line, as Bot Social's send_as_member with the attestation; falls back
   // to a plain send when this token may not attest. Deliberately not gated on the feature probe
@@ -2216,7 +2226,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (local) continue
         const who = line.who || 'Someone'
         flybot.rooms.applyFaceLine?.(room.id, { ...line, who, remote: true, authorKind: 'human' })
-        if (flybot.rooms.postHuman) void flybot.rooms.postHuman(room.id, { authorId: line.authorId, name: who, text: line.text })
+        if (flybot.rooms.postHuman) void flybot.rooms.postHuman(room.id, { authorId: line.authorId, name: who, text: line.text, ...(line.mentions ? { mentions: line.mentions } : {}) })
         else void flybot.rooms.postNotice?.(room.id, `${who}: ${line.text}`)
       } else {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
@@ -2403,7 +2413,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return viewHostedFace(room, { status: 'open' })
   }
   if (flybot.rooms?.onFaceLine) {
-    disposers.push(flybot.rooms.onFaceLine(async (room, line) => {
+    disposers.push(flybot.rooms.onFaceLine(async (room, line, { mentions = [] } = {}) => {
       const serverId = room?.face?.roomId
       if (!serverId || !faceApi) return
       const outbound = faceOutbound(line, {
@@ -2418,7 +2428,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         let sent
         if (outbound.human && outbound.plain !== undefined && await canAttest()) {
           try {
-            sent = await faceApi.send(serverId, { text: outbound.plain, botId: outbound.botId, typedByOwner: true })
+            // The Bots the person's "@" picked go along as an explicit list when the server carries it (#293).
+            const listed = mentions.length > 0 && await serverMentions() ? mentions : []
+            sent = await faceApi.send(serverId, { text: outbound.plain, botId: outbound.botId, typedByOwner: true, ...(listed.length > 0 ? { mentions: listed } : {}) })
           } catch (error) {
             if (!isAttestRefused(error)) throw error
             typed.forbidden = true

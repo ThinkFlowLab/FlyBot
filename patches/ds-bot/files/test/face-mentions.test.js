@@ -2,7 +2,7 @@
 // is @chief.friend.home and its other Bot is Writer. Danyang's Chief lives on the other home.
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { faceMentions } from '../src/host/face-mentions.js'
+import { faceMentions, handleKey, mentionedByHandle } from '../src/host/face-mentions.js'
 import { mentionSpans, unmatchedMentions } from '../src/shared/mentions.js'
 
 const bots = {
@@ -57,4 +57,26 @@ test("a friend's bare @Chief is theirs when their Chief is in the room; a label 
   assert.deepEqual(fromFriend("@Friend's Chief hi").bots.map(bot => bot.id), ['chief'])
   assert.deepEqual(fromFriend('@chief.friend.home hi').bots.map(bot => bot.id), ['chief'])
   assert.deepEqual(fromFriend('@技术文档 hi').bots.map(bot => bot.id), ['writer'])
+})
+
+test('#293: a line\'s mention list is the handle of every Bot its @ names, mine and friends\', never @all', () => {
+  assert.deepEqual(called("@Danyang's Chief and @技术文档 · Friend hi").handles, ['@chief.danyang.home', '@writer.friend.home'])
+  assert.deepEqual(called('@chief.friend.home @Chief.Friend.Home again').handles, ['@chief.friend.home'])
+  assert.deepEqual(called('@all hi').handles, [])
+  assert.deepEqual(called('plain line').handles, [])
+})
+
+test('#293: the receiving end resolves handles to my Bots, counts the ones this room knows, and ignores strangers', () => {
+  assert.equal(handleKey(' @Chief.Friend.Home '), 'chief.friend.home')
+  const byHandle = handles => mentionedByHandle(room, handles, botOf)
+  assert.deepEqual(byHandle(['@chief.friend.home']).bots.map(bot => bot.id), ['chief'])
+  assert.deepEqual(byHandle(['writer.friend.home', '@CHIEF.friend.home']).bots.map(bot => bot.id), ['chief', 'writer'])
+  // A friend's own Bot is known to the room but calls nobody here.
+  assert.deepEqual(byHandle(['@chief.danyang.home']), { bots: [], known: 1 })
+  assert.deepEqual(byHandle(['@ghost.nowhere']), { bots: [], known: 0 })
+  assert.deepEqual(byHandle([]), { bots: [], known: 0 })
+  assert.deepEqual(byHandle(undefined), { bots: [], known: 0 })
+  // A participant that left is not in the room any more.
+  const left = { ...room, participants: room.participants.map(p => p.id === 'writer' ? { ...p, leftSeq: 3 } : p) }
+  assert.deepEqual(mentionedByHandle(left, ['@writer.friend.home'], botOf), { bots: [], known: 0 })
 })

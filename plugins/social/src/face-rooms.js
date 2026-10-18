@@ -397,6 +397,20 @@ const INBOX_TYPES = {
   message: 'room.message',
 }
 
+// The sender's explicit mention list as the server delivers it (Bot Social `mentions`, #293): at most 8
+// handles, each normalised to lowercase "@handle"; anything malformed is dropped, never trusted.
+const MENTION_HANDLE = /^@?[a-z0-9._-]{2,40}$/i
+export function cleanMentions(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const item of value.slice(0, 8)) {
+    if (typeof item !== 'string' || !MENTION_HANDLE.test(item.trim())) continue
+    const handle = `@${item.trim().replace(/^@/, '').toLowerCase()}`
+    if (!out.includes(handle)) out.push(handle)
+  }
+  return out
+}
+
 export function viewFaceEvent(event) {
   if (!event || typeof event !== 'object') return undefined
   const raw = String(event.type || event.event_type || '')
@@ -419,6 +433,9 @@ export function viewFaceEvent(event) {
     // Stamped by Bot Social (never read from the text): the owner typed this line themselves. A viewed
     // event is viewed again by renderFaceEvent, hence the camelCase form.
     ...(mapped === 'room.message' && (event.typed_by_owner === true || event.typedByOwner === true) ? { typedByOwner: true } : {}),
+    // The sender's own list of whom the line is for (#293). Data from the sender's host, read by
+    // renderFaceEvent only on a line the server attests as typed by that person.
+    ...(mapped === 'room.message' && cleanMentions(event.mentions).length > 0 ? { mentions: cleanMentions(event.mentions) } : {}),
   }
 }
 
@@ -467,6 +484,9 @@ export function renderFaceEvent(event, { attested = false } = {}) {
       trust: 'peer_untrusted',
       eventId: viewed.eventId,
       eventCursor: viewed.eventCursor,
+      // Honoured only on a line the server attests as typed by the person (#293): a Bot's line never
+      // calls another home's Bots by a list it wrote, and an unattested server has no such list to trust.
+      ...(attested && human && viewed.typedByOwner === true && viewed.mentions ? { mentions: viewed.mentions } : {}),
     }
   }
   const kind = viewed.type === 'member.left' ? 'left' : viewed.type === 'room.started' ? 'started' : 'joined'
@@ -578,11 +598,14 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     },
     // `typedByOwner`: the person typed this line. Bot Social stamps it for the receiver only when this
     // token may attest; otherwise it answers 403 typed_attestation_forbidden.
-    async send(roomId, { text, botId, typedByOwner } = {}) {
+    // `mentions`: the Bot handles the line @-names (#293); sent only when the server lists the feature.
+    async send(roomId, { text, botId, typedByOwner, mentions } = {}) {
+      const listed = cleanMentions(mentions)
       const body = await request('POST', `/${encodeURIComponent(String(roomId))}/messages`, {
         text: String(text ?? ''),
         ...(botId ? { bot_id: botId } : {}),
         ...(typedByOwner === true ? { typed_by_owner: true } : {}),
+        ...(listed.length > 0 ? { mentions: listed } : {}),
       })
       return {
         typedByOwner: body.typed_by_owner === true,
