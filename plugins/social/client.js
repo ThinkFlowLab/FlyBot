@@ -736,9 +736,13 @@ window.__ModuleLoader__.load({
       if (chip === 'joining') return 'Joining'
       return chip
     }
+    // Past rooms read like the room's tab and sidebar row (#304): `Face-to-face · Alice, Bob · 482913`.
+    // People come from every member when the row has them (a stored auto name can miss one), the
+    // number from the row or its stored title, else the time the room was created.
     function shownFaceTitle(room) {
       const named = String(room?.name || '').trim()
       if (named && named !== 'Face-to-face room' && !named.startsWith('Face-to-face · ')) return named
+      if (named.startsWith('Face-to-face · ') && !(room?.members ?? []).some(m => String(m?.ownerName || m?.owner_name || '').trim())) return named
       const rows = []
       const seen = new Set()
       for (const member of room?.members ?? []) {
@@ -751,12 +755,17 @@ window.__ModuleLoader__.load({
       }
       rows.sort((a, b) => a.sort.localeCompare(b.sort))
       const owners = rows.slice(0, 3).map(row => row.owner)
-      const code = String(room?.joinCode || room?.code || '').replace(/\D/g, '').slice(0, 6)
+      const stored = named.match(/ · (\d{6})$/)?.[1]
+      const code = String(room?.joinCode || room?.code || stored || '').replace(/\D/g, '').slice(0, 6)
       const bits = ['Face-to-face']
       if (owners.length) bits.push(owners.join(', '))
+      const storedWhen = named.match(/ · ([A-Z][a-z]{2} \d{1,2} \d{2}:\d{2})$/)?.[1]
       if (code.length === 6) bits.push(code)
+      else if (storedWhen) bits.push(storedWhen)
       else {
-        const at = Date.parse(room?.startedAt || room?.expiresAt || '')
+        // Created = the joining deadline minus the 10-minute window, never the deadline itself.
+        const deadline = Date.parse(room?.expiresAt || '')
+        const at = Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : Date.parse(room?.startedAt || ''))
         const when = Number.isFinite(at) ? new Date(at) : new Date()
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
         bits.push(`${months[when.getMonth()]} ${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
@@ -957,8 +966,10 @@ window.__ModuleLoader__.load({
       const gone = (room.participants ?? []).filter(p => p.remote && p.leftSeq !== undefined)
         .map(p => p.ownerName || p.displayName || p.name).filter(Boolean)
       const names = [...new Set(gone)]
+      // The one who left reads that they left; the others read who left (#304).
+      if (status === 'left') return 'You left this room.'
       if (names.length > 0) return `${names.join(', ')} left the room. This room is closed.`
-      return status === 'left' ? 'You left this room.' : 'This room is closed.'
+      return 'This room is closed.'
     }
     function FaceRoomStatus({ room } = {}) {
       const text = faceEndLine(room)
@@ -1259,6 +1270,11 @@ window.__ModuleLoader__.load({
       }
       const mineNames = members.filter(member => member.remote === false || Boolean(member.id && roster?.byId?.[member.id])).map(member => member.displayName || member.name).filter(Boolean)
       const statusRoom = { status: snapshot?.status || face?.status || 'open', expiresAt: snapshot?.expiresAt || face?.expiresAt }
+      if (statusRoom.status === 'left' || statusRoom.status === 'closed') {
+        // A past room is read-only: its chip only, no Auto-send and no Leave (#304).
+        return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview', 'data-past': true },
+          h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)))
+      }
       return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview' },
         h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)),
         h(FaceAutoSendControl, { bot: mineNames[0] }),

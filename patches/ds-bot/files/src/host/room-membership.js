@@ -1271,9 +1271,16 @@ export function install(rt) {
     // Everyone who was in the room, so the title reads the same on every home and does not
     // lose a member who left (#182). The time is the start, never the joining deadline.
     members: [...(spec.members ?? []), ...(room?.participants ?? [])],
-    code: spec.joinCode || spec.code,
+    // The number the room was joined by, kept on the room: an upsert that does not repeat it
+    // (a poll, a leave) must not turn `· 482913` into a date (#304).
+    code: spec.joinCode || spec.code || room?.face?.joinCode,
     at: faceRoomCreatedAt({ createdAt: spec.createdAt, expiresAt: spec.expiresAt || room?.face?.expiresAt, startedAt: spec.startedAt || room?.face?.startedAt }) || room?.createdAt,
   })
+
+  const faceJoinCode = (spec, room) => {
+    const digits = String(spec.joinCode || spec.code || '').replace(/\D/g, '')
+    return digits.length === 6 ? digits : room?.face?.joinCode
+  }
 
   rt.upsertFaceRoom = async function upsertFaceRoom(spec = {}) {
     const serverId = String(spec.roomId || spec.faceRoomId || '')
@@ -1308,6 +1315,7 @@ export function install(rt) {
       startedAt: spec.startedAt ?? room.face.startedAt ?? null,
       eventCursor: Math.max(Number(room.face.eventCursor) || 0, Number(spec.eventCursor) || 0),
       seenEvents: Array.isArray(room.face.seenEvents) ? room.face.seenEvents : [],
+      ...(faceJoinCode(spec, room) ? { joinCode: faceJoinCode(spec, room) } : {}),
     }
     if (spec.name || isAutoFaceTitle(room.name)) room.name = title
     if (Array.isArray(spec.members)) rt.syncFaceParticipants(room, spec.members, spec.localBots)

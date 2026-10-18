@@ -1721,10 +1721,19 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
     bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob',
   })
   await call('flybot/social/face-rooms', { poll: true })
+  // #304: the title keeps the number it was joined by, through polls and the end.
+  assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
   room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
   const listed = (await call('flybot/social/face-rooms', { poll: true })).value
   const past = listed.rooms.find(item => item.faceRoomId === 'frm_123456')
-  assert.equal(past.status, 'left')
+  // This home did not leave: the room ended around it, so it reads Closed, not Left (#304) ...
+  assert.equal(past.status, 'closed')
+  assert.match(past.name, / · 123456$/)
+  assert.equal(listed.rooms.filter(item => item.faceRoomId === 'frm_123456').length, 1)
+  // ... and it leaves on Bot Social too, so it stops polling the room and releases its seat.
+  assert.equal(room.status, 'closed', 'left on Bot Social')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
+  assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
 })
 
 test('face and inbox polls speed up while a live face room is open', async (t) => {
@@ -1833,9 +1842,9 @@ test('#182: a peer leaving closes the room here and a later poll does not reopen
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open')
   body.members = body.members.filter(member => member.handle !== '@chief.bob.home')
   await call('flybot/social/face-rooms', { poll: true })
-  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'left')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
   await call('flybot/social/face-rooms', { poll: true })
-  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'left', 'a second poll must not reopen it')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed', 'a second poll must not reopen it')
 })
 
 test('#166: an open face room does not post two identical join lines', async (t) => {
@@ -4679,6 +4688,30 @@ test('createSocialApi listGrants maps an object-shaped grantee to a handle', asy
   assert.doesNotMatch(listed[0].grantee, /object/i)
 })
 
+test('#304: a left or closed room\'s details are read-only: chip only, no Auto-send, no Leave', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  for (const status of ['left', 'closed']) {
+    const tree = walk(pluginOf([]).FaceRoomOverview({ room: { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status } } }))
+    assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status'))
+    assert.equal(tree.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
+    assert.equal(tree.some(n => n.props['data-flybot'] === 'face-leave'), false)
+  }
+})
+
+test('#304: Past rooms keep the room\'s number and never show the joining deadline as its time', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const title = room => String(walk(pluginOf([]).FaceRoomCard({ room, past: true })).find(n => n.props.className === 'fs-name')?.children?.join?.('') ?? '')
+  const members = [{ handle: '@a.home', ownerName: 'SelfA' }, { handle: '@b.home', ownerName: 'SelfB' }]
+  // Rows with no members keep the stored title as is.
+  assert.equal(title({ name: 'Face-to-face · SelfA, SelfB · 482913', status: 'closed', members: [] }), 'Face-to-face · SelfA, SelfB · 482913')
+  // Members rebuild the people, the stored number stays.
+  assert.equal(title({ name: 'Face-to-face · SelfA · 482913', status: 'closed', members }), 'Face-to-face · SelfA, SelfB · 482913')
+  // No number and no stored time: the creation time (deadline - 10 min), not the deadline.
+  const created = new Date(Date.parse('2026-10-18T08:42:00.000Z') - 10 * 60_000)
+  const hhmm = `${String(created.getHours()).padStart(2, '0')}:${String(created.getMinutes()).padStart(2, '0')}`
+  assert.match(title({ name: '', status: 'closed', expiresAt: '2026-10-18T08:42:00.000Z', startedAt: '2026-10-18T08:35:00.000Z', members }), new RegExp(`${hhmm}$`))
+})
+
 test('#191: an ended face room says so in plain view and names the person who left', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const plugin = pluginOf([])
@@ -4686,8 +4719,11 @@ test('#191: an ended face room says so in plain view and names the person who le
     { remote: false, displayName: 'Chief' },
     { remote: true, ownerName: 'UiB1415', displayName: 'Chief', leftSeq: 3 },
   ] })
+  // The home that stayed reads who left; the one who left reads that they left (#304).
+  const closed = walk(plugin.FaceRoomStatus({ room: room('closed') }))
+  assert.match(closed.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\. This room is closed\.$/)
   const left = walk(plugin.FaceRoomStatus({ room: room('left') }))
-  assert.match(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\./)
+  assert.equal(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
   assert.equal(walk(plugin.FaceRoomStatus({ room: room('open') })).some(n => n.props?.['data-flybot'] === 'face-room-end'), false)
   assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
 })
