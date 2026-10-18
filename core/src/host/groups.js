@@ -281,7 +281,7 @@ export function install(rt) {
     // The owner's own typed line reaches a face round through the Session inbox, not as the round's opener (the opener
     // is the quiet "name: text" notice), so it is routed here (#299). A line added to a round that already routes
     // is answered by the rule for its own opening, so that round stops routing.
-    const starting = round.route === undefined && round.slots.length === 0 && lines.length === 1
+    const starting = round.route === undefined && round.slots.length === 0
     delete round.route
     for (const line of lines) {
       if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
@@ -289,7 +289,8 @@ export function install(rt) {
       const { all, found } = mentionsIn(line.text, members)
       const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
       let speakers = openingSpeakers(room, { text: line.text })
-      if (starting) {
+      // Lines queued together are routed by the newest one.
+      if (starting && line === lines.at(-1)) {
         const route = routeFor(room, { text: line.text }, round.startSeq)
         if (route) {
           round.route = route

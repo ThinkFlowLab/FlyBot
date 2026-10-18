@@ -880,3 +880,21 @@ test('#299: the owner\'s own line, drained from the Session inbox, is routed: on
   await three
   assert.ok(chief)
 })
+
+test('#299: two owner lines queued together are still routed by the newest one', async (t) => {
+  const env = start()
+  const { call, emit, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'batch')
+  await call('send', { sessionId: hosted.id, text: '先问一句' })
+  await call('send', { sessionId: hosted.id, text: '文档怎么写' })
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Me', quiet: true, notice: true, human: { authorId: 'owner-1', name: 'Me' } }, content: [{ type: 'text', text: 'Me: 文档怎么写' }] } })
+  const running = relay(hosted.id, 'batch-1')
+  const a = await turnFor(sent)
+  assert.match(promptOf(a), /names no Bot/, 'batched lines are routed')
+  await answer(a.sessionId, a.message.source.exchangeId, 'One answer for both.', 1)
+  const result = JSON.parse(await running)
+  assert.equal(roomTurns(sent).length, 1, 'the first Bot to answer ends the round')
+  assert.equal(result.replies.filter(reply => reply.kind === undefined).length, 1)
+  assert.ok(writer)
+})

@@ -747,14 +747,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // A called member moves up if it is still waiting, or gets one more turn if it
    // already spoke; either way it goes right after slot `index`. `cap` is the caller's
    // per-member turn bound for the round; `by` is the calling member, if a member called.
-@@ -291,12 +291,26 @@ export function install(rt) {
+@@ -291,12 +291,27 @@ export function install(rt) {
      if (lines.length === 0) return 0
      const before = round.slots.length
      const members = room.members.map(rt.botOf).filter(Boolean)
 +    // The owner's own typed line reaches a face round through the Session inbox, not as the round's opener (the opener
 +    // is the quiet "name: text" notice), so it is routed here (#299). A line added to a round that already routes
 +    // is answered by the rule for its own opening, so that round stops routing.
-+    const starting = round.route === undefined && round.slots.length === 0 && lines.length === 1
++    const starting = round.route === undefined && round.slots.length === 0
 +    delete round.route
      for (const line of lines) {
 -      appendRoom(room, { who: 'User', text: line.text })
@@ -765,7 +765,8 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
 -      callMembers(round, turns, index - 1, openingSpeakers(room, { text: line.text }), note, ROOM_ADMIN_TURNS_EACH)
 +      let speakers = openingSpeakers(room, { text: line.text })
-+      if (starting) {
++      // Lines queued together are routed by the newest one.
++      if (starting && line === lines.at(-1)) {
 +        const route = routeFor(room, { text: line.text }, round.startSeq)
 +        if (route) {
 +          round.route = route
