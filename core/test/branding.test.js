@@ -72,6 +72,28 @@ test('FlyBot mark SVG matches the docs logo; tab title and favicon follow', () =
   }
 })
 
+test('#250: an ended face-to-face room says closed in the tab instead of listing its members', () => {
+  const face = (status, extra = {}) => ({ name: 'Face-to-face · Ann, Bob · Oct 18 10:00', displayName: 'Face-to-face · Ann, Bob · Oct 18 10:00', origin: 'face-to-face', face: { status }, ...extra })
+  const sessions = createSource({ byId: { room1: { id: 'room1', retainedBy: { mainView: 1 } } } })
+  const roster = createSource({ byId: {}, roomsById: { room1: face('open') } })
+  const doc = { title: 'FlyBot' }
+  const off = installTabTitle(sessions, roster, doc)
+  assert.equal(doc.title, 'Face-to-face · Ann, Bob · Oct 18 10:00 — FlyBot')
+  // The peer leaves: the room is closed, and the tab follows without a session change.
+  roster.set(current => ({ ...current, roomsById: { room1: face('closed') } }))
+  assert.equal(doc.title, 'Face-to-face · closed — FlyBot')
+  roster.set(current => ({ ...current, roomsById: { room1: face('left') } }))
+  assert.equal(doc.title, 'Face-to-face · closed — FlyBot')
+  // A name the user chose is kept; so is a room that is not face-to-face, and a generic title closes too.
+  roster.set(current => ({ ...current, roomsById: { room1: face('closed', { name: 'Trip plan', displayName: 'Trip plan' }) } }))
+  assert.equal(doc.title, 'Trip plan — FlyBot')
+  roster.set(current => ({ ...current, roomsById: { room1: { name: 'Face-to-face · Ann · x', origin: 'group', face: { status: 'closed' } } } }))
+  assert.equal(doc.title, 'Face-to-face · Ann · x — FlyBot')
+  roster.set(current => ({ ...current, roomsById: { room1: face('closed', { name: 'Face-to-face room', displayName: 'Face-to-face room' }) } }))
+  assert.equal(doc.title, 'Face-to-face · closed — FlyBot')
+  off()
+})
+
 test('#173: the tab title follows a room the roster learns after it opened', () => {
   const sessions = createSource({ byId: { chief: { id: 'chief', retainedBy: { mainView: 1 } } } })
   const roster = createSource({ byId: { chief: { name: 'Chief' } }, roomsById: {} })

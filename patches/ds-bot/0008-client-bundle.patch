@@ -1313,7 +1313,7 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
-@@ -2855,226 +2855,141 @@ function installCompiledStyles(text, tag) {
+@@ -2855,226 +2855,208 @@ function installCompiledStyles(text, tag) {
    };
  }
  
@@ -1417,7 +1417,37 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
--}
++// src/shared/face-title.js
++var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
++function isGenericFaceTitle(name) {
++  const n = String(name ?? "").trim();
++  return !n || n === "Face-to-face room";
++}
++function formatFaceWhen(value) {
++  const date = value instanceof Date ? value : new Date(value);
++  if (!Number.isFinite(date.getTime())) return "";
++  const hh = String(date.getHours()).padStart(2, "0");
++  const mm = String(date.getMinutes()).padStart(2, "0");
++  return `${MONTHS[date.getMonth()]} ${date.getDate()} ${hh}:${mm}`;
++}
++function isAutoFaceTitle(name) {
++  const n = String(name ?? "").trim();
++  return isGenericFaceTitle(n) || n.startsWith("Face-to-face · ");
++}
++function ownersFromMembers(members) {
++  const rows = [];
++  const seen = /* @__PURE__ */ new Set();
++  for (const member of members ?? []) {
++    const owner = String(member?.ownerName ?? member?.owner_name ?? "").trim();
++    const key = owner.toLowerCase();
++    if (!owner || seen.has(key)) continue;
++    seen.add(key);
++    const handle = String(member?.handle ?? member?.id ?? "").trim().toLowerCase();
++    rows.push({ owner, sort: handle || key });
++  }
++  rows.sort((a, b) => a.sort.localeCompare(b.sort));
++  return rows.slice(0, 3).map((row) => row.owner);
+ }
 -function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
 -  const settled = useSettled(state);
 -  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
@@ -1431,7 +1461,40 @@ diff --git a/client.js b/client.js
 -    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
 -    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
 -  );
--}
++function uniqueOwners(owners) {
++  const seen = /* @__PURE__ */ new Set();
++  const out = [];
++  for (const raw of owners ?? []) {
++    const owner = String(raw ?? "").trim();
++    const key = owner.toLowerCase();
++    if (!owner || seen.has(key)) continue;
++    seen.add(key);
++    out.push(owner);
++  }
++  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
++  return out.slice(0, 3);
++}
++function joinCodeOf(code) {
++  return String(code ?? "").replace(/\D/g, "").slice(0, 6);
++}
++var FACE_JOIN_WINDOW_MS = 10 * 6e4;
++function faceRoomCreatedAt({ createdAt, expiresAt, startedAt } = {}) {
++  if (createdAt && Number.isFinite(Date.parse(createdAt))) return createdAt;
++  const deadline = Date.parse(expiresAt);
++  if (Number.isFinite(deadline)) return new Date(deadline - FACE_JOIN_WINDOW_MS).toISOString();
++  return startedAt || void 0;
++}
++function formatFaceRoomTitle({ name, owners, members, code, at } = {}) {
++  const named = String(name ?? "").trim();
++  if (named && !isAutoFaceTitle(named)) return named;
++  const people = members?.length ? ownersFromMembers(members) : uniqueOwners(owners);
++  const join = joinCodeOf(code);
++  const when3 = formatFaceWhen(at) || formatFaceWhen(/* @__PURE__ */ new Date());
++  const bits = ["Face-to-face"];
++  if (people.length) bits.push(people.join(", "));
++  bits.push(join.length === 6 ? join : when3);
++  return bits.join(" · ");
+ }
 -function clusterSeats(count, frame) {
 -  if (count === 1) return [[0, 0, frame]];
 -  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
@@ -1439,6 +1502,7 @@ diff --git a/client.js b/client.js
 -    const size = frame * 5 / 9;
 -    const rest = frame - size;
 -    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
++
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
 +var FLYBOT_WING_LOW = "M150 318 C 104 300, 62 306, 54 322 C 48 338, 84 352, 150 352 Z";
@@ -1467,6 +1531,7 @@ diff --git a/client.js b/client.js
    }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
++  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
 +}

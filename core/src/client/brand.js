@@ -1,6 +1,7 @@
 // FlyBot product chrome: the mark from docs/images/logo.svg, the tab title, and the favicon.
 // Paths stay here so tests can import them without React.
 
+import { isAutoFaceTitle } from '../shared/face-title.js'
 import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 
 export const FLYBOT_WING = 'M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z'
@@ -38,6 +39,9 @@ export function sessionTabLabel(roster, sessionId) {
       isChief: bot.remote.isChief,
     })
   }
+  // An ended face-to-face room (closed, or someone left) no longer lists people who are not in it (#250).
+  // A name the user chose is kept.
+  if (room && room.origin === 'face-to-face' && (room.face?.status === 'closed' || room.face?.status === 'left') && isAutoFaceTitle(room.name)) return 'Face-to-face · closed'
   if (room) return room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name) || ''
   return bot?.name || ''
 }

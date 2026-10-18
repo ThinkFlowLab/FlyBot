@@ -1,0 +1,1 @@
+The browser tab title of an ended face-to-face room (closed, or someone left) now reads `Face-to-face · closed` instead of keeping the member list; a name you chose is kept ([#250](https://github.com/ThinkFlowLab/FlyBot/issues/250), follow-up to #244).

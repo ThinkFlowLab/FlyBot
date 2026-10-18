@@ -3666,6 +3666,72 @@ function installCompiledStyles(text, tag) {
   };
 }
 
+// src/shared/face-title.js
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function isGenericFaceTitle(name) {
+  const n = String(name ?? "").trim();
+  return !n || n === "Face-to-face room";
+}
+function formatFaceWhen(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${MONTHS[date.getMonth()]} ${date.getDate()} ${hh}:${mm}`;
+}
+function isAutoFaceTitle(name) {
+  const n = String(name ?? "").trim();
+  return isGenericFaceTitle(n) || n.startsWith("Face-to-face · ");
+}
+function ownersFromMembers(members) {
+  const rows = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const member of members ?? []) {
+    const owner = String(member?.ownerName ?? member?.owner_name ?? "").trim();
+    const key = owner.toLowerCase();
+    if (!owner || seen.has(key)) continue;
+    seen.add(key);
+    const handle = String(member?.handle ?? member?.id ?? "").trim().toLowerCase();
+    rows.push({ owner, sort: handle || key });
+  }
+  rows.sort((a, b) => a.sort.localeCompare(b.sort));
+  return rows.slice(0, 3).map((row) => row.owner);
+}
+function uniqueOwners(owners) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const raw of owners ?? []) {
+    const owner = String(raw ?? "").trim();
+    const key = owner.toLowerCase();
+    if (!owner || seen.has(key)) continue;
+    seen.add(key);
+    out.push(owner);
+  }
+  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return out.slice(0, 3);
+}
+function joinCodeOf(code) {
+  return String(code ?? "").replace(/\D/g, "").slice(0, 6);
+}
+var FACE_JOIN_WINDOW_MS = 10 * 6e4;
+function faceRoomCreatedAt({ createdAt, expiresAt, startedAt } = {}) {
+  if (createdAt && Number.isFinite(Date.parse(createdAt))) return createdAt;
+  const deadline = Date.parse(expiresAt);
+  if (Number.isFinite(deadline)) return new Date(deadline - FACE_JOIN_WINDOW_MS).toISOString();
+  return startedAt || void 0;
+}
+function formatFaceRoomTitle({ name, owners, members, code, at } = {}) {
+  const named = String(name ?? "").trim();
+  if (named && !isAutoFaceTitle(named)) return named;
+  const people = members?.length ? ownersFromMembers(members) : uniqueOwners(owners);
+  const join = joinCodeOf(code);
+  const when3 = formatFaceWhen(at) || formatFaceWhen(/* @__PURE__ */ new Date());
+  const bits = ["Face-to-face"];
+  if (people.length) bits.push(people.join(", "));
+  bits.push(join.length === 6 ? join : when3);
+  return bits.join(" · ");
+}
+
 // src/client/brand.js
 var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
 var FLYBOT_WING_LOW = "M150 318 C 104 300, 62 306, 54 322 C 48 338, 84 352, 150 352 Z";
@@ -3692,6 +3758,7 @@ function sessionTabLabel(roster, sessionId) {
       isChief: bot.remote.isChief
     });
   }
+  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
   if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
   return bot?.name || "";
 }
