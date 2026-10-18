@@ -894,12 +894,12 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -6,16 +6,24 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
+@@ -6,16 +6,26 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
  import { CreateBot } from './create-bot.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
  import { t } from './i18n.js'
 +import { newChatActionRows } from './flybot-registry.js'
-+import { listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
++import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
  
  export function NewChat({ mode, roster, actions }) {
    const [query, setQuery] = useState('')
@@ -916,10 +916,12 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +  // the Bots and friends named, so the error offers its two ways out (see ungrantedLocalFix).
 +  const [fix, setFix] = useState(null)
 +  const [fixNote, setFixNote] = useState('')
++  // An invite link the clipboard could not take: shown in a selectable field to copy by hand.
++  const [inviteLink, setInviteLink] = useState('')
    const [cursor, setCursor] = useState(0)
    // The Create Bot form, opened straight from 'create' mode or from the list.
    const [draft, setDraft] = useState(mode === 'create' ? { name: '', fromList: false } : null)
-@@ -24,15 +24,44 @@ export function NewChat({ mode, roster, actions }) {
+@@ -24,15 +24,56 @@ export function NewChat({ mode, roster, actions }) {
    useEscape(close)
    const paneLeft = usePaneLeft()
    const wanted = query.trim().toLowerCase()
@@ -936,6 +938,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
      setError('')
 +    setFix(null)
 +    setFixNote('')
++    setInviteLink('')
      setBusy(true)
 -    try { await task() } catch (failure) { setError(failure?.message ?? String(failure)) } finally { setBusy(false) }
 +    try { await task() } catch (failure) {
@@ -950,19 +953,30 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +    setError('')
 +    setFix(null)
 +    setFixNote('')
++    setInviteLink('')
 +  }
 +  // Sharing is the friend's click on an invite to that Bot (Bot Social makes the grant when they accept),
 +  // so the fix is the Bot's invite link; the group is made again once they have accepted it.
++  // "Copied" is said only when the clipboard took the link; with no clipboard (an insecure page, a
++  // locked-down WebView) or a refused write the link itself is shown, to select and copy by hand.
 +  const copyInvite = async (bot) => {
 +    const social = globalThis.__flybot__?.social
++    let link
 +    try {
 +      const invite = await social.createInvite(bot.id)
-+      const link = invite?.link || invite?.url
++      link = invite?.link || invite?.url
 +      if (!link) throw new Error('no link')
-+      await navigator.clipboard?.writeText(link)
-+      setFixNote(t('Invite link for {name} copied. Send it to your friend; once they accept, create the group again.', { name: bot.name }))
 +    } catch {
++      setInviteLink('')
 +      setFixNote(t('Could not create the invite. Use Bot settings → Invite to this Bot.'))
++      return
++    }
++    if (await copiedToClipboard(link)) {
++      setInviteLink('')
++      setFixNote(t('Invite link for {name} copied. Send it to your friend; once they accept, create the group again.', { name: bot.name }))
++    } else {
++      setInviteLink(link)
++      setFixNote(t('Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.', { name: bot.name }))
 +    }
    }
    const pick = (bot) => {
@@ -1057,7 +1071,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('span', { className: 'bt-to-label' }, t('To:')),
          adminBot ? h('span', { key: adminBot.id, className: 'bt-token bt-token-admin', title: t('Admin') },
            h(BotMark, { bot: adminBot, size: 16 }), adminBot.name, h(AdminStar),
-@@ -162,11 +162,27 @@ export function NewChat({ mode, roster, actions }) {
+@@ -162,11 +162,28 @@ export function NewChat({ mode, roster, actions }) {
                onMouseEnter: () => setCursor(index), onClick: option.run,
              },
              option.bot ? h(BotMark, { bot: option.bot, size: 22 }) : h('span', { className: 'bt-option-icon' }, option.icon),
@@ -1084,7 +1098,8 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +            : null,
 +          h('button', { key: `out-${bot.id}`, type: 'button', className: 'bt-fix-btn', 'data-fix-action': 'leave-out', onClick: () => leaveOut(bot.id) }, t('Leave {name} out', { name: bot.name })),
 +        ])),
-+        fixNote ? h('div', { className: 'bt-note', role: 'status' }, fixNote) : null)
++        fixNote ? h('div', { className: 'bt-note', role: 'status' }, fixNote) : null,
++        inviteLink ? h('input', { className: 'bt-input bt-fix-link', type: 'text', readOnly: true, value: inviteLink, 'aria-label': t('Invite link'), 'data-fix-link': '', autoFocus: true, onFocus: event => event.target.select(), onClick: event => event.target.select() }) : null)
 +        : error ? h('div', { className: 'bt-error' }, error) : null,
 +      menuOnly ? null : h('div', { className: 'bt-nc-compose' },
          h('div', { className: 'bt-nc-card' },
@@ -1625,13 +1640,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
  .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
  .bt-nc-spacer{flex:1}
-@@ -309,6 +309,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -309,6 +309,10 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
  .bt-send:disabled{opacity:.35;cursor:default}
  .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
 +.bt-fix-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 +.bt-fix-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}
 +.bt-fix .bt-note{margin-top:6px}
++.bt-fix-link{margin-top:6px;color:inherit;user-select:all}
  
  .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}

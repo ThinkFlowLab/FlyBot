@@ -109,6 +109,8 @@ var ZH = {
   "Copy invite link for {name}": "复制 {name} 的邀请链接",
   "Leave {name} out": "不拉 {name} 进群",
   "Invite link for {name} copied. Send it to your friend; once they accept, create the group again.": "{name} 的邀请链接已复制。发给好友，对方接受后再重新建群。",
+  "Invite link": "邀请链接",
+  "Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.": "无法自动复制 {name} 的邀请链接。请手动复制下面的链接发给好友，对方接受后再重新建群。",
   "Could not create the invite. Use Bot settings → Invite to this Bot.": "无法创建邀请。请在 Bot 设置里使用 Invite to this Bot。",
   "Face-to-face group": "面对面建群",
   "Meet the people next to you. Pick your Bots and type the same 6-digit number.": "和身边的人建群。选你的 Bot，输入同一组 6 位数字。",
@@ -1361,6 +1363,16 @@ function ungrantedLocalFix(details) {
   if (bots.length === 0) return void 0;
   const friends = [...new Set((Array.isArray(details.remotes) ? details.remotes : []).map((remote) => cleanPeerName(remote?.owner || remote?.name, "")).filter(Boolean))];
   return { bots, friends };
+}
+async function copiedToClipboard(text, nav = globalThis.navigator) {
+  const write = nav?.clipboard?.writeText;
+  if (typeof write !== "function") return false;
+  try {
+    await write.call(nav.clipboard, text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // src/client/flybot-registry.js
@@ -3157,6 +3169,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-fix-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .bt-fix-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}
 .bt-fix .bt-note{margin-top:6px}
+.bt-fix-link{margin-top:6px;color:inherit;user-select:all}
 
 .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
@@ -9819,6 +9832,7 @@ function NewChat({ mode, roster, actions }) {
   const [error, setError] = (0, import_react22.useState)("");
   const [fix, setFix] = (0, import_react22.useState)(null);
   const [fixNote, setFixNote] = (0, import_react22.useState)("");
+  const [inviteLink, setInviteLink] = (0, import_react22.useState)("");
   const [cursor, setCursor] = (0, import_react22.useState)(0);
   const [draft, setDraft] = (0, import_react22.useState)(mode === "create" ? { name: "", fromList: false } : null);
   const inputRef = (0, import_react22.useRef)(null);
@@ -9837,6 +9851,7 @@ function NewChat({ mode, roster, actions }) {
     setError("");
     setFix(null);
     setFixNote("");
+    setInviteLink("");
     setBusy(true);
     try {
       await task();
@@ -9853,17 +9868,26 @@ function NewChat({ mode, roster, actions }) {
     setError("");
     setFix(null);
     setFixNote("");
+    setInviteLink("");
   };
   const copyInvite = async (bot) => {
     const social = globalThis.__flybot__?.social;
+    let link;
     try {
       const invite = await social.createInvite(bot.id);
-      const link = invite?.link || invite?.url;
+      link = invite?.link || invite?.url;
       if (!link) throw new Error("no link");
-      await navigator.clipboard?.writeText(link);
-      setFixNote(t("Invite link for {name} copied. Send it to your friend; once they accept, create the group again.", { name: bot.name }));
     } catch {
+      setInviteLink("");
       setFixNote(t("Could not create the invite. Use Bot settings → Invite to this Bot."));
+      return;
+    }
+    if (await copiedToClipboard(link)) {
+      setInviteLink("");
+      setFixNote(t("Invite link for {name} copied. Send it to your friend; once they accept, create the group again.", { name: bot.name }));
+    } else {
+      setInviteLink(link);
+      setFixNote(t("Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.", { name: bot.name }));
     }
   };
   const pick2 = (bot) => {
@@ -10117,7 +10141,8 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
           } }, t("Copy invite link for {name}", { name: bot.name })) : null,
           (0, import_react22.createElement)("button", { key: `out-${bot.id}`, type: "button", className: "bt-fix-btn", "data-fix-action": "leave-out", onClick: () => leaveOut(bot.id) }, t("Leave {name} out", { name: bot.name }))
         ])),
-        fixNote ? (0, import_react22.createElement)("div", { className: "bt-note", role: "status" }, fixNote) : null
+        fixNote ? (0, import_react22.createElement)("div", { className: "bt-note", role: "status" }, fixNote) : null,
+        inviteLink ? (0, import_react22.createElement)("input", { className: "bt-input bt-fix-link", type: "text", readOnly: true, value: inviteLink, "aria-label": t("Invite link"), "data-fix-link": "", autoFocus: true, onFocus: (event) => event.target.select(), onClick: (event) => event.target.select() }) : null
       ) : error ? (0, import_react22.createElement)("div", { className: "bt-error" }, error) : null,
       menuOnly ? null : (0, import_react22.createElement)(
         "div",

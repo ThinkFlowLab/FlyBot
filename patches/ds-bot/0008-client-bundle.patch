@@ -25,7 +25,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,20 +78,62 @@ var ZH = {
+@@ -78,20 +78,64 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -45,6 +45,8 @@ diff --git a/client.js b/client.js
 +  "Copy invite link for {name}": "复制 {name} 的邀请链接",
 +  "Leave {name} out": "不拉 {name} 进群",
 +  "Invite link for {name} copied. Send it to your friend; once they accept, create the group again.": "{name} 的邀请链接已复制。发给好友，对方接受后再重新建群。",
++  "Invite link": "邀请链接",
++  "Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.": "无法自动复制 {name} 的邀请链接。请手动复制下面的链接发给好友，对方接受后再重新建群。",
 +  "Could not create the invite. Use Bot settings → Invite to this Bot.": "无法创建邀请。请在 Bot 设置里使用 Invite to this Bot。",
 +  "Face-to-face group": "面对面建群",
 +  "Meet the people next to you. Pick your Bots and type the same 6-digit number.": "和身边的人建群。选你的 Bot，输入同一组 6 位数字。",
@@ -409,7 +411,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,295 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,305 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -513,6 +515,16 @@ diff --git a/client.js b/client.js
 +  if (bots.length === 0) return void 0;
 +  const friends = [...new Set((Array.isArray(details.remotes) ? details.remotes : []).map((remote) => cleanPeerName(remote?.owner || remote?.name, "")).filter(Boolean))];
 +  return { bots, friends };
++}
++async function copiedToClipboard(text, nav = globalThis.navigator) {
++  const write = nav?.clipboard?.writeText;
++  if (typeof write !== "function") return false;
++  try {
++    await write.call(nav.clipboard, text);
++    return true;
++  } catch {
++    return false;
++  }
 +}
 +
 +// src/client/flybot-registry.js
@@ -1569,13 +1581,14 @@ diff --git a/client.js b/client.js
  .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
  .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
  .bt-nc-spacer{flex:1}
-@@ -2127,6 +2127,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -2127,6 +2127,10 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
  .bt-send:disabled{opacity:.35;cursor:default}
  .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
 +.bt-fix-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 +.bt-fix-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}
 +.bt-fix .bt-note{margin-top:6px}
++.bt-fix-link{margin-top:6px;color:inherit;user-select:all}
  
  .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
@@ -3457,7 +3470,8 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react7.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -3474,8 +3488,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -4563,12 +4576,11 @@ diff --git a/client.js b/client.js
    const useNews = useMemoryNews ?? noNews;
    const memoryIds = bot ? [bot.id] : room2?.members ?? [];
    const notice = useMemoryNotice(memoryIds, useNews);
--  const changed = useNews((map) => latestMemoryChange(map, memoryIds));
+   const changed = useNews((map) => latestMemoryChange(map, memoryIds));
 -  (0, import_react9.useEffect)(() => {
 -    document.body.style.setProperty("--bt-placeholder", JSON.stringify(name ? t("Message {name}", { name }) : t("Message")));
 -  }, [name, t("Message")]);
 -  (0, import_react9.useEffect)(() => {
-+  const changed = useNews((map) => latestMemoryChange(map, memoryIds));
 +  const composerLabel = name ? t("Message {name}", { name }) : t("Message");
 +  const blank3 = useSessions((list) => list.byId[sessionId]?.blank === true);
 +  const remoteEmptyHint = t("Send a message. Your friend approves unless Auto-send is on.");
@@ -7062,7 +7074,7 @@ diff --git a/client.js b/client.js
          className: "bt-input",
          autoFocus: !inline,
          value: name,
-@@ -8284,75 +8284,103 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
+@@ -8284,75 +8284,114 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
            }
          }
        }),
@@ -7143,6 +7155,7 @@ diff --git a/client.js b/client.js
 +  const [error, setError] = (0, import_react22.useState)("");
 +  const [fix, setFix] = (0, import_react22.useState)(null);
 +  const [fixNote, setFixNote] = (0, import_react22.useState)("");
++  const [inviteLink, setInviteLink] = (0, import_react22.useState)("");
 +  const [cursor, setCursor] = (0, import_react22.useState)(0);
 +  const [draft, setDraft] = (0, import_react22.useState)(mode === "create" ? { name: "", fromList: false } : null);
 +  const inputRef = (0, import_react22.useRef)(null);
@@ -7163,6 +7176,7 @@ diff --git a/client.js b/client.js
      setError("");
 +    setFix(null);
 +    setFixNote("");
++    setInviteLink("");
      setBusy(true);
      try {
        await task();
@@ -7179,17 +7193,26 @@ diff --git a/client.js b/client.js
 +    setError("");
 +    setFix(null);
 +    setFixNote("");
++    setInviteLink("");
 +  };
 +  const copyInvite = async (bot) => {
 +    const social = globalThis.__flybot__?.social;
++    let link;
 +    try {
 +      const invite = await social.createInvite(bot.id);
-+      const link = invite?.link || invite?.url;
++      link = invite?.link || invite?.url;
 +      if (!link) throw new Error("no link");
-+      await navigator.clipboard?.writeText(link);
-+      setFixNote(t("Invite link for {name} copied. Send it to your friend; once they accept, create the group again.", { name: bot.name }));
 +    } catch {
++      setInviteLink("");
 +      setFixNote(t("Could not create the invite. Use Bot settings → Invite to this Bot."));
++      return;
++    }
++    if (await copiedToClipboard(link)) {
++      setInviteLink("");
++      setFixNote(t("Invite link for {name} copied. Send it to your friend; once they accept, create the group again.", { name: bot.name }));
++    } else {
++      setInviteLink(link);
++      setFixNote(t("Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.", { name: bot.name }));
 +    }
 +  };
    const pick2 = (bot) => {
@@ -7375,7 +7398,7 @@ diff --git a/client.js b/client.js
            "button",
            {
              key: option.key,
-@@ -8542,21 +8542,35 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
+@@ -8542,21 +8542,36 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
              onMouseEnter: () => setCursor(index),
              onClick: option.run
            },
@@ -7404,7 +7427,8 @@ diff --git a/client.js b/client.js
 +          } }, t("Copy invite link for {name}", { name: bot.name })) : null,
 +          (0, import_react22.createElement)("button", { key: `out-${bot.id}`, type: "button", className: "bt-fix-btn", "data-fix-action": "leave-out", onClick: () => leaveOut(bot.id) }, t("Leave {name} out", { name: bot.name }))
 +        ])),
-+        fixNote ? (0, import_react22.createElement)("div", { className: "bt-note", role: "status" }, fixNote) : null
++        fixNote ? (0, import_react22.createElement)("div", { className: "bt-note", role: "status" }, fixNote) : null,
++        inviteLink ? (0, import_react22.createElement)("input", { className: "bt-input bt-fix-link", type: "text", readOnly: true, value: inviteLink, "aria-label": t("Invite link"), "data-fix-link": "", autoFocus: true, onFocus: (event) => event.target.select(), onClick: (event) => event.target.select() }) : null
 +      ) : error ? (0, import_react22.createElement)("div", { className: "bt-error" }, error) : null,
 +      menuOnly ? null : (0, import_react22.createElement)(
          "div",

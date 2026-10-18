@@ -7,7 +7,7 @@ import { CreateBot } from './create-bot.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
-import { listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
+import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
 
 export function NewChat({ mode, roster, actions }) {
   const [query, setQuery] = useState('')
@@ -24,6 +24,8 @@ export function NewChat({ mode, roster, actions }) {
   // the Bots and friends named, so the error offers its two ways out (see ungrantedLocalFix).
   const [fix, setFix] = useState(null)
   const [fixNote, setFixNote] = useState('')
+  // An invite link the clipboard could not take: shown in a selectable field to copy by hand.
+  const [inviteLink, setInviteLink] = useState('')
   const [cursor, setCursor] = useState(0)
   // The Create Bot form, opened straight from 'create' mode or from the list.
   const [draft, setDraft] = useState(mode === 'create' ? { name: '', fromList: false } : null)
@@ -43,6 +45,7 @@ export function NewChat({ mode, roster, actions }) {
     setError('')
     setFix(null)
     setFixNote('')
+    setInviteLink('')
     setBusy(true)
     try { await task() } catch (failure) {
       setError(failure?.message ?? String(failure))
@@ -56,19 +59,30 @@ export function NewChat({ mode, roster, actions }) {
     setError('')
     setFix(null)
     setFixNote('')
+    setInviteLink('')
   }
   // Sharing is the friend's click on an invite to that Bot (Bot Social makes the grant when they accept),
   // so the fix is the Bot's invite link; the group is made again once they have accepted it.
+  // "Copied" is said only when the clipboard took the link; with no clipboard (an insecure page, a
+  // locked-down WebView) or a refused write the link itself is shown, to select and copy by hand.
   const copyInvite = async (bot) => {
     const social = globalThis.__flybot__?.social
+    let link
     try {
       const invite = await social.createInvite(bot.id)
-      const link = invite?.link || invite?.url
+      link = invite?.link || invite?.url
       if (!link) throw new Error('no link')
-      await navigator.clipboard?.writeText(link)
-      setFixNote(t('Invite link for {name} copied. Send it to your friend; once they accept, create the group again.', { name: bot.name }))
     } catch {
+      setInviteLink('')
       setFixNote(t('Could not create the invite. Use Bot settings → Invite to this Bot.'))
+      return
+    }
+    if (await copiedToClipboard(link)) {
+      setInviteLink('')
+      setFixNote(t('Invite link for {name} copied. Send it to your friend; once they accept, create the group again.', { name: bot.name }))
+    } else {
+      setInviteLink(link)
+      setFixNote(t('Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.', { name: bot.name }))
     }
   }
   const pick = (bot) => {
@@ -256,7 +270,8 @@ export function NewChat({ mode, roster, actions }) {
             : null,
           h('button', { key: `out-${bot.id}`, type: 'button', className: 'bt-fix-btn', 'data-fix-action': 'leave-out', onClick: () => leaveOut(bot.id) }, t('Leave {name} out', { name: bot.name })),
         ])),
-        fixNote ? h('div', { className: 'bt-note', role: 'status' }, fixNote) : null)
+        fixNote ? h('div', { className: 'bt-note', role: 'status' }, fixNote) : null,
+        inviteLink ? h('input', { className: 'bt-input bt-fix-link', type: 'text', readOnly: true, value: inviteLink, 'aria-label': t('Invite link'), 'data-fix-link': '', autoFocus: true, onFocus: event => event.target.select(), onClick: event => event.target.select() }) : null)
         : error ? h('div', { className: 'bt-error' }, error) : null,
       menuOnly ? null : h('div', { className: 'bt-nc-compose' },
         h('div', { className: 'bt-nc-card' },

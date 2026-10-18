@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, splitRoomPicks, ungrantedLocalFix } from '../src/shared/remote-label.js'
+import { copiedToClipboard, listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, splitRoomPicks, ungrantedLocalFix } from '../src/shared/remote-label.js'
 import { DICTIONARY } from '../src/client/i18n.js'
 
 test('picker hides gone, hidden, and home-level remotes; labels include the owner', () => {
@@ -116,6 +116,43 @@ test('new-chat turns a refused group into a card with the invite and leave-out a
   const api = readFileSync(new URL('../src/client/api.js', import.meta.url), 'utf8')
   assert.match(api, /details: result\.error\?\.details/)
   for (const key of ['Copy invite link for {name}', 'Leave {name} out', 'that friend']) {
+    assert.ok(DICTIONARY.zh[key], `ZH entry for ${key}`)
+  }
+})
+
+test('copiedToClipboard is true only when the clipboard really took the text', async () => {
+  const written = []
+  const working = { clipboard: { writeText: async function (text) { assert.equal(this, working.clipboard); written.push(text) } } }
+  assert.equal(await copiedToClipboard('https://invite.test/x', working), true)
+  assert.deepEqual(written, ['https://invite.test/x'])
+  // No clipboard at all (insecure context, locked-down WebView): the old `clipboard?.writeText` call was a quiet success.
+  assert.equal(await copiedToClipboard('link', {}), false)
+  assert.equal(await copiedToClipboard('link', { clipboard: {} }), false)
+  assert.equal(await copiedToClipboard('link', { clipboard: { writeText: 'no' } }), false)
+  assert.equal(await copiedToClipboard('link', undefined), false)
+  assert.equal(await copiedToClipboard('link', null), false)
+  // A refused write (permission, focus) is a failure too, and does not throw.
+  assert.equal(await copiedToClipboard('link', { clipboard: { writeText: async () => { throw new Error('NotAllowedError') } } }), false)
+  assert.equal(await copiedToClipboard('link', { clipboard: { writeText: () => { throw new Error('sync') } } }), false)
+})
+
+test('Copy invite link says copied only after a real copy, else shows the link to copy by hand', () => {
+  const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
+  const copyInvite = src.slice(src.indexOf('const copyInvite'), src.indexOf('const pick = '))
+  assert.match(copyInvite, /await copiedToClipboard\(link\)/)
+  // The success note sits only in the branch the real copy took; the other branch keeps the link.
+  const [taken, notTaken] = copyInvite.split('} else {')
+  assert.match(taken, /if \(await copiedToClipboard\(link\)\)/)
+  assert.match(taken, /copied\. Send it to your friend/)
+  assert.doesNotMatch(notTaken, /copied\. Send it to your friend/)
+  assert.match(notTaken, /setInviteLink\(link\)/)
+  assert.match(notTaken, /Could not copy the invite link/)
+  assert.doesNotMatch(copyInvite, /navigator\.clipboard/)
+  // The fallback is a read-only, selectable field in the card; leaving a Bot out or trying again clears it.
+  assert.match(src, /readOnly: true, value: inviteLink/)
+  assert.match(src, /onFocus: event => event\.target\.select\(\)/)
+  assert.equal((src.match(/setInviteLink\(''\)/g) ?? []).length >= 4, true)
+  for (const key of ['Invite link', 'Could not copy the invite link for {name}. Copy the link below and send it to your friend; once they accept, create the group again.']) {
     assert.ok(DICTIONARY.zh[key], `ZH entry for ${key}`)
   }
 })
