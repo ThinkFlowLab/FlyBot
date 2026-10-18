@@ -139,10 +139,12 @@ async function team() {
   }))
   const ctx = fakeContext()
   const received = new Map()
+  const sources = new Map()
+  const note = (id, m) => { received.set(id, [...(received.get(id) ?? []), m.content[0].text]); sources.set(id, [...(sources.get(id) ?? []), m.source]) }
   const agentOf = id => ({
     session: { id }, id, status: 'idle', inbox: { nextStep: [], nextTurn: [] },
-    followup: m => received.set(id, [...(received.get(id) ?? []), m.content[0].text]),
-    steer: m => received.set(id, [...(received.get(id) ?? []), m.content[0].text]),
+    followup: m => note(id, m),
+    steer: m => note(id, m),
   })
   Object.assign(ctx, {
     llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
@@ -171,7 +173,7 @@ async function team() {
     }
   }
   const call = async (endpoint, payload) => (await ctx.__route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
-  return { ctx, tool, call, received, home, stop }
+  return { ctx, tool, call, received, sources, home, stop }
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 30))
@@ -4675,7 +4677,7 @@ test('typed_by_owner: an old server (field ignored, no stamp) keeps the old beha
 })
 
 test('typed_by_owner: a stamped incoming direct line is the person\'s; the same text without the stamp is the Bot\'s', async (t) => {
-  const { ctx, received, stop } = await team()
+  const { ctx, received, sources, stop } = await team()
   t.after(stop)
   const server = mockServer()
   const delivered = captureChatDeliveries(ctx)
@@ -4693,6 +4695,10 @@ test('typed_by_owner: a stamped incoming direct line is the person\'s; the same 
   const [typedLine, forged] = received.get('a').slice(-2)
   assert.match(typedLine, /^\[Message from Bob \(typed via @coder\.bob\.home, Bot Social\)\]/)
   assert.match(forged, /^\[Message from Coder \(@coder\.bob\.home, Bot Social\)\]/)
+  // The message source carries the person for the chat to draw (not the signing Bot); the forged line does not.
+  const [typedSource, forgedSource] = sources.get('a').slice(-2)
+  assert.equal(typedSource.remote.typedBy, 'Bob')
+  assert.equal('typedBy' in forgedSource.remote, false)
   // In the chat with that friend's Bot: the host is told it is the person, with the server's owner name.
   assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'hi' }), '')
   server.events.set('m1', [

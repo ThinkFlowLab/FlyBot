@@ -510,6 +510,7 @@ var ZH = {
   "Replies from": "群聊回复：",
   "Reply from": "收到回复：",
   "Message from": "收到消息：",
+  "via {name}": "经由 {name}",
   "Stopped by": "叫停者：",
   "{count} messages with": "{count} 条消息，来自",
   "Routine started": "例行任务开始",
@@ -4752,6 +4753,21 @@ function remoteSpeaker(source, roster) {
 function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
   const { bot, member, name, handle, chatId } = remoteSpeaker(source, roster);
   const files = Array.isArray(source.attachments) ? source.attachments : [];
+  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
+  if (person) {
+    return (0, import_react7.createElement)(
+      "div",
+      { className: "bt-group-msg bt-person-msg bt-remote-msg", "data-person": person, "data-remote": handle },
+      (0, import_react7.createElement)(
+        "span",
+        { className: "bt-group-name" },
+        person,
+        (0, import_react7.createElement)("span", { className: "bt-remote-handle", title: handle }, t("via {name}", { name }))
+      ),
+      (0, import_react7.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react7.createElement)("span", { className: "bt-lead", title: person }, (0, import_react7.createElement)(PersonMark)) }),
+      files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
+    );
+  }
   const mark = (0, import_react7.createElement)(BotMark, { bot, size: 22 });
   const lead = chatId ? (0, import_react7.createElement)("button", { type: "button", className: "bt-lead", title: handle, "aria-label": t("Open {name}'s chat", { name }), onClick: () => actions.openSession(chatId) }, mark) : (0, import_react7.createElement)("span", { className: "bt-lead", title: handle }, mark);
   return (0, import_react7.createElement)(

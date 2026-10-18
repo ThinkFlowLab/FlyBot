@@ -200,6 +200,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Open updates': '打开更新',
  
    // Command palette
+@@ -403,6 +403,7 @@ const ZH = {
+   'Replies from': '群聊回复：',
+   'Reply from': '收到回复：',
+   'Message from': '收到消息：',
++  'via {name}': '经由 {name}',
+   'Stopped by': '叫停者：',
+   '{count} messages with': '{count} 条消息，来自',
+   'Routine started': '例行任务开始',
 @@ -453,6 +453,9 @@ const ZH = {
    '{first} and {second} are waiting for your approval': '{first}、{second} 等你批准',
    '{first}, {second} and {count} more are waiting for your approval': '{first}、{second} 等 {total} 个等你批准',
