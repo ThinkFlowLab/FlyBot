@@ -1858,12 +1858,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (more.length) {
       const first = grantId ? [grantId] : []
       let last
-      for (const id of [...first, ...more]) last = await revokeOne(bot, { grantId: id })
+      // One roster refresh after the whole batch: a refresh started between two deletes could sync a
+      // grant the next delete removes and write it back after the loop (Codex P1 on #387).
+      for (const id of [...first, ...more]) last = await revokeOne(bot, { grantId: id }, { refresh: false })
+      fetchedAt = 0
+      void remoteBots({ fresh: true }).catch(() => {})
       return last
     }
     return revokeOne(bot, { grantId, relationshipId, grantee })
   }))
-  async function revokeOne(bot, { grantId, relationshipId, grantee }) {
+  async function revokeOne(bot, { grantId, relationshipId, grantee }, { refresh = true } = {}) {
     const current = flybot.grants?.of?.(bot.id) ?? []
     const target = current.find(grant =>
       (grantId && grant.id === grantId)
@@ -1880,8 +1884,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (typeof flybot.grants?.set === 'function') await flybot.grants.set(bot.id, next)
     const invited = memberOf(bot.id)?.handle
     void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
-    fetchedAt = 0
-    void remoteBots({ fresh: true }).catch(() => {})
+    if (refresh) {
+      fetchedAt = 0
+      void remoteBots({ fresh: true }).catch(() => {})
+    }
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }
   }
   disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots), { read: true }))

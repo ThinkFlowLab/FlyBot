@@ -4933,6 +4933,11 @@ test('#383: People with access shows one row per person; its Revoke removes each
   assert.deepEqual(bob.grantIds, ['g-1', 'g-2'])
   const before = server.calls.length
   assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: bob.id, grantIds: bob.grantIds })).ok, true)
+  // One roster refresh for the whole batch, started after the last delete (Codex P1).
+  const batch = server.calls.slice(before).map(c => c.name)
+  assert.equal(batch.filter(name => name === 'list_remote_bots').length <= 1, true, batch.join(','))
+  const lastDelete = batch.findLastIndex(name => /revoke|DELETE/i.test(name))
+  assert.equal(batch.slice(0, lastDelete).includes('list_remote_bots'), false, 'no refresh between the deletes')
   const revoked = server.calls.slice(before).filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
   assert.equal(revoked.some(args => args.includes('g-1')), true)
   assert.equal(revoked.some(args => args.includes('g-2')), true)
