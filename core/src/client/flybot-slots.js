@@ -128,14 +128,16 @@ export function FlyBotApprovals() {
   const entries = useSlot('flybot.approvals')
   const [pending, setPending] = useState([])
   const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
   const refresh = () => call('approvals', { status: ['pending', 'failed'] }).then(list => setPending(Array.isArray(list) ? list : [])).catch(() => {})
   useEffect(() => {
     void refresh()
     const timer = setInterval(refresh, POLL_MS)
     return () => clearInterval(timer)
   }, [])
+  // Every hook above runs on every render: a hook after this early return made React throw
+  // ("Rendered more hooks") the moment the first held message arrived, so no card ever drew (#254).
   if (pending.length === 0) return null
-  const [error, setError] = useState('')
   const decide = async (id, decision) => {
     setBusy(id)
     setError('')

@@ -102,6 +102,8 @@ The default card (`flybot-slots.js`) shows where a held request came from: `send
 
 - FlyBot `restrict()`s DSH's `ask_user_question` off Bot sessions (`hideBlockingQuestion`). DSH then appends a developer `tool-removal` context row, and `@deepseek-ai/dsh-client-ui-chat` renders it as "Tool removed: {name}". `ContextCell` shadows `conversation.chat.node` `context` and returns null for those notices (`HIDDEN_REMOVED_TOOLS`). Other tool-change context (tool-added, unrelated removals) still shows; `tool-call` cells are unchanged. Empty shadowed nodes collapse via the existing `:empty` flow-item rule. Covered by `core/test/tool-cells.test.js`.
 
+- The held-send overlay (`FlyBotApprovals`, `flybot-slots.js`) runs every hook before its `if (pending.length === 0) return null`: a hook after that return made React throw on the first held message and no card ever drew (#254). `test/overlay-approvals.test.js` renders it with a stand-in that enforces React's hook-count rule.
+
 ## Tests
 
 `npm test` in `core/` (it also fails when `client.js` is stale).

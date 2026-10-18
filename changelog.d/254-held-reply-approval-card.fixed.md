@@ -1,0 +1,1 @@
+A friend Bot's reply to a typed DM was held for its owner's approval, but no card ever showed: the approvals overlay crashed (a React hook after an early return) and the replying Bot's own chat did not list holds its Bot wrote. The overlay now draws, and the held reply shows as an Approve / Always approve / Reject card in the replying Bot's chat. (#254)

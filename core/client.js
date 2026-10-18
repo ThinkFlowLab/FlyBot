@@ -1925,6 +1925,7 @@ function FlyBotApprovals() {
   const entries2 = useSlot("flybot.approvals");
   const [pending, setPending] = (0, import_react2.useState)([]);
   const [busy, setBusy] = (0, import_react2.useState)("");
+  const [error, setError] = (0, import_react2.useState)("");
   const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
   });
   (0, import_react2.useEffect)(() => {
@@ -1933,7 +1934,6 @@ function FlyBotApprovals() {
     return () => clearInterval(timer);
   }, []);
   if (pending.length === 0) return null;
-  const [error, setError] = (0, import_react2.useState)("");
   const decide = async (id, decision) => {
     setBusy(id);
     setError("");

@@ -871,6 +871,8 @@ window.__ModuleLoader__.load({
         if (faceId && item.roomId === faceId) return true
         if (room?.id && item.roomId === room.id) return true
         if (item.roomId) return false
+        // A held reply or message a local Bot wrote shows in that Bot's own chat, where its owner is (#254).
+        if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return true
         if (item.to && handles.has(item.to)) return true
         if (sessionId && item.sessionId === sessionId) return true
         return false
@@ -885,10 +887,13 @@ window.__ModuleLoader__.load({
         id: approval.id,
         source: 'local',
         from: composer ? 'You' : approval.senderName,
+        // The local Bot that wrote it (not a line you typed): its own chat shows the card (#254).
+        ...(!composer && typeof approval.request?.from === 'string' ? { fromId: approval.request.from } : {}),
         to,
         toName: approval.targetName || to,
         text: approval.request?.text || approval.reason,
-        roomId: approval.request?.meta?.roomId || approval.request?.to,
+        // A friend's handle is an object, never a room: only a room id may sit here.
+        roomId: approval.request?.meta?.roomId || (typeof approval.request?.to === 'string' ? approval.request.to : undefined),
         sessionId: approval.request?.meta?.sessionId,
       }
     }
@@ -1562,6 +1567,8 @@ window.__ModuleLoader__.load({
       PendingApprovals,
       ChatApproval,
       ChatApprovalDock,
+      approvalsForOpenChat,
+      localHoldView,
       MyHandle,
       FaceRoomStatus,
       FriendBotRow,

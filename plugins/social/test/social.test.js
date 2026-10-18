@@ -2749,6 +2749,27 @@ test('in-chat hold card is a compact bubble with names, clamp, and Approve/Rejec
   assert.equal(longTree.filter(n => n.type === 'button' && (n.children.includes('Approve') || n.children.includes('Reject') || n.props['data-flybot'] === 'hold-expand' || n.props['data-flybot'] === 'hold-always')).length, 4)
 })
 
+test('#254: a Bot\'s held reply to a friend shows as a card in that Bot\'s own chat, and in the friend\'s chat', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  // The shape the host's approvals endpoint serves for a Bot's auto-reply to a friend's Bot.
+  const approval = {
+    id: 'apr-reply', status: 'pending', by: 'social', senderName: 'Helper', targetName: '@chief.uia.home',
+    request: { from: 'session-helper', to: { kind: 'remote', handle: '@chief.uia.home', home: '@uia.home' }, target: { remote: true, handle: '@chief.uia.home' }, text: 'Which file do you mean?', role: 'reply', via: 'auto-reply', meta: { replyTo: 'x1' } },
+  }
+  const plugin = pluginOf([[], []])
+  const view = plugin.localHoldView(approval)
+  assert.deepEqual([view.fromId, view.to, view.roomId, view.from], ['session-helper', '@chief.uia.home', undefined, 'Helper'])
+  const cards = (props) => walk(pluginOf([[], [view], '']).ChatApprovalDock(props)).filter(n => n.props['data-flybot'] === 'chat-approval' && n.props['data-role'] === 'owner')
+  assert.equal(cards({ bot: { id: 'session-helper', name: 'Helper' } }).length, 1, 'the sender Bot\'s own chat')
+  assert.equal(cards({ bot: { id: 'session-helper', remote: { handle: '@chief.uia.home' } } }).length, 1, 'the friend\'s chat')
+  assert.equal(cards({ bot: { id: 'session-other', name: 'Writer' } }).length, 0, 'another Bot\'s chat stays clean')
+  assert.ok(walk(pluginOf([[], [view], '']).ChatApprovalDock({ bot: { id: 'session-helper' } })).some(n => n.props.className === 'fs-sub' && n.children.includes('Helper → Chief')))
+  // A line you typed (composer) is not shown again in the sending Bot's own chat.
+  const typed = plugin.localHoldView({ ...approval, id: 'apr-typed', request: { ...approval.request, via: 'composer' } })
+  assert.equal(typed.fromId, undefined)
+  assert.equal(walk(pluginOf([[], [typed], '']).ChatApprovalDock({ bot: { id: 'session-helper' } })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+})
+
 test('Always approve is owner-only and toasts Auto-send for that pair', async () => {
   const calls = []
   const notes = []
