@@ -37,6 +37,8 @@ const ROOM_EXTRA_TURNS = 4
 const ROOM_ADMIN_EXTRA_TURNS = 4
 const ROOM_TURNS_EACH = 2
 const ROOM_ADMIN_TURNS_EACH = 4
+// A plain line in a face-to-face room lets this many local Bots answer (#295); a larger room is cut off here.
+const FACE_PLAIN_SPEAKERS = 6
 
 // Logs written before rooms were versioned get sequence numbers in place.
 const ensureRoomLog = (room) => {
@@ -339,7 +341,7 @@ export function install(rt) {
       const { all, found: named } = mentionsIn(reply, everyone)
       const found = named.filter(other => other.id !== member.id)
       const callees = leads && all ? [...found, ...others.filter(other => !found.includes(other))] : found
-      callMembers(round, turns, index, callees, `${member.name} mentioned you`, leads ? ROOM_ADMIN_TURNS_EACH : ROOM_TURNS_EACH, member.id)
+      if (!round.single) callMembers(round, turns, index, callees, `${member.name} mentioned you`, leads ? ROOM_ADMIN_TURNS_EACH : ROOM_TURNS_EACH, member.id)
     }
   }
 
@@ -396,6 +398,8 @@ export function install(rt) {
           ...(opener.kickoff ? { note: 'the group was just created' } : {}),
           ...(named.includes(member) ? { by: opener.botId } : {}),
         })),
+        // One pass: a plain line's speakers do not call each other on (#295), so Bots in two homes cannot loop.
+        ...(isPlainFaceLine(room, opener) ? { single: true } : {}),
         speaking: null,
         turns: 0,
         replies: [],
@@ -523,6 +527,21 @@ export function install(rt) {
   // the admin answers alone in admin mode, or first of everyone. What a member posts
   // after its round moved on is answered by the member that asked for it; work the
   // user asked for is left for the user to read.
+  // A plain person's line in a face-to-face room: every local Bot may answer, the admin first, then the
+  // room's order, one at a time (each sees the earlier replies), capped (#295).
+  const plainSpeakers = (members, admin) => (admin ? [admin, ...members.filter(bot => bot !== admin)] : members).slice(0, FACE_PLAIN_SPEAKERS)
+
+  // Whether this opener is a person's plain line there: the one that starts a single pass over the
+  // Bots with no Bot-triggered follow-ups inside it (#295). An @ that names a Bot, a Bot's post, a late
+  // reply and the greeting are not.
+  function isPlainFaceLine(room, opener) {
+    if (!isFaceRoom(room) || opener.botId !== undefined || opener.kickoff || opener.late) return false
+    if (opener.plain) return true
+    if (opener.quiet || opener.callIds?.length > 0) return false
+    const said = faceMentions(room, opener.text, rt.botOf, { references: (opener.references ?? []).flatMap(reference => reference.labels) })
+    return !said.all && said.bots.length === 0 && said.friends.length === 0
+  }
+
   function openingSpeakers(room, opener) {
     const everyone = room.members.map(rt.botOf).filter(Boolean)
     const members = everyone.filter(bot => bot.id !== opener.botId)
@@ -531,14 +550,17 @@ export function install(rt) {
     // A friend's own typed line that @-calls Bots here (#287): only those Bots answer. The caller
     // resolved the names and only passes lines the server attests as typed by that person.
     if (opener.callIds?.length > 0) return members.filter(bot => opener.callIds.includes(bot.id))
+    // A friend's own attested plain line (or their @all): this home's Bots answer too (#295). The caller only
+    // sets `plain` on lines the server attests as typed by that person; a Bot's line never does.
+    if (opener.plain && isFaceRoom(room)) return plainSpeakers(members, admin)
     if (opener.quiet) return []
     const { all, found: named } = mentionsIn(opener.text, everyone, opener.references)
     const found = named.filter(bot => bot.id !== opener.botId)
     if (opener.late) return found.length > 0 ? found : members.filter(bot => bot.id === opener.askedBy)
     // Face-to-face, the room's own person typing (#167, #287): @Name, the label the picker shows
     // ("Friend's Chief") or a handle picks that local Bot; a line to a friend's Bot starts none
-    // here; a plain line gets ONE local speaker, the admin else the first member, never every Bot
-    // at once. @all stays everyone. Another person's line (postHuman) is quiet and never gets here
+    // here; a plain line lets every local Bot answer in one pass (#295): the admin first, then the room's
+    // order, up to FACE_PLAIN_SPEAKERS, each after the earlier replies. @all stays everyone. Another person's line (postHuman) is quiet and never gets here
     // without callIds, and a Bot's post keeps the old rule below, so Bots in two homes cannot set
     // each other off.
     if (isFaceRoom(room) && opener.botId === undefined) {
@@ -547,7 +569,7 @@ export function install(rt) {
         const called = said.bots.filter(bot => bot.id !== opener.botId)
         if (called.length > 0) return called
         if (said.friends.length > 0) return []
-        return admin ? [admin] : members.slice(0, 1)
+        return plainSpeakers(members, admin)
       }
     }
     if (found.length > 0 && !all) return found

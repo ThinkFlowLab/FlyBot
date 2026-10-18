@@ -2226,7 +2226,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (local) continue
         const who = line.who || 'Someone'
         flybot.rooms.applyFaceLine?.(room.id, { ...line, who, remote: true, authorKind: 'human' })
-        if (flybot.rooms.postHuman) void flybot.rooms.postHuman(room.id, { authorId: line.authorId, name: who, text: line.text, ...(line.mentions ? { mentions: line.mentions } : {}) })
+        if (flybot.rooms.postHuman) void flybot.rooms.postHuman(room.id, { authorId: line.authorId, name: who, text: line.text, ...(line.mentions ? { mentions: line.mentions } : {}), ...(line.attested === true ? { attested: true } : {}) })
         else void flybot.rooms.postNotice?.(room.id, `${who}: ${line.text}`)
       } else {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)

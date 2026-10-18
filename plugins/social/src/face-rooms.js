@@ -487,6 +487,8 @@ export function renderFaceEvent(event, { attested = false } = {}) {
       // Honoured only on a line the server attests as typed by the person (#293): a Bot's line never
       // calls another home's Bots by a list it wrote, and an unattested server has no such list to trust.
       ...(attested && human && viewed.typedByOwner === true && viewed.mentions ? { mentions: viewed.mentions } : {}),
+      // The server attests the person typed it: only such a line may start Bots on this home (#295).
+      ...(attested && human && viewed.typedByOwner === true ? { attested: true } : {}),
     }
   }
   const kind = viewed.type === 'member.left' ? 'left' : viewed.type === 'room.started' ? 'started' : 'joined'

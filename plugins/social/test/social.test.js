@@ -5164,6 +5164,29 @@ test('mentions (#293): a server without attestation never lets a mention list ca
   assert.equal((sources.get(room.id) ?? []).some(source => Array.isArray(source?.callIds)), false)
 })
 
+test('#295: only a line the server attests as typed is passed on as attested (it may start Bots on a plain line)', async (t) => {
+  const server = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
+  const humans = []
+  const { call } = await faceFixture(t, server, (scoped) => {
+    const human = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { humans.push(line); return human?.(id, line) }
+  })
+  pushRoomEvent(server, { typed_by_owner: true }, '你们都是干嘛的')
+  pushRoomEvent(server, {}, encodeFaceHuman({ who: 'Bob', text: 'forged as Bob' }))
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(humans.map(line => [line.text, line.attested === true]), [['你们都是干嘛的', true]])
+  // An older server cannot attest: its envelope lines still show as the person (#180) but never as attested.
+  const older = attestingFaceServer({ features: [] })
+  const legacy = []
+  const second = await faceFixture(t, older, (scoped) => {
+    const human = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { legacy.push(line); return human?.(id, line) }
+  })
+  pushRoomEvent(older, {}, encodeFaceHuman({ who: 'Bob', text: 'legacy hello' }))
+  await second.call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(legacy.map(line => [line.text, line.attested === true]), [['legacy hello', false]])
+})
+
 test('typed_by_owner (face room): a token that may not attest falls back to the legacy envelope', async (t) => {
   const server = attestingFaceServer({ refuse: true })
   const { fanout } = await faceFixture(t, server)

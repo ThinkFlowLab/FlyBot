@@ -456,6 +456,103 @@ test('#287: in a face room an @ to a friend\'s Bot starts no local turn, an @ to
   assert.equal(sent.slice(none).some(entry => /No one in this room/.test(entry.message?.content?.[0]?.text ?? '')), false)
 })
 
+test('#295: a plain face-to-face line lets every local Bot answer in one pass, each after the earlier replies, with no follow-ups; @Name still targets one', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_all',
+    localId: 'face-all',
+    status: 'open',
+    members: [
+      { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+      { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
+      { handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob', published: false },
+    ],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }, { id: writer, handle: '@writer.me.home', name: 'Writer' }],
+  })
+  sent.length = 0
+  // "你们都是干嘛的": no @, so both of my Bots answer, one at a time; the friend's Bot is not mine to start.
+  await emit(hosted.id, userMessage('你们都是干嘛的'))
+  const running = relay(hosted.id, 'plain-all')
+  const first = await turnFor(sent)
+  assert.ok(first, 'the first Bot answers')
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room').length, 1, 'one at a time')
+  // Its reply @-names the other Bot, then also names itself back: no extra turn is queued from replies.
+  await answer(first.sessionId, first.message.source.exchangeId, `I handle planning. @${first.sessionId === hosted.sessions[chief] ? 'Writer' : 'Chief'} what about you?`, 1)
+  const second = await turnFor(sent, first)
+  assert.ok(second, 'the other Bot answers next')
+  assert.notEqual(second.sessionId, first.sessionId)
+  assert.match(second.message.content[0].text, /I handle planning/, 'it sees the earlier reply')
+  await answer(second.sessionId, second.message.source.exchangeId, `I write. @${second.sessionId === hosted.sessions[chief] ? 'Writer' : 'Chief'} thanks`, 2)
+  const done = JSON.parse(await running)
+  assert.deepEqual(done.replies.filter(reply => reply.botId !== undefined).map(reply => reply.botId).sort(), [chief, writer].sort())
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room').length, 2, 'the replies\' @s start no follow-up turns in a plain pass')
+
+  // @Name still targets only that Bot.
+  sent.length = 0
+  await emit(hosted.id, userMessage('@Writer only you please'))
+  const named = relay(hosted.id, 'named-one')
+  const only = await turnFor(sent)
+  assert.equal(only.sessionId, hosted.sessions[writer])
+  await answer(only.sessionId, only.message.source.exchangeId, 'done', 3)
+  await named
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room').length, 1)
+
+  // A Bot's post without an @ starts nobody; a friend's plain line only counts when the server attested it.
+  sent.length = 0
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: '@chief.bob.home', senderName: 'Bob Chief', remote: { handle: '@chief.bob.home' } }, content: [{ type: 'text', text: 'hello everyone' }] } })
+  const botPost = JSON.parse(await relay(hosted.id, 'bot-post'))
+  assert.equal((botPost.replies ?? []).filter(reply => reply.botId !== undefined).length, 0)
+  assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false)
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text: 'unattested hello' }] } })
+  await relay(hosted.id, 'quiet-human')
+  assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false)
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, plain: true, human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text: 'attested hello' }] } })
+  const friend = relay(hosted.id, 'friend-plain')
+  const theirs = await turnFor(sent)
+  assert.ok(theirs, 'a friend\'s attested plain line starts my Bots too')
+  await answer(theirs.sessionId, theirs.message.source.exchangeId, 'hi Bob', 4)
+  const other = await turnFor(sent, theirs)
+  assert.ok(other)
+  await answer(other.sessionId, other.message.source.exchangeId, 'hi from me too', 5)
+  await friend
+})
+
+test('#295: a plain line in a large face room is cut off at six speakers, the admin first', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const ids = [chief]
+  for (let at = 0; at < 7; at += 1) ids.push((await call('create-bot', { name: `Extra${at}` })).value.id)
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_big',
+    localId: 'face-big',
+    status: 'open',
+    members: ids.map((id, at) => ({ handle: `@b${at}.me.home`, displayName: `Bot${at}`, ownerName: 'Me', published: false })),
+    localBots: ids.map((id, at) => ({ id, handle: `@b${at}.me.home`, name: at === 0 ? 'Chief' : `Extra${at - 1}` })),
+  })
+  sent.length = 0
+  await emit(hosted.id, userMessage('who is here'))
+  const running = relay(hosted.id, 'big')
+  const spoke = []
+  for (let at = 0; at < 8; at += 1) {
+    const turn = await turnFor(sent, ...spoke)
+    if (!turn) break
+    spoke.push(turn)
+    await answer(turn.sessionId, turn.message.source.exchangeId, `reply ${at}`, at + 1)
+  }
+  await running
+  assert.equal(spoke.length, 6)
+})
+
 test('#287: a face-room line the send path posted is logged and sent once, whether the round starts on it or drains it', async (t) => {
   const { call, emit, relay, inboxOf, answer, stop, sent, rt } = start()
   t.after(stop)

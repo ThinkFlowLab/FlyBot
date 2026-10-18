@@ -690,3 +690,23 @@ test('#293: postHuman calls the Bots a friend\'s mention list names by handle, n
   assert.deepEqual(await said("@Me's Chief hi"), [['a']])
   assert.deepEqual(await said('no @ at all', []), [undefined])
 })
+
+test('#295: postHuman marks a friend\'s attested plain line (or @all) as for the whole room; naming Bots, a friend\'s Bot, or no attestation does not', async (t) => {
+  const { fb, agents, stop } = await start()
+  t.after(stop)
+  const room = await mentionRoom(fb)
+  const sources = () => (agents.get(room.id)?.calls ?? []).map(([, message]) => message.source).filter(source => source?.human)
+  const said = async (text, extra = {}) => {
+    const before = sources().length
+    await fb.rooms.postHuman(room.id, { authorId: '@bob.home', name: 'Bob', text, ...extra })
+    const [source] = sources().slice(before)
+    return [source.plain === true, source.callIds]
+  }
+  assert.deepEqual(await said('你们都是干嘛的', { attested: true }), [true, undefined])
+  assert.deepEqual(await said('@all everyone please', { attested: true }), [true, undefined])
+  assert.deepEqual(await said('plain but not attested'), [false, undefined])
+  assert.deepEqual(await said("@Me's Chief you first", { attested: true }), [false, ['a']])
+  assert.deepEqual(await said("@Bob's Chief is it you?", { attested: true }), [false, undefined])
+  assert.deepEqual(await said('hello', { attested: true, mentions: ['@chief.bob.home'] }), [false, undefined])
+  assert.deepEqual(await said('hello again', { attested: true, mentions: ['@ghost.nowhere'] }), [true, undefined], 'a list this room does not know reads as no list')
+})
