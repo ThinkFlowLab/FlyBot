@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { apply as applyDsBot } from 'ds-bot'
 import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
-import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
+import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
@@ -31,6 +31,7 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
   const tools = {
     create_invite: a => ({ code: 'INV123', url: 'https://s/i/INV123', status: 'active', expires_at: '2026-10-21T00:00:00Z', bot: a.bot_id, auto_accept: a.auto_accept }),
     join_invite: a => {
+      if (a.code === 'NOPE') throw Object.assign(new Error('Bot Social join_invite: invite_not_found'), { code: 'invite_not_found' })
       if (a.code === 'USED') throw Object.assign(new Error('Bot Social join_invite: invite is used'), { code: 'invite_used' })
       if (a.code === 'UNAVAIL') throw Object.assign(new Error('Bot Social join_invite: invite_unavailable'), { code: 'invite_unavailable' })
       if (a.code === 'EXISTS') throw Object.assign(new Error('Bot Social join_invite: relationship_exists'), { code: 'relationship_exists', peer: { handle: '@bob.home', display_name: 'Bob' }, bot: { handle: '@coder.bob.home', display_name: 'Coder' } })
@@ -5461,4 +5462,60 @@ test('#228: an open People with access shows a friend who accepts, without reope
   const after = draw()
   assert.ok(after.some(n => n.props['data-flybot'] === 'access-grant'))
   assert.equal(after.some(n => typeof n.children?.[0] === 'string' && /Nobody has this Bot yet/.test(n.children[0])), false)
+})
+
+test('#310: Add friend takes a link, a link without scheme or /i/, a bare code, or the copied text', () => {
+  const code = 'eWDDdBMIxLSZ'
+  const host = '47-80-69-220.sslip.io'
+  for (const input of [
+    `https://${host}/i/${code}`, `http://${host}/i/${code}/`, `${host}/i/${code}`, `${host}/${code}`, `https://${host}/${code}`,
+    `  ${host}/i/${code}?x=1#y `, `<https://${host}/i/${code}>`, code, ` ${code}. `,
+    `Add my bot @chief.bob.home (Chief) from my FlyBot home @bob.home. Link: https://${host}/i/${code} (single use, expires Oct 21, 2026).`,
+  ]) assert.equal(parseInviteInput(input).code, code, input)
+  assert.equal(parseInviteInput(`${host}/${code}`).host, host)
+  assert.equal(parseInviteInput(`https://${host}/i/${code}`).host, host)
+  assert.equal(parseInviteInput(code).host, undefined)
+  assert.equal(parseInviteInput('i/ABC').code, 'ABC')
+  // A host from another server is kept apart from the code; it is never added to a bare code.
+  assert.deepEqual(parseInviteInput('https://other.example/i/ABC'), { code: 'ABC', host: 'other.example' })
+  // Not an invite: passed as typed, so the server's answer is what the person sees.
+  assert.equal(parseInviteInput(host).code, host)
+  assert.equal(parseInviteInput(`${host}/a/b/c`).code, `${host}/a/b/c`)
+  assert.equal(parseInviteInput('not an invite').code, 'not an invite')
+})
+
+test('#310: join_invite errors read as plain sentences, never as raw codes', async (t) => {
+  const plain = error => mapJoinInviteError(error).message
+  assert.equal(plain(Object.assign(new Error('Bot Social join_invite: invite_not_found'), { code: 'invite_not_found' })), "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link.")
+  assert.match(mapJoinInviteError(new Error('Bot Social join_invite: invite_not_found'), { foreignHost: true }).message, /^This invite link wasn't found on your Bot Social server\. It may come from another server/)
+  assert.equal(plain(new Error('Bot Social join_invite: invite is expired')), 'This invite has expired. Ask your friend for a new one.')
+  assert.equal(plain(new Error('Bot Social join_invite: invite is revoked')), 'This invite is no longer valid. Ask your friend for a new one.')
+  assert.equal(plain(new Error('Bot Social join_invite: invite is used')), 'This invite was already used. Ask your friend for a new one.')
+  assert.equal(plain(new Error('Bot Social join_invite: cannot join your own invite')), "That's your own invite. Send it to a friend instead.")
+  assert.equal(plain(new Error('Bot Social join_invite: relationship is blocked')), "You can't add this friend.")
+  assert.equal(plain(new Error('Bot Social join_invite: rate_limited')), 'Too many tries. Wait a moment and try again.')
+  const other = new Error('Bot Social is not connected')
+  assert.equal(mapJoinInviteError(other), other)
+
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const missing = await call('flybot/social/join-invite', { code: '47-80-69-220.sslip.io/NOPE' })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.error.message, "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link.")
+  assert.equal(server.calls.filter(c => c.name === 'join_invite').at(-1).args.code, 'NOPE')
+  // The pasted form from the bug report reaches the server as the bare code.
+  const joined = await call('flybot/social/join-invite', { code: '47-80-69-220.sslip.io/eWDDdBMIxLSZ' })
+  assert.equal(joined.ok, true, JSON.stringify(joined.error))
+  assert.equal(server.calls.filter(c => c.name === 'join_invite').at(-1).args.code, 'eWDDdBMIxLSZ')
+})
+
+test('#310: Copy invite link always carries the /i/ segment', () => {
+  assert.equal(inviteLink({ code: 'ABC', url: 'https://h.example/i/ABC' }), 'https://h.example/i/ABC')
+  assert.equal(inviteLink({ code: 'ABC', url: 'https://h.example/ABC' }), 'https://h.example/i/ABC')
+  assert.equal(inviteLink({ code: 'ABC', url: 'http://127.0.0.1:8787/ABC' }), 'http://127.0.0.1:8787/i/ABC')
+  assert.equal(inviteLink({ code: 'ABC' }), undefined)
+  assert.equal(inviteLink({ url: 'not a url' }), 'not a url')
 })

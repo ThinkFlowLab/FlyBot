@@ -235,7 +235,50 @@ export async function onboardHome({ server, displayName, webhookUrl, fetch: fetc
   throw last
 }
 
-export function mapJoinInviteError(error) {
+const INVITE_CODE = /^[A-Za-z0-9_-]+$/
+
+const stripWrapping = token => token.replace(/^[<("'`[]+/, '').replace(/[>)"'`\].,;:!?]+$/, '')
+const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i
+
+// The link we hand out is the server's own `https://host/i/CODE`. If a server ever answers with a
+// url that lacks the /i/ segment (the server only serves /i/CODE), rebuild it from that url's host
+// and the code, so Copy invite link can never produce a link Add friend would have to guess (#310).
+export function inviteLink(invite) {
+  const url = String(invite?.url ?? '')
+  const code = String(invite?.code ?? '')
+  if (!url || !code || url.includes(`/i/${code}`)) return url || undefined
+  try { return `${new URL(url).origin}/i/${code}` } catch { return url }
+}
+
+// What the Add friend box may hold: the server's link (https://host/i/CODE), the same without
+// the scheme, a link whose /i/ went missing (host/CODE), the bare code, or the whole "Add my
+// bot ... Link: https://host/i/CODE (single use ...)" text. Bot Social's join_invite takes the
+// code, so that is what we send; `host` is the pasted host when there was one, so a link from
+// another server can say so when it is not found (#310).
+export function parseInviteInput(input) {
+  const raw = String(input ?? '').trim()
+  const tokens = raw.split(/\s+/).map(stripWrapping).filter(Boolean)
+  const hasInvitePath = token => /\/i\/[^/]/.test(token)
+  const hostLike = token => /^[^/\s]+\.[^/\s]+\/[^/\s]/.test(token) || /^localhost(:\d+)?\/[^/\s]/i.test(token)
+  const token = tokens.length === 1
+    ? tokens[0]
+    : tokens.find(hasInvitePath) ?? tokens.find(item => SCHEME.test(item)) ?? tokens.find(hostLike) ?? ''
+  if (!token) return { code: raw }
+  const bare = token.replace(SCHEME, '').replace(/[?#].*$/, '').replace(/\/+$/, '')
+  if (!bare.includes('/')) return { code: INVITE_CODE.test(bare) ? bare : raw }
+  const [first, ...rest] = bare.split('/')
+  const hasHost = SCHEME.test(token) || /\./.test(first) || /^localhost(:\d+)?$/i.test(first)
+  const host = hasHost ? first.toLowerCase() : undefined
+  const path = (hasHost ? rest : [first, ...rest]).filter(Boolean)
+  let code
+  const at = path.lastIndexOf('i')
+  if (at >= 0 && at < path.length - 1) code = path[at + 1]
+  else if (path.length === 1) code = path[0]
+  try { if (code) code = decodeURIComponent(code) } catch { /* keep it as pasted */ }
+  return { code: code && INVITE_CODE.test(code) ? code : raw, ...(host ? { host } : {}) }
+}
+
+export function mapJoinInviteError(error, { foreignHost } = {}) {
   const msg = String(error?.message ?? error ?? '')
   const code = String(error?.code ?? '')
   const blob = `${code} ${msg}`
@@ -249,9 +292,29 @@ export function mapJoinInviteError(error) {
         : {}),
     })
   }
+  if (/invite_not_found/i.test(blob)) {
+    return Object.assign(new Error(foreignHost
+      ? "This invite link wasn't found on your Bot Social server. It may come from another server, or be incomplete, expired, or already used. Ask your friend for a new link."
+      : "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link."), { code: 'invite_not_found' })
+  }
+  if (/invite is expired|invite_expired/i.test(blob)) {
+    return Object.assign(new Error('This invite has expired. Ask your friend for a new one.'), { code: 'invite_unavailable' })
+  }
+  if (/invite is revoked|invite_revoked|invite is pending/i.test(blob)) {
+    return Object.assign(new Error('This invite is no longer valid. Ask your friend for a new one.'), { code: 'invite_unavailable' })
+  }
   if (/invite_unavailable|invite is used|invite_used|already used|max_uses|used_up/i.test(blob)) {
     const code = /invite_unavailable/i.test(blob) ? 'invite_unavailable' : 'invite_used'
     return Object.assign(new Error('This invite was already used. Ask your friend for a new one.'), { code })
+  }
+  if (/cannot join your own invite/i.test(blob)) {
+    return Object.assign(new Error("That's your own invite. Send it to a friend instead."), { code: 'own_invite' })
+  }
+  if (/\bblocked\b/i.test(blob) && !/dlp_blocked/i.test(blob)) {
+    return Object.assign(new Error("You can't add this friend."), { code: 'blocked' })
+  }
+  if (/rate_limited/i.test(blob)) {
+    return Object.assign(new Error('Too many tries. Wait a moment and try again.'), { code: 'rate_limited' })
   }
   return error
 }
@@ -1509,7 +1572,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
     const invite = await api.createInvite({ bot_id: member.bot_id, max_uses: 1, expires_in_hours: 168, auto_accept: true, offered_capabilities: ['chat.public'], requested_capabilities: ['chat.public'], ...(message ? { message: String(message).slice(0, 280) } : {}) })
     const handle = norm(member.handle)
-    return { botId: bot.id, botName: bot.name, handle, home: norm(home.handle), code: invite.code, url: invite.url, link: invite.url, expiresAt: invite.expires_at, status: invite.status, text: inviteText({ handle, name: bot.name, home: norm(home.handle), url: invite.url, expiresAt: invite.expires_at }) }
+    const url = inviteLink(invite)
+    return { botId: bot.id, botName: bot.name, handle, home: norm(home.handle), code: invite.code, url, link: url, expiresAt: invite.expires_at, status: invite.status, text: inviteText({ handle, name: bot.name, home: norm(home.handle), url, expiresAt: invite.expires_at }) }
   }
   disposers.push(flybot.api.handle('social/create-invite', createBotInvite))
   disposers.push(flybot.api.handle('social.createInvite', createBotInvite))
@@ -1541,6 +1605,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/join-invite', async ({ code, botId } = {}) => {
     const value = String(code ?? '').trim()
     if (!value) throw new Error('paste an invite link or code')
+    const parsed = parseInviteInput(value)
+    const configuredHost = () => { try { return new URL(String(config.server)).host.toLowerCase() } catch { return '' } }
     let from = config.botId ? { from_bot_id: config.botId } : {}
     let joinedAs
     if (home) {
@@ -1555,9 +1621,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const before = new Set(listedRemoteBots().map(bot => bot.handle))
     let joined
     try {
-      joined = await client.callTool('join_invite', { code: value.replace(/^.*\/i\//, '').replace(/[?#].*$/, ''), ...from })
+      joined = await client.callTool('join_invite', { code: parsed.code, ...from })
     } catch (error) {
-      const mapped = mapJoinInviteError(error)
+      const mapped = mapJoinInviteError(error, { foreignHost: Boolean(parsed.host && configuredHost() && parsed.host !== configuredHost()) })
       if (mapped.code === 'relationship_exists' && home) {
         try {
           const result = await client.callTool('list_remote_bots', { home: home.id })
