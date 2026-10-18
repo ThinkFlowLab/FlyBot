@@ -883,7 +883,18 @@ window.__ModuleLoader__.load({
       return `@${body}`
     }
 
-    function ChatApproval({ item, canDecide = true, busy, onDecide } = {}) {
+    // Why Bot Social held a send, in words (#371). `t` is the host's translator (zh in a zh UI); without one the
+    // English stays. A category this build does not know is left out, never shown raw.
+    const HOLD_REASON_WORDS = {
+      commitment: 'commitment language', 'pii.phone': 'a phone number', 'pii.email': 'an email address', money: 'a money amount',
+      'owner.sensitive_term': 'one of your sensitive terms', 'calendar.details': 'calendar details',
+    }
+    function holdReasonLine(reasons, t) {
+      const tr = typeof t === 'function' ? t : (key, params) => String(key).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+      const words = (Array.isArray(reasons) ? reasons : []).filter(name => Object.hasOwn(HOLD_REASON_WORDS, name)).map(name => tr(HOLD_REASON_WORDS[name]))
+      return words.length ? tr('Held for your approval: contains {reasons}', { reasons: words.join(tr(', ')) }) : ''
+    }
+    function ChatApproval({ item, canDecide = true, busy, onDecide, t } = {}) {
       const [open, setOpen] = useState(false)
       if (!item) return null
       if (item.status === 'approved' || item.status === 'rejected') {
@@ -897,11 +908,13 @@ window.__ModuleLoader__.load({
       const { from, to } = holdParties(item)
       const text = shownHoldText(item.text || item.summary || '')
       const long = text.length > 160 || text.split(/\n/).length > 3
+      const reasonLine = holdReasonLine(item.reasons, t)
       return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
         h('div', { className: 'fs-label' }, WAITING_OWNER),
         item.from || item.to || item.toName || item.kind === 'face_room_message'
           ? h('div', { className: 'fs-sub' }, `${from} → ${to}`)
           : null,
+        reasonLine ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-reason' }, reasonLine) : null,
         text ? h('div', { className: 'fs-draft', 'data-clamp': !open && long ? true : undefined }, text) : null,
         long ? h('button', {
           type: 'button', className: 'fs-hold-more', 'data-flybot': 'hold-expand',
@@ -933,7 +946,7 @@ window.__ModuleLoader__.load({
         if (item.roomId) return false
         // A held reply or message a local Bot wrote shows in that Bot's own chat, where its owner is (#254).
         // One place per approval: once the friend's chat exists, that chat alone shows it (#278).
-        if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return !friendChatOf(roster, item.to)
+        if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return !listedFriendChat(roster, item.to)
         // A Bot's direct message to a friend belongs to the Bot's chat and the friend's chat, never to
         // a room that merely has that friend in it (#260). Bot Social's own holds still match by handle.
         if (item.source === 'local' && room) return false
@@ -949,6 +962,14 @@ window.__ModuleLoader__.load({
       const want = String(handle ?? '').trim().toLowerCase()
       if (!want.startsWith('@')) return undefined
       return (roster?.bots ?? []).find(item => item?.remote && String(item.remote.handle ?? '').toLowerCase() === want)
+    }
+    // A friend's chat that can be opened: in the list, not hidden, not gone, not a home-level handle. A hold to
+    // any other chat has no card there, so the sender Bot's own chat shows it (#371).
+    function listedFriendChat(roster, handle) {
+      const bot = friendChatOf(roster, handle)
+      if (!bot || bot.hidden || bot.remote.gone || bot.remote.hidden) return undefined
+      const parts = String(bot.remote.handle).replace(/^@/, '').toLowerCase().split('.')
+      return parts.length === 2 && parts[1] === 'home' ? undefined : bot
     }
     // A friend's Bot as the chat list names it: "UiA1415's Chief", "Helper · UiB1415's Bot" (#260).
     function friendLabel(roster, handle) {
@@ -1072,7 +1093,7 @@ window.__ModuleLoader__.load({
       return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
     }
 
-    function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim } = {}) {
+    function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim, t } = {}) {
       useStyles()
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
@@ -1148,7 +1169,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll }, 'Approve all'))
           : null,
         mine.map(item => h(ChatApproval, {
-          key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide,
+          key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide, t,
         })))
     }
 
@@ -1835,6 +1856,8 @@ window.__ModuleLoader__.load({
       AddFriend,
       PendingApprovals,
       ChatApproval,
+      holdReasonLine,
+      listedFriendChat,
       ChatApprovalDock,
       approvalsForOpenChat,
       localHoldView,

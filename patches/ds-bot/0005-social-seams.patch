@@ -174,7 +174,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      revision: state.revision,
      workspaceId: state.workspaceId ?? null,
      // `mainBotId` is the first Main Bot, which the sidebar shows as its tile.
-@@ -36,17 +36,44 @@ export function install(rt) {
+@@ -36,17 +36,45 @@ export function install(rt) {
      mainBotIds: state.mainBotIds,
      // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
      // `waiting`: the Bot holds its greeting until the user picks its model.
@@ -182,7 +182,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 -      ...bot, sessionId: rt.chatOf(bot.id), parts: (segments ?? []).map(segment => segment.sessionId), ...(kickoff ? { waiting: true } : {}),
 -    })),
 +    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
-+      const pending = bot.remote ? (rt.listChatApprovals?.(bot, actor) ?? []) : []
++      // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
++      const pending = rt.listChatApprovals?.(bot, actor) ?? []
 +      return {
 +        ...bot,
 +        granted: rt.hasAnyGrant?.(bot.id) === true,

@@ -589,6 +589,15 @@ test('channel: a friend\'s chat gets pendingCount from chatApprovals', async (t)
   assert.equal(local?.pendingCount, 0)
 })
 
+test('channel: a local Bot gets pendingCount for its own held sends from chatApprovals (#371)', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  const invite = (await call('auth-invite', {})).value
+  const alice = (await call('auth-redeem', { token: invite.token, displayName: 'Alice' })).value
+  rt.listChatApprovals = (bot) => (bot.id === 'chief-a' ? [{ id: 'appr-1' }, { id: 'appr-2' }] : [])
+  const view = (await call('state', {}, alice.sessionToken)).value
+  assert.equal(view.bots.find(bot => bot.id === 'chief-a')?.pendingCount, 2)
+})
+
 // ---- #51: a room with friends' Bots takes published local Bots only
 
 // The war room starts with both Chiefs; these tests want one owner and the friend's Bot.

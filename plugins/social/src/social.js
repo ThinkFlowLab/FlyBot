@@ -95,6 +95,21 @@ export function approvalDraftText(value) {
 }
 // Bot Social list_approvals card → the Friends' Bots queue (outbound drafts only).
 const looksLikeBotId = (value) => /^bot_[a-z0-9]+$/i.test(String(value ?? '').trim())
+// Why Bot Social held a send, as the DLP categories it named (`dlp.commitment` → `commitment`). The plain
+// "all outbound needs approval" reason is not a finding and is left out. Only known-shaped names pass: the card
+// maps them to words, and nothing else of the server's text reaches the screen (#371).
+export function holdReasons(item) {
+  const names = []
+  for (const reason of Array.isArray(item?.reasons) ? item.reasons : []) {
+    const match = /^dlp\.([a-z_]+(?:\.[a-z_]+)?)$/.exec(String(reason))
+    if (match && match[1] !== 'blocked' && !names.includes(match[1])) names.push(match[1])
+  }
+  for (const flag of Array.isArray(item?.risk_flags) ? item.risk_flags : []) {
+    const category = typeof flag?.category === 'string' && /^[a-z_]+(?:\.[a-z_]+)?$/.test(flag.category) ? flag.category : ''
+    if (category && !names.includes(category)) names.push(category)
+  }
+  return names.slice(0, 8)
+}
 export function approvalView(item, { localName } = {}) {
   if (!item || typeof item !== 'object') return undefined
   const id = String(item.approval_id ?? item.id ?? '')
@@ -124,6 +139,9 @@ export function approvalView(item, { localName } = {}) {
     to: to?.handle ? norm(to.handle) : undefined,
     toName: cleanText(to?.display_name) || (kind === 'face_room_message' ? 'the room' : undefined),
     roomId: item.room_id || item.face_room_id || item.message?.room_id,
+    // The Bot Social identity that wrote it (a local Bot is found by it), and why Bot Social held it (#371).
+    ...(typeof item.bot_id === 'string' && item.bot_id ? { botId: item.bot_id } : {}),
+    reasons: holdReasons(item),
     text,
     summary: cleanText(item.summary),
     createdAt: item.created_at,
@@ -2023,6 +2041,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const items = raw
         .map(item => approvalView(item, { localName: localNameOf }))
         .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message') && (item.status === 'pending' || item.status === 'pending_approval'))
+        // A local Bot's own send shows in its chat when the friend's chat is hidden or gone, so a hold is never
+        // without a place (#371). The Bot is found by its Bot Social identity, never by a name.
+        .map(item => {
+          const own = item.kind === 'outbound_message' && item.botId ? flybot.bot.list().find(bot => memberOf(bot.id)?.bot_id === item.botId) : undefined
+          return own ? { ...item, fromId: own.id } : item
+        })
         // A held room line belongs to one live room only (#188): no known room (legacy) or a room
         // that is left / closed here means no card and no waiting dot anywhere.
         .map(item => (item.kind === 'face_room_message' && !item.roomId && holdRooms()[item.id]?.roomId ? { ...item, roomId: holdRooms()[item.id].roomId } : item))
@@ -2135,7 +2159,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   })
   flybot.chatApprovals?.setProvider?.((bot) => {
     const handle = bot?.remote?.handle ? norm(bot.remote.handle) : ''
-    if (!handle) return []
+    // A local Bot's own held sends wait on its row too, so a hold to a hidden friend chat still shows a dot (#371).
+    if (!handle) return bot && !bot.remote ? pendingCache.items.filter(item => item.kind === 'outbound_message' && !item.roomId && item.fromId === bot.id) : []
     return pendingCache.items.filter((item) => {
       if (item.kind === 'face_room_message' || item.roomId) return false
       return norm(item.to) === handle || norm(item.from) === handle

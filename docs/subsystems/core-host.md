@@ -137,7 +137,7 @@ credentials and team mode remain separate work under #55/#198.
 
 ### Remote chats and mentions
 
-- Channel `view()` puts `pendingCount` on a friend's chat (`bot.remote`) from `rt.listChatApprovals`, the same gold wait badge rooms already use. Local team Bots stay at 0. The social plugin supplies the list via `flybot.chatApprovals.setProvider` ([plugin-runtime](plugin-runtime.md)). Still not team mode.
+- Channel `view()` puts `pendingCount` on a friend's chat (`bot.remote`) from `rt.listChatApprovals`, the same gold wait badge rooms already use. A local team Bot gets the count of its own held sends when the provider names them (`fromId`, #371); otherwise 0. The social plugin supplies the list via `flybot.chatApprovals.setProvider` ([plugin-runtime](plugin-runtime.md)). Still not team mode.
 - `remoteTurn` (`src/host/remote-chat.js`) finds what the user typed on a friend's remote chat by skipping host-appended `role:'user'` context: forms `snapshot`, `instructions` (the AGENTS.md baseline on a chat's first turn) and `notice`, and the time-context kinds. Match by form, not by a whitelist of senders, or the first message of a new chat is dropped (#66).
 - Remote-chat `open` copies optional published `color` / `avatar` / `avatarUpdatedAt` onto the chat record (cached by `avatarUpdatedAt`) so headers, the picker, and group lists match Friends' Bots. A missing look stays handle-seeded (#137).
 - `0002-flybot-api-host` `cleanRemote` sanitizes those peer-controlled `name` / `homeName` / `owner` labels (strip `@` and controls/newlines, 60-char cap) before they are stored. Details in [plugin-runtime](plugin-runtime.md) (#75).

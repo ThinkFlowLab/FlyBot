@@ -1264,6 +1264,31 @@ test('status (#69): pending outbound approvals from Bot Social are listed', asyn
   assert.deepEqual(listed.approvals.map(item => item.id), ['apr-hold-1'])
 })
 
+test('status (#371): a local Bot\'s hold names that Bot and why Bot Social held it', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const held = {
+    ...heldOutbound,
+    reasons: ['mvp.all_outbound_requires_approval', 'dlp.commitment', 'dlp.pii.phone', 'dlp.<script>'],
+    risk_flags: [{ category: 'commitment', action: 'approve', label: 'Commitment language' }, { category: 'money', action: 'approve', label: 'Money amount' }],
+  }
+  server.tools.list_approvals = () => ({ approvals: [held] })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const status = (await call('flybot/social/status', {})).value
+  const item = status.approvals[0]
+  const sender = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal(item.fromId, sender.id, 'found by its Bot Social identity, not its name')
+  assert.deepEqual(item.reasons, ['commitment', 'pii.phone', 'money'], 'DLP categories only; the plain approval reason and odd names are left out')
+  // The sender Bot's own row carries the wait dot, even when the friend's chat is not listed (#371).
+  const view = (await call('state', {})).value
+  assert.equal(view.bots.find(bot => bot.id === sender.id).pendingCount, 1)
+  assert.equal(view.bots.find(bot => bot.name === 'Writer').pendingCount, 0)
+})
+
 test('decide-approval (#69): owner click approves or rejects via Bot Social', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
@@ -2834,6 +2859,36 @@ test('Add friend mints and copies an invite link in one click', async () => {
   await mint.props.onClick()
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/create-invite' && payload.botId === 'a'))
   assert.deepEqual(copied, ['https://s/i/INV123'])
+})
+
+test('#371: a local Bot\'s hold shows in its own chat when the friend\'s chat is hidden, gone or absent, with why', () => {
+  const hold = { id: 'apr-371', kind: 'outbound_message', fromId: 'tester', from: '测试工程师', to: '@chief.alice.home', toName: 'Chief', text: '我保证会交付', reasons: ['commitment'] }
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const fresh = () => pluginOf([[hold], [], ''])
+  const sender = { id: 'tester', name: '测试工程师' }
+  const friend = (extra = {}, remote = {}) => ({ id: 'remote-chief', name: 'Chief', remote: { handle: '@chief.alice.home', ...remote }, ...extra })
+  const shown = (roster) => walk(fresh().ChatApprovalDock({ bot: sender, roster })).filter(n => n.props['data-flybot'] === 'chat-approval').length
+  assert.equal(shown({ bots: [] }), 1, 'no friend chat at all')
+  assert.equal(shown({ bots: [friend({ hidden: true })] }), 1, 'the friend\'s chat is hidden')
+  assert.equal(shown({ bots: [friend({}, { hidden: true })] }), 1, 'hidden by the owner')
+  assert.equal(shown({ bots: [friend({}, { gone: true })] }), 1, 'no longer shared')
+  assert.equal(shown({ bots: [friend({}, { handle: '@alice.home' })].map(b => ({ ...b, remote: { handle: '@alice.home' } })) }), 1, 'home-level chat is never listed')
+  // One place per approval (#278): a listed friend chat shows it, the sender Bot's chat does not.
+  const listed = { bots: [friend()] }
+  assert.equal(shown(listed), 0)
+  assert.equal(walk(fresh().ChatApprovalDock({ bot: listed.bots[0], roster: listed })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
+  // Another Bot's chat shows nothing.
+  assert.equal(walk(fresh().ChatApprovalDock({ bot: { id: 'other' }, roster: { bots: [] } })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+  // The card says it is held and why, in the host's language; the text stays on the card.
+  const tr = (key, params) => ({ 'Held for your approval: contains {reasons}': '已扣留，等待你批准：含{reasons}', 'commitment language': '承诺用语' }[key] ?? key).replace(/\{(\w+)\}/g, (_, n) => params?.[n] ?? '')
+  const tree = walk(fresh().ChatApprovalDock({ bot: sender, roster: { bots: [] }, t: tr }))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'hold-reason' && n.children.includes('已扣留，等待你批准：含承诺用语')))
+  assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('我保证会交付')))
+  const en = walk(fresh().ChatApprovalDock({ bot: sender, roster: { bots: [] } }))
+  assert.ok(en.some(n => n.props['data-flybot'] === 'hold-reason' && n.children.includes('Held for your approval: contains commitment language')))
+  assert.equal(fresh().holdReasonLine(['commitment', 'pii.phone', 'money', 'mystery'], undefined), 'Held for your approval: contains commitment language, a phone number, a money amount')
+  assert.equal(fresh().holdReasonLine(['mystery'], undefined), '')
+  assert.equal(fresh().holdReasonLine([], undefined), '')
 })
 
 test('#126: a face-room hold shows in that chat with a readable name', () => {
