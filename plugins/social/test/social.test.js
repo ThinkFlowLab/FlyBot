@@ -4905,6 +4905,48 @@ test('#383: a friend\'s Bot shared with us that later joins OUR invite keeps our
   assert.deepEqual(access.grants.map(row => row.id), ['g-share'], 'our real share of Chief stays listed')
 })
 
+test('#383: a possible talk-through grant from an older join keeps its own row, so the person\'s Revoke leaves it', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // r1: we shared Chief, Bob's Chief joined. r2: our Chief joined Bob's invite for Helper before joins were
+  // recorded, so nothing says r2 is the talk-through side.
+  server.tools.list_bot_grants = () => ({
+    grants: [
+      { id: 'g-share', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+      { id: 'g-tt', grantee: '@helper.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r2' },
+    ],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      relationship_ids: ['r1', 'r2'],
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in-2' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: { '@helper.bob.home': true } }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  const share = access.grants.find(row => row.id === 'g-share')
+  assert.deepEqual(share.grantIds, ['g-share'], 'the possible talk-through grant is not merged into the share row')
+  const before = server.calls.length
+  assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: share.id, grantIds: share.grantIds })).ok, true)
+  const revoked = server.calls.slice(before).filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
+  assert.equal(revoked.some(args => args.includes('g-share')), true)
+  assert.equal(revoked.some(args => args.includes('g-tt')), false, 'the chat with Helper keeps working')
+})
+
 test('#383: People with access shows one row per person; its Revoke removes each of their grants', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)

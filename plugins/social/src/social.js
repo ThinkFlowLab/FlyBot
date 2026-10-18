@@ -1840,7 +1840,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const view = grantPersonView(grant)
       const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
       const grantee = home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : '')
-      const key = norm(grantee) || String(grant.id)
+      // A grant to a Bot shared with us, in a relationship not recorded as joined here, may be a
+      // talk-through grant from a join made before that record (#383): it keeps a row of its own, so
+      // Revoke on the person's row never takes it along and breaks that chat (Codex P1 on #387).
+      const toInbound = Boolean(settings.inboundBots?.[memberHandleOf(grant.grantee)])
+      const unsure = toInbound && !(grant.relationshipId && settings.joinedRelationships?.[grant.relationshipId])
+      const key = unsure ? `grant:${grant.id}` : (norm(grantee) || String(grant.id))
       const rooms = roomsUsing(botId, view.member || grant.grantee)
       const row = rows.get(key)
       if (row) {
