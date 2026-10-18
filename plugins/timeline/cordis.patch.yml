@@ -1,4 +1,6 @@
 # Mounts flybot-timeline (needs ds-bot, which provides the flybot service and its activity feed).
+# Off until the profile sets `config.enabled: true` (recorder, endpoint) and, in the browser,
+# `sidebarSection: true` (the sidebar row) (#281).
 - insert:
     - id: flybot-timeline
       name: '@flybot/timeline'

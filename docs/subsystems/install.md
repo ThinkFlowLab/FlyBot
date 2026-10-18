@@ -30,7 +30,7 @@ Tooling for setup checks and the architecture-docs gate.
 | `core/test/check-arch-docs.test.js` | Tests for the gate. |
 | `core/test/install-doctor.test.js` | Install doctor tests. |
 | `plugins/README.md` | Plugin list. |
-| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/timeline`) and their install commands. |
+| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/timeline`) and the install commands (core, social, tree; `@flybot/timeline` is opt-in and not in the default commands, #281). |
 | `core/scripts/local-ci.sh` | Local run of CI's steps, including each plugin's suite. |
 
 ## Entry points

@@ -4,7 +4,11 @@
 // append-only capped trace on disk, and answers the panel's poll on `timeline/window`.
 // Everything FlyBot-specific goes through ctx.flybot via src/adapter.js.
 //
+// Off by default (#281): without `enabled: true` the plugin records nothing, writes nothing and
+// registers no endpoint, so a profile that still lists it costs nothing.
+//
 // Config:
+//   enabled         true turns the recorder and the endpoint on (default false)
 //   dir             where the trace lives (default $DSH_HOME/bot/flybot-timeline)
 //   persist         false keeps the trace in memory only (default true)
 //   segmentRecords  records per trace file before it rotates (default 2000)
@@ -19,6 +23,7 @@ export const name = 'flybot-timeline'
 export const inject = ['flybot']
 
 export function apply(ctx, config = {}) {
+  if (config?.enabled !== true) return { timeline: undefined, enabled: false, dispose() {} }
   const adapter = createAdapter(ctx.flybot)
   const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')
   const { dir = join(dshHome, 'bot', 'flybot-timeline'), persist, segmentRecords, segments, retentionMs, flushMs } = config
@@ -28,5 +33,5 @@ export function apply(ctx, config = {}) {
   // Cordis-style cleanup: ctx.effect runs the returned disposer when the plugin's scope is disposed.
   if (typeof ctx.effect === 'function') ctx.effect(() => dispose, 'flybot-timeline')
   else ctx.on?.('dispose', dispose)
-  return { timeline, dispose }
+  return { timeline, enabled: true, dispose }
 }

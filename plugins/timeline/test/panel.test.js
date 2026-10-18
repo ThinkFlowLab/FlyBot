@@ -356,7 +356,7 @@ test('sidebar row: opens the panel on click, shows it while open, releases the p
   view.unmount()
 })
 
-test('apply registers the sidebar row only (no + menu entry, #269), opens through it, and removes it', () => {
+test('apply registers the sidebar row only when sidebarSection: true (off by default, #281; no + menu entry, #269), opens through it, and removes it', () => {
   const registered = []
   const flybot = {
     call: async () => ({}),
@@ -364,7 +364,13 @@ test('apply registers the sidebar row only (no + menu entry, #269), opens throug
   }
   globalThis.__flybot__ = {}
   try {
-    const off = client.apply({ flybot })
+    // Default: nothing is drawn; the panel is still reachable through ctx.flybot.timeline.
+    const plain = client.apply({ flybot })
+    assert.deepEqual(registered, [])
+    assert.equal(typeof flybot.timeline.panel.show, 'function')
+    plain()
+    assert.equal(flybot.timeline, undefined)
+    const off = client.apply({ flybot }, { sidebarSection: true })
     assert.deepEqual(registered.map(([slot, entry]) => [slot, entry.id]), [['flybot.sidebar.section', 'timeline']])
     assert.equal(registered.some(([slot]) => slot === 'flybot.new-chat.action'), false)
     flybot.timeline.panel.show()
@@ -372,7 +378,7 @@ test('apply registers the sidebar row only (no + menu entry, #269), opens throug
     off()
     assert.equal(registered.length, 0)
     assert.equal(flybot.timeline, undefined)
-    // Without the sidebar row nothing is registered; the panel opens through ctx.flybot.timeline.panel.show().
+    // sidebarSection: false (the old way to hide it) stays quiet too.
     const quiet = client.apply({ flybot }, { sidebarSection: false })
     assert.deepEqual(registered, [])
     quiet()

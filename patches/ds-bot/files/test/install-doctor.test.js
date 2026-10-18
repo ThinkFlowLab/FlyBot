@@ -97,14 +97,17 @@ test('checkPluginPackage: a numeric dsh.bundle.patch fails without throwing', ()
   }
 })
 
-test('buildInstallCommands: four install commands covering the core and the three plugins', () => {
+test('buildInstallCommands: three install commands for the core, social and tree; timeline only on request (#281)', () => {
   const commands = buildInstallCommands()
-  assert.equal(commands.length, 4)
+  assert.equal(commands.length, 3)
   assert.ok(commands.every(command => command.includes('0.2.0-rc.2')))
   assert.ok(commands[0].includes('path:/core'))
   assert.ok(commands[1].includes('path:/plugins/social'))
   assert.ok(commands[2].includes('path:/plugins/tree'))
-  assert.ok(commands[3].includes('path:/plugins/timeline'))
+  assert.equal(commands.some(command => command.includes('timeline')), false)
+  const all = buildInstallCommands({ timeline: true })
+  assert.equal(all.length, 4)
+  assert.ok(all[3].includes('path:/plugins/timeline'))
 })
 
 test('runDoctor: the real repository passes on a Node version at the floor', () => {

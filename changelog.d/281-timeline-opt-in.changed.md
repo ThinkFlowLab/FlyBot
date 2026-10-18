@@ -1,0 +1,1 @@
+Timeline is now opt-in and hidden by default: no sidebar row, and the recorder and its endpoint stay off until the profile sets `enabled: true` (and `sidebarSection: true` to show the row). The install guide and install doctor no longer list it in the standard install. (#281)

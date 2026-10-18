@@ -24,7 +24,7 @@ FlyBot is three plugins on top of a pinned [DS Bot](https://github.com/Fei2411/D
 
 - **`@flybot/tree`** — a recursive Bot tree that splits a request, delegates level by level, and combines answers on the way back up.
 - **`@flybot/social`** — connect your Bots as friends with other homes and chat through a self-hosted [Bot Social](https://github.com/Birfy/bot-social) server, with owner approvals.
-- **`@flybot/timeline`** — see where your team's time goes: swimlanes per Bot, who waits on whom, and how busy each Bot is.
+- **`@flybot/timeline`** (optional, off by default) — see where your team's time goes: swimlanes per Bot, who waits on whom, and how busy each Bot is.
 
 ## Features
 
@@ -76,7 +76,7 @@ The social plugin stays idle until you point it at a Bot Social server (see [Qui
 
 ### Timeline plugin (`@flybot/timeline`)
 
-Shows where the time goes across your local Bot team, from a **Timeline** row under the Bot list (or the sidebar **+** menu). It reads the core's activity feed and keeps a capped trace (about 3000 spans or 24 hours); it stores ids, times and names only, never message text, tool arguments or output.
+**Optional and off by default.** Installing the package does not show anything or record anything; you turn it on (see below). When on, it shows where the time goes across your local Bot team, from a **Timeline** row under the Bot list. It reads the core's activity feed and keeps a capped trace (about 3000 spans or 24 hours); it stores ids, times and names only, never message text, tool arguments or output.
 
 ![Timeline plugin: swimlanes with turns, tool calls, request and reply arrows and their latencies (synthetic data)](docs/images/timeline-swimlanes.png)
 
@@ -85,11 +85,21 @@ Shows where the time goes across your local Bot team, from a **Timeline** row un
 - **Utilization.** Per Bot: model time, tool time and time with no running turn.
 - **Honest numbers.** Times are when a message reached the other Bot's log, not when it was read. "No running turn" is not "waiting". "Model" time is turn time outside tool calls, not a measured model latency.
 
-Install (needs the core):
+Install (needs the core), then turn it on:
 
 ```bash
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
 ```
+
+```yaml
+# profile cordis.patch.yml
+- id: flybot-timeline
+  config:
+    enabled: true          # starts the recorder and the endpoint
+    sidebarSection: true   # shows the Timeline row (browser side)
+```
+
+Without `enabled: true` it records nothing and keeps no files; without `sidebarSection: true` no row is drawn.
 
 ## Quick Start
 
@@ -105,10 +115,9 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
 ```
 
-The first line is the FlyBot core (package `ds-bot`). The plugins are optional but recommended. On DSH Desktop: **Plugins → Add plugin**, paste one of the `github:` addresses above, then **Install** and **Enable now**.
+The first line is the FlyBot core (package `ds-bot`). The plugins are optional but recommended. `@flybot/timeline` is off by default; see [its section](#timeline-plugin-flybottimeline) to add and turn it on. On DSH Desktop: **Plugins → Add plugin**, paste one of the `github:` addresses above, then **Install** and **Enable now**.
 
 ### 3. Run the web app
 

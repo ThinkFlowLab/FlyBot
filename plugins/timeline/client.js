@@ -4,7 +4,8 @@
 //
 // Two parts. The data layer: a poller for the host's `timeline/window` endpoint, exposed as
 // ctx.flybot.timeline / globalThis.__flybot__.timeline. And the panel that draws from it: three
-// views (swimlanes, communication map, utilization), opened from a sidebar row or the '+' menu.
+// views (swimlanes, communication map, utilization), opened from a sidebar row, which is off by
+// default (#281; config.sidebarSection: true shows it).
 // Every string that reaches the page is a React text child or an SVG text node (never markup),
 // and is cleaned again here although the host already cleaned it.
 //
@@ -651,7 +652,8 @@ window.__ModuleLoader__.load({
 
     const inject = ['flybot']
     // The service other parts (the panel, ds-bot's slots) use: ctx.flybot.timeline.
-    // config: windowMs (initial window), sidebarSection (default true: a "Timeline" row under the Bot list).
+    // config: windowMs (initial window), sidebarSection (default false, #281: true shows a "Timeline" row under the Bot list).
+    // Without it the plugin draws nothing and never polls: the poller only runs while a panel is open.
     function apply(ctx, config = {}) {
       if (!ctx.flybot || typeof ctx.flybot.call !== 'function') throw new Error('@flybot/timeline needs the flybot browser service (ds-bot)')
       const store = createStore(ctx.flybot, { windowMs: Number.isFinite(config?.windowMs) ? config.windowMs : undefined })
@@ -662,7 +664,7 @@ window.__ModuleLoader__.load({
       if (globalThis.__flybot__) { globalThis.__flybot__.timeline = api; offs.push(() => { if (globalThis.__flybot__?.timeline === api) delete globalThis.__flybot__.timeline }) }
       if (ctx.flybot.slots) {
         // The sidebar row is the one entry: the + menu has none (#269).
-        if (config?.sidebarSection !== false) offs.push(ctx.flybot.slots.register('flybot.sidebar.section', { id: 'timeline', order: 80, component: makeSection(api) }))
+        if (config?.sidebarSection === true) offs.push(ctx.flybot.slots.register('flybot.sidebar.section', { id: 'timeline', order: 80, component: makeSection(api) }))
       }
       const off = () => { panel.hide(); store.dispose(); for (const fn of offs.splice(0)) fn() }
       ctx.effect?.(() => off, 'flybot-timeline: panel')

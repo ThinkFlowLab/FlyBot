@@ -13,8 +13,8 @@ cd core
 npm run install:doctor
 ```
 
-It checks the Node floor and the four packages the clean-profile install needs
+It checks the Node floor and the four packages in the repository
 (`core`, `plugins/social`, `plugins/tree`, `plugins/timeline`) and prints the `dsh plugin add`
-commands with the `path:/core`, `path:/plugins/social`, `path:/plugins/tree` and
-`path:/plugins/timeline` paths the README documents. It reads the filesystem only: no network, no tokens,
+commands for the clean-profile install: `path:/core`, `path:/plugins/social` and `path:/plugins/tree`.
+`@flybot/timeline` is opt-in (off by default), so its command is not in that list; see the README. It reads the filesystem only: no network, no tokens,
 no `~/.dsh`.

@@ -71,7 +71,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 ### 时间线插件（`@flybot/timeline`）
 
-在侧栏 Bot 列表下的 **Timeline**（或 **+** 菜单）里，看本地 Bot 团队的时间花在哪。它读核心的活动事件流，保存一份有上限的记录（约 3000 段或 24 小时），只存 id、时间和名称，不存消息正文、工具参数和输出。
+**可选，默认关闭。** 只安装不会显示或记录任何东西，需要手动开启（见下）。开启后，在侧栏 Bot 列表下的 **Timeline** 一行里，看本地 Bot 团队的时间花在哪。它读核心的活动事件流，保存一份有上限的记录（约 3000 段或 24 小时），只存 id、时间和名称，不存消息正文、工具参数和输出。
 
 ![时间线插件：泳道里的回合、工具调用、请求/回复箭头及其耗时（示意数据）](docs/images/timeline-swimlanes.png)
 
@@ -84,6 +84,16 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 ```bash
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
+```
+
+再开启（默认什么都不记录、不显示）：
+
+```yaml
+# profile 的 cordis.patch.yml
+- id: flybot-timeline
+  config:
+    enabled: true          # 启动记录器和接口
+    sidebarSection: true   # 显示 Timeline 一行（浏览器端）
 ```
 
 ## 快速开始
@@ -100,10 +110,9 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
 ```
 
-第一行是核心（包名 `ds-bot`）。桌面版：侧栏 **插件 → 添加插件**，粘贴上面的 `github:` 地址后安装并启用。
+第一行是核心（包名 `ds-bot`）。`@flybot/timeline` 默认不安装也不显示，需要时见上面的时间线插件一节。桌面版：侧栏 **插件 → 添加插件**，粘贴上面的 `github:` 地址后安装并启用。
 
 ### 3. 启动 Web
 

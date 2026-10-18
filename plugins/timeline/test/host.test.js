@@ -4,7 +4,7 @@
 // the spans the plugin serves must match that event log.
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -62,7 +62,7 @@ async function start(config = {}) {
   apply(ctx, { home })
   await ctx.flybot.ready()
   const dir = join(home, 'trace')
-  const plugin = ctx.plugin(timeline, { dir, flushMs: 20, ...config })
+  const plugin = ctx.plugin(timeline, { dir, flushMs: 20, enabled: true, ...config })
   const call = async (endpoint, payload) => {
     const body = await (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
     return body.ok ? body.value : { error: body.error }
@@ -183,6 +183,19 @@ test('a Chief → Writer → Chief run: the served spans match the event log', a
   assert.equal(ask.answerAt, first.record.t1)
   // The Bots' names come from the host's team.
   assert.deepEqual(win.lanes.filter(lane => lane.kind === 'bot').map(lane => lane.name), ['Chief', 'Writer'])
+})
+
+test('off by default (#281): without enabled: true nothing is recorded, written or served', async (t) => {
+  const h = await start({ enabled: undefined })
+  t.after(h.stop)
+  const loop = agentLoop(h.ctx)
+  loop.deliver('a', { kind: 'user' }, 'hello')
+  await loop.turn('a', 'hello')
+  await sleep(120)
+  const answer = await h.call('timeline/window', {})
+  assert.ok(answer.error, `the endpoint must not exist: ${JSON.stringify(answer).slice(0, 120)}`)
+  assert.deepEqual(existsSync(h.dir) ? readdirSync(h.dir) : [], [])
+  assert.equal(h.plugin.enabled, undefined)
 })
 
 test('no prompt, tool argument or model output reaches the trace on disk', async (t) => {

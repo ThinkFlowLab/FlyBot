@@ -2,9 +2,11 @@
 
 Where time goes across your local Bot team: which Bot was running, for how long, how much of that was tool calls, and how long a Bot waited for another Bot's answer. Built on ds-bot's team activity feed (`ctx.flybot.on('turn.start' | 'turn.end' | 'tool.start' | 'tool.end' | 'exchange.delivered')`); it never reads raw DSH session events.
 
+**Opt-in (#281).** Installed, it does nothing: the host records nothing, keeps no files and serves no endpoint until `enabled: true`, and the browser draws no sidebar row until `sidebarSection: true` (the poller never runs while no panel is open). To hide it again, remove those two lines (or remove `@flybot/timeline` from the profile's bundles).
+
 ## The panel
 
-A **Timeline** row under the Bot list (the one entry; the **+** menu has none) opens a dialog with three views, polled every 2 s only while it is open and the page visible:
+With `sidebarSection: true`, a **Timeline** row under the Bot list (the one entry; the **+** menu has none) opens a dialog with three views, polled every 2 s only while it is open and the page visible:
 
 - **Swimlanes**: a lane for you, each Bot (Main Bot first) and each group. A turn is a bar with its tool calls inside (a failed call is darker); a turn that is still running reaches the right edge with a dashed outline. A group's round is drawn as round brackets on the group's lane, and the members' turns inside it are outlined on their own Bots' lanes. Arrows are deliveries: dashed requests, solid replies, a blue dashed arrow for what you asked; the line above a lane shows how long the sender waited for the answer ("reply 4.5 s", "answer 4.8 s"), and an open request counts up in red ("waiting 12 s"). **Skip quiet time** shrinks long stretches with nothing happening.
 - **Who waits on whom**: the requests between Bots as a directed map (median wait per edge, red dashed where something is unanswered) and a table with requests, answered, not yet answered, median, slowest and total wait, longest total wait first.
@@ -18,7 +20,7 @@ The window can be 1 min to 24 h, and **Earlier** looks back (**Live** is always 
 
 *Screenshots are rendered from a scripted team run (synthetic data) with real React, not from a live team.*
 
-Config for the browser entry: `sidebarSection: false` hides the sidebar row, the panel's only entry (there is no **+** menu entry, #269; open it with `ctx.flybot.timeline.panel.show()`); `windowMs` sets the initial window.
+Config for the browser entry: `sidebarSection: true` shows the sidebar row, the panel's only entry (default off; there is no **+** menu entry, #269; without the row open it with `ctx.flybot.timeline.panel.show()`); `windowMs` sets the initial window.
 
 ## What it records
 
@@ -45,6 +47,8 @@ The response (`version: 1`) has `lanes` (You, Bots, groups), `turns` (with `tool
 - id: flybot-timeline
   name: "@flybot/timeline"
   config:
+    enabled: true       # default false: nothing is recorded or served without it
+    sidebarSection: true # browser side, default false: shows the Timeline row
     dir: ''             # trace directory (default $DSH_HOME/bot/flybot-timeline)
     persist: true       # false: keep the trace in memory only
     segmentRecords: 2000
