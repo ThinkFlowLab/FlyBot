@@ -10,7 +10,7 @@ A **Timeline** row under the Bot list (and an entry in the sidebar **+** menu) o
 - **Who waits on whom**: the requests between Bots as a directed map (median wait per edge, red dashed where something is unanswered) and a table with requests, answered, not yet answered, median, slowest and total wait, longest total wait first.
 - **Utilization**: per Bot, how much of the window was model time, tool time and no running turn.
 
-The window can be 1 min to 24 h, and **Earlier** looks back (then **Live** returns). Notes above the view say when the trace is shorter than the window, when it is truncated, when it is not being saved to disk, and when the host cannot be reached (the last good data stays on screen). Everything shown is text from the trace, cleaned on the host and again in the browser, and drawn as text only.
+The window can be 1 min to 24 h, and **Earlier** looks back (**Live** is always shown: lit while following, press it to return). Notes above the view say when the trace is shorter than the window, when it is truncated, when it is not being saved to disk, and when the host cannot be reached (the last good data stays on screen). Everything shown is text from the trace, cleaned on the host and again in the browser, and drawn as text only.
 
 ![Swimlanes](../../docs/images/timeline-swimlanes.png)
 ![Who waits on whom](../../docs/images/timeline-map.png)

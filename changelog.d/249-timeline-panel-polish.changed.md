@@ -1,0 +1,1 @@
+Timeline panel polish: the dialog keeps one height across tabs, **Live** is always visible, lane names carry no "( )" prefix and say what they are underneath (main, group, friend), the "Who waits on whom" map lays names out beside or under their node in a wider layout, the footer and trace notes are shorter, and the text is larger. (#249)

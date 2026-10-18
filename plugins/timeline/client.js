@@ -193,7 +193,7 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------------ swimlane geometry
-    const LABEL_W = 132
+    const LABEL_W = 150
     const AXIS_H = 26
     const ROW_H = 22
     const BAR_H = 16
@@ -205,6 +205,14 @@ window.__ModuleLoader__.load({
       const name = safe(lane?.name)
       if (name && !RAW_ID.test(name)) return name
       return lane?.kind === 'room' ? 'Removed group' : lane?.kind === 'friend' ? 'Friend' : 'Removed Bot'
+    }
+    const clip = (value, max) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
+    // What a lane is, under its name: plain Bots say nothing.
+    const subOf = (lane, name) => {
+      if (lane.kind === 'friend') return 'friend'
+      if (/^Removed /.test(name)) return ''
+      if (lane.kind === 'room') return lane.removed ? 'removed group' : 'group'
+      return lane.main ? 'main' : lane.removed ? 'removed' : ''
     }
     function layoutSwimlanes(win, { width = 980, compress = false } = {}) {
       const from = num(win.from)
@@ -221,7 +229,8 @@ window.__ModuleLoader__.load({
       const lanes = win.lanes.map((lane) => {
         const rows = Math.max(1, num(lane.rows, 1))
         const h2 = rows * ROW_H + LANE_PAD * 2 + TOP_STRIP
-        const out = { id: lane.id, kind: lane.kind, name: nameOf(lane), main: lane.main === true, removed: lane.removed === true, rows, y: top, h: h2, mid: top + TOP_STRIP + (h2 - TOP_STRIP) / 2 }
+        const name = nameOf(lane)
+        const out = { id: lane.id, kind: lane.kind, name, sub: subOf(lane, name), main: lane.main === true, removed: lane.removed === true, rows, y: top, h: h2, mid: top + TOP_STRIP + (h2 - TOP_STRIP) / 2 }
         top += h2
         return out
       })
@@ -277,15 +286,30 @@ window.__ModuleLoader__.load({
     const ROLE_CLASS = { user: 'ask', request: 'req', reply: 'rep', remote: 'rep', room: 'room', stopped: 'oth', report: 'oth', post: 'oth', mention: 'oth' }
 
     // ------------------------------------------------------------------ communication map geometry
-    function layoutMap(win, { size = 440 } = {}) {
+    function layoutMap(win, { size = 600 } = {}) {
       const involved = new Set(win.edges.flatMap(edge => [edge.from, edge.to]))
       const nodes = win.lanes.filter(lane => lane.kind === 'bot' || involved.has(lane.id))
-      const cx = size / 2
-      const cy = size / 2
-      const radius = size / 2 - 64
+      // A wide oval sized to how many nodes there are, so a small team is not a small dot in a big
+      // square; the names sit beside or under their node, never on top of each other or cut off.
+      const width = size
+      const height = nodes.length <= 2 ? 200 : nodes.length <= 4 ? 300 : 400
+      const cx = width / 2
+      const cy = height / 2
+      const rx = width / 2 - 150
+      const ry = height / 2 - 52
+      const start = nodes.length === 2 ? Math.PI : -Math.PI / 2
       const place = new Map(nodes.map((lane, i) => {
-        const angle = -Math.PI / 2 + (nodes.length === 1 ? 0 : (2 * Math.PI * i) / nodes.length)
-        return [lane.id, { id: lane.id, kind: lane.kind, name: nameOf(lane), x: cx + (nodes.length === 1 ? 0 : radius * Math.cos(angle)), y: cy + (nodes.length === 1 ? 0 : radius * Math.sin(angle)) }]
+        const angle = start + (nodes.length === 1 ? 0 : (2 * Math.PI * i) / nodes.length)
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        const x = nodes.length === 1 ? cx : cx + rx * cos
+        const y = nodes.length === 1 ? cy : cy + ry * sin
+        const name = nameOf(lane)
+        const side = nodes.length === 1 || Math.abs(cos) < 0.35 ? 'below' : cos > 0 ? 'right' : 'left'
+        const label = side === 'below'
+          ? { x, y: sin < 0 && nodes.length > 1 ? y - 26 : y + 36, anchor: 'middle' }
+          : { x: x + (side === 'right' ? 26 : -26), y: y + 4, anchor: side === 'right' ? 'start' : 'end' }
+        return [lane.id, { id: lane.id, kind: lane.kind, name, label: clip(name, 22), lx: label.x, ly: label.y, anchor: label.anchor, x, y }]
       }))
       const edges = []
       for (const edge of win.edges) {
@@ -296,7 +320,7 @@ window.__ModuleLoader__.load({
         const dy = b.y - a.y
         const len = Math.max(1, Math.hypot(dx, dy))
         // The opposite direction bends the other way, so the two arrows do not overlap.
-        const bend = 22
+        const bend = 34
         const mx = (a.x + b.x) / 2 + (-dy / len) * bend
         const my = (a.y + b.y) / 2 + (dx / len) * bend
         const shrink = 22 // stop at the node's rim
@@ -313,7 +337,7 @@ window.__ModuleLoader__.load({
           title: `${a.name} → ${b.name}: ${edge.requests} request${edge.requests === 1 ? '' : 's'}, ${edge.replies} repl${edge.replies === 1 ? 'y' : 'ies'}${edge.other ? `, ${edge.other} other` : ''}${edge.answered ? ` · answered ${edge.answered}, median ${fmtDur(edge.medianMs)}, slowest ${fmtDur(edge.maxMs)}` : ''}${edge.unanswered ? ` · ${edge.unanswered} not answered` : ''}`,
         })
       }
-      return { size, nodes: [...place.values()], edges }
+      return { size: width, width, height, nodes: [...place.values()], edges }
     }
     // "Who waits on whom": the edges that carried requests, the longest total wait first.
     function waitRows(win) {
@@ -342,16 +366,22 @@ window.__ModuleLoader__.load({
       .tl-row { display:flex; align-items:center; gap:8px; width:100%; padding:6px 10px; border:0; background:transparent; color:var(--bt-ink, inherit); font:inherit; text-align:left; cursor:pointer; border-radius:6px }
       .tl-row:hover { background:var(--bt-hover, rgba(127,127,127,.12)) }
       .tl-overlay { position:fixed; inset:0; z-index:2147483000; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center }
-      .tl-dialog { width:min(1080px, 96vw); max-height:92vh; display:flex; flex-direction:column; background:var(--bt-bg, #fff); color:var(--bt-ink, #1f2328); border:1px solid var(--bt-line, #d0d7de); border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.3); font-size:13px }
+      .tl-dialog { width:min(1080px, 96vw); height:min(720px, 92vh); display:flex; flex-direction:column; background:var(--bt-bg, #fff); color:var(--bt-ink, #1f2328); border:1px solid var(--bt-line, #d0d7de); border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.3); font-size:14px }
       .tl-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--bt-line, #d0d7de) }
       .tl-head h2 { margin:0 8px 0 0; font-size:15px }
       .tl-tab, .tl-btn { border:1px solid var(--bt-line, #d0d7de); background:transparent; color:inherit; padding:3px 10px; border-radius:6px; font:inherit; cursor:pointer }
       .tl-tab[aria-selected="true"] { background:var(--bt-accent, #2563eb); border-color:var(--bt-accent, #2563eb); color:#fff }
-      .tl-body { overflow:auto; padding:12px 14px }
-      .tl-note { margin:0 0 8px; padding:6px 10px; border-radius:6px; background:var(--bt-hover, rgba(127,127,127,.12)) }
+      .tl-body { flex:1 1 auto; min-height:0; overflow:auto; padding:12px 14px }
+      .tl-note { margin:0 0 8px; padding:6px 10px; border-radius:6px; font-size:13px; background:var(--bt-hover, rgba(127,127,127,.12)) }
       .tl-note.err { background:rgba(220,38,38,.12); color:#b91c1c }
-      .tl-foot { padding:8px 14px; border-top:1px solid var(--bt-line, #d0d7de); opacity:.75; font-size:12px }
-      .tl-svg text { font:11px system-ui, sans-serif; fill:currentColor }
+      .tl-foot { flex:none; padding:7px 14px; border-top:1px solid var(--bt-line, #d0d7de); opacity:.8; font-size:12.5px }
+      .tl-btn.live { display:inline-flex; align-items:center; gap:5px }
+      .tl-btn.live[aria-pressed="true"] { border-color:#16a34a; color:#15803d; cursor:default }
+      .tl-btn.live[aria-pressed="false"] { background:var(--bt-accent, #2563eb); border-color:var(--bt-accent, #2563eb); color:#fff }
+      .tl-dot { width:8px; height:8px; border-radius:50%; background:currentColor }
+      .tl-svg text { font:12px system-ui, sans-serif; fill:currentColor }
+      .tl-svg .tl-lane-name { font-weight:600; font-size:13px }
+      .tl-svg .tl-lane-sub { font-size:11px; opacity:.7 }
       .tl-lane-bg { fill:rgba(127,127,127,.07) }
       .tl-lane-bg.alt { fill:rgba(127,127,127,.13) }
       .tl-grid { stroke:var(--bt-line, #d0d7de); stroke-width:1 }
@@ -376,13 +406,15 @@ window.__ModuleLoader__.load({
       .tl-svg .tl-badge-text { paint-order:stroke; stroke:var(--bt-bg, #fff); stroke-width:3px }
       .tl-node { fill:var(--bt-bg, #fff); stroke:var(--bt-accent, #2563eb); stroke-width:2 }
       .tl-node.room, .tl-node.friend { stroke-dasharray:3 2 }
+      .tl-svg .tl-node-name { font-weight:600; font-size:13px }
+      .tl-svg .tl-badge-text { font-size:13px }
       .tl-edge { fill:none; stroke:var(--bt-ink, #1f2328); opacity:.7 }
       .tl-edge.waiting { stroke:#dc2626; stroke-dasharray:5 3; opacity:1 }
       .tl-table { width:100%; border-collapse:collapse; margin-top:10px }
       .tl-table th, .tl-table td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--bt-line, #d0d7de) }
       .tl-bar { display:flex; height:16px; border-radius:4px; overflow:hidden; background:rgba(127,127,127,.15) }
       .tl-bar .m { background:var(--bt-accent, #2563eb) } .tl-bar .t { background:#d97706 } .tl-bar .i { background:transparent }
-      .tl-util { display:grid; grid-template-columns:140px 1fr; gap:4px 12px; align-items:center; margin-bottom:10px }
+      .tl-util { display:grid; grid-template-columns:150px 1fr; gap:4px 12px; align-items:center; margin-bottom:12px }
       .tl-legend { display:flex; gap:12px; flex-wrap:wrap; margin:6px 0 }
       .tl-legend i { display:inline-block; width:10px; height:10px; margin-right:4px; border-radius:2px }
     `
@@ -403,7 +435,10 @@ window.__ModuleLoader__.load({
       const g = layoutSwimlanes(win, { compress })
       const laneRows = g.lanes.map((lane, i) => [
         h('rect', { key: `bg-${lane.id}`, className: i % 2 ? 'tl-lane-bg alt' : 'tl-lane-bg', x: 0, y: lane.y, width: g.width, height: lane.h }),
-        text({ key: `lb-${lane.id}`, x: 8, y: lane.mid + 4 }, `${lane.kind === 'room' ? '( ) ' : ''}${lane.name}${lane.kind === 'friend' ? ' (friend)' : ''}${lane.main ? ' ★' : ''}${lane.removed ? ' (removed)' : ''}`),
+        h('g', { key: `lb-${lane.id}` },
+          h('title', null, lane.sub ? `${lane.name} (${lane.sub})` : lane.name),
+          text({ x: 10, y: lane.sub ? lane.mid - 1 : lane.mid + 4, className: 'tl-lane-name' }, clip(lane.name, 18)),
+          lane.sub && text({ x: 10, y: lane.mid + 13, className: 'tl-lane-sub' }, lane.sub)),
       ])
       const ticks = g.axis.ticks.map(tick => [
         h('line', { key: `gl-${tick.x}`, className: 'tl-grid', x1: tick.x, x2: tick.x, y1: AXIS_H - 4, y2: g.height - 8 }),
@@ -442,7 +477,7 @@ window.__ModuleLoader__.load({
       const rows = waitRows(win)
       const waitingNow = rows.reduce((sum, row) => sum + row.waiting, 0)
       return h('div', null,
-        h('svg', { className: 'tl-svg', viewBox: `0 0 ${map.size} ${map.size}`, width: '100%', style: { maxWidth: '400px' }, role: 'img', 'aria-label': 'Communication map: who sent requests to whom' },
+        h('svg', { className: 'tl-svg', viewBox: `0 0 ${map.width} ${map.height}`, width: '100%', style: { maxWidth: `${map.width}px`, display: 'block', margin: '0 auto' }, role: 'img', 'aria-label': 'Communication map: who sent requests to whom' },
           h('defs', null, h('marker', { id: 'tl-head', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto' }, h('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: 'currentColor' }))),
           ...map.edges.map(edge => h('g', { key: `e-${edge.from}-${edge.to}` },
             h('title', null, edge.title),
@@ -451,7 +486,8 @@ window.__ModuleLoader__.load({
           )),
           ...map.nodes.map(node => h('g', { key: `n-${node.id}` },
             h('circle', { className: `tl-node${node.kind === 'room' || node.kind === 'friend' ? ` ${node.kind}` : ''}`, cx: node.x, cy: node.y, r: 18 }),
-            text({ x: node.x, y: node.y + 32, textAnchor: 'middle' }, node.name),
+            h('title', null, node.name),
+            text({ x: node.lx, y: node.ly, textAnchor: node.anchor, className: 'tl-node-name' }, node.label),
           )),
         ),
         h('p', { className: waitingNow > 0 ? 'tl-note err' : 'tl-note' }, waitingNow > 0 ? `${waitingNow} request${waitingNow === 1 ? '' : 's'} not answered yet.` : 'Every request in this window has an answer (or none was sent).'),
@@ -487,11 +523,11 @@ window.__ModuleLoader__.load({
       const out = []
       if (snap.status === 'error') out.push({ err: true, text: win ? `Could not refresh: ${safe(snap.error, 200)}. Showing the data from ${fmtClock(snap.updatedAt)}.` : `Could not load the timeline: ${safe(snap.error, 200)}` })
       if (!win) return out
-      if (win.coverage && win.coverage.complete === false && win.coverage.oldest) out.push({ text: `The trace starts at ${fmtClock(win.coverage.oldest)}, after the start of this window: older activity was not recorded or has rotated out.` })
-      if (win.coverage && win.coverage.oldest === null) out.push({ text: 'Nothing has been recorded yet. The timeline only sees activity from when this plugin started.' })
-      if (win.truncated) out.push({ text: 'Only the newest turns and messages are shown; narrow the window to see all.' })
-      if (win.trace && win.trace.persisting === false) out.push({ text: 'The trace is kept in memory only (another dsh holds the files, or the folder is not writable): history is lost on restart.' })
-      if (!win.live) out.push({ text: `Looking back: this window ends at ${fmtClock(win.to)}.` })
+      if (win.coverage && win.coverage.complete === false && win.coverage.oldest) out.push({ text: `Trace starts at ${fmtClock(win.coverage.oldest)}; earlier activity was not recorded.` })
+      if (win.coverage && win.coverage.oldest === null) out.push({ text: 'Nothing recorded yet: the timeline only sees activity since it started.' })
+      if (win.truncated) out.push({ text: 'Showing the newest turns and messages only; narrow the window for all.' })
+      if (win.trace && win.trace.persisting === false) out.push({ text: 'Trace is in memory only: history is lost on restart.' })
+      if (!win.live) out.push({ text: `Looking back: window ends at ${fmtClock(win.to)}.` })
       return out
     }
     function TimelinePanel({ api, onClose }) {
@@ -525,10 +561,10 @@ window.__ModuleLoader__.load({
             h('select', { className: 'tl-btn', 'aria-label': 'Window', value: String(snap.windowMs), onChange: event => api.setWindow({ windowMs: Number(event.target.value) }) },
               ...WINDOWS.map(([label, ms]) => h('option', { key: ms, value: String(ms) }, `Last ${label}`))),
             h('button', { className: 'tl-btn', onClick: () => api.setWindow({ windowMs: snap.windowMs, to: (win ? win.to : Date.now()) - snap.windowMs / 2 }) }, 'Earlier'),
-            snap.to !== undefined && h('button', { className: 'tl-btn', onClick: () => api.setWindow({ windowMs: snap.windowMs }) }, 'Live'),
+            h('button', { className: 'tl-btn live', 'aria-pressed': snap.to === undefined, title: snap.to === undefined ? 'Following the latest activity' : 'Back to the latest activity', onClick: () => { if (snap.to !== undefined) api.setWindow({ windowMs: snap.windowMs }) } }, h('i', { className: 'tl-dot', 'aria-hidden': 'true' }), 'Live'),
             h('button', { className: 'tl-btn', 'aria-label': 'Close', onClick: onClose }, '✕')),
           h('div', { className: 'tl-body' }, ...notesOf(snap).map((note, i) => h('p', { key: `n${i}`, className: note.err ? 'tl-note err' : 'tl-note', role: note.err ? 'alert' : undefined }, note.text)), body),
-          h('div', { className: 'tl-foot' }, 'Times are when a message reached the other Bot\'s log (delivered, not read). "No running turn" is not "waiting": a Bot on a slow model call or tool is busy. Model time is turn time outside tool calls, including queueing; it is not a measured model latency.')))
+          h('div', { className: 'tl-foot' }, 'Delivered means in the other Bot\'s log, not read. A Bot on a slow model call or tool is busy, not idle. Model time is turn time outside tools, not a measured latency.')))
     }
 
     // The panel's open/closed state, shared by the sidebar row and the '+' menu entry.

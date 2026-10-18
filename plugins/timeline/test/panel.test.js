@@ -205,7 +205,7 @@ test('the views render to markup with the lane names, labels and the honesty foo
   const data = win({ windowMs: 60_000 })
   const lanes = mount(client.Swimlanes, { win: data, compress: false })
   const html = htmlOf(lanes.tree)
-  for (const needle of ['Chief', 'Writer', '( ) Team Room', 'reply 4.5 s', 'waiting 4.0 s', 'answer 4.8 s']) assert.ok(html.includes(needle), needle)
+  for (const needle of ['Chief', 'Writer', 'Team Room', 'group', 'reply 4.5 s', 'waiting 4.0 s', 'answer 4.8 s']) assert.ok(html.includes(needle), needle)
   assert.equal(findAll(lanes.tree, node => node.type === 'svg').length, 1)
   const map = mount(client.CommMap, { win: data })
   assert.ok(htmlOf(map.tree).includes('1 request not answered yet'))
@@ -327,16 +327,17 @@ test('panel: loading, the empty window, an error with and without data, and the 
   assert.match(body(), /Could not refresh: host down\. Showing the data from/)
   assert.equal(findAll(view.tree, node => node.props.role === 'alert').length, 1)
   assert.equal(findAll(view.tree, node => node.type === 'svg').length, 1) // the last good data still draws
+  assert.equal(button(view.tree, 'Live').props['aria-pressed'], true) // always there; pressed while following
   api.set({ status: 'ok', error: undefined, window: win({ windowMs: 30_000, to: at(20_000) }), to: at(20_000) })
-  assert.match(body(), /Looking back: this window ends at/)
-  assert.ok(button(view.tree, 'Live'))
+  assert.match(body(), /Looking back: window ends at/)
+  assert.equal(button(view.tree, 'Live').props['aria-pressed'], false)
   button(view.tree, 'Live').props.onClick()
   assert.deepEqual(api.calls.setWindow.at(-1), { windowMs: 900_000 })
   view.unmount()
   const notes = client.notesOf({ status: 'ok', window: { ...win(), truncated: true, trace: { persisting: false } } }).map(note => note.text).join(' | ')
-  assert.match(notes, /trace starts at/)
+  assert.match(notes, /Trace starts at/)
   assert.match(notes, /newest turns/)
-  assert.match(notes, /memory only/)
+  assert.match(notes, /in memory only/)
   assert.deepEqual(client.notesOf({ status: 'loading' }), [])
 })
 
@@ -378,4 +379,29 @@ test('apply registers the sidebar row and the new-chat entry, opens through them
   } finally {
     delete globalThis.__flybot__
   }
+})
+
+test('polish (#249): no "( )" prefix, a short footer, labels that fit, and a dialog that keeps one height', () => {
+  const data = win({ windowMs: 60_000 })
+  const html = htmlOf(mount(client.Swimlanes, { win: data, compress: false }).tree)
+  assert.ok(!html.includes('( )'))
+  const long = { ...data, lanes: data.lanes.map(lane => (lane.id === 'a' ? { ...lane, name: 'A Bot with a really quite long name indeed' } : lane)) }
+  assert.ok(client.layoutSwimlanes(long, {}).lanes.every(lane => lane.name.length <= 60))
+  assert.ok(!htmlOf(mount(client.Swimlanes, { win: long, compress: false }).tree).includes('A Bot with a really quite long name indeed</text>'))
+  const view = mount(client.TimelinePanel, { api: fakeApi(okState()), onClose() {} })
+  const foot = textOf(findAll(view.tree, node => node.props.className === 'tl-foot')[0])
+  assert.ok(foot.length < 200, `footer is ${foot.length} characters`)
+  assert.match(foot, /not read/)
+  assert.match(client.CSS, /\.tl-dialog \{[^}]*\bheight:min\(720px, 92vh\)/)
+  // Map nodes: inside the drawing with room for the name beside or under them, one name per node.
+  const map = client.layoutMap({ ...data, lanes: [...data.lanes, { id: 'c', kind: 'bot', name: 'Third', rows: 1 }, { id: 'd', kind: 'bot', name: 'Fourth', rows: 1 }] })
+  for (const node of map.nodes) {
+    assert.ok(node.x > 20 && node.x < map.width - 20 && node.y > 20 && node.y < map.height - 20, node.name)
+    const room = node.anchor === 'middle' ? 60 : 8 + node.label.length * 8
+    const edgeX = node.anchor === 'start' ? node.lx + room : node.anchor === 'end' ? node.lx - room : node.lx
+    assert.ok(edgeX > 0 && edgeX < map.width, node.name)
+  }
+  const spots = map.nodes.map(node => `${Math.round(node.lx)},${Math.round(node.ly)}`)
+  assert.equal(new Set(spots).size, spots.length)
+  assert.ok(client.layoutMap(win()).height < client.layoutMap({ ...data, lanes: [...data.lanes, { id: 'c', kind: 'bot', name: 'T', rows: 1 }, { id: 'd', kind: 'bot', name: 'F', rows: 1 }, { id: 'e', kind: 'bot', name: 'E', rows: 1 }] }).height)
 })
