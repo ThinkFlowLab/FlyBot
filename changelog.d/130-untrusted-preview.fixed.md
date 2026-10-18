@@ -1,1 +1,0 @@
-Chat and sidebar previews show the inner words of a remote line, not the `<untrusted-message>` wrap, and use the person's real name instead of **User**. A Bot that has no model or API key posts a short friendly line; the raw error stays in diagnostics. ([#130](https://github.com/ThinkFlowLab/FlyBot/issues/130))

@@ -1,1 +1,0 @@
-Approvals: a Bot's direct message to a friend no longer shows (or marks) a Face-to-face room that merely has the friend in it; the top-right pill never points at the chat you are in; Always approve sits in the same place on every card; Timeline wait labels are larger and clear of the lane edge, and the panel refreshes when the window gets focus. (#271)

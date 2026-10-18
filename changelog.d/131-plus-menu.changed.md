@@ -1,1 +1,0 @@
-The sidebar **+** menu is a short list of creation actions: **Face-to-face group**, **Add friend**, **Accept invite**, and one-click **Copy invite link**. Duplicate Friend requests is gone, and individual Bots no longer clutter that menu. ([#131](https://github.com/ThinkFlowLab/FlyBot/issues/131))

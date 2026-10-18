@@ -1,1 +1,0 @@
-A face-to-face room that has ended now shows a plain status line naming the person who left (not their Bot), and joining a room by number moves the main pane and its title to the new room straight away. ([#191](https://github.com/ThinkFlowLab/FlyBot/issues/191))

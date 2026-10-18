@@ -1,1 +1,0 @@
-A Bot's room message can no longer pass as its owner's typed line: only approvals this host created for the person's own send are auto-approved, and the person marker is neutralized in Bot output (#179).

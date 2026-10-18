@@ -1,1 +1,0 @@
-Typing in a face-to-face room posts a human line to Bot Social (`FLYBOT-FACE-HUMAN`) and shows it on the other FlyBot instance. Send no longer goes through the local Bot prompt, so it does not bump turns or stay local-only. ([#124](https://github.com/ThinkFlowLab/FlyBot/issues/124))

@@ -1,1 +1,0 @@
-Add friend's paste button reads "Accept invite", and an accepted Bot invite closes the panel with a message so the new Bot shows at once; the + menu is no longer a full-width bar. ([#195](https://github.com/ThinkFlowLab/FlyBot/issues/195))

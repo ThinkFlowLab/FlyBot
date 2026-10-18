@@ -1,1 +1,0 @@
-A friend Bot's reply that its owner approved on the card now leaves at once: Bot Social held it a second time on a card nobody saw, so it never reached the sender's chat. The owner's one click finishes both holds; room lines and Auto-send keep their behaviour. (#258)

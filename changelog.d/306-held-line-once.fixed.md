@@ -1,1 +1,0 @@
-A Bot line held for your approval in a Face-to-face room shows its text once, in the approval card; its bubble in the chat reads only **Waiting for approval** and shows the line again after you decide ([#306](https://github.com/ThinkFlowLab/FlyBot/issues/306), item 5).

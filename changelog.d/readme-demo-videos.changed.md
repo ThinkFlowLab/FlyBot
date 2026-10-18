@@ -1,1 +1,0 @@
-README: every demo (Tree, friend DM with Sharing and an approval, face-to-face room) is re-recorded on the current UI as a GIF preview plus an MP4 (`docs/images/demo-*.gif` / `.mp4`); the stale face-room still and the Timeline swimlanes screenshot are removed from the README (Timeline stays optional, off by default, text only).

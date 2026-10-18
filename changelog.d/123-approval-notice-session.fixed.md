@@ -1,1 +1,0 @@
-A waiting-for-approval chat notice no longer calls `remote.chats.deliver` with a home-level friend handle when there is no 1:1 session (that threw `resume failed for session "undefined"`). FlyBot opens or resolves a listed friend Bot chat so the notice lands, or skips with a clear log. ([#123](https://github.com/ThinkFlowLab/FlyBot/issues/123))

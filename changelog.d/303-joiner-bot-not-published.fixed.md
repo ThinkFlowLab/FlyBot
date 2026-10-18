@@ -1,1 +1,0 @@
-Accepting an invite no longer briefly lists the joiner's own (unshared) Bot on the inviter's home, so no dead "no longer shared with you" chat opens there, also for the first friend a home ever has and when the grant sync fails or the same refresh brings another new Bot ([#303](https://github.com/ThinkFlowLab/FlyBot/issues/303)).

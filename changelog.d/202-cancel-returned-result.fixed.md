@@ -1,1 +1,0 @@
-Requesters can cancel a returned task result before accepting it. The result and decision history are preserved, and a cancelled task cannot later be accepted. ([#202](https://github.com/ThinkFlowLab/FlyBot/issues/202))

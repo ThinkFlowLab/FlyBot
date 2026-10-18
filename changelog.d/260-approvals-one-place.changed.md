@@ -1,1 +1,0 @@
-Approvals have one place per context: the chat's card (named after the friend's Bot, Approve / Reject plus a quiet Always approve link) is the only card for its message; the overlay no longer covers it or repeats it, and points to the chat when it is not open. A Bot's direct message to a friend no longer shows in a Face-to-face room that has that friend. (#260)

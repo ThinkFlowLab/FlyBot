@@ -1,1 +1,0 @@
-Approvals: a Face-to-face room no longer carries a "Waiting for the owner's approval" line for a Bot's direct message to a friend who is in it (older lines are hidden too); a held message to a friend is drawn once, in the friend's chat; the top-right pointer opens that chat and never shows for the chat you are in. (#278)

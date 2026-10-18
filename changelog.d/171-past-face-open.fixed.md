@@ -1,1 +1,0 @@
-Past face rooms on every home open their transcript again: Open calls `social/face-open` so a stale or missing local id still lands on the hosted room, and closed rooms that fall off Bot Social keep the local copy instead of deleting it. ([#171](https://github.com/ThinkFlowLab/FlyBot/issues/171))

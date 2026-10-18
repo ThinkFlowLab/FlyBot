@@ -1,1 +1,0 @@
-Face room details and past-room rows show **Open** / **Closed** status chips with readable contrast, and past-room **Open** controls have comfortable spacing from avatars and chips. ([#170](https://github.com/ThinkFlowLab/FlyBot/issues/170))

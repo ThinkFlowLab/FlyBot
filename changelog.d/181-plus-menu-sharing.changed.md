@@ -1,1 +1,0 @@
-The + menu is shorter (no Copy invite link / Copy my handle rows; the DSH Agent row is **Add DSH Agent**). Add friend names you (`You are @handle`), lets you pick which Bot an invite shares, and has one paste hint. Bot Sharing shows the invite link at full width with **Copy link** / **Copy with instructions** below it. ([#181](https://github.com/ThinkFlowLab/FlyBot/issues/181))

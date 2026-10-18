@@ -1,1 +1,0 @@
-Accepting an invite shows the inviter's Bot again right away and no longer lists the inviter under **People with access** on your own Bot: the Bot Social talk-through grant is read as talk-through, not as you sharing back, while the Bot that joined your invite still never shows up ([#342](https://github.com/ThinkFlowLab/FlyBot/issues/342), regression of #303).

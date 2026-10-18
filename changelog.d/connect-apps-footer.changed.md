@@ -1,1 +1,0 @@
-The sidebar footer button now reads **Connect apps** (连接应用) and opens Settings > Connectors directly, instead of the shell's plugin panel. The plugin panel is still one click away in the account menu, under a new **Plugins** (插件) row.

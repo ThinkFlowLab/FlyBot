@@ -1,1 +1,0 @@
-The in-chat **Waiting for approval** card is a compact bubble (not full chat width): who → whom with real names, a short clamped preview, and **Approve** / **Always approve** / **Reject** on one row. **Always approve** turns on Auto-send for that pair (the same per-friend or face-room checkbox) so later messages are not held.

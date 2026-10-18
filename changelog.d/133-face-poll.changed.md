@@ -1,1 +1,0 @@
-While a Face-to-face room is live, FlyBot polls Bot Social about every 4s (about 3s in the open room) so a peer's message shows within a few seconds, then backs off to 15s when idle. ([#133](https://github.com/ThinkFlowLab/FlyBot/issues/133))

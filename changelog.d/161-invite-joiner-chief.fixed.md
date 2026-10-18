@@ -1,1 +1,0 @@
-Accepting a friend invite no longer lists the joiner's talk-through Bot (Chief) on the inviter's Friends list. Reverse-friends of invites this home created stay out of `list_remote_bots` even on a fresh install, before inbound backfill. ([#161](https://github.com/ThinkFlowLab/FlyBot/issues/161))

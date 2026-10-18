@@ -1,1 +1,0 @@
-Face-to-face rooms: the one-answer rule for a plain line was not applied to the lines you type yourself (they reach the round through the Session inbox), so every Bot still answered. They are now routed like a friend's line: one answer, the last speaker first for a follow-up, and the first Bot as fallback. (#299)

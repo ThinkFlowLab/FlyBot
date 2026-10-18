@@ -1,1 +1,0 @@
-A Bot that may not message a friend's Bot now says why the right way round and names the setting that exists ("Chief is not shared with that friend … share Chief with them in its settings → Sharing"), so it no longer sends people to a permissions setting that does not exist ([#273](https://github.com/ThinkFlowLab/FlyBot/issues/273)).

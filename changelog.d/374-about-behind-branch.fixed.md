@@ -1,1 +1,0 @@
-About FlyBot no longer says "Up to date with main" when main was reset or force-pushed to before the installed commit (it says it could not compare), and the README's "Built on" now says which parts point at ThinkFlowLab/FlyBot and which still use the upstream `ds-bot` name. ([#374](https://github.com/ThinkFlowLab/FlyBot/issues/374))

@@ -1,1 +1,0 @@
-Timeline: a friend's Bot chat is no longer shown as a "session-… (removed)" Bot with a fake turn. It is a friend lane (messages only, your line waits for the friend's reply), the friend's replies are recorded as deliveries, and a gone Bot or group without a remembered name reads "Removed Bot" / "Removed group" instead of a raw session id. (#248)

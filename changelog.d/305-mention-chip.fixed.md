@@ -1,1 +1,0 @@
-A face-to-face @mention now looks the same on both homes: the chip shows `@` and the room name for the Bot (`SelfA · Chief`, as in Members), a line typed on the other home turns into the same chip, and a space typed after a picked name no longer shows as two ([#305](https://github.com/ThinkFlowLab/FlyBot/issues/305)).
