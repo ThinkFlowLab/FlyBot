@@ -99,6 +99,13 @@ var ZH = {
   "Remove Main Bot role": "取消主 Bot",
   "Bot settings": "Bot 设置",
   "Create group chat": "新建群聊",
+  "{name} is not shared with {friend}, so it cannot be in a group with their Bot: the group's messages go to their home.": "{name} 还没有共享给 {friend}，所以不能和对方的 Bot 在同一个群里：群消息会发到对方的主页。",
+  "{name} are not shared with {friend}, so they cannot be in a group with their Bot: the group's messages go to their home.": "{name} 还没有共享给 {friend}，所以不能和对方的 Bot 在同一个群里：群消息会发到对方的主页。",
+  "that friend": "这位好友",
+  "Copy invite link for {name}": "复制 {name} 的邀请链接",
+  "Leave {name} out": "不拉 {name} 进群",
+  "Invite link for {name} copied. Send it to your friend; once they accept, create the group again.": "{name} 的邀请链接已复制。发给好友，对方接受后再重新建群。",
+  "Could not create the invite. Use Bot settings → Invite to this Bot.": "无法创建邀请。请在 Bot 设置里使用 Invite to this Bot。",
   "Face-to-face group": "面对面建群",
   "Meet the people next to you. Pick your Bots and type the same 6-digit number.": "和身边的人建群。选你的 Bot，输入同一组 6 位数字。",
   "Add friend": "添加好友",
@@ -1180,7 +1187,7 @@ var call = async (endpoint, payload, signal) => {
   if (!result.ok) {
     const code = result.error?.code ?? "bot/error";
     const message = hostText(result.error?.message ?? "Request failed");
-    const error = Object.assign(new Error(code === "bot/internal" ? `${message} ${t("Settings → Feedback has the details.")}` : message), { code });
+    const error = Object.assign(new Error(code === "bot/internal" ? `${message} ${t("Settings → Feedback has the details.")}` : message), { code, details: result.error?.details });
     if (!REFUSALS.has(code)) {
       noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
       markNoted(error);
@@ -1283,6 +1290,13 @@ function disambiguatedRemoteTitle(record, others = []) {
   if (!name) return title;
   const clash = others.some((item) => item !== record && cleanPeerName(item?.displayName || item?.name) === name && ownerNameOf(item) !== ownerNameOf(record));
   return clash ? title : title;
+}
+function ungrantedLocalFix(details) {
+  if (details?.reason !== "ungranted-local" || !Array.isArray(details.bots)) return void 0;
+  const bots = details.bots.filter((bot) => typeof bot?.id === "string" && bot.id !== "").map((bot) => ({ id: bot.id, name: cleanPeerName(bot.name, bot.id) }));
+  if (bots.length === 0) return void 0;
+  const friends = [...new Set((Array.isArray(details.remotes) ? details.remotes : []).map((remote) => cleanPeerName(remote?.owner || remote?.name, "")).filter(Boolean))];
+  return { bots, friends };
 }
 
 // src/client/flybot-registry.js
@@ -3069,6 +3083,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
 .bt-send:disabled{opacity:.35;cursor:default}
 .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
+.bt-fix-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.bt-fix-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}
+.bt-fix .bt-note{margin-top:6px}
 
 .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
@@ -9605,6 +9622,8 @@ function NewChat({ mode, roster, actions }) {
   const [message, setMessage] = (0, import_react21.useState)("");
   const [busy, setBusy] = (0, import_react21.useState)(false);
   const [error, setError] = (0, import_react21.useState)("");
+  const [fix, setFix] = (0, import_react21.useState)(null);
+  const [fixNote, setFixNote] = (0, import_react21.useState)("");
   const [cursor, setCursor] = (0, import_react21.useState)(0);
   const [draft, setDraft] = (0, import_react21.useState)(mode === "create" ? { name: "", fromList: false } : null);
   const inputRef = (0, import_react21.useRef)(null);
@@ -9621,13 +9640,35 @@ function NewChat({ mode, roster, actions }) {
   const run = async (task) => {
     if (busy) return;
     setError("");
+    setFix(null);
+    setFixNote("");
     setBusy(true);
     try {
       await task();
     } catch (failure) {
       setError(failure?.message ?? String(failure));
+      setFix(ungrantedLocalFix(failure?.details) ?? null);
     } finally {
       setBusy(false);
+    }
+  };
+  const leaveOut = (id) => {
+    if (id === admin) setAdmin(null);
+    setPicked((current) => current.filter((other) => other !== id));
+    setError("");
+    setFix(null);
+    setFixNote("");
+  };
+  const copyInvite = async (bot) => {
+    const social = globalThis.__flybot__?.social;
+    try {
+      const invite = await social.createInvite(bot.id);
+      const link = invite?.link || invite?.url;
+      if (!link) throw new Error("no link");
+      await navigator.clipboard?.writeText(link);
+      setFixNote(t("Invite link for {name} copied. Send it to your friend; once they accept, create the group again.", { name: bot.name }));
+    } catch {
+      setFixNote(t("Could not create the invite. Use Bot settings → Invite to this Bot."));
     }
   };
   const pick2 = (bot) => {
@@ -9871,7 +9912,18 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
         ))
       )),
       menuOnly ? null : (0, import_react21.createElement)("div", { className: "bt-nc-spacer" }),
-      error ? (0, import_react21.createElement)("div", { className: "bt-error" }, error) : null,
+      error && fix ? (0, import_react21.createElement)(
+        "div",
+        { className: "bt-error bt-fix", role: "alert", "data-fix": "ungranted-local" },
+        (0, import_react21.createElement)("div", null, fix.bots.length === 1 ? t("{name} is not shared with {friend}, so it cannot be in a group with their Bot: the group's messages go to their home.", { name: fix.bots[0].name, friend: fix.friends.join(", ") || t("that friend") }) : t("{name} are not shared with {friend}, so they cannot be in a group with their Bot: the group's messages go to their home.", { name: fix.bots.map((bot) => bot.name).join(", "), friend: fix.friends.join(", ") || t("that friend") })),
+        (0, import_react21.createElement)("div", { className: "bt-fix-actions" }, fix.bots.flatMap((bot) => [
+          typeof globalThis.__flybot__?.social?.createInvite === "function" && globalThis.__flybot__.social.canInvite?.(bot.id) !== false ? (0, import_react21.createElement)("button", { key: `invite-${bot.id}`, type: "button", className: "bt-fix-btn", "data-fix-action": "invite", onClick: () => {
+            void copyInvite(bot);
+          } }, t("Copy invite link for {name}", { name: bot.name })) : null,
+          (0, import_react21.createElement)("button", { key: `out-${bot.id}`, type: "button", className: "bt-fix-btn", "data-fix-action": "leave-out", onClick: () => leaveOut(bot.id) }, t("Leave {name} out", { name: bot.name }))
+        ])),
+        fixNote ? (0, import_react21.createElement)("div", { className: "bt-note", role: "status" }, fixNote) : null
+      ) : error ? (0, import_react21.createElement)("div", { className: "bt-error" }, error) : null,
       menuOnly ? null : (0, import_react21.createElement)(
         "div",
         { className: "bt-nc-compose" },

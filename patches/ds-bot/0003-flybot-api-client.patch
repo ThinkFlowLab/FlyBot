@@ -766,12 +766,12 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -6,11 +6,15 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
+@@ -6,16 +6,24 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
  import { CreateBot } from './create-bot.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
  import { t } from './i18n.js'
 +import { newChatActionRows } from './flybot-registry.js'
-+import { listedChatBots, pickerBotLabel, splitRoomPicks } from '../shared/remote-label.js'
++import { listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
  
  export function NewChat({ mode, roster, actions }) {
    const [query, setQuery] = useState('')
@@ -782,7 +782,16 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    // A new group chat picks its admin first, then the other members.
    const [admin, setAdmin] = useState(null)
    const [message, setMessage] = useState('')
-@@ -24,9 +24,11 @@ export function NewChat({ mode, roster, actions }) {
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState('')
++  // A group with a friend's Bot refused because one of my Bots is not shared with that friend:
++  // the Bots and friends named, so the error offers its two ways out (see ungrantedLocalFix).
++  const [fix, setFix] = useState(null)
++  const [fixNote, setFixNote] = useState('')
+   const [cursor, setCursor] = useState(0)
+   // The Create Bot form, opened straight from 'create' mode or from the list.
+   const [draft, setDraft] = useState(mode === 'create' ? { name: '', fromList: false } : null)
+@@ -24,15 +24,44 @@ export function NewChat({ mode, roster, actions }) {
    useEscape(close)
    const paneLeft = usePaneLeft()
    const wanted = query.trim().toLowerCase()
@@ -796,6 +805,40 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const pickedBots = picked.map(id => roster.byId[id]).filter(Boolean)
    const run = async (task) => {
      if (busy) return
+     setError('')
++    setFix(null)
++    setFixNote('')
+     setBusy(true)
+-    try { await task() } catch (failure) { setError(failure?.message ?? String(failure)) } finally { setBusy(false) }
++    try { await task() } catch (failure) {
++      setError(failure?.message ?? String(failure))
++      setFix(ungrantedLocalFix(failure?.details) ?? null)
++    } finally { setBusy(false) }
++  }
++  // Take a Bot out of the picks (the admin pick included) and clear the refusal.
++  const leaveOut = (id) => {
++    if (id === admin) setAdmin(null)
++    setPicked(current => current.filter(other => other !== id))
++    setError('')
++    setFix(null)
++    setFixNote('')
++  }
++  // Sharing is the friend's click on an invite to that Bot (Bot Social makes the grant when they accept),
++  // so the fix is the Bot's invite link; the group is made again once they have accepted it.
++  const copyInvite = async (bot) => {
++    const social = globalThis.__flybot__?.social
++    try {
++      const invite = await social.createInvite(bot.id)
++      const link = invite?.link || invite?.url
++      if (!link) throw new Error('no link')
++      await navigator.clipboard?.writeText(link)
++      setFixNote(t('Invite link for {name} copied. Send it to your friend; once they accept, create the group again.', { name: bot.name }))
++    } catch {
++      setFixNote(t('Could not create the invite. Use Bot settings → Invite to this Bot.'))
++    }
+   }
+   const pick = (bot) => {
+     setPicked(current => [...current, bot.id])
 @@ -71,7 +71,12 @@ export function NewChat({ mode, roster, actions }) {
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return
@@ -886,13 +929,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('span', { className: 'bt-to-label' }, t('To:')),
          adminBot ? h('span', { key: adminBot.id, className: 'bt-token bt-token-admin', title: t('Admin') },
            h(BotMark, { bot: adminBot, size: 16 }), adminBot.name, h(AdminStar),
-@@ -162,11 +162,16 @@ export function NewChat({ mode, roster, actions }) {
+@@ -162,11 +162,27 @@ export function NewChat({ mode, roster, actions }) {
                onMouseEnter: () => setCursor(index), onClick: option.run,
              },
              option.bot ? h(BotMark, { bot: option.bot, size: 22 }) : h('span', { className: 'bt-option-icon' }, option.icon),
 -            h('span', { className: 'bt-option-label' }, option.label),
 -            option.hint && index === active ? h('span', { className: 'bt-option-hint' }, option.hint) : null)))),
 -      h('div', { className: 'bt-nc-spacer' }),
+-      error ? h('div', { className: 'bt-error' }, error) : null,
+-      h('div', { className: 'bt-nc-compose' },
 +            // An action row's description sits under its title and is always there (#283): a long line
 +            // beside the title squeezed the title to nothing on hover, and a line that appears on hover moves the rows.
 +            // A Bot row's short hint stays beside the name and shows on the active row only.
@@ -901,8 +946,18 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +              : h('span', { className: 'bt-option-copy' }, h('span', { className: 'bt-option-label' }, option.label), h('span', { className: 'bt-option-sub' }, option.hint)),
 +            option.bot && option.hint && index === active ? h('span', { className: 'bt-option-hint' }, option.hint) : null)))),
 +      menuOnly ? null : h('div', { className: 'bt-nc-spacer' }),
-       error ? h('div', { className: 'bt-error' }, error) : null,
--      h('div', { className: 'bt-nc-compose' },
++      error && fix ? h('div', { className: 'bt-error bt-fix', role: 'alert', 'data-fix': 'ungranted-local' },
++        h('div', null, fix.bots.length === 1
++          ? t('{name} is not shared with {friend}, so it cannot be in a group with their Bot: the group\'s messages go to their home.', { name: fix.bots[0].name, friend: fix.friends.join(', ') || t('that friend') })
++          : t('{name} are not shared with {friend}, so they cannot be in a group with their Bot: the group\'s messages go to their home.', { name: fix.bots.map(bot => bot.name).join(', '), friend: fix.friends.join(', ') || t('that friend') })),
++        h('div', { className: 'bt-fix-actions' }, fix.bots.flatMap(bot => [
++          typeof globalThis.__flybot__?.social?.createInvite === 'function' && globalThis.__flybot__.social.canInvite?.(bot.id) !== false
++            ? h('button', { key: `invite-${bot.id}`, type: 'button', className: 'bt-fix-btn', 'data-fix-action': 'invite', onClick: () => { void copyInvite(bot) } }, t('Copy invite link for {name}', { name: bot.name }))
++            : null,
++          h('button', { key: `out-${bot.id}`, type: 'button', className: 'bt-fix-btn', 'data-fix-action': 'leave-out', onClick: () => leaveOut(bot.id) }, t('Leave {name} out', { name: bot.name })),
++        ])),
++        fixNote ? h('div', { className: 'bt-note', role: 'status' }, fixNote) : null)
++        : error ? h('div', { className: 'bt-error' }, error) : null,
 +      menuOnly ? null : h('div', { className: 'bt-nc-compose' },
          h('div', { className: 'bt-nc-card' },
            h('span', { className: 'bt-nc-plus', 'aria-hidden': true }, h(PlusIcon)),
@@ -1416,6 +1471,16 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
  .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
  .bt-nc-spacer{flex:1}
+@@ -309,6 +309,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
+ .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
+ .bt-send:disabled{opacity:.35;cursor:default}
+ .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
++.bt-fix-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
++.bt-fix-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}
++.bt-fix .bt-note{margin-top:6px}
+ 
+ .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+ .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
 @@ -345,6 +345,8 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-drawer-id{display:flex;flex-direction:column;align-items:center;padding:14px 16px 0}
  .bt-drawer-id>.bt-mark,.bt-drawer-id>.bt-cluster{margin-bottom:16px}

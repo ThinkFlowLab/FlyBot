@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, splitRoomPicks } from '../src/shared/remote-label.js'
+import { listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, splitRoomPicks, ungrantedLocalFix } from '../src/shared/remote-label.js'
 import { DICTIONARY } from '../src/client/i18n.js'
 
 test('picker hides gone, hidden, and home-level remotes; labels include the owner', () => {
@@ -91,4 +91,31 @@ test('the sidebar + menu is a compact popover next to +, closed by a press outsi
   // See-through pane, a small card anchored at the top left, next to the sidebar +.
   assert.match(styles, /\.bt-pane\[data-menu\]\{background:transparent\}/)
   assert.match(styles, /\.bt-pane\[data-menu\] \.bt-newchat\{flex:none;align-self:flex-start;width:min\(280px,/)
+})
+
+test('ungrantedLocalFix reads the host refusal defensively', () => {
+  assert.equal(ungrantedLocalFix(undefined), undefined)
+  assert.equal(ungrantedLocalFix({}), undefined)
+  assert.equal(ungrantedLocalFix({ reason: 'other', bots: [{ id: 'a' }] }), undefined)
+  assert.equal(ungrantedLocalFix({ reason: 'ungranted-local', bots: [{ name: 'no id' }, null] }), undefined)
+  assert.deepEqual(ungrantedLocalFix({
+    reason: 'ungranted-local',
+    bots: [{ id: 'dev', name: '程序员' }, { id: 'x', name: '<b>Evil`</b>' }],
+    remotes: [{ handle: '@yi.home', name: "Yi's Bot", owner: 'Yi' }, { owner: 'Yi' }],
+  }), { bots: [{ id: 'dev', name: '程序员' }, { id: 'x', name: 'bEvil/b' }], friends: ['Yi'] })
+})
+
+test('new-chat turns a refused group into a card with the invite and leave-out actions, never a dead end', () => {
+  const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
+  assert.match(src, /ungrantedLocalFix\(failure\?\.details\)/)
+  assert.match(src, /'data-fix-action': 'invite'/)
+  assert.match(src, /'data-fix-action': 'leave-out'/)
+  // The invite is the Bot's own invite: nothing is granted by this click (the friend accepts it).
+  assert.match(src, /social\.createInvite\(bot\.id\)/)
+  assert.doesNotMatch(src, /setGrants|grants\.set/)
+  const api = readFileSync(new URL('../src/client/api.js', import.meta.url), 'utf8')
+  assert.match(api, /details: result\.error\?\.details/)
+  for (const key of ['Copy invite link for {name}', 'Leave {name} out', 'that friend']) {
+    assert.ok(DICTIONARY.zh[key], `ZH entry for ${key}`)
+  }
 })

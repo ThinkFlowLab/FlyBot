@@ -27,7 +27,7 @@ export function install(rt) {
   rt.uiLanguage = () => (uiLocale === undefined ? 'English' : LANGUAGES[uiLocale.split('-')[0].toLowerCase()] ?? uiLocale)
 
   const ok = value => ({ ok: true, value })
-  const fail = (message, code = 'bot/error') => ({ ok: false, error: { code, message, details: {} } })
+  const fail = (message, code = 'bot/error', details = {}) => ({ ok: false, error: { code, message, details } })
   // Models come from DSH, not state.json, so a provider added in Harness settings
   // changes the view without a new revision.
   const modelsKey = () => `${rt.cachedCatalog().map(entry => entry.reasoning ? `${entry.ref}:${JSON.stringify(entry.reasoning)}` : entry.ref).join(',')}|${rt.cachedDefault() ?? ''}`
@@ -498,7 +498,9 @@ export function install(rt) {
       const code = errorCode(error)
       const message = error?.message ?? String(error)
       if (code === 'bot/internal') rt.noteFailure({ source: 'api', text: `${endpoint}: ${message}`, code: error?.code ?? error?.name, stack: error?.stack })
-      return fail(message, code)
+      // A refusal may carry a plain JSON `details` object the client acts on; nothing else rides along.
+      const details = error?.details !== null && typeof error?.details === 'object' && !Array.isArray(error.details) ? error.details : {}
+      return fail(message, code, details)
     }
   }
 
