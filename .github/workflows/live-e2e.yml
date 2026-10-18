@@ -1,0 +1,158 @@
+name: Live E2E
+
+# The real-model browser suite of #204: four task checks driven through the FlyBot web
+# UI on a fresh isolated bench, against the real DeepSeek endpoint. Separate from the
+# compatibility matrix (nightly.yml) and from every PR check; never added to `tests-ok`
+# or branch protection. This is the repository's only workflow that reads a secret: the
+# live job runs on main only, the key is mapped step-scoped, and everything uploaded has
+# passed the runner's evidence sanitizer (no `token=`, no key material, no cookies) and
+# is an explicit allow-list — never a raw bench home.
+
+on:
+  schedule:
+    - cron: "30 16 * * *" # 00:30 Asia/Shanghai daily; clear of compat's 16:00Z
+  workflow_dispatch:
+
+concurrency:
+  group: live-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  window:
+    name: window check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Check out main with full history
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether main has new commits
+        id: gate
+        run: |
+          run=false
+          reason=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run=true
+            reason="manual dispatch always runs"
+          elif [ -n "$(git log --since='24 hours ago' --pretty=oneline)" ]; then
+            run=true
+            reason="main had commits in the last 24 hours"
+          else
+            reason="main had no commits in the window; no tokens spent"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Live E2E run decision"
+            echo ""
+            echo "- event: \`${{ github.event_name }}\`"
+            echo "- run: \`${run}\`: ${reason}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live:
+    name: live · ubuntu · Node 24 · real model
+    needs: window
+    if: needs.window.outputs.run == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEB_PORT: '3196'
+      TAP_PORT: '8898'
+      BENCH: live-e2e
+      MODEL: deepseek-official/deepseek-flash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: core/package-lock.json
+      - name: Preflight (the key must exist; never a silent skip)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          [ -n "$DEEPSEEK_API_KEY" ] || { echo "::error::DEEPSEEK_API_KEY is not configured as a repository secret"; exit 1; }
+      - name: npm ci (core)
+        working-directory: core
+        run: npm ci --no-fund --no-audit
+        timeout-minutes: 5
+      - name: Install the pinned DSH runtime
+        working-directory: core
+        run: |
+          DSH=$(node -p "require('./dev/harness/package.json').dependencies['@deepseek-ai/dsh']")
+          npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
+          echo "DSH=$DSH" >> "$GITHUB_ENV"
+        timeout-minutes: 5
+      - name: Clone DeepSeek Harness at the pinned tag
+        run: |
+          git clone --depth 1 --branch "dsh-v$DSH" https://github.com/deepseek-ai/deepseek-harness.git deepseek-harness
+          corepack enable
+          pnpm install --dir deepseek-harness
+        timeout-minutes: 10
+      - name: Start the usage tap
+        run: |
+          mkdir -p ".dsh-test-$BENCH"
+          setsid node core/dev/llm-tap.mjs "$TAP_PORT" https://api.deepseek.com ".dsh-test-$BENCH/tap.jsonl" \
+            </dev/null >".dsh-test-$BENCH/tap.out" 2>&1 & echo $! >".dsh-test-$BENCH/tap.pid"
+          i=0
+          until (exec 3<>"/dev/tcp/127.0.0.1/$TAP_PORT") 2>/dev/null; do
+            i=$((i + 1))
+            [ $i -ge 30 ] && { echo "::error::the usage tap did not start"; cat ".dsh-test-$BENCH/tap.out"; exit 1; }
+            sleep 1
+          done
+      - name: Start the real-model bench
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          DEEPSEEK_BASE_URL="http://127.0.0.1:$TAP_PORT/anthropic" node dev/live-e2e/bench.mjs "$BENCH" "$WEB_PORT" reset
+        timeout-minutes: 8
+      - name: Run the four checks
+        id: run
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_BASE_URL: http://127.0.0.1:8898/anthropic
+          LIVE_E2E_TAP_UPSTREAM: https://api.deepseek.com
+        run: |
+          node dev/live-e2e/run.mjs ".dsh-test-$BENCH" "$WEB_PORT" \
+            --model "$MODEL" --harness deepseek-harness \
+            --tap ".dsh-test-$BENCH/tap.jsonl" --evidence evidence --tz Asia/Shanghai
+      - name: Stop the bench and the tap
+        if: always()
+        run: |
+          node dev/live-e2e/bench.mjs "$BENCH" "$WEB_PORT" stop || true
+          if [ -f ".dsh-test-$BENCH/tap.pid" ]; then
+            kill -TERM "-$(cat ".dsh-test-$BENCH/tap.pid")" 2>/dev/null || true
+          fi
+      - name: Sanitized web log (diagnostics only, never uploaded raw)
+        if: failure()
+        run: tail -80 ".dsh-test-$BENCH/web.log" | grep -v 'token=' || true
+      # Fail closed twice: the runner writes evidence/sanitized.txt only after a clean
+      # scan, and the upload requires that stamp. A bundle the sanitizer flagged (or one
+      # from a run that never reached the scan) never becomes a public artifact.
+      - name: Evidence gate
+        id: evidence-gate
+        if: always() && steps.run.outcome != 'skipped'
+        run: |
+          if [ ! -f evidence/sanitized.txt ]; then
+            echo "::error::no sanitizer-cleared evidence bundle (the run failed before the scan, or the scan found something); nothing is uploaded"
+            exit 1
+          fi
+      # Only the stamped allow-list is uploaded: the report, the screenshots, the
+      # transcript — never the bench home, the tap log or any raw log.
+      - name: Upload evidence (allow-list, sanitizer-stamped)
+        if: always() && steps.evidence-gate.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: live-e2e-evidence
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -4,7 +4,7 @@ import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
 import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
-import { colorOf, lookBotForRemote, toolState, BotMark, RoomAvatar } from './mark.js'
+import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
@@ -163,14 +163,9 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
       : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions })) : null)
 }
 
-// A friend's line that Bot Social attests the friend typed themselves: the person's name and a
-// person mark, not the Bot's (the host marks the turn, remote-chat.js / turns.js).
-function PersonMark({ size = 22 }) {
-  return h('span', { className: 'bt-person-mark', style: { width: size, height: size }, 'aria-hidden': true },
-    h('svg', { width: size * 0.64, height: size * 0.64, viewBox: '0 0 24 24', fill: 'currentColor' },
-      h('circle', { cx: 12, cy: 8.5, r: 4.2 }), h('path', { d: 'M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z' })))
-}
-
+// A friend's line that Bot Social attests the friend typed themselves, or another person's own
+// line in a face-to-face room: the person's name and a person mark, not the Bot's (the host marks
+// the turn, remote-chat.js / turns.js, or posts it as a person line, hooks.js postHuman).
 function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
   const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark))
   return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
@@ -667,7 +662,7 @@ function useLiveNote(actions, sessionId, id, entry) {
   }, [sessionId, id, key])
 }
 
-function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
+export function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
   const [live, setLive] = useState({ replies: [], speaking: null })
   useEffect(() => {
     if (done) return undefined
@@ -699,12 +694,10 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
       if (reply.kind === 'user') {
         const who = reply.name && reply.name !== 'User' ? reply.name : reply.authorId
-        // Another member's line: a left-hand bubble with their name, like any other person's message (#180).
+        // Another person's own line: their name and person mark beside a received bubble,
+        // never the sent-bubble style of my own lines (#180, #229).
         if (reply.other) {
-          return h('div', { key: `user-${index}`, className: 'bt-umsg bt-umsg-other', 'data-author': reply.authorId, 'data-author-kind': 'human', 'data-author-name': who },
-            h('div', { className: 'bt-ustack' },
-              who ? h('span', { className: 'bt-uauthor' }, who) : null,
-              h('div', { className: 'bt-ubody' }, remoteMessageText(reply.text))))
+          return h(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
         }
         return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
           who ? h('span', { className: 'bt-uauthor' }, who) : null,

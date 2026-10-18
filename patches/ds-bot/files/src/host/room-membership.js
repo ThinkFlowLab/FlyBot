@@ -888,6 +888,9 @@ export function install(rt) {
   rt.evictUnshared = async function evictUnshared(botId) {
     let changed = false
     for (const room of Object.values(state.rooms ?? {})) {
+      // A face-to-face room's members come from Bot Social (syncFaceParticipants), and a Bot brought
+      // by number is reachable there without a person-grant: a grant change never evicts it (#236).
+      if (isFaceRoom(room)) continue
       if (!Array.isArray(room.participants) || !(hasRemote(room) || isCrossOwnerRoom(room, state))) continue
       for (const me of currentParticipants(room).filter(p => p.kind === 'bot' && !p.remote && (botId === undefined || p.id === botId))) {
         if (mayShareRoom(state, room, me.id)) continue
@@ -1147,9 +1150,21 @@ export function install(rt) {
       handle: bot.handle,
       ownerName: cleanPeerName(member?.ownerName, ''),
       ...(label ? { label } : {}),
+      // Brought by number: reachable in this room only, while a member (reach.js isCodeJoined).
+      viaCode: true,
       joinedSeq,
       joinedAt: at,
     }
+  }
+
+  // A Bot that is back in the server's member list was never gone: drop the empty `left` line a
+  // local removal wrote for it, so the log does not say it left. A platform leave notice has text
+  // and stays. Matches on the author, since a silent `leftSeq` can equal any line's seq.
+  function dropStrayLeft(room, p) {
+    const ids = new Set([p.id, p.handle].filter(Boolean))
+    const at = (room.log ?? []).findIndex(line => line.seq === p.leftSeq && line.kind === 'left'
+      && line.authorKind === 'bot' && !line.text && ids.has(line.authorId))
+    if (at >= 0) room.log.splice(at, 1)
   }
 
   function faceSameBot(p, { local, handle }) {
@@ -1175,6 +1190,7 @@ export function install(rt) {
       if (look.color) existing.color = look.color
       if (look.avatar) existing.avatar = look.avatar
     } else {
+      existing.viaCode = true
       if (member.ownerName) existing.ownerName = cleanPeerName(member.ownerName, existing.ownerName)
       const label = cleanPeerName(member.label, '')
       if (label) existing.label = label
@@ -1199,6 +1215,7 @@ export function install(rt) {
       const existing = matches.find(p => p.leftSeq === undefined) || matches.at(-1)
       if (existing) {
         if (existing.leftSeq !== undefined) {
+          dropStrayLeft(room, existing)
           delete existing.leftSeq
           delete existing.leftAt
           existing.joinedSeq = seq

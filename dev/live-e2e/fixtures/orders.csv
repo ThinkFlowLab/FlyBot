@@ -1,0 +1,6 @@
+order_id,region,status,amount
+A001,华东,paid,100
+A002,华北,paid,200
+A003,华东,pending,300
+A004,华东,paid,40
+A005,华北,paid,60

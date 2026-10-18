@@ -323,6 +323,87 @@ test('face-to-face rejoin revives a left participant instead of duplicating', as
   assert.equal(room.face.status, 'open')
 })
 
+const FACE_SPEC = {
+  roomId: 'frm_236',
+  localId: 'face-236',
+  status: 'open',
+  localBots: [{ id: 'spec-a', handle: '@writer.alice.home', name: 'Writer A' }],
+  members: [
+    { handle: '@writer.alice.home', displayName: 'Writer', ownerName: 'Alice', published: false },
+    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
+  ],
+}
+
+test('#236: a grant change never evicts a Bot brought into a face-to-face room by number', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const room = await rt.upsertFaceRoom(FACE_SPEC)
+  const mine = room.participants.find(p => p.id === 'spec-a')
+  assert.equal(mine.viaCode, true, 'a Bot brought by number is code-joined in this room')
+  assert.equal(rt.isCodeJoined('face-236', 'spec-a'), true)
+  await rt.evictUnshared('spec-a')
+  await rt.evictUnshared()
+  await rt.setGrants('spec-a', [{ grantee: 'room:frm_236', roomId: 'face-236' }])
+  await rt.setGrants('spec-a', [])
+  assert.equal(room.log.some(line => line.kind === 'left'), false, 'no leave line for a Bot that is still in the room')
+  assert.equal(mine.leftSeq, undefined)
+})
+
+test('#236: an ordinary shared room still evicts a Bot that lost its grant', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const room = rt.state.rooms.war
+  room.participants = [
+    { kind: 'human', id: 'owner-1', role: 'admin', joinedSeq: 0 },
+    { kind: 'bot', id: 'spec-a', role: 'member', joinedSeq: 0 },
+    { kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', displayName: 'Coder', role: 'member', joinedSeq: 0 },
+  ]
+  await rt.evictUnshared('spec-a')
+  const mine = room.participants.find(p => p.id === 'spec-a')
+  assert.notEqual(mine.leftSeq, undefined)
+  assert.ok(room.log.some(line => line.kind === 'left' && line.authorId === 'spec-a'))
+})
+
+test('#236: a face-room Bot saved before viaCode gets it on the next sync', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const room = await rt.upsertFaceRoom(FACE_SPEC)
+  delete room.participants.find(p => p.id === 'spec-a').viaCode
+  assert.equal(rt.isCodeJoined('face-236', 'spec-a'), false)
+  await rt.upsertFaceRoom(FACE_SPEC)
+  assert.equal(rt.isCodeJoined('face-236', 'spec-a'), true)
+})
+
+test('#236: a Bot back in the member list drops the empty left line a local removal wrote, not a platform notice', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const room = await rt.upsertFaceRoom(FACE_SPEC)
+  await rt.removeRoomParticipant('face-236', { kind: 'bot', id: 'spec-a' })
+  const mine = room.participants.find(p => p.id === 'spec-a')
+  assert.notEqual(mine.leftSeq, undefined)
+  assert.equal(room.log.filter(line => line.kind === 'left' && !line.text).length, 1)
+  rt.applyFaceRoomLine(room, { kind: 'left', who: 'Room', text: 'Bob left the room', authorKind: 'system', eventId: 'fev_l' })
+  await rt.upsertFaceRoom(FACE_SPEC)
+  assert.equal(mine.leftSeq, undefined)
+  assert.equal(room.log.some(line => line.kind === 'left' && !line.text), false, 'no stray empty left line')
+  assert.ok(room.log.some(line => line.text === 'Bob left the room'), 'the platform notice stays')
+})
+
+test('#236: a silent leave from a sync leaves other lines alone when the Bot comes back', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const spec = { ...FACE_SPEC, members: [FACE_SPEC.members[1]] }
+  const room = await rt.upsertFaceRoom(FACE_SPEC)
+  rt.applyFaceRoomLine(room, { kind: 'joined', who: 'Room', text: 'Bob joined', authorKind: 'system', eventId: 'fev_j' })
+  await rt.upsertFaceRoom(spec)
+  const mine = room.participants.find(p => p.id === 'spec-a')
+  assert.equal(mine.leftSeq, room.seq, 'marked left at the newest line, with no line of its own')
+  const before = room.log.length
+  await rt.upsertFaceRoom(FACE_SPEC)
+  assert.equal(mine.leftSeq, undefined)
+  assert.equal(room.log.length, before, 'the line at that seq belongs to someone else and stays')
+})
+
 test('fanout to remotes fences peer text and never names unpublished specialists', async (t) => {
   const { rt, sent } = host(t, TEAM)
   await rt.load()

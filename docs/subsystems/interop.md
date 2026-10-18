@@ -11,6 +11,12 @@ An offline contract simulator for [#198](https://github.com/ThinkFlowLab/FlyBot/
 and [#200](https://github.com/ThinkFlowLab/FlyBot/issues/200), not a shipped adapter.
 Commands, semantics and limitations are in [the harness README](../../dev/interop/README.md).
 
+The separate opt-in [isolation probe](../interop/runtime-reuse-isolation.md)
+(#221) runs synthetic scripts in disposable Docker containers. It is outside
+the no-process simulator's command and required CI. It records selected OS
+observations and configured limits; it does not connect a runtime or certify a
+live deployment. Its ordinary unit tests use injected Docker calls only.
+
 ## Owns
 
 - `dev/interop/`: bounded versioned codec, durable synthetic task coordinator,
@@ -19,7 +25,7 @@ Commands, semantics and limitations are in [the harness README](../../dev/intero
 
 ## Invariants
 
-- No model, credential, real process, DSH data or network access. The command
+- The contract simulator has no model, credential, real process, DSH data or network access. The command
   preload rejects accidental network/process calls; it is not a security sandbox.
 - Owner identities stay distinct. Same-owner social friendship is rejected;
   sending and executing require separate owner-bound mock decisions.

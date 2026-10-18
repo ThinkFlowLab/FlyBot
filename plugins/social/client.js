@@ -185,7 +185,7 @@ window.__ModuleLoader__.load({
 .fs-tile-hit:hover,.fs-tile-on{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-tile-mark{position:relative;flex:none;display:inline-flex}
 .fs-tile-name{display:block;width:100%;font-size:12px;line-height:16px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink,#141414)}
-.fs-tile-owner{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-tile-sub{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-wait-overview{margin:0 0 8px;padding:8px 10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px;min-width:0;max-width:100%}
 .fs-wait-overview .fs-wait-foot{margin-top:2px}
 .fs-tile-mine{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px var(--bt-card,#fff);pointer-events:none}
@@ -325,7 +325,7 @@ window.__ModuleLoader__.load({
 
     function FaceTile({ bot, name, owner, member, handle, mine, pick, selected, onToggle } = {}) {
       const parts = member ? faceTileParts(member) : { name: name || 'Bot', owner: owner || '' }
-      const title = [parts.name, parts.owner].filter(Boolean).join(' · ')
+      const title = (member ? [parts.owner, parts.name] : [parts.name, parts.owner]).filter(Boolean).join(' · ')
       const mark = h('span', { className: 'fs-tile-mark' },
         h(FaceAvatar, { bot, size: 48 }),
         mine
@@ -334,10 +334,16 @@ window.__ModuleLoader__.load({
         pick && selected
           ? h('span', { className: 'fs-tile-check', 'data-flybot': 'face-pick-check', 'aria-hidden': true }, '✓')
           : null)
-      const caption = [
-        h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
-        parts.owner ? h('span', { key: 'o', className: 'fs-tile-owner', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
-      ]
+      // A joined member leads with the person, so two Chiefs are told apart at a glance (#229).
+      const caption = member && parts.owner
+        ? [
+          h('span', { key: 'o', className: 'fs-tile-name', 'data-flybot': 'face-owner', title }, parts.owner),
+          h('span', { key: 'n', className: 'fs-tile-sub', 'data-flybot': 'face-bot', title }, parts.name),
+        ]
+        : [
+          h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
+          parts.owner ? h('span', { key: 'o', className: 'fs-tile-sub', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
+        ]
       if (pick) {
         return h('li', { className: selected ? 'fs-tile fs-tile-on' : 'fs-tile' },
           h('label', { className: 'fs-tile-hit' },
@@ -1324,7 +1330,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-line' },
             h('input', { className: 'fs-input', value: code, placeholder: 'Paste invite link', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite')),
-          mine.length ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: 'Your friend only sees this Bot unless you invite them to another.' },
+          // Accepting grants only the invited Bot to you. The Bot you talk through is not shared, so
+          // there is nothing to pick with one Bot (#228).
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: "Talks for you. Not shared: your friend can't use it unless you invite them to it." },
             h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null),
@@ -1372,6 +1380,7 @@ window.__ModuleLoader__.load({
       return Boolean(status.value?.connected && status.value.bots.some(bot => bot.id === botId))
     }
 
+    const ACCESS_POLL_MS = 5000
     const ACCESS_NOTE = 'One person per grant. Revoke anyone without affecting the rest. Default: nobody, Chief included.'
     function ManageAccess({ bot }) {
       const [view, setView] = useState(null)
@@ -1380,11 +1389,19 @@ window.__ModuleLoader__.load({
       const load = async () => {
         if (!bot?.id) return
         try {
-          setView(await call('social/access', { botId: bot.id }))
+          const next = await call('social/access', { botId: bot.id })
+          setView(previous => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next))
           setError('')
         } catch (e) { setError(errorText(e)) }
       }
-      useEffect(() => { void load() }, [bot?.id])
+      // A friend who accepts while this page is open shows up without reopening it (#228).
+      useEffect(() => {
+        void load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, ACCESS_POLL_MS)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [bot?.id])
       if (!bot?.id) return null
       const revoke = async (grant) => {
         setBusy(grant.id)

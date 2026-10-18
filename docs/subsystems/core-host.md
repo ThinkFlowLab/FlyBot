@@ -38,13 +38,24 @@ The server side of the patched `ds-bot` core (`core/`): the part of [ds-bot-core
 | --- | --- |
 | `core/index.js` | Server entry. |
 | `core/src/host/` | Host-side helpers (non-hooks). |
-| `core/src/host/room-membership.js` | Typed room participants (human / local bot / granted remote), authorship, membership-window history (#50); rooms with friends' Bots or other owners take granted local Bots only and evict a Bot that stops qualifying (#90). Face-to-face rooms (#83) reuse this model (`origin: 'face-to-face'`, room-only remotes without a person-grant, `upsertFaceRoom` / `syncFaceParticipants` / `applyFaceRoomLine`). |
+| `core/src/host/room-membership.js` | Typed room participants (human / local bot / granted remote), authorship, membership-window history (#50); rooms with friends' Bots or other owners take granted local Bots only and evict a Bot that stops qualifying (#90). Face-to-face rooms (#83) reuse this model (`origin: 'face-to-face'`, room-only remotes without a person-grant, `upsertFaceRoom` / `syncFaceParticipants` / `applyFaceRoomLine`); a face-room local Bot is `viaCode` (brought by number), `evictUnshared` skips face rooms (membership is the server's), and a Bot that returns to the member list drops the empty local `left` line (#236). |
 | `core/src/host/reach.js` | Per-Bot grants and the owner-policy `reach()` check that hooks.js runs outside the plugin chain (#90); `rt.setGrants`, `rt.hasGrant`, `rt.hasAnyGrant`. |
 | `core/src/shared/remote-label.js` | Owner-badge labels for a friend's Bot and “Shared room from …” titles. `isListedRemoteChat` / `listedChatBots` keep gone, hidden, and home-level (`@something.home`) remotes out of the sidebar, the **发给** picker, mentions, and `list_bots` friends lines; history stays on disk. |
 
 ## Invariants
 
 Add a new invariant under the heading it belongs to (or a new heading), not at the end of the page: parallel PRs then do not edit the same lines.
+
+### Room execution boundary
+
+`groups.js` owns room scheduling, membership checks, private-brief selection,
+prompts, seen cursors and reply presentation. DSH session opening, member turns,
+running snapshots and cancellation go through `room-participant.js` (#216).
+Existing `room.sessions` / `groupOwners` links and host permission paths remain
+unchanged. The driver releases completed waiter timers/listeners and follows
+context rollover for execution events. This internal DSH boundary adds no
+external backend or task-specific session mapping; see the
+[same-room participant contract](../interop/room-participants.md) for those gaps.
 
 ### Team state and access
 

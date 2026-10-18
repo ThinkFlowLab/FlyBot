@@ -63,6 +63,13 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 
 `npm test` in `core/`; smoke test for `index.js` / `src/host/` changes.
 
+The [same-room collaboration fixture](../interop/room-fixture.md) (#219) runs
+through the real room relay with scripted DSH events. It exercises delegation,
+required clarification, background work, actual synthetic code/tests, independent
+artifact verification and simulated requester acceptance/rejection. Its reusable
+inputs/checks live in `core/dev/room-collaboration/`; the two test directories and
+Node process restrictions are not a full sandbox or a real-model trial.
+
 ## Common mistakes
 
 - Hand-editing `ds-bot/` or `client.js`.

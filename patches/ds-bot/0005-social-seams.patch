@@ -82,6 +82,20 @@ diff --git a/src/client/mark.js b/src/client/mark.js
    const box = shapeOf(look.shape).size
    return h('span', common, h('svg', { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }))
  }
+@@ -79,6 +79,13 @@ function StarIcon({ size = 8 }) {
+     h('path', { d: 'M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z', fill: '#fff' }))
+ }
+ // The small star in a disc that marks a group admin, beside a name.
++// A person, not a Bot: a friend's own attested line, or another person in a face-to-face room.
++export function PersonMark({ size = 22 }) {
++  return h('span', { className: 'bt-person-mark', style: { width: size, height: size }, 'aria-hidden': true },
++    h('svg', { width: size * 0.64, height: size * 0.64, viewBox: '0 0 24 24', fill: 'currentColor' },
++      h('circle', { cx: 12, cy: 8.5, r: 4.2 }), h('path', { d: 'M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z' })))
++}
++
+ export function AdminStar() {
+   return h('span', { className: 'bt-admin-star', role: 'img', 'aria-label': t('Admin') }, h(StarIcon, { size: 7 }))
+ }
 @@ -130,10 +130,42 @@ function clusterSeats(count, frame) {
    return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]]
  }

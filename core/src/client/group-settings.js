@@ -6,7 +6,7 @@ import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
-import { remoteBotTitle } from '../shared/remote-label.js'
+import { cleanPeerName, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
   ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
@@ -15,6 +15,35 @@ export const ROOM_MODES = [
 
 // Without an admin the host answers as everyone, whatever the stored mode says.
 export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
+
+// A face-to-face room lists people, each with the Bot they brought, named one way for every
+// member: "Bob · Chief", "Ann (you) · Chief" (#229). Names come from the participant records
+// (server member fields for a friend, the roster for my own Bot), never from message text.
+export function faceSeats(room, roster) {
+  const live = (room.presentedParticipants ?? room.participants ?? []).filter(p => p.kind !== 'human' && p.leftSeq === undefined)
+  const seats = live.map((p) => {
+    const local = p.remote ? undefined : roster.byId[p.id]
+    return {
+      key: p.handle || p.id,
+      local,
+      record: p,
+      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, '') : ownerNameOf(p),
+      bot: local ? local.name : cleanPeerName(p.displayName || p.name, 'Bot'),
+      mine: Boolean(local),
+    }
+  })
+  for (const id of room.members ?? []) {
+    const bot = roster.byId[id]
+    if (!bot || seats.some(seat => seat.local?.id === id)) continue
+    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ''), bot: bot.name, mine: true })
+  }
+  return seats
+}
+
+export function faceSeatLabel(seat) {
+  if (!seat.person) return seat.bot
+  return `${seat.mine ? t('{name} (you)', { name: seat.person }) : seat.person} · ${seat.bot}`
+}
 
 export function roomSubtitle(room, roster) {
   if (room.origin === 'face-to-face') {
@@ -40,6 +69,8 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
   const humans = live.filter(p => p.kind === 'human' && p.leftSeq === undefined)
   const remotes = live.filter(p => p.remote && p.leftSeq === undefined)
   const members = room.members.map(id => roster.byId[id]).filter(Boolean)
+  const face = room.origin === 'face-to-face'
+  const seats = face ? faceSeats(room, roster) : []
   const shared = humans.length > 1
   const chiefs = new Set((roster.humans ?? []).map(person => person.designatedChiefId).filter(Boolean))
   const outside = roster.bots.filter((bot) => {
@@ -82,7 +113,12 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
       h('div', { className: 'bt-set-row bt-bs-row' },
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
         h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
-    h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
+    face ? h(Card, { title: t('Members · {count}', { count: seats.length }) },
+      seats.map(seat => h('div', { key: seat.key, className: 'bt-set-row bt-bs-row bt-gs-member', 'data-flybot': 'face-seat' },
+        h('span', { className: 'bt-gs-who' },
+          h(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false }),
+          h('span', { className: 'bt-row-title' }, faceSeatLabel(seat)))))) : null,
+    face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
       humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
         h('span', { className: 'bt-gs-who' },
           h('span', { className: 'bt-row-title' }, person.displayName || person.id),

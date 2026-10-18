@@ -2516,8 +2516,11 @@ test('Face-to-face waiting overview is a tile grid with Leave and Enter chat', (
   }))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-overview' && n.props['data-wait']))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-wait-roster' && /\bfs-tiles\b/.test(n.props.className)))
-  assert.ok(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief')))
-  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-owner' && n.children.includes('Me')))
+  // #229: a joined tile leads with the person, the Bot they brought underneath.
+  assert.ok(tree.some(n => n.props.className === 'fs-tile-name' && n.props['data-flybot'] === 'face-owner' && n.children.includes('Me')))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Chief')))
+  assert.ok(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Bob')))
+  assert.equal(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief')), false)
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-enter' && n.children.includes('Enter chat')))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-leave' && n.children.includes('Leave')))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-wait-code'))
@@ -2957,10 +2960,11 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
   assert.equal(peerMark.props['data-image'], 'https://example.test/coder.png')
   assert.equal(peerMark.props['data-size'], 48)
   assert.notEqual(mineMark.props['data-bot-id'], peerMark.props['data-bot-id'])
-  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief')))
-  assert.ok(wait.some(n => n.props['data-flybot'] === 'face-owner' && n.children.includes('Me')))
-  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Coder')))
-  assert.ok(wait.some(n => n.props['data-flybot'] === 'face-owner' && n.children.includes('Bob')))
+  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.props['data-flybot'] === 'face-owner' && n.children.includes('Me')))
+  assert.ok(wait.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Chief')))
+  assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.props['data-flybot'] === 'face-owner' && n.children.includes('Bob')))
+  assert.ok(wait.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Coder')))
+  assert.equal(peer.props.title, 'Bob · Coder')
   assert.equal(mine.children.some(n => n.props?.className === 'fs-sub' || (typeof n.props?.className === 'string' && n.props.className.includes('fs-tag'))), false)
   assert.equal(peer.children.some(n => n.props?.className === 'fs-sub'), false)
   assert.equal(wait.some(n => n.props.className === 'fs-wait-hint' || n.props.className === 'fs-wait-name'), false)
@@ -3018,8 +3022,8 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
   cursor = 0
   const liveNodes = liveClient.walk(livePlugin.FaceToFaceGroup({ actions: {} }))
   assert.ok(liveNodes.some(n => n.props['data-flybot'] === 'face-member' && n.props['data-handle'] === '@writer.alice.home'))
-  assert.ok(liveNodes.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Writer')))
-  assert.ok(liveNodes.some(n => n.props['data-flybot'] === 'face-owner' && n.children.includes('Alice')))
+  assert.ok(liveNodes.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Writer')))
+  assert.ok(liveNodes.some(n => n.props.className === 'fs-tile-name' && n.props['data-flybot'] === 'face-owner' && n.children.includes('Alice')))
 
   const autoOpened = []
   const autoPlugin = pluginOf(['waiting', bots, ['a'], '123456', false, null, [], { ...room, status: 'open' }, 0], true)
@@ -4304,7 +4308,7 @@ test('#181: the account menu header shows my own handle with a Copy button', asy
   assert.equal(none.some(n => n.props?.['data-flybot'] === 'my-handle-menu'), false)
 })
 
-test('#136 / #181: Add friend shows my own handle; Auto-send starts unchecked; Join-as is always offered', async () => {
+test('#136 / #181 / #228: Add friend shows my own handle; Auto-send starts unchecked; Talk through only with a choice to make', async () => {
   const { walk, pluginOf } = loadSocialClient(async (endpoint) => {
     if (endpoint === 'social/status') return { connected: true, home: '@selfa1935.home', bots: [{ id: 'a', name: 'Chief', isMain: true }], approvals: [] }
     if (endpoint === 'social/settings') return { autoAccept: {} }
@@ -4317,11 +4321,16 @@ test('#136 / #181: Add friend shows my own handle; Auto-send starts unchecked; J
   }))
   const box = settings.find(n => n.type === 'input' && n.props.type === 'checkbox')
   assert.equal(box.props.checked, false)
-  const add = walk(pluginOf([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a']).AddFriend({}))
+  // One Bot: nothing to pick, and nothing of mine is shared by accepting.
+  const one = walk(pluginOf([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a']).AddFriend({}))
+  assert.equal(one.some(n => n.props['data-flybot'] === 'join-as'), false)
+  const add = walk(pluginOf([null, '', null, false, [{ id: 'a', name: 'Chief', isMain: true }, { id: 'b', name: 'Writer' }], 'a']).AddFriend({}))
   assert.ok(add.some(n => n.props['data-flybot'] === 'join-as'))
   assert.match(add.find(n => n.props['data-flybot'] === 'join-as').props.className, /fs-join-as/)
   assert.match(add.find(n => n.props['data-flybot'] === 'talk-through').children.join(''), /Talk through/)
-  assert.ok(add.find(n => n.props['data-flybot'] === 'join-as').props.title)
+  const title = add.find(n => n.props['data-flybot'] === 'join-as').props.title
+  assert.match(title, /Not shared/)
+  assert.doesNotMatch(title, /only sees this Bot/)
 })
 
 test('#160: Remove this Bot closes the settings overlay', async () => {
@@ -4367,8 +4376,10 @@ test('#138: join success copy names the person and the Bot', () => {
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(src, /shared \$\{shared\} with you/)
   assert.match(src, /Talk through /)
-  assert.match(src, /Your friend only sees this Bot unless you invite them to another/)
-  assert.doesNotMatch(src, /not shared unless you invite them to it/)
+  // #228: the talk-through tooltip says plainly that Bot is not shared; nothing implies a grant back.
+  assert.match(src, /Talks for you\. Not shared: your friend can't use it unless you invite them to it\./)
+  assert.doesNotMatch(src, /only sees this Bot unless you invite them to another/)
+  assert.doesNotMatch(src, /\(not shared unless you invite them to it\)/)
   assert.match(src, /\.fs-join-as-label\{[^}]*white-space:nowrap/)
   assert.doesNotMatch(src, /there is no preview/)
 })
@@ -4871,4 +4882,95 @@ test('typed_by_owner (face room): a probe that got no answer is retried soon, no
   await call('flybot/social/face-rooms', { poll: true })
   assert.equal(probes() - before, 1, 'the failed probe did not pin the answer for the recheck window')
   assert.deepEqual(humans.map(line => [line.name, line.text]), [['Bob', 'after recovery']])
+})
+
+test('#228: accepting an invite shows the shared Bot at once and never grants our talk-through Bot back', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let joined = false
+  server.tools.join_invite = () => {
+    joined = true
+    return { relationship_id: 'r1', status: 'active', inviter: { handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' }, bot: { handle: '@helper.bob.home', display_name: 'Helper' } }
+  }
+  // After the join, Bot Social lists the talk-through side on our Chief (grantee: the shared Bot).
+  server.tools.list_bot_grants = () => ({ grants: joined ? [{ id: 'g-tt', grantee: '@helper.bob.home', name: 'bob (@bob.home)', relationship_id: 'r1' }] : [] })
+  server.tools.list_remote_bots = () => ({
+    homes: joined ? [{
+      relationship_id: 'r1',
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', grant_id: 'g-in' }],
+    }] : [],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const result = (await call('flybot/social/join-invite', { code: 'TT' })).value
+  assert.equal(result.inviterBotName, 'Helper')
+  // The plugin's own roster (what it publishes), read from cache: no new fetch hides a drop.
+  const shown = async () => (await call('flybot/social/remote-bots', {})).value.homes.flatMap(entry => entry.bots).some(bot => bot.handle === '@helper.bob.home')
+  assert.equal(await shown(), true, 'the shared Bot is in the roster when the toast shows')
+  // Let the background grant sync and its re-filter finish.
+  for (let n = 0; n < 30; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(await shown(), true, 'the background grant sync does not drop it again')
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.grantee === '@helper.bob.home'), false, 'no grant on our Chief for the inviter')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.deepEqual(access.grants, [])
+})
+
+test('#228: an open People with access shows a friend who accepts, without reopening', async () => {
+  const registered = []
+  const ticks = []
+  let grants = []
+  const sandbox = {
+    window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console,
+    setInterval: (fn, ms) => { ticks.push([fn, ms]); return { unref() {} } }, clearInterval: () => {},
+    document: { hidden: false, getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } },
+  }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = {
+    slots: { register: () => () => {} },
+    call: async (endpoint, payload) => (endpoint === 'social/access' ? { botId: payload.botId, botName: 'Helper', grants, rooms: [] } : {}),
+  }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const walk = (node, all = []) => {
+    if (!node || typeof node !== 'object') return all
+    all.push(node)
+    for (const child of node.children ?? []) walk(child, all)
+    return all
+  }
+  const store = []
+  let cursor = 0
+  let mounted = false
+  const plugin = registered[0].factory(() => ({
+    createElement: h, Fragment: 'F',
+    useEffect(fn) { if (!mounted) { mounted = true; fn() } },
+    useState: v => {
+      const i = cursor++
+      if (!(i in store)) store[i] = v
+      return [store[i], n => { store[i] = typeof n === 'function' ? n(store[i]) : n }]
+    },
+    useRef: v => ({ current: v }), useMemo: f => f(),
+  }))
+  const draw = () => { cursor = 0; return walk(plugin.ManageAccess({ bot: { id: 'h', name: 'Helper' } })) }
+  draw()
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.ok(draw().some(n => typeof n.children?.[0] === 'string' && /Nobody has this Bot yet/.test(n.children[0])))
+  assert.equal(ticks.length, 1, 'the open page keeps checking')
+  grants = [{ id: 'g1', grantee: '@selfb.home', name: 'SelfB' }]
+  ticks[0][0]()
+  await new Promise(resolve => setTimeout(resolve, 5))
+  const after = draw()
+  assert.ok(after.some(n => n.props['data-flybot'] === 'access-grant'))
+  assert.equal(after.some(n => typeof n.children?.[0] === 'string' && /Nobody has this Bot yet/.test(n.children[0])), false)
 })

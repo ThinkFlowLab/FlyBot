@@ -87,6 +87,14 @@ diff --git a/client.js b/client.js
    // Header
    "Message {name}": "给 {name} 发消息",
    Message: "发消息",
+@@ -187,6 +187,7 @@ var ZH = {
+   Everyone: "所有人",
+   "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
+   "Members · {count}": "成员 · {count}",
++  "{name} (you)": "{name}（你）",
+   "Leave the group without an admin": "让群聊不设管理员",
+   Unset: "取消",
+   "Make admin": "设为管理员",
 @@ -270,6 +270,7 @@ var ZH = {
    "Kept above the other chats.": "排在其他对话上面。",
    "Search still finds it.": "仍然可以搜索到。",
@@ -596,7 +604,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,368 @@ function maskOf(shape) {
+@@ -1242,6 +1242,380 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -678,6 +686,18 @@ diff --git a/client.js b/client.js
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
++  );
++}
++function PersonMark({ size = 22 }) {
++  return (0, import_react.createElement)(
++    "span",
++    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
++    (0, import_react.createElement)(
++      "svg",
++      { width: size * 0.64, height: size * 0.64, viewBox: "0 0 24 24", fill: "currentColor" },
++      (0, import_react.createElement)("circle", { cx: 12, cy: 8.5, r: 4.2 }),
++      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
++    )
 +  );
 +}
 +function AdminStar() {
@@ -2441,7 +2461,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,157 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,145 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -2449,18 +2469,6 @@ diff --git a/client.js b/client.js
 -    texts2.length ? (0, import_react6.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
 +    reasoning ? (0, import_react7.createElement)(ThinkingRow, { text: reasoning }) : null,
 +    texts2.length ? person ? (0, import_react7.createElement)(PersonMessage, { name: person, texts: texts2, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi }) : (0, import_react7.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
-+  );
-+}
-+function PersonMark({ size = 22 }) {
-+  return (0, import_react7.createElement)(
-+    "span",
-+    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
-+    (0, import_react7.createElement)(
-+      "svg",
-+      { width: size * 0.64, height: size * 0.64, viewBox: "0 0 24 24", fill: "currentColor" },
-+      (0, import_react7.createElement)("circle", { cx: 12, cy: 8.5, r: 4.2 }),
-+      (0, import_react7.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
-+    )
 +  );
 +}
 +function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
@@ -2898,7 +2906,7 @@ diff --git a/client.js b/client.js
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4366,66 +4366,100 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -4366,66 +4366,91 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
    const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
    if (replies.length === 0 && pending.length === 0) return null;
    const room2 = roster.roomsById[sessionId];
@@ -2912,16 +2920,7 @@ diff --git a/client.js b/client.js
 -        return (0, import_react6.createElement)("div", { key: `user-${index}`, className: "bt-urow" }, (0, import_react6.createElement)(
 +        const who = reply.name && reply.name !== "User" ? reply.name : reply.authorId;
 +        if (reply.other) {
-+          return (0, import_react7.createElement)(
-+            "div",
-+            { key: `user-${index}`, className: "bt-umsg bt-umsg-other", "data-author": reply.authorId, "data-author-kind": "human", "data-author-name": who },
-+            (0, import_react7.createElement)(
-+              "div",
-+              { className: "bt-ustack" },
-+              who ? (0, import_react7.createElement)("span", { className: "bt-uauthor" }, who) : null,
-+              (0, import_react7.createElement)("div", { className: "bt-ubody" }, remoteMessageText(reply.text))
-+            )
-+          );
++          return (0, import_react7.createElement)(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +        }
 +        return (0, import_react7.createElement)(
            "div",
@@ -2988,8 +2987,7 @@ diff --git a/client.js b/client.js
 +      }
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -3002,7 +3000,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -6668,15 +6667,15 @@ diff --git a/client.js b/client.js
 -      (0, import_react20.createElement)(
 +      { className: "bt-newchat", role: "dialog", "aria-label": mode === "search" ? t("Search") : t("New chat"), "data-menu": menuOnly || void 0 },
 +      menuOnly ? (0, import_react21.createElement)(
-+        "div",
-+        { className: "bt-to" },
-+        (0, import_react21.createElement)("span", { className: "bt-to-label" }, t("New…")),
-+        (0, import_react21.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Close new chat"), onClick: close }, "×")
-+      ) : (0, import_react21.createElement)(
          "div",
          { className: "bt-to" },
 -        (0, import_react20.createElement)("span", { className: "bt-to-label" }, t("To:")),
 -        adminBot ? (0, import_react20.createElement)(
++        (0, import_react21.createElement)("span", { className: "bt-to-label" }, t("New…")),
++        (0, import_react21.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Close new chat"), onClick: close }, "×")
++      ) : (0, import_react21.createElement)(
++        "div",
++        { className: "bt-to" },
 +        (0, import_react21.createElement)("span", { className: "bt-to-label" }, t("To:")),
 +        adminBot ? (0, import_react21.createElement)(
            "span",
@@ -6954,7 +6953,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,85 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,111 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -7024,6 +7023,30 @@ diff --git a/client.js b/client.js
    ["everyone", "Everyone", "Every member answers in turn, admin first."]
  ];
  var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
++function faceSeats(room2, roster) {
++  const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human" && p.leftSeq === void 0);
++  const seats = live.map((p) => {
++    const local = p.remote ? void 0 : roster.byId[p.id];
++    return {
++      key: p.handle || p.id,
++      local,
++      record: p,
++      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, "") : ownerNameOf(p),
++      bot: local ? local.name : cleanPeerName(p.displayName || p.name, "Bot"),
++      mine: Boolean(local)
++    };
++  });
++  for (const id of room2.members ?? []) {
++    const bot = roster.byId[id];
++    if (!bot || seats.some((seat) => seat.local?.id === id)) continue;
++    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ""), bot: bot.name, mine: true });
++  }
++  return seats;
++}
++function faceSeatLabel(seat) {
++  if (!seat.person) return seat.bot;
++  return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
++}
  function roomSubtitle(room2, roster) {
 +  if (room2.origin === "face-to-face") {
 +    const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.leftSeq === void 0);
@@ -7048,6 +7071,8 @@ diff --git a/client.js b/client.js
 +  const remotes = live.filter((p) => p.remote && p.leftSeq === void 0);
    const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
 -  const outside = roster.bots.filter((bot) => !room2.members.includes(bot.id));
++  const face = room2.origin === "face-to-face";
++  const seats = face ? faceSeats(room2, roster) : [];
 +  const shared2 = humans.length > 1;
 +  const chiefs = new Set((roster.humans ?? []).map((person) => person.designatedChiefId).filter(Boolean));
 +  const outside = roster.bots.filter((bot) => {
@@ -7117,7 +7142,7 @@ diff --git a/client.js b/client.js
            key: id,
            type: "button",
            "aria-pressed": mode === id,
-@@ -8999,86 +8999,130 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
+@@ -8999,86 +8999,144 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
              if (mode !== id) void update({ mode: id });
            }
          }, t(label)))),
@@ -7140,9 +7165,23 @@ diff --git a/client.js b/client.js
        )
      ),
 -    (0, import_react23.createElement)(
-+    (0, import_react24.createElement)(
++    face ? (0, import_react24.createElement)(
        Card,
 -      { title: t("Members · {count}", { count: members.length }) },
++      { title: t("Members · {count}", { count: seats.length }) },
++      seats.map((seat) => (0, import_react24.createElement)(
++        "div",
++        { key: seat.key, className: "bt-set-row bt-bs-row bt-gs-member", "data-flybot": "face-seat" },
++        (0, import_react24.createElement)(
++          "span",
++          { className: "bt-gs-who" },
++          (0, import_react24.createElement)(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false }),
++          (0, import_react24.createElement)("span", { className: "bt-row-title" }, faceSeatLabel(seat))
++        )
++      ))
++    ) : null,
++    face ? null : (0, import_react24.createElement)(
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react24.createElement)(
 +        "div",
@@ -9208,7 +9247,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,87 +11367,177 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,87 +11367,194 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -9238,11 +9277,8 @@ diff --git a/client.js b/client.js
    useMorph(body, open);
 -  return (0, import_react31.createElement)(
 +  return (0, import_react32.createElement)(
-     "div",
-     null,
--    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
--    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
--    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
++    "div",
++    null,
 +    (0, import_react32.createElement)("div", { className: "bt-section-title" }, t(title)),
 +    (0, import_react32.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
 +    long ? (0, import_react32.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
@@ -9289,6 +9325,26 @@ diff --git a/client.js b/client.js
 +      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
 +      (0, import_react32.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
 +    ))
++  );
++}
++function FaceMembers({ room: room2, roster, actions }) {
++  const seats = faceSeats(room2, roster);
++  return (0, import_react32.createElement)(
+     "div",
+     null,
+-    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
+-    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
+-    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
++    (0, import_react32.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: seats.length })),
++    (0, import_react32.createElement)("div", { className: "bt-members", role: "list" }, seats.map((seat) => {
++      const label = faceSeatLabel(seat);
++      const avatar = (0, import_react32.createElement)(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false });
++      return (0, import_react32.createElement)(
++        "div",
++        { key: seat.key, role: "listitem", "data-flybot": "face-seat", "data-mine": seat.mine || void 0 },
++        (0, import_react32.createElement)("div", { className: "bt-member" }, seat.local ? (0, import_react32.createElement)("button", { type: "button", className: "bt-member-name", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => actions.openSession(seat.local.id) }, avatar, (0, import_react32.createElement)("span", null, label)) : (0, import_react32.createElement)("span", { className: "bt-member-name" }, avatar, (0, import_react32.createElement)("span", null, label)))
++      );
++    }))
    );
  }
  function GroupOverview({ room: room2, roster, actions, usage, useWork, openSettings }) {
@@ -9317,7 +9373,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react32.createElement)("button", { type: "button", className: "bt-more", onClick: leaveMine }, t("Remove my Bot"))
 +    ) : face ? null : room2.notice ? (0, import_react32.createElement)(About, { key: "notice", title: "Notice", text: room2.notice }) : (0, import_react32.createElement)("button", { key: "notice", type: "button", className: "bt-more", onClick: openSettings }, t("Add a notice in group settings")),
 +    face ? null : (0, import_react32.createElement)(SharedRoomApprovals, { key: "approvals", room: room2 }),
-+    face && (room2.face?.status === "candidate" || room2.face?.status === "joining") ? null : (0, import_react32.createElement)(
++    face && (room2.face?.status === "candidate" || room2.face?.status === "joining") ? null : face ? (0, import_react32.createElement)(FaceMembers, { key: "members", room: room2, roster, actions }) : (0, import_react32.createElement)(
        "div",
        { key: "members" },
 -      (0, import_react31.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: members.length })),
@@ -10136,7 +10192,7 @@ diff --git a/client.js b/client.js
  }
  var clock3 = (time) => typeof time === "number" ? new Date(time).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" }) : void 0;
  function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
-@@ -13178,28 +13178,46 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
+@@ -13178,28 +13178,50 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
    const referenceLabels = data.referenceLabels ?? [];
    const references = openFile && openSkill ? { openFile, openSkill } : void 0;
    const steering = node.kind === "steering";
@@ -10145,6 +10201,7 @@ diff --git a/client.js b/client.js
 +  const room2 = roster.roomsById?.[sessionId];
 +  const multiHuman = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).length > 1;
 +  const incoming = author && !author.mine;
++  const person = incoming && author.authorKind === "human" && !author.ownerName;
 +  const held = Boolean(room2 && room2.origin === "face-to-face" && !incoming && (room2.pendingCount ?? 0) > 0);
 +  return (0, import_react36.createElement)(
      "div",
@@ -10158,6 +10215,7 @@ diff --git a/client.js b/client.js
 +      "data-author-kind": author?.authorKind,
 +      "data-author-name": author?.name
 +    },
++    person ? (0, import_react36.createElement)("span", { className: "bt-lead", title: author.name }, (0, import_react36.createElement)(PersonMark)) : null,
 +    (0, import_react36.createElement)(
        "div",
        { className: "bt-ustack" },
@@ -10184,6 +10242,8 @@ diff --git a/client.js b/client.js
  .bt-umsg{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:4px}
 +.bt-umsg-other{flex-direction:row}
 +.bt-umsg-other .bt-ustack{align-items:flex-start}
++.bt-umsg-other>.bt-lead{align-self:flex-end;margin-right:4px}
++.bt-umsg-other .bt-ubody{background:var(--bt-bubble);color:var(--bt-ink)}
 +.bt-uauthor{font-size:12px;line-height:16px;color:var(--bt-ink-3);font-weight:600}
 +.bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
  .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
