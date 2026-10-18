@@ -29,6 +29,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 - **Right:** final `core/` edit → `npm run build` in `core/` when `src/client/` changed → `node scripts/ds-bot-patches.mjs generate` (repo root) → commit → `ARCH_DOCS_BASE=upstream/main npm run verify`. New files under `core/` land whole in `patches/ds-bot/files/` (no `topics.json` row).
 - **Promote path:** after ≥3 days → docs/code-standards.md (merge gate section).
 
+### 2026-10-18 — `main` merges only through the merge queue
+
+- **Seen:** 1× (#217, #222)
+- **Trigger:** merging a green PR into `main`.
+- **Wrong:** `gh pr merge <n> --squash`, reading `! The merge strategy for main is set by the merge queue` as a failure, then retrying or looking for a `--merge-queue` flag.
+- **Right:** `gh pr merge <n> --auto --squash --match-head-commit <sha>` enqueues it; the queue runs `Test` on `merge_group` and squash-merges. Wait for MERGED (the merge starts the `push` run on `main`). See [merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge).
+- **Promote path:** after ≥3 days → docs/code-standards.md (merge gate section).
+
 ### 2026-10-14 — Claim honesty (Verifier)
 
 - **Seen:** 1× (PR #2 review / agent claim patterns)

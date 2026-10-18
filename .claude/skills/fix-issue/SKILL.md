@@ -57,6 +57,7 @@ node scripts/ds-bot-patches.mjs generate && node scripts/ds-bot-patches.mjs chec
 
 - Merge only when all hold **on the same tip**: review PASS (and implementer↔reviewer agreement, or a maintainer waiver of one side), required checks green, and either the maintainer's go or the standing T0/T1 delegation below. Tip moved → start over from the review.
 - **Standing delegation (T0/T1 only).** An agent may enable auto-merge itself when `node .github/scripts/risk-gate.mjs --pr <n>` reports **T0 or T1**, the `reviewed tip` report shows a PASS at the current head by a login in `.github/agent/review-policy.json` (never the PR's own author), and `tests-ok` is green. Then `gh pr merge --auto --squash --match-head-commit <sha>`. T2, T3 and any pull request without a PASS at its tip wait for the maintainer.
+- **Merge queue.** `main` requires one. The command above enqueues the PR; gh may print `The merge strategy for main is set by the merge queue` or `already queued`, which is success, not a refusal. The queue runs `Test` on a `gh-readonly-queue/main/pr-<n>-<sha>` entry and squash-merges it; a plain `gh pr merge --squash` is refused. Do not retry; check `isInMergeQueue` (GraphQL) or wait for the PR to read MERGED.
 - Then: fetch and fast-forward main, delete the branch locally and remotely, remove the worktree, and carry follow-up issues (not TODOs).
 
 ## Filing (before the fix)
