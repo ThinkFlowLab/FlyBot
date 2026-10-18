@@ -258,6 +258,7 @@ var ZH = {
   "Admin leads": "管理员主持",
   "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
   Everyone: "所有人",
+  "Every Bot in this room": "房间里的所有 Bot",
   "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
   "Members · {count}": "成员 · {count}",
   "{name} (you)": "{name}（你）",
@@ -7191,20 +7192,44 @@ var conversationOf = (roster, sessionId) => {
 function mentionRows(roster, sessionId, query = "") {
   const here = conversationOf(roster, sessionId);
   if (here === null) return null;
+  const face = isFaceRoom(here.room);
+  const live = (here.room?.participants ?? []).filter((p) => p.leftSeq === void 0);
   const bots = here.room ? [
-    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean),
-    ...(here.room.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role })),
-    ...(here.room.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, handle: p.handle }))
+    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(cleanPeerName(roster.self?.displayName, ""), bot.name, true) } : bot),
+    ...live.filter((p) => p.kind === "human").map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role })),
+    // A remote seat already listed under its handle (a duplicate participant record) is offered once.
+    ...uniqueBy(live.filter((p) => p.remote), (p) => p.handle || p.id).map((p) => ({
+      id: p.handle || p.id,
+      name: remoteBotTitle(p),
+      kind: "bot",
+      remote: p,
+      handle: p.handle,
+      ...face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot"), false) } : {}
+    }))
   ] : listedChatBots(roster).filter((bot) => bot.id !== here.self.id);
   const needle = query.trim().toLowerCase();
-  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
+  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle) || String(bot.label ?? "").toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
   const everyone = t("Everyone");
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
     rows.push({ room: here.room, text: `@${everyone} ` });
   }
-  rows.push(...remoteMentionRows(roster, query));
+  if (!face) rows.push(...remoteMentionRows(roster, query));
   return rows;
 }
+var isFaceRoom = (room2) => room2?.origin === "face-to-face";
+var uniqueBy = (list, key) => {
+  const seen = /* @__PURE__ */ new Set();
+  return list.filter((item) => {
+    const k = key(item);
+    if (!k || seen.has(k)) return !k;
+    seen.add(k);
+    return true;
+  });
+};
+var faceLabel = (person, bot, mine) => {
+  if (!person) return bot;
+  return `${mine ? t("{name} (you)", { name: person }) : person} · ${bot}`;
+};
 function chatRows(roster, list, sessionId) {
   const here = conversationOf(roster, sessionId);
   if (here === null) return [];
@@ -7234,17 +7259,19 @@ function atSources({ roster, sessions, launched, iconFor }) {
     showGroupTitle: false,
     async candidates(session, { query }) {
       const snapshot = roster.getSnapshot();
+      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-        name: row.bot ? row.bot.name : row.remote ? `${row.remote.name} (${row.remote.handle})` : t("Everyone"),
-        ...row.bot?.role ? { description: row.bot.role } : {},
+        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? `${row.remote.name} (${row.remote.handle})` : t("Everyone"),
+        ...row.bot?.role && !face ? { description: row.bot.role } : {},
         ...row.remote ? { description: remoteBotTitle(row.remote) } : {},
-        ...row.bot?.remote ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {},
-        ...row.room ? { description: t("{count} members", { count: row.room.members.length }) } : {},
+        ...row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {},
+        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
+        ...row.room ? { description: face ? t("Every Bot in this room") : t("{count} members", { count: row.room.members.length }) } : {},
         icon: iconFor(row),
         section: t("Bots"),
         value: row.text
       }));
-      if (mentionRows(snapshot, session.sessionId, "") === null) return team;
+      if (mentionRows(snapshot, session.sessionId, "") === null || face) return team;
       const extra = (await mentionCandidates(query, { sessionId: session.sessionId, roster: snapshot })).map((row) => ({
         name: row.name,
         ...row.description ? { description: row.description } : {},

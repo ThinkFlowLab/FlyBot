@@ -1,0 +1,1 @@
+In a Face-to-face room the composer's `@` lists each Bot in the room once, named like the Members panel (`SelfA · Chief`), with no friend's Bot from outside the room, no separate Friends' Bots section and no wrong "1 members" count ([#305](https://github.com/ThinkFlowLab/FlyBot/issues/305)).
