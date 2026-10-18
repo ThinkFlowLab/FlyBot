@@ -20,10 +20,11 @@ const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 // One line, no controls, no fence markers, capped: safe to store and to show.
 export const cleanLabel = (value, max = 80) => {
   let out = String(value ?? '').replace(CONTROLS, ' ')
-  for (let previous; previous !== out;) { previous = out; out = out.replace(/<\/?\s*untrusted-?/gi, '') }
+  for (let previous; previous !== out;) { previous = out; out = out.replace(/<\s*\/?\s*untrusted-?/gi, '') }
   return out.replace(/\s+/g, ' ').trim().slice(0, max)
 }
-const cleanCode = code => (typeof code === 'string' && /^[A-Za-z0-9_.-]{1,40}$/.test(code) ? code : 'UNKNOWN')
+// An error code is an enumerated value (RATE_LIMIT, AUTH): upper-case words only, so free text or a key put in the field is not kept.
+const cleanCode = code => (typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,39}$/.test(code) ? code : 'UNKNOWN')
 const cleanId = value => (typeof value === 'string' ? cleanLabel(value, 120) : undefined)
 const timeOf = event => (Number.isFinite(event?.time) ? event.time : Date.now())
 const seqOf = event => (Number.isInteger(event?.seq) ? event.seq : undefined)

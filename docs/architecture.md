@@ -11,6 +11,7 @@ FlyBot is a team of long-lived Bots built on DeepSeek Harness (DSH). Two parts s
 | `core/` | `ds-bot/` + patches. Ships; all tests run here. |
 | `plugins/social/` | `@flybot/social` — social posting plugin. |
 | `plugins/tree/` | `@flybot/tree` — knowledge-tree plugin. |
+| `plugins/timeline/` | `@flybot/timeline` — where time goes across the local Bot team (swimlanes, communication map, utilization). |
 | `app/` | Desktop app (Windows/macOS) for the DSH + plugin. |
 
 ## Subsystems
@@ -20,6 +21,7 @@ Each subsystem has a detail page under [docs/subsystems/](subsystems/README.md) 
 - [ds-bot-core](subsystems/ds-bot-core.md) — pin, patch format and dev tooling of the patched core; [core-host](subsystems/core-host.md) and [core-client](subsystems/core-client.md) — its server and browser code
 - [plugin-runtime](subsystems/plugin-runtime.md) — FlyBot plugin hooks
 - [tree](subsystems/tree.md) — `@flybot/tree`
+- [timeline](subsystems/timeline.md) — `@flybot/timeline`
 - [social](subsystems/social.md) — `@flybot/social`
 - [install](subsystems/install.md) — scripts and install doctor
 - [team](subsystems/team.md) — planned human/Chief/specialist authority contract (not shipped); #47–#50 are data/auth/room-membership foundations only

@@ -30,6 +30,8 @@ Tooling for setup checks and the architecture-docs gate.
 | `core/test/check-arch-docs.test.js` | Tests for the gate. |
 | `core/test/install-doctor.test.js` | Install doctor tests. |
 | `plugins/README.md` | Plugin list. |
+| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/timeline`) and their install commands. |
+| `core/scripts/local-ci.sh` | Local run of CI's steps, including each plugin's suite. |
 
 ## Entry points
 
@@ -39,6 +41,7 @@ Tooling for setup checks and the architecture-docs gate.
 
 1. Owned-file changes require a matching subsystem doc in the same PR (or a `Docs-not-needed:` trailer).
 2. Empty diff vs base passes.
+3. A new peer plugin is added to the install doctor (and its test), `check-pack.mjs`, the CI plugin matrix, `local-ci.sh` and `plugins/README.md` in the same PR.
 
 ## Tests
 

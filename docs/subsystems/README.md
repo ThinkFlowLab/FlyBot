@@ -9,6 +9,7 @@ Detail pages for each FlyBot subsystem. Each page lists `owned_paths`, what the 
 | core-client | [core-client.md](core-client.md) | `core/src/client/`, `core/client.js` |
 | plugin-runtime | [plugin-runtime.md](plugin-runtime.md) | `core/src/host/hooks.js`, `core/src/host/flybot-feed.js`, `core/src/client/flybot-slots.js`, `core/src/client/flybot-registry.js`, `core/types/flybot.d.ts`, flybot tests |
 | tree | [tree.md](tree.md) | `plugins/tree/` |
+| timeline | [timeline.md](timeline.md) | `plugins/timeline/` |
 | social | [social.md](social.md) | `plugins/social/` |
 | install | [install.md](install.md) | `core/scripts/`, arch-doc tests, `plugins/README.md` |
 | team | [team.md](team.md) | `docs/subsystems/team.md` — **planned contract only** (no code paths; multi-human is not shipped) |

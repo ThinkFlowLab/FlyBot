@@ -55,15 +55,19 @@ test('undeclared bare imports fail; declared deps and node builtins pass', () =>
   }
 })
 
-test('social and tree runtime sources stay inside their package', () => {
+test('social, tree and timeline runtime sources stay inside their package', () => {
   assert.deepEqual(outboundImports(join(repo, 'plugins/social')), [])
   assert.deepEqual(outboundImports(join(repo, 'plugins/tree')), [])
+  assert.deepEqual(outboundImports(join(repo, 'plugins/timeline')), [])
 })
 
-test('packed @flybot/social and @flybot/tree import', async () => {
+test('packed @flybot/social, @flybot/tree and @flybot/timeline import', async () => {
   const social = await importPackedPlugin(join(repo, 'plugins/social'))
   assert.equal(social.name, 'flybot-social')
   assert.equal(typeof social.apply, 'function')
   const tree = await importPackedPlugin(join(repo, 'plugins/tree'))
   assert.equal(typeof tree.apply, 'function')
+  const timeline = await importPackedPlugin(join(repo, 'plugins/timeline'))
+  assert.equal(timeline.name, 'flybot-timeline')
+  assert.equal(typeof timeline.apply, 'function')
 })

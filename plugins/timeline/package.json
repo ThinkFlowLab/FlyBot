@@ -1,0 +1,42 @@
+{
+  "name": "@flybot/timeline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot timeline: where time goes across the local Bot team (turns, tool calls, Bot-to-Bot exchanges), recorded from the flybot activity feed into a capped trace",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "ds-bot",
+    "flybot"
+  ],
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src/",
+    "README.md",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --import ./test/resolve.mjs --test \"test/*.test.js\""
+  },
+  "peerDependencies": {
+    "ds-bot": ">=0.1.5-flybot.1"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -68,7 +68,7 @@ runs:
       shell: bash
       run: npm run lint:interop
     # Core's suite (incl. bot-tree: the public flybot.sidebar.structure slot), then each peer
-    # plugin's own suite and lint (plugins/social, plugins/tree; each also tests against core/).
+    # plugin's own suite and lint (plugins/social, plugins/tree, plugins/timeline; each also tests against core/).
     - name: Unit tests
       if: inputs.coverage != 'true'
       shell: bash
@@ -89,6 +89,13 @@ runs:
       if: inputs.plugins != 'false'
       shell: bash
       working-directory: plugins/tree
+      env:
+        DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
+      run: npm test
+    - name: Plugin tests (timeline)
+      if: inputs.plugins != 'false'
+      shell: bash
+      working-directory: plugins/timeline
       env:
         DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
       run: npm test

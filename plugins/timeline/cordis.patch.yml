@@ -1,0 +1,4 @@
+# Mounts flybot-timeline (needs ds-bot, which provides the flybot service and its activity feed).
+- insert:
+    - id: flybot-timeline
+      name: '@flybot/timeline'

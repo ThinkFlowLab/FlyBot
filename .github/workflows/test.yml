@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [tree, social]
+        plugin: [tree, social, timeline]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -100,7 +100,7 @@ jobs:
           node-version: 24
       - name: ds-bot/ matches the pin, patches apply, core/ is ds-bot/ + patches (#34)
         run: node scripts/ds-bot-patches.mjs check
-      - name: Pack and check core (ds-bot), plugins/social, plugins/tree
+      - name: Pack and check core (ds-bot), plugins/social, plugins/tree, plugins/timeline
         run: node .github/scripts/check-pack.mjs
       - name: Typecheck the plugin API (types/*.d.ts, strict)
         working-directory: core

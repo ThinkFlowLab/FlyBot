@@ -49,7 +49,7 @@ FlyBot is a team of long-lived Bots, built on DeepSeek Harness (DSH). It has two
 - `ds-bot/`: pristine upstream ds-bot (Fei2411/DeepSeek-Bot), pinned in `ds-bot.pin.json`. **Never edit it.**
 - `patches/ds-bot/`: FlyBot's ordered patches on it; see `patches/ds-bot/README.md`.
 - `core/`: `ds-bot/` + the patches (committed, what ships and what tests run on): the Bot features, written as a DSH plugin. The plugin runs in DSH Desktop, in DSH Web and in the desktop app.
-- `plugins/social/`, `plugins/tree/`: peer plugins `@flybot/social` and `@flybot/tree`.
+- `plugins/social/`, `plugins/tree/`, `plugins/timeline/`: peer plugins `@flybot/social`, `@flybot/tree` and `@flybot/timeline`.
 
 The Bot team:
 
@@ -99,7 +99,7 @@ After oxlint, `npm run lint` also runs `npm run arch-docs`: if an owned file (se
 - `core/src/client/`: the browser side (sidebar, chat, panels, themes, characters, the Bot browser panel).
 - `core/web-search.js`: the `auto` web-search provider, independent of the Bot team code.
 - `core/test/`: unit tests and fixtures. `core/dev/`: the DSH packages for the tests (`harness/`), mock model, test bench, smoke test, character generator, Desktop scripts for Linux.
-- `plugins/social/` and `plugins/tree/`: peer plugins `@flybot/social` and `@flybot/tree`, not under `core/`.
+- `plugins/social/`, `plugins/tree/` and `plugins/timeline/`: peer plugins `@flybot/social`, `@flybot/tree` and `@flybot/timeline`, not under `core/`.
 - Architecture and ownership: [docs/architecture.md](docs/architecture.md) and [docs/subsystems/](docs/subsystems/README.md).
 
 ## Style

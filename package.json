@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "verify": "npm --prefix core run lint && node scripts/lint-plugins.mjs && node core/scripts/build-client.mjs --check && node scripts/ds-bot-patches.mjs check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && node --test \".github/scripts/*.test.mjs\" && npm run lint:interop && npm run test:interop && npm run lint:live-e2e && npm run test:live-e2e",
+    "verify": "npm --prefix core run lint && node scripts/lint-plugins.mjs && node core/scripts/build-client.mjs --check && node scripts/ds-bot-patches.mjs check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && node --test \".github/scripts/*.test.mjs\" && npm run lint:interop && npm run test:interop && npm run lint:live-e2e && npm run test:live-e2e",
     "lint:interop": "node scripts/lint-interop.mjs",
     "test:interop": "node --import ./dev/interop/no-network.mjs --test \"dev/interop/test/*.test.mjs\"",
     "demo:interop": "node --import ./dev/interop/no-network.mjs dev/interop/demo.mjs",

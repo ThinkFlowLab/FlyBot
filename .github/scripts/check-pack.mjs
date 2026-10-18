@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-const packages = ['core', 'plugins/social', 'plugins/tree']
+const packages = ['core', 'plugins/social', 'plugins/tree', 'plugins/timeline']
 const out = process.argv[2] ? resolve(process.argv[2]) : undefined
 if (out) mkdirSync(out, { recursive: true })
 let failed = false

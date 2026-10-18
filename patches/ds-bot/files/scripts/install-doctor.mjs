@@ -16,6 +16,7 @@ const PACKAGES = [
   ['core', 'ds-bot'],
   ['plugins/social', '@flybot/social'],
   ['plugins/tree', '@flybot/tree'],
+  ['plugins/timeline', '@flybot/timeline'],
 ]
 
 export function parseNodeVersion(versionString) {
@@ -73,7 +74,7 @@ export function buildInstallCommands({
   profile = 'web',
   dshPackage = '@deepseek-ai/dsh@0.2.0-rc.2',
 } = {}) {
-  return ['/core', '/plugins/social', '/plugins/tree']
+  return ['/core', '/plugins/social', '/plugins/tree', '/plugins/timeline']
     .map(path => `npx -y ${dshPackage} plugin --profile ${profile} add "github:${repo}#${ref}&path:${path}"`)
 }
 

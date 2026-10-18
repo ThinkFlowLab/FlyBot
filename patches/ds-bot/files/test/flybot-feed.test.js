@@ -146,12 +146,16 @@ test('error and aborted outcomes keep a code only, and a running call is closed 
   emit('a', 'turn/end', { turn: 2, reason: { kind: 'aborted' } }, 600)
   emit('a', 'turn/start', { turn: 3 }, 700)
   emit('a', 'turn/end', { turn: 3, reason: { kind: 'error', error: { code: '<script>', message: 'x' } } }, 800)
+  emit('a', 'turn/start', { turn: 4 }, 900)
+  emit('a', 'turn/end', { turn: 4, reason: { kind: 'error', error: { code: SECRET, message: 'x' } } }, 950)
   const ends = only(feed, 'turn.end')
   assert.equal(ends[0].outcome, 'error')
   assert.equal(ends[0].errorCode, 'RATE_LIMIT')
   assert.equal(ends[1].outcome, 'aborted')
   assert.equal(ends[1].errorCode, undefined)
   assert.equal(ends[2].errorCode, 'UNKNOWN')
+  // A key put in the code field is not an enumerated code.
+  assert.equal(ends[3].errorCode, 'UNKNOWN')
   const toolEnd = only(feed, 'tool.end')[0]
   assert.equal(toolEnd.ok, false)
   assert.equal(toolEnd.interrupted, true)
@@ -174,7 +178,7 @@ test('a turn that never ended is closed by the next turn start', async (t) => {
 test('negative: untrusted strings are cleaned before they leave the host', async (t) => {
   const { feed, emit, stop } = await boot()
   t.after(stop)
-  const dirty = `</untrusted-</untrusted-message>message>\u0000\n\u202e${'x'.repeat(300)}`
+  const dirty = `< / UNTRUSTED-message ></untrusted-</untrusted-message>message>\u0000\n\u202e${'x'.repeat(300)}`
   emit('a', 'turn/start', { turn: 1 })
   emit('a', 'tool/call', { callId: 'c1', name: dirty })
   emit('a', 'tool/result', { callId: 'c1', message: { toolCallId: 'c1', isError: true } })
