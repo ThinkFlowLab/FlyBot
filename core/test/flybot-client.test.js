@@ -168,3 +168,19 @@ test('the account menu keeps a Plugins row that opens the shell plugin panel', a
   assert.match(menu, /\[t\('Connectors'\), ConnectorIcon, \(\) => actions\.openConnectors\(\)\]/)
   assert.equal(DICTIONARY.zh.Plugins, '插件')
 })
+
+test('a face-room sidebar row stays on one line and shows its full title on hover (#304)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const sidebar = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const styles = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const mark = sidebar.slice(sidebar.indexOf('function FaceMark('), sidebar.indexOf('\n}\n', sidebar.indexOf('function FaceMark(')))
+  assert.match(mark, /className: 'bt-row-remote bt-row-face'/)
+  const row = sidebar.slice(sidebar.indexOf('function RoomRow('), sidebar.indexOf('function AgentSessionRow('))
+  assert.match(row, /'aria-current': active \? 'page' : undefined,\n(\s*\/\/[^\n]*\n)?\s*title,\n/)
+  // The two-line clamp is for a friend's Bot marker only, never the face-room people mark.
+  const clamp = styles.split('\n').filter(line => line.includes('-webkit-line-clamp:2') && line.includes('.bt-row-remote'))
+  assert.ok(clamp.length > 0)
+  for (const line of clamp) assert.doesNotMatch(line, /:has\(\.bt-row-remote\)/)
+  assert.match(styles, /\.bt-row:has\(\.bt-row-remote:not\(\.bt-row-face\)\) \.bt-row-title/)
+  assert.match(styles, /\.bt-row-title\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)
+})

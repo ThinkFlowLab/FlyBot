@@ -1178,7 +1178,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { showsDshRow } from './dsh-offer.js'
  
  // -------------------------------------------------------------------------
-@@ -37,56 +37,90 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,56 +37,91 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -1265,8 +1265,9 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  return status === 'candidate' && expires && Number.isFinite(Date.parse(expires)) && Date.parse(expires) <= Date.now()
 +}
 +
++// A face room's people mark. It is not a friend's Bot marker, so the row keeps one line (#304).
 +function FaceMark() {
-+  return h('span', { className: 'bt-row-remote', title: t('Face-to-face'), 'aria-label': t('Face-to-face') },
++  return h('span', { className: 'bt-row-remote bt-row-face', title: t('Face-to-face'), 'aria-label': t('Face-to-face') },
 +    h('svg', { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
 +      h('circle', { cx: 9, cy: 8, r: 3 }), h('circle', { cx: 16, cy: 9, r: 2.5 }),
 +      h('path', { d: 'M4 18a5 5 0 0 1 10 0M14 18a4 4 0 0 1 6 0' })))
@@ -1281,7 +1282,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    const active = useSessionRetainInfo(id, info => (info?.retainedBy?.mainView ?? 0) > 0)
    const unread = useSessionStatus(map => map.get(id)?.completionUnread === true) || (marked && !active)
    useMarkedUnread(id, active, marked, actions)
-@@ -96,7 +96,10 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
+@@ -96,18 +96,23 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
    const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null
    if (room.hidden && !active) return null
    const pinned = room.pinned === true
@@ -1292,8 +1293,11 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  const label = [title, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : ''].filter(Boolean).join(', ')
    return h('button', {
      type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
++    // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
++    title,
      'data-room-id': id, onClick: () => actions.openSession(id),
-@@ -105,9 +105,9 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
+     onContextMenu: (event) => { event.preventDefault(); actions.openMenu({ kind: 'room', id, x: event.clientX, y: event.clientY }) },
+   },
    h(RoomAvatar, { room, roster, size: 36 }),
    pinned && !wide ? h(PinMark) : null,
    wide ? h('span', { className: 'bt-row-body' },
@@ -1587,8 +1591,8 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-+.bt-row:has(.bt-row-remote) .bt-row-title,.bt-row-wrap:has(.bt-row-remote) .bt-row-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
-+.bt-row:has(.bt-row-remote) .bt-row-name,.bt-row-wrap:has(.bt-row-remote) .bt-row-name{align-items:flex-start}
++.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
++.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name{align-items:flex-start}
 +.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-3,rgba(20,20,20,.36))}
  .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

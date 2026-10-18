@@ -3004,8 +3004,8 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
 .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
 .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-row:has(.bt-row-remote) .bt-row-title,.bt-row-wrap:has(.bt-row-remote) .bt-row-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
-.bt-row:has(.bt-row-remote) .bt-row-name,.bt-row-wrap:has(.bt-row-remote) .bt-row-name{align-items:flex-start}
+.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
+.bt-row:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name,.bt-row-wrap:has(.bt-row-remote:not(.bt-row-face)) .bt-row-name{align-items:flex-start}
 .bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -6129,7 +6129,7 @@ function isPastFaceRoom(room2) {
 function FaceMark() {
   return (0, import_react9.createElement)(
     "span",
-    { className: "bt-row-remote", title: t("Face-to-face"), "aria-label": t("Face-to-face") },
+    { className: "bt-row-remote bt-row-face", title: t("Face-to-face"), "aria-label": t("Face-to-face") },
     (0, import_react9.createElement)(
       "svg",
       { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
@@ -6163,6 +6163,8 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
       className: "bt-row",
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
+      // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
+      title,
       "data-room-id": id,
       onClick: () => actions.openSession(id),
       onContextMenu: (event) => {

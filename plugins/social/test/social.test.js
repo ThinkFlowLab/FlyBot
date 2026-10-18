@@ -2630,6 +2630,8 @@ test('Face-to-face room card titles include people and a distinguisher, not Face
   }))
   const title = tree.find(n => n.props.className === 'fs-name')
   assert.equal(String(title?.children?.join?.('') ?? ''), 'Face-to-face · Alice, Bob · 482913')
+  // The row stays on one line; the full title is the hover text when the sidebar cuts it (#304).
+  assert.equal(title.props.title, 'Face-to-face · Alice, Bob · 482913')
   assert.equal(tree.some(n => String(n.children?.join?.('') ?? n.children) === 'Face-to-face room'), false)
 })
 

@@ -1,0 +1,1 @@
+A face-to-face room's sidebar row stays on one line (only a friend's Bot row wraps to two), and the row and its Past rooms entry show the full title on hover. ([#304](https://github.com/ThinkFlowLab/FlyBot/issues/304))
