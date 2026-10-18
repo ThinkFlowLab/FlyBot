@@ -67,6 +67,27 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
      },
      onPick: ({ candidate }) => (candidate.value ? { text: candidate.value } : undefined),
    }
+diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
+--- a/src/client/bot-draft.js
++++ b/src/client/bot-draft.js
+@@ -8,10 +8,15 @@ export function freshBotName(roster, base = 'New Bot') {
+   return `${base} ${index}`
+ }
+ 
+-// The form starts on the DSH default model when it is served, else the first one.
++// The form starts on the model the Main Bot runs on now (its chosen model, else the
++// one it last ran on). When that one is not served anymore it falls back to the DSH
++// default, then to the first served model. Only served models are picked, so a
++// provider without a credential is never preselected.
+ export function startModel(roster) {
+   const models = roster.models ?? []
+-  return (models.find(model => model.ref === roster.defaultModel) ?? models[0])?.ref ?? ''
++  const served = ref => (ref ? models.find(model => model.ref === ref) : undefined)
++  const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find(bot => bot.id === roster.mainBotId)
++  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? ''
+ }
+ 
+ // The model is always sent: the host fixes it on the Bot at creation.
 diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 --- a/src/client/bot-settings.js
 +++ b/src/client/bot-settings.js
@@ -1448,6 +1469,33 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
+diff --git a/test/create-bot.test.js b/test/create-bot.test.js
+--- a/test/create-bot.test.js
++++ b/test/create-bot.test.js
+@@ -7,7 +7,22 @@ const models = [
+   { ref: 'cloud/qwen-max', name: 'Qwen Max', providerName: 'Cloud' },
+ ]
+ 
+-test('the form starts on the DSH default model, else the first served one', () => {
++test('the form starts on the Main Bot\'s model, then the DSH default, then the first served one (#230)', () => {
++  const chief = { id: 'chief', name: 'Chief', model: 'cloud/qwen-max' }
++  const roster = (bot, defaultModel = 'ollama/ds-flash') => ({ models, defaultModel, mainBotId: bot.id, bots: [bot], byId: { [bot.id]: bot } })
++  assert.equal(startModel(roster(chief)), 'cloud/qwen-max')
++  // No chosen model yet: the one it last ran on.
++  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', appliedModel: 'cloud/qwen-max' })), 'cloud/qwen-max')
++  // Its model is gone (or its provider lost the credential, so it is not served): the DSH default.
++  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', model: 'gone/model' })), 'ollama/ds-flash')
++  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', model: 'gone/model' }, 'cloud/qwen-max')), 'cloud/qwen-max')
++  // Neither served: the first served model.
++  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', model: 'gone/model' }, 'gone/default')), 'ollama/ds-flash')
++  // A roster without byId (tests, early snapshots) still finds the Main Bot in bots.
++  assert.equal(startModel({ models, defaultModel: 'ollama/ds-flash', mainBotId: 'chief', bots: [chief] }), 'cloud/qwen-max')
++})
++
++test('without a Main Bot the form starts on the DSH default model, else the first served one', () => {
+   assert.equal(startModel({ models, defaultModel: 'cloud/qwen-max' }), 'cloud/qwen-max')
+   assert.equal(startModel({ models, defaultModel: 'gone/model' }), 'ollama/ds-flash')
+   assert.equal(startModel({ models, defaultModel: null }), 'ollama/ds-flash')
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js

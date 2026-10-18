@@ -14,7 +14,8 @@
     "test/model-menu.test.js",
     "test/home-lock.test.js",
     "test/client-bundle.test.js",
-    "test/install.test.js"
+    "test/install.test.js",
+    "README.md"
   ],
   "0002-flybot-api-host": [
     "index.js",
@@ -41,7 +42,9 @@
     "test/looks.test.js",
     "test/user-bubble.test.js",
     "src/client/create-bot.js",
-    "test/turn-tail.test.js"
+    "test/turn-tail.test.js",
+    "src/client/bot-draft.js",
+    "test/create-bot.test.js"
   ],
   "0005-social-seams": [
     "src/host/channel.js",

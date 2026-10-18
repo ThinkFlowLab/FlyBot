@@ -9288,7 +9288,9 @@ function freshBotName(roster, base = "New Bot") {
 }
 function startModel(roster) {
   const models = roster.models ?? [];
-  return (models.find((model) => model.ref === roster.defaultModel) ?? models[0])?.ref ?? "";
+  const served = (ref) => ref ? models.find((model) => model.ref === ref) : void 0;
+  const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find((bot) => bot.id === roster.mainBotId);
+  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? "";
 }
 function createPayload({ name, look, image, model, effort, brief }) {
   const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } };

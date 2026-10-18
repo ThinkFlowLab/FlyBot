@@ -7,7 +7,22 @@ const models = [
   { ref: 'cloud/qwen-max', name: 'Qwen Max', providerName: 'Cloud' },
 ]
 
-test('the form starts on the DSH default model, else the first served one', () => {
+test('the form starts on the Main Bot\'s model, then the DSH default, then the first served one (#230)', () => {
+  const chief = { id: 'chief', name: 'Chief', model: 'cloud/qwen-max' }
+  const roster = (bot, defaultModel = 'ollama/ds-flash') => ({ models, defaultModel, mainBotId: bot.id, bots: [bot], byId: { [bot.id]: bot } })
+  assert.equal(startModel(roster(chief)), 'cloud/qwen-max')
+  // No chosen model yet: the one it last ran on.
+  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', appliedModel: 'cloud/qwen-max' })), 'cloud/qwen-max')
+  // Its model is gone (or its provider lost the credential, so it is not served): the DSH default.
+  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', model: 'gone/model' })), 'ollama/ds-flash')
+  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', model: 'gone/model' }, 'cloud/qwen-max')), 'cloud/qwen-max')
+  // Neither served: the first served model.
+  assert.equal(startModel(roster({ id: 'chief', name: 'Chief', model: 'gone/model' }, 'gone/default')), 'ollama/ds-flash')
+  // A roster without byId (tests, early snapshots) still finds the Main Bot in bots.
+  assert.equal(startModel({ models, defaultModel: 'ollama/ds-flash', mainBotId: 'chief', bots: [chief] }), 'cloud/qwen-max')
+})
+
+test('without a Main Bot the form starts on the DSH default model, else the first served one', () => {
   assert.equal(startModel({ models, defaultModel: 'cloud/qwen-max' }), 'cloud/qwen-max')
   assert.equal(startModel({ models, defaultModel: 'gone/model' }), 'ollama/ds-flash')
   assert.equal(startModel({ models, defaultModel: null }), 'ollama/ds-flash')

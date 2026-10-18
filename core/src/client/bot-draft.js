@@ -8,10 +8,15 @@ export function freshBotName(roster, base = 'New Bot') {
   return `${base} ${index}`
 }
 
-// The form starts on the DSH default model when it is served, else the first one.
+// The form starts on the model the Main Bot runs on now (its chosen model, else the
+// one it last ran on). When that one is not served anymore it falls back to the DSH
+// default, then to the first served model. Only served models are picked, so a
+// provider without a credential is never preselected.
 export function startModel(roster) {
   const models = roster.models ?? []
-  return (models.find(model => model.ref === roster.defaultModel) ?? models[0])?.ref ?? ''
+  const served = ref => (ref ? models.find(model => model.ref === ref) : undefined)
+  const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find(bot => bot.id === roster.mainBotId)
+  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? ''
 }
 
 // The model is always sent: the host fixes it on the Bot at creation.

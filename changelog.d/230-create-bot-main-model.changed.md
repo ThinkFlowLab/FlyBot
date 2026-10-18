@@ -1,0 +1,1 @@
+Create Bot now starts on the model the Main Bot runs on, falling back to the DeepSeek Harness default and then to the first available model, instead of always preselecting the harness default ([#230](https://github.com/ThinkFlowLab/FlyBot/issues/230)).
