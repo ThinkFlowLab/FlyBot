@@ -220,7 +220,42 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  }
  
  function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
-@@ -180,6 +180,91 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
+@@ -170,16 +170,123 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+   return h('div', { className: 'bt-event' }, parts)
+ }
+ 
++// A Bot line that Bot Social holds for the owner's approval has its text in the approval card; the
++// bubble keeps only the state, so the text shows once (#306). The host's pending list (`pendingApprovals`)
++// carries the held text whitespace-collapsed and capped at 800 characters (799 once trimmed), without a "To the room:" lead.
++const heldForm = text => String(text ?? '').replace(/\s+/g, ' ').trim().replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
++export function isHeldLine(room, text) {
++  if (room?.origin !== 'face-to-face') return false
++  const line = heldForm(text)
++  if (!line) return false
++  return (room.pendingApprovals ?? []).some((item) => {
++    if (item?.kind !== 'face_room_message') return false
++    const held = heldForm(item.text)
++    return held !== '' && (held === line || (held.length >= 799 && line.startsWith(held)))
++  })
++}
++
+ // One Bot message inside a group chat: avatar, name (with its group role), bubble.
+ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
+   const lead = h('button', { type: 'button', className: 'bt-lead', 'aria-label': t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
+     h(BotMark, { bot, size: 22 }))
+-  return h('div', { className: 'bt-group-msg' },
+-    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
+-      room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null),
++  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
++    room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
++  if (isHeldLine(room, text)) {
++    return h('div', { className: 'bt-group-msg' }, name,
++      h('div', { className: 'bt-astack', 'data-lead': '' },
++        h('div', { className: 'bt-msg' },
++          h('div', { className: 'bt-msg-line' }, lead,
++            h('div', { className: 'bt-bubble bt-bubble-held', 'data-flybot': 'held-line', role: 'status' }, t('Waiting for approval'))))))
++  }
++  return h('div', { className: 'bt-group-msg' }, name,
      h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
  }
  
@@ -1490,6 +1525,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  .bt-head{position:relative;display:flex;justify-content:center;align-items:center;height:40px;flex:none;pointer-events:none}
  .bt-pill{pointer-events:auto;display:inline-flex;align-items:center;gap:8px;height:40px;padding:7.5px 13.5px 7.5px 7.5px;border-radius:999px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 2px 8px -1px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);color:var(--bt-ink);font-family:inherit;font-size:14px;line-height:20px;cursor:pointer;max-width:70%;box-sizing:border-box;transition:background-color .12s ease,transform ${SPRING_TAP.duration}ms ${SPRING_TAP.easing}}
+@@ -174,6 +174,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+ 
+ .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
+ .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
++.bt-bubble-held{background:transparent;border:1px dashed var(--bt-line-2);color:var(--bt-ink-2)}
+ .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
+ .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
+ .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
 @@ -267,6 +267,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  

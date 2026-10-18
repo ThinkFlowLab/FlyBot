@@ -192,13 +192,35 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
   return h('div', { className: 'bt-event' }, parts)
 }
 
+// A Bot line that Bot Social holds for the owner's approval has its text in the approval card; the
+// bubble keeps only the state, so the text shows once (#306). The host's pending list (`pendingApprovals`)
+// carries the held text whitespace-collapsed and capped at 800 characters (799 once trimmed), without a "To the room:" lead.
+const heldForm = text => String(text ?? '').replace(/\s+/g, ' ').trim().replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
+export function isHeldLine(room, text) {
+  if (room?.origin !== 'face-to-face') return false
+  const line = heldForm(text)
+  if (!line) return false
+  return (room.pendingApprovals ?? []).some((item) => {
+    if (item?.kind !== 'face_room_message') return false
+    const held = heldForm(item.text)
+    return held !== '' && (held === line || (held.length >= 799 && line.startsWith(held)))
+  })
+}
+
 // One Bot message inside a group chat: avatar, name (with its group role), bubble.
 function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
   const lead = h('button', { type: 'button', className: 'bt-lead', 'aria-label': t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
     h(BotMark, { bot, size: 22 }))
-  return h('div', { className: 'bt-group-msg' },
-    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
-      room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null),
+  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
+    room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
+  if (isHeldLine(room, text)) {
+    return h('div', { className: 'bt-group-msg' }, name,
+      h('div', { className: 'bt-astack', 'data-lead': '' },
+        h('div', { className: 'bt-msg' },
+          h('div', { className: 'bt-msg-line' }, lead,
+            h('div', { className: 'bt-bubble bt-bubble-held', 'data-flybot': 'held-line', role: 'status' }, t('Waiting for approval'))))))
+  }
+  return h('div', { className: 'bt-group-msg' }, name,
     h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
 }
 

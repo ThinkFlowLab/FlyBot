@@ -711,10 +711,15 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,488 @@ function maskOf(shape) {
- }
- var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
- 
+@@ -1238,9 +1238,491 @@ function maskOf(shape) {
+     mask = svgUrl(`<mask id="e" ${maskBox(def.size)}>${holes(def, def.eyes.map(eyeMarkup).join("").replaceAll('class="bt-eye"', 'fill="#000"'))}</mask>${def.wrap ? `<g transform="${def.wrap}">${body}</g>` : body}`, def.size);
+     maskCache.set(shape, mask);
+   }
+-  return mask;
++  return mask;
++}
++var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
++
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -1170,7 +1175,8 @@ diff --git a/client.js b/client.js
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
 +    ) : null
 +  );
-+}
+ }
+-var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 +var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 +var FLYBOT_CSS = `
 +.bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
@@ -1196,10 +1202,9 @@ diff --git a/client.js b/client.js
 +.bt-flybot-pointer-note { opacity: .65; white-space: nowrap; }
 +.bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 +`;
-+
+ 
  // src/client/sources.js
  function createSource(initial) {
-   let value = initial;
 @@ -1262,7 +1262,7 @@ function createSource(initial) {
      }
    };
@@ -1507,6 +1512,14 @@ diff --git a/client.js b/client.js
  
  .bt-head{position:relative;display:flex;justify-content:center;align-items:center;height:40px;flex:none;pointer-events:none}
  .bt-pill{pointer-events:auto;display:inline-flex;align-items:center;gap:8px;height:40px;padding:7.5px 13.5px 7.5px 7.5px;border-radius:999px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 2px 8px -1px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);color:var(--bt-ink);font-family:inherit;font-size:14px;line-height:20px;cursor:pointer;max-width:70%;box-sizing:border-box;transition:background-color .12s ease,transform ${SPRING_TAP.duration}ms ${SPRING_TAP.easing}}
+@@ -1992,6 +1992,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+ 
+ .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
+ .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
++.bt-bubble-held{background:transparent;border:1px dashed var(--bt-line-2);color:var(--bt-ink-2)}
+ .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
+ .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
+ .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
 @@ -2085,6 +2085,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  
@@ -2832,7 +2845,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,163 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,196 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -2887,6 +2900,17 @@ diff --git a/client.js b/client.js
    });
 -  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
 +  return (0, import_react7.createElement)("div", { className: "bt-event" }, parts);
++}
++var heldForm = (text) => String(text ?? "").replace(/\s+/g, " ").trim().replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, "").trim();
++function isHeldLine(room2, text) {
++  if (room2?.origin !== "face-to-face") return false;
++  const line = heldForm(text);
++  if (!line) return false;
++  return (room2.pendingApprovals ?? []).some((item) => {
++    if (item?.kind !== "face_room_message") return false;
++    const held = heldForm(item.text);
++    return held !== "" && (held === line || held.length >= 799 && line.startsWith(held));
++  });
  }
  function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
 -  const lead = (0, import_react6.createElement)(
@@ -2897,17 +2921,38 @@ diff --git a/client.js b/client.js
 +    (0, import_react7.createElement)(BotMark, { bot, size: 22 })
    );
 -  return (0, import_react6.createElement)(
++  const name = (0, import_react7.createElement)(
++    "span",
++    { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
++    bot.name,
++    room2?.admin === bot.id ? (0, import_react7.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
++  );
++  if (isHeldLine(room2, text)) {
++    return (0, import_react7.createElement)(
++      "div",
++      { className: "bt-group-msg" },
++      name,
++      (0, import_react7.createElement)(
++        "div",
++        { className: "bt-astack", "data-lead": "" },
++        (0, import_react7.createElement)(
++          "div",
++          { className: "bt-msg" },
++          (0, import_react7.createElement)(
++            "div",
++            { className: "bt-msg-line" },
++            lead,
++            (0, import_react7.createElement)("div", { className: "bt-bubble bt-bubble-held", "data-flybot": "held-line", role: "status" }, t("Waiting for approval"))
++          )
++        )
++      )
++    );
++  }
 +  return (0, import_react7.createElement)(
      "div",
      { className: "bt-group-msg" },
 -    (0, import_react6.createElement)(
-+    (0, import_react7.createElement)(
-       "span",
-       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
-       bot.name,
--      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
-+      room2?.admin === bot.id ? (0, import_react7.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
-+    ),
++    name,
 +    (0, import_react7.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +  );
 +}
@@ -2956,8 +3001,10 @@ diff --git a/client.js b/client.js
 +    "div",
 +    { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
 +    (0, import_react7.createElement)(
-+      "span",
-+      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+       "span",
+       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+-      bot.name,
+-      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +      name,
 +      (0, import_react7.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react7.createElement)(GlobeMark), handle)
      ),
