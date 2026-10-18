@@ -1686,7 +1686,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
       status = 'pending_target'
     }
-    const offered = joined.bot ?? joined.inviter?.bot ?? joined.offered_bot
+    // Bot Social answers with `inviter` = the invited Bot itself (a member handle, @chief.bob.home) and
+    // no separate `bot` field; older shapes name it in `bot`, `inviter.bot` or `offered_bot` and
+    // keep `inviter` at the home (#342). Only a member-level inviter is the Bot shared with us.
+    const inviterBot = home && joined.inviter?.handle && homeOfPeer(joined.inviter.handle) !== norm(joined.inviter.handle) ? joined.inviter : undefined
+    const offered = joined.bot ?? joined.inviter?.bot ?? joined.offered_bot ?? inviterBot
     const offeredHandle = offered?.handle ? norm(offered.handle) : ''
     // Mark the shared Bot inbound before the first refresh: the grant sync that refresh starts
     // must already see the talk-through grant on our Bot as talk-through, or it stores it as us

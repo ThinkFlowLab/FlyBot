@@ -37,6 +37,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 - **Right:** `gh pr merge <n> --auto --squash --match-head-commit <sha>` enqueues it; the queue runs `Test` on `merge_group` and squash-merges. Wait for MERGED (the merge starts the `push` run on `main`). See [merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge).
 - **Promote path:** after ≥3 days → docs/code-standards.md (merge gate section).
 
+### 2026-10-18 — A mock answer must have the shape the real server sends
+
+- **Seen:** 1× (#342: #228's `join_invite` mock returned a `bot` field the server never sends; #334 broke the real shape and stayed green)
+- **Trigger:** a plugin test mocks a Bot Social tool answer.
+- **Wrong:** invent a convenient field, or use a home-level `inviter` where the server sends the invited Bot, so the test passes while the real answer takes another path.
+- **Right:** copy the answer from the server source or a read-only call, name the Bot Social commit in a comment, and keep one test on exactly that shape (`#342` in `plugins/social/test/social.test.js`).
+- **Promote path:** after ≥3 days → [docs/code-standards.md](docs/code-standards.md#verifier-honesty).
+
 ### 2026-10-14 — Claim honesty (Verifier)
 
 - **Seen:** 1× (PR #2 review / agent claim patterns)
