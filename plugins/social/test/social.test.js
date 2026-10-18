@@ -1736,6 +1736,43 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
   assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
 })
 
+test('#304: a failed automatic leave is tried again on the next poll', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  let failLeave = 1
+  const leaves = []
+  const fetch = async (url, init) => {
+    if (String(url).includes('/v1/face-rooms/') && String(url).endsWith('/leave') && init?.method === 'POST') {
+      leaves.push(String(url))
+      if (failLeave-- > 0) return new Response(JSON.stringify({ error: { code: 'internal', message: 'try later' } }), { status: 503 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
+  const room = server.face.rooms.get('frm_123456')
+  room.members.push({ bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' })
+  await call('flybot/social/face-rooms', { poll: true })
+  room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 1)
+  assert.equal(room.status, 'open', 'the first leave failed')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 2, 'tried again')
+  assert.equal(room.status, 'closed')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 2, 'not after it succeeded')
+})
+
 test('face and inbox polls speed up while a live face room is open', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

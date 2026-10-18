@@ -2274,6 +2274,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // Once the room is left or closed here, a later poll must not reopen it (#182): the peer's
     // leave shows at once and stays shown without a reload.
     const held = hosted?.face?.status
+    // Ended here but still open on Bot Social: the automatic leave failed (timeout, 5xx), so the
+    // next poll tries it again instead of polling a room it shows as past forever (#304).
+    if (held === 'closed' && status === 'open') return { status: held, peersGone: true }
     if (held === 'left' || held === 'closed') return { status: held }
     const expiresAt = snapshot?.expiresAt || hosted?.face?.expiresAt
     if (status === 'candidate' && expiresAt) {
