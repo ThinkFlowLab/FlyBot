@@ -3017,7 +3017,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-option[aria-selected=true]{background:var(--bt-active)}
 .bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
 .bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-option-hint{font-size:11px;color:var(--bt-ink-2);flex:none;animation:bt-veil-in .16s ease-out}
+.bt-option-hint{font-size:11px;color:var(--bt-ink-2);flex:0 1 auto;min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;animation:bt-veil-in .16s ease-out}
+.bt-option-copy{flex:1;min-width:0;display:flex;flex-direction:column}
+.bt-option-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);white-space:normal;overflow-wrap:anywhere}
 .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
 .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
 .bt-nc-spacer{flex:1}
@@ -9835,8 +9837,11 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
             onClick: option.run
           },
           option.bot ? (0, import_react21.createElement)(BotMark, { bot: option.bot, size: 22 }) : (0, import_react21.createElement)("span", { className: "bt-option-icon" }, option.icon),
-          (0, import_react21.createElement)("span", { className: "bt-option-label" }, option.label),
-          option.hint && index === active ? (0, import_react21.createElement)("span", { className: "bt-option-hint" }, option.hint) : null
+          // An action row's description sits under its title and is always there (#283): a long line
+          // beside the title squeezed the title to nothing on hover, and a line that appears on hover moves the rows.
+          // A Bot row's short hint stays beside the name and shows on the active row only.
+          option.bot || !option.hint ? (0, import_react21.createElement)("span", { className: "bt-option-label" }, option.label) : (0, import_react21.createElement)("span", { className: "bt-option-copy" }, (0, import_react21.createElement)("span", { className: "bt-option-label" }, option.label), (0, import_react21.createElement)("span", { className: "bt-option-sub" }, option.hint)),
+          option.bot && option.hint && index === active ? (0, import_react21.createElement)("span", { className: "bt-option-hint" }, option.hint) : null
         ))
       )),
       menuOnly ? null : (0, import_react21.createElement)("div", { className: "bt-nc-spacer" }),

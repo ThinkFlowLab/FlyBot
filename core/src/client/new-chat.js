@@ -207,8 +207,13 @@ export function NewChat({ mode, roster, actions }) {
               onMouseEnter: () => setCursor(index), onClick: option.run,
             },
             option.bot ? h(BotMark, { bot: option.bot, size: 22 }) : h('span', { className: 'bt-option-icon' }, option.icon),
-            h('span', { className: 'bt-option-label' }, option.label),
-            option.hint && index === active ? h('span', { className: 'bt-option-hint' }, option.hint) : null)))),
+            // An action row's description sits under its title and is always there (#283): a long line
+            // beside the title squeezed the title to nothing on hover, and a line that appears on hover moves the rows.
+            // A Bot row's short hint stays beside the name and shows on the active row only.
+            option.bot || !option.hint
+              ? h('span', { className: 'bt-option-label' }, option.label)
+              : h('span', { className: 'bt-option-copy' }, h('span', { className: 'bt-option-label' }, option.label), h('span', { className: 'bt-option-sub' }, option.hint)),
+            option.bot && option.hint && index === active ? h('span', { className: 'bt-option-hint' }, option.hint) : null)))),
       menuOnly ? null : h('div', { className: 'bt-nc-spacer' }),
       error ? h('div', { className: 'bt-error' }, error) : null,
       menuOnly ? null : h('div', { className: 'bt-nc-compose' },

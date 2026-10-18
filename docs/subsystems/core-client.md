@@ -25,6 +25,7 @@ The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/cl
 | --- | --- |
 | `core/src/client/` | Client sources → build to `core/client.js`. |
 | `core/src/client/new-chat.js` | Sidebar **+** picker. Plugin rows via `flybot.new-chat.action` (`newChatActionRows` in `flybot-registry.js`); social adds Face-to-face group and Add friend (copy actions live inside Add friend, #181). The DSH Agent row reads **Add coding agent** (hint "A plain DSH session, not a Bot") so it is not mistaken for **Create new Bot** (#181). The short + menu does not list individual Bots. |
+| `core/test/new-chat-menu.test.js` | **+** menu rows (#283): an action row's description is its own line under the title, an inline Bot hint is capped, so hovering never hides a title. |
 | `core/test/new-chat.test.js` | Picker filters and the **+** short action menu (`data-menu`; New chat, then Create group chat, plugin actions, then Add Agent). |
 
 ## Invariants
