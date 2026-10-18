@@ -17,6 +17,9 @@
 //                            approval ids it shows: the overlay then draws no second card for them (#260)
 //   flybot.new-chat.action  { id, order, label, hint?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (next to Create group chat; Face-to-face group, Add friend, Friend requests)
 //   flybot.account.header   { id, order, component({ actions, call }) }   top of the account menu (the owner's own Bot Social handle)
+//   flybot.settings.page    { id, order, label, icon?, component({ roster, actions, call, run, t, Section, Row }) }   a page in the Settings list
+//                            (after Connectors); `label` is English and goes through the host's t(); the component gets the host's t(),
+//                            Section(title) and Row(label, hint) so the page looks like the others and reads zh in a zh UI
 //
 // The same registry object also carries the host Bot look so a plugin can draw a Bot
 // exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf (set in registry()).
@@ -71,6 +74,16 @@ class SlotBoundary extends Component {
 }
 function Safe({ entry, props }) {
   return h(SlotBoundary, { id: entry.id }, h(entry.component, props))
+}
+
+// Pages plugins add to Settings (flybot.settings.page), in order.
+export function useSettingsPages() {
+  return useSlot('flybot.settings.page')
+}
+
+// Renders a plugin's Settings page without letting its failure close the dialog.
+export function SettingsPageSlot({ entry, props }) {
+  return h(Safe, { entry, props })
 }
 
 // The first 'flybot.sidebar.structure' entry, or undefined: the sidebar then lists Bots flat.
