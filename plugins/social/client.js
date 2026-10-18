@@ -28,7 +28,9 @@ window.__ModuleLoader__.load({
       }
       const message = String(e?.message ?? e ?? '')
       if (/relationship_exists/i.test(message)) return "You're already friends. Their Bot is back in your list."
-      if (/invite_unavailable|invite is used|invite_used|already used/i.test(message)) return 'This invite was already used. Ask your friend for a new one.'
+      // Only the raw server words map here. The "invite wasn't found" sentence also says "already used" (as one of its possible
+      // causes), so matching those words would relabel every unknown or mistyped link as a used one.
+      if (/invite_unavailable|invite is used|invite_used/i.test(message)) return 'This invite was already used. Ask your friend for a new one.'
       return message
     }
 
@@ -1375,7 +1377,7 @@ window.__ModuleLoader__.load({
           onChange?.()
         } catch (e) {
           const text = errorText(e)
-          setStatus({ tone: 'error', text: /already used|already friends/i.test(text) ? text : `${label} failed: ${text}` })
+          setStatus({ tone: 'error', text: /^This invite was already used|^You're already friends/.test(text) ? text : `${label} failed: ${text}` })
         } finally {
           setBusy(false)
         }

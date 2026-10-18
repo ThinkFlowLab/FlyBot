@@ -522,6 +522,12 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
+  // #310 follow-up: the "wasn't found" sentence mentions "already used" as one possible cause; it must not be shown as "already used".
+  const notFound = "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link."
+  assert.equal(plugin.errorText(Object.assign(new Error(notFound), { code: 'bot/refused' })), notFound)
+  assert.equal(plugin.errorText(new Error("This invite link wasn't found on your Bot Social server. It may come from another server, or be incomplete, expired, or already used. Ask your friend for a new link.")).startsWith("This invite link wasn't found on your Bot Social server"), true)
+  assert.equal(plugin.errorText(new Error('This invite was already used. Ask your friend for a new one.')), 'This invite was already used. Ask your friend for a new one.')
+  assert.equal(plugin.errorText(new Error('Bot Social join_invite: invite is used')), 'This invite was already used. Ask your friend for a new one.')
   // A missing host handler is never shown as "Unknown FlyBot endpoint".
   assert.match(plugin.errorText(Object.assign(new Error('Unknown FlyBot endpoint social/remote-bots'), { code: 'bot/not-found' })), /^Social is not running:/)
   assert.doesNotMatch(plugin.errorText(Object.assign(new Error('Unknown FlyBot endpoint social/remote-bots'), { code: 'bot/not-found' })), /Unknown FlyBot endpoint/)
