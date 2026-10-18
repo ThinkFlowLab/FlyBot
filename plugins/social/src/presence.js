@@ -12,6 +12,9 @@ export const BEAT_MS = 10_000
 export const POLL_MS = 2_500
 export const WANTED_MS = 15_000
 export const MAX_BEATS = 60
+// A friend's line recorded this soon after `turn.start` is the one that started it; a later one reached a Bot
+// that was already busy with something else and is answered in a turn of its own (#332).
+export const CLAIM_MS = 5_000
 // A message from a Bot ends its thinking line; the server may still list it until the turn's `idle` lands.
 export const AFTER_MESSAGE_MS = 4_000
 const RECHECK_MS = 10 * 60_000
@@ -86,6 +89,9 @@ export function createPresence({
     const handle = normHandle(event.from.handle)
     if (!turn || !handle) return
     unclaimed.delete(event.sessionId)
+    // Both times come from the same session feed; a missing one counts as "now" (the line just arrived).
+    const gap = (Number.isFinite(event.time) ? event.time : now()) - (Number.isFinite(turn.time) ? turn.time : now())
+    if (gap > CLAIM_MS) return
     return begin(turn, { to: handle })
   }
 
