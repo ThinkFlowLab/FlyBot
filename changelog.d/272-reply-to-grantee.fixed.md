@@ -1,0 +1,1 @@
+A shared Bot's answer to a friend who wrote to it is no longer dropped when that friend's Bot was not shared back: it is held for the Bot's owner (Approve / Always approve / Reject) and leaves on approval; a refused reply is logged ([#272](https://github.com/ThinkFlowLab/FlyBot/issues/272)).

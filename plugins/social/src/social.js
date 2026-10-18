@@ -593,6 +593,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // ------------------------------------------------------------ remote roster
   let remote = { homes: [] }
   let fetchedAt = 0
+  // Every Bot Social lists for us, before the shared-with-us filter: a reply may go back to one (#272).
+  let serverRoster = []
   // Roster fetches are numbered when they ask, not when they land (#224): an answer that lands
   // after a newer one (the background refresh hide-remote starts, a slow link) is dropped, so it
   // cannot put back a roster the server has since changed — nor count toward forgetting a hide.
@@ -773,6 +775,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         result = await client.callTool('list_remote_bots', { home: home.id })
         if (rosterAt < rosterApplied) return remote
         const mapped = mapRemoteHomes(result?.homes)
+        serverRoster = mapped
         forgetDeclinedIfGone(mapped)
         backfillInboundFromRoster(mapped)
         unfiltered = { homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot)) })) }
@@ -817,6 +820,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return remote
   }
   const remoteBot = async handle => (await remoteBots()).homes.flatMap(entry => entry.bots).find(bot => bot.handle === norm(handle))
+  // A reply goes back to the Bot that carried the request, also when that Bot was not shared
+  // with us (the default one-way per-Bot grant, #138 / #161): our Bot's grant to it is the
+  // consent to answer it, and the reply still takes the owner's hold (#272). Nothing else
+  // reaches such a Bot: a new request to it needs a Bot its owner shared with us.
+  const replyTarget = (msg) => {
+    if (msg?.role !== 'reply' || typeof msg.from !== 'string') return undefined
+    const handle = norm(msg.target?.handle)
+    if (!handle || handle === '@' || isHomeLevelHandle(handle)) return undefined
+    if (flybot.grants?.has?.(msg.from, handle) !== true) return undefined
+    const listed = serverRoster.flatMap(entry => entry.bots ?? []).find(bot => bot.handle === handle)
+    return listed ?? { handle, name: handle, home: homeOfPeer(handle), remote: true }
+  }
+  const sendTarget = async msg => (await remoteBot(msg.target.handle)) ?? replyTarget(msg)
   const friendEntry = async friendHome => (await remoteBots()).homes.find(entry => entry.home === norm(friendHome))
   const homeOfPeer = (peerHandle) => {
     const key = norm(peerHandle)
@@ -1022,7 +1038,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     priority: flybot.bot.send.priority?.APPROVAL ?? 900,
     async handle(msg) {
       if (msg.target?.remote !== true || (msg.to?.transport ?? 'bot-social') !== 'bot-social') return undefined
-      const bot = await remoteBot(msg.target.handle)
+      const bot = await sendTarget(msg)
       if (bot === undefined) return { action: 'deny', reason: `${msg.target.handle} is not a Bot of a friend on Bot Social` }
       if (home && typeof msg.from === 'string' && !covered(await friendEntry(bot.home), msg.from)) {
         return { action: 'deny', reason: `${flybot.bot.get(msg.from)?.name ?? 'this Bot'} is not friends with ${bot.home}: that friendship is with ${(await friendEntry(bot.home)).via.join(', ')} only` }
@@ -1090,7 +1106,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     },
   }))
   async function sendOut(msg) {
-      const bot = await remoteBot(msg.target.handle)
+      const bot = await sendTarget(msg)
       if (bot === undefined) throw new Error(`${msg.target.handle} is no longer reachable`)
       if (home) {
         const member = typeof msg.from === 'string' ? activeMember(msg.from) : undefined

@@ -1042,6 +1042,43 @@ test('#258: a Bot\'s reply the owner approved on its card leaves at once: no sec
   assert.equal(status.pendingApprovals, 0, 'no card is left for a message that already went')
 })
 
+test('#272: a reply to the Bot that carried a request is held and leaves on approval, though that Bot was not shared with us', async (t) => {
+  const { ctx, home, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  // Bob joined Chief's invite with his own Chief: that Bot is on the server roster, but not shared back.
+  server.tools.list_bot_grants = () => ({ grants: [{ id: 'g-rev', grantee: 'Chief@chief.bob.home', name: 'Bob', relationship_id: 'r1' }] })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await ctx.flybot.grants.set('a', [{ grantee: '@chief.bob.home' }])
+  await social.registerAll()
+  // A new request to that Bot still needs a Bot Bob shared with us.
+  const asked = await ctx.flybot.bot.send({ from: 'a', to: '@chief.bob.home', text: 'Hello Bob' })
+  assert.equal(asked.action, 'deny')
+  assert.match(asked.reason, /not a Bot (of a friend|a friend shared)/)
+  // A Bot with no grant to it cannot answer it either.
+  assert.equal((await ctx.flybot.bot.send({ from: 'b', to: '@chief.bob.home', text: '4', role: 'reply', via: 'auto-reply' })).action, 'deny')
+  // Chief's answer is held for its owner, not dropped.
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@chief.bob.home', text: '4', role: 'reply', via: 'auto-reply' })).action, 'hold')
+  assert.equal(server.calls.some(c => c.name === 'send_as_member'), false, 'nothing leaves before the owner decides')
+  const [pending] = ctx.flybot.approvals.list()
+  assert.ok(pending, 'the owner gets a card')
+  await ctx.flybot.approvals.decide(pending.id, 'approve')
+  const sent = server.calls.filter(c => c.name === 'send_as_member')
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].args.to, '@chief.bob.home')
+  assert.equal(sent[0].args.text, '4')
+})
+
 test('#258: only an owner-approved send finishes Bot Social\'s hold; a Bot cannot claim it was approved', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
