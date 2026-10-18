@@ -73,6 +73,7 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
     memoryReview: true              # false leaves memory to the Bots' own remember calls
     diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
     updateCheck: true               # look for a newer DS Bot when a window opens; default true
+    automationTasks: false          # false stops FlyBot switching on DSH's Automation tasks bundle (once per profile) for Scheduled tasks; default on
     updateRegistry: https://registry.example/   # ask only this npm registry for updates
     github: false                   # hide the GitHub connector; default shown in Connectors
     composio: false                 # hide the Composio connector; default shown in Connectors

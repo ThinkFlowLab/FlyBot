@@ -11,8 +11,11 @@ diff --git a/README.md b/README.md
  - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
  - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
  
-@@ -74,6 +74,7 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+@@ -72,8 +72,10 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+     memoryReview: true              # false leaves memory to the Bots' own remember calls
+     diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
      updateCheck: true               # look for a newer DS Bot when a window opens; default true
++    automationTasks: false          # false stops FlyBot switching on DSH's Automation tasks bundle (once per profile) for Scheduled tasks; default on
      updateRegistry: https://registry.example/   # ask only this npm registry for updates
      github: false                   # hide the GitHub connector; default shown in Connectors
 +    composio: false                 # hide the Composio connector; default shown in Connectors
@@ -570,6 +573,17 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
+@@ -806,8 +806,8 @@ const ZH = {
+   Unit: '单位',
+   'Create task': '创建任务',
+   'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
+-  'Switch on Automation tasks on the Plugins page in Harness settings.': '在 Harness 设置的插件页启用「自动化任务」。',
+-  'Open Harness settings': '打开 Harness 设置',
++  'Switch on Automation tasks on the Plugins page.': '在「插件」页面打开「自动化任务」。',
++  'Open Plugins': '打开「插件」页面',
+   'New task': '新建任务',
+   'No scheduled tasks yet.': '还没有定时任务。',
+   'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
 @@ -851,10 +851,13 @@ const HOST_ERRORS = [
    [/^A group chat holds at most (\d+) Bots$/, '一个群聊最多 $1 个 Bot'],
    [/^Reply mode must be one of (.+)$/, '回复模式只能是 $1'],
@@ -665,6 +679,69 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  // Ways to get a first model. The DeepSeek sign-in exists only where the shell carries
  // its account plugin (the Desktop); the API key and custom models use the shell's
  // own editors.
+diff --git a/src/client/schedules.js b/src/client/schedules.js
+--- a/src/client/schedules.js
++++ b/src/client/schedules.js
+@@ -4,7 +4,6 @@
+ import { createElement as h, Fragment, useEffect, useState } from 'react'
+ import { BotAvatar, RoomAvatar } from './mark.js'
+ import { ClockIcon, PlusIcon, TrashIcon } from './icons.js'
+-import { openHarnessSettings } from './sidebar.js'
+ import { Segmented } from './motion.js'
+ import { dateLocale, hostText, t } from './i18n.js'
+ 
+@@ -169,20 +169,27 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+       h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' }, busy ? t('Creating…') : t('Create task'))))
+ }
+ 
++// The switch for Automation tasks is DSH's Plugins panel, not its settings dialog. The
++// Settings dialog closes first so the panel is not left behind it.
++export function openPlugins(actions) {
++  actions.closeSettings()
++  actions.selectPanel('plugins')
++}
++
+ // Settings has no schedule service to show: Automation tasks are off in DSH.
+-function AutomationOff() {
++function AutomationOff({ actions }) {
+   return h('div', { className: 'bt-set-card bt-task-off' },
+     h('span', { className: 'bt-task-off-mark' }, h(ClockIcon)),
+     h('span', { className: 'bt-task-off-title' }, t('Turn on Automation tasks in DSH')),
+-    h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Harness settings.')),
+-    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: openHarnessSettings }, t('Open Harness settings')))
++    h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.')),
++    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
+ }
+ 
+ export function SchedulesPage({ roster, actions, start }) {
+   const view = useSchedules(actions)
+   const [adding, setAdding] = useState(Boolean(start))
+   if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
+-  if (!view.available) return h(AutomationOff)
++  if (!view.available) return h(AutomationOff, { actions })
+   const shown = next => { publish(next); setAdding(false) }
+   const byChat = [
+     ...roster.bots.map(bot => [bot.id, h(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter(task => task.botId === bot.id)]),
+@@ -210,8 +210,8 @@ export function BotSchedules({ bot, roster, actions }) {
+     h('div', { className: 'bt-set-card' },
+       !view.available
+         ? h('div', { className: 'bt-set-row bt-bs-row' },
+-            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Harness settings.'))),
+-            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: openHarnessSettings }, t('Open Harness settings')))
++            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.'))),
++            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
+         : [
+             ...tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
+             h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task')),
+@@ -225,7 +225,7 @@ export function ScheduleSummary({ bot, actions }) {
+   return h('div', null,
+     h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
+     tasks.length === 0
+-      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page in Harness settings.') : t('No scheduled tasks yet. Add one'))
++      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
+       : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
+           h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
+ }
 diff --git a/src/client/text.js b/src/client/text.js
 --- a/src/client/text.js
 +++ b/src/client/text.js
@@ -2560,7 +2637,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -91,12 +91,18 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,19 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -2569,6 +2646,7 @@ diff --git a/test/install.test.js b/test/install.test.js
 +    'on agent/created',
      'on agent/created',
      'effect ds-bot: capabilities',
++    'effect ds-bot: automation tasks default',
      'effect ds-bot: usage ledger',
      'on llm/stream',
      'effect ds-bot: update check',

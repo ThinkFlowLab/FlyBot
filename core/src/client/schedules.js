@@ -4,7 +4,6 @@
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 import { BotAvatar, RoomAvatar } from './mark.js'
 import { ClockIcon, PlusIcon, TrashIcon } from './icons.js'
-import { openHarnessSettings } from './sidebar.js'
 import { Segmented } from './motion.js'
 import { dateLocale, hostText, t } from './i18n.js'
 
@@ -169,20 +168,27 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
       h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' }, busy ? t('Creating…') : t('Create task'))))
 }
 
+// The switch for Automation tasks is DSH's Plugins panel, not its settings dialog. The
+// Settings dialog closes first so the panel is not left behind it.
+export function openPlugins(actions) {
+  actions.closeSettings()
+  actions.selectPanel('plugins')
+}
+
 // Settings has no schedule service to show: Automation tasks are off in DSH.
-function AutomationOff() {
+function AutomationOff({ actions }) {
   return h('div', { className: 'bt-set-card bt-task-off' },
     h('span', { className: 'bt-task-off-mark' }, h(ClockIcon)),
     h('span', { className: 'bt-task-off-title' }, t('Turn on Automation tasks in DSH')),
-    h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Harness settings.')),
-    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: openHarnessSettings }, t('Open Harness settings')))
+    h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.')),
+    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
 }
 
 export function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions)
   const [adding, setAdding] = useState(Boolean(start))
   if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
-  if (!view.available) return h(AutomationOff)
+  if (!view.available) return h(AutomationOff, { actions })
   const shown = next => { publish(next); setAdding(false) }
   const byChat = [
     ...roster.bots.map(bot => [bot.id, h(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter(task => task.botId === bot.id)]),
@@ -210,8 +216,8 @@ export function BotSchedules({ bot, roster, actions }) {
     h('div', { className: 'bt-set-card' },
       !view.available
         ? h('div', { className: 'bt-set-row bt-bs-row' },
-            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Harness settings.'))),
-            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: openHarnessSettings }, t('Open Harness settings')))
+            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.'))),
+            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
         : [
             ...tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
             h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task')),
@@ -225,7 +231,7 @@ export function ScheduleSummary({ bot, actions }) {
   return h('div', null,
     h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
     tasks.length === 0
-      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page in Harness settings.') : t('No scheduled tasks yet. Add one'))
+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
       : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
           h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
 }

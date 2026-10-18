@@ -1005,8 +1005,8 @@ var ZH = {
   Unit: "单位",
   "Create task": "创建任务",
   "Turn on Automation tasks in DSH": "在 DSH 里打开「自动化任务」",
-  "Switch on Automation tasks on the Plugins page in Harness settings.": "在 Harness 设置的插件页启用「自动化任务」。",
-  "Open Harness settings": "打开 Harness 设置",
+  "Switch on Automation tasks on the Plugins page.": "在「插件」页面打开「自动化任务」。",
+  "Open Plugins": "打开「插件」页面",
   "New task": "新建任务",
   "No scheduled tasks yet.": "还没有定时任务。",
   "No scheduled tasks yet. Add one": "还没有定时任务，去添加",
@@ -8518,21 +8518,25 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
     )
   );
 }
-function AutomationOff() {
+function openPlugins(actions) {
+  actions.closeSettings();
+  actions.selectPanel("plugins");
+}
+function AutomationOff({ actions }) {
   return (0, import_react16.createElement)(
     "div",
     { className: "bt-set-card bt-task-off" },
     (0, import_react16.createElement)("span", { className: "bt-task-off-mark" }, (0, import_react16.createElement)(ClockIcon)),
     (0, import_react16.createElement)("span", { className: "bt-task-off-title" }, t("Turn on Automation tasks in DSH")),
-    (0, import_react16.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page in Harness settings.")),
-    (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: openHarnessSettings }, t("Open Harness settings"))
+    (0, import_react16.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page.")),
+    (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
   );
 }
 function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions);
   const [adding, setAdding] = (0, import_react16.useState)(Boolean(start));
   if (view === null) return (0, import_react16.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
-  if (!view.available) return (0, import_react16.createElement)(AutomationOff);
+  if (!view.available) return (0, import_react16.createElement)(AutomationOff, { actions });
   const shown = (next) => {
     publish(next);
     setAdding(false);
@@ -8565,8 +8569,8 @@ function BotSchedules({ bot, roster, actions }) {
       !view.available ? (0, import_react16.createElement)(
         "div",
         { className: "bt-set-row bt-bs-row" },
-        (0, import_react16.createElement)("span", { className: "bt-set-copy" }, (0, import_react16.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page in Harness settings."))),
-        (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: openHarnessSettings }, t("Open Harness settings"))
+        (0, import_react16.createElement)("span", { className: "bt-set-copy" }, (0, import_react16.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page."))),
+        (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
       ) : [
         ...tasks.map((task) => (0, import_react16.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
         (0, import_react16.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react16.createElement)(PlusIcon), t("New task"))
@@ -8581,7 +8585,7 @@ function ScheduleSummary({ bot, actions }) {
     "div",
     null,
     (0, import_react16.createElement)("div", { className: "bt-section-title" }, t("Scheduled tasks")),
-    tasks.length === 0 ? (0, import_react16.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view?.available === false ? t("Switch on Automation tasks on the Plugins page in Harness settings.") : t("No scheduled tasks yet. Add one")) : (0, import_react16.createElement)("div", { className: "bt-task-list" }, tasks.slice(0, 3).map((task) => (0, import_react16.createElement)(
+    tasks.length === 0 ? (0, import_react16.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view?.available === false ? t("Switch on Automation tasks on the Plugins page.") : t("No scheduled tasks yet. Add one")) : (0, import_react16.createElement)("div", { className: "bt-task-list" }, tasks.slice(0, 3).map((task) => (0, import_react16.createElement)(
       "button",
       { key: task.id, type: "button", className: "bt-task-line", onClick: () => actions.openSettings("schedules") },
       (0, import_react16.createElement)(ClockIcon),
