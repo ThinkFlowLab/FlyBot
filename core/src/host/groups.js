@@ -183,7 +183,7 @@ export function install(rt) {
       'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
       broadcast
         ? 'It is addressed to everyone (introductions, what each of you can do, a round of opinions): give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
-        : 'Default to [PASS]: one Bot answers a line like this, not several. Answer only if it is for you (it names you or your role, or no other member\'s role fits it better) and no Bot before you has answered it. If a Bot before you answered, even partly, reply exactly [PASS]: do not confirm, verify, repeat, add tips or run extra checks, unless that answer is wrong. Reply [PASS] too when it is for another Bot by name or role, or when it follows up on another Bot\'s answer.',
+        : 'Default to [PASS]: exactly one Bot answers a line like this, and the first Bot that answers ends it, so the Bots after it are not asked. Answer only if it is for you: it names you or your role, no other member\'s role fits it better, or it follows up on your own last answer. Reply [PASS] when it is for another Bot by name or role, when it follows up on another Bot\'s answer, or when you would only be guessing.',
       last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
       roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
       friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
@@ -294,6 +294,10 @@ export function install(rt) {
     return round.slots.length - before
   }
 
+  // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval.
+  const answeredAlready = round => round.route !== undefined && !round.route.broadcast && round.route.forced === undefined
+    && round.slots.some(slot => slot.status === 'posted' || slot.status === 'working' || slot.status === 'waiting-approval')
+
   // True once a routed round ended with every Bot silent on the owner's own line (a friend's line is not
   // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer.
   function fallbackDue(round) {
@@ -338,6 +342,13 @@ export function install(rt) {
       // Settings may change mid-round, for example when the admin removes someone.
       if (member === undefined || !room.members.includes(slot.id)) {
         slot.status = 'left'
+        continue
+      }
+      // One answer for a line that is not for everyone (#299): once a Bot has answered, the Bots still waiting are not
+      // asked at all (no model call, no line), so three Bots never post three similar answers.
+      if (answeredAlready(round)) {
+        slot.status = 'passed'
+        round.passed.push(member.name)
         continue
       }
       slot.status = 'speaking'

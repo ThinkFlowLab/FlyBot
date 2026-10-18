@@ -601,6 +601,15 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    if (known !== undefined) {
 -      await rt.ensureCapabilities(known)
 -      return { id: known, brief: undefined }
+-    }
+-    const id = await rt.createSession(`${member.name} · ${room.name}`, { dir: rt.workDirOf({ botId: member.id, roomId: room.id }) })
+-    room.sessions[member.id] = id
+-    rt.groupOwners.set(id, { botId: member.id, roomId: room.id })
+-    delete room.seen[member.id]
+-    const ref = await rt.desiredModel(member)
+-    if (ref !== undefined) {
+-      await rt.selectSessionModel(id, splitRef(ref))
+-        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
 +  // The brief is the member's owner's private chat with the Bot. In a room where
 +  // another owner sits it stays out unless that owner shared it with this room (#53).
 +  const briefAllowed = (room, member) => {
@@ -613,15 +622,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      else if (p.remote) owners.add(p.handle)
 +      else owners.add(rt.botOf(p.id)?.ownerId)
      }
--    const id = await rt.createSession(`${member.name} · ${room.name}`, { dir: rt.workDirOf({ botId: member.id, roomId: room.id }) })
--    room.sessions[member.id] = id
--    rt.groupOwners.set(id, { botId: member.id, roomId: room.id })
--    delete room.seen[member.id]
--    const ref = await rt.desiredModel(member)
--    if (ref !== undefined) {
--      await rt.selectSessionModel(id, splitRef(ref))
--        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
--    }
 -    await rt.applyPermission(member, id)
 -      .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))
 -    await rt.save()
@@ -650,7 +650,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
 +      broadcast
 +        ? 'It is addressed to everyone (introductions, what each of you can do, a round of opinions): give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
-+        : 'Default to [PASS]: one Bot answers a line like this, not several. Answer only if it is for you (it names you or your role, or no other member\'s role fits it better) and no Bot before you has answered it. If a Bot before you answered, even partly, reply exactly [PASS]: do not confirm, verify, repeat, add tips or run extra checks, unless that answer is wrong. Reply [PASS] too when it is for another Bot by name or role, or when it follows up on another Bot\'s answer.',
++        : 'Default to [PASS]: exactly one Bot answers a line like this, and the first Bot that answers ends it, so the Bots after it are not asked. Answer only if it is for you: it names you or your role, no other member\'s role fits it better, or it follows up on your own last answer. Reply [PASS] when it is for another Bot by name or role, when it follows up on another Bot\'s answer, or when you would only be guessing.',
 +      last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
 +      roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
 +      friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
@@ -761,10 +761,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        const { all, found } = mentionsIn(line.text, members)
        const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
        callMembers(round, turns, index - 1, openingSpeakers(room, { text: line.text }), note, ROOM_ADMIN_TURNS_EACH)
-@@ -305,14 +305,44 @@ export function install(rt) {
+@@ -305,14 +305,48 @@ export function install(rt) {
      return round.slots.length - before
    }
  
++  // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval.
++  const answeredAlready = round => round.route !== undefined && !round.route.broadcast && round.route.forced === undefined
++    && round.slots.some(slot => slot.status === 'posted' || slot.status === 'working' || slot.status === 'waiting-approval')
++
 +  // True once a routed round ended with every Bot silent on the owner's own line (a friend's line is not
 +  // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer.
 +  function fallbackDue(round) {
@@ -807,6 +811,20 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        if (index >= round.slots.length) break
        const slot = round.slots[index]
        const member = rt.botOf(slot.id)
+@@ -321,6 +321,13 @@ export function install(rt) {
+         slot.status = 'left'
+         continue
+       }
++      // One answer for a line that is not for everyone (#299): once a Bot has answered, the Bots still waiting are not
++      // asked at all (no model call, no line), so three Bots never post three similar answers.
++      if (answeredAlready(round)) {
++        slot.status = 'passed'
++        round.passed.push(member.name)
++        continue
++      }
+       slot.status = 'speaking'
+       round.speaking = member.id
+       round.turns += 1
 @@ -339,7 +339,9 @@ export function install(rt) {
        const prompt = roomPrompt(room, member, round)
        round.shown?.push(member.id)

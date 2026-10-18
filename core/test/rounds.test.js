@@ -540,7 +540,7 @@ test('#295: a plain line in a large face room is cut off at six speakers, the ad
     localBots: ids.map((id, at) => ({ id, handle: `@b${at}.me.home`, name: at === 0 ? 'Chief' : `Extra${at - 1}` })),
   })
   sent.length = 0
-  await emit(hosted.id, userMessage('who is here'))
+  await emit(hosted.id, userMessage('大家好 who is here'))
   const running = relay(hosted.id, 'big')
   const spoke = []
   for (let at = 0; at < 8; at += 1) {
@@ -756,11 +756,10 @@ test('#299: a follow-up goes to the Bot that spoke last, who is asked first; one
   assert.equal(c.sessionId, hosted.sessions[writer], 'the last speaker is asked first')
   assert.match(promptOf(c), /Writer spoke last before this line/)
   await answer(c.sessionId, c.message.source.exchangeId, 'Three headings, then fill in.', 3)
-  const d = await turnFor(sent, c)
-  assert.ok(d, 'the other Bot is still asked and sees the answer, so it can pass')
-  await answer(d.sessionId, d.message.source.exchangeId, '[PASS]', 4)
   const done = JSON.parse(await two)
   assert.deepEqual(done.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['Three headings, then fill in.'])
+  assert.equal(roomTurns(sent).length, 1, 'once the Writer answered, the other Bot is not asked at all')
+  assert.equal(done.passed.length, 1, 'it counts as a silent pass: no line, no model call')
 
   // The friend's Bot spoke last: my Bots may pass, and nothing is forced on the owner's home.
   await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: '@chief.bob.home', senderName: "Bob's Chief", remote: { handle: '@chief.bob.home' } }, content: [{ type: 'text', text: 'I can see the whole room.' }] } })
@@ -791,7 +790,7 @@ test('#299: the pass rule is explicit, and the follow-up rule holds on the real 
   const { running: one } = await say('文档怎么写', 'real-1')
   const a = await turnFor(sent)
   assert.match(promptOf(a), /Default to \[PASS\]/)
-  assert.match(promptOf(a), /do not confirm, verify, repeat, add tips or run extra checks/)
+  assert.match(promptOf(a), /the first Bot that answers ends it/)
   await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 1)
   const b = await turnFor(sent, a)
   assert.equal(b.sessionId, hosted.sessions[writer])
@@ -803,8 +802,33 @@ test('#299: the pass rule is explicit, and the follow-up rule holds on the real 
   assert.equal(c.sessionId, hosted.sessions[writer], 'the Bot that spoke last is asked first')
   assert.match(promptOf(c), /Writer spoke last before this line/)
   await answer(c.sessionId, c.message.source.exchangeId, 'Three headings.', 3)
-  const d = await turnFor(sent, c)
-  assert.match(promptOf(d), /Three headings\./, 'the next Bot sees the answer, so it can pass')
-  await answer(d.sessionId, d.message.source.exchangeId, '[PASS]', 4)
   await two
+  assert.equal(roomTurns(sent).length, 1, 'the other Bot is not asked once the last speaker answered')
+})
+
+test('#299: the first Bot that answers a routed line ends it; a line to everyone is not cut', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted } = await routedRoom(env, 'one')
+  // The screenshot case: a plain "what did the group talk about" gets one summary, not three.
+  await emit(hosted.id, userMessage('那你说说群里都聊了啥'))
+  const running = relay(hosted.id, 'one-1')
+  const first = await turnFor(sent)
+  await answer(first.sessionId, first.message.source.exchangeId, 'We introduced ourselves.', 1)
+  const result = JSON.parse(await running)
+  assert.deepEqual(result.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['We introduced ourselves.'])
+  assert.equal(roomTurns(sent).length, 1)
+  assert.equal(result.passed.length, 1)
+
+  // "你们 / 大家" is addressed to everyone: each Bot is still asked.
+  sent.length = 0
+  await emit(hosted.id, userMessage('你们各自总结一下'))
+  const all = relay(hosted.id, 'one-2')
+  const a = await turnFor(sent)
+  await answer(a.sessionId, a.message.source.exchangeId, 'mine', 2)
+  const b = await turnFor(sent, a)
+  assert.ok(b, 'a line to everyone reaches the next Bot too')
+  await answer(b.sessionId, b.message.source.exchangeId, 'mine too', 3)
+  await all
 })
