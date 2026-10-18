@@ -637,11 +637,8 @@ window.__ModuleLoader__.load({
       if (typeof ctx.flybot === 'object') { ctx.flybot.timeline = api; offs.push(() => { if (ctx.flybot.timeline === api) delete ctx.flybot.timeline }) }
       if (globalThis.__flybot__) { globalThis.__flybot__.timeline = api; offs.push(() => { if (globalThis.__flybot__?.timeline === api) delete globalThis.__flybot__.timeline }) }
       if (ctx.flybot.slots) {
+        // The sidebar row is the one entry: the + menu has none (#269).
         if (config?.sidebarSection !== false) offs.push(ctx.flybot.slots.register('flybot.sidebar.section', { id: 'timeline', order: 80, component: makeSection(api) }))
-        offs.push(ctx.flybot.slots.register('flybot.new-chat.action', {
-          id: 'timeline-open', order: 40, label: 'Timeline', hint: 'See where the team\'s time goes.',
-          run: ({ close } = {}) => { api.panel.show(); close?.() },
-        }))
       }
       const off = () => { panel.hide(); store.dispose(); for (const fn of offs.splice(0)) fn() }
       ctx.effect?.(() => off, 'flybot-timeline: panel')

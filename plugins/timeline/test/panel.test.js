@@ -356,7 +356,7 @@ test('sidebar row: opens the panel on click, shows it while open, releases the p
   view.unmount()
 })
 
-test('apply registers the sidebar row and the new-chat entry, opens through them, and removes both', () => {
+test('apply registers the sidebar row only (no + menu entry, #269), opens through it, and removes it', () => {
   const registered = []
   const flybot = {
     call: async () => ({}),
@@ -365,16 +365,16 @@ test('apply registers the sidebar row and the new-chat entry, opens through them
   globalThis.__flybot__ = {}
   try {
     const off = client.apply({ flybot })
-    assert.deepEqual(registered.map(([slot, entry]) => [slot, entry.id]), [['flybot.sidebar.section', 'timeline'], ['flybot.new-chat.action', 'timeline-open']])
-    let closed = 0
-    registered[1][1].run({ close: () => { closed += 1 } })
+    assert.deepEqual(registered.map(([slot, entry]) => [slot, entry.id]), [['flybot.sidebar.section', 'timeline']])
+    assert.equal(registered.some(([slot]) => slot === 'flybot.new-chat.action'), false)
+    flybot.timeline.panel.show()
     assert.equal(flybot.timeline.panel.open, true)
-    assert.equal(closed, 1)
     off()
     assert.equal(registered.length, 0)
     assert.equal(flybot.timeline, undefined)
+    // Without the sidebar row nothing is registered; the panel opens through ctx.flybot.timeline.panel.show().
     const quiet = client.apply({ flybot }, { sidebarSection: false })
-    assert.deepEqual(registered.map(([slot]) => slot), ['flybot.new-chat.action'])
+    assert.deepEqual(registered, [])
     quiet()
   } finally {
     delete globalThis.__flybot__
