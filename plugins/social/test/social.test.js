@@ -4940,14 +4940,19 @@ test('#297: the thinking line is a plain session dock below the approval card, s
 
 test('#297: social/typing answers from Bot Social only when the server lists presence, and a friend\'s message clears the line', async (t) => {
   const withPresence = attestingFaceServer({ features: ['typed_by_owner', 'presence'] })
-  const stamp = () => new Date().toISOString()
-  withPresence.tools.list_presence = () => ({
-    server_time: stamp(),
-    presence: [
-      { scope: 'face_room', room_id: 'frm_123456', bot: { handle: '@chief.bob.home', display_name: 'Chief' }, state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
-      { scope: 'direct', bot: { handle: '@coder.bob.home', display_name: 'Coder' }, to: '@chief.danyang.home', state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
-    ],
-  })
+  // One clock reading per answer: separate Date.now() calls could straddle a millisecond and give
+  // 20 001 ms left, which failed the `<= 20_000` check below now and then.
+  withPresence.tools.list_presence = () => {
+    const at = Date.now()
+    const expires = new Date(at + 20_000).toISOString()
+    return {
+      server_time: new Date(at).toISOString(),
+      presence: [
+        { scope: 'face_room', room_id: 'frm_123456', bot: { handle: '@chief.bob.home', display_name: 'Chief' }, state: 'thinking', expires_at: expires },
+        { scope: 'direct', bot: { handle: '@coder.bob.home', display_name: 'Coder' }, to: '@chief.danyang.home', state: 'thinking', expires_at: expires },
+      ],
+    }
+  }
   const { call } = await faceFixture(t, withPresence)
   const first = await call('flybot/social/typing', {})
   assert.equal(first.ok, true)
