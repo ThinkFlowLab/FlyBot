@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
-import { cleanApps, composioSession, signIn } from '../src/host/connectors.js'
+import { cleanApps, composioDeleteSession, composioSession, composioSessionAlive, signIn } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
 
 const fresh = () => `ghp_${randomBytes(16).toString('hex')}`
-const answer = (status, body) => ({ status, ok: status >= 200 && status < 300, json: async () => body })
+const answer = (status, body) => ({ status, ok: status >= 200 && status < 300, body, json: async () => body })
 
 test('signIn asks GitHub who owns the token', async () => {
   const token = fresh()
@@ -185,15 +185,30 @@ test('a GitHub address without https refuses to send the token', async (t) => {
 const composioKey = () => `cmp_${randomBytes(16).toString('hex')}`
 const SESSION = { session_id: 's1', mcp: { type: 'http', url: 'https://composio.test/tool_router/s1/mcp' } }
 
-// Records each session request; `answers` can replace the reply.
+// Stands in for Composio. `reply` answers session creation (POST); a session that was made and
+// not yet deleted answers GET 200, DELETE 200 once and then 404, like the real API. Every request is
+// recorded in `requests`, the creations (with their parsed body) in `posts`.
 function fakeComposio(reply = () => answer(201, SESSION)) {
   const requests = []
+  const live = new Set()
   const fetch = async (url, init) => {
-    requests.push({ url, init, body: JSON.parse(init.body) })
-    return reply(init)
+    const method = init.method ?? 'GET'
+    const request = { url, init, method, ...(init.body === undefined ? {} : { body: JSON.parse(init.body) }) }
+    requests.push(request)
+    if (method === 'POST') {
+      const made = reply(init)
+      if (made.ok && made.body?.session_id !== undefined) live.add(made.body.session_id)
+      return made
+    }
+    const id = decodeURIComponent(url.split('/').at(-1))
+    if (!live.has(id)) return answer(404, { error: { message: 'gone' } })
+    if (method === 'DELETE') live.delete(id)
+    return answer(200, method === 'DELETE' ? { session_id: id, deleted: true } : { session_id: id })
   }
-  return { requests, fetch }
+  return { requests, live, fetch, get posts() { return requests.filter(request => request.method === 'POST') }, get deletes() { return requests.filter(request => request.method === 'DELETE') } }
 }
+// A new session id for every creation.
+const numbered = () => { let count = 0; return () => { count += 1; return answer(201, { session_id: `trs_${count}`, mcp: { url: `https://composio.test/tool_router/trs_${count}/mcp` } }) } }
 
 test('cleanApps takes a list or a text, lowercases, de-duplicates and refuses nothing or odd names', () => {
   assert.deepEqual(cleanApps(['Gmail', 'gmail', ' slack ']), ['gmail', 'slack'])
@@ -209,7 +224,7 @@ test('composioSession limits the session to the apps, proves the key, and keeps 
   const key = composioKey()
   const sent = fakeComposio()
   const session = await composioSession(key, { api: 'https://composio.test/api/v3.1/', userId: 'flybot-1', apps: ['gmail', 'slack'], fetch: sent.fetch })
-  assert.deepEqual(session, { url: 'https://composio.test/tool_router/s1/mcp' })
+  assert.deepEqual(session, { url: 'https://composio.test/tool_router/s1/mcp', id: 's1' })
   const [request] = sent.requests
   assert.equal(request.url, 'https://composio.test/api/v3.1/tool_router/session')
   assert.equal(request.init.method, 'POST')
@@ -261,7 +276,7 @@ test('connecting Composio keeps the key out of every Bot shell and the profile, 
     headers: { 'x-api-key': key },
     failOnStartupError: true,
   })
-  const userIds = new Set(sent.requests.map(request => request.body.user_id))
+  const userIds = new Set(sent.posts.map(request => request.body.user_id))
   assert.equal(userIds.size, 1)
   assert.match([...userIds][0], /^flybot-[0-9a-f-]{36}$/)
 
@@ -277,7 +292,7 @@ test('connecting Composio keeps the key out of every Bot shell and the profile, 
   assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
   // The same FlyBot id comes back, so apps signed in earlier stay signed in.
   await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
-  assert.equal(new Set(sent.requests.map(request => request.body.user_id)).size, 1)
+  assert.equal(new Set(sent.posts.map(request => request.body.user_id)).size, 1)
 })
 
 test('Choose apps mounts again with the new list and needs no key; an unknown app name is refused by Composio and keeps the old list', async (t) => {
@@ -298,7 +313,7 @@ test('Choose apps mounts again with the new list and needs no key; an unknown ap
   assert.deepEqual(changed.value.find(entry => entry.id === 'composio').apps, ['gmail', 'notion'])
   assert.equal(mounts.length, 2)
   assert.equal(mounts[0].disposed, true)
-  assert.deepEqual(sent.requests.at(-1).body.toolkits, { enable: ['gmail', 'notion'] })
+  assert.deepEqual(sent.posts.at(-1).body.toolkits, { enable: ['gmail', 'notion'] })
   refuse = true
   const refused = await call(ctx, 'connector-apps', { id: 'composio', apps: ['nope'] })
   assert.equal(refused.ok, false)
@@ -367,4 +382,157 @@ test('a Composio address without https refuses to send the key', async (t) => {
   assert.match(refused.error.message, /https/)
   assert.equal(asked, false)
   assert.equal(mounts.length, 0)
+})
+
+// --- Composio sessions: made once, reused while valid, deleted when superseded (#323) ---
+
+test('composioSessionAlive and composioDeleteSession use the session address, send the key only as a header, and never throw on delete', async () => {
+  const key = composioKey()
+  const api = 'https://composio.test/api/v3.1/'
+  const sent = fakeComposio(() => answer(201, SESSION))
+  await composioSession(key, { api, userId: 'u', apps: ['gmail'], fetch: sent.fetch })
+  assert.equal(await composioSessionAlive(key, { api, id: 's1', fetch: sent.fetch }), true)
+  const [, get] = sent.requests
+  assert.equal(get.url, 'https://composio.test/api/v3.1/tool_router/session/s1')
+  assert.equal(get.method, 'GET')
+  assert.equal(get.init.headers['x-api-key'], key)
+  assert.equal(get.init.redirect, 'error')
+  assert.equal(await composioSessionAlive(key, { api, id: 'nope', fetch: sent.fetch }), false)
+  await assert.rejects(composioSessionAlive(key, { api, id: 's1', fetch: async () => answer(401, {}) }), /did not accept/)
+  await assert.rejects(composioSessionAlive(key, { api, id: 's1', fetch: async () => answer(500, {}) }), /answered 500/)
+  await assert.rejects(composioSessionAlive(key, { api, id: 's1', fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
+
+  assert.equal(await composioDeleteSession(key, { api, id: 's1', fetch: sent.fetch }), true)
+  const [del] = sent.deletes
+  assert.equal(del.url, 'https://composio.test/api/v3.1/tool_router/session/s1')
+  assert.equal(del.init.headers['x-api-key'], key)
+  assert.equal(del.init.redirect, 'error')
+  assert.equal(del.init.body, undefined)
+  // Already gone counts as deleted; a refusal or an outage is false, not an error.
+  assert.equal(await composioDeleteSession(key, { api, id: 's1', fetch: sent.fetch }), true)
+  assert.equal(await composioDeleteSession(key, { api, id: 's1', fetch: async () => answer(500, {}) }), false)
+  assert.equal(await composioDeleteSession(key, { api, id: 's1', fetch: async () => { throw new Error(`boom ${key}`) } }), false)
+  // An id that is not a plain token never reaches the network.
+  const before = sent.requests.length
+  assert.equal(await composioDeleteSession(key, { api, id: '../../x', fetch: sent.fetch }), false)
+  assert.equal(await composioDeleteSession(key, { api, id: undefined, fetch: sent.fetch }), false)
+  assert.equal(sent.requests.length, before)
+})
+
+test('Composio makes one session per connect, keeps it (never the key) in state, and reuses it on Try again', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const sent = fakeComposio(numbered())
+  globalThis.fetch = sent.fetch
+  const { ctx, home, mounts } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const key = composioKey()
+  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
+  assert.equal(sent.posts.length, 1, 'the key check and the mount share one session')
+  assert.equal(mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
+  const kept = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio
+  assert.deepEqual(kept.session, { id: 'trs_1', url: 'https://composio.test/tool_router/trs_1/mcp', apps: ['gmail'] })
+  assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(key))
+
+  await call(ctx, 'connector-retry', { id: 'composio' })
+  await call(ctx, 'connector-retry', { id: 'composio' })
+  assert.equal(mounts.length, 3)
+  assert.equal(sent.posts.length, 1, 'Try again mounts the same session')
+  assert.ok(mounts.every(mount => mount.config.url.endsWith('/trs_1/mcp')))
+  assert.equal(sent.deletes.length, 0)
+  // Choosing the same apps again changes nothing on Composio.
+  await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail'] })
+  assert.equal(sent.posts.length, 1)
+  assert.equal(sent.deletes.length, 0)
+})
+
+test('a session Composio no longer has is made again on Try again, and the new one is kept', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const sent = fakeComposio(numbered())
+  globalThis.fetch = sent.fetch
+  const { ctx, home, mounts } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
+  sent.live.clear()
+  const retried = await call(ctx, 'connector-retry', { id: 'composio' })
+  assert.equal(retried.value.find(entry => entry.id === 'composio').state, 'ready')
+  assert.equal(sent.posts.length, 2)
+  assert.ok(mounts.at(-1).config.url.endsWith('/trs_2/mcp'))
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.session.id, 'trs_2')
+})
+
+test('Choose apps deletes the superseded session after the new one is kept; a refused list leaves the old session alone', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  let refuse = false
+  const make = numbered()
+  const sent = fakeComposio(() => refuse ? answer(400, { error: { message: 'Unknown toolkit nope' } }) : make())
+  globalThis.fetch = sent.fetch
+  const { ctx, home, mounts } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const key = composioKey()
+  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
+  const changed = await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail', 'notion'] })
+  assert.equal(changed.ok, true, JSON.stringify(changed))
+  assert.deepEqual(sent.deletes.map(request => request.url), ['https://composio.test/api/v3.1/tool_router/session/trs_1'])
+  assert.equal(sent.deletes[0].init.headers['x-api-key'], key)
+  assert.deepEqual([...sent.live], ['trs_2'])
+  assert.ok(mounts.at(-1).config.url.endsWith('/trs_2/mcp'))
+  assert.equal(sent.posts.length, 2)
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.session.id, 'trs_2')
+
+  refuse = true
+  const refused = await call(ctx, 'connector-apps', { id: 'composio', apps: ['nope'] })
+  assert.equal(refused.ok, false)
+  assert.equal(sent.deletes.length, 1)
+  assert.deepEqual([...sent.live], ['trs_2'])
+})
+
+test('Disconnect deletes the session with the key it was made with, drops it from state, and a failed delete is not an error', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const sent = fakeComposio(numbered())
+  let breakDelete = false
+  globalThis.fetch = (url, init) => breakDelete && init.method === 'DELETE' ? Promise.reject(new Error('boom')) : sent.fetch(url, init)
+  const { ctx, home } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const key = composioKey()
+  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
+  const userId = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.userId
+  const off = await call(ctx, 'connector-disconnect', { id: 'composio' })
+  assert.equal(off.ok, true)
+  assert.equal(sent.deletes.length, 1)
+  assert.equal(sent.deletes[0].init.headers['x-api-key'], key)
+  assert.deepEqual([...sent.live], [])
+  assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio, { userId })
+
+  // Connecting again makes a fresh session for the same FlyBot id; an outage on delete does not block Disconnect.
+  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
+  assert.equal(sent.posts.length, 2)
+  breakDelete = true
+  const again = await call(ctx, 'connector-disconnect', { id: 'composio' })
+  assert.equal(again.ok, true, JSON.stringify(again))
+  assert.equal(again.value.find(entry => entry.id === 'composio').state, 'off')
+  assert.ok(!JSON.stringify(again).includes(key))
+  assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(key))
+})
+
+test('a new key makes its own session and deletes the old key\'s session with the old key', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const sent = fakeComposio(numbered())
+  globalThis.fetch = sent.fetch
+  const { ctx, home } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const first = composioKey()
+  const second = composioKey()
+  await call(ctx, 'connector-connect', { id: 'composio', token: first, apps: ['gmail'] })
+  // The first session cannot be seen with the second key (another project): a new session is made.
+  const get = sent.fetch
+  globalThis.fetch = (url, init) => init.headers['x-api-key'] === second && init.method === 'GET' && url.endsWith('/trs_1') ? Promise.resolve(answer(404, {})) : get(url, init)
+  await call(ctx, 'connector-connect', { id: 'composio', token: second, apps: ['gmail'] })
+  assert.equal(sent.posts.length, 2)
+  assert.deepEqual(sent.deletes.map(request => [request.url.split('/').at(-1), request.init.headers['x-api-key']]), [['trs_1', first]])
+  assert.deepEqual([...sent.live], ['trs_2'])
 })
