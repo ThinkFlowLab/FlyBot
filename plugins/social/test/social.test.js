@@ -1126,6 +1126,31 @@ test('#226: a held line arriving or being decided refreshes the friend chat wait
   assert.notEqual(next.unchanged, true)
 })
 
+test('#271: a Bot\'s direct message to a friend is not a line of a Face-to-face room that has the friend in it', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  let provider
+  const scope = ctx.flybot.scope
+  ctx.flybot.scope = (name) => {
+    const scoped = scope(name)
+    const original = scoped.roomApprovals
+    scoped.roomApprovals = { ...original, setProvider: (fn) => { provider = fn; original?.setProvider?.(fn) } }
+    return scoped
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@bob.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  const [held] = (await call('flybot/social/status', {})).value.approvals
+  assert.ok(held)
+  const friend = [{ remote: true, handle: '@coder.bob.home' }]
+  assert.equal(typeof provider, 'function')
+  assert.deepEqual(provider({ id: 'face-1', origin: 'face-to-face', participants: friend, face: { roomId: 'srv-room' } }), [], 'no card, no waiting badge in the face room')
+  assert.equal(provider({ id: 'group-1', participants: friend }).length, 1, 'other rooms keep matching by handle')
+})
+
 const heldOutbound = {
   approval_id: 'apr-hold-1',
   kind: 'outbound_message',
@@ -2824,10 +2849,23 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Always approve'])
   assert.equal(buttons.filter(n => /fs-btn/.test(n.props.className ?? '')).length, 2)
   assert.match(buttons.at(-1).props.className, /fs-link/)
+  // One layout on every card: the two decisions together on the right, the standing choice at the left
+  // (alone above them when narrow), whatever the width (#271).
+  const decide = own.find(n => n.props.className === 'fs-hold-decide')
+  assert.ok(decide && decide.children.filter(n => n.type === 'button').length === 2, 'Approve and Reject are one group')
+  const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(src, /\.fs-hold \.fs-actions\{[^}]*flex-wrap:wrap/)
+  assert.match(src, /\.fs-hold \.fs-actions \.fs-hold-always\{order:-1;margin-right:auto/)
   // A room that merely has that friend in it does not get the Bot's direct message (it showed in the
   // Face-to-face room instead of the Bot's own chat).
   const room = { id: 'room-1', participants: [{ handle: '@chief.uia.home', remote: true }] }
   assert.equal(dock({ room, sessionId: 'room-1', roster }).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+  // A Face-to-face room holds lines for its own room id only, and says nothing of a DM to the friend (#271).
+  const faceRoom = { id: 'face-1', origin: 'face-to-face', participants: [{ handle: '@chief.uia.home', remote: true }], face: { roomId: 'srv-face' }, pendingCount: 0 }
+  const dm = { id: 'srv-dm', from: 'Helper', to: '@chief.uia.home', text: 'x' }
+  assert.equal(walk(pluginOf([[dm], [view], '']).ChatApprovalDock({ room: faceRoom, sessionId: 'face-1', roster })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
+  const lineHold = { id: 'srv-line', kind: 'face_room_message', roomId: 'srv-face', from: 'Helper', text: 'in the room' }
+  assert.equal(walk(pluginOf([[lineHold, dm], [], '']).ChatApprovalDock({ room: faceRoom, sessionId: 'face-1' })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
   // Server holds keep matching a room by its participants' handles.
   const held = { id: 'srv-1', from: 'Helper', to: '@chief.uia.home', text: 'x' }
   assert.equal(walk(pluginOf([[held], [], '']).ChatApprovalDock({ room, sessionId: 'room-1' })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)

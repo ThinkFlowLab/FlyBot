@@ -613,7 +613,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,462 @@ function maskOf(shape) {
+@@ -1242,6 +1242,478 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -877,7 +877,14 @@ diff --git a/client.js b/client.js
 +}
 +var claims = /* @__PURE__ */ new Map();
 +var claimListeners = /* @__PURE__ */ new Set();
-+var claimedIds = () => new Set([...claims.values()].flatMap((ids) => [...ids]));
++var openChats = /* @__PURE__ */ new Map();
++function chatOpened(sessionId, delta) {
++  const count = (openChats.get(sessionId) ?? 0) + delta;
++  if (count > 0) openChats.set(sessionId, count);
++  else openChats.delete(sessionId);
++  for (const fn of [...claimListeners]) fn();
++}
++var claimedIds = () => Object.assign(new Set([...claims.values()].flatMap((ids) => [...ids])), { chats: new Set(openChats.keys()) });
 +function claimApprovals(owner, ids) {
 +  if (!Array.isArray(ids) || ids.length === 0) claims.delete(owner);
 +  else claims.set(owner, new Set(ids.map(String)));
@@ -897,6 +904,11 @@ diff --git a/client.js b/client.js
 +}
 +function FlyBotSessionDock({ sessionId, useRoster, actions }) {
 +  const entries2 = useSlot("flybot.session.dock");
++  (0, import_react2.useEffect)(() => {
++    if (!sessionId) return void 0;
++    chatOpened(sessionId, 1);
++    return () => chatOpened(sessionId, -1);
++  }, [sessionId]);
 +  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
 +  if (entries2.length === 0) return null;
 +  const room2 = roster?.roomsById?.[sessionId];
@@ -967,7 +979,11 @@ diff --git a/client.js b/client.js
 +  const policies = new Set(docks.map((entry) => entry.policy).filter(Boolean));
 +  const open = pending.filter((approval) => !claimed.has(approval.id));
 +  const cards = open.filter((approval) => !policies.has(approval.by));
-+  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed");
++  const inOpenChat = (approval) => {
++    const chat = chatOf(approval);
++    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
++  };
++  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
 +    if (!awayKey) {

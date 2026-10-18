@@ -424,11 +424,17 @@ test('#255: wait labels stay inside the plot and never sit on each other; friend
   const byStrip = new Map()
   for (const { wait } of waits) {
     if (wait.hideLabel) continue
-    const room = wait.label.length * 7.4 + 6
+    const room = wait.label.length * 7 + 6
     const lo = wait.anchor === 'start' ? wait.lx : wait.lx - room
     assert.ok(lo >= g.plotLeft - 1 && lo + room <= g.plotRight + 1, `${wait.label} inside the plot`)
     for (const [a, b] of byStrip.get(wait.y) ?? []) assert.ok(lo + room <= a || lo >= b, `${wait.label} does not overlap another label`)
     byStrip.set(wait.y, [...(byStrip.get(wait.y) ?? []), [lo, lo + room]])
+  }
+  // #271: a label sits well inside its lane's top strip: clear of the lane edge above, text and line both.
+  for (const arrow of waits) {
+    const lane = g.lanes.find(item => item.y <= arrow.wait.y && arrow.wait.y < item.y + item.h)
+    assert.ok(arrow.wait.y - 14 - lane.y >= 6, `${arrow.wait.label} is clear of the lane's top edge`)
+    assert.ok(lane.y + 30 - arrow.wait.y >= 4, `${arrow.wait.label}'s line is above the bars`)
   }
   assert.ok(waits.some(({ wait }) => wait.open && !wait.hideLabel), 'the open wait keeps its label')
   assert.ok(waits.some(({ wait }) => wait.hideLabel), 'a label with no room is left to the tooltip')

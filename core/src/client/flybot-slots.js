@@ -95,7 +95,15 @@ export function FlyBotSections({ roster, actions, renderBot }) {
 // chat it belongs to; an approval no open chat shows becomes a small pointer to that chat instead (#260).
 const claims = new Map()
 const claimListeners = new Set()
-const claimedIds = () => new Set([...claims.values()].flatMap(ids => [...ids]))
+// Chats open right now (a session dock is mounted for them): the pointer never points at the chat you are in (#271).
+const openChats = new Map()
+export function chatOpened(sessionId, delta) {
+  const count = (openChats.get(sessionId) ?? 0) + delta
+  if (count > 0) openChats.set(sessionId, count)
+  else openChats.delete(sessionId)
+  for (const fn of [...claimListeners]) fn()
+}
+const claimedIds = () => Object.assign(new Set([...claims.values()].flatMap(ids => [...ids])), { chats: new Set(openChats.keys()) })
 export function claimApprovals(owner, ids) {
   if (!Array.isArray(ids) || ids.length === 0) claims.delete(owner)
   else claims.set(owner, new Set(ids.map(String)))
@@ -114,6 +122,11 @@ function useClaimed() {
 
 export function FlyBotSessionDock({ sessionId, useRoster, actions }) {
   const entries = useSlot('flybot.session.dock')
+  useEffect(() => {
+    if (!sessionId) return undefined
+    chatOpened(sessionId, 1)
+    return () => chatOpened(sessionId, -1)
+  }, [sessionId])
   const roster = typeof useRoster === 'function' ? useRoster(value => value) : undefined
   if (entries.length === 0) return null
   const room = roster?.roomsById?.[sessionId]
@@ -183,7 +196,12 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
   const policies = new Set(docks.map(entry => entry.policy).filter(Boolean))
   const open = pending.filter(approval => !claimed.has(approval.id))
   const cards = open.filter(approval => !policies.has(approval.by))
-  const away = open.filter(approval => policies.has(approval.by) && approval.status !== 'failed')
+  // An approval of the chat that is open is that chat's to show, never a pointer (#271).
+  const inOpenChat = approval => {
+    const chat = chatOf(approval)
+    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true)
+  }
+  const away = open.filter(approval => policies.has(approval.by) && approval.status !== 'failed' && !inOpenChat(approval))
   // Only when no chat took it for a moment: moving between chats must not flash the pointer.
   const awayKey = away.map(approval => approval.id).join(',')
   useEffect(() => {

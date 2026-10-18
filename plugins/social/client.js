@@ -158,10 +158,11 @@ window.__ModuleLoader__.load({
 .fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;overflow-wrap:break-word;word-break:normal;max-height:calc(18px * 3)}
 .fs-hold-more{align-self:flex-start;margin:0;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;line-height:16px;cursor:pointer}
 .fs-hold-more:hover{text-decoration:underline}
-.fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:8px;flex-wrap:nowrap}
+.fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap}
 .fs-hold .fs-btn{flex:none;height:28px;padding:0 12px;border-radius:999px;font-size:12px}
 .fs-hold .fs-btn-primary{width:auto;color:#fff}
-.fs-hold .fs-hold-always{order:-1;margin-right:auto;white-space:nowrap}
+.fs-hold .fs-hold-decide{display:flex;gap:8px;flex:none}
+.fs-hold .fs-actions .fs-hold-always{order:-1;margin-right:auto;white-space:nowrap;flex:0 0 auto}
 .fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
 .fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
@@ -852,8 +853,10 @@ window.__ModuleLoader__.load({
           onClick: () => setOpen(value => !value),
         }, open ? 'Show less' : 'Show more') : null,
         h('div', { className: 'fs-actions fs-chat-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject'),
+          // The two decisions stay together on the right; the standing choice is left of them, or alone above when narrow (#271).
+          h('span', { className: 'fs-hold-decide' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')),
           // Two buttons are the decision; the standing choice is a quiet link, not a third button (#260).
           h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve')))
     }
@@ -878,6 +881,8 @@ window.__ModuleLoader__.load({
         // A Bot's direct message to a friend belongs to the Bot's chat and the friend's chat, never to
         // a room that merely has that friend in it (#260). Bot Social's own holds still match by handle.
         if (item.source === 'local' && room) return false
+        // The same for Bot Social's own: a Face-to-face room holds lines for its room id only (#271).
+        if (room?.origin === 'face-to-face') return false
         if (item.to && handles.has(item.to)) return true
         if (sessionId && item.sessionId === sessionId) return true
         return false

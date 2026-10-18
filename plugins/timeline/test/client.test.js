@@ -191,3 +191,32 @@ test('apply exposes ctx.flybot.timeline and globalThis.__flybot__.timeline, and 
     delete globalThis.__flybot__
   }
 })
+
+test('#271: the window gaining focus refreshes an open panel at once, and closing stops listening', async () => {
+  const added = []
+  const removed = []
+  const saved = { add: globalThis.addEventListener, remove: globalThis.removeEventListener }
+  globalThis.addEventListener = (type, fn) => added.push([type, fn])
+  globalThis.removeEventListener = (type, fn) => removed.push([type, fn])
+  try {
+    const calls = []
+    const flybot = { call: (endpoint, body) => { calls.push([endpoint, body]); return Promise.resolve(good({ now: calls.length })) } }
+    const timers = { setTimeout: () => ({}), clearTimeout: () => {} }
+    const store = client().createStore(flybot, { timers, visible: () => true })
+    const close = store.open()
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    assert.equal(calls.length, 1)
+    const focus = added.find(([type]) => type === 'focus')
+    assert.ok(focus, 'listens for focus')
+    focus[1]()
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    assert.equal(calls.length, 2, 'focus polls again now, not at the next timer')
+    close()
+    assert.ok(removed.some(([type, fn]) => type === 'focus' && fn === focus[1]))
+  } finally {
+    globalThis.addEventListener = saved.add
+    globalThis.removeEventListener = saved.remove
+    if (saved.add === undefined) delete globalThis.addEventListener
+    if (saved.remove === undefined) delete globalThis.removeEventListener
+  }
+})

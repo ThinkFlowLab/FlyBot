@@ -123,3 +123,29 @@ test('#260: an approval no open chat shows becomes a pointer to its chat, after 
     assert.deepEqual(opened, ['bot-helper'])
   } finally { off() }
 })
+
+test('#271: no pointer for an approval whose chat is the open one, whatever the open chat draws', async () => {
+  const { FlyBotApprovals, FlyBotSessionDock, registry, chatOpened } = await import('../src/client/flybot-slots.js')
+  const off = registry().register('flybot.session.dock', { id: 'social-approval', policy: 'social', component: () => null })
+  try {
+    const roster = { bots: [], byId: { 'bot-helper': { sessionId: 'session-helper' } } }
+    const inst = { hooks: {}, effects: [], rendered: false, props: { useRoster: pick => pick(roster) } }
+    render(FlyBotApprovals, inst)
+    inst.hooks[PENDING].value = [held({ id: 'a1' })]
+    inst.hooks[SHOWN].value = 'a1'
+    assert.match(JSON.stringify(render(FlyBotApprovals, inst)), /bt-flybot-pointer/, 'a chat that is not open: the pointer')
+    // Helper's chat is open (its session id), though nothing in it claimed the approval.
+    inst.hooks[CLAIMED].value = Object.assign(new Set(), { chats: new Set(['session-helper']) })
+    assert.equal(render(FlyBotApprovals, inst), null)
+    inst.hooks[CLAIMED].value = Object.assign(new Set(), { chats: new Set(['bot-helper']) })
+    assert.equal(render(FlyBotApprovals, inst), null)
+    // A session dock registers its chat as open for as long as it is mounted.
+    const dock = { hooks: {}, effects: [], rendered: false, props: { sessionId: 'session-x' } }
+    render(FlyBotSessionDock, dock)
+    // Mounted: the chat counts as open for the overlay; unmounted: it does not.
+    const stops = dock.effects.map(([, fn]) => fn()).filter(fn => typeof fn === 'function')
+    assert.ok(stops.length >= 1, 'the dock registers and releases its chat')
+    stops.forEach(fn => fn())
+    assert.equal(typeof chatOpened, 'function')
+  } finally { off() }
+})

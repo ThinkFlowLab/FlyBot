@@ -34,10 +34,15 @@ window.__ModuleLoader__.load({
 
     // timers: { setTimeout, clearTimeout } and visible(): injected by the tests.
     // onVisible(fn) -> stop: calls fn when the page becomes visible again (injected by the tests).
+    // The window gaining focus counts too: a decision made in another window shows here at once (#271).
     const watchVisible = fn => {
       const doc = globalThis.document
       doc?.addEventListener?.('visibilitychange', fn)
-      return () => doc?.removeEventListener?.('visibilitychange', fn)
+      globalThis.addEventListener?.('focus', fn)
+      return () => {
+        doc?.removeEventListener?.('visibilitychange', fn)
+        globalThis.removeEventListener?.('focus', fn)
+      }
     }
     function createStore(flybot, { timers = globalThis, visible = () => globalThis.document?.visibilityState !== 'hidden', onVisible = watchVisible, windowMs = 900_000 } = {}) {
       let state = { status: 'idle', window: undefined, error: undefined, updatedAt: undefined, windowMs, to: undefined, failures: 0 }
@@ -212,7 +217,7 @@ window.__ModuleLoader__.load({
     const ROW_H = 22
     const BAR_H = 16
     const LANE_PAD = 6
-    const TOP_STRIP = 20 // above a lane's bars: the wait lines and their labels
+    const TOP_STRIP = 30 // above a lane's bars: the wait lines and their labels, clear of the lane's top edge (#271)
     // A raw session id is never shown as a name: an older server may still send one.
     const RAW_ID = /^(session|bot|room)-[0-9a-f]{6,}|^[0-9a-f]{8}-[0-9a-f]{4}-/i
     const nameOf = (lane) => {
@@ -288,8 +293,8 @@ window.__ModuleLoader__.load({
         const arrow = { id: safe(e.id, 80), role: ROLE_CLASS[e.role] ? e.role : 'other', x, y1: a.mid, y2: b.mid - dir * 7, from: a.name, to: b.name, hop: num(e.hop) }
         if (e.role === 'request' || e.role === 'user' || e.role === 'stopped') {
           const endAt = e.replyAt ?? e.answerAt
-          if (endAt !== undefined) arrow.wait = { x0: x, x1: Math.max(x + 1, X(Math.min(to, endAt))), y: a.y + TOP_STRIP - 2, label: `${e.role === 'user' ? 'answer' : 'reply'} ${fmtDur(e.latencyMs)}`, ms: e.latencyMs }
-          else if (e.waiting) arrow.wait = { x0: x, x1: Math.max(x + 1, X(to)), y: a.y + TOP_STRIP - 2, label: `waiting ${fmtDur(to - e.t)}`, open: true, ms: to - e.t }
+          if (endAt !== undefined) arrow.wait = { x0: x, x1: Math.max(x + 1, X(Math.min(to, endAt))), y: a.y + TOP_STRIP - 5, label: `${e.role === 'user' ? 'answer' : 'reply'} ${fmtDur(e.latencyMs)}`, ms: e.latencyMs }
+          else if (e.waiting) arrow.wait = { x0: x, x1: Math.max(x + 1, X(to)), y: a.y + TOP_STRIP - 5, label: `waiting ${fmtDur(to - e.t)}`, open: true, ms: to - e.t }
         }
         if (arrow.wait) arrow.y1 = arrow.wait.y
         arrow.title = `${a.name} → ${b.name}: ${e.role}${arrow.wait ? ` · ${arrow.wait.label}` : ''} (delivered ${fmtClock(e.t)})`
@@ -302,7 +307,7 @@ window.__ModuleLoader__.load({
       const used = new Map()
       for (const arrow of [...arrows].filter(item => item.wait).sort((p, q) => Number(Boolean(q.wait.open)) - Number(Boolean(p.wait.open)))) {
         const w = arrow.wait
-        const room = w.label.length * 7.4 + 6
+        const room = w.label.length * 7 + 6
         let x = w.x0 + 3
         let anchor = 'start'
         if (w.open || x + room > plotRight) { anchor = 'end'; x = Math.min(w.x1, plotRight) - 2 }
@@ -447,6 +452,7 @@ window.__ModuleLoader__.load({
       .tl-svg .tl-node-name { font-weight:600; font-size:14px }
       .tl-svg .tl-node-sub { font-size:12px; opacity:.75 }
       .tl-svg .tl-badge-text { font-size:13px }
+      .tl-svg .tl-badge-text.tl-wait-label { font-size:14px; font-weight:600 }
       .tl-edge { fill:none; stroke:var(--bt-ink, #1f2328); opacity:.7 }
       .tl-edge.waiting { stroke:#dc2626; stroke-dasharray:5 3; opacity:1 }
       .tl-table { width:100%; border-collapse:collapse; margin-top:10px }
@@ -504,7 +510,7 @@ window.__ModuleLoader__.load({
           h('line', { className: `tl-arrow ${ROLE_CLASS[a.role] ?? 'oth'}`, x1: a.x, x2: a.x, y1: a.y1, y2: a.y2 }),
           h('path', { d: `M ${a.x - 4} ${a.y2 - dir * 6} L ${a.x} ${a.y2} L ${a.x + 4} ${a.y2 - dir * 6} Z`, fill: 'currentColor' }),
           a.wait && h('line', { className: `tl-wait${a.wait.open ? ' open' : ''}`, x1: a.wait.x0, x2: a.wait.x1, y1: a.wait.y, y2: a.wait.y }),
-          a.wait && !a.wait.hideLabel && text({ className: `tl-badge-text${a.wait.open ? ' open' : ''}`, x: a.wait.lx, y: a.wait.y - 4, textAnchor: a.wait.anchor }, a.wait.label),
+          a.wait && !a.wait.hideLabel && text({ className: `tl-badge-text tl-wait-label${a.wait.open ? ' open' : ''}`, x: a.wait.lx, y: a.wait.y - 6, textAnchor: a.wait.anchor }, a.wait.label),
         )
       })
       return h('svg', { className: 'tl-svg', viewBox: `0 0 ${g.width} ${g.height}`, width: '100%', role: 'img', 'aria-label': 'Swimlanes: one lane per Bot, bars for turns, arrows for messages' },

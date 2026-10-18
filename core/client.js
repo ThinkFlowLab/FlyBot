@@ -1884,7 +1884,14 @@ function FlyBotSections({ roster, actions, renderBot }) {
 }
 var claims = /* @__PURE__ */ new Map();
 var claimListeners = /* @__PURE__ */ new Set();
-var claimedIds = () => new Set([...claims.values()].flatMap((ids) => [...ids]));
+var openChats = /* @__PURE__ */ new Map();
+function chatOpened(sessionId, delta) {
+  const count = (openChats.get(sessionId) ?? 0) + delta;
+  if (count > 0) openChats.set(sessionId, count);
+  else openChats.delete(sessionId);
+  for (const fn of [...claimListeners]) fn();
+}
+var claimedIds = () => Object.assign(new Set([...claims.values()].flatMap((ids) => [...ids])), { chats: new Set(openChats.keys()) });
 function claimApprovals(owner, ids) {
   if (!Array.isArray(ids) || ids.length === 0) claims.delete(owner);
   else claims.set(owner, new Set(ids.map(String)));
@@ -1904,6 +1911,11 @@ function useClaimed() {
 }
 function FlyBotSessionDock({ sessionId, useRoster, actions }) {
   const entries2 = useSlot("flybot.session.dock");
+  (0, import_react2.useEffect)(() => {
+    if (!sessionId) return void 0;
+    chatOpened(sessionId, 1);
+    return () => chatOpened(sessionId, -1);
+  }, [sessionId]);
   const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
   if (entries2.length === 0) return null;
   const room2 = roster?.roomsById?.[sessionId];
@@ -1974,7 +1986,11 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
   const policies = new Set(docks.map((entry) => entry.policy).filter(Boolean));
   const open = pending.filter((approval) => !claimed.has(approval.id));
   const cards = open.filter((approval) => !policies.has(approval.by));
-  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed");
+  const inOpenChat = (approval) => {
+    const chat = chatOf(approval);
+    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
+  };
+  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
   const awayKey = away.map((approval) => approval.id).join(",");
   (0, import_react2.useEffect)(() => {
     if (!awayKey) {

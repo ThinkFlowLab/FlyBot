@@ -1963,6 +1963,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         return Boolean(item.roomId) && (item.roomId === faceId || item.roomId === room.id)
       }
       if (item.roomId) return item.roomId === room.id || (faceId && item.roomId === faceId)
+      // A Bot's direct message to a friend is not a line of a Face-to-face room that has the friend in it (#271).
+      if (room?.origin === 'face-to-face') return false
       return handles.has(norm(item.from)) || handles.has(norm(item.to))
     })
   })
