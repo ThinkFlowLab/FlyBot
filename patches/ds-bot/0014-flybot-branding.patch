@@ -481,7 +481,7 @@ diff --git a/src/host/update.js b/src/host/update.js
      available: status.phase !== 'installed' && target !== null && status.latest !== null && newer(status.latest, status.current),
    })
  
-@@ -169,9 +169,27 @@ export function install(rt) {
+@@ -169,9 +169,30 @@ export function install(rt) {
      return { version, spec: `github:${owner}/${repo}#${fragment}` }
    }
  
@@ -496,7 +496,10 @@ diff --git a/src/host/update.js b/src/host/update.js
 +    if (commit === null || source.branch === undefined || !/^[\w./-]+$/.test(source.branch)) return
 +    try {
 +      const answer = await fetchJson(`https://api.github.com/repos/${source.owner}/${source.repo}/compare/${commit}...${source.branch}`, { 'user-agent': `${PKG.name}/${PKG.version}` })
-+      if (Number.isInteger(answer?.ahead_by) && answer.status !== 'diverged') status.behind = answer.ahead_by
++      // Only a branch that contains the installed commit gives a count. `behind` (the branch was reset or
++      // force-pushed to before it) and `diverged` mean the commit is no longer on the branch: unknown, never
++      // "Up to date" (#374 follow-up).
++      if (Number.isInteger(answer?.ahead_by) && (answer.status === 'ahead' || answer.status === 'identical')) status.behind = answer.ahead_by
 +    } catch (error) {
 +      rt.warn('ds-bot: comparing with %s failed: %s', source.branch, error?.message ?? error)
 +    }
@@ -658,7 +661,7 @@ diff --git a/test/update.test.js b/test/update.test.js
    // Back on the registry with no copy answering: the offer stays cleared.
    delete answers[latest]
    setSource(`^${PKG.version}`)
-@@ -223,3 +223,62 @@ test('a failed install reports why and can be tried again', async () => {
+@@ -223,3 +223,63 @@ test('a failed install reports why and can be tried again', async () => {
    assert.equal(installs.length, 2)
    assert.deepEqual(installs[0][1], { registry: 'https://registry.example/' })
  })
@@ -696,8 +699,9 @@ diff --git a/test/update.test.js b/test/update.test.js
 +  assert.throws(() => rt.updateStart(), /No FlyBot core update/)
 +  assert.deepEqual(installs, [])
 +
-+  // Up to date, a branch that moved away from the commit, and an unreachable API: never a made-up number.
-+  for (const [answer, behind] of [[{ status: 'identical', ahead_by: 0 }, 0], [{ status: 'diverged', ahead_by: 3 }, null], [new Error('offline'), null], [{}, null]]) {
++  // Up to date, a branch that moved away from the commit (diverged, or reset to before it), no status, and an
++  // unreachable API: never a made-up number.
++  for (const [answer, behind] of [[{ status: 'identical', ahead_by: 0 }, 0], [{ status: 'diverged', ahead_by: 3 }, null], [{ status: 'behind', ahead_by: 0, behind_by: 2 }, null], [{ ahead_by: 2 }, null], [new Error('offline'), null], [{}, null]]) {
 +    const run = start({ source: spec, config: { packagePath: path }, answers: { [compare]: answer } })
 +    assert.equal((await run.rt.updateCheck()).behind, behind)
 +  }

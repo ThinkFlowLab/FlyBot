@@ -164,7 +164,7 @@ export PORT=8787
 
 ## 架构简述
 
-上游 DS Bot 核心保持字节一致（`ds-bot/`，见 `ds-bot.pin.json`），经 `patches/` 打出 `core/`，插件在 `plugins/`。详见 [#34](https://github.com/ThinkFlowLab/FlyBot/issues/34)。网页界面（顶栏、关于、设置、更新提示）显示 FlyBot；npm 包名和更新检查仍走上游 `ds-bot` 仓库。
+上游 DS Bot 核心保持字节一致（`ds-bot/`，见 `ds-bot.pin.json`），经 `patches/` 打出 `core/`，插件在 `plugins/`。详见 [#34](https://github.com/ThinkFlowLab/FlyBot/issues/34)。网页界面（顶栏、关于、设置、更新提示）显示 FlyBot；npm 包名仍是上游的 `ds-bot`（从 npm 安装时仍查 npm 上的 `ds-bot` 更新），包的仓库地址、关于页的链接和 Star、以及 GitHub 更新检查都指向 ThinkFlowLab/FlyBot。
 
 ## 许可与声明
 

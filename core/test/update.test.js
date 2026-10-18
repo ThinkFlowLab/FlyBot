@@ -260,8 +260,9 @@ test('a git install on a branch reports its branch and commit, and how many comm
   assert.throws(() => rt.updateStart(), /No FlyBot core update/)
   assert.deepEqual(installs, [])
 
-  // Up to date, a branch that moved away from the commit, and an unreachable API: never a made-up number.
-  for (const [answer, behind] of [[{ status: 'identical', ahead_by: 0 }, 0], [{ status: 'diverged', ahead_by: 3 }, null], [new Error('offline'), null], [{}, null]]) {
+  // Up to date, a branch that moved away from the commit (diverged, or reset to before it), no status, and an
+  // unreachable API: never a made-up number.
+  for (const [answer, behind] of [[{ status: 'identical', ahead_by: 0 }, 0], [{ status: 'diverged', ahead_by: 3 }, null], [{ status: 'behind', ahead_by: 0, behind_by: 2 }, null], [{ ahead_by: 2 }, null], [new Error('offline'), null], [{}, null]]) {
     const run = start({ source: spec, config: { packagePath: path }, answers: { [compare]: answer } })
     assert.equal((await run.rt.updateCheck()).behind, behind)
   }

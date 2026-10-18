@@ -215,7 +215,10 @@ export function install(rt) {
     if (commit === null || source.branch === undefined || !/^[\w./-]+$/.test(source.branch)) return
     try {
       const answer = await fetchJson(`https://api.github.com/repos/${source.owner}/${source.repo}/compare/${commit}...${source.branch}`, { 'user-agent': `${PKG.name}/${PKG.version}` })
-      if (Number.isInteger(answer?.ahead_by) && answer.status !== 'diverged') status.behind = answer.ahead_by
+      // Only a branch that contains the installed commit gives a count. `behind` (the branch was reset or
+      // force-pushed to before it) and `diverged` mean the commit is no longer on the branch: unknown, never
+      // "Up to date" (#374 follow-up).
+      if (Number.isInteger(answer?.ahead_by) && (answer.status === 'ahead' || answer.status === 'identical')) status.behind = answer.ahead_by
     } catch (error) {
       rt.warn('ds-bot: comparing with %s failed: %s', source.branch, error?.message ?? error)
     }
