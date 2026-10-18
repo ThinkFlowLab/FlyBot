@@ -84,10 +84,9 @@ export function countdownLabel(expiresAt, now = Date.now()) {
   if (!Number.isFinite(at)) return ''
   const left = Math.max(0, at - now)
   if (left <= 0) return 'Joining has ended'
-  const minutes = Math.ceil(left / 60_000)
-  if (minutes >= 2) return `${minutes} minutes left to join`
-  const seconds = Math.max(1, Math.ceil(left / 1000))
-  return seconds === 1 ? '1 second left to join' : `${seconds} seconds left to join`
+  // m:ss, so the line visibly ticks every second (#306); minutes alone looked frozen.
+  const total = Math.max(1, Math.ceil(left / 1000))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} left to join`
 }
 
 const ALREADY_LEFT = new Set(['bot_not_found', 'not_a_member', 'room_closed', 'face_room_not_found', 'code_void'])

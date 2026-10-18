@@ -45,11 +45,17 @@ export function faceSeatLabel(seat) {
   return `${seat.mine ? t('{name} (you)', { name: seat.person }) : seat.person} · ${seat.bot}`
 }
 
+// A face room says what it counts, people and Bots, not an ambiguous "2 members" (#306).
+export function faceRoomCount(room, roster) {
+  const seats = faceSeats(room, roster)
+  const people = new Set(seats.map(seat => (seat.mine ? ':you' : (ownerNameOf(seat.record) || seat.person || seat.key).toLowerCase())))
+  const persons = people.size === 1 ? t('1 person') : t('{count} people', { count: people.size })
+  const bots = seats.length === 1 ? t('1 Bot') : t('{count} Bots', { count: seats.length })
+  return `${persons} · ${bots}`
+}
+
 export function roomSubtitle(room, roster) {
-  if (room.origin === 'face-to-face') {
-    const live = (room.presentedParticipants ?? room.participants ?? []).filter(p => p.leftSeq === undefined)
-    return t('{count} members', { count: live.length })
-  }
+  if (room.origin === 'face-to-face') return faceRoomCount(room, roster)
   const admin = roster.byId[room.admin]
   return [t('{count} members', { count: room.members.length }), admin ? t('Admin {name}', { name: admin.name }) : t('No admin')].join(' · ')
 }

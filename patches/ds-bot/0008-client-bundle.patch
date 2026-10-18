@@ -25,7 +25,17 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -84,14 +84,52 @@ var ZH = {
+@@ -78,20 +78,62 @@ var ZH = {
+   " and ": "、",
+   and: "和",
+   "{count} members": "{count} 位成员",
++  "1 person": "1 人",
++  "{count} people": "{count} 人",
++  "1 Bot": "1 个 Bot",
++  "{count} Bots": "{count} 个 Bot",
+   "Loading…": "加载中…",
+   "Edit Bot": "编辑 Bot",
+   "Make Main Bot": "设为主 Bot",
    "Remove Main Bot role": "取消主 Bot",
    "Bot settings": "Bot 设置",
    "Create group chat": "新建群聊",
@@ -7400,7 +7410,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,111 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,115 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -7494,11 +7504,15 @@ diff --git a/client.js b/client.js
 +  if (!seat.person) return seat.bot;
 +  return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
 +}
++function faceRoomCount(room2, roster) {
++  const seats = faceSeats(room2, roster);
++  const people = new Set(seats.map((seat) => seat.mine ? ":you" : (ownerNameOf(seat.record) || seat.person || seat.key).toLowerCase()));
++  const persons = people.size === 1 ? t("1 person") : t("{count} people", { count: people.size });
++  const bots = seats.length === 1 ? t("1 Bot") : t("{count} Bots", { count: seats.length });
++  return `${persons} · ${bots}`;
++}
  function roomSubtitle(room2, roster) {
-+  if (room2.origin === "face-to-face") {
-+    const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.leftSeq === void 0);
-+    return t("{count} members", { count: live.length });
-+  }
++  if (room2.origin === "face-to-face") return faceRoomCount(room2, roster);
    const admin = roster.byId[room2.admin];
    return [t("{count} members", { count: room2.members.length }), admin ? t("Admin {name}", { name: admin.name }) : t("No admin")].join(" · ");
  }

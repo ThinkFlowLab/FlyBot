@@ -2666,6 +2666,75 @@ test('Face-to-face waiting overview is a tile grid with Leave and Enter chat', (
   assert.equal(tree.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
 })
 
+test('#306: Join is enabled once a Bot is picked; a short number gets the inline hint, not a grey button', async () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const bots = [{ id: 'a', name: 'Chief', isMain: true }]
+  // state order: step, bots, selected, code, busy, status, failures, room, tick
+  const picked = walk(pluginOf(['setup', bots, ['a'], '12']).FaceToFaceGroup({}))
+  const join = picked.find(n => n.type === 'button' && n.props.type === 'submit')
+  assert.equal(join.props.disabled, false)
+  assert.equal(picked.some(n => n.props['data-flybot'] === 'face-join-pick'), false)
+  const none = walk(pluginOf(['setup', bots, [], '482913']).FaceToFaceGroup({}))
+  assert.equal(none.find(n => n.type === 'button' && n.props.type === 'submit').props.disabled, true)
+  assert.ok(none.some(n => n.props['data-flybot'] === 'face-join-pick' && n.children.includes('Pick a Bot first.')))
+  // The short number is answered inline on submit.
+  const statuses = []
+  const { registered } = loadSocialClient(async () => ({}))
+  let i = 0
+  const states = ['setup', bots, ['a'], '12']
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }), Fragment: 'F',
+    useEffect() {}, useState: v => { const index = i++; return [index < states.length ? states[index] : v, value => { if (index === 5) statuses.push(value) }] },
+    useRef: v => ({ current: v }), useMemo: f => f(),
+  }))
+  const form = plugin.FaceToFaceGroup({})
+  const find = (node) => node?.props?.['data-flybot'] === 'face-join' ? node : (node?.children ?? []).map(find).find(Boolean)
+  await find(form).props.onSubmit({ preventDefault() {} })
+  assert.deepEqual(JSON.parse(JSON.stringify(statuses)), [{ tone: 'error', text: 'Enter a 6-digit number.' }])
+})
+
+test('#306: the waiting dialog asks before Leave, lands on the main Bot, and the panel draws no second waiting card', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const room = { roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z', members: [] }
+  const opened = []
+  const actions = { openSession: id => opened.push(id) }
+  const roster = { bots: [{ id: 'helper' }, { id: 'main', isMain: true }], byId: {} }
+  const plugin = pluginOf(['waiting', [], [], '482913', false, null, [], room, 0], true)
+  const tree = walk(plugin.FaceToFaceGroup({ actions, roster, onClose() {} }))
+  // Leave asks first, like Leave in an open room.
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-leave' && n.children.includes('Leave')))
+  assert.equal(tree.some(n => n.props['data-flybot'] === 'face-leave-yes'), false)
+  // The dialog shows room g1, so the details panel of g1 draws nothing while it is open.
+  const overview = plugin.FaceRoomOverview({
+    room: { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status: 'candidate', expiresAt: '2099-01-01T00:00:00.000Z' }, participants: [] },
+    roster, actions,
+  })
+  assert.equal(overview, null)
+  // Answering Leave → Leave leaves on Bot Social and opens the main Bot.
+  const asked = walk(loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+    .pluginOf(['waiting', [], [], '482913', false, null, [], room, 0, true]).FaceToFaceGroup({ actions, roster, onClose() {} }))
+  await asked.find(n => n.props['data-flybot'] === 'face-leave-yes').props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
+  assert.deepEqual(opened, ['main'])
+})
+
+test('#306: in an open room Leave sits on the status line, a row away from the Auto-send toggle', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const tree = walk(pluginOf([]).FaceRoomOverview({ room: { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status: 'open' } } }))
+  const top = tree.find(n => n.props.className === 'fs-face-top')
+  assert.ok(top)
+  const inTop = walk(top)
+  assert.ok(inTop.some(n => n.props['data-flybot'] === 'face-status'))
+  assert.ok(inTop.some(n => n.props['data-flybot'] === 'face-leave'))
+  assert.equal(inTop.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-auto-send'))
+  const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  // The dialog overlay sits above the details panel (z-index 40) and the Bot pane (45).
+  assert.match(src, /\.fs-dialog-back\{[^}]*z-index:6[0-9]/)
+})
+
 test('an ended matching window sits under Past rooms with Open, not Leave', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const rooms = [
@@ -3181,9 +3250,10 @@ test('Face-to-face group (#92): pick Bots, join each once, live roster, Enter ch
   const foot = wait.find(n => n.props['data-flybot'] === 'face-wait-foot')
   assert.ok(foot)
   const footBtns = (foot.children ?? []).filter(n => n && typeof n === 'object')
-  assert.equal(footBtns[0].props['data-flybot'], 'face-leave')
+  // Leave asks first (#306), so the footer's first control is the confirming Leave.
+  assert.equal(footBtns[0].type.name, 'ConfirmLeave')
+  assert.equal(footBtns[0].props.size, 'fs-btn')
   assert.equal(footBtns[1].props['data-flybot'], 'face-enter')
-  assert.equal(footBtns[0].props.className, 'fs-btn')
   assert.match(footBtns[1].props.className, /fs-btn-primary/)
   assert.match(wait.find(n => n.props['data-flybot'] === 'face-join-fail').children.join(''), /Writer:/)
   assert.equal(wait.some(n => /published/i.test(String(n.children ?? ''))), false)

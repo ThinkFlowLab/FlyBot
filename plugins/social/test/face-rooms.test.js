@@ -82,7 +82,11 @@ test('error mapping covers the FACE_ROOMS.md codes', () => {
 
 test('countdown copy for a candidate room', () => {
   const now = Date.parse('2026-10-15T10:00:00.000Z')
-  assert.match(countdownLabel('2026-10-15T10:08:00.000Z', now), /8 minutes left/)
+  assert.equal(countdownLabel('2026-10-15T10:08:00.000Z', now), '8:00 left to join')
+  // #306: the line changes every second, not once a minute.
+  assert.equal(countdownLabel('2026-10-15T10:09:41.000Z', now), '9:41 left to join')
+  assert.equal(countdownLabel('2026-10-15T10:09:40.000Z', now), '9:40 left to join')
+  assert.equal(countdownLabel('2026-10-15T10:00:05.000Z', now), '0:05 left to join')
   assert.equal(countdownLabel('2026-10-15T09:00:00.000Z', now), 'Joining has ended')
 })
 

@@ -47,7 +47,7 @@ const find = (node, match) => {
 }
 
 const { GroupReplies } = await load('cells.js')
-const { faceSeats, faceSeatLabel } = await load('group-settings.js')
+const { faceSeats, faceSeatLabel, roomSubtitle } = await load('group-settings.js')
 const { UserMessageCell, USER_MESSAGE_CSS } = await load('user-message.js')
 
 test('another person\'s face-room line is their own received bubble with name and person mark', () => {
@@ -80,6 +80,21 @@ test('a face room lists people, each with the Bot they brought, named one way', 
   const seats = faceSeats(room, roster)
   assert.deepEqual(seats.map(faceSeatLabel), ['SelfB0333 (you) · Chief', 'SelfA0333 · Chief'])
   assert.deepEqual(seats.map(seat => seat.mine), [true, false])
+})
+
+test('#306: a face room counts people and Bots, not an ambiguous "members"', () => {
+  const roster = { self: { memberId: 'm1', displayName: 'Me' }, byId: { chief: { id: 'chief', name: 'Chief' }, coder: { id: 'coder', name: 'Coder' } } }
+  const bot = (id, owner, extra = {}) => ({ kind: 'bot', remote: true, id, handle: id, displayName: 'Chief', ownerName: owner, ...extra })
+  const room = participants => ({ origin: 'face-to-face', members: [], presentedParticipants: participants })
+  const mine = { kind: 'bot', id: 'chief', handle: '@chief.me.home', displayName: 'Chief' }
+  assert.equal(roomSubtitle(room([mine, bot('@chief.ann.home', 'Ann')]), roster), '2 people · 2 Bots')
+  assert.equal(roomSubtitle(room([mine]), roster), '1 person · 1 Bot')
+  // Two Bots of mine and two of Ann's: still two people; a human seat and a left Bot are not counted.
+  const coder = { kind: 'bot', id: 'coder', handle: '@coder.me.home', displayName: 'Coder' }
+  assert.equal(roomSubtitle(room([
+    mine, coder, bot('@chief.ann.home', 'Ann'), bot('@coder.ann.home', 'Ann'),
+    { kind: 'human', id: 'h1', ownerName: 'Ann' }, bot('@x.gone.home', 'Gone', { leftSeq: 2 }),
+  ]), roster), '2 people · 4 Bots')
 })
 
 test('another home member\'s line shows their person mark and a received surface', () => {
