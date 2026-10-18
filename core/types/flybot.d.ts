@@ -62,7 +62,7 @@ export interface BotRemoved {
 }
 
 /** Who a delivery came from. A user line, a Bot, a group (a round's call), or a friend's Bot. */
-export type FeedParty = { kind: 'user' } | { kind: 'bot'; botId: BotId } | { kind: 'room'; roomId: string } | { kind: 'remote'; handle: string }
+export type FeedParty = { kind: 'user' } | { kind: 'bot'; botId: BotId } | { kind: 'room'; roomId: string } | { kind: 'remote'; handle: string; /** What the user calls it ("Bob's Chief"), when the roster knows it. */ name?: string }
 
 /**
  * Where a Session speaks: a Bot's own chat ('chat'), a Bot's hidden Session in a group

@@ -85,7 +85,7 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
       const t = cleanTime(event?.time)
       if (!where || !id || !t) return
       const trigger = event.trigger
-      if (trigger?.from?.kind === 'remote') noteFriend(trigger.from.handle)
+      if (trigger?.from?.kind === 'remote') noteFriend(trigger.from.handle, trigger.from.name)
       const from = partyOf(trigger?.from)
       write({ r: 'ts', t, id, ...where, ...(cleanId(trigger?.exchangeId) ? { x: trigger.exchangeId } : {}), ...withParty('f', from), ...(typeof trigger?.role === 'string' && ROLES.has(trigger.role) ? { ro: trigger.role } : {}) })
     },
@@ -118,7 +118,7 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
       const id = cleanId(event?.exchangeId)
       const t = cleanTime(event?.time)
       const ro = typeof event?.role === 'string' && ROLES.has(event.role) ? event.role : undefined
-      if (event?.from?.kind === 'remote') noteFriend(event.from.handle, event.place === 'remote' ? event.remote?.name : undefined)
+      if (event?.from?.kind === 'remote') noteFriend(event.from.handle, event.from.name ?? (event.place === 'remote' ? event.remote?.name : undefined))
       if (isRemoteChat(event)) noteFriend(event.remote?.handle, event.remote?.name)
       const f = partyOf(event?.from)
       const toBot = cleanId(event?.to?.botId)

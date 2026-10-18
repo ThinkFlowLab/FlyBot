@@ -8,6 +8,7 @@
 // user pasted or a tool printed. Strings that came from outside the team (a tool name
 // from an MCP server, a remote handle, an error code) are cleaned here.
 import { SOURCE_KIND } from './constants.js'
+import { normRemoteHandle, remoteBotTitle } from '../shared/remote-label.js'
 
 export const FEED_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.start', 'tool.end', 'exchange.delivered'])
 
@@ -47,6 +48,26 @@ export function installFeed(rt, fire) {
     return entry
   }
 
+  // What the user calls a friend's Bot ("UiA1415's Chief", "Helper · UiB1415's Bot"), as the sidebar
+  // does, from the published roster or the friend's chat. Untrusted (a peer chose it): cleaned, capped.
+  const remoteTitle = (handle) => {
+    try {
+      const key = normRemoteHandle(handle)
+      const member = rt.flybotRemoteMembers?.().find(item => normRemoteHandle(item?.handle) === key)
+      const chat = member === undefined ? rt.remoteChats?.list().find(item => normRemoteHandle(item?.handle) === key) : undefined
+      const record = member ?? (chat === undefined ? undefined : { ...chat, displayName: chat.name })
+      return record === undefined ? undefined : cleanLabel(remoteBotTitle(record), 60) || undefined
+    } catch {
+      // A roster that cannot be read only costs the friend's name; the handle still identifies it.
+      return undefined
+    }
+  }
+
+  const remoteParty = (handle) => {
+    const name = remoteTitle(handle)
+    return { kind: 'remote', handle: cleanLabel(handle, 120), ...(name ? { name } : {}) }
+  }
+
   // Where a Session speaks: a Bot's own chat, a Bot's hidden group Session, or the group
   // itself (its turn is the round). Archived segments are not listed.
   const placeOf = (id) => {
@@ -57,7 +78,7 @@ export function installFeed(rt, fire) {
       // A friend's Bot is a chat of its own (remote-chat.js): its Session runs no model, it
       // only carries lines to and from the friend. It is not a team Bot's chat.
       const handle = rt.botOf?.(botId)?.remote?.handle
-      if (typeof handle === 'string') return { place: 'remote', botId, remote: { handle: cleanLabel(handle, 120), name: cleanLabel(rt.botOf(botId).name, 60) } }
+      if (typeof handle === 'string') return { place: 'remote', botId, remote: { handle: cleanLabel(handle, 120), name: remoteTitle(handle) ?? cleanLabel(rt.botOf(botId).name, 60) } }
       return { place: 'chat', botId }
     }
     if (rt.roomOf?.(id) !== undefined) return { place: 'room', roomId: id }
@@ -66,7 +87,7 @@ export function installFeed(rt, fire) {
 
   const partyOf = (source, where) => {
     if (source?.kind === 'user') return { kind: 'user' }
-    if (source?.remote?.handle) return { kind: 'remote', handle: cleanLabel(source.remote.handle, 120) }
+    if (source?.remote?.handle) return remoteParty(source.remote.handle)
     if (typeof source?.senderSessionId === 'string' && rt.botOf?.(source.senderSessionId) !== undefined) return { kind: 'bot', botId: source.senderSessionId }
     if (source?.role === 'room' && where.roomId !== undefined) return { kind: 'room', roomId: where.roomId }
     return undefined
@@ -88,7 +109,7 @@ export function installFeed(rt, fire) {
       // The friend's line, posted into its chat (remote-chat.js `deliver`).
       role = 'remote'
       exchangeId = cleanId(source.exchangeId)
-      party = typeof source.remote?.handle === 'string' ? { kind: 'remote', handle: cleanLabel(source.remote.handle, 120) } : undefined
+      party = typeof source.remote?.handle === 'string' ? remoteParty(source.remote.handle) : undefined
     } else if (source?.kind === SOURCE_KIND && source.form === 'relay') {
       if (source.deferred || source.resumed || source.retried) return undefined
       role = String(source.role ?? '')

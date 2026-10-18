@@ -193,12 +193,12 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------------ swimlane geometry
-    const LABEL_W = 150
+    const LABEL_W = 156
     const AXIS_H = 26
     const ROW_H = 22
     const BAR_H = 16
     const LANE_PAD = 6
-    const TOP_STRIP = 12 // above a lane's bars: the wait lines and their labels
+    const TOP_STRIP = 20 // above a lane's bars: the wait lines and their labels
     // A raw session id is never shown as a name: an older server may still send one.
     const RAW_ID = /^(session|bot|room)-[0-9a-f]{6,}|^[0-9a-f]{8}-[0-9a-f]{4}-/i
     const nameOf = (lane) => {
@@ -209,7 +209,7 @@ window.__ModuleLoader__.load({
     const clip = (value, max) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
     // What a lane is, under its name: plain Bots say nothing.
     const subOf = (lane, name) => {
-      if (lane.kind === 'friend') return 'friend'
+      if (lane.kind === 'friend') return name.includes(' · ') ? name.split(' · ').slice(1).join(' · ') : 'friend'
       if (/^Removed /.test(name)) return ''
       if (lane.kind === 'room') return lane.removed ? 'removed group' : 'group'
       return lane.main ? 'main' : lane.removed ? 'removed' : ''
@@ -230,7 +230,7 @@ window.__ModuleLoader__.load({
         const rows = Math.max(1, num(lane.rows, 1))
         const h2 = rows * ROW_H + LANE_PAD * 2 + TOP_STRIP
         const name = nameOf(lane)
-        const out = { id: lane.id, kind: lane.kind, name, sub: subOf(lane, name), main: lane.main === true, removed: lane.removed === true, rows, y: top, h: h2, mid: top + TOP_STRIP + (h2 - TOP_STRIP) / 2 }
+        const out = { id: lane.id, kind: lane.kind, name, label: lane.kind === 'friend' ? name.split(' · ')[0] : name, sub: subOf(lane, name), main: lane.main === true, removed: lane.removed === true, rows, y: top, h: h2, mid: top + TOP_STRIP + (h2 - TOP_STRIP) / 2 }
         top += h2
         return out
       })
@@ -281,12 +281,31 @@ window.__ModuleLoader__.load({
         arrow.title = `${a.name} → ${b.name}: ${e.role}${arrow.wait ? ` · ${arrow.wait.label}` : ''} (delivered ${fmtClock(e.t)})`
         arrows.push(arrow)
       }
-      return { width, height: top + 8, plotLeft: LABEL_W, plotRight: LABEL_W + plotW, axis: { ticks: scale.ticks.map(tick => ({ x: LABEL_W + tick.x, label: tick.label })), breaks: scale.breaks.map(brk => ({ x: LABEL_W + brk.x, ms: brk.ms })), compressed: scale.compressed }, lanes, bars, brackets, arrows }
+      // Wait labels sit in the strip above their lane. Each stays inside the plot (right-aligned
+      // when it would run past the edge) and one that would land on another in the same strip is
+      // left out: the arrow's tooltip still says it. Open waits are placed first.
+      const plotRight = LABEL_W + plotW
+      const used = new Map()
+      for (const arrow of [...arrows].filter(item => item.wait).sort((p, q) => Number(Boolean(q.wait.open)) - Number(Boolean(p.wait.open)))) {
+        const w = arrow.wait
+        const room = w.label.length * 7.4 + 6
+        let x = w.x0 + 3
+        let anchor = 'start'
+        if (w.open || x + room > plotRight) { anchor = 'end'; x = Math.min(w.x1, plotRight) - 2 }
+        if (anchor === 'end' && x - room < LABEL_W) x = LABEL_W + room
+        const lo = anchor === 'start' ? x : x - room
+        const taken = used.get(w.y) ?? []
+        if (taken.some(([a, b]) => lo < b && lo + room > a)) w.hideLabel = true
+        else taken.push([lo, lo + room])
+        used.set(w.y, taken)
+        Object.assign(w, { lx: x, anchor })
+      }
+      return { width, height: top + 8, plotLeft: LABEL_W, plotRight, axis: { ticks: scale.ticks.map(tick => ({ x: LABEL_W + tick.x, label: tick.label })), breaks: scale.breaks.map(brk => ({ x: LABEL_W + brk.x, ms: brk.ms })), compressed: scale.compressed }, lanes, bars, brackets, arrows }
     }
     const ROLE_CLASS = { user: 'ask', request: 'req', reply: 'rep', remote: 'rep', room: 'room', stopped: 'oth', report: 'oth', post: 'oth', mention: 'oth' }
 
     // ------------------------------------------------------------------ communication map geometry
-    function layoutMap(win, { size = 600 } = {}) {
+    function layoutMap(win, { size = 640 } = {}) {
       const involved = new Set(win.edges.flatMap(edge => [edge.from, edge.to]))
       const nodes = win.lanes.filter(lane => lane.kind === 'bot' || involved.has(lane.id))
       // A wide oval sized to how many nodes there are, so a small team is not a small dot in a big
@@ -295,7 +314,7 @@ window.__ModuleLoader__.load({
       const height = nodes.length <= 2 ? 200 : nodes.length <= 4 ? 300 : 400
       const cx = width / 2
       const cy = height / 2
-      const rx = width / 2 - 150
+      const rx = width / 2 - 170
       const ry = height / 2 - 52
       const start = nodes.length === 2 ? Math.PI : -Math.PI / 2
       const place = new Map(nodes.map((lane, i) => {
@@ -305,11 +324,16 @@ window.__ModuleLoader__.load({
         const x = nodes.length === 1 ? cx : cx + rx * cos
         const y = nodes.length === 1 ? cy : cy + ry * sin
         const name = nameOf(lane)
+        // "Helper · Bob's Bot" breaks into two lines (the name, then whose Bot it is): two Bots called
+        // Helper stay apart, and the label fits beside the node.
+        const parts = name.split(' · ')
+        const lines = [clip(parts[0], 24), ...(parts.length > 1 ? [clip(parts.slice(1).join(' · '), 26)] : [])]
         const side = nodes.length === 1 || Math.abs(cos) < 0.35 ? 'below' : cos > 0 ? 'right' : 'left'
+        const above = side === 'below' && sin < 0 && nodes.length > 1
         const label = side === 'below'
-          ? { x, y: sin < 0 && nodes.length > 1 ? y - 26 : y + 36, anchor: 'middle' }
-          : { x: x + (side === 'right' ? 26 : -26), y: y + 4, anchor: side === 'right' ? 'start' : 'end' }
-        return [lane.id, { id: lane.id, kind: lane.kind, name, label: clip(name, 22), lx: label.x, ly: label.y, anchor: label.anchor, x, y }]
+          ? { x, y: above ? y - 26 - (lines.length - 1) * 15 : y + 38, anchor: 'middle' }
+          : { x: x + (side === 'right' ? 26 : -26), y: y + 4 - (lines.length - 1) * 7, anchor: side === 'right' ? 'start' : 'end' }
+        return [lane.id, { id: lane.id, kind: lane.kind, name, label: lines[0], lines, lx: label.x, ly: label.y, anchor: label.anchor, x, y }]
       }))
       const edges = []
       for (const edge of win.edges) {
@@ -365,23 +389,23 @@ window.__ModuleLoader__.load({
     const CSS = `
       .tl-row { display:flex; align-items:center; gap:8px; width:100%; padding:6px 10px; border:0; background:transparent; color:var(--bt-ink, inherit); font:inherit; text-align:left; cursor:pointer; border-radius:6px }
       .tl-row:hover { background:var(--bt-hover, rgba(127,127,127,.12)) }
-      .tl-overlay { position:fixed; inset:0; z-index:2147483000; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center }
-      .tl-dialog { width:min(1080px, 96vw); height:min(720px, 92vh); display:flex; flex-direction:column; background:var(--bt-bg, #fff); color:var(--bt-ink, #1f2328); border:1px solid var(--bt-line, #d0d7de); border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.3); font-size:14px }
+      .tl-overlay { position:fixed; inset:0; z-index:2147483000; background:rgba(0,0,0,.45); display:flex; align-items:flex-start; justify-content:center; padding-top:5vh }
+      .tl-dialog { width:min(1080px, 96vw); max-height:90vh; display:flex; flex-direction:column; background:var(--bt-bg, #fff); color:var(--bt-ink, #1f2328); border:1px solid var(--bt-line, #d0d7de); border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.3); font-size:14px }
       .tl-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--bt-line, #d0d7de) }
       .tl-head h2 { margin:0 8px 0 0; font-size:15px }
       .tl-tab, .tl-btn { border:1px solid var(--bt-line, #d0d7de); background:transparent; color:inherit; padding:3px 10px; border-radius:6px; font:inherit; cursor:pointer }
       .tl-tab[aria-selected="true"] { background:var(--bt-accent, #2563eb); border-color:var(--bt-accent, #2563eb); color:#fff }
-      .tl-body { flex:1 1 auto; min-height:0; overflow:auto; padding:12px 14px }
+      .tl-body { flex:0 1 auto; min-height:260px; overflow:auto; padding:12px 14px }
       .tl-note { margin:0 0 8px; padding:6px 10px; border-radius:6px; font-size:13px; background:var(--bt-hover, rgba(127,127,127,.12)) }
       .tl-note.err { background:rgba(220,38,38,.12); color:#b91c1c }
-      .tl-foot { flex:none; padding:7px 14px; border-top:1px solid var(--bt-line, #d0d7de); opacity:.8; font-size:12.5px }
+      .tl-foot { flex:none; padding:7px 14px; border-top:1px solid var(--bt-line, #d0d7de); opacity:.85; font-size:13px }
       .tl-btn.live { display:inline-flex; align-items:center; gap:5px }
       .tl-btn.live[aria-pressed="true"] { border-color:#16a34a; color:#15803d; cursor:default }
       .tl-btn.live[aria-pressed="false"] { background:var(--bt-accent, #2563eb); border-color:var(--bt-accent, #2563eb); color:#fff }
       .tl-dot { width:8px; height:8px; border-radius:50%; background:currentColor }
-      .tl-svg text { font:12px system-ui, sans-serif; fill:currentColor }
-      .tl-svg .tl-lane-name { font-weight:600; font-size:13px }
-      .tl-svg .tl-lane-sub { font-size:11px; opacity:.7 }
+      .tl-svg text { font:13px system-ui, sans-serif; fill:currentColor }
+      .tl-svg .tl-lane-name { font-weight:600; font-size:14px }
+      .tl-svg .tl-lane-sub { font-size:12px; opacity:.75 }
       .tl-lane-bg { fill:rgba(127,127,127,.07) }
       .tl-lane-bg.alt { fill:rgba(127,127,127,.13) }
       .tl-grid { stroke:var(--bt-line, #d0d7de); stroke-width:1 }
@@ -406,7 +430,8 @@ window.__ModuleLoader__.load({
       .tl-svg .tl-badge-text { paint-order:stroke; stroke:var(--bt-bg, #fff); stroke-width:3px }
       .tl-node { fill:var(--bt-bg, #fff); stroke:var(--bt-accent, #2563eb); stroke-width:2 }
       .tl-node.room, .tl-node.friend { stroke-dasharray:3 2 }
-      .tl-svg .tl-node-name { font-weight:600; font-size:13px }
+      .tl-svg .tl-node-name { font-weight:600; font-size:14px }
+      .tl-svg .tl-node-sub { font-size:12px; opacity:.75 }
       .tl-svg .tl-badge-text { font-size:13px }
       .tl-edge { fill:none; stroke:var(--bt-ink, #1f2328); opacity:.7 }
       .tl-edge.waiting { stroke:#dc2626; stroke-dasharray:5 3; opacity:1 }
@@ -437,7 +462,7 @@ window.__ModuleLoader__.load({
         h('rect', { key: `bg-${lane.id}`, className: i % 2 ? 'tl-lane-bg alt' : 'tl-lane-bg', x: 0, y: lane.y, width: g.width, height: lane.h }),
         h('g', { key: `lb-${lane.id}` },
           h('title', null, lane.sub ? `${lane.name} (${lane.sub})` : lane.name),
-          text({ x: 10, y: lane.sub ? lane.mid - 1 : lane.mid + 4, className: 'tl-lane-name' }, clip(lane.name, 18)),
+          text({ x: 10, y: lane.sub ? lane.mid - 1 : lane.mid + 4, className: 'tl-lane-name' }, clip(lane.label ?? lane.name, 20)),
           lane.sub && text({ x: 10, y: lane.mid + 13, className: 'tl-lane-sub' }, lane.sub)),
       ])
       const ticks = g.axis.ticks.map(tick => [
@@ -465,7 +490,7 @@ window.__ModuleLoader__.load({
           h('line', { className: `tl-arrow ${ROLE_CLASS[a.role] ?? 'oth'}`, x1: a.x, x2: a.x, y1: a.y1, y2: a.y2 }),
           h('path', { d: `M ${a.x - 4} ${a.y2 - dir * 6} L ${a.x} ${a.y2} L ${a.x + 4} ${a.y2 - dir * 6} Z`, fill: 'currentColor' }),
           a.wait && h('line', { className: `tl-wait${a.wait.open ? ' open' : ''}`, x1: a.wait.x0, x2: a.wait.x1, y1: a.wait.y, y2: a.wait.y }),
-          a.wait && text({ className: `tl-badge-text${a.wait.open ? ' open' : ''}`, x: a.wait.open ? a.wait.x1 - 2 : a.wait.x0 + 3, y: a.wait.y - 2, textAnchor: a.wait.open ? 'end' : 'start' }, a.wait.label),
+          a.wait && !a.wait.hideLabel && text({ className: `tl-badge-text${a.wait.open ? ' open' : ''}`, x: a.wait.lx, y: a.wait.y - 4, textAnchor: a.wait.anchor }, a.wait.label),
         )
       })
       return h('svg', { className: 'tl-svg', viewBox: `0 0 ${g.width} ${g.height}`, width: '100%', role: 'img', 'aria-label': 'Swimlanes: one lane per Bot, bars for turns, arrows for messages' },
@@ -487,7 +512,7 @@ window.__ModuleLoader__.load({
           ...map.nodes.map(node => h('g', { key: `n-${node.id}` },
             h('circle', { className: `tl-node${node.kind === 'room' || node.kind === 'friend' ? ` ${node.kind}` : ''}`, cx: node.x, cy: node.y, r: 18 }),
             h('title', null, node.name),
-            text({ x: node.lx, y: node.ly, textAnchor: node.anchor, className: 'tl-node-name' }, node.label),
+            ...node.lines.map((line, n) => text({ key: `nl-${n}`, x: node.lx, y: node.ly + n * 15, textAnchor: node.anchor, className: n === 0 ? 'tl-node-name' : 'tl-node-sub' }, line)),
           )),
         ),
         h('p', { className: waitingNow > 0 ? 'tl-note err' : 'tl-note' }, waitingNow > 0 ? `${waitingNow} request${waitingNow === 1 ? '' : 's'} not answered yet.` : 'Every request in this window has an answer (or none was sent).'),
@@ -506,7 +531,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'tl-legend' },
           h('span', null, h('i', { style: { background: 'var(--bt-accent, #2563eb)' } }), 'model (turn time outside tools)'),
           h('span', null, h('i', { style: { background: '#d97706' } }), 'tools'),
-          h('span', null, h('i', { style: { background: 'rgba(127,127,127,.4)' } }), 'no running turn')),
+          h('span', null, h('i', { style: { background: 'rgba(127,127,127,.4)' } }), 'no running turn (a Bot on a slow model call is busy, not idle)')),
         ...rows.map(row => h('div', { key: row.lane, className: 'tl-util' },
           h('div', null, `${row.name}${row.running ? ' ● running' : ''}`),
           h('div', null,
@@ -564,7 +589,7 @@ window.__ModuleLoader__.load({
             h('button', { className: 'tl-btn live', 'aria-pressed': snap.to === undefined, title: snap.to === undefined ? 'Following the latest activity' : 'Back to the latest activity', onClick: () => { if (snap.to !== undefined) api.setWindow({ windowMs: snap.windowMs }) } }, h('i', { className: 'tl-dot', 'aria-hidden': 'true' }), 'Live'),
             h('button', { className: 'tl-btn', 'aria-label': 'Close', onClick: onClose }, '✕')),
           h('div', { className: 'tl-body' }, ...notesOf(snap).map((note, i) => h('p', { key: `n${i}`, className: note.err ? 'tl-note err' : 'tl-note', role: note.err ? 'alert' : undefined }, note.text)), body),
-          h('div', { className: 'tl-foot' }, 'Delivered means in the other Bot\'s log, not read. A Bot on a slow model call or tool is busy, not idle. Model time is turn time outside tools, not a measured latency.')))
+          h('div', { className: 'tl-foot' }, 'Delivered means in the other Bot\'s log, not read; model time is turn time outside tools, not a measured latency.')))
     }
 
     // The panel's open/closed state, shared by the sidebar row and the '+' menu entry.

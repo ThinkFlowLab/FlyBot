@@ -145,3 +145,11 @@ test('negative: a friend\'s hostile chat name is cleaned before it reaches the n
   assert.ok(name.length <= 60)
   assert.doesNotMatch(name, /[<>]|untrusted/i)
 })
+
+test('a friend\'s name from the feed party names its lane, and a later name replaces the bare handle', () => {
+  const { feed, trace } = setup()
+  feed('exchange.delivered', { exchangeId: 'q1', from: { kind: 'remote', handle: '@chief.uia.home' }, to: { botId: 'a' }, sessionId: 'a', place: 'chat', role: 'request', hop: 0, time: 4_100, textLength: 8 })
+  assert.equal(trace.names().friends['f:chief.uia.home'], '@chief.uia.home')
+  feed('turn.start', { ...base, turnId: 's1#1', turn: 1, time: 4_110, trigger: { exchangeId: 'q1', from: { kind: 'remote', handle: '@chief.uia.home', name: "UiA's Chief" }, role: 'request', hop: 0 } })
+  assert.equal(trace.names().friends['f:chief.uia.home'], "UiA's Chief")
+})

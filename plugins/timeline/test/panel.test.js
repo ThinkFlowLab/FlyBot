@@ -390,9 +390,12 @@ test('polish (#249): no "( )" prefix, a short footer, labels that fit, and a dia
   assert.ok(!htmlOf(mount(client.Swimlanes, { win: long, compress: false }).tree).includes('A Bot with a really quite long name indeed</text>'))
   const view = mount(client.TimelinePanel, { api: fakeApi(okState()), onClose() {} })
   const foot = textOf(findAll(view.tree, node => node.props.className === 'tl-foot')[0])
-  assert.ok(foot.length < 200, `footer is ${foot.length} characters`)
+  assert.ok(foot.length < 140, `footer is ${foot.length} characters`)
+  assert.equal(foot.split(/[.!?](\s|$)/).filter(part => part.trim()).length, 1, 'one sentence')
   assert.match(foot, /not read/)
-  assert.match(client.CSS, /\.tl-dialog \{[^}]*\bheight:min\(720px, 92vh\)/)
+  // The dialog shrinks to its content and hangs from the top, so switching tabs moves nothing above the body.
+  assert.doesNotMatch(client.CSS.match(/\.tl-dialog \{[^}]*\}/)[0], /[^-]height:/)
+  assert.match(client.CSS.match(/\.tl-overlay \{[^}]*\}/)[0], /align-items:flex-start/)
   // Map nodes: inside the drawing with room for the name beside or under them, one name per node.
   const map = client.layoutMap({ ...data, lanes: [...data.lanes, { id: 'c', kind: 'bot', name: 'Third', rows: 1 }, { id: 'd', kind: 'bot', name: 'Fourth', rows: 1 }] })
   for (const node of map.nodes) {
@@ -404,4 +407,42 @@ test('polish (#249): no "( )" prefix, a short footer, labels that fit, and a dia
   const spots = map.nodes.map(node => `${Math.round(node.lx)},${Math.round(node.ly)}`)
   assert.equal(new Set(spots).size, spots.length)
   assert.ok(client.layoutMap(win()).height < client.layoutMap({ ...data, lanes: [...data.lanes, { id: 'c', kind: 'bot', name: 'T', rows: 1 }, { id: 'd', kind: 'bot', name: 'F', rows: 1 }, { id: 'e', kind: 'bot', name: 'E', rows: 1 }] }).height)
+})
+
+test('#255: wait labels stay inside the plot and never sit on each other; friend lane and node names are readable and distinct', () => {
+  const friend = { k: 'f', id: 'f:helper.uib.home' }
+  const recs = [{ r: 'boot', t: at(0) },
+    { r: 'm', t: at(1000), id: 'f1', f: { k: 'u' }, to: friend, ro: 'user', hop: 0, n: 3 },
+    { r: 'm', t: at(1500), id: 'f2', f: { k: 'u' }, to: friend, ro: 'user', hop: 0, n: 3 },
+    { r: 'm', t: at(44_000), id: 'f3', f: { k: 'u' }, to: friend, ro: 'user', hop: 0, n: 3 },
+    { r: 'm', t: at(44_300), id: 'x9', f: { k: 'b', id: 'a' }, to: { k: 'b', id: 'b' }, ro: 'request', hop: 0, n: 3 },
+    ...records().slice(1)]
+  const data = win({ windowMs: 60_000, names: { friends: { 'f:helper.uib.home': "Helper · UiB1415's Bot" } } }, recs)
+  const g = client.layoutSwimlanes(data, {})
+  const waits = g.arrows.filter(arrow => arrow.wait)
+  assert.ok(waits.length >= 3)
+  const byStrip = new Map()
+  for (const { wait } of waits) {
+    if (wait.hideLabel) continue
+    const room = wait.label.length * 7.4 + 6
+    const lo = wait.anchor === 'start' ? wait.lx : wait.lx - room
+    assert.ok(lo >= g.plotLeft - 1 && lo + room <= g.plotRight + 1, `${wait.label} inside the plot`)
+    for (const [a, b] of byStrip.get(wait.y) ?? []) assert.ok(lo + room <= a || lo >= b, `${wait.label} does not overlap another label`)
+    byStrip.set(wait.y, [...(byStrip.get(wait.y) ?? []), [lo, lo + room]])
+  }
+  assert.ok(waits.some(({ wait }) => wait.open && !wait.hideLabel), 'the open wait keeps its label')
+  assert.ok(waits.some(({ wait }) => wait.hideLabel), 'a label with no room is left to the tooltip')
+  const lane = g.lanes.find(item => item.kind === 'friend')
+  assert.deepEqual([lane.label, lane.sub], ['Helper', "UiB1415's Bot"])
+  const chief = client.layoutSwimlanes(win({ names: { friends: { 'f:helper.uib.home': "UiA1415's Chief" } } }, recs), {}).lanes.find(item => item.kind === 'friend')
+  assert.deepEqual([chief.label, chief.sub], ["UiA1415's Chief", 'friend'])
+  // Two Bots called Helper: mine and the friend's. The map labels them apart.
+  const two = client.layoutMap({ ...data, lanes: [...data.lanes, { id: 'h', kind: 'bot', name: 'Helper', rows: 1 }] })
+  const helpers = two.nodes.filter(node => node.lines[0] === 'Helper')
+  assert.equal(helpers.length, 2)
+  assert.notDeepEqual(helpers[0].lines, helpers[1].lines)
+  assert.ok(helpers.some(node => node.lines[1] === "UiB1415's Bot"))
+  // The drawing is as tall as its lanes: three Bot lanes are shorter than seven.
+  const few = client.layoutSwimlanes(win({}, [{ r: 'boot', t: at(0) }]), {}).height
+  assert.ok(few < g.height)
 })

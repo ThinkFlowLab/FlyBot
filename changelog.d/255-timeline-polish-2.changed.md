@@ -1,0 +1,1 @@
+Timeline polish: a friend's Bot is named like in the sidebar ("UiA1415's Chief", "Helper · UiB1415's Bot") instead of a truncated handle, two Bots called Helper are told apart in the map, wait labels stay inside the plot and no longer pile up, the dialog shrinks to its content and hangs from the top, and text is larger with a one-sentence footer. (#255)
