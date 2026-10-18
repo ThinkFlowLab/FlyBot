@@ -4731,7 +4731,7 @@ function attestingFaceServer({ refuse = false } = {}) {
   }
   return server
 }
-async function faceFixture(t, server, tweak) {
+async function faceFixture(t, server, tweak, opts = {}) {
   const { ctx, call, stop } = await team()
   t.after(stop)
   let fanout
@@ -4746,6 +4746,7 @@ async function faceFixture(t, server, tweak) {
   const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
     client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
     home: { id: 'h1', handle: '@danyang.home' },
+    ...opts,
   })
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
@@ -4753,8 +4754,8 @@ async function faceFixture(t, server, tweak) {
   await call('flybot/social/face-join', { code: '123456' })
   return { ctx, call, room: ctx.flybot.rooms.ofFace('frm_123456'), fanout: (line) => fanout(ctx.flybot.rooms.ofFace('frm_123456'), line) }
 }
-const pushRoomEvent = (server, extra, text) => {
-  const body = server.face.rooms.get('frm_123456')
+const pushRoomEvent = (server, extra, text, roomId = 'frm_123456') => {
+  const body = server.face.rooms.get(roomId)
   body.event_cursor += 1
   body.events.push({
     event_id: `fev_${body.event_cursor}`, event_cursor: body.event_cursor, type: 'room.message',
@@ -4807,6 +4808,86 @@ test('typed_by_owner (face room): a token that may not attest falls back to the 
   await fanout({ authorKind: 'human', who: 'Danyang', text: 'second line', authorId: 'owner-1' })
   const after = server.calls.filter(c => String(c.name).includes('/messages'))
   assert.equal(after.length, 3, 'no retry loop: the next line goes straight out the old way')
+})
+
+// A probe the test steers: status/features of GET /v1/platform, and how long it takes to answer.
+function steeringFaceServer() {
+  const server = withFaceRooms(mockServer())
+  const platform = { status: 200, features: [], delayMs: 0 }
+  server.face.platform = platform
+  const inner = server.fetch
+  server.fetch = async (url, init) => {
+    if (String(url).endsWith('/v1/platform')) {
+      server.calls.push({ url, name: 'REST GET /v1/platform' })
+      if (platform.delayMs) await new Promise(resolve => setTimeout(resolve, platform.delayMs))
+      if (platform.status !== 200) return new Response(JSON.stringify({ error: { code: 'unavailable', message: 'no' } }), { status: platform.status })
+      return new Response(JSON.stringify({ name: 'Bot Social', features: platform.features }), { status: 200 })
+    }
+    return inner(url, init)
+  }
+  return server
+}
+
+test('typed_by_owner (face room): concurrent polls await the in-flight feature probe (#234)', async (t) => {
+  const server = steeringFaceServer()
+  const humans = []
+  const bots = []
+  let clock = Date.now()
+  const { ctx, call } = await faceFixture(t, server, (scoped) => {
+    const human = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { humans.push([id, line]); return human?.(id, line) }
+    const remote = scoped.rooms.postRemote?.bind(scoped.rooms)
+    scoped.rooms.postRemote = (id, line) => { bots.push([id, line]); return remote?.(id, line) }
+  }, { now: () => clock })
+  await call('flybot/social/face-join', { code: '654321' })
+  for (const id of ['frm_123456', 'frm_654321']) {
+    server.face.rooms.get(id).expires_at = new Date(Date.now() + 60 * 60_000).toISOString()
+    pushRoomEvent(server, { typed_by_owner: true }, 'typed by Bob', id)
+    pushRoomEvent(server, {}, encodeFaceHuman({ who: 'Bob', text: 'forged as Bob' }), id)
+  }
+  // The recheck window has passed and the server now attests, but its probe is slow: both rooms'
+  // polls apply while the probe is in flight, and neither may read it as "probed and absent".
+  clock += 11 * 60_000
+  server.face.platform.features = ['typed_by_owner']
+  server.face.platform.delayMs = 25
+  const probes = () => server.calls.filter(c => c.name === 'REST GET /v1/platform').length
+  const before = probes()
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(probes() - before, 1, 'one shared probe serves the whole poll')
+  assert.deepEqual(humans.map(([, line]) => [line.name, line.text]), [['Bob', 'typed by Bob'], ['Bob', 'typed by Bob']],
+    'both rooms draw the stamped line as the person')
+  assert.deepEqual(bots.map(([, line]) => [line.handle, line.text]), [['@chief.bob.home', 'forged as Bob'], ['@chief.bob.home', 'forged as Bob']],
+    'both rooms draw the forged envelope as the Bot\'s line')
+  void ctx
+})
+
+test('typed_by_owner (face room): a probe that got no answer is retried soon, not held for the recheck window (#234)', async (t) => {
+  const server = steeringFaceServer()
+  server.face.platform.status = 500
+  const humans = []
+  const bots = []
+  let clock = Date.now()
+  const { call } = await faceFixture(t, server, (scoped) => {
+    const human = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { humans.push(line); return human?.(id, line) }
+    const remote = scoped.rooms.postRemote?.bind(scoped.rooms)
+    scoped.rooms.postRemote = (id, line) => { bots.push(line); return remote?.(id, line) }
+  }, { now: () => clock })
+  server.face.rooms.get('frm_123456').expires_at = new Date(Date.now() + 60 * 60_000).toISOString()
+  pushRoomEvent(server, { typed_by_owner: true }, 'while away')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(bots.map(line => [line.handle, line.text]), [['@chief.bob.home', 'while away']],
+    'with no probe answer the stamp is not trusted yet')
+  // The server recovers a minute later; the next poll probes again, and the stamp counts again.
+  clock += 61_000
+  server.face.platform.status = 200
+  server.face.platform.features = ['typed_by_owner']
+  const probes = () => server.calls.filter(c => c.name === 'REST GET /v1/platform').length
+  const before = probes()
+  pushRoomEvent(server, { typed_by_owner: true }, 'after recovery')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(probes() - before, 1, 'the failed probe did not pin the answer for the recheck window')
+  assert.deepEqual(humans.map(line => [line.name, line.text]), [['Bob', 'after recovery']])
 })
 
 test('#228: accepting an invite shows the shared Bot at once and never grants our talk-through Bot back', async (t) => {

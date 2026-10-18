@@ -1133,20 +1133,39 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // Typed-by-owner attestation (Bot Social typed_by_owner): `supported` is learned from the
   // server's feature list (face rooms) or from an attested reply; `forbidden` is set when this
   // token may not attest, so lines then go out the old way and nothing is retried in a loop.
-  const typed = { supported: false, forbidden: false, probedAt: 0 }
+  // The probe is shared: while one is in flight every caller awaits its result (#234) — an early
+  // "not attesting" from a probe that has not finished would render forgeable envelopes as person
+  // lines and mark the events seen, with no self-heal once the probe lands.
+  const typed = { supported: false, forbidden: false, probedAt: 0, probeFailed: false, probing: undefined }
   const TYPED_RECHECK_MS = 10 * 60_000
+  // A probe that got no answer (features() → undefined: an unreachable or pre-platform server) is
+  // not a "no": it is retried soon, not held for the recheck window.
+  const TYPED_RETRY_MS = 60_000
   async function serverAttests() {
     if (typed.supported || !faceApi?.features) return typed.supported
-    if (typed.probedAt && now() - typed.probedAt < TYPED_RECHECK_MS) return false
-    typed.probedAt = now()
-    const features = await faceApi.features()
-    if (features?.includes('typed_by_owner')) typed.supported = true
-    return typed.supported
+    if (typed.probing) return typed.probing
+    if (typed.probedAt && now() - typed.probedAt < (typed.probeFailed ? TYPED_RETRY_MS : TYPED_RECHECK_MS)) return false
+    typed.probing = probeTypedSupport()
+    return typed.probing
+  }
+  async function probeTypedSupport() {
+    try {
+      const features = await faceApi.features()
+      typed.probedAt = now()
+      typed.probeFailed = features === undefined
+      if (features?.includes('typed_by_owner')) typed.supported = true
+      return typed.supported
+    } finally {
+      typed.probing = undefined
+    }
   }
   const canAttest = async () => !typed.forbidden && await serverAttests()
   const isAttestRefused = error => error?.code === 'typed_attestation_forbidden' || /typed_attestation_forbidden/.test(String(error?.message ?? ''))
   // The owner's own typed line, as Bot Social's send_as_member with the attestation; falls back
-  // to a plain send when this token may not attest.
+  // to a plain send when this token may not attest. Deliberately not gated on the feature probe
+  // (face sends are): an older Bot Social ignores the unknown field — its reply carries no stamp,
+  // and support is learned from the next attested reply — and a server that refuses attesting
+  // answers typed_attestation_forbidden, which sends the line plain instead.
   async function sendTypedAsMember(args) {
     if (!typed.forbidden) {
       try {
