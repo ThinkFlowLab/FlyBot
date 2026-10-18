@@ -650,7 +650,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
 +      broadcast
 +        ? 'It is addressed to everyone (introductions, what each of you can do, a round of opinions): give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
-+        : 'Answer only if it is for you: it names you or your role, or it fits what you do best and nobody before you has answered it, or nobody has answered yet and you can add something genuinely new. Reply [PASS] when a Bot before you already answered it, when it is for another Bot by name or role, or when it follows up on another Bot\'s answer.',
++        : 'Default to [PASS]: one Bot answers a line like this, not several. Answer only if it is for you (it names you or your role, or no other member\'s role fits it better) and no Bot before you has answered it. If a Bot before you answered, even partly, reply exactly [PASS]: do not confirm, verify, repeat, add tips or run extra checks, unless that answer is wrong. Reply [PASS] too when it is for another Bot by name or role, or when it follows up on another Bot\'s answer.',
 +      last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
 +      roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
 +      friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',

@@ -776,3 +776,35 @@ test('#299: a follow-up goes to the Bot that spoke last, who is asked first; one
   await three
   assert.equal(roomTurns(sent).length, 2, 'no forced answer when the follow-up is to a friend\'s Bot')
 })
+
+test('#299: the pass rule is explicit, and the follow-up rule holds on the real send path (the line is logged before the round starts)', async (t) => {
+  const env = start()
+  const { call, emit, relay, inboxOf, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'real')
+  const say = async (text, id) => {
+    await call('send', { sessionId: hosted.id, text })
+    const queued = inboxOf(hosted.id).nextTurn.splice(0).at(-1)
+    await emit(hosted.id, { type: 'user/message', data: { source: queued.source, content: queued.content } })
+    return { running: relay(hosted.id, id) }
+  }
+  const { running: one } = await say('文档怎么写', 'real-1')
+  const a = await turnFor(sent)
+  assert.match(promptOf(a), /Default to \[PASS\]/)
+  assert.match(promptOf(a), /do not confirm, verify, repeat, add tips or run extra checks/)
+  await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 1)
+  const b = await turnFor(sent, a)
+  assert.equal(b.sessionId, hosted.sessions[writer])
+  await answer(b.sessionId, b.message.source.exchangeId, 'Start with an outline.', 2)
+  await one
+  sent.length = 0
+  const { running: two } = await say('那你刚才说的大纲具体怎么写', 'real-2')
+  const c = await turnFor(sent)
+  assert.equal(c.sessionId, hosted.sessions[writer], 'the Bot that spoke last is asked first')
+  assert.match(promptOf(c), /Writer spoke last before this line/)
+  await answer(c.sessionId, c.message.source.exchangeId, 'Three headings.', 3)
+  const d = await turnFor(sent, c)
+  assert.match(promptOf(d), /Three headings\./, 'the next Bot sees the answer, so it can pass')
+  await answer(d.sessionId, d.message.source.exchangeId, '[PASS]', 4)
+  await two
+})

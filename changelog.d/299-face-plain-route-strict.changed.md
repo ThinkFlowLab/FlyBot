@@ -1,0 +1,1 @@
+Face-to-face rooms: the Bots now pass by default on a plain line. Once one Bot has answered a question, later Bots no longer confirm, verify, repeat or add tips to it (unless it is wrong); a line to everyone still gets one answer from each. (#299)
