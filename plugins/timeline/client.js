@@ -199,7 +199,13 @@ window.__ModuleLoader__.load({
     const BAR_H = 16
     const LANE_PAD = 6
     const TOP_STRIP = 12 // above a lane's bars: the wait lines and their labels
-    const nameOf = (lane) => safe(lane?.name) || safe(lane?.id)
+    // A raw session id is never shown as a name: an older server may still send one.
+    const RAW_ID = /^(session|bot|room)-[0-9a-f]{6,}|^[0-9a-f]{8}-[0-9a-f]{4}-/i
+    const nameOf = (lane) => {
+      const name = safe(lane?.name)
+      if (name && !RAW_ID.test(name)) return name
+      return lane?.kind === 'room' ? 'Removed group' : lane?.kind === 'friend' ? 'Friend' : 'Removed Bot'
+    }
     function layoutSwimlanes(win, { width = 980, compress = false } = {}) {
       const from = num(win.from)
       const to = Math.max(from + 1, num(win.to, from + 1))
@@ -268,7 +274,7 @@ window.__ModuleLoader__.load({
       }
       return { width, height: top + 8, plotLeft: LABEL_W, plotRight: LABEL_W + plotW, axis: { ticks: scale.ticks.map(tick => ({ x: LABEL_W + tick.x, label: tick.label })), breaks: scale.breaks.map(brk => ({ x: LABEL_W + brk.x, ms: brk.ms })), compressed: scale.compressed }, lanes, bars, brackets, arrows }
     }
-    const ROLE_CLASS = { user: 'ask', request: 'req', reply: 'rep', room: 'room', stopped: 'oth', report: 'oth', post: 'oth', mention: 'oth' }
+    const ROLE_CLASS = { user: 'ask', request: 'req', reply: 'rep', remote: 'rep', room: 'room', stopped: 'oth', report: 'oth', post: 'oth', mention: 'oth' }
 
     // ------------------------------------------------------------------ communication map geometry
     function layoutMap(win, { size = 440 } = {}) {
@@ -369,7 +375,7 @@ window.__ModuleLoader__.load({
       .tl-badge-text.open { fill:#dc2626 }
       .tl-svg .tl-badge-text { paint-order:stroke; stroke:var(--bt-bg, #fff); stroke-width:3px }
       .tl-node { fill:var(--bt-bg, #fff); stroke:var(--bt-accent, #2563eb); stroke-width:2 }
-      .tl-node.room { stroke-dasharray:3 2 }
+      .tl-node.room, .tl-node.friend { stroke-dasharray:3 2 }
       .tl-edge { fill:none; stroke:var(--bt-ink, #1f2328); opacity:.7 }
       .tl-edge.waiting { stroke:#dc2626; stroke-dasharray:5 3; opacity:1 }
       .tl-table { width:100%; border-collapse:collapse; margin-top:10px }
@@ -397,7 +403,7 @@ window.__ModuleLoader__.load({
       const g = layoutSwimlanes(win, { compress })
       const laneRows = g.lanes.map((lane, i) => [
         h('rect', { key: `bg-${lane.id}`, className: i % 2 ? 'tl-lane-bg alt' : 'tl-lane-bg', x: 0, y: lane.y, width: g.width, height: lane.h }),
-        text({ key: `lb-${lane.id}`, x: 8, y: lane.mid + 4 }, `${lane.kind === 'room' ? '( ) ' : ''}${lane.name}${lane.main ? ' ★' : ''}${lane.removed ? ' (removed)' : ''}`),
+        text({ key: `lb-${lane.id}`, x: 8, y: lane.mid + 4 }, `${lane.kind === 'room' ? '( ) ' : ''}${lane.name}${lane.kind === 'friend' ? ' (friend)' : ''}${lane.main ? ' ★' : ''}${lane.removed ? ' (removed)' : ''}`),
       ])
       const ticks = g.axis.ticks.map(tick => [
         h('line', { key: `gl-${tick.x}`, className: 'tl-grid', x1: tick.x, x2: tick.x, y1: AXIS_H - 4, y2: g.height - 8 }),
@@ -444,7 +450,7 @@ window.__ModuleLoader__.load({
             text({ x: edge.lx, y: edge.ly - 4, textAnchor: 'middle', className: edge.waiting ? 'tl-badge-text open' : 'tl-badge-text' }, edge.label),
           )),
           ...map.nodes.map(node => h('g', { key: `n-${node.id}` },
-            h('circle', { className: `tl-node${node.kind === 'room' ? ' room' : ''}`, cx: node.x, cy: node.y, r: 18 }),
+            h('circle', { className: `tl-node${node.kind === 'room' || node.kind === 'friend' ? ` ${node.kind}` : ''}`, cx: node.x, cy: node.y, r: 18 }),
             text({ x: node.x, y: node.y + 32, textAnchor: 'middle' }, node.name),
           )),
         ),

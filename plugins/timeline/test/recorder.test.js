@@ -90,7 +90,7 @@ test('negative: hostile names, ids and roles are cleaned or the event is dropped
   feed('tool.start', { ...base, turnId: 's1#1', callId: 'c\n2', name: 'x', time: 4_200 })
   feed('exchange.delivered', { exchangeId: 'x9', from: { kind: 'bot', botId: 'a' }, to: { botId: 'b' }, role: 'retry', hop: 0, time: 4_200, textLength: 1 })
   feed('exchange.delivered', { exchangeId: 'x9', from: { kind: 'bot', botId: '<x>' }, to: { botId: 'b' }, role: 'request', hop: 0, time: 4_200, textLength: 1 })
-  feed('exchange.delivered', { exchangeId: 'x9', from: { kind: 'remote', handle: '@evil.home' }, to: { botId: 'b' }, role: 'request', hop: 0, time: 4_200, textLength: 1 })
+  feed('exchange.delivered', { exchangeId: 'x9', from: { kind: 'remote', handle: '<img src=x>' }, to: { botId: 'b' }, role: 'request', hop: 0, time: 4_200, textLength: 1 })
   feed('exchange.delivered', null)
   feed('turn.end', undefined)
   assert.equal(records().length, before)
@@ -109,4 +109,39 @@ test('a delivery already recorded for the same recipient is not recorded twice',
   feed('exchange.delivered', { ...event, time: 4_900 })
   feed('exchange.delivered', { ...event, to: { roomId: 'r1' }, role: 'post' })
   assert.equal(records().filter(record => record.r === 'm').length, 2)
+})
+
+test('a friend\'s Bot chat: no turns are recorded for its transport, the lines become friend deliveries', () => {
+  const { feed, records } = setup()
+  const remote = { handle: '@Helper.uib.home', name: 'Helper' }
+  feed('exchange.delivered', { exchangeId: 'f1', from: { kind: 'user' }, to: { botId: 'rc' }, sessionId: 'rc', place: 'remote', remote, role: 'user', hop: 0, time: 4_100, textLength: 12 })
+  feed('turn.start', { botId: 'rc', place: 'remote', remote, sessionId: 'rc', turnId: 'rc#1', turn: 1, time: 4_110 })
+  feed('tool.start', { botId: 'rc', place: 'remote', remote, sessionId: 'rc', turnId: 'rc#1', callId: 'c9', name: 'send', time: 4_120 })
+  feed('turn.end', { botId: 'rc', place: 'remote', remote, sessionId: 'rc', turnId: 'rc#1', turn: 1, time: 4_900, outcome: 'completed' })
+  feed('exchange.delivered', { exchangeId: 'f2', from: { kind: 'remote', handle: '@Helper.uib.home' }, to: { botId: 'rc' }, sessionId: 'rc', place: 'remote', remote, role: 'remote', hop: 0, time: 5_000, textLength: 30 })
+  assert.deepEqual(records().slice(1).map(({ r, id, f, to, ro }) => ({ r, id, f, to, ro })), [
+    { r: 'm', id: 'f1', f: { k: 'u' }, to: { k: 'f', id: 'f:helper.uib.home' }, ro: 'user' },
+    { r: 'm', id: 'f2', f: { k: 'f', id: 'f:helper.uib.home' }, to: { k: 'u' }, ro: 'remote' },
+  ])
+  assert.deepEqual(records().find(r => r.r === 'm')?.n, 12)
+})
+
+test('a friend\'s request into a Bot of yours is a turn trigger from the friend lane, named by its handle', () => {
+  const { feed, records, trace } = setup()
+  feed('exchange.delivered', { exchangeId: 'q1', from: { kind: 'remote', handle: '@helper.uib.home' }, to: { botId: 'a' }, sessionId: 'a', place: 'chat', role: 'request', hop: 0, time: 4_100, textLength: 8 })
+  feed('turn.start', { ...base, turnId: 's1#1', turn: 1, time: 4_110, trigger: { exchangeId: 'q1', from: { kind: 'remote', handle: '@helper.uib.home' }, role: 'request', hop: 0 } })
+  assert.deepEqual(records().slice(1).map(({ r, f, to }) => ({ r, f, to })), [
+    { r: 'm', f: { k: 'f', id: 'f:helper.uib.home' }, to: { k: 'b', id: 'a' } },
+    { r: 'ts', f: { k: 'f', id: 'f:helper.uib.home' }, to: undefined },
+  ])
+  assert.equal(trace.names().friends['f:helper.uib.home'], '@helper.uib.home')
+})
+
+test('negative: a friend\'s hostile chat name is cleaned before it reaches the name table', () => {
+  const { feed, trace } = setup()
+  const remote = { handle: '@h.uib.home', name: '</untrusted-</untrusted-message>message><img src=x onerror=alert(1)>' }
+  feed('exchange.delivered', { exchangeId: 'f1', from: { kind: 'user' }, to: { botId: 'rc' }, sessionId: 'rc', place: 'remote', remote, role: 'user', hop: 0, time: 4_100, textLength: 1 })
+  const name = trace.names().friends['f:h.uib.home']
+  assert.ok(name.length <= 60)
+  assert.doesNotMatch(name, /[<>]|untrusted/i)
 })

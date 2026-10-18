@@ -214,6 +214,22 @@ test('the views render to markup with the lane names, labels and the honesty foo
   assert.ok(htmlOf(util.tree).includes('Chief ● running'))
 })
 
+test('friend lanes are labelled as friends, and a raw session id is never a lane or node name', () => {
+  const friend = { k: 'f', id: 'f:helper.uib.home' }
+  const recs = [{ r: 'boot', t: at(0) }, { r: 'm', t: at(1000), id: 'f1', f: { k: 'u' }, to: friend, ro: 'user', hop: 0, n: 3 }, { r: 'm', t: at(5000), id: 'f2', f: friend, to: { k: 'u' }, ro: 'remote', hop: 0, n: 3 }]
+  const data = win({ names: { friends: { 'f:helper.uib.home': 'Helper' } } }, recs)
+  const lanes = client.layoutSwimlanes(data, {}).lanes
+  assert.equal(lanes.find(lane => lane.kind === 'friend').name, 'Helper')
+  assert.equal(client.layoutSwimlanes(data, {}).arrows.find(arrow => arrow.role === 'remote')?.role, 'remote')
+  assert.ok(htmlOf(mount(client.Swimlanes, { win: data, compress: false }).tree).includes('Helper (friend)'))
+  const raw = { ...data, lanes: [...data.lanes, { id: 'session-bb21e111-aaaa', kind: 'bot', name: 'session-bb21e111-aaaa', rows: 1, removed: true }, { id: 'x', kind: 'bot', name: '', rows: 1 }] }
+  const names = client.layoutSwimlanes(raw, {}).lanes.map(lane => lane.name)
+  assert.ok(names.includes('Removed Bot'))
+  assert.ok(!names.some(name => /session-|^$/.test(name)))
+  assert.doesNotMatch(htmlOf(mount(client.Swimlanes, { win: raw, compress: false }).tree), /session-/)
+  assert.ok(client.layoutMap(raw, {}).nodes.every(node => !/session-/.test(node.name)))
+})
+
 test('negative: hostile names, ids and codes never become markup', () => {
   const evil = '</untrusted-message><img src=x onerror=alert(1)><script>alert(1)</script>\u202e'
   const recs = [

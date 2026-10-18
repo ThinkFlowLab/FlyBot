@@ -169,7 +169,7 @@ test('negative: garbage records are skipped, never thrown on', () => {
   assert.equal(win.exchanges.length, build().exchanges.length)
 })
 
-test('negative: arrows to lanes the model does not know are dropped (a friend\'s Bot, a malformed party)', () => {
+test('negative: arrows to lanes the model does not know are dropped (a ghost Bot, a malformed party)', () => {
   const recs = [{ r: 'boot', t: at(0) }, { r: 'm', t: at(1000), id: 'x1', f: { k: 'b', id: 'ghost' }, to: { k: 'x', id: 'q' }, ro: 'request', hop: 0 }, { r: 'm', t: at(1100), id: 'x2', f: { k: 'u' }, to: { k: 'b' }, ro: 'user', hop: 0 }]
   assert.deepEqual(buildWindow(recs, { now: at(5000), bots, rooms }).exchanges, [])
 })
@@ -189,4 +189,46 @@ test('clampWindow keeps the window between 30 s and 24 h', () => {
   assert.equal(clampWindow(5), WINDOW_LIMITS.min)
   assert.equal(clampWindow(1e12), WINDOW_LIMITS.max)
   assert.equal(clampWindow(120_000.4), 120_000)
+})
+
+const friend = { k: 'f', id: 'f:helper.uib.home' }
+const friendRecords = () => [
+  { r: 'boot', t: at(0) },
+  { r: 'm', t: at(1000), id: 'f1', f: u, to: friend, ro: 'user', hop: 0, n: 12 },
+  { r: 'm', t: at(7000), id: 'f2', f: friend, to: u, ro: 'remote', hop: 0, n: 80 },
+  { r: 'm', t: at(9000), id: 'f3', f: u, to: friend, ro: 'user', hop: 0, n: 5 },
+]
+
+test('a friend\'s Bot is a friend lane: its name, no turns, no utilization row', () => {
+  const win = buildWindow(friendRecords(), { now: at(20_000), bots, rooms, names: { friends: { 'f:helper.uib.home': 'Helper' } } })
+  assert.deepEqual(win.lanes.find(lane => lane.kind === 'friend'), { id: 'f:helper.uib.home', kind: 'friend', name: 'Helper' })
+  assert.deepEqual(win.turns, [])
+  assert.deepEqual(win.utilization.map(row => row.lane), ['a', 'b'])
+  const nameless = buildWindow(friendRecords(), { now: at(20_000), bots, rooms })
+  assert.equal(nameless.lanes.find(lane => lane.kind === 'friend').name, 'helper.uib.home')
+})
+
+test('friend exchanges: your line waits until the friend\'s next line, which is the answer', () => {
+  const win = buildWindow(friendRecords(), { now: at(20_000), bots, rooms })
+  const [first, answer, second] = win.exchanges
+  assert.deepEqual([first.from, first.to, first.answerAt, first.latencyMs, first.waiting], ['user', 'f:helper.uib.home', at(7000), 6000, undefined])
+  assert.deepEqual([answer.from, answer.to, answer.role, answer.latencyMs], ['f:helper.uib.home', 'user', 'remote', 6000])
+  assert.deepEqual([second.waiting, second.latencyMs], [true, undefined])
+  const edge = win.edges.find(item => item.from === 'user' && item.to === 'f:helper.uib.home')
+  assert.deepEqual([edge.requests, edge.answered, edge.unanswered, edge.medianMs], [2, 1, 1, 6000])
+  assert.equal(win.edges.find(item => item.from === 'f:helper.uib.home').replies, 1)
+})
+
+test('a friend\'s request into your Bot is answered by that Bot\'s turn', () => {
+  const recs = [{ r: 'boot', t: at(0) }, { r: 'm', t: at(1000), id: 'q1', f: friend, to: { k: 'b', id: 'a' }, ro: 'request', hop: 0, n: 5 }, { r: 'ts', t: at(1100), id: 'a#1', pl: 'chat', bot: 'a', x: 'q1', f: friend, ro: 'request' }, { r: 'te', t: at(4100), id: 'a#1', o: 'completed' }]
+  const win = buildWindow(recs, { now: at(20_000), bots, rooms })
+  assert.deepEqual([win.exchanges[0].from, win.exchanges[0].answerAt, win.exchanges[0].latencyMs, win.exchanges[0].turnId], ['f:helper.uib.home', at(4100), 3100, 'a#1'])
+  assert.equal(win.turns[0].trigger.from, 'f:helper.uib.home')
+})
+
+test('a gone Bot or group with no remembered name is "Removed Bot" / "Removed group", never a raw id', () => {
+  const recs = [{ r: 'boot', t: at(0) }, { r: 'ts', t: at(1000), id: 'session-bb21#1', pl: 'chat', bot: 'session-bb21e111-aaaa' }, { r: 'te', t: at(2000), id: 'session-bb21#1', o: 'completed' }, { r: 'ts', t: at(1000), id: 'zz#1', pl: 'chat', bot: 'session-cc' }, { r: 'te', t: at(2000), id: 'zz#1', o: 'completed' }, { r: 'ts', t: at(1000), id: 'gr#1', pl: 'room', room: 'session-gone' }, { r: 'te', t: at(2000), id: 'gr#1', o: 'completed' }]
+  const win = buildWindow(recs, { now: at(5000), bots, rooms })
+  assert.deepEqual(win.lanes.filter(lane => lane.removed).map(lane => lane.name), ['Removed Bot', 'Removed Bot 2', 'Removed group'])
+  assert.doesNotMatch(JSON.stringify(win.lanes), /"name":"session-/)
 })

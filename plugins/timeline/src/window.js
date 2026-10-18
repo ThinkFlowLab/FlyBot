@@ -46,6 +46,7 @@ export const clampWindow = (windowMs) => {
 }
 
 const laneOfParty = (party) => (party?.k === 'u' ? 'user' : party?.id)
+const FRIEND_PREFIX = 'f:'
 
 // Folds records into turns, tools and messages. Records are trusted for shape only after
 // this check: the file may be old, hand-edited or from another version.
@@ -121,16 +122,18 @@ export function buildWindow(records, { now = Date.now(), to, windowMs, bots = []
   // ---- lanes: You, every current Bot (idle ones too), Bots seen in the window that are gone, groups with activity
   const botName = new Map(bots.map(bot => [bot.id, cleanLabel(bot.name)]))
   const roomName = new Map(rooms.map(room => [room.id, cleanLabel(room.name)]))
-  const stored = { bots: names.bots ?? {}, rooms: names.rooms ?? {} }
+  const stored = { bots: names.bots ?? {}, rooms: names.rooms ?? {}, friends: names.friends ?? {} }
   const current = new Set(bots.map(bot => bot.id))
   const seenBots = new Set()
   const seenRooms = new Set()
+  const seenFriends = new Set()
   for (const turn of botTurns) { seenBots.add(turn.bot); if (turn.room) seenRooms.add(turn.room) }
   for (const turn of roundTurns) seenRooms.add(turn.room)
   for (const message of inWindow) {
     for (const party of [message.from, message.to]) {
       if (party?.k === 'b') seenBots.add(party.id)
       if (party?.k === 'r') seenRooms.add(party.id)
+      if (party?.k === 'f') seenFriends.add(party.id)
     }
     if (message.room) seenRooms.add(message.room)
   }
@@ -138,8 +141,15 @@ export function buildWindow(records, { now = Date.now(), to, windowMs, bots = []
   for (const bot of [...bots.filter(item => item.isMain), ...bots.filter(item => !item.isMain)]) {
     lanes.push({ id: bot.id, kind: 'bot', name: botName.get(bot.id) || bot.id, ...(bot.isMain ? { main: true } : {}) })
   }
-  for (const id of seenBots) if (!current.has(id)) lanes.push({ id, kind: 'bot', name: cleanLabel(stored.bots[id]) || id, removed: true })
-  for (const id of seenRooms) lanes.push({ id, kind: 'room', name: roomName.get(id) || cleanLabel(stored.rooms[id]) || id, ...(roomName.has(id) ? {} : { removed: true }) })
+  // A raw session id is never a lane name: a gone Bot or group shows its remembered name, else a
+  // plain "Removed Bot" / "Removed group" (numbered when there are several).
+  const fallback = (label, count) => (count === 0 ? label : `${label} ${count + 1}`)
+  let removedBots = 0
+  let removedRooms = 0
+  for (const id of seenBots) if (!current.has(id)) lanes.push({ id, kind: 'bot', name: cleanLabel(stored.bots[id]) || fallback('Removed Bot', removedBots++), removed: true })
+  for (const id of seenRooms) lanes.push({ id, kind: 'room', name: roomName.get(id) || cleanLabel(stored.rooms[id]) || fallback('Removed group', removedRooms++), ...(roomName.has(id) ? {} : { removed: true }) })
+  // A friend's Bot lives on another team: messages only, no turns, no utilization.
+  for (const id of seenFriends) lanes.push({ id, kind: 'friend', name: cleanLabel(stored.friends[id]) || cleanLabel(id.slice(FRIEND_PREFIX.length)) || 'Friend' })
   const laneIds = new Set(lanes.map(lane => lane.id))
 
   // ---- turns (with their tools) per Bot lane, rounds per group lane
@@ -183,12 +193,31 @@ export function buildWindow(records, { now = Date.now(), to, windowMs, bots = []
   let exchanges = []
   for (const message of inWindow) {
     const from = laneOfParty(message.from)
-    const toLane = message.to?.id
+    const toLane = laneOfParty(message.to)
     if (!from || !toLane || !laneIds.has(from) || !laneIds.has(toLane)) continue
     const arrow = { id: message.id, from, to: toLane, role: message.role, hop: message.hop, t: message.t, ...(message.replyTo ? { replyTo: message.replyTo } : {}), ...(message.room ? { room: message.room } : {}) }
-    if (message.role === 'reply' && message.replyTo) {
+    const friendAsk = message.role === 'request' && from.startsWith(FRIEND_PREFIX)
+    if (message.role === 'remote') {
+      // A friend's line to you: the answer to the last line you sent that friend before it.
+      const asked = [...messages].reverse().find(item => item.role === 'user' && item.to?.id === from && item.t <= message.t)
+      if (asked) arrow.latencyMs = Math.max(0, message.t - asked.t)
+    } else if (message.role === 'user' && toLane.startsWith(FRIEND_PREFIX)) {
+      // Waiting on a friend: from your line to the friend's next line back.
+      const answer = messages.find(item => item.role === 'remote' && item.from?.id === toLane && item.t >= message.t)
+      const newer = messages.find(item => item.role === 'user' && item.to?.id === toLane && item.t > message.t)
+      if (answer && (!newer || answer.t <= newer.t)) Object.assign(arrow, { answerAt: answer.t, latencyMs: Math.max(0, answer.t - message.t) })
+      else if (!newer) arrow.waiting = true
+    } else if (message.role === 'reply' && message.replyTo) {
       const request = byId.get(message.replyTo)
       if (request) arrow.latencyMs = Math.max(0, message.t - request.t)
+    } else if (friendAsk) {
+      // A friend's request into a Bot of yours: the Bot's turn for it is the answer, as for a typed line.
+      const turn = turnOfTrigger.get(message.id)
+      if (turn) {
+        arrow.turnId = turn.id
+        if (turn.t1 === undefined && live) arrow.waiting = true
+        else if (turn.t1 !== undefined) Object.assign(arrow, { answerAt: turn.t1, latencyMs: Math.max(0, turn.t1 - message.t) })
+      } else arrow.waiting = true
     } else if (message.role === 'request' || message.role === 'stopped') {
       const reply = repliesTo.get(message.id)
       if (reply) Object.assign(arrow, { replyAt: reply.t, latencyMs: Math.max(0, reply.t - message.t) })
@@ -231,7 +260,7 @@ export function buildWindow(records, { now = Date.now(), to, windowMs, bots = []
     if (arrow.role === 'request' || arrow.role === 'user') {
       edge.requests += 1
       if (arrow.latencyMs !== undefined) { edge.answered += 1; edge.waits.push(arrow.latencyMs) } else edge.unanswered += 1
-    } else if (arrow.role === 'reply') edge.replies += 1
+    } else if (arrow.role === 'reply' || arrow.role === 'remote') edge.replies += 1
     else edge.other += 1
     edgeMap.set(key, edge)
   }

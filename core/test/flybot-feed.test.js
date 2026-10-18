@@ -15,6 +15,7 @@ const team = () => ({
   bots: {
     a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'a', createdAt: 1 },
     b: { id: 'b', name: 'Writer', role: 'Write', sessionId: 'b', createdAt: 2 },
+    rc: { id: 'rc', name: 'Helper', role: '', sessionId: 'rc', createdAt: 3, remote: { handle: '@helper.uib.home', home: 'uib.home', plugin: 'flybot-social' }, model: 'flybot-remote/@helper.uib.home' },
   },
   rooms: { r1: { id: 'r1', name: 'Group', members: ['a', 'b'], admin: 'a', mode: 'admin', notice: '', createdAt: 1, createdBy: null, sessions: { b: 'rb' }, log: [], seq: 0, seen: {} } },
   agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0,
@@ -232,4 +233,23 @@ test('listeners: a throwing one does not stop the rest, a disposer unsubscribes,
   emit('a', 'turn/end', { turn: 2, reason: { kind: 'completed' } })
   assert.deepEqual(seen, ['completed'])
   assert.ok(ctx.listeners.get('session/event').length >= 1)
+})
+
+test('a friend\'s Bot chat is place remote: its transport turn is not a team Bot turn, the lines are deliveries', async (t) => {
+  const { feed, emit, stop } = await boot()
+  t.after(stop)
+  emit('rc', 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: SECRET }] }, 5000)
+  emit('rc', 'turn/start', { turn: 1 }, 5010)
+  emit('rc', 'turn/end', { turn: 1, reason: { kind: 'completed' } }, 5900)
+  emit('rc', 'user/message', { source: { kind: 'bot', form: 'remote-chat', role: 'remote', exchangeId: 'fx1', hop: 0, remote: { handle: '@helper.uib.home' }, text: SECRET }, content: [{ type: 'text', text: SECRET }] }, 9000)
+  assert.deepEqual(names(feed), ['exchange.delivered', 'turn.start', 'turn.end', 'exchange.delivered'])
+  const [[, typed], [, start], [, end], [, reply]] = feed
+  const where = { handle: '@helper.uib.home', name: 'Helper' }
+  assert.deepEqual([typed.place, typed.remote, typed.role, typed.from, typed.to], ['remote', where, 'user', { kind: 'user' }, { botId: 'rc' }])
+  assert.deepEqual([start.place, start.remote, start.botId, end.place, end.remote], ['remote', where, 'rc', 'remote', where])
+  assert.deepEqual([reply.place, reply.role, reply.from, reply.exchangeId, reply.remote], ['remote', 'remote', { kind: 'remote', handle: '@helper.uib.home' }, 'fx1', where])
+  assert.ok(!JSON.stringify(feed).includes(SECRET))
+  // A team Bot's own chat is still place chat, with no remote field.
+  emit('a', 'turn/start', { turn: 1 }, 9100)
+  assert.deepEqual([feed.at(-1)[1].place, feed.at(-1)[1].remote], ['chat', undefined])
 })

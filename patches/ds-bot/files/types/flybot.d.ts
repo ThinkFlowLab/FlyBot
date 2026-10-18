@@ -66,10 +66,14 @@ export type FeedParty = { kind: 'user' } | { kind: 'bot'; botId: BotId } | { kin
 
 /**
  * Where a Session speaks: a Bot's own chat ('chat'), a Bot's hidden Session in a group
- * ('group'), or the group's own Session ('room': its turn is one round and has no botId).
+ * ('group'), the group's own Session ('room': its turn is one round and has no botId), or a
+ * friend's Bot chat ('remote': the Session runs no model, it only carries lines to and from
+ * the friend, so its turns are transport, not a team Bot's work; `botId` is the chat's id).
  */
 export interface FeedPlace {
-  place: 'chat' | 'group' | 'room'
+  place: 'chat' | 'group' | 'room' | 'remote'
+  /** Set for place 'remote': the friend's handle and the chat's name. */
+  remote?: { handle: string; name: string }
   /** Absent for place 'room'. */
   botId?: BotId
   /** Set for 'group' and 'room'. */
@@ -138,8 +142,10 @@ export interface ExchangeDelivered {
   from: FeedParty
   to: { botId?: BotId; roomId?: string }
   sessionId: string
-  place: 'chat' | 'group' | 'room'
-  /** 'user' for a typed line; else request, reply, stopped, report, room, post or mention. */
+  place: 'chat' | 'group' | 'room' | 'remote'
+  /** Set for place 'remote' (a line typed in a friend's chat, or the friend's own line). */
+  remote?: { handle: string; name: string }
+  /** 'user' for a typed line; 'remote' for a friend's line into its chat; else request, reply, stopped, report, room, post or mention. */
   role: string
   hop: number
   time: number

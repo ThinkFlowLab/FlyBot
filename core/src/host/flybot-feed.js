@@ -13,7 +13,7 @@ export const FEED_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.start'
 
 // Relay roles a consumer can show. Retry, resume and secret-card nudges are the host
 // talking to itself, not the team talking to each other.
-const DELIVERED_ROLES = new Set(['request', 'reply', 'stopped', 'report', 'room', 'post', 'mention'])
+const DELIVERED_ROLES = new Set(['request', 'reply', 'stopped', 'report', 'room', 'post', 'mention', 'remote'])
 const OUTCOMES = new Set(['completed', 'aborted', 'error'])
 
 const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
@@ -53,7 +53,13 @@ export function installFeed(rt, fire) {
     const group = rt.groupOwners?.get(id)
     if (group !== undefined) return { place: 'group', botId: group.botId, roomId: group.roomId }
     const botId = rt.chatOwners?.get(id)
-    if (botId !== undefined) return { place: 'chat', botId }
+    if (botId !== undefined) {
+      // A friend's Bot is a chat of its own (remote-chat.js): its Session runs no model, it
+      // only carries lines to and from the friend. It is not a team Bot's chat.
+      const handle = rt.botOf?.(botId)?.remote?.handle
+      if (typeof handle === 'string') return { place: 'remote', botId, remote: { handle: cleanLabel(handle, 120), name: cleanLabel(rt.botOf(botId).name, 60) } }
+      return { place: 'chat', botId }
+    }
     if (rt.roomOf?.(id) !== undefined) return { place: 'room', roomId: id }
     return undefined
   }
@@ -78,6 +84,11 @@ export function installFeed(rt, fire) {
       role = 'user'
       exchangeId = `user:${id}:${seqOf(event) ?? timeOf(event)}`
       party = { kind: 'user' }
+    } else if (source?.kind === SOURCE_KIND && source.form === 'remote-chat' && where.place === 'remote') {
+      // The friend's line, posted into its chat (remote-chat.js `deliver`).
+      role = 'remote'
+      exchangeId = cleanId(source.exchangeId)
+      party = typeof source.remote?.handle === 'string' ? { kind: 'remote', handle: cleanLabel(source.remote.handle, 120) } : undefined
     } else if (source?.kind === SOURCE_KIND && source.form === 'relay') {
       if (source.deferred || source.resumed || source.retried) return undefined
       role = String(source.role ?? '')
@@ -95,6 +106,7 @@ export function installFeed(rt, fire) {
       to: omitUndefined({ botId: where.botId, roomId: where.place === 'room' ? where.roomId : undefined }),
       sessionId: id,
       place: where.place,
+      remote: where.remote,
       role,
       hop: Number.isInteger(source.hop) ? source.hop : 0,
       time: timeOf(event),
@@ -111,7 +123,7 @@ export function installFeed(rt, fire) {
 
   const closeCalls = (id, entry, where, turnId, time, interrupted) => {
     for (const [callId, call] of entry.calls) {
-      fire('tool.end', omitUndefined({ botId: where.botId, roomId: where.roomId, place: where.place, sessionId: id, turnId, callId, name: call.name, time, durationMs: Math.max(0, time - call.time), ok: false, interrupted: interrupted ? true : undefined }))
+      fire('tool.end', omitUndefined({ botId: where.botId, roomId: where.roomId, place: where.place, remote: where.remote, sessionId: id, turnId, callId, name: call.name, time, durationMs: Math.max(0, time - call.time), ok: false, interrupted: interrupted ? true : undefined }))
     }
     entry.calls.clear()
   }
@@ -123,7 +135,7 @@ export function installFeed(rt, fire) {
     if (where === undefined) return
     const entry = entryOf(id)
     const turnId = entry.turn === undefined ? undefined : `${id}#${entry.turn}`
-    const base = { botId: where.botId, roomId: where.roomId, place: where.place, sessionId: id }
+    const base = omitUndefined({ botId: where.botId, roomId: where.roomId, place: where.place, remote: where.remote, sessionId: id })
     switch (event.type) {
       case 'user/message': {
         const delivered = deliveredOf(id, event, where)

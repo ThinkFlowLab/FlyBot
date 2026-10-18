@@ -16,13 +16,16 @@ import { cleanCode, cleanCount, cleanId, cleanLabel, cleanTime } from './sanitiz
 const PLACES = new Set(['chat', 'group', 'room'])
 const OUTCOMES = new Set(['completed', 'aborted', 'error'])
 // The roles the panel draws. Anything else is not recorded.
-export const ROLES = new Set(['user', 'request', 'reply', 'stopped', 'report', 'room', 'post', 'mention'])
+export const ROLES = new Set(['user', 'request', 'reply', 'stopped', 'report', 'room', 'post', 'mention', 'remote'])
 
+// A friend's Bot runs on its own team: it gets a lane of its own (messages only, never turns), keyed
+// by its handle. The id is a conservative alphabet, so two spellings of one handle are one lane.
+const friendId = handle => (typeof handle === 'string' ? cleanId(`f:${handle.replace(/^@/, '').toLowerCase()}`) : undefined)
 const partyOf = (party) => {
   if (party?.kind === 'user') return { k: 'u' }
   if (party?.kind === 'bot' && cleanId(party.botId)) return { k: 'b', id: party.botId }
   if (party?.kind === 'room' && cleanId(party.roomId)) return { k: 'r', id: party.roomId }
-  // A friend's Bot is outside the local team: phase 1 shows the local team only.
+  if (party?.kind === 'remote' && friendId(party.handle)) return { k: 'f', id: friendId(party.handle) }
   return undefined
 }
 const withParty = (key, party) => (party ? { [key]: party } : {})
@@ -34,7 +37,18 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
     const rooms = {}
     for (const bot of adapter.bots()) { const id = cleanId(bot.id); if (id) bots[id] = cleanLabel(bot.name) || id }
     for (const room of adapter.rooms()) { const id = cleanId(room.id); if (id) rooms[id] = cleanLabel(room.name) || id }
-    return { bots, rooms }
+    return friendNames.size ? { bots, rooms, friends: Object.fromEntries(friendNames) } : { bots, rooms }
+  }
+  // Friends' names: the chat's name when a remote chat event carried it, else the handle.
+  const friendNames = new Map()
+  const noteFriend = (handle, name) => {
+    const id = friendId(handle)
+    if (!id) return
+    const shown = cleanLabel(name, 60)
+    const handleLabel = cleanLabel(handle, 60)
+    const had = friendNames.get(id)
+    if (shown && shown !== handleLabel) friendNames.set(id, shown)
+    else if (had === undefined) friendNames.set(id, handleLabel || id)
   }
   let lastLabels = ''
   const write = (record) => {
@@ -44,6 +58,9 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
     const key = JSON.stringify(labels)
     if (key !== lastLabels) { lastLabels = key; trace.append(record, labels) } else trace.append(record)
   }
+  // The Session of a friend's Bot chat runs no model (it carries lines to and from the friend):
+  // its turns and tools are transport, not a Bot's work, so they are not recorded as turns.
+  const isRemoteChat = event => event?.place === 'remote'
   const place = (event) => {
     const pl = PLACES.has(event?.place) ? event.place : undefined
     const bot = cleanId(event?.botId)
@@ -62,15 +79,18 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
 
   const handlers = {
     'turn.start'(event) {
+      if (isRemoteChat(event)) return
       const where = place(event)
       const id = cleanId(event?.turnId)
       const t = cleanTime(event?.time)
       if (!where || !id || !t) return
       const trigger = event.trigger
+      if (trigger?.from?.kind === 'remote') noteFriend(trigger.from.handle)
       const from = partyOf(trigger?.from)
       write({ r: 'ts', t, id, ...where, ...(cleanId(trigger?.exchangeId) ? { x: trigger.exchangeId } : {}), ...withParty('f', from), ...(typeof trigger?.role === 'string' && ROLES.has(trigger.role) ? { ro: trigger.role } : {}) })
     },
     'turn.end'(event) {
+      if (isRemoteChat(event)) return
       const id = cleanId(event?.turnId)
       const t = cleanTime(event?.time)
       if (!id || !t) return
@@ -78,6 +98,7 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
       write({ r: 'te', t, id, o, ...(o === 'error' ? { ec: cleanCode(event.errorCode) } : {}) })
     },
     'tool.start'(event) {
+      if (isRemoteChat(event)) return
       const where = place(event)
       const id = cleanId(event?.callId)
       const tid = cleanId(event?.turnId)
@@ -86,6 +107,7 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
       write({ r: 'ks', t, id, tid, nm: cleanLabel(event.name, 60) || 'tool', ...(where.bot ? { bot: where.bot } : {}), ...(where.room ? { room: where.room } : {}) })
     },
     'tool.end'(event) {
+      if (isRemoteChat(event)) return
       const id = cleanId(event?.callId)
       const tid = cleanId(event?.turnId)
       const t = cleanTime(event?.time)
@@ -96,10 +118,15 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
       const id = cleanId(event?.exchangeId)
       const t = cleanTime(event?.time)
       const ro = typeof event?.role === 'string' && ROLES.has(event.role) ? event.role : undefined
+      if (event?.from?.kind === 'remote') noteFriend(event.from.handle, event.place === 'remote' ? event.remote?.name : undefined)
+      if (isRemoteChat(event)) noteFriend(event.remote?.handle, event.remote?.name)
       const f = partyOf(event?.from)
       const toBot = cleanId(event?.to?.botId)
       const toRoom = cleanId(event?.to?.roomId)
-      const to = toBot ? { k: 'b', id: toBot } : toRoom ? { k: 'r', id: toRoom } : undefined
+      // Into a friend's chat: a line you typed goes to the friend, the friend's line comes to you.
+      const to = isRemoteChat(event)
+        ? (event.from?.kind === 'user' ? partyOf({ kind: 'remote', handle: event.remote?.handle }) : { k: 'u' })
+        : toBot ? { k: 'b', id: toBot } : toRoom ? { k: 'r', id: toRoom } : undefined
       if (!id || !t || !ro || !f || !to) return
       if (!firstTime(id, `${to.k}${to.id}`)) return
       const room = cleanId(event?.roomId)
