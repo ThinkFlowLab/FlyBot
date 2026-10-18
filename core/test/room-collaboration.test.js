@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -152,6 +152,18 @@ async function collaborate(t, { source = implementation, accept = true } = {}) {
   const final = await ok(accept && independent.ok ? 'task-accept-result' : 'task-cancel', { id: task.id })
   return { worker, independent, final, returned }
 }
+
+test('the fixture checks still pass when the working directory is reached through a symlink', t => {
+  const home = mkdtempSync(join(tmpdir(), 'flybot-room-symlink-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const real = join(home, 'fixture')
+  prepareFixture(real)
+  writeFileSync(join(real, 'writer', 'total.mjs'), implementation)
+  const link = join(home, 'link')
+  symlinkSync(real, link)
+  const worker = checkWorker({ worker: join(link, 'writer'), verifier: join(link, 'verifier') })
+  assert.equal(worker.ok, true, worker.stderr)
+})
 
 test('same-room DSH fixture delegates, clarifies, edits, independently verifies and accepts', async t => {
   const result = await collaborate(t)

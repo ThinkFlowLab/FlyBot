@@ -1686,7 +1686,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
       status = 'pending_target'
     }
-    const offered = joined.bot ?? joined.inviter?.bot ?? joined.offered_bot
+    // Bot Social answers with `inviter` = the invited Bot itself (a member handle, @chief.bob.home) and
+    // no separate `bot` field; older shapes name it in `bot`, `inviter.bot` or `offered_bot` and
+    // keep `inviter` at the home (#342). Only a member-level inviter is the Bot shared with us.
+    const inviterBot = home && joined.inviter?.handle && homeOfPeer(joined.inviter.handle) !== norm(joined.inviter.handle) ? joined.inviter : undefined
+    const offered = joined.bot ?? joined.inviter?.bot ?? joined.offered_bot ?? inviterBot
     const offeredHandle = offered?.handle ? norm(offered.handle) : ''
     // Mark the shared Bot inbound before the first refresh: the grant sync that refresh starts
     // must already see the talk-through grant on our Bot as talk-through, or it stores it as us
@@ -2274,6 +2278,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // Once the room is left or closed here, a later poll must not reopen it (#182): the peer's
     // leave shows at once and stays shown without a reload.
     const held = hosted?.face?.status
+    // Ended here but still open on Bot Social: the automatic leave failed (timeout, 5xx), so the
+    // next poll tries it again instead of polling a room it shows as past forever (#304).
+    if (held === 'closed' && status === 'open') return { status: held, peersGone: true }
     if (held === 'left' || held === 'closed') return { status: held }
     const expiresAt = snapshot?.expiresAt || hosted?.face?.expiresAt
     if (status === 'candidate' && expiresAt) {
@@ -2283,7 +2290,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const locals = new Set(bringable().map(bot => bot.handle).filter(Boolean))
     const previousRemotes = (hosted?.participants ?? []).filter(p => p.leftSeq === undefined && p.remote === true)
     const currentRemotes = (snapshot?.members ?? []).filter(member => member.handle && !locals.has(norm(member.handle)))
-    if (status === 'open' && previousRemotes.length > 0 && currentRemotes.length === 0) return { status: 'left' }
+    // Every other home left: the room has ended here, but this home did not leave it (#304).
+    if (status === 'open' && previousRemotes.length > 0 && currentRemotes.length === 0) return { status: 'closed', peersGone: true }
     return undefined
   }
   async function applyFaceSnapshot(snapshot, { asBot } = {}) {
@@ -2300,6 +2308,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const room = await flybot.rooms.upsertFace({
       roomId: snapshot.roomId,
       name: title,
+      ...(settings.faceRooms[snapshot.roomId]?.joinCode ? { joinCode: settings.faceRooms[snapshot.roomId].joinCode } : {}),
       status: past?.status || snapshot.status,
       expiresAt: snapshot.expiresAt,
       startedAt: snapshot.startedAt,
@@ -2395,6 +2404,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     saveSettings()
     armSocialPoll()
+    // The room ended here because everyone else left: leave it on Bot Social too, so this
+    // home stops polling it and a room-only identity is released (social.md invariant 4, #304).
+    if (past?.peersGone && settings.faceRooms[snapshot.roomId]) {
+      await leaveFaceRoom({ faceRoomId: snapshot.roomId, status: 'closed' })
+        .catch(error => warn('face-room leave after the last peer left failed', error))
+    }
     return flybot.rooms.ofFace?.(snapshot.roomId) ?? room
   }
   async function pollOneFace(serverId, meta, listed) {
@@ -2438,8 +2453,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         for (const [serverId, meta] of Object.entries(settings.faceRooms)) {
           if (known.has(serverId)) continue
           const hosted = flybot.rooms.ofFace?.(serverId)
-          rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed' })
-            || { faceRoomId: serverId, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'closed', members: [] })
+          rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed', joinCode: meta?.joinCode })
+            || { faceRoomId: serverId, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'closed', members: [], joinCode: meta?.joinCode })
           delete settings.faceRooms[serverId]
           dropRoomRemotes(serverId)
           for (const handle of asBotsOf(meta)) {
@@ -2485,8 +2500,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   function rememberPastFace(room) {
     if (!room?.faceRoomId) return
+    const before = (settings.pastFaceRooms ?? []).find(item => item.faceRoomId === room.faceRoomId)
+    // Who left keeps "Left": a poll that later finds the room gone must not relabel it "Closed" (#304).
+    const status = before?.status === 'left' ? 'left' : (room.status || 'left')
     const next = [
-      { ...room, status: room.status || 'left' },
+      { ...room, status, ...(before?.joinCode && !room.joinCode ? { joinCode: before.joinCode } : {}) },
       ...(settings.pastFaceRooms ?? []).filter(item => item.faceRoomId !== room.faceRoomId),
     ]
     settings.pastFaceRooms = next.slice(0, 20)
@@ -2496,13 +2514,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (hosted?.id && ['left', 'closed'].includes(hosted.face?.status)) void flybot.rooms.dropFace?.(hosted.id)?.catch?.(() => {})
     }
   }
-  async function leaveFaceRoom({ roomId, faceRoomId, bots } = {}) {
+  async function leaveFaceRoom({ roomId, faceRoomId, bots, status: ended } = {}) {
     const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
     if (!id) throw new Error('which room?')
+    // `closed` when the room ended around us (every peer left), `left` when the owner left it.
+    const status = ended === 'closed' ? 'closed' : 'left'
     const meta = settings.faceRooms[id]
     const hosted = flybot.rooms.ofFace?.(id)
-    rememberPastFace(viewHostedFace(hosted, { faceRoomId: id, localRoomId: meta?.localRoomId, status: 'left' })
-      || { faceRoomId: id, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'left', members: [] })
+    rememberPastFace(viewHostedFace(hosted, { faceRoomId: id, localRoomId: meta?.localRoomId, status, joinCode: meta?.joinCode })
+      || { faceRoomId: id, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status, members: [], joinCode: meta?.joinCode })
     const handles = (Array.isArray(bots) && bots.length ? bots : asBotsOf(meta)).map(norm).filter(Boolean)
     let result
     try {
@@ -2520,7 +2540,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
       // The room stays as a read-only past room with its transcript (#192): Open from Past rooms
       // finds it already hosted. It is only marked left; the sidebar lists past rooms elsewhere.
-      await flybot.rooms.upsertFace?.({ roomId: id, status: 'left' }).catch(() => {})
+      await flybot.rooms.upsertFace?.({ roomId: id, status, ...(meta?.joinCode ? { joinCode: meta.joinCode } : {}) }).catch(() => {})
     }
     delete settings.faceRooms[id]
     dropRoomRemotes(id)
@@ -2608,6 +2628,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const room = await flybot.rooms.upsertFace?.({
       roomId: serverId,
       name: seed.name || faceRoomTitle({ members: seed.members }, { code: seed.joinCode }),
+      ...(seed.joinCode ? { joinCode: seed.joinCode } : {}),
       status: seed.status === 'open' ? 'closed' : (seed.status || 'closed'),
       expiresAt: seed.expiresAt,
       startedAt: seed.startedAt,

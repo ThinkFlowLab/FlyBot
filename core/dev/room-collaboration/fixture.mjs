@@ -1,6 +1,6 @@
 // Synthetic inputs and executable assertions shared by deterministic room tests
 // and later runtime trials. No model or participant behavior is defined here.
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -54,8 +54,10 @@ export function prepareFixture(root) {
 
 function execute(directory) {
   const artifact = readFileSync(join(directory, 'total.mjs'))
+  // The permission flag must match the canonical path the loader realpaths to;
+  // a symlinked temp root (macOS /var -> /private/var) otherwise denies every read.
   const result = spawnSync(process.execPath, [
-    '--permission', `--allow-fs-read=${directory}`, 'check.mjs',
+    '--permission', `--allow-fs-read=${realpathSync(directory)}`, 'check.mjs',
   ], { cwd: directory, env: { TZ: 'UTC' }, encoding: 'utf8', timeout: 5000, maxBuffer: 32 * 1024 })
   if (result.error) throw result.error
   return {

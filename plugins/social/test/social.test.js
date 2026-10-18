@@ -522,6 +522,12 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
+  // #310 follow-up: the "wasn't found" sentence mentions "already used" as one possible cause; it must not be shown as "already used".
+  const notFound = "This invite link wasn't found. It may be incomplete, expired, or already used. Ask your friend for a new link."
+  assert.equal(plugin.errorText(Object.assign(new Error(notFound), { code: 'bot/refused' })), notFound)
+  assert.equal(plugin.errorText(new Error("This invite link wasn't found on your Bot Social server. It may come from another server, or be incomplete, expired, or already used. Ask your friend for a new link.")).startsWith("This invite link wasn't found on your Bot Social server"), true)
+  assert.equal(plugin.errorText(new Error('This invite was already used. Ask your friend for a new one.')), 'This invite was already used. Ask your friend for a new one.')
+  assert.equal(plugin.errorText(new Error('Bot Social join_invite: invite is used')), 'This invite was already used. Ask your friend for a new one.')
   // A missing host handler is never shown as "Unknown FlyBot endpoint".
   assert.match(plugin.errorText(Object.assign(new Error('Unknown FlyBot endpoint social/remote-bots'), { code: 'bot/not-found' })), /^Social is not running:/)
   assert.doesNotMatch(plugin.errorText(Object.assign(new Error('Unknown FlyBot endpoint social/remote-bots'), { code: 'bot/not-found' })), /Unknown FlyBot endpoint/)
@@ -1721,10 +1727,56 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
     bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob',
   })
   await call('flybot/social/face-rooms', { poll: true })
+  // #304: the title keeps the number it was joined by, through polls and the end.
+  assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
   room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
   const listed = (await call('flybot/social/face-rooms', { poll: true })).value
   const past = listed.rooms.find(item => item.faceRoomId === 'frm_123456')
-  assert.equal(past.status, 'left')
+  // This home did not leave: the room ended around it, so it reads Closed, not Left (#304) ...
+  assert.equal(past.status, 'closed')
+  assert.match(past.name, / · 123456$/)
+  assert.equal(listed.rooms.filter(item => item.faceRoomId === 'frm_123456').length, 1)
+  // ... and it leaves on Bot Social too, so it stops polling the room and releases its seat.
+  assert.equal(room.status, 'closed', 'left on Bot Social')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
+  assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
+})
+
+test('#304: a failed automatic leave is tried again on the next poll', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  let failLeave = 1
+  const leaves = []
+  const fetch = async (url, init) => {
+    if (String(url).includes('/v1/face-rooms/') && String(url).endsWith('/leave') && init?.method === 'POST') {
+      leaves.push(String(url))
+      if (failLeave-- > 0) return new Response(JSON.stringify({ error: { code: 'internal', message: 'try later' } }), { status: 503 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
+  const room = server.face.rooms.get('frm_123456')
+  room.members.push({ bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' })
+  await call('flybot/social/face-rooms', { poll: true })
+  room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 1)
+  assert.equal(room.status, 'open', 'the first leave failed')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 2, 'tried again')
+  assert.equal(room.status, 'closed')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 2, 'not after it succeeded')
 })
 
 test('face and inbox polls speed up while a live face room is open', async (t) => {
@@ -1833,9 +1885,9 @@ test('#182: a peer leaving closes the room here and a later poll does not reopen
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open')
   body.members = body.members.filter(member => member.handle !== '@chief.bob.home')
   await call('flybot/social/face-rooms', { poll: true })
-  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'left')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
   await call('flybot/social/face-rooms', { poll: true })
-  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'left', 'a second poll must not reopen it')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed', 'a second poll must not reopen it')
 })
 
 test('#166: an open face room does not post two identical join lines', async (t) => {
@@ -4451,7 +4503,7 @@ async function joinerTeam(t, { initial, settings = { inboundBackfilled: true, in
   await grantTeam(ctx.flybot)
   await social.registerAll()
   const published = () => Object.values(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).flybot?.remote ?? {}).flat()
-  return { ctx, call, state, published }
+  return { ctx, call, state, published, server, social }
 }
 const bobHome = bots => ({ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' }, bots })
 const chiefBot = { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief' }
@@ -4750,6 +4802,30 @@ test('createSocialApi listGrants maps an object-shaped grantee to a handle', asy
   assert.doesNotMatch(listed[0].grantee, /object/i)
 })
 
+test('#304: a left or closed room\'s details are read-only: chip only, no Auto-send, no Leave', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  for (const status of ['left', 'closed']) {
+    const tree = walk(pluginOf([]).FaceRoomOverview({ room: { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status } } }))
+    assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status'))
+    assert.equal(tree.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
+    assert.equal(tree.some(n => n.props['data-flybot'] === 'face-leave'), false)
+  }
+})
+
+test('#304: Past rooms keep the room\'s number and never show the joining deadline as its time', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const title = room => String(walk(pluginOf([]).FaceRoomCard({ room, past: true })).find(n => n.props.className === 'fs-name')?.children?.join?.('') ?? '')
+  const members = [{ handle: '@a.home', ownerName: 'SelfA' }, { handle: '@b.home', ownerName: 'SelfB' }]
+  // Rows with no members keep the stored title as is.
+  assert.equal(title({ name: 'Face-to-face · SelfA, SelfB · 482913', status: 'closed', members: [] }), 'Face-to-face · SelfA, SelfB · 482913')
+  // Members rebuild the people, the stored number stays.
+  assert.equal(title({ name: 'Face-to-face · SelfA · 482913', status: 'closed', members }), 'Face-to-face · SelfA, SelfB · 482913')
+  // No number and no stored time: the creation time (deadline - 10 min), not the deadline.
+  const created = new Date(Date.parse('2026-10-18T08:42:00.000Z') - 10 * 60_000)
+  const hhmm = `${String(created.getHours()).padStart(2, '0')}:${String(created.getMinutes()).padStart(2, '0')}`
+  assert.match(title({ name: '', status: 'closed', expiresAt: '2026-10-18T08:42:00.000Z', startedAt: '2026-10-18T08:35:00.000Z', members }), new RegExp(`${hhmm}$`))
+})
+
 test('#191: an ended face room says so in plain view and names the person who left', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const plugin = pluginOf([])
@@ -4757,8 +4833,11 @@ test('#191: an ended face room says so in plain view and names the person who le
     { remote: false, displayName: 'Chief' },
     { remote: true, ownerName: 'UiB1415', displayName: 'Chief', leftSeq: 3 },
   ] })
+  // The home that stayed reads who left; the one who left reads that they left (#304).
+  const closed = walk(plugin.FaceRoomStatus({ room: room('closed') }))
+  assert.match(closed.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\. This room is closed\.$/)
   const left = walk(plugin.FaceRoomStatus({ room: room('left') }))
-  assert.match(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\./)
+  assert.equal(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
   assert.equal(walk(plugin.FaceRoomStatus({ room: room('open') })).some(n => n.props?.['data-flybot'] === 'face-room-end'), false)
   assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
 })
@@ -5591,6 +5670,152 @@ test('#228: accepting an invite shows the shared Bot at once and never grants ou
   assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.grantee === '@helper.bob.home'), false, 'no grant on our Chief for the inviter')
   const access = (await call('flybot/social/access', { botId: chief.id })).value
   assert.deepEqual(access.grants, [])
+})
+
+test('#342: real join_invite shape (no bot field, inviter = the shared Bot) after an empty roster shows the Bot and grants nothing back', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let joined = false
+  // Real Bot Social 0b7cabb joinInvite: { relationship_id, status, approval_id, inviter: publicBot(inviterBot), awaiting }
+  server.tools.join_invite = () => {
+    joined = true
+    return { relationship_id: 'r1', status: 'active', inviter: { bot_id: 'x2', handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob', owner_verified: true }, awaiting: null }
+  }
+  server.tools.list_bot_grants = () => ({ grants: joined ? [{ id: 'g-tt', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' }] : [] })
+  server.tools.list_remote_bots = () => ({
+    homes: joined ? [{
+      relationship_id: 'r1',
+      via: ['@chief.danyang.home'],
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x2', handle: '@chief.bob.home', display_name: 'Chief', grant_id: 'g-in' }],
+    }] : [],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const result = (await call('flybot/social/join-invite', { code: 'TT' })).value
+  for (let n = 0; n < 30; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(result.inviterBotName, 'Chief', 'the toast names the shared Bot')
+  const roster = (await call('flybot/social/remote-bots', {})).value
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(roster.homes.flatMap(e => e.bots).some(b => b.handle === '@chief.bob.home'), true, 'shared Bot shows')
+  assert.deepEqual(access.grants, [], 'no reverse grant on our Chief')
+})
+
+// #342: Bot Social's real join_invite answer (0b7cabb): `inviter` is the invited Bot itself, a member
+// handle, and there is no `bot`, `inviter.bot` or `offered_bot`. The talk-through side the server
+// creates on the joiner's Bot names that Bot as grantee, and the roster lists it with `via`.
+async function realJoinTeam(t, { initial = [], status = 'active' } = {}) {
+  const { ctx, call, state, published, server } = await joinerTeam(t, { initial })
+  // Per Bot, like Bot Social: the talk-through grant is on the Bot that joined, and `via` names it.
+  server.tools.list_bot_grants = a => ({ grants: state.grants.filter(grant => !grant.on || grant.on === a.bot_id) })
+  let joinedAs
+  const activate = () => {
+    state.grants = [...state.grants, { id: 'g-tt', on: joinedAs, grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' }]
+    state.homes = [...state.homes, { ...bobHome([{ ...chiefBot, grant_id: 'g-in' }]), via: [server.members.get(joinedAs).handle] }]
+  }
+  server.tools.join_invite = (a) => {
+    joinedAs = a.from_bot_id
+    if (status === 'active') activate()
+    return {
+      relationship_id: 'r1', status, approval_id: null, awaiting: status === 'active' ? null : 'inviter_owner_consent',
+      inviter: { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob', owner_verified: true },
+    }
+  }
+  const join = async (args = {}) => {
+    const result = (await call('flybot/social/join-invite', { code: 'TT', ...args })).value
+    for (let n = 0; n < 30; n++) await new Promise(resolve => setTimeout(resolve, 5))
+    return result
+  }
+  const shown = async () => (await call('flybot/social/remote-bots', {})).value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  const accessOf = async (name) => (await call('flybot/social/access', { botId: ctx.flybot.bot.list().find(bot => bot.name === name).id })).value.grants
+  return { ctx, call, state, published, join, shown, accessOf, approve: activate }
+}
+const carolsChief = { bot_id: 'c1', handle: '@chief.carol.home', display_name: 'Chief' }
+const carolHome = bots => ({ relationship_id: 'r2', home: { bot_id: 'h3', handle: '@carol.home', display_name: 'Carol', owner_display_name: 'Carol' }, bots })
+
+test('#342 + #303: after joining Bob\'s invite, Bob\'s Chief shows and Carol\'s Chief, who joins our invite, still never does', async (t) => {
+  const { call, state, published, join, shown, accessOf, ctx } = await realJoinTeam(t)
+  assert.deepEqual((await call('flybot/social/remote-bots', { fresh: true })).value.homes, [], 'no friends yet')
+  const result = await join()
+  assert.equal(result.inviterBotName, 'Chief')
+  assert.equal(result.inviterName, 'Bob')
+  assert.deepEqual(await shown(), ['@chief.bob.home'])
+  assert.equal(published().some(bot => bot.handle === '@chief.bob.home'), true, 'published for a chat')
+  // Carol accepts our invite to Writer through her Chief: the server lists her Chief and our reverse grant.
+  state.homes = [...state.homes, carolHome([carolsChief])]
+  state.grants = [...state.grants, { id: 'g-rev', grantee: 'Chief@chief.carol.home', name: 'Chief@chief.carol.home', relationship_id: 'r2' }]
+  await call('flybot/social/remote-bots', { fresh: true })
+  assert.deepEqual(await shown(), ['@chief.bob.home'], 'Bob\'s Chief stays, Carol\'s never shows')
+  assert.equal(published().some(bot => bot.handle === '@chief.carol.home'), false, 'the host was never given Carol\'s Chief')
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.grantee).sort(), ['@chief.carol.home'], 'only what we really shared')
+  assert.deepEqual((await accessOf('Chief')).map(grant => grant.grantee), ['@carol.home'], 'Bob is not listed, Carol is')
+})
+
+test('#342 + #303: joining from a non-empty roster shows the shared Bot and it stays after the next refresh', async (t) => {
+  const { call, published, join, shown, accessOf } = await realJoinTeam(t, {
+    initial: [carolHome([{ bot_id: 'c2', handle: '@writer.carol.home', display_name: 'Writer' }])],
+  })
+  await call('flybot/social/remote-bots', { fresh: true })
+  await join()
+  assert.deepEqual((await shown()).sort(), ['@chief.bob.home', '@writer.carol.home'])
+  assert.equal(published().some(bot => bot.handle === '@chief.bob.home'), true)
+  assert.deepEqual(await accessOf('Chief'), [])
+  // The next refresh, with the grants as the server lists them: nothing flips back.
+  await call('flybot/social/remote-bots', { fresh: true })
+  assert.deepEqual((await shown()).sort(), ['@chief.bob.home', '@writer.carol.home'])
+  assert.deepEqual(await accessOf('Chief'), [])
+})
+
+test('#342: a join that waits for the inviter\'s owner shows the shared Bot once it is approved, with no grant on our Chief', async (t) => {
+  const { call, join, shown, accessOf, approve, published } = await realJoinTeam(t, { status: 'pending_target' })
+  await call('flybot/social/remote-bots', { fresh: true })
+  const result = await join()
+  assert.equal(result.status, 'pending_target')
+  assert.deepEqual(await shown(), [], 'nothing is listed before the inviter\'s owner approves')
+  approve()
+  await call('flybot/social/remote-bots', { fresh: true })
+  assert.deepEqual(await shown(), ['@chief.bob.home'])
+  assert.equal(published().some(bot => bot.handle === '@chief.bob.home'), true)
+  assert.deepEqual(await accessOf('Chief'), [])
+})
+
+test('#342: B\'s Chief People with access does not list A after a plain join, joined as the Main Bot or as another Bot', async (t) => {
+  for (const botId of [undefined, 'b']) {
+    const { call, join, shown, accessOf, ctx } = await realJoinTeam(t)
+    await call('flybot/social/remote-bots', { fresh: true })
+    const result = await join(botId ? { botId } : {})
+    assert.equal(result.inviterBotName, 'Chief')
+    assert.deepEqual(await shown(), ['@chief.bob.home'], `shared Bot shows (joined as ${botId ?? 'main'})`)
+    assert.deepEqual(await accessOf('Chief'), [], 'Chief: nobody has access')
+    assert.deepEqual(await accessOf('Writer'), [], 'Writer: nobody has access')
+    const status = (await call('flybot/social/status', {})).value
+    assert.equal(status.bots.some(bot => bot.granted), false, 'no Bot reads as shared')
+    for (const bot of ctx.flybot.bot.list()) assert.deepEqual(ctx.flybot.grants.of(bot.id) ?? [], [])
+  }
+})
+
+test('#342: the inviter\'s own side stays default-deny: the joiner\'s Bot is not shown and our Bot lists them', async (t) => {
+  const { ctx, call, state, shown, accessOf } = await realJoinTeam(t)
+  assert.deepEqual((await call('flybot/social/remote-bots', { fresh: true })).value.homes, [])
+  // Bob joined the invite for our Chief: our grant to his Chief is the share, his talk-through grant is on his Bot.
+  state.homes = [bobHome([chiefBot])]
+  state.grants = [{ id: 'g-out', grantee: 'Chief@chief.bob.home', name: 'Chief@chief.bob.home', relationship_id: 'r1' }]
+  await call('flybot/social/remote-bots', { fresh: true })
+  assert.deepEqual(await shown(), [], 'their Bot is not shared with us')
+  assert.deepEqual((await accessOf('Chief')).map(grant => grant.grantee), ['@bob.home'])
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal(ctx.flybot.grants.of(chief.id)?.[0]?.grantee, '@chief.bob.home')
 })
 
 test('#228: an open People with access shows a friend who accepts, without reopening', async () => {

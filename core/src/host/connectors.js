@@ -1,6 +1,7 @@
-// Connectors: outside services every Bot can use. Their tools come from an MCP server
-// through DSH's own MCP client, mounted on the plugin context, so every Bot and Session
-// gets them as mcp__<connector>__<tool>.
+// Connectors: outside services the owner's Bots can use. Their tools come from an MCP server
+// through DSH's own MCP client, mounted on the plugin context as mcp__<connector>__<tool>.
+// The mount is global to DSH, so which Bot sees them is decided per Bot in
+// connector-access.js: off by default, never on for a Bot that is shared with anyone.
 //
 // GitHub is the first one: GitHub's own MCP server. Composio is the second: one API key
 // opens a gateway to many apps (Gmail, Slack, Calendar, Notion, ...). The user picks the
@@ -93,28 +94,25 @@ export async function composioSession(apiKey, { api = COMPOSIO_DEFAULTS.api, use
     throw new Error('Composio did not give an MCP address')
   }
   if (url.protocol !== 'https:' || url.origin !== new URL(base).origin) throw new Error('Composio gave an MCP address on another host')
+  // Only the id is kept (see composioSessionFind); the address is rebuilt from it at mount time.
   const id = typeof body?.session_id === 'string' && SESSION_ID.test(body.session_id) ? body.session_id : undefined
-  return { url: url.href, ...(id === undefined ? {} : { id }) }
+  if (id === undefined) throw new Error('Composio did not give a session id')
+  return { url: url.href, id }
 }
 
-// A stored session is trusted again only while its address is still https on the API's own host.
-const sameHost = (address, base) => {
-  try {
-    const url = new URL(address)
-    return url.protocol === 'https:' && url.origin === new URL(base).origin
-  } catch {
-    return false
-  }
-}
 const sameApps = (left, right) => Array.isArray(left) && left.length === right.length && right.every(app => left.includes(app))
 const sessionAddress = (base, id) => `${base.replace(/\/$/, '')}/tool_router/session/${encodeURIComponent(id)}`
 
-// Asks Composio whether a session is still there. True while it is, false once it is gone
-// (404/410, or an id Composio does not know); a refused key or an outage throws.
-export async function composioSessionAlive(apiKey, { api = COMPOSIO_DEFAULTS.api, id, fetch: request = fetch } = {}) {
+// Asks Composio for a session by id (GET /tool_router/session/{id}, `x-api-key`) and returns its
+// MCP address, which is what the mount needs. Composio documents the address in this answer, so
+// only the id is kept in state.json and the address is asked for again at each mount. Returns
+// undefined once the session is gone (404/410, an id Composio does not know) or when its answer
+// names no https address on the API's own host; a refused key or an outage throws.
+export async function composioSessionFind(apiKey, { api = COMPOSIO_DEFAULTS.api, id, fetch: request = fetch } = {}) {
+  const base = api.replace(/\/$/, '')
   let response
   try {
-    response = await request(sessionAddress(api, id), {
+    response = await request(sessionAddress(base, id), {
       method: 'GET',
       headers: { 'x-api-key': apiKey, accept: 'application/json', 'user-agent': 'ds-bot' },
       redirect: 'error',
@@ -124,9 +122,20 @@ export async function composioSessionAlive(apiKey, { api = COMPOSIO_DEFAULTS.api
     throw new Error('Could not reach Composio')
   }
   if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
-  if (response.ok) return true
-  if (response.status === 400 || response.status === 404 || response.status === 410) return false
-  throw new Error(`Composio answered ${response.status}`)
+  if (response.status === 400 || response.status === 404 || response.status === 410) return undefined
+  if (!response.ok) throw new Error(`Composio answered ${response.status}`)
+  const body = await response.json().catch(() => ({}))
+  try {
+    const url = new URL(body?.mcp?.url)
+    return url.protocol === 'https:' && url.origin === new URL(base).origin ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// True while Composio still has the session and names an address for it.
+export async function composioSessionAlive(apiKey, options = {}) {
+  return (await composioSessionFind(apiKey, options)) !== undefined
 }
 
 // Deletes a session on Composio (DELETE /tool_router/session/{id}): afterwards its MCP address
@@ -148,17 +157,20 @@ export async function composioDeleteSession(apiKey, { api = COMPOSIO_DEFAULTS.ap
   }
 }
 
+// What state.json keeps of a session: its id and apps, never the address (see composioSessionFind).
+const kept = session => ({ id: session.id, apps: session.apps })
+
 // One session per connect or app-list change: the stored session is reused while it is for the
-// same apps, on the API's own host, and Composio still has it; otherwise a new one is made.
-// Returns the session to keep ({ id, url, apps }); `id` is missing only if Composio sent none.
+// same apps and Composio still has it; otherwise a new one is made. Returns { id, apps, url }:
+// the address is for this mount only and is never saved.
 async function composioEnsureSession(apiKey, { api, userId, apps, stored, fetch: request }) {
   const base = (api ?? COMPOSIO_DEFAULTS.api)
-  if (stored?.id !== undefined && sameApps(stored.apps, apps) && typeof stored.url === 'string' && sameHost(stored.url, base)
-    && await composioSessionAlive(apiKey, { api: base, id: stored.id, fetch: request })) {
-    return { id: stored.id, url: stored.url, apps }
+  if (typeof stored?.id === 'string' && sameApps(stored.apps, apps)) {
+    const url = await composioSessionFind(apiKey, { api: base, id: stored.id, fetch: request })
+    if (url !== undefined) return { id: stored.id, url, apps }
   }
   const { url, id } = await composioSession(apiKey, { api: base, userId, apps, fetch: request })
-  return { url, apps, ...(id === undefined ? {} : { id }) }
+  return { id, url, apps }
 }
 
 const DEFINITIONS = {
@@ -187,22 +199,24 @@ const DEFINITIONS = {
     defaults: COMPOSIO_DEFAULTS,
     addresses: options => [options.api],
     // The user id names this FlyBot to Composio, so the apps signed in once stay signed in.
-    // The session it makes (or reuses) is kept in the record, so the mount does not make another.
+    // The session it makes (or reuses) is kept in the record as { id, apps }, so the mount does not
+    // make another; the session's address is not kept.
     async check({ token, options, saved, body }) {
       const apps = cleanApps(body.apps ?? saved?.apps)
       const userId = saved?.userId ?? `flybot-${randomUUID()}`
       const session = await composioEnsureSession(token, { api: options.api, userId, apps, stored: saved?.session })
-      return { userId, apps, session }
+      return { userId, apps, session: kept(session) }
     },
-    // Mounts the kept session while Composio still has it. `record` is set when a new session had
-    // to be made (first start after an older version, or one deleted on Composio) and must be kept.
+    // Mounts the kept session while Composio still has it, with the address Composio gives for its
+    // id. `record` is set when a new session had to be made (first start after an older version, or
+    // one deleted on Composio) or when an older version's record still carries an address; it must be kept.
     async mountConfig(token, options, saved) {
       // A key without a saved connection (added on the Secrets page, say) makes no session.
       if (saved?.userId === undefined) throw new Error('Connect Composio first')
       const apps = cleanApps(saved.apps)
       const session = await composioEnsureSession(token, { api: options.api, userId: saved.userId, apps, stored: saved.session })
-      const same = saved.session?.id === session.id && saved.session?.url === session.url
-      return { url: session.url, headers: { 'x-api-key': token }, ...(same ? {} : { record: { ...saved, session }, session }) }
+      const same = saved.session?.id === session.id && saved.session?.url === undefined
+      return { url: session.url, headers: { 'x-api-key': token }, ...(same ? {} : { record: { ...saved, session: kept(session) }, session: kept(session) }) }
     },
     // Best effort: a session that cannot be deleted is left to Composio, never an error for the user.
     async discard({ keys, options, session }) {
@@ -244,9 +258,12 @@ export function install(rt) {
     if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
   }
 
-  // The MCP client wraps the server's answer (a 401, say) as the cause.
+  // The MCP client wraps the server's answer (a 401, say) as the cause. The session address of a
+  // mount in progress is not kept anywhere, so it is also taken out of what is shown or logged.
+  let addresses = []
   const reason = (error) => {
-    const text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
+    let text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
+    for (const address of addresses) text = text.split(address).join('[session address]')
     return rt.redactSecrets(text || 'error').slice(0, 300)
   }
 
@@ -275,6 +292,7 @@ export function install(rt) {
     }
     try {
       const { url, headers, record, session } = await def.mountConfig(token, options, saved(c))
+      if (def.id === COMPOSIO) addresses = [url]
       if (record !== undefined) {
         // A session made just now is kept only while this connection is still the saved one;
         // after a Disconnect (or a new key) in the meantime it is deleted again.
@@ -396,6 +414,7 @@ export function install(rt) {
         await rt.save()
       }
       if (oldToken !== undefined) await retire(c, { gone: previous?.session, kept: undefined, keys: [oldToken] })
+      await rt.forgetConnector?.(c.def.id)
       await sync(c)
       return connectorsView()
     },
@@ -409,9 +428,19 @@ export function install(rt) {
 
   const connectorEndpoint = (endpoint, body) => endpoints[endpoint](body ?? {})
 
+  // An older version kept the session's address in state.json. Only the id stays; the address is
+  // asked for again at mount time (composioSessionFind).
+  const scrubAddresses = async () => {
+    await rt.load()
+    const session = state.connectors?.[COMPOSIO]?.session
+    if (session === undefined || !('url' in session)) return
+    state.connectors[COMPOSIO] = { ...state.connectors[COMPOSIO], session: kept(session) }
+    await rt.save()
+  }
+
   ctx.effect(() => {
     stopped = false
-    void rt.loadSecrets().then(syncAll)
+    void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(syncAll)
     return () => {
       stopped = true
       for (const c of connectors) void unmount(c)

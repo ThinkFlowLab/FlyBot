@@ -4,7 +4,7 @@
 // Both are sources of the shell's trigger menu; the shell's own file and session
 // rows stay beside them, because a source cannot be hidden for one Session.
 import { mentionCandidates, remoteMentionRows } from './flybot-registry.js'
-import { remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
+import { cleanPeerName, ownerNameOf, remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
 import { t } from './i18n.js'
 import { currentPart, relativeShort } from './text.js'
 
@@ -27,24 +27,57 @@ const conversationOf = (roster, sessionId) => {
 export function mentionRows(roster, sessionId, query = '') {
   const here = conversationOf(roster, sessionId)
   if (here === null) return null
+  const face = isFaceRoom(here.room)
+  const live = (here.room?.participants ?? []).filter(p => p.leftSeq === undefined)
   const bots = here.room
     ? [
-        ...here.room.members.map(id => roster.byId[id]).filter(Boolean),
-        ...(here.room.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
+        ...here.room.members.map(id => roster.byId[id]).filter(Boolean)
+          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot)),
+        ...live.filter(p => p.kind === 'human')
           .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role })),
-        ...(here.room.participants ?? []).filter(p => p.remote && p.leftSeq === undefined)
-          .map(p => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, handle: p.handle })),
+        // A remote seat already listed under its handle (a duplicate participant record) is offered once.
+        ...uniqueBy(live.filter(p => p.remote), p => p.handle || p.id)
+          .map(p => ({
+            id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, handle: p.handle,
+            ...(face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot'), false) } : {}),
+          })),
       ]
     : listedChatBots(roster).filter(bot => bot.id !== here.self.id)
   const needle = query.trim().toLowerCase()
-  const rows = bots.filter(bot => bot.name.toLowerCase().includes(needle)).map(bot => ({ bot, text: `@${bot.name} ` }))
+  const rows = bots
+    .filter(bot => bot.name.toLowerCase().includes(needle) || String(bot.label ?? '').toLowerCase().includes(needle))
+    .map(bot => ({ bot, text: `@${bot.name} ` }))
   const everyone = t('Everyone')
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {
     rows.push({ room: here.room, text: `@${everyone} ` })
   }
-  // Friends' remote Bots are members of every chat, marked remote.
-  rows.push(...remoteMentionRows(roster, query))
+  // Friends' remote Bots are members of every chat, marked remote. Not of a face-to-face
+  // room: only the Bots in that room can be reached there, each listed once above (#305).
+  if (!face) rows.push(...remoteMentionRows(roster, query))
   return rows
+}
+
+const isFaceRoom = room => room?.origin === 'face-to-face'
+// As `faceSeats` names it: the owner name Bot Social stamped on my Bot's seat, else my own name.
+const myOwnerName = (roster, live, bot) => {
+  const seat = live.find(p => !p.remote && p.kind !== 'human' && (p.id === bot.id || (bot.handle && p.handle === bot.handle)))
+  return cleanPeerName(seat?.ownerName || roster.self?.displayName, '')
+}
+const uniqueBy = (list, key) => {
+  const seen = new Set()
+  return list.filter((item) => {
+    const k = key(item)
+    if (!k || seen.has(k)) return !k
+    seen.add(k)
+    return true
+  })
+}
+// In a face-to-face room a Bot is named as the Members panel names it: "Ann · Chief",
+// "Me (you) · Chief" (#229, #305). Only the label changes; the inserted "@Name" stays the
+// one the room routes on.
+const faceLabel = (person, bot, mine) => {
+  if (!person) return bot
+  return `${mine ? t('{name} (you)', { name: person }) : person} · ${bot}`
 }
 
 // The chats a message here can reference: every other Bot's chat, then the latest
@@ -89,18 +122,21 @@ export function atSources({ roster, sessions, launched, iconFor }) {
     showGroupTitle: false,
     async candidates(session, { query }) {
       const snapshot = roster.getSnapshot()
+      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-        name: row.bot ? row.bot.name : row.remote ? `${row.remote.name} (${row.remote.handle})` : t('Everyone'),
-        ...(row.bot?.role ? { description: row.bot.role } : {}),
+        name: row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? `${row.remote.name} (${row.remote.handle})` : t('Everyone'),
+        ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
         ...(row.remote ? { description: remoteBotTitle(row.remote) } : {}),
-        ...(row.bot?.remote ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {}),
-        ...(row.room ? { description: t('{count} members', { count: row.room.members.length }) } : {}),
+        ...(row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {}),
+        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
+        ...(row.room ? { description: face ? t('Every Bot in this room') : t('{count} members', { count: row.room.members.length }) } : {}),
         icon: iconFor(row),
         section: t('Bots'),
         value: row.text,
       }))
-      // FlyBot plugins' rows (remote Bots...), only where the team's menu shows.
-      if (mentionRows(snapshot, session.sessionId, '') === null) return team
+      // FlyBot plugins' rows (remote Bots...), only where the team's menu shows, and not in a
+      // face-to-face room, whose Bots are all listed above (no separate Friends' Bots, #305).
+      if (mentionRows(snapshot, session.sessionId, '') === null || face) return team
       const extra = (await mentionCandidates(query, { sessionId: session.sessionId, roster: snapshot })).map(row => ({
         name: row.name,
         ...(row.description ? { description: row.description } : {}),
