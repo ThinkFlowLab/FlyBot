@@ -87,7 +87,7 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 ### One sidebar list
 
-- `TeamSidebar` lists local Bots, listed remote chats (`isListedRemoteChat`), live face-to-face rooms, and shared rooms in one `bt-list`. Own chats sort before foreign ones (a remote Bot, a face room, or `sharedFrom`); pinned and recency still win. A friend's Bot keeps the globe `RemoteMark`; a live face room gets a small people `FaceMark`. Past/ended face rooms stay out of this list (`isPastFaceRoom`) so the social section can fold them under **Past rooms**. With `@flybot/tree` on, only own Bots are tree nodes under Main; a friend's Bot stays in the flat ordered list (not hidden when Main is collapsed).
+- `TeamSidebar` lists local Bots, listed remote chats (`isListedRemoteChat`), live face-to-face rooms, and shared rooms in one `bt-list`. Own chats sort before foreign ones (a remote Bot, a face room, or `sharedFrom`); pinned and recency still win. A friend's Bot keeps the globe `RemoteMark`; a live face room gets a small people `FaceMark` (`bt-row-remote bt-row-face`). A friend's Bot row may wrap its title to two lines; a face-room row stays on one line with an ellipsis (the clamp skips `.bt-row-face`), and every room row has its full title as hover text (#304). Past/ended face rooms stay out of this list (`isPastFaceRoom`) so the social section can fold them under **Past rooms**. With `@flybot/tree` on, only own Bots are tree nodes under Main; a friend's Bot stays in the flat ordered list (not hidden when Main is collapsed).
 
 ### Approval wait badge on chat rows
 
