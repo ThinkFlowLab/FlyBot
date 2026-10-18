@@ -123,7 +123,7 @@ export function install(rt) {
           ...(Number.isFinite(entry.lastUsedAt) ? { lastUsedAt: entry.lastUsedAt } : {}),
         })
       }
-      if (!loadedReadOnly) await chmod(path, 0o600).catch(() => {})
+      if (!loadedReadOnly) await chmod(path, 0o600).catch(() => { /* best effort: some file systems have no modes */ })
     } catch (error) {
       if (error?.code === 'ENOENT') secrets.clear()
       else rt.warn('ds-bot: unreadable secrets file %s (%s)', path, reason(error))
@@ -144,7 +144,7 @@ export function install(rt) {
         await chmod(temp, 0o600)
         await rename(temp, path)
       } catch (error) {
-        await unlink(temp).catch(() => {})
+        await unlink(temp).catch(() => { /* the temp file may already be gone */ })
         throw error
       }
     })
@@ -357,7 +357,7 @@ export function install(rt) {
     }
     if (touched) {
       changed()
-      await persist().catch(() => {})
+      await persist().catch(() => { /* the change stays in memory and the next save writes it */ })
     }
   }
 

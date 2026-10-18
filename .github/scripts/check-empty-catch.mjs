@@ -1,8 +1,12 @@
 // A catch clause whose block holds neither a statement nor a comment swallows the
 // error with nothing on record saying why that is safe (#205). The comment is the
 // reason; a block with statements handles the error and needs none. Only the
-// statement form is checked: the `void p.catch(() => {})` promise form is a separate
-// fire-and-forget idiom, and test helpers may retry through a bare catch.
+// statement form of `catch` is checked there; the promise form is the next rule.
+// Promise form (#213): a `.catch` whose handler does nothing (`() => {}`, `() => undefined`,
+// `() => null`) and whose result is dropped (a statement or an `await` statement) needs a
+// `void` prefix or a one-line reason comment (in the handler, after the call on the same
+// line, or on the line above the statement). A handler that returns a fallback VALUE that is
+// used (`const x = await p.catch(() => undefined)`, an argument, a `return`) stays allowed.
 // The text `catch {}` inside a comment, a string, a template or a regex literal is
 // not code, so it is never reported (#213).
 // Usage: node .github/scripts/check-empty-catch.mjs   (exit 1 lists every violation)
@@ -145,6 +149,74 @@ export function scanSource(name, source) {
   return found
 }
 
+// A `.catch` handler that does nothing: an arrow whose body is empty, or just undefined / null.
+const IDLE_CATCH = /\.catch\(\s*(?:\([^()]*\)|[\w$]+)\s*=>\s*(\{\s*\}|undefined\b|null\b|void\s+0\b)\s*\)/g
+
+// Where the statement holding the call at `at` begins, walking back over balanced brackets.
+// Returns { start, argument }: `argument` when an unmatched `(` / `[` / `,` shows the call sits
+// inside another expression (an argument, an element), so its result is used.
+function statementStart(code, at) {
+  let depth = 0
+  for (let i = at - 1; i >= 0; i -= 1) {
+    const char = code[i]
+    if (char === ')' || char === ']') depth += 1
+    else if (char === '(' || char === '[') {
+      if (depth === 0) return { start: i + 1, argument: true }
+      depth -= 1
+    } else if (depth === 0) {
+      if (char === ';' || char === '{' || char === '}') return { start: i + 1, argument: false }
+      if (char === ',') return { start: i + 1, argument: true }
+      if (char === '\n') {
+        // A new statement begins here unless this line, or the one before it, continues an expression.
+        const lineStart = i + 1
+        const lineEnd = code.indexOf('\n', lineStart)
+        const line = code.slice(lineStart, lineEnd === -1 ? code.length : lineEnd).trim()
+        const before = code.slice(0, i).trimEnd().slice(-2)
+        const continues = /^[.?:+\-*/%&|=<>,]/.test(line) && !/^(?:\+\+|--)/.test(line)
+        const open = /[.?:+\-*/%&|=<>,(\[{]$/.test(before) && !/(?:\+\+|--|\)|\})$/.test(before)
+        if (!continues && !open && line !== '') return { start: lineStart, argument: false }
+      }
+    }
+  }
+  return { start: 0, argument: false }
+}
+
+// `text` with the inside of every (...), [...] and {...} removed.
+function outside(text) {
+  let depth = 0
+  let out = ''
+  for (const char of text) {
+    if ('([{'.includes(char)) { depth += 1; out += depth === 1 ? char : ''; continue }
+    if (')]}'.includes(char)) { depth -= 1; out += depth === 0 ? char : ''; continue }
+    if (depth === 0) out += char
+  }
+  return out
+}
+
+export function scanPromiseSource(name, source) {
+  const found = []
+  const { bare, commented } = maskSource(source)
+  for (const match of bare.matchAll(IDLE_CATCH)) {
+    const { start, argument } = statementStart(bare, match.index)
+    if (argument) continue
+    const head = bare.slice(start, match.index).trim()
+    // The statement's own text, without what sits inside brackets (callbacks, arguments, objects).
+    const top = outside(head)
+    // A used value: returned, thrown, declared, assigned, an arrow's expression body, a ternary, negated.
+    if (/^(?:return|throw|yield|const|let|var|export)\b|=>|(?<![=!<>])=(?![=>])|\?(?!\.)\s|^!/.test(top)) continue
+    if (/\bvoid\b/.test(top)) continue
+    // A reason: a comment in the handler, after the call on its line, or on the line above the statement.
+    const handler = commented.slice(match.index, match.index + match[0].length)
+    const eol = commented.indexOf('\n', match.index + match[0].length)
+    const rest = commented.slice(match.index + match[0].length, eol === -1 ? commented.length : eol)
+    const startLine = commented.lastIndexOf('\n', commented.indexOf(bare.slice(start).trimStart().slice(0, 1) || ' ', start))
+    const above = commented.slice(commented.lastIndexOf('\n', Math.max(0, startLine - 1)) + 1, startLine === -1 ? 0 : startLine)
+    if (/\/\*|\/\//.test(handler) || /\/\*|\/\//.test(rest) || /^\s*(?:\/\/|\/\*|\*)/.test(above)) continue
+    found.push(`${name}:${source.slice(0, match.index).split('\n').length}`)
+  }
+  return found
+}
+
 const under = (dir, names) => {
   const out = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -171,9 +243,15 @@ export function scanTree(root) {
   return collectTargets(root).flatMap((path) => scanSource(path, readFileSync(path, 'utf8')))
 }
 
+export function scanPromiseTree(root) {
+  return collectTargets(root).flatMap((path) => scanPromiseSource(path, readFileSync(path, 'utf8')))
+}
+
 if (process.argv[1] === import.meta.filename) {
   const root = join(import.meta.dirname, '..', '..')
   const violations = scanTree(root)
+  const dropped = scanPromiseTree(root)
   for (const where of violations) console.log(`${where}: empty catch: the error is swallowed with no reason on record`)
-  if (violations.length > 0) process.exit(1)
+  for (const where of dropped) console.log(`${where}: .catch handler does nothing and its result is dropped: add \`void\` or a one-line reason comment`)
+  if (violations.length + dropped.length > 0) process.exit(1)
 }

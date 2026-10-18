@@ -250,7 +250,7 @@ export function install(rt) {
       const damaged = error => /malformed|not a database|corrupt/i.test(String(error?.message ?? error))
       for (const fresh of [false, true]) {
         try {
-          if (fresh) await unlink(path).catch(() => {})
+          if (fresh) await unlink(path).catch(() => { /* the ledger file may not exist */ })
           return sqliteLedger(DatabaseSync, path)
         } catch (error) {
           if (fresh || !damaged(error)) {

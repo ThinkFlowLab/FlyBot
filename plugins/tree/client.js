@@ -190,7 +190,7 @@ window.__ModuleLoader__.load({
         if (typeof value !== 'string' || !value.trim()) throw new Error(kind === 'text' ? 'The invite came back without its message' : 'The invite came back without its link')
         return value
       })()
-      message.catch(() => {})
+      message.catch(() => { /* the awaiting caller below reports it; this only marks it handled */ })
       try {
         const clip = globalThis.navigator?.clipboard
         const Item = globalThis.ClipboardItem

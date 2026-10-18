@@ -338,7 +338,7 @@ export function apply(ctx) {
 
   ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
 
-  const after = promise => promise.then(async (value) => { await pull().catch(() => {}); return value })
+  const after = promise => promise.then(async (value) => { await pull().catch(() => { /* a stale team list is fixed by the next pull; the call itself succeeded */ }); return value })
   // A Bot id, or any part of its chat, opens the Bot's current part.
   const partFor = (id) => {
     const bot = roster.getSnapshot().byId[id]
@@ -423,7 +423,7 @@ export function apply(ctx) {
     // `last` is the Bot conversation the view held before it cleared: when that part
     // was archived for a fresh one, the view goes on in the fresh one.
     landOn: async (id, last) => {
-      if (last) await pull().catch(() => {})
+      if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
       const bot = last ? roster.getSnapshot().byId[last.botId] : undefined
       setPlain(false)
       const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id)

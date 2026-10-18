@@ -129,8 +129,8 @@ export function install(rt) {
       // tools never denied.
       const createdSessions = [...agent.sessions]
       delete state.agents[agent.id]
-      for (const sessionId of createdSessions) await ctx.workspaceRegistry.archiveSession(sessionId).catch(() => {})
-      await rt.save().catch(() => {})
+      for (const sessionId of createdSessions) await ctx.workspaceRegistry.archiveSession(sessionId).catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
+      await rt.save().catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
       throw error
     }
     return agent

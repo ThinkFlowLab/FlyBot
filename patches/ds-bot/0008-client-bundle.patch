@@ -5758,7 +5758,7 @@ diff --git a/client.js b/client.js
  var MENU_EXIT_MS2 = 120;
  var counts = /* @__PURE__ */ new Map();
  var countListeners = /* @__PURE__ */ new Set();
-@@ -7384,8 +7384,8 @@ function noteCount(botId, count) {
+@@ -7384,13 +7384,13 @@ function noteCount(botId, count) {
    for (const listener of countListeners) listener();
  }
  function useMemoryCount(botId, actions) {
@@ -5769,6 +5769,12 @@ diff --git a/client.js b/client.js
      const listener = () => setCount(counts.get(botId) ?? null);
      countListeners.add(listener);
      listener();
+     let stop = false;
+-    actions.memoryView?.(botId).then((view) => {
++    void actions.memoryView?.(botId).then((view) => {
+       if (!stop) noteCount(botId, view.entries.length);
+     }).catch(() => {
+     });
 @@ -7404,16 +7404,16 @@ function useMemoryCount(botId, actions) {
  function MemoryRow({ bot, actions }) {
    const count = useMemoryCount(bot.id, actions);
@@ -7062,7 +7068,7 @@ diff --git a/client.js b/client.js
  var plainSpeech = (text) => stripHeader(text).replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>|~-]+/g, " ").replace(/\s+/g, " ").trim();
  var VOICE_LABELS = {
    listening: "Listening",
-@@ -8665,8 +8665,8 @@ var VOICE_LABELS = {
+@@ -8665,14 +8665,14 @@ var VOICE_LABELS = {
  };
  var CAPTURE_NOTES = { blocked: "Microphone access is blocked", unavailable: "Voice chat is not available in this browser", "too-long": "That was too long to recognize" };
  function useMicLevel(enabled) {
@@ -7073,6 +7079,13 @@ diff --git a/client.js b/client.js
      if (!enabled || !navigator.mediaDevices?.getUserMedia) return void 0;
      let stream = null;
      let audio = null;
+     let frame = 0;
+     let stopped = false;
+-    navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
++    void navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
+       if (stopped) {
+         media.getTracks().forEach((track) => track.stop());
+         return;
 @@ -8716,18 +8716,18 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
      const entry = Array.isArray(outline) ? outline[outline.length - 1] : void 0;
      return entry ? `${outline.length}|${entry.response ?? ""}` : "0|";

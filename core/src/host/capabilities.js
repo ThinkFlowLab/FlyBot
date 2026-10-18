@@ -264,7 +264,7 @@ export function install(rt) {
     return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
   }
   const disposeMount = async mount => {
-    if (mount?.fiber) await Promise.resolve().then(() => mount.fiber.dispose()).catch(() => {})
+    if (mount?.fiber) await Promise.resolve().then(() => mount.fiber.dispose()).catch(() => { /* a mount that fails to dispose must not block unloading */ })
   }
   const mountOne = async (agent, bot, agentMounts, name) => {
     const sessionId = agent.session.id

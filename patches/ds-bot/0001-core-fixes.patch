@@ -12,6 +12,36 @@ diff --git a/README.md b/README.md
  
  - Give every model a `contextWindow`. DS Bot takes its lines from it: the usable window is the window minus the reply reserve (`maxTokens`), the hard line is 95% of that, and the check line is `checkRatio` of it. A model without `contextWindow` gets the adapter's default (262,144 tokens for `llm-pi-ai`), which may be wrong for that model; a model that reports no window at all counts as 500,000.
  - To send images, the provider needs `defaultInput: [ text, image ]`.
+diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
+--- a/src/client/bot-browsers.js
++++ b/src/client/bot-browsers.js
+@@ -171,7 +171,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
+   async function create(tabId) {
+     const botId = owner.get(tabId)
+     const reservation = await bridge.acquire(`bot:${botId}`)
+-    if (disposed) { await bridge.release(reservation.lease).catch(() => {}); return undefined }
++    if (disposed) { await bridge.release(reservation.lease).catch(() => { /* best effort: the lease may already be gone */ }); return undefined }
+     const element = doc.createElement('webview')
+     // The shell forwards app shortcuts from a focused webview that carries these
+     // attributes, as it does for its own Sidebar browser.
+@@ -293,7 +293,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
+   async function closeTab(botId, tabId) {
+     const state = tabs.getSnapshot()[botId]
+     if (state === undefined || !state.ids.includes(tabId)) return
+-    await opening.get(tabId)?.catch(() => {})
++    await opening.get(tabId)?.catch(() => { /* its opener reports a failure; this only waits for it to settle */ })
+     if (shown === tabId) await show(null)
+     await release(tabId)
+     // The waits above can overlap a new tab or an active-tab switch; drop the
+@@ -375,7 +375,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
+   async function forget(botId) {
+     ensureTabs(botId)
+     for (const tabId of tabs.getSnapshot()[botId]?.ids ?? []) {
+-      await opening.get(tabId)?.catch(() => {})
++      await opening.get(tabId)?.catch(() => { /* its opener reports a failure; this only waits for it to settle */ })
+       if (shown === tabId) await show(null)
+       await release(tabId)
+       owner.delete(tabId)
 diff --git a/src/client/feedback.js b/src/client/feedback.js
 --- a/src/client/feedback.js
 +++ b/src/client/feedback.js
@@ -303,6 +333,18 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  Object.assign(ZH, HOST_ZH)
  
+diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
+--- a/src/client/memory-panel.js
++++ b/src/client/memory-panel.js
+@@ -27,7 +27,7 @@ export function useMemoryCount(botId, actions) {
+     countListeners.add(listener)
+     listener()
+     let stop = false
+-    actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
++    void actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
+     return () => { stop = true; countListeners.delete(listener) }
+   }, [botId])
+   return count
 diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 --- a/src/client/model-menu.js
 +++ b/src/client/model-menu.js
@@ -411,6 +453,68 @@ diff --git a/src/client/text.js b/src/client/text.js
    }
    return ''
  }
+diff --git a/src/client/voice.js b/src/client/voice.js
+--- a/src/client/voice.js
++++ b/src/client/voice.js
+@@ -27,7 +27,7 @@ function useMicLevel(enabled) {
+     let audio = null
+     let frame = 0
+     let stopped = false
+-    navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
++    void navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
+       if (stopped) { media.getTracks().forEach(track => track.stop()); return }
+       stream = media
+       audio = new AudioContext()
+diff --git a/src/host/agents.js b/src/host/agents.js
+--- a/src/host/agents.js
++++ b/src/host/agents.js
+@@ -129,8 +129,8 @@ export function install(rt) {
+       // tools never denied.
+       const createdSessions = [...agent.sessions]
+       delete state.agents[agent.id]
+-      for (const sessionId of createdSessions) await ctx.workspaceRegistry.archiveSession(sessionId).catch(() => {})
+-      await rt.save().catch(() => {})
++      for (const sessionId of createdSessions) await ctx.workspaceRegistry.archiveSession(sessionId).catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
++      await rt.save().catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
+       throw error
+     }
+     return agent
+diff --git a/src/host/capabilities.js b/src/host/capabilities.js
+--- a/src/host/capabilities.js
++++ b/src/host/capabilities.js
+@@ -264,7 +264,7 @@ export function install(rt) {
+     return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
+   }
+   const disposeMount = async mount => {
+-    if (mount?.fiber) await Promise.resolve().then(() => mount.fiber.dispose()).catch(() => {})
++    if (mount?.fiber) await Promise.resolve().then(() => mount.fiber.dispose()).catch(() => { /* a mount that fails to dispose must not block unloading */ })
+   }
+   const mountOne = async (agent, bot, agentMounts, name) => {
+     const sessionId = agent.session.id
+diff --git a/src/host/chat-index.js b/src/host/chat-index.js
+--- a/src/host/chat-index.js
++++ b/src/host/chat-index.js
+@@ -82,7 +82,7 @@ export function install(rt) {
+       // A damaged file is rebuilt from the logs once.
+       for (const fresh of [false, true]) {
+         try {
+-          if (fresh) await unlink(indexPath).catch(() => {})
++          if (fresh) await unlink(indexPath).catch(() => { /* the index file may not exist yet */ })
+           return createIndex(new DatabaseSync(indexPath))
+         } catch (error) {
+           if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
+diff --git a/src/host/connectors.js b/src/host/connectors.js
+--- a/src/host/connectors.js
++++ b/src/host/connectors.js
+@@ -51,7 +51,7 @@ export function install(rt) {
+   const unmount = async () => {
+     const fiber = mount?.fiber
+     mount = null
+-    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => {})
++    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
+   }
+ 
+   // The MCP client wraps the server's answer (a 401, say) as the cause.
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
@@ -446,6 +550,24 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      console.error(`[ds-bot] ${line}${frames.length > 0 ? `\n${clean(frames.join('\n'))}` : ''}`)
      note({
        level: 'warn',
+@@ -217,7 +217,7 @@ export function install(rt) {
+   })
+ 
+   async function report(body = {}) {
+-    await rt.loadSecrets?.().catch(() => {})
++    await rt.loadSecrets?.().catch(() => { /* without stored secrets the report is still built, redacting what it can */ })
+     const list = await entries()
+     const client = sanitizeClient(body.client)
+     const clientEntries = sanitizeClientEntries(body.clientErrors)
+@@ -232,7 +232,7 @@ export function install(rt) {
+   }
+ 
+   async function logText() {
+-    await rt.loadSecrets?.().catch(() => {})
++    await rt.loadSecrets?.().catch(() => { /* without stored secrets the log is still built, redacting what it can */ })
+     const list = await entries()
+     return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
+   }
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
@@ -507,6 +629,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
    function namedScope(raw, botId) {
      const value = unquote(raw)
+@@ -632,7 +632,7 @@ export function install(rt) {
+     news.delete(botId)
+     return queued(async () => {
+       if (rt.readOnly() !== undefined) return
+-      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => {})
++      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => { /* the summary file may not exist */ })
+       const dir = dirOf(ownScope(botId))
+       if (!existsSync(dir)) return
+       const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
 @@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
@@ -703,6 +834,18 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
+diff --git a/src/host/usage.js b/src/host/usage.js
+--- a/src/host/usage.js
++++ b/src/host/usage.js
+@@ -250,7 +250,7 @@ export function install(rt) {
+       const damaged = error => /malformed|not a database|corrupt/i.test(String(error?.message ?? error))
+       for (const fresh of [false, true]) {
+         try {
+-          if (fresh) await unlink(path).catch(() => {})
++          if (fresh) await unlink(path).catch(() => { /* the ledger file may not exist */ })
+           return sqliteLedger(DatabaseSync, path)
+         } catch (error) {
+           if (fresh || !damaged(error)) {
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
 +++ b/test/client-bundle.test.js

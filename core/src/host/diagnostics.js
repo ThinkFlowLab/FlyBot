@@ -219,7 +219,7 @@ export function install(rt) {
   })
 
   async function report(body = {}) {
-    await rt.loadSecrets?.().catch(() => {})
+    await rt.loadSecrets?.().catch(() => { /* without stored secrets the report is still built, redacting what it can */ })
     const list = await entries()
     const client = sanitizeClient(body.client)
     const clientEntries = sanitizeClientEntries(body.clientErrors)
@@ -234,7 +234,7 @@ export function install(rt) {
   }
 
   async function logText() {
-    await rt.loadSecrets?.().catch(() => {})
+    await rt.loadSecrets?.().catch(() => { /* without stored secrets the log is still built, redacting what it can */ })
     const list = await entries()
     return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
   }

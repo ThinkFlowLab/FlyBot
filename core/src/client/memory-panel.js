@@ -27,7 +27,7 @@ export function useMemoryCount(botId, actions) {
     countListeners.add(listener)
     listener()
     let stop = false
-    actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
+    void actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
     return () => { stop = true; countListeners.delete(listener) }
   }, [botId])
   return count

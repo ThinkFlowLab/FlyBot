@@ -8595,7 +8595,7 @@ function useMemoryCount(botId, actions) {
     countListeners.add(listener);
     listener();
     let stop = false;
-    actions.memoryView?.(botId).then((view) => {
+    void actions.memoryView?.(botId).then((view) => {
       if (!stop) noteCount(botId, view.entries.length);
     }).catch(() => {
     });
@@ -9927,7 +9927,7 @@ function useMicLevel(enabled) {
     let audio = null;
     let frame = 0;
     let stopped = false;
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
+    void navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
       if (stopped) {
         media.getTracks().forEach((track) => track.stop());
         return;

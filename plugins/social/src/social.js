@@ -1516,7 +1516,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           const next = handles.length ? revealHiddenIfPresent(settings, handles) : settings
           if (next !== settings) { settings = next; saveSettings() }
           fetchedAt = 0
-          await remoteBots({ fresh: true }).catch(() => {})
+          await remoteBots({ fresh: true }).catch(() => { /* the roster refreshes on the next poll */ })
         } catch (revealError) {
           warn('could not unhide after relationship_exists', revealError)
         }
@@ -1547,7 +1547,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       settings = again
       saveSettings()
       fetchedAt = 0
-      await remoteBots({ fresh: true }).catch(() => {})
+      await remoteBots({ fresh: true }).catch(() => { /* the roster refreshes on the next poll */ })
     }
     if (offered?.handle) rememberInbound(offered.handle)
     const inviterHome = joined.inviter?.handle ? homeOfPeer(joined.inviter.handle) : added[0]?.home
@@ -1609,7 +1609,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/access', async ({ botId } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
-    await syncOutgoingGrants({ only: bot.id }).catch(() => {})
+    await syncOutgoingGrants({ only: bot.id }).catch(() => { /* shows the grants as last synced when Bot Social is unreachable */ })
     const grants = (flybot.grants?.of?.(bot.id) ?? []).filter(grant => !grant.roomId)
     const rooms = roomsUsing(bot.id)
     return {
@@ -2454,7 +2454,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/face-join', async ({ code, botId } = {}) => joinFaceRoom({ code, botId })))
   disposers.push(flybot.api.handle('social/face-open', async (payload) => openFaceRoom(payload), { read: true }))
   disposers.push(flybot.api.handle('social/face-rooms', async (payload) => {
-    if (payload?.poll !== false) await pollFaceRooms().catch(() => {})
+    if (payload?.poll !== false) await pollFaceRooms().catch(() => { /* a failed poll shows the rooms as last polled */ })
     const rooms = Object.entries(settings.faceRooms).map(([faceRoomId, meta]) => {
       const room = flybot.rooms.ofFace?.(faceRoomId)
       return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor, joinCode: meta.joinCode }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate', joinCode: meta.joinCode }

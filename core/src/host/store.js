@@ -451,7 +451,7 @@ export function install(rt) {
         seen = stamp()
         rt.capabilitiesStateSaved?.()
       } catch (error) {
-        await unlink(temp).catch(() => {})
+        await unlink(temp).catch(() => { /* the temp file may already be gone */ })
         throw error
       }
     })

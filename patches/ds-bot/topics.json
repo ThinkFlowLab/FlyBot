@@ -15,6 +15,14 @@
     "test/home-lock.test.js",
     "test/client-bundle.test.js",
     "test/install.test.js",
+    "src/client/bot-browsers.js",
+    "src/client/memory-panel.js",
+    "src/client/voice.js",
+    "src/host/agents.js",
+    "src/host/capabilities.js",
+    "src/host/chat-index.js",
+    "src/host/connectors.js",
+    "src/host/usage.js",
     "README.md"
   ],
   "0002-flybot-api-host": [

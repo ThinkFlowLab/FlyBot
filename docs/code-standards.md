@@ -27,7 +27,8 @@ When you report status on a change:
 ## Silent catches
 
 - A `catch` that swallows the error says why in a comment inside the block (or handles it); `check-empty-catch` in `.github/scripts/` fails the build on a bare one (#205). Text inside comments, strings, templates and regex literals is not code, so a `catch {}` written there is never reported (#213).
-- The `void p.catch(() => {})` promise form is a separate fire-and-forget idiom and test-helper retries stay out of the gate's scope.
+- The promise form follows the same rule (#213): a `.catch` whose handler does nothing (`() => {}`, `() => undefined`, `() => null`) and whose result is dropped (a statement, or an `await` statement) needs a `void` prefix or a one-line reason comment (in the handler, after the call, or on the line above). A handler that returns a fallback value that is *used* (`const x = await p.catch(() => undefined)`, an argument, a `return`, an assignment) stays allowed. `void` suits fire-and-forget; an `await` that waits for the work to settle takes the reason comment.
+- Test helpers (`test/`, `dev/`) stay out of the gate's scope.
 
 ## Security: fences and remote strings
 

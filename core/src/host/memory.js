@@ -649,7 +649,7 @@ export function install(rt) {
     news.delete(botId)
     return queued(async () => {
       if (rt.readOnly() !== undefined) return
-      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => {})
+      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => { /* the summary file may not exist */ })
       const dir = dirOf(ownScope(botId))
       if (!existsSync(dir)) return
       const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`

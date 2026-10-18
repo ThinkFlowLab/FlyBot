@@ -51,7 +51,7 @@ export function install(rt) {
   const unmount = async () => {
     const fiber = mount?.fiber
     mount = null
-    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => {})
+    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
   }
 
   // The MCP client wraps the server's answer (a 401, say) as the cause.

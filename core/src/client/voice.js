@@ -27,7 +27,7 @@ function useMicLevel(enabled) {
     let audio = null
     let frame = 0
     let stopped = false
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
+    void navigator.mediaDevices.getUserMedia({ audio: true }).then((media) => {
       if (stopped) { media.getTracks().forEach(track => track.stop()); return }
       stream = media
       audio = new AudioContext()

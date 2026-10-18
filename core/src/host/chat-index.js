@@ -82,7 +82,7 @@ export function install(rt) {
       // A damaged file is rebuilt from the logs once.
       for (const fresh of [false, true]) {
         try {
-          if (fresh) await unlink(indexPath).catch(() => {})
+          if (fresh) await unlink(indexPath).catch(() => { /* the index file may not exist yet */ })
           return createIndex(new DatabaseSync(indexPath))
         } catch (error) {
           if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)

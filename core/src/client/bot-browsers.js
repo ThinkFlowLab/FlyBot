@@ -171,7 +171,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
   async function create(tabId) {
     const botId = owner.get(tabId)
     const reservation = await bridge.acquire(`bot:${botId}`)
-    if (disposed) { await bridge.release(reservation.lease).catch(() => {}); return undefined }
+    if (disposed) { await bridge.release(reservation.lease).catch(() => { /* best effort: the lease may already be gone */ }); return undefined }
     const element = doc.createElement('webview')
     // The shell forwards app shortcuts from a focused webview that carries these
     // attributes, as it does for its own Sidebar browser.
@@ -293,7 +293,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
   async function closeTab(botId, tabId) {
     const state = tabs.getSnapshot()[botId]
     if (state === undefined || !state.ids.includes(tabId)) return
-    await opening.get(tabId)?.catch(() => {})
+    await opening.get(tabId)?.catch(() => { /* its opener reports a failure; this only waits for it to settle */ })
     if (shown === tabId) await show(null)
     await release(tabId)
     // The waits above can overlap a new tab or an active-tab switch; drop the
@@ -375,7 +375,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
   async function forget(botId) {
     ensureTabs(botId)
     for (const tabId of tabs.getSnapshot()[botId]?.ids ?? []) {
-      await opening.get(tabId)?.catch(() => {})
+      await opening.get(tabId)?.catch(() => { /* its opener reports a failure; this only waits for it to settle */ })
       if (shown === tabId) await show(null)
       await release(tabId)
       owner.delete(tabId)

@@ -612,6 +612,15 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
+@@ -262,7 +262,7 @@ export function install(rt) {
+         seen = stamp()
+         rt.capabilitiesStateSaved?.()
+       } catch (error) {
+-        await unlink(temp).catch(() => {})
++        await unlink(temp).catch(() => { /* the temp file may already be gone */ })
+         throw error
+       }
+     })
 @@ -335,9 +335,10 @@ export function install(rt) {
    }
    const findBot = (ref) => {
