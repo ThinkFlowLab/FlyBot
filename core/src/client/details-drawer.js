@@ -6,7 +6,7 @@ import { botState, BotMark, BotAvatar, RoomAvatar, lookBotForRemote } from './ma
 import { GlobeIcon, Favicon } from './browser-pane.js'
 import { useEscape } from './overlay-hooks.js'
 import { BotSettingsForm } from './bot-settings.js'
-import { GroupSettingsForm, ROOM_MODES, roomSubtitle, shownMode } from './group-settings.js'
+import { GroupSettingsForm, ROOM_MODES, faceSeatLabel, faceSeats, roomSubtitle, shownMode } from './group-settings.js'
 import { ModelMenu, modelOf } from './model-menu.js'
 import { FolderMenu } from './folder-menu.js'
 import { MemoryRow } from './memory-panel.js'
@@ -149,6 +149,21 @@ function SharedRoomApprovals({ room }) {
       h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))))
 }
 
+// People first, each with the Bot they brought; my own Bot opens its chat (#229).
+function FaceMembers({ room, roster, actions }) {
+  const seats = faceSeats(room, roster)
+  return h('div', null,
+    h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: seats.length })),
+    h('div', { className: 'bt-members', role: 'list' }, seats.map((seat) => {
+      const label = faceSeatLabel(seat)
+      const avatar = h(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false })
+      return h('div', { key: seat.key, role: 'listitem', 'data-flybot': 'face-seat', 'data-mine': seat.mine || undefined },
+        h('div', { className: 'bt-member' }, seat.local
+          ? h('button', { type: 'button', className: 'bt-member-name', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => actions.openSession(seat.local.id) }, avatar, h('span', null, label))
+          : h('span', { className: 'bt-member-name' }, avatar, h('span', null, label))))
+    })))
+}
+
 function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) {
   const live = room.presentedParticipants ?? room.participants ?? []
   const humans = live.filter(p => p.kind === 'human' && p.leftSeq === undefined)
@@ -179,7 +194,9 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
     face ? null : h(SharedRoomApprovals, { key: 'approvals', room }),
     face && (room.face?.status === 'candidate' || room.face?.status === 'joining')
       ? null
-      : h('div', { key: 'members' },
+      : face
+        ? h(FaceMembers, { key: 'members', room, roster, actions })
+        : h('div', { key: 'members' },
       h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: members.length + humans.length + remotes.length })),
       h('div', { className: 'bt-members', role: 'list' }, [
         ...humans.map(person => h('div', { key: person.id, role: 'listitem' },

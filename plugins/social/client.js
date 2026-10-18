@@ -185,7 +185,7 @@ window.__ModuleLoader__.load({
 .fs-tile-hit:hover,.fs-tile-on{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-tile-mark{position:relative;flex:none;display:inline-flex}
 .fs-tile-name{display:block;width:100%;font-size:12px;line-height:16px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink,#141414)}
-.fs-tile-owner{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-tile-sub{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-wait-overview{margin:0 0 8px;padding:8px 10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px;min-width:0;max-width:100%}
 .fs-wait-overview .fs-wait-foot{margin-top:2px}
 .fs-tile-mine{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px var(--bt-card,#fff);pointer-events:none}
@@ -325,7 +325,7 @@ window.__ModuleLoader__.load({
 
     function FaceTile({ bot, name, owner, member, handle, mine, pick, selected, onToggle } = {}) {
       const parts = member ? faceTileParts(member) : { name: name || 'Bot', owner: owner || '' }
-      const title = [parts.name, parts.owner].filter(Boolean).join(' · ')
+      const title = (member ? [parts.owner, parts.name] : [parts.name, parts.owner]).filter(Boolean).join(' · ')
       const mark = h('span', { className: 'fs-tile-mark' },
         h(FaceAvatar, { bot, size: 48 }),
         mine
@@ -334,10 +334,16 @@ window.__ModuleLoader__.load({
         pick && selected
           ? h('span', { className: 'fs-tile-check', 'data-flybot': 'face-pick-check', 'aria-hidden': true }, '✓')
           : null)
-      const caption = [
-        h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
-        parts.owner ? h('span', { key: 'o', className: 'fs-tile-owner', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
-      ]
+      // A joined member leads with the person, so two Chiefs are told apart at a glance (#229).
+      const caption = member && parts.owner
+        ? [
+          h('span', { key: 'o', className: 'fs-tile-name', 'data-flybot': 'face-owner', title }, parts.owner),
+          h('span', { key: 'n', className: 'fs-tile-sub', 'data-flybot': 'face-bot', title }, parts.name),
+        ]
+        : [
+          h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
+          parts.owner ? h('span', { key: 'o', className: 'fs-tile-sub', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
+        ]
       if (pick) {
         return h('li', { className: selected ? 'fs-tile fs-tile-on' : 'fs-tile' },
           h('label', { className: 'fs-tile-hit' },

@@ -1,7 +1,7 @@
 import { createElement as h, Fragment, useState } from 'react'
 import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
 import { mentionSpans } from '../shared/mentions.js'
-import { BotMark } from './mark.js'
+import { BotMark, PersonMark } from './mark.js'
 import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
 import { remoteBotTitle } from '../shared/remote-label.js'
@@ -117,6 +117,9 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
   const room = roster.roomsById?.[sessionId]
   const multiHuman = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined).length > 1
   const incoming = author && !author.mine
+  // A person in this home (the host stamps the signed-in member as the author); a friend's Bot
+  // keeps its own label, so the person mark is never drawn from message text (#229).
+  const person = incoming && author.authorKind === 'human' && !author.ownerName
   const held = Boolean(room && room.origin === 'face-to-face' && !incoming && (room.pendingCount ?? 0) > 0)
   return h('div', {
     className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
@@ -126,6 +129,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
     'data-author-kind': author?.authorKind,
     'data-author-name': author?.name,
   },
+    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark)) : null,
     h('div', { className: 'bt-ustack' },
       author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
       attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
@@ -140,6 +144,8 @@ export const USER_MESSAGE_CSS = `
 .bt-umsg{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:4px}
 .bt-umsg-other{flex-direction:row}
 .bt-umsg-other .bt-ustack{align-items:flex-start}
+.bt-umsg-other>.bt-lead{align-self:flex-end;margin-right:4px}
+.bt-umsg-other .bt-ubody{background:var(--bt-bubble);color:var(--bt-ink)}
 .bt-uauthor{font-size:12px;line-height:16px;color:var(--bt-ink-3);font-weight:600}
 .bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
 .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}

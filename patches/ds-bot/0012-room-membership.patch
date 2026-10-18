@@ -47,7 +47,7 @@ diff --git a/src/client/composer.js b/src/client/composer.js
 diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 --- a/src/client/details-drawer.js
 +++ b/src/client/details-drawer.js
-@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useRef, useState } from 'react
+@@ -2,11 +2,11 @@ import { createElement as h, Fragment, useEffect, useRef, useState } from 'react
  import { isMainOf } from './sources.js'
  import { HEADER, currentPart, stripHeader, usageOf } from './text.js'
  import { PlusIcon, ShareIcon, CloseIcon, ChevronLeftIcon, GearIcon } from './icons.js'
@@ -56,6 +56,11 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  import { GlobeIcon, Favicon } from './browser-pane.js'
  import { useEscape } from './overlay-hooks.js'
  import { BotSettingsForm } from './bot-settings.js'
+-import { GroupSettingsForm, ROOM_MODES, roomSubtitle, shownMode } from './group-settings.js'
++import { GroupSettingsForm, ROOM_MODES, faceSeatLabel, faceSeats, roomSubtitle, shownMode } from './group-settings.js'
+ import { ModelMenu, modelOf } from './model-menu.js'
+ import { FolderMenu } from './folder-menu.js'
+ import { MemoryRow } from './memory-panel.js'
 @@ -14,6 +14,9 @@ import { ScheduleSummary } from './schedules.js'
  import { Segmented, useGlide, useMorph } from './motion.js'
  import { MemberWork, useMemberWork } from './member-status.js'
@@ -66,7 +71,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  
  function transcriptOf(list, id, name, hiddenTurns = []) {
    const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
-@@ -113,16 +113,84 @@ function About({ text, title = 'About' }) {
+@@ -113,16 +113,101 @@ function About({ text, title = 'About' }) {
  
  // A group's overview: what members read, who is in it, and who answers. Changes are
  // made in its settings.
@@ -101,6 +106,21 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +      h('span', { className: 'bt-set-copy' }, item.text || item.summary || item.to || t('Outbound reply')),
 +      h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'approve') }, t('Approve')),
 +      h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))))
++}
++
++// People first, each with the Bot they brought; my own Bot opens its chat (#229).
++function FaceMembers({ room, roster, actions }) {
++  const seats = faceSeats(room, roster)
++  return h('div', null,
++    h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: seats.length })),
++    h('div', { className: 'bt-members', role: 'list' }, seats.map((seat) => {
++      const label = faceSeatLabel(seat)
++      const avatar = h(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false })
++      return h('div', { key: seat.key, role: 'listitem', 'data-flybot': 'face-seat', 'data-mine': seat.mine || undefined },
++        h('div', { className: 'bt-member' }, seat.local
++          ? h('button', { type: 'button', className: 'bt-member-name', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => actions.openSession(seat.local.id) }, avatar, h('span', null, label))
++          : h('span', { className: 'bt-member-name' }, avatar, h('span', null, label))))
++    })))
 +}
 +
  function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) {
@@ -139,7 +159,9 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +    face ? null : h(SharedRoomApprovals, { key: 'approvals', room }),
 +    face && (room.face?.status === 'candidate' || room.face?.status === 'joining')
 +      ? null
-+      : h('div', { key: 'members' },
++      : face
++        ? h(FaceMembers, { key: 'members', room, roster, actions })
++        : h('div', { key: 'members' },
 +      h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: members.length + humans.length + remotes.length })),
 +      h('div', { className: 'bt-members', role: 'list' }, [
 +        ...humans.map(person => h('div', { key: person.id, role: 'listitem' },
@@ -259,13 +281,43 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
  import { Segmented } from './motion.js'
  import { FolderMenu } from './folder-menu.js'
  import { t } from './i18n.js'
-+import { remoteBotTitle } from '../shared/remote-label.js'
++import { cleanPeerName, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
  
  export const ROOM_MODES = [
    ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
-@@ -16,6 +16,10 @@ export const ROOM_MODES = [
+@@ -15,7 +15,40 @@ export const ROOM_MODES = [
+ // Without an admin the host answers as everyone, whatever the stored mode says.
  export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
  
++// A face-to-face room lists people, each with the Bot they brought, named one way for every
++// member: "Bob · Chief", "Ann (you) · Chief" (#229). Names come from the participant records
++// (server member fields for a friend, the roster for my own Bot), never from message text.
++export function faceSeats(room, roster) {
++  const live = (room.presentedParticipants ?? room.participants ?? []).filter(p => p.kind !== 'human' && p.leftSeq === undefined)
++  const seats = live.map((p) => {
++    const local = p.remote ? undefined : roster.byId[p.id]
++    return {
++      key: p.handle || p.id,
++      local,
++      record: p,
++      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, '') : ownerNameOf(p),
++      bot: local ? local.name : cleanPeerName(p.displayName || p.name, 'Bot'),
++      mine: Boolean(local),
++    }
++  })
++  for (const id of room.members ?? []) {
++    const bot = roster.byId[id]
++    if (!bot || seats.some(seat => seat.local?.id === id)) continue
++    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ''), bot: bot.name, mine: true })
++  }
++  return seats
++}
++
++export function faceSeatLabel(seat) {
++  if (!seat.person) return seat.bot
++  return `${seat.mine ? t('{name} (you)', { name: seat.person }) : seat.person} · ${seat.bot}`
++}
++
  export function roomSubtitle(room, roster) {
 +  if (room.origin === 'face-to-face') {
 +    const live = (room.presentedParticipants ?? room.participants ?? []).filter(p => p.leftSeq === undefined)
@@ -274,7 +326,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    return [t('{count} members', { count: room.members.length }), admin ? t('Admin {name}', { name: admin.name }) : t('No admin')].join(' · ')
  }
-@@ -31,8 +31,20 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+@@ -31,8 +31,22 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
      const timer = setTimeout(() => setConfirming(false), 4000)
      return () => clearTimeout(timer)
    }, [confirming])
@@ -283,6 +335,8 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +  const remotes = live.filter(p => p.remote && p.leftSeq === undefined)
    const members = room.members.map(id => roster.byId[id]).filter(Boolean)
 -  const outside = roster.bots.filter(bot => !room.members.includes(bot.id))
++  const face = room.origin === 'face-to-face'
++  const seats = face ? faceSeats(room, roster) : []
 +  const shared = humans.length > 1
 +  const chiefs = new Set((roster.humans ?? []).map(person => person.designatedChiefId).filter(Boolean))
 +  const outside = roster.bots.filter((bot) => {
@@ -296,12 +350,17 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    const mode = shownMode(room, roster)
    const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
-@@ -65,26 +65,50 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+@@ -65,26 +65,55 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
        h('div', { className: 'bt-set-row bt-bs-row' },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
 -    h(Card, { title: t('Members · {count}', { count: members.length }) },
-+    h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
++    face ? h(Card, { title: t('Members · {count}', { count: seats.length }) },
++      seats.map(seat => h('div', { key: seat.key, className: 'bt-set-row bt-bs-row bt-gs-member', 'data-flybot': 'face-seat' },
++        h('span', { className: 'bt-gs-who' },
++          h(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false }),
++          h('span', { className: 'bt-row-title' }, faceSeatLabel(seat)))))) : null,
++    face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
 +        h('span', { className: 'bt-gs-who' },
 +          h('span', { className: 'bt-row-title' }, person.displayName || person.id),
