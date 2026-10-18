@@ -125,3 +125,16 @@ export function ungrantedLocalFix(details) {
     .map(remote => cleanPeerName(remote?.owner || remote?.name, '')).filter(Boolean))]
   return { bots, friends }
 }
+
+// Puts `text` on the clipboard and says whether it really got there. A page with no clipboard
+// (an insecure context, a locked-down WebView) or a refused write is `false`, never a quiet success.
+export async function copiedToClipboard(text, nav = globalThis.navigator) {
+  const write = nav?.clipboard?.writeText
+  if (typeof write !== 'function') return false
+  try {
+    await write.call(nav.clipboard, text)
+    return true
+  } catch {
+    return false
+  }
+}
