@@ -2292,7 +2292,16 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -97,6 +97,9 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,18 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+     'on llm/stream',
+     'effect ds-bot: load secrets',
+     'effect ds-bot: connectors',
++    'tools guard',
++    'on tools/change',
++    'on agent/created',
+     'on agent/created',
+     'effect ds-bot: capabilities',
+     'effect ds-bot: usage ledger',
      'on llm/stream',
      'effect ds-bot: update check',
      'effect ds-bot: dsh update install',
