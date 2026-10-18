@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf, personHomeOf } from './mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint } from './look.js'
+import { createPresence } from './presence.js'
 import {
   createFaceRoomApi,
   isJoinCode,
@@ -45,6 +46,7 @@ import {
   faceMemberLabel,
   viewMe,
   faceOutbound,
+  cleanFaceName,
   platformJoinText,
   humanFaceWho,
   faceRoomTitle,
@@ -1171,7 +1173,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // The probe is shared: while one is in flight every caller awaits its result (#234) — an early
   // "not attesting" from a probe that has not finished would render forgeable envelopes as person
   // lines and mark the events seen, with no self-heal once the probe lands.
-  const typed = { supported: false, forbidden: false, mentions: false, probedAt: 0, probeFailed: false, probing: undefined }
+  const typed = { supported: false, forbidden: false, mentions: false, presence: false, probedAt: 0, probeFailed: false, probing: undefined }
   const TYPED_RECHECK_MS = 10 * 60_000
   // A probe that got no answer (features() → undefined: an unreachable or pre-platform server) is
   // not a "no": it is retried soon, not held for the recheck window.
@@ -1190,6 +1192,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       typed.probeFailed = features === undefined
       if (features?.includes('typed_by_owner')) typed.supported = true
       if (features?.includes('mentions')) typed.mentions = true
+      if (features?.includes('presence')) typed.presence = true
       return typed.supported
     } finally {
       typed.probing = undefined
@@ -1204,6 +1207,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (typed.probing) await typed.probing
     else if (!typed.probedAt || now() - typed.probedAt >= (typed.probeFailed ? TYPED_RETRY_MS : TYPED_RECHECK_MS)) await (typed.probing = probeTypedSupport())
     return typed.mentions
+  }
+  // Whether this server carries the presence signal (Bot Social `presence`, #297): the same feature probe.
+  // An older server, or one that has not answered, sends and polls nothing.
+  async function serverPresence() {
+    if (config.presence === false || !faceApi?.features) return false
+    if (typed.presence) return true
+    if (typed.probing) await typed.probing
+    else if (!typed.probedAt || now() - typed.probedAt >= (typed.probeFailed ? TYPED_RETRY_MS : TYPED_RECHECK_MS)) await (typed.probing = probeTypedSupport())
+    return typed.presence
   }
   const isAttestRefused = error => error?.code === 'typed_attestation_forbidden' || /typed_attestation_forbidden/.test(String(error?.message ?? ''))
   // The owner's own typed line, as Bot Social's send_as_member with the attestation; falls back
@@ -1254,6 +1266,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`))
   }
   if (flybot.remote?.chats) disposers.push(flybot.remote.chats.onSend(sendChat))
+
+  // "Name is thinking…" for friends' Bots (#297): my Bots announce their turns, the chat on screen asks for theirs.
+  const presence = createPresence({
+    flybot,
+    api: client,
+    supported: serverPresence,
+    memberId: botId => memberOf(botId)?.bot_id,
+    normHandle: norm,
+    cleanName: (value, fallback) => cleanFaceName(value, fallback),
+    now,
+    every,
+    clear,
+    warn,
+  })
+  disposers.push(() => presence.dispose())
+  disposers.push(flybot.api.handle('social/typing', async () => presence.touch()))
 
   // ------------------------------------------------------------ inbound
   // Cursors and delivered event ids are saved with the settings, so a restart neither
@@ -1329,6 +1357,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // The user's own chat with this friend's Bot (it went out from this Bot's identity):
         // the answer lands in that chat, written back as the friend's Bot's reply.
         if (settings.via[handle] === local.id && flybot.remote?.chats) {
+          presence.arrived({ handle })
           await flybot.remote.chats.deliver({ handle, home: fromHome, name: cleanText(event.from?.display_name, handle), text, ...(typedBy ? { human: true, ownerName: typedBy } : {}) })
           delivered += 1
           done()
@@ -2235,6 +2264,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       } else {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
         if (local) continue
+        presence.arrived({ handle: line.authorId, roomId: snapshot.roomId })
         void flybot.rooms.postRemote?.(room.id, { handle: line.authorId, name: line.who, text: line.text })
       }
       if (event.eventCursor) settings.faceRooms[snapshot.roomId].cursor = Math.max(settings.faceRooms[snapshot.roomId].cursor, event.eventCursor)

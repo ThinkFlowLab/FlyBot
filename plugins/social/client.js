@@ -98,6 +98,7 @@ window.__ModuleLoader__.load({
 .fs-status[data-tone=error]{color:#e5484d}
 .fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
+.fs-thinking{margin:0 12px 6px;padding-inline-start:8px;font-size:13px;line-height:20px;min-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fs-room-end{margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
 /* A left or closed face room is read-only (#197): its end line replaces the composer. */
 [class*="_composerStack"]:has([data-flybot="face-room-end"]) [class*="_root"]:has(> [data-composer-card]){display:none!important}
@@ -964,6 +965,60 @@ window.__ModuleLoader__.load({
       return text ? h('div', { className: 'fs-room-end', 'data-flybot': 'face-room-end', role: 'status' }, text) : null
     }
 
+
+    // "Name is thinking…" for friends' Bots (#297): one quiet line above the composer of a friend's chat or an
+    // open face room. The host polls Bot Social only while this is mounted (`social/typing`); an older
+    // server has no signal, so the line never shows and nothing else changes.
+    function thinkingLine(names) {
+      const list = names.filter(Boolean)
+      if (list.length === 0) return ''
+      if (list.length === 1) return `${list[0]} is thinking…`
+      if (list.length === 2) return `${list[0]} and ${list[1]} are thinking…`
+      return `${list[0]}, ${list[1]} and ${list.length - 2} more are thinking…`
+    }
+    // Which entries belong to this chat, and what to call them: the chat's own name for a friend's Bot, the
+    // room's participant name (with the owner when two share a name) in a face room.
+    function thinkingNames(items, { room, bot } = {}) {
+      const handle = typeof bot?.remote?.handle === 'string' ? bot.remote.handle.trim().toLowerCase() : ''
+      const faceId = room?.origin === 'face-to-face' && room.face?.status === 'open' ? room.face.roomId : ''
+      const seen = new Set()
+      const out = []
+      for (const item of Array.isArray(items) ? items : []) {
+        const mine = faceId
+          ? item.scope === 'face_room' && item.roomId === faceId
+          : handle !== '' && item.scope === 'direct' && String(item.handle).toLowerCase() === handle
+        if (!mine || seen.has(item.handle)) continue
+        seen.add(item.handle)
+        if (!faceId) { out.push(String(bot.name || item.name || '').trim()); continue }
+        const people = (room.participants ?? []).filter(p => p.remote)
+        const own = people.find(p => String(p.handle ?? '').toLowerCase() === String(item.handle).toLowerCase())
+        const name = String(own?.displayName || own?.name || item.name || '').trim()
+        const clash = own && people.filter(p => String(p.displayName || p.name || '').trim() === name).length > 1
+        out.push(clash && own.ownerName ? `${name} · ${own.ownerName}` : name)
+      }
+      return out
+    }
+    function PeerThinking({ room, bot } = {}) {
+      useStyles()
+      const [items, setItems] = useState([])
+      const watching = Boolean((typeof bot?.remote?.handle === 'string' && bot.remote.handle) || (room?.origin === 'face-to-face' && room.face?.roomId && room.face.status === 'open'))
+      useEffect(() => {
+        if (!watching) { setItems([]); return undefined }
+        let live = true
+        const load = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          call('social/typing', {}).then(value => { if (live) setItems(value?.supported === false ? [] : (Array.isArray(value?.typing) ? value.typing : [])) }, () => { if (live) setItems([]) })
+        }
+        load()
+        if (typeof setInterval !== 'function') return () => { live = false }
+        const timer = setInterval(load, 2000)
+        timer?.unref?.()
+        return () => { live = false; clearInterval(timer) }
+      }, [watching, bot?.remote?.handle, room?.id, room?.face?.roomId, room?.face?.status])
+      const text = thinkingLine(thinkingNames(items, { room, bot }))
+      return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
+    }
+
     function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim } = {}) {
       useStyles()
       const [items, setItems] = useState([])
@@ -1611,6 +1666,9 @@ window.__ModuleLoader__.load({
       friendLabel,
       MyHandle,
       FaceRoomStatus,
+      PeerThinking,
+      thinkingLine,
+      thinkingNames,
       FriendBotRow,
       FriendChatSettings,
       FaceToFaceGroup,
@@ -1652,6 +1710,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
+            slots().register('flybot.session.dock', { id: 'social-thinking', order: 60, component: PeerThinking }),
           ]
           // For other plugins (the tree's per-node "Copy invite link"): ctx.flybot.social.canInvite(botId)
           // is synchronous; flybot.call('social.createInvite', { botId }) returns { link, text, ... }.

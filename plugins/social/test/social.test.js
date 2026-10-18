@@ -4585,6 +4585,81 @@ test('#191: an ended face room says so in plain view and names the person who le
   assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
 })
 
+test('#297: a friend\'s Bot thinking shows as one quiet line above the composer; nothing for other chats, rooms or no signal', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[]])
+  const line = (items, props) => walk(pluginOf([items]).PeerThinking(props)).find(n => n.props?.['data-flybot'] === 'peer-thinking')
+  const dm = { bot: { id: 'r1', name: "Bob's Coder", remote: { handle: '@Coder.bob.home' } } }
+  const items = [
+    { scope: 'direct', handle: '@coder.bob.home', name: 'Coder' },
+    { scope: 'direct', handle: '@other.bob.home', name: 'Other' },
+    { scope: 'face_room', handle: '@chief.carol.home', name: 'Chief', roomId: 'frm_1' },
+  ]
+  const shown = line(items, dm)
+  assert.equal(shown.children.flat().map(n => n.children?.join?.('') ?? n).join(''), "Bob's Coder is thinking…")
+  assert.equal(shown.props.role, 'status')
+  assert.equal(walk(shown).find(n => n.props?.className === 'bt-shimmer')?.type, 'span')
+  assert.equal(line([], dm), undefined)
+  assert.equal(line(items, { bot: { id: 'r2', name: 'Other chat', remote: { handle: '@nobody.home' } } }), undefined)
+  assert.equal(line(items, { bot: { id: 'a', name: 'Chief' } }), undefined, 'a local Bot chat has its own activity row')
+  const room = status => ({ id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status }, participants: [
+    { remote: false, displayName: 'Chief' },
+    { remote: true, handle: '@chief.carol.home', displayName: 'Chief', ownerName: 'Carol' },
+    { remote: true, handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob' },
+  ] })
+  assert.equal(line(items, { room: room('open') }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief · Carol is thinking…', 'two Bots with one name keep their owner')
+  assert.equal(line(items, { room: room('left') }), undefined)
+  assert.equal(line(items, { room: room('candidate') }), undefined)
+  assert.equal(line(items, { room: { ...room('open'), face: { roomId: 'frm_2', status: 'open' } } }), undefined, 'another room\'s Bots never show here')
+  assert.equal(plugin.thinkingLine([]), '')
+  assert.equal(plugin.thinkingLine(['A']), 'A is thinking…')
+  assert.equal(plugin.thinkingLine(['A', 'B']), 'A and B are thinking…')
+  assert.equal(plugin.thinkingLine(['A', 'B', 'C', 'D']), 'A, B and 2 more are thinking…')
+})
+
+test('#297: the thinking line is a plain session dock below the approval card, styled like the other quiet notes', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(source, /register\('flybot\.session\.dock', \{ id: 'social-thinking', order: 60, component: PeerThinking \}\)/)
+  assert.match(source, /\.fs-thinking\{[^}]*font-size:13px/)
+  assert.match(source, /className: 'bt-shimmer'/)
+})
+
+test('#297: social/typing answers from Bot Social only when the server lists presence, and a friend\'s message clears the line', async (t) => {
+  const withPresence = attestingFaceServer({ features: ['typed_by_owner', 'presence'] })
+  const stamp = () => new Date().toISOString()
+  withPresence.tools.list_presence = () => ({
+    server_time: stamp(),
+    presence: [
+      { scope: 'face_room', room_id: 'frm_123456', bot: { handle: '@chief.bob.home', display_name: 'Chief' }, state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
+      { scope: 'direct', bot: { handle: '@coder.bob.home', display_name: 'Coder' }, to: '@chief.danyang.home', state: 'thinking', expires_at: new Date(Date.now() + 20_000).toISOString() },
+    ],
+  })
+  const { call } = await faceFixture(t, withPresence)
+  const first = await call('flybot/social/typing', {})
+  assert.equal(first.ok, true)
+  assert.equal(first.value.supported, true)
+  await waitUntil(() => withPresence.calls.some(c => c.name === 'list_presence'))
+  const answer = (await call('flybot/social/typing', {})).value
+  assert.deepEqual(answer.typing.map(item => [item.scope, item.handle, item.name, item.roomId]).sort(), [
+    ['direct', '@coder.bob.home', 'Coder', undefined],
+    ['face_room', '@chief.bob.home', 'Chief', 'frm_123456'],
+  ])
+  assert.ok(answer.typing.every(item => item.expiresIn > 0 && item.expiresIn <= 20_000))
+  assert.deepEqual(Object.keys(answer.typing[0]).sort(), ['expiresIn', 'handle', 'name', 'scope', ...(answer.typing[0].roomId ? ['roomId'] : [])].sort(), 'no text, no owner, only who and where')
+  // That Bot's room line arrives: its thinking line in that room ends at once.
+  pushRoomEvent(withPresence, {}, 'here is my answer')
+  await call('flybot/social/face-rooms', { poll: true })
+  const cleared = (await call('flybot/social/typing', {})).value
+  assert.deepEqual(cleared.typing.map(item => item.scope), ['direct'])
+
+  const older = attestingFaceServer({ features: ['typed_by_owner'] })
+  older.tools.list_presence = () => { throw new Error('must not be called') }
+  const fixture = await faceFixture(t, older)
+  assert.deepEqual((await fixture.call('flybot/social/typing', {})).value.typing, [])
+  await settle()
+  assert.equal(older.calls.some(c => c.name === 'list_presence'), false, 'an older server is never asked')
+})
+
 test('#195: accepting a Bot invite says what was added and closes the panel; the button reads Accept invite', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint) => {

@@ -20,6 +20,10 @@ browser: `client.js`. Design: see "Social design: homes and members" in the root
   When you leave the last face room or the room closes, the plugin revokes it (`remove_home_member`).
   A failed join that created a new room-only identity is revoked too. A later person-grant reuses
   the handle and drops `roomOnly`. **Manage access** on the Bot lists who has it and **Revoke**.
+- **Thinking status** (#297): a friend's Bot shows `Name is thinking…` above the composer in its chat and in a
+  face-to-face room while it works, through Bot Social's ephemeral `presence` signal (`set_presence` / `list_presence`;
+  handle, name and state only). Sent only for turns that answer a friend or run in an open room; polled only while such a
+  chat is on screen; nothing happens against a Bot Social that does not list `presence`. Option `presence: false` turns it off.
 - **Remote roster**: `list_remote_bots` → friends' Bots published into the main Bot list
   (globe mark). Each row uses the published `avatar` / `color` when the server sends them,
   else a handle-seeded look. Sidebar section `flybot.sidebar.section#social` keeps **N to approve**,
