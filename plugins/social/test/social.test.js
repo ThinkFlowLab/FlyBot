@@ -4327,6 +4327,39 @@ test('#138: Friends\' Bots drops the joiner\'s Bot from an outgoing invite', asy
   assert.equal(coreGrant?.grantee, '@chief.bob.home', 'canonical member handle stored in core grants')
 })
 
+test('#303: the Bot that just joined our invite is never published, not even before the grant sync', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let grants = []
+  let bots = [{ bot_id: 'x2', handle: '@coder.bob.home', display_name: 'Coder' }]
+  server.tools.list_bot_grants = () => ({ grants })
+  server.tools.list_remote_bots = () => ({
+    homes: [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' }, bots }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await call('flybot/social/remote-bots', { fresh: true })).value.homes[0].bots.some(bot => bot.handle === '@coder.bob.home'), true)
+  // Bob accepts the invite to our Bot through his Chief: the server now lists his Chief and our grant to it.
+  bots = [...bots, { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief' }]
+  grants = [{ id: 'g-rev', grantee: 'Chief@chief.bob.home', name: 'Chief@chief.bob.home', relationship_id: 'r1' }]
+  const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(listed.homes[0].bots.some(bot => bot.handle === '@chief.bob.home'), false)
+  // What the host was given to publish (and make chats from) never held the joiner's Bot.
+  const state = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  const published = Object.values(state.flybot?.remote ?? {}).flat()
+  assert.equal(published.some(bot => bot.handle === '@coder.bob.home'), true)
+  assert.equal(published.some(bot => bot.handle === '@chief.bob.home'), false)
+  assert.equal(Object.values(state.bots ?? {}).some(bot => bot.remote?.handle === '@chief.bob.home'), false)
+})
+
 test('#138: joining an invite marks that Bot inbound and does not auto-send', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

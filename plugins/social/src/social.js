@@ -834,12 +834,25 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     let result
     const source = home ? 'home' : 'legacy'
     let unfiltered
+    let grantsFresh = false
     const rosterAt = ++rosterAsked
     try {
       if (home) {
         result = await client.callTool('list_remote_bots', { home: home.id })
         if (rosterAt < rosterApplied) return remote
         const mapped = mapRemoteHomes(result?.homes)
+        // A Bot that appears on a roster we already had, and that nobody shared with us, may be the
+        // Bot that just joined our invite, which the grant sync would hide (#138 / #161). Publishing it
+        // first opened a chat for it on this home that was marked gone seconds later (#303), so sync
+        // grants before such a Bot is published. The first fetch stays fast (#92; registerAll has
+        // synced grants at start), and known Bots and Bots shared with us never wait.
+        const seen = new Set(serverRoster.flatMap(entry => entry.bots.map(bot => bot.handle)))
+        const unseen = serverRoster.length > 0 && mapped.some(entry => entry.bots.some(bot => !seen.has(bot.handle) && !settings.inboundBots?.[bot.handle]))
+        if (unseen && typeof flybot.grants?.set === 'function') {
+          await syncOutgoingGrants().catch(error => warn('grants not synced', error))
+          grantsFresh = true
+          if (rosterAt < rosterApplied) return remote
+        }
         serverRoster = mapped
         forgetDeclinedIfGone(mapped)
         backfillInboundFromRoster(mapped)
@@ -872,7 +885,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (home) void syncServerAutoApprove((result?.homes ?? []))
     // Grant listing is N HTTP calls; do not block Friends' Bots on it. Re-filter
     // once grants arrive so reverse-friends of our invites drop (#138).
-    void syncOutgoingGrants().then(() => {
+    if (!grantsFresh) void syncOutgoingGrants().then(() => {
       if (rosterApplied !== rosterAt || !home || !result) return
       const mapped = mapRemoteHomes(result.homes)
       forgetDeclinedIfGone(mapped)
