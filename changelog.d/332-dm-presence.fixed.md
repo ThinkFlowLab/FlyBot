@@ -1,0 +1,1 @@
+A friend's line that is recorded after the Bot's turn has already started now still makes your Bot say "is thinking…" toward that friend, so the thinking line in a friend chat no longer depends on the order of those two events ([#332](https://github.com/ThinkFlowLab/FlyBot/issues/332), part of the DM follow-up to #297).

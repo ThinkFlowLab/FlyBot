@@ -65,9 +65,32 @@ export function createPresence({
     entry.closed = true
   }
 
+  // A turn in a Bot's own chat that started without saying who it answers. The friend's line may be
+  // recorded after `turn.start` (the feed sets `trigger` only from a delivery that came before it, #332),
+  // so a turn with no trigger at all waits here for a friend's `exchange.delivered` on its Session.
+  const unclaimed = new Map()
+
   async function onTurnStart(event) {
     if (flybot.readOnly?.() || !event?.turnId || sending.has(event.turnId)) return
     const target = targetOf(event)
+    if (!target && event.place === 'chat' && !event.trigger && typeof event.sessionId === 'string') unclaimed.set(event.sessionId, event)
+    else if (event.sessionId) unclaimed.delete(event.sessionId)
+    return begin(event, target)
+  }
+
+  // A friend's line was delivered into one of my Bots' chats: if that Bot's turn is already running and
+  // started without a target, it is answering this friend.
+  function onDelivered(event) {
+    if (event?.place !== 'chat' || event.from?.kind !== 'remote' || typeof event.sessionId !== 'string') return
+    const turn = unclaimed.get(event.sessionId)
+    const handle = normHandle(event.from.handle)
+    if (!turn || !handle) return
+    unclaimed.delete(event.sessionId)
+    return begin(turn, { to: handle })
+  }
+
+  async function begin(event, target) {
+    if (flybot.readOnly?.() || !event?.turnId || sending.has(event.turnId)) return
     const botId = event.botId ? memberId(event.botId) : undefined
     if (!target || !botId || now() < offUntil) return
     const entry = { turnId: event.turnId, botId, target, beats: 0, closed: false, timer: undefined }
@@ -87,6 +110,7 @@ export function createPresence({
   }
 
   function onTurnEnd(event) {
+    if (typeof event?.sessionId === 'string' && unclaimed.get(event.sessionId)?.turnId === event.turnId) unclaimed.delete(event.sessionId)
     const entry = sending.get(event?.turnId)
     if (entry) stop(entry)
   }
@@ -94,6 +118,7 @@ export function createPresence({
   if (typeof flybot.on === 'function') {
     disposers.push(flybot.on('turn.start', event => { void onTurnStart(event).catch(error => warn('presence start failed', error)) }))
     disposers.push(flybot.on('turn.end', onTurnEnd))
+    disposers.push(flybot.on('exchange.delivered', event => { void onDelivered(event)?.catch?.(error => warn('presence start failed', error)) }))
   }
 
   // ------------------------------------------------------------ receive
