@@ -132,6 +132,9 @@ test('#305: a face room offers each of its Bots once, named Person · Bot, and n
     ['SelfA · Chief', undefined],
     ['Everyone', 'Every Bot in this room'],
   ])
+  // Without a member-session actor (roster.self is null) the seat's own owner name is used, as Members does.
+  const legacy = indexRoster({ ...face, self: null, rooms: [{ ...face.rooms[0], participants: [{ ...face.rooms[0].participants[0], ownerName: 'SelfB' }, ...face.rooms[0].participants.slice(1)] }] })
+  assert.equal(mentionRows(legacy, 'face')[0].bot.label, 'SelfB (you) · Chief')
   // Outside a face room the published friends' Bots still join the menu.
   const group = indexRoster({ ...face, rooms: [{ ...face.rooms[0], origin: undefined }] })
   assert.equal(mentionRows(group, 'face').filter(row => row.remote).length, 2)

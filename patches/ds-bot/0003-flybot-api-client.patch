@@ -12,7 +12,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  import { t } from './i18n.js'
  import { currentPart, relativeShort } from './text.js'
  
-@@ -25,18 +25,54 @@ const conversationOf = (roster, sessionId) => {
+@@ -25,18 +25,59 @@ const conversationOf = (roster, sessionId) => {
  export function mentionRows(roster, sessionId, query = '') {
    const here = conversationOf(roster, sessionId)
    if (here === null) return null
@@ -23,7 +23,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 -    : roster.bots.filter(bot => bot.id !== here.self.id)
 +    ? [
 +        ...here.room.members.map(id => roster.byId[id]).filter(Boolean)
-+          .map(bot => (face ? { ...bot, label: faceLabel(cleanPeerName(roster.self?.displayName, ''), bot.name, true) } : bot)),
++          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot)),
 +        ...live.filter(p => p.kind === 'human')
 +          .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role })),
 +        // A remote seat already listed under its handle (a duplicate participant record) is offered once.
@@ -50,6 +50,11 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  }
  
 +const isFaceRoom = room => room?.origin === 'face-to-face'
++// As `faceSeats` names it: the owner name Bot Social stamped on my Bot's seat, else my own name.
++const myOwnerName = (roster, live, bot) => {
++  const seat = live.find(p => !p.remote && p.kind !== 'human' && (p.id === bot.id || (bot.handle && p.handle === bot.handle)))
++  return cleanPeerName(seat?.ownerName || roster.self?.displayName, '')
++}
 +const uniqueBy = (list, key) => {
 +  const seen = new Set()
 +  return list.filter((item) => {

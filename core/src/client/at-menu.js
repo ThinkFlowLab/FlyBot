@@ -32,7 +32,7 @@ export function mentionRows(roster, sessionId, query = '') {
   const bots = here.room
     ? [
         ...here.room.members.map(id => roster.byId[id]).filter(Boolean)
-          .map(bot => (face ? { ...bot, label: faceLabel(cleanPeerName(roster.self?.displayName, ''), bot.name, true) } : bot)),
+          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot)),
         ...live.filter(p => p.kind === 'human')
           .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role })),
         // A remote seat already listed under its handle (a duplicate participant record) is offered once.
@@ -58,6 +58,11 @@ export function mentionRows(roster, sessionId, query = '') {
 }
 
 const isFaceRoom = room => room?.origin === 'face-to-face'
+// As `faceSeats` names it: the owner name Bot Social stamped on my Bot's seat, else my own name.
+const myOwnerName = (roster, live, bot) => {
+  const seat = live.find(p => !p.remote && p.kind !== 'human' && (p.id === bot.id || (bot.handle && p.handle === bot.handle)))
+  return cleanPeerName(seat?.ownerName || roster.self?.displayName, '')
+}
 const uniqueBy = (list, key) => {
   const seen = new Set()
   return list.filter((item) => {

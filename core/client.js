@@ -7195,7 +7195,7 @@ function mentionRows(roster, sessionId, query = "") {
   const face = isFaceRoom(here.room);
   const live = (here.room?.participants ?? []).filter((p) => p.leftSeq === void 0);
   const bots = here.room ? [
-    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(cleanPeerName(roster.self?.displayName, ""), bot.name, true) } : bot),
+    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot),
     ...live.filter((p) => p.kind === "human").map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role })),
     // A remote seat already listed under its handle (a duplicate participant record) is offered once.
     ...uniqueBy(live.filter((p) => p.remote), (p) => p.handle || p.id).map((p) => ({
@@ -7217,6 +7217,10 @@ function mentionRows(roster, sessionId, query = "") {
   return rows;
 }
 var isFaceRoom = (room2) => room2?.origin === "face-to-face";
+var myOwnerName = (roster, live, bot) => {
+  const seat = live.find((p) => !p.remote && p.kind !== "human" && (p.id === bot.id || bot.handle && p.handle === bot.handle));
+  return cleanPeerName(seat?.ownerName || roster.self?.displayName, "");
+};
 var uniqueBy = (list, key) => {
   const seen = /* @__PURE__ */ new Set();
   return list.filter((item) => {

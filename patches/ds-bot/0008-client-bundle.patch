@@ -678,10 +678,15 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,482 @@ function maskOf(shape) {
- }
- var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
- 
+@@ -1238,9 +1238,485 @@ function maskOf(shape) {
+     mask = svgUrl(`<mask id="e" ${maskBox(def.size)}>${holes(def, def.eyes.map(eyeMarkup).join("").replaceAll('class="bt-eye"', 'fill="#000"'))}</mask>${def.wrap ? `<g transform="${def.wrap}">${body}</g>` : body}`, def.size);
+     maskCache.set(shape, mask);
+   }
+-  return mask;
++  return mask;
++}
++var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
++
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -1131,7 +1136,8 @@ diff --git a/client.js b/client.js
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
 +    ) : null
 +  );
-+}
+ }
+-var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 +var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 +var FLYBOT_CSS = `
 +.bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
@@ -1157,10 +1163,9 @@ diff --git a/client.js b/client.js
 +.bt-flybot-pointer-note { opacity: .65; white-space: nowrap; }
 +.bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 +`;
-+
+ 
  // src/client/sources.js
  function createSource(initial) {
-   let value = initial;
 @@ -1262,7 +1262,7 @@ function createSource(initial) {
      }
    };
@@ -3338,7 +3343,8 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -3351,8 +3357,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -4750,7 +4755,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -5922,15 +5922,44 @@ var conversationOf = (roster, sessionId) => {
+@@ -5922,15 +5922,48 @@ var conversationOf = (roster, sessionId) => {
  function mentionRows(roster, sessionId, query = "") {
    const here = conversationOf(roster, sessionId);
    if (here === null) return null;
@@ -4758,7 +4763,7 @@ diff --git a/client.js b/client.js
 +  const face = isFaceRoom(here.room);
 +  const live = (here.room?.participants ?? []).filter((p) => p.leftSeq === void 0);
 +  const bots = here.room ? [
-+    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(cleanPeerName(roster.self?.displayName, ""), bot.name, true) } : bot),
++    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot),
 +    ...live.filter((p) => p.kind === "human").map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role })),
 +    // A remote seat already listed under its handle (a duplicate participant record) is offered once.
 +    ...uniqueBy(live.filter((p) => p.remote), (p) => p.handle || p.id).map((p) => ({
@@ -4781,6 +4786,10 @@ diff --git a/client.js b/client.js
    return rows;
  }
 +var isFaceRoom = (room2) => room2?.origin === "face-to-face";
++var myOwnerName = (roster, live, bot) => {
++  const seat = live.find((p) => !p.remote && p.kind !== "human" && (p.id === bot.id || bot.handle && p.handle === bot.handle));
++  return cleanPeerName(seat?.ownerName || roster.self?.displayName, "");
++};
 +var uniqueBy = (list, key) => {
 +  const seen = /* @__PURE__ */ new Set();
 +  return list.filter((item) => {
