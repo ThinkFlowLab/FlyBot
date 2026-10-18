@@ -464,6 +464,9 @@ export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
  *   Social replies waiting for approval).
  * - `flybot.account.header`: a compact block at the top of the account menu (the social
  *   plugin shows the owner's own Bot Social handle with a copy button).
+ * - `flybot.settings.page`: a page in the Settings list, after Connectors. `label` is an English
+ *   key looked up with the host `t()`; the component receives the host `t`, `Section(title)` and
+ *   `Row(label, hint)` so it matches the other pages and reads in the DSH language.
  * - `flybot.new-chat.action`: a row in the sidebar '+' new-chat menu, next to
  *   Create group chat (e.g. Face-to-face group, Add friend). `label` / `hint` are English keys
  *   looked up with the same `t()` map as the neighbouring rows.
@@ -484,6 +487,14 @@ export interface FlyBotSlots {
   'flybot.room.overview': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall }): any }
   'flybot.session.dock': { id: string; order?: number; /** The `by` of the approvals this dock draws; the overlay then draws no second card for the ids it claims. */ policy?: string; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall; /** Report the approval ids this dock shows (a plugin's own policy). */ claim?: (ids: string[]) => void }): any }
   'flybot.account.header': { id: string; order?: number; component(props: { actions?: any; call: FlyBotCall }): any }
+  'flybot.settings.page': {
+    id: string
+    order?: number
+    label: string
+    /** A React component drawn beside the label in the Settings list (default: the connector mark). */
+    icon?: any
+    component(props: { roster: any; actions: any; call: FlyBotCall; run(promise: Promise<unknown>): Promise<boolean>; t(key: string, params?: Record<string, unknown>): string; Section: any; Row: any }): any
+  }
   'flybot.new-chat.action': {
     id: string
     order?: number
