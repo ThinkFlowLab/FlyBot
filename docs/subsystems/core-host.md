@@ -140,6 +140,10 @@ credentials and team mode remain separate work under #55/#198.
 - A friend's Bot @-mentioned in a group never has its reply delivered back into that group (it lands in the friend's Bot's own chat), so the host posts one receipt line into the room per mention (`src/host/hooks.js` `mentionReceipt`, source role `mention`) and the client renders it as a muted event line (`src/client/cells.js`) (#80, #81). The role stays outside the room's round trigger (`groups.js` `opens`) and outside `RELAY_ROLES`, so the receipt opens no round and folds no turns. When that friend's Bot is already a current participant of the room, `sendUserMentions` skips the 1:1 `bot.send` entirely (#143): the human line in the room is the delivery, and Chief's grant is not consulted. A friend's line Bot Social attests they typed themselves (#227) arrives as `remoteChats.deliver({ human: true, ownerName })`: the message source carries `typedBy`, `turns.js` `claimTrigger` records the turn in `state.remoteTypedTurns[sessionId][turn]` (capped at 400 per Session, dropped with the part), `channel.js` publishes it as `roster.remoteTypedTurns` (narrowed per owner in `authz.js`), and the client draws that turn's reply as the person (`typedBy` in `src/client/text.js`, `PersonMessage` in `cells.js`). The flag is never derived from text. A failed 1:1 remote-chat send (`remote-chat.js` `forward` / `notSentLine`) is one short English line with a next step, never a raw `Bot Social send_as_member: …` preview.
 - `deliver()` (`src/host/delivery.js`) copies a cleaned, plugin-attested `remote.typedBy` onto the message `source.remote` for a friend's line to a local Bot; the client uses it to draw the person (#233 follow-up).
 
+### Discarded promise `.catch` (#213)
+
+A discarded `.catch(() => {})` in the host sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).
+
 ## Tests
 
 `npm test` in `core/`; smoke test for `index.js` / `src/host/` changes.

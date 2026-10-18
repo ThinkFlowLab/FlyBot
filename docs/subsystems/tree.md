@@ -45,6 +45,10 @@ Everything in `plugins/tree/` (entry `plugins/tree/index.js` and any helpers).
 - The Bot list itself uses the core `.bt-tree-toggle` (see [core-client](core-client.md)). When `sidebarSection: true` brings this plugin's separate Tree section back, `.flybot-tree-toggle` matches that control: 28×28 hit target, 16px inner `.flybot-tree-caret`, hover, focus ring, and rotation of the glyph only. Leaf spacers (`.flybot-tree-dot`) keep the same 28px width. `aria-expanded` and Expand/Collapse `{name}` labels stay on the button.
 - The right-click menu entry from `menuItems({ bot })` is a single **Copy invite link** (bare URL, shown when `social.canInvite(bot.id)`). The invite with instructions is offered only in the Bot's Sharing section, so the menu does not list the same invite twice (#173).
 
+### Discarded promise `.catch` (#213)
+
+The plugin's discarded `.catch(() => {})` calls carry a one-line reason comment or `void`; `check-empty-catch` enforces it (see `docs/code-standards.md`).
+
 ## Tests
 
 Covered by the plugin's own tests under `plugins/tree/` / core test suite as wired. `#16 Option B` in `test/tree.test.js` (and the matching host test) asserts a non-Main tree Bot can create a child under itself, that `maxChildren`/depth still refuse, and that the child is not auto-granted.

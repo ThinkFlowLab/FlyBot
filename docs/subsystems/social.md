@@ -133,6 +133,10 @@ pins the list. The authority for the list is Bot Social's README and `docs/FACE_
 
 - Bot Social has no FlyBot-group record (`list_conversations` is 1:1; inbox is `message.received` after a send). The plugin therefore carries a `FLYBOT-ROOM-SHARE` envelope on `send_as_member` text. `pollOnce` calls `flybot.rooms.applyInbound` before 1:1 chat delivery, so the Bot's owner sees the group as soon as they are added. `via: 'room'` / `via: 'room-share'` skip the social outbound hold (the add-to-group click is consent); the invited owner's Bot replies still go through `pending_approval`. A roster fetch that no longer lists a remote, or `social/revoke-grant`, leaves those rooms / hides inbound projections.
 
+### Discarded promise `.catch` (#213)
+
+The plugin's discarded `.catch(() => {})` calls carry a one-line reason comment or `void`; `check-empty-catch` enforces it (see `docs/code-standards.md`).
+
 ## Tests
 
 Covered by the plugin's own tests under `plugins/social/` / core test suite as wired. Packaged-install import (#153) is `scripts/lint-plugins.mjs` plus `.github/scripts/plugin-imports.test.mjs`.

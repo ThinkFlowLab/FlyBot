@@ -105,6 +105,10 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 - The held-send overlay (`FlyBotApprovals`, `flybot-slots.js`) runs every hook before its `if (pending.length === 0) return null`: a hook after that return made React throw on the first held message and no card ever drew (#254). `test/overlay-approvals.test.js` renders it with a stand-in that enforces React's hook-count rule.
 
+### Discarded promise `.catch` (#213)
+
+A discarded `.catch(() => {})` in the client sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).
+
 ## Tests
 
 `npm test` in `core/` (it also fails when `client.js` is stale).
