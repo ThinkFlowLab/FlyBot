@@ -34,6 +34,11 @@ test('new-chat action rows sit after New group chat and skip a failing plugin', 
     assert.deepEqual(rows.map(row => row.key), ['social-face-group'])
     assert.equal(rows[0].label, 'Face-to-face room')
     assert.equal(typeof rows[0].icon, 'function')
+    const memo = { $$typeof: Symbol.for('react.memo'), type: () => null }
+    const off = slots.register('flybot.new-chat.action', { id: 'memo-icon', order: 20, label: 'Memo', icon: memo, run: () => {} })
+    try {
+      assert.equal(newChatActionRows({ mode: 'new' }).find(row => row.key === 'memo-icon').icon, memo, 'a memo / forwardRef component is kept')
+    } finally { off() }
     assert.equal(rows[0].hint, 'Meet next to you')
   } finally {
     console.error = original

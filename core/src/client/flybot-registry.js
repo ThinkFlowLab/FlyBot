@@ -52,7 +52,8 @@ export function newChatActionRows(context = {}) {
         order: entry.order ?? 0,
         label: entry.label,
         hint: entry.hint,
-        ...(typeof entry.icon === 'function' ? { icon: entry.icon } : {}),
+        // A component: a function, or memo / forwardRef objects (React marks those with $$typeof).
+        ...(typeof entry.icon === 'function' || (entry.icon && typeof entry.icon === 'object' && '$$typeof' in entry.icon) ? { icon: entry.icon } : {}),
         run: entry.run ?? (() => {}),
       })
     } catch (error) {

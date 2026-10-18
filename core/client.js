@@ -1454,7 +1454,8 @@ function newChatActionRows(context = {}) {
         order: entry.order ?? 0,
         label: entry.label,
         hint: entry.hint,
-        ...typeof entry.icon === "function" ? { icon: entry.icon } : {},
+        // A component: a function, or memo / forwardRef objects (React marks those with $$typeof).
+        ...typeof entry.icon === "function" || entry.icon && typeof entry.icon === "object" && "$$typeof" in entry.icon ? { icon: entry.icon } : {},
         run: entry.run ?? (() => {
         })
       });
@@ -1993,9 +1994,12 @@ var SlotBoundary = class extends import_react2.Component {
     console.error(`flybot: ${this.props.id} failed`, error);
   }
   render() {
-    return this.state.failed ? null : this.props.children;
+    return this.state.failed ? this.props.fallback ?? null : this.props.children;
   }
 };
+function SlotIcon({ id, icon: icon2, fallback }) {
+  return (0, import_react2.createElement)(SlotBoundary, { id, fallback }, (0, import_react2.createElement)(icon2));
+}
 function Safe({ entry, props }) {
   return (0, import_react2.createElement)(SlotBoundary, { id: entry.id }, (0, import_react2.createElement)(entry.component, props));
 }
@@ -10038,7 +10042,7 @@ function NewChat({ mode, roster, actions }) {
     for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
       options.push({
         key: action.key,
-        icon: (0, import_react22.createElement)(action.icon ?? PeopleIcon),
+        icon: action.icon ? (0, import_react22.createElement)(SlotIcon, { id: action.key, icon: action.icon, fallback: (0, import_react22.createElement)(PeopleIcon) }) : (0, import_react22.createElement)(PeopleIcon),
         label: t(action.label),
         hint: action.hint ? t(action.hint) : void 0,
         run: () => {

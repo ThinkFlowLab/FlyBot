@@ -174,7 +174,10 @@ test('#385: the + menu rows have their own marks, one verb style and short hints
     assert.ok(DICTIONARY.zh[label] && DICTIONARY.zh[hint], `${label} zh`)
   }
   assert.doesNotMatch(src, /Create new Bot|DSH session/)
-  assert.match(src, /icon: h\(action\.icon \?\? PeopleIcon\)/)
+  // A plugin's mark renders behind its own boundary and falls back to the people mark (Codex P2).
+  assert.match(src, /icon: action\.icon \? h\(SlotIcon, \{ id: action\.key, icon: action\.icon, fallback: h\(PeopleIcon\) \}\) : h\(PeopleIcon\)/)
+  const slotsSrc = readFileSync(new URL('../src/client/flybot-slots.js', import.meta.url), 'utf8')
+  assert.match(slotsSrc, /this\.state\.failed \? \(this\.props\.fallback \?\? null\)/)
   const menu = readFileSync(new URL('../src/client/context-menu.js', import.meta.url), 'utf8')
   assert.doesNotMatch(menu, /t\('Rename Bot'\)/)
   assert.match(menu, /t\('Edit Bot'\)/)

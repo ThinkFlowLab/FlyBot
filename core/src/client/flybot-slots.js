@@ -70,7 +70,11 @@ class SlotBoundary extends Component {
   }
   static getDerivedStateFromError() { return { failed: true } }
   componentDidCatch(error) { console.error(`flybot: ${this.props.id} failed`, error) }
-  render() { return this.state.failed ? null : this.props.children }
+  render() { return this.state.failed ? (this.props.fallback ?? null) : this.props.children }
+}
+// A plugin's + menu mark (#385), behind its own boundary: a mark that throws shows `fallback`, not a broken menu.
+export function SlotIcon({ id, icon, fallback }) {
+  return h(SlotBoundary, { id, fallback }, h(icon))
 }
 function Safe({ entry, props }) {
   return h(SlotBoundary, { id: entry.id }, h(entry.component, props))

@@ -479,7 +479,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,314 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,315 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -651,7 +651,8 @@ diff --git a/client.js b/client.js
 +        order: entry.order ?? 0,
 +        label: entry.label,
 +        hint: entry.hint,
-+        ...typeof entry.icon === "function" ? { icon: entry.icon } : {},
++        // A component: a function, or memo / forwardRef objects (React marks those with $$typeof).
++        ...typeof entry.icon === "function" || entry.icon && typeof entry.icon === "object" && "$$typeof" in entry.icon ? { icon: entry.icon } : {},
 +        run: entry.run ?? (() => {
 +        })
 +      });
@@ -835,7 +836,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,488 @@ function maskOf(shape) {
+@@ -1242,6 +1242,491 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1078,9 +1079,12 @@ diff --git a/client.js b/client.js
 +    console.error(`flybot: ${this.props.id} failed`, error);
 +  }
 +  render() {
-+    return this.state.failed ? null : this.props.children;
++    return this.state.failed ? this.props.fallback ?? null : this.props.children;
 +  }
 +};
++function SlotIcon({ id, icon: icon2, fallback }) {
++  return (0, import_react2.createElement)(SlotBoundary, { id, fallback }, (0, import_react2.createElement)(icon2));
++}
 +function Safe({ entry, props }) {
 +  return (0, import_react2.createElement)(SlotBoundary, { id: entry.id }, (0, import_react2.createElement)(entry.component, props));
 +}
@@ -7375,7 +7379,7 @@ diff --git a/client.js b/client.js
 +    for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
 +      options.push({
 +        key: action.key,
-+        icon: (0, import_react22.createElement)(action.icon ?? PeopleIcon),
++        icon: action.icon ? (0, import_react22.createElement)(SlotIcon, { id: action.key, icon: action.icon, fallback: (0, import_react22.createElement)(PeopleIcon) }) : (0, import_react22.createElement)(PeopleIcon),
 +        label: t(action.label),
 +        hint: action.hint ? t(action.hint) : void 0,
 +        run: () => {

@@ -899,7 +899,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -1,21 +1,30 @@
+@@ -1,21 +1,31 @@
  import { createElement as h, useRef, useState } from 'react'
 -import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 -import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
@@ -910,6 +910,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
  import { t } from './i18n.js'
 +import { newChatActionRows } from './flybot-registry.js'
++import { SlotIcon } from './flybot-slots.js'
 +import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
  
  export function NewChat({ mode, roster, actions }) {
@@ -1035,7 +1036,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +    for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
 +      options.push({
 +        key: action.key,
-+        icon: h(action.icon ?? PeopleIcon),
++        icon: action.icon ? h(SlotIcon, { id: action.key, icon: action.icon, fallback: h(PeopleIcon) }) : h(PeopleIcon),
 +        label: t(action.label),
 +        hint: action.hint ? t(action.hint) : undefined,
 +        run: () => {

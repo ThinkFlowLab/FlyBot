@@ -6,6 +6,7 @@ import { CreateBot } from './create-bot.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
+import { SlotIcon } from './flybot-slots.js'
 import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
 
 export function NewChat({ mode, roster, actions }) {
@@ -163,7 +164,7 @@ export function NewChat({ mode, roster, actions }) {
     for (const action of newChatActionRows({ mode, group, picked, query, roster })) {
       options.push({
         key: action.key,
-        icon: h(action.icon ?? PeopleIcon),
+        icon: action.icon ? h(SlotIcon, { id: action.key, icon: action.icon, fallback: h(PeopleIcon) }) : h(PeopleIcon),
         label: t(action.label),
         hint: action.hint ? t(action.hint) : undefined,
         run: () => {
