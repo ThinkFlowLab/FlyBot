@@ -2203,7 +2203,8 @@ test('a friend\'s Bot settings uses Auto-send, not a second Auto-accept label', 
   }))
   assert.ok(tree.some(n => n.type === 'label' && n.children.includes('Auto-send to Bob')))
   assert.equal(tree.some(n => n.type === 'label' && n.children.some(c => /Auto-accept/.test(String(c)))), false)
-  assert.ok(tree.some(n => n.props.className === 'fs fs-card fs-friend-settings'))
+  assert.ok(tree.some(n => n.props.className === 'fs fs-friend-settings'))
+  assert.ok(tree.some(n => n.props.className === 'fs-card fs-friend-auto'), 'Auto-send has its own box (#274)')
   const remove = tree.find(n => n.props['data-flybot'] === 'remove-friend-bot')
   assert.ok(remove)
   assert.match(String(remove.props.className ?? ''), /\bfs-link\b/)
@@ -3810,6 +3811,17 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   assert.ok(remove.children.includes('Remove this Bot'))
   assert.ok(all.some(n => n.props['data-flybot'] === 'friend-chat-settings'))
   assert.ok(all.some(n => n.type === 'label' && n.children.includes('Auto-send to hsliu')))
+  // #274: the Auto-send box holds the setting only; Remove this Bot sits in its own row below it.
+  const box = all.find(n => n.props['data-flybot'] === 'friend-auto-box')
+  assert.ok(box, 'the Auto-send setting has its own box')
+  const inBox = []
+  const gather = node => { if (node && typeof node === 'object') { inBox.push(node); (node.children ?? []).forEach(gather) } }
+  gather(box)
+  assert.equal(inBox.some(n => n.props?.['data-flybot'] === 'remove-friend-bot'), false, 'Remove is not inside the Auto-send box')
+  const removeRow = all.find(n => n.props['data-flybot'] === 'friend-remove-row')
+  assert.ok(removeRow && removeRow.children.some(c => c?.props?.['data-flybot'] === 'remove-friend-bot'))
+  const settingsCard = all.find(n => n.props['data-flybot'] === 'friend-chat-settings')
+  assert.doesNotMatch(settingsCard.props.className, /fs-card/, 'the outer wrapper is not one box around both')
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(src, /data-flybot': 'remove-friend-bot/)
   remove.props.onClick({ stopPropagation() {} })

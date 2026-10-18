@@ -714,6 +714,7 @@ export const SIDEBAR_CSS = `
 
 .bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
 .bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
+.bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
 .bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
 .bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 .bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}

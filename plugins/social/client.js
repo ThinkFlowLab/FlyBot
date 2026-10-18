@@ -73,11 +73,14 @@ window.__ModuleLoader__.load({
 .fs-msg{white-space:normal;overflow-wrap:anywhere}
 .fs-actions{flex:none;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:100%}
 .fs-card{margin:4px 4px 2px;padding:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px}
-.fs-friend-settings{gap:10px;max-width:280px}
+.fs-friend-settings{display:flex;flex-direction:column;gap:14px;max-width:280px}
+.fs-friend-auto{margin:0}
+.fs-friend-remove{display:flex;padding:0 4px}
 .fs-friend-settings .fs-auto{align-self:flex-start;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-friend-settings .fs-auto input{flex:none;width:14px;height:14px}
 .fs-friend-settings .fs-leave-ask{flex-wrap:wrap;white-space:normal}
 .fs-friend-settings .fs-link{align-self:flex-start;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-friend-remove .fs-leave-ask{display:flex;align-items:center;gap:6px}
 .fs-card .fs-hint{padding:0}
 .fs-line{display:flex;gap:6px;min-width:0;align-items:center}
 .fs-input{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;outline:none;text-overflow:ellipsis}
@@ -1516,12 +1519,14 @@ window.__ModuleLoader__.load({
           actions?.closeOverlay?.()
         } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
       }
-      return h('div', { className: 'fs fs-card fs-friend-settings', 'data-flybot': 'friend-chat-settings' },
+      return h('div', { className: 'fs fs-friend-settings', 'data-flybot': 'friend-chat-settings' },
         // Auto-send covers every message from your Bots to this friend's Bots (#230 names the pair).
-        h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
-          h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
-          `Auto-send to ${who}`),
-        asking
+        // The box holds the setting only; the destructive link sits apart, below it (#274).
+        h('div', { className: 'fs-card fs-friend-auto', 'data-flybot': 'friend-auto-box' },
+          h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
+            h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
+            `Auto-send to ${who}`)),
+        h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
             h('span', { className: 'fs-hint' }, `Remove ${bot.name}? ${who} can share it again.`),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, 'Remove'),
@@ -1535,7 +1540,7 @@ window.__ModuleLoader__.load({
             'aria-busy': busy || undefined,
             disabled: !!busy,
             onClick: () => setAsking(true),
-          }, busy ? 'Removing…' : 'Remove this Bot'),
+          }, busy ? 'Removing…' : 'Remove this Bot')),
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 

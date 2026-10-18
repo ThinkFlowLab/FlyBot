@@ -46,6 +46,11 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
   assert.match(text('details-drawer.js'), /bot && bot\.remote && tab === 'details'[\s\S]*FlyBotDetails/)
   assert.match(text('bot-settings.js'), /if \(bot\.remote\) return null/)
   assert.match(text('remote-bot-settings.js'), /remote-bot-sheet/)
+  // #274: the friend's Bot sheet takes focus and closes on Escape itself; its row and gear fit a tree item.
+  assert.match(text('remote-bot-settings.js'), /tabIndex: -1, ref: dialog, onKeyDown/)
+  assert.match(text('remote-bot-settings.js'), /event\.key === 'Escape'\) \{ event\.stopPropagation\(\); close\(\) \}/)
+  assert.match(text('remote-bot-settings.js'), /focus\?\.\(\{ preventScroll: true \}\)/)
+  assert.match(text('sidebar.js'), /\.bt-tree-item>\.bt-row-wrap\{flex:1 1 auto;width:auto;min-width:0\}/)
   assert.match(text('sidebar.js'), /bt-row-settings/)
   assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
   assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)

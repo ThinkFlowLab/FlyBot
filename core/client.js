@@ -6642,6 +6642,7 @@ var SIDEBAR_CSS = `
 
 .bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
 .bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
+.bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
 .bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
 .bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 .bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
@@ -13736,6 +13737,7 @@ var REMOTE_BOT_SETTINGS_CSS = `
 .bt-remote-sheet-layer[data-leaving]{pointer-events:none}
 .bt-remote-sheet-layer .bt-scrim{position:absolute;inset:0;z-index:0;pointer-events:auto}
 .bt-remote-sheet-layer[data-leaving] .bt-scrim{opacity:0;transition:opacity .16s ease-in}
+.bt-remote-sheet:focus{outline:none}
 .bt-remote-sheet{position:relative;z-index:1;pointer-events:auto;width:min(320px,calc(100vw - 32px));max-height:min(70vh,420px);margin:0 auto 0;border-radius:14px;background:var(--bt-card,#fff);border:.5px solid var(--bt-line-2);box-shadow:0 12px 40px rgba(20,20,20,.16);display:flex;flex-direction:column;overflow:hidden;animation:bt-remote-sheet-in .2s ease-out}
 .bt-remote-sheet-layer[data-leaving] .bt-remote-sheet{animation:bt-remote-sheet-out .16s ease-in forwards}
 .bt-remote-sheet-head{display:flex;align-items:center;gap:10px;padding:12px 12px 8px}
@@ -13753,6 +13755,20 @@ var REMOTE_BOT_SETTINGS_CSS = `
 function RemoteBotSettingsSheet({ bot, roster, actions, leaving = false }) {
   const close = () => actions.closeSettings();
   useEscape(close);
+  const dialog = (0, import_react34.useRef)(null);
+  (0, import_react34.useEffect)(() => {
+    const before = document.activeElement;
+    dialog.current?.focus?.({ preventScroll: true });
+    return () => {
+      if (before && typeof before.focus === "function" && before.isConnected) before.focus({ preventScroll: true });
+    };
+  }, []);
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      close();
+    }
+  };
   if (!bot?.remote) return null;
   const who = bot.remote.homeName || bot.remote.owner || bot.remote.home || t("Friend's Bot");
   return (0, import_react34.createElement)(
@@ -13761,7 +13777,7 @@ function RemoteBotSettingsSheet({ bot, roster, actions, leaving = false }) {
     (0, import_react34.createElement)("div", { className: "bt-scrim", onMouseDown: close }),
     (0, import_react34.createElement)(
       "div",
-      { className: "bt-remote-sheet", role: "dialog", "aria-modal": true, "aria-label": t("Bot settings") },
+      { className: "bt-remote-sheet", role: "dialog", "aria-modal": true, "aria-label": t("Bot settings"), tabIndex: -1, ref: dialog, onKeyDown },
       (0, import_react34.createElement)(
         "div",
         { className: "bt-remote-sheet-head" },

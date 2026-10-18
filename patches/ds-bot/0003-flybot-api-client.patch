@@ -1304,13 +1304,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // With the whale holding the settings seat, the footer row is just the account menu
-@@ -658,4 +658,11 @@ export const SIDEBAR_CSS = `
+@@ -658,4 +658,12 @@ export const SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
 +
 +.bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
 +.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
++.bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
 +.bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
 +.bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 +.bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
@@ -1589,7 +1590,7 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js
-@@ -40,7 +40,15 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
+@@ -40,7 +40,20 @@ test('Bot settings is the only settings entry; nothing is called Team settings',
    assert.match(text('palette.js'), /title: t\('Bot settings'\), run: \(\) => actions\.openSettings\('general'\)/)
    // One Bot's own entries open that Bot, so they read Edit Bot instead.
    assert.match(text('context-menu.js'), /\[t\('Edit Bot'\), GearIcon, \(\) => actions\.openSettings\('bots', bot\.id\)\]/)
@@ -1600,6 +1601,11 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 +  assert.match(text('details-drawer.js'), /bot && bot\.remote && tab === 'details'[\s\S]*FlyBotDetails/)
 +  assert.match(text('bot-settings.js'), /if \(bot\.remote\) return null/)
 +  assert.match(text('remote-bot-settings.js'), /remote-bot-sheet/)
++  // #274: the friend's Bot sheet takes focus and closes on Escape itself; its row and gear fit a tree item.
++  assert.match(text('remote-bot-settings.js'), /tabIndex: -1, ref: dialog, onKeyDown/)
++  assert.match(text('remote-bot-settings.js'), /event\.key === 'Escape'\) \{ event\.stopPropagation\(\); close\(\) \}/)
++  assert.match(text('remote-bot-settings.js'), /focus\?\.\(\{ preventScroll: true \}\)/)
++  assert.match(text('sidebar.js'), /\.bt-tree-item>\.bt-row-wrap\{flex:1 1 auto;width:auto;min-width:0\}/)
 +  assert.match(text('sidebar.js'), /bt-row-settings/)
 +  assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
 +  assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)

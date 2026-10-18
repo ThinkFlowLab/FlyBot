@@ -1,0 +1,1 @@
+A friend's Bot settings sheet closes on Escape, opening it no longer shifts and clips the sidebar (a friend's row with its gear now fits its tree row), and Remove this Bot sits in its own row below the Auto-send box ([#274](https://github.com/ThinkFlowLab/FlyBot/issues/274)).
