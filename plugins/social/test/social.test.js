@@ -114,7 +114,7 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
     const body = JSON.parse(init.body)
     calls.push({ url, name: body.params.name, args: body.params.arguments })
     const tool = tools[body.params.name]
-    const result = tool ? { content: [{ type: 'text', text: JSON.stringify(tool(body.params.arguments)) }] } : { isError: true, content: [{ type: 'text', text: '{"code":"unknown","message":"no tool"}' }] }
+    const result = tool ? { content: [{ type: 'text', text: JSON.stringify(await tool(body.params.arguments)) }] } : { isError: true, content: [{ type: 'text', text: '{"code":"unknown","message":"no tool"}' }] }
     return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result }), { status: 200 })
   }
   return { fetch, calls, events, members, uploads, tools, me, onboarded: () => onboarded }
@@ -4944,6 +4944,80 @@ test('#383: People with access shows one row per person; its Revoke removes each
   assert.equal(revoked.some(args => args.includes('g-3')), false, 'Carol keeps her access')
   listed = listed.filter(grant => grant.id === 'g-3')
   assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'])
+})
+
+test('#383: the join is recorded before the owner-approval round trip, so a lost approval answer keeps it', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.join_invite = () => ({ relationship_id: 'r2', status: 'pending_requester_owner', awaiting: 'your_owner_approval', approval_id: 'apr2', inviter: { bot_id: 'x2', handle: '@helper.bob.home', display_name: 'Helper', owner_display_name: 'Bob' } })
+  // Bot Social applies the approval, but its answer never arrives.
+  server.tools.decide_approval = () => { throw Object.assign(new Error('Bot Social decide_approval: network'), { code: 'unavailable' }) }
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  assert.equal((await call('flybot/social/join-invite', { code: 'H2', botId: chief.id })).ok, false)
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.joinedRelationships?.r2, true, 'the joined relationship is recorded')
+  assert.equal(saved.inboundBots?.['@helper.bob.home'], true, 'the offered Bot is recorded as shared with us')
+})
+
+test('#383: a grant list taken while a merged Revoke runs is not written back (Manage access loader)', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let listed = [
+    { id: 'g-1', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+    { id: 'g-2', grantee: '@coder.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r3' },
+    { id: 'g-3', grantee: '@carol.home', name: 'Carol (@carol.home)', relationship_id: 'r4' },
+  ]
+  // The next list answer is held: it is taken now (all three grants) and lands only when released.
+  let hold
+  server.tools.list_bot_grants = () => {
+    const snapshot = { grants: [...listed] }
+    if (!hold) return snapshot
+    return new Promise(resolve => { hold.release = () => resolve(snapshot) })
+  }
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const bob = (await call('flybot/social/access', { botId: chief.id })).value.grants[0]
+  assert.deepEqual(bob.grantIds, ['g-1', 'g-2'])
+  // The open dialog's 5-second loader asks again; its list is in flight when Revoke starts.
+  hold = {}
+  const loader = call('flybot/social/access', { botId: chief.id })
+  for (let n = 0; n < 40 && !hold.release; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  const release = hold.release
+  assert.equal(typeof release, 'function', 'the loader is listing')
+  hold = undefined
+  // Bot Social deletes for real: later lists no longer name a revoked grant.
+  server.tools.revoke_bot_grant = (args) => { listed = listed.filter(grant => grant.id !== args.grant_id); return { ok: true } }
+  const batch = await call('flybot/social/revoke-grant', { botId: chief.id, grantId: bob.id, grantIds: bob.grantIds })
+  assert.equal(batch.ok, true)
+  listed = listed.filter(grant => grant.id === 'g-3')
+  for (let n = 0; n < 20; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'])
+  // The stale answer (still naming g-1 and g-2) lands after the batch: it must not bring Bob back.
+  release()
+  assert.equal((await loader).ok, true)
+  for (let n = 0; n < 20; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'], 'Bob stays revoked')
 })
 
 test('#140: respond Auto-send follows the accepted relationship, not the first roster home', async (t) => {

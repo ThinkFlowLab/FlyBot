@@ -1100,6 +1100,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return rooms
   }
 
+  // Per Bot: revokes in flight, and a count bumped by each revoke, so a grant sync can tell that a
+  // revoke ran while it listed (#383).
+  const revoking = new Map()
+  const revokeEpochs = new Map()
+  const grantEpoch = botId => revokeEpochs.get(botId) ?? 0
+  async function fencedRevoke(botId, run) {
+    revoking.set(botId, (revoking.get(botId) ?? 0) + 1)
+    revokeEpochs.set(botId, grantEpoch(botId) + 1)
+    try { return await run() } finally {
+      revokeEpochs.set(botId, grantEpoch(botId) + 1)
+      const left = (revoking.get(botId) ?? 1) - 1
+      if (left > 0) revoking.set(botId, left)
+      else revoking.delete(botId)
+    }
+  }
   // `only`: one Bot's grants (an open People with access refreshes just that Bot). `roster`: the
   // friends' homes to classify talk-through grants against, when they are newer than `remote`.
   // Resolves true only when every Bot's grants were listed and stored; a failure is warned, not thrown.
@@ -1114,7 +1129,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     await mapPool(bots, GRANT_CONCURRENCY, async (bot) => {
       const member = memberOf(bot.id)
       try {
+        const epoch = grantEpoch(bot.id)
         const listed = await api.listGrants({ botId: member.bot_id })
+        // A revoke of this Bot's grants started or ran while this list was in flight: the list may
+        // still name a grant it deletes, and writing it would bring the person back. Skip; the revoke's
+        // own refresh lists again once it is done (Codex P1 on #387).
+        if (revoking.get(bot.id) || grantEpoch(bot.id) !== epoch) return
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
         const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
           const view = grantPersonView(grant)
@@ -1720,11 +1740,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
       throw mapped
     }
-    let status = joined.status
-    if (joined.awaiting === 'your_owner_approval' && joined.approval_id) {
-      await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
-      status = 'pending_target'
-    }
     // Bot Social answers with `inviter` = the invited Bot itself (a member handle, @chief.bob.home) and
     // no separate `bot` field; older shapes name it in `bot`, `inviter.bot` or `offered_bot` and
     // keep `inviter` at the home (#342). Only a member-level inviter is the Bot shared with us.
@@ -1736,6 +1751,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // sharing that Bot back and the re-filter drops the shared Bot until the next refresh (#228).
     if (offeredHandle) rememberInbound(offeredHandle)
     if (joined.relationship_id) rememberJoined(joined.relationship_id)
+    // Recorded before the approval round trip below: if that answer is lost after Bot Social applied
+    // it, the relationship can still become active, and a retry answers relationship_exists without
+    // reaching this point again (Codex P2 on #387).
+    let status = joined.status
+    if (joined.awaiting === 'your_owner_approval' && joined.approval_id) {
+      await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
+      status = 'pending_target'
+    }
     if (offeredHandle) unhideDeclined([offeredHandle])
     const unhide = revealHiddenIfPresent(settings, offeredHandle ? [offeredHandle] : [])
     if (unhide !== settings) { settings = unhide; saveSettings() }
@@ -1853,21 +1876,23 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/revoke-grant', async ({ botId, grantId, grantIds, relationshipId, grantee } = {}) => {
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots')
-    // A merged People with access row (#383) revokes each of the person's grants in turn.
+    // A merged People with access row (#383) revokes each of the person's grants in turn. Every grant
+    // sync for this Bot waits out the whole batch (the 5-second Manage access loader's included), so a
+    // list taken between two deletes is never written back; the roster refreshes once after the last
+    // delete (Codex P1 on #387).
     const more = Array.isArray(grantIds) ? [...new Set(grantIds.filter(id => typeof id === 'string' && id && id !== grantId))] : []
-    if (more.length) {
-      const first = grantId ? [grantId] : []
+    const result = await fencedRevoke(bot.id, async () => {
+      if (!more.length) return revokeOne(bot, { grantId, relationshipId, grantee })
       let last
-      // One roster refresh after the whole batch: a refresh started between two deletes could sync a
-      // grant the next delete removes and write it back after the loop (Codex P1 on #387).
-      for (const id of [...first, ...more]) last = await revokeOne(bot, { grantId: id }, { refresh: false })
-      fetchedAt = 0
-      void remoteBots({ fresh: true }).catch(() => {})
+      for (const id of [...(grantId ? [grantId] : []), ...more]) last = await revokeOne(bot, { grantId: id })
       return last
-    }
-    return revokeOne(bot, { grantId, relationshipId, grantee })
+    })
+    fetchedAt = 0
+    void remoteBots({ fresh: true }).catch(() => {})
+    return result
   }))
-  async function revokeOne(bot, { grantId, relationshipId, grantee }, { refresh = true } = {}) {
+  // One grant's delete; the caller fences it and refreshes the roster once afterwards.
+  async function revokeOne(bot, { grantId, relationshipId, grantee }) {
     const current = flybot.grants?.of?.(bot.id) ?? []
     const target = current.find(grant =>
       (grantId && grant.id === grantId)
@@ -1884,10 +1909,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (typeof flybot.grants?.set === 'function') await flybot.grants.set(bot.id, next)
     const invited = memberOf(bot.id)?.handle
     void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
-    if (refresh) {
-      fetchedAt = 0
-      void remoteBots({ fresh: true }).catch(() => {})
-    }
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }
   }
   disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots), { read: true }))
