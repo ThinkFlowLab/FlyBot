@@ -429,3 +429,27 @@ test('#194: a face room title shows one time, the creation time, before and afte
   assert.equal(faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z', expiresAt: '2026-10-17T13:06:00.000Z' }), faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z' }))
   assert.notEqual(faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z', expiresAt: '2026-10-17T13:06:00.000Z' }), candidate)
 })
+
+test('a peer line with paragraphs survives being viewed twice (viewFaceRoom then renderFaceEvent, #302)', () => {
+  const text = "Hi from A's side 👋 I'm Chief.\n\nAnything you'd like us to work on together?"
+  const room = viewFaceRoom({
+    room_id: 'frm_1',
+    status: 'open',
+    events: [
+      { event_id: 'fev_199', event_cursor: 199, type: 'room.message', trust: 'peer_untrusted',
+        from: { handle: '@chief.a.home', display_name: 'Chief', owner_name: 'A' }, untrusted_content: { text } },
+      { event_id: 'fev_200', event_cursor: 200, type: 'room.message', trust: 'peer_untrusted',
+        from: { handle: '@chief.a.home', display_name: 'Chief', owner_name: 'A' }, untrusted_content: { text: 'line1\nline2\nline3' } },
+    ],
+  })
+  for (const attested of [true, false]) {
+    assert.equal(renderFaceEvent(room.events[0], { attested }).text, text)
+    assert.equal(renderFaceEvent(room.events[1], { attested }).text, 'line1\nline2\nline3')
+  }
+  // Viewing is idempotent, and plain multi-line strings are never cut.
+  assert.equal(viewFaceEvent(viewFaceEvent(room.events[0])).untrustedText, text)
+  assert.equal(faceUntrustedText('line1\nline2\nline3'), 'line1\nline2\nline3')
+  assert.equal(faceUntrustedText('a\n\nb'), 'a\n\nb')
+  // A really wrapped string is still unwrapped.
+  assert.equal(faceUntrustedText('<<<UNTRUSTED>>>\nline1\nline2\n<<<END>>>'), 'line1\nline2')
+})

@@ -61,11 +61,14 @@ export function fenceFaceText(name, text) {
   return `<untrusted-message from="${who}">\n${stripFaceMarkers(text)}\n</untrusted-message>`
 }
 
-const UNTRUSTED = /^[\s\S]*?\n([\s\S]*)\n[^\n]*$/
+// A wrapped string is `<marker>\n…\n<marker>`, each marker one `<…>` line. Only such a string is
+// unwrapped: plain text keeps every line, so a peer's paragraphs are never cut (#302).
+const UNTRUSTED = /^\s*<[^\n]*>[ \t]*\n([\s\S]*)\n[ \t]*<[^\n]*>\s*$/
 export function faceUntrustedText(value) {
   if (value && typeof value === 'object') return String(value.text ?? '')
   if (typeof value !== 'string') return String(value ?? '')
-  const inner = value.match(UNTRUSTED)?.[1] ?? value
+  const inner = value.match(UNTRUSTED)?.[1]
+  if (inner === undefined) return value
   try { return String(JSON.parse(inner)?.text ?? inner) } catch { return inner }
 }
 
@@ -411,6 +414,12 @@ export function cleanMentions(value) {
   return out
 }
 
+function viewedFaceText(event) {
+  const raw = event.untrusted_content ?? event.untrustedContent
+  if (raw === undefined && typeof event.untrustedText === 'string') return event.untrustedText
+  return faceUntrustedText(raw ?? event.untrustedText)
+}
+
 export function viewFaceEvent(event) {
   if (!event || typeof event !== 'object') return undefined
   const raw = String(event.type || event.event_type || '')
@@ -429,7 +438,8 @@ export function viewFaceEvent(event) {
     member,
     from,
     text: mapped === 'room.message' ? undefined : sanitizePlatformText(event.text, mapped, member, event.reason),
-    untrustedText: mapped === 'room.message' ? stripFaceMarkers(faceUntrustedText(event.untrusted_content ?? event.untrustedContent ?? event.untrustedText)) : undefined,
+    // A viewed event (renderFaceEvent views again) already holds the plain text: keep it as is (#302).
+    untrustedText: mapped === 'room.message' ? stripFaceMarkers(viewedFaceText(event)) : undefined,
     // Stamped by Bot Social (never read from the text): the owner typed this line themselves. A viewed
     // event is viewed again by renderFaceEvent, hence the camelCase form.
     ...(mapped === 'room.message' && (event.typed_by_owner === true || event.typedByOwner === true) ? { typedByOwner: true } : {}),
