@@ -854,7 +854,8 @@ window.__ModuleLoader__.load({
             shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
               h(FaceAvatar, { bot: look(m), size: 20 }))),
             extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
-          h('span', { className: 'fs-name' }, shownFaceTitle(room)),
+          // One line; the full title on hover when the narrow sidebar cuts it (#304).
+          h('span', { className: 'fs-name', title: shownFaceTitle(room) }, shownFaceTitle(room)),
           h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(room) }, faceChipLabel(room)),
           h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
             past

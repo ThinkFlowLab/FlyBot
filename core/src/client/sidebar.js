@@ -112,8 +112,9 @@ function isPastFaceRoom(room) {
   return status === 'candidate' && expires && Number.isFinite(Date.parse(expires)) && Date.parse(expires) <= Date.now()
 }
 
+// A face room's people mark. It is not a friend's Bot marker, so the row keeps one line (#304).
 function FaceMark() {
-  return h('span', { className: 'bt-row-remote', title: t('Face-to-face'), 'aria-label': t('Face-to-face') },
+  return h('span', { className: 'bt-row-remote bt-row-face', title: t('Face-to-face'), 'aria-label': t('Face-to-face') },
     h('svg', { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
       h('circle', { cx: 9, cy: 8, r: 3 }), h('circle', { cx: 16, cy: 9, r: 2.5 }),
       h('path', { d: 'M4 18a5 5 0 0 1 10 0M14 18a4 4 0 0 1 6 0' })))
@@ -138,6 +139,8 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const label = [title, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : ''].filter(Boolean).join(', ')
   return h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
+    // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
+    title,
     'data-room-id': id, onClick: () => actions.openSession(id),
     onContextMenu: (event) => { event.preventDefault(); actions.openMenu({ kind: 'room', id, x: event.clientX, y: event.clientY }) },
   },

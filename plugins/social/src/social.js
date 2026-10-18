@@ -648,10 +648,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const member = memberOf(bot?.id)
     if (!member?.bot_id || typeof api.updateBotProfile !== 'function') return
     const patch = lookToServer(bot)
-    const fingerprint = lookFingerprint(bot)
-    if (settings.lookSynced?.[bot.id] === fingerprint) return
+    // The record names the Bot Social identity it was sent to: a room-only identity is released after
+    // its last face room and the next room registers a new one, which has no look until it is sent
+    // again (#182). A record from before this (look only) sends once more.
+    const fingerprint = `${member.bot_id}|${lookFingerprint(bot)}`
+    const synced = settings.lookSynced?.[bot.id]
+    if (synced === fingerprint) return
     const empty = !('avatar' in patch) && !('color' in patch)
-    if (empty && !settings.lookSynced?.[bot.id]) return
+    // Nothing to clear on an identity that never got a look (an old record is taken as this identity's).
+    const sentHere = typeof synced === 'string' && (synced.startsWith(`${member.bot_id}|`) || synced.startsWith('{'))
+    if (empty && !sentHere) return
     const body = empty ? { avatar: null, color: null } : patch
     try {
       const result = await api.updateBotProfile({ botId: member.bot_id, ...body })

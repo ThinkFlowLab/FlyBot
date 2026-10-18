@@ -1,0 +1,1 @@
+A Bot that joins a second face-to-face room gets a fresh room-only Bot Social identity, and that identity now gets the Bot's colour and avatar too, so other homes no longer draw it with a generated look. ([#182](https://github.com/ThinkFlowLab/FlyBot/issues/182))

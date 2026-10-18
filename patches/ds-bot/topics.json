@@ -30,6 +30,7 @@
     "src/client/connectors.js",
     "test/connectors.test.js",
     "test/work-dir.test.js",
+    "src/client/schedules.js",
     "README.md"
   ],
   "0002-flybot-api-host": [

@@ -2630,6 +2630,8 @@ test('Face-to-face room card titles include people and a distinguisher, not Face
   }))
   const title = tree.find(n => n.props.className === 'fs-name')
   assert.equal(String(title?.children?.join?.('') ?? ''), 'Face-to-face · Alice, Bob · 482913')
+  // The row stays on one line; the full title is the hover text when the sidebar cuts it (#304).
+  assert.equal(title.props.title, 'Face-to-face · Alice, Bob · 482913')
   assert.equal(tree.some(n => String(n.children?.join?.('') ?? n.children) === 'Face-to-face room'), false)
 })
 
@@ -5195,6 +5197,49 @@ test('#137: owner look is sent with update_bot_profile; old servers are skipped'
   assert.equal(sent.at(-1).args.avatar, 'whale')
   assert.equal(sent.at(-1).args.color, '#4d6bfe')
   assert.ok(JSON.parse(readFileSync(settingsPath, 'utf8')).lookSynced?.a)
+})
+
+test('#182: a new Bot Social identity for the same Bot gets its look again', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const painted = await call('update-bot', { id: 'a', color: 'deepseek', avatar: { shape: 'whale' } })
+  assert.equal(painted.ok, true, painted.error?.message)
+  const server = mockServer()
+  // The answer's shape is Bot Social's: Birfy/bot-social 59ed07a, src/platform.ts `updateBotProfile` returns
+  // `publicBot(bot, true)` = { bot_id, handle, display_name, owner_display_name, owner_verified } plus
+  // src/bot-look.ts `lookOf` = { avatar, avatar_kind, color, avatar_updated_at }. FlyBot reads none of it
+  // beyond "the call succeeded".
+  server.tools.update_bot_profile = (a) => ({
+    bot_id: a.bot_id, handle: '@chief.danyang.home', display_name: 'Chief', owner_display_name: 'Danyang', owner_verified: true,
+    avatar: a.avatar ?? null, avatar_kind: a.avatar ? 'preset' : null, color: a.color ?? null, avatar_updated_at: '2026-10-19T00:00:00.000Z',
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  const fields = ctx.flybot.scope('social').fields
+  const first = fields.get('a', 'member')
+  assert.ok(first?.bot_id)
+  const sentTo = () => server.calls.filter(c => c.name === 'update_bot_profile').map(c => c.args.bot_id)
+  assert.ok(sentTo().includes(first.bot_id))
+  // Same look, same identity: nothing more is sent.
+  const before = sentTo().length
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.equal(sentTo().length, before)
+  // The identity was released and a new one registered (room-only, next face room): the look goes to it.
+  fields.set('a', 'member', { bot_id: 'bot_new_identity', handle: first.handle, roomOnly: true })
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  const last = server.calls.filter(c => c.name === 'update_bot_profile').at(-1)
+  assert.equal(last.args.bot_id, 'bot_new_identity')
+  assert.equal(last.args.avatar, 'whale')
+  assert.equal(last.args.color, '#4d6bfe')
 })
 
 test('#139: decline_bot_grant on Remove; grant_not_found is already gone', async (t) => {
