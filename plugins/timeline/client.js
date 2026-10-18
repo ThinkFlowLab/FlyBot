@@ -33,13 +33,20 @@ window.__ModuleLoader__.load({
     }
 
     // timers: { setTimeout, clearTimeout } and visible(): injected by the tests.
-    function createStore(flybot, { timers = globalThis, visible = () => globalThis.document?.visibilityState !== 'hidden', windowMs = 900_000 } = {}) {
+    // onVisible(fn) -> stop: calls fn when the page becomes visible again (injected by the tests).
+    const watchVisible = fn => {
+      const doc = globalThis.document
+      doc?.addEventListener?.('visibilitychange', fn)
+      return () => doc?.removeEventListener?.('visibilitychange', fn)
+    }
+    function createStore(flybot, { timers = globalThis, visible = () => globalThis.document?.visibilityState !== 'hidden', onVisible = watchVisible, windowMs = 900_000 } = {}) {
       let state = { status: 'idle', window: undefined, error: undefined, updatedAt: undefined, windowMs, to: undefined, failures: 0 }
       let holders = 0
       let timer
       let inFlight = false
       let disposed = false
       let generation = 0
+      let stopWatching
       const listeners = new Set()
       const emit = () => { for (const fn of [...listeners]) fn(state) }
       const set = patch => { state = { ...state, ...patch }; emit() }
@@ -53,7 +60,9 @@ window.__ModuleLoader__.load({
       }
       async function poll() {
         if (disposed || holders === 0) return
-        if (!visible()) { schedule(POLL_MS); return } // a hidden page does not poll
+        // A hidden page does not keep polling, but it still loads once: a panel opened in a background
+        // tab would otherwise say "Loading…" until the tab is looked at (#259).
+        if (!visible() && state.window !== undefined) { schedule(POLL_MS); return }
         if (inFlight) return
         inFlight = true
         const mine = generation
@@ -86,12 +95,17 @@ window.__ModuleLoader__.load({
         open() {
           let closed = false
           holders += 1
-          if (holders === 1) { set({ status: state.window === undefined ? 'loading' : state.status }); void poll() }
+          if (holders === 1) {
+            set({ status: state.window === undefined ? 'loading' : state.status })
+            void poll()
+            // Coming back to the tab shows fresh data now, not after the next timer.
+            stopWatching = onVisible(() => { if (holders > 0 && visible() && !inFlight) restart() })
+          }
           return () => {
             if (closed) return
             closed = true
             holders -= 1
-            if (holders === 0) { timers.clearTimeout(timer); timer = undefined }
+            if (holders === 0) { timers.clearTimeout(timer); timer = undefined; stopWatching?.(); stopWatching = undefined }
           }
         },
         // Looks back: `to` is an epoch ms, or undefined for live.
@@ -102,7 +116,7 @@ window.__ModuleLoader__.load({
           restart()
         },
         refresh: restart,
-        dispose() { disposed = true; timers.clearTimeout(timer); listeners.clear() },
+        dispose() { disposed = true; timers.clearTimeout(timer); stopWatching?.(); stopWatching = undefined; listeners.clear() },
       }
     }
 

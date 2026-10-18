@@ -24,10 +24,11 @@ function rig({ visible = true } = {}) {
   }
   const flybot = { call: (endpoint, body) => new Promise((resolve, reject) => { calls.push([endpoint, body]); pending.push({ resolve, reject }) }) }
   const state = { visible }
-  const store = client().createStore(flybot, { timers, visible: () => state.visible })
+  const watchers = new Set()
+  const store = client().createStore(flybot, { timers, visible: () => state.visible, onVisible: fn => { watchers.add(fn); return () => watchers.delete(fn) } })
   const live = () => scheduled.filter(timer => !timer.cleared)
   const tick = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
-  return { store, calls, pending, scheduled, live, state, tick }
+  return { store, calls, pending, scheduled, live, state, tick, watchers }
 }
 
 test('the loader entry registers @flybot/timeline with the flybot service injected', () => {
@@ -79,16 +80,35 @@ test('one request in flight at a time, and two panels share one poll', async () 
   assert.equal(live().length, 0)
 })
 
-test('a hidden page does not poll', async () => {
-  const { store, calls, live, state, tick } = rig({ visible: false })
+test('a hidden page loads once, then does not poll; showing it again refreshes at once (#259)', async () => {
+  const { store, calls, pending, live, state, tick, watchers } = rig({ visible: false })
   store.open()
   await tick()
-  assert.equal(calls.length, 0)
+  // Never "Loading…" forever in a background tab: the first fetch does not wait for visibility.
+  assert.equal(calls.length, 1)
+  pending[0].resolve(good({ now: 'first' }))
+  await tick()
+  assert.equal(store.state.status, 'ok')
   assert.equal(live().length, 1)
-  state.visible = true
+  // Still hidden: the next tick polls nothing.
   live()[0].fn()
   await tick()
   assert.equal(calls.length, 1)
+  // Visible again: one fetch right away.
+  state.visible = true
+  assert.equal(watchers.size, 1)
+  for (const fn of [...watchers]) fn()
+  await tick()
+  assert.equal(calls.length, 2)
+})
+
+test('closing the last panel stops watching visibility', async () => {
+  const { store, watchers, tick } = rig()
+  const close = store.open()
+  await tick()
+  assert.equal(watchers.size, 1)
+  close()
+  assert.equal(watchers.size, 0)
 })
 
 test('an error backs off, keeps the last good window, and recovers', async () => {
