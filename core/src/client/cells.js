@@ -657,6 +657,19 @@ export function openingTurn(turns, firstTurns, hiddenTurns) {
 }
 // Began after the user last left the conversation and before this visit opened it.
 export const unseenSince = (visit, time) => typeof visit?.seen === 'number' && time > visit.seen && time <= visit.entered
+// The chat moved on during this visit: a turn the chat shows began after the visit opened (a new
+// line from a friend, the user's own message). Hidden exchange turns do not count (#275).
+export function movedOnSince(visit, turns, hiddenTurns) {
+  if (typeof visit?.entered !== 'number') return false
+  for (const key in turns ?? {}) {
+    if (hiddenTurns?.includes(Number(key))) continue
+    if (turns[key].first !== undefined && turns[key].first > visit.entered) return true
+  }
+  return false
+}
+// The unread divider has been on screen and the chat moved on, so nothing from before this visit
+// is new any more: `seen` catches up with `entered` and every divider of the visit goes (#275).
+export const settledVisit = visit => (typeof visit?.seen === 'number' && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit)
 
 // An entry in DSH's own turn tail, after what other plugins put there (the cards of
 // the files a turn delivered). The tail sits right before the next turn's first row,

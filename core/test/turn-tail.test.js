@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 
 const bundle = await build({
@@ -28,7 +29,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { AssistantCell, TurnTailCell } = module.exports
+const { AssistantCell, TurnTailCell, TurnProcessCell, movedOnSince, settledVisit, unseenSince } = module.exports
 
 // Renders the named components of an element tree, leaving the rest as elements.
 const expand = (node, names) => {
@@ -115,4 +116,60 @@ test('a reply to a line the friend typed themselves is drawn as the person, not 
   const other = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 9: 'Bob' } } }) }
   assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
   assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
+})
+
+// #275: a friend's line in my Bot's own chat came while I was away. The NEW divider marks it; once
+// the divider has been on screen and the chat moves on (the friend's next line, my own message),
+// the visit settles and every divider of the visit goes, as on leaving and coming back.
+const dividers = node => find(expand(node, ['NewDivider']), item => item.props?.className === 'bt-new-sep').length
+const tailOf = (clock, visit, turn = finished) => TurnTailCell({
+  turn, sessionId: 'b', useTurnClock: select => select(clock), useUi: select => select({ visits: { b: visit } }), actions: { noteTurnTime() {} },
+})
+const processOf = (clock, visit, turn = 4) => TurnProcessCell({
+  node: { location: { turn: { turn, start: { time: clock.b[turn].first } } }, data: { turn } },
+  sessionId: 'b', useRoster: select => select(roster), useUi: select => select({ visits: { b: visit } }), useTurnClock: select => select(clock), actions: { noteTurnTime() {} },
+})
+
+test('#275: a friend\'s line that came while away has the NEW divider; the settled visit has none', () => {
+  // Turn 3 ended before I left (1_500); the friend's line opened turn 4 at 3_000; I came back at 5_000.
+  const clock = { b: { 3: { first: 1_000, end: 2_000 }, 4: { first: 3_000, end: 3_500 } } }
+  const visit = { seen: 2_500, entered: 5_000 }
+  assert.equal(dividers(tailOf(clock, visit)), 1, 'divider above the line')
+  assert.equal(unseenSince(visit, 3_000), true)
+  const settled = settledVisit(visit)
+  assert.deepEqual([settled.seen, settled.entered], [5_000, 5_000])
+  assert.equal(dividers(tailOf(clock, settled)), 0)
+  assert.equal(unseenSince(settled, 3_000), false)
+})
+
+test('#275: the reply to a line I saw begin, finished while away, loses its divider when the visit settles', () => {
+  const clock = { b: { 4: { first: 2_000, end: 3_000 } } }
+  const visit = { seen: 2_500, entered: 5_000 }
+  assert.equal(dividers(processOf(clock, visit)), 1)
+  assert.equal(dividers(processOf(clock, settledVisit(visit))), 0)
+})
+
+test('#275: only a shown turn that began after the visit opened moves the chat on', () => {
+  const visit = { seen: 2_500, entered: 5_000 }
+  assert.equal(movedOnSince(visit, { 3: { first: 1_000, end: 2_000 }, 4: { first: 3_000 } }), false, 'only earlier turns: not yet')
+  assert.equal(movedOnSince(visit, { 4: { first: 3_000 }, 5: { end: 6_000 } }), false, 'a turn with no start drawn yet')
+  assert.equal(movedOnSince(visit, { 4: { first: 3_000 }, 5: { first: 6_000 } }), true, 'the friend\'s next line')
+  assert.equal(movedOnSince(visit, { 5: { first: 6_000 } }, [5]), false, 'a hidden exchange turn is not something I saw')
+  assert.equal(movedOnSince(undefined, { 5: { first: 6_000 } }), false, 'no visit')
+})
+
+test('#275: a visit with nothing unread, or no record, is left as it is', () => {
+  const caught = { seen: 5_000, entered: 5_000 }
+  assert.equal(settledVisit(caught), caught)
+  const none = { seen: null, entered: 5_000 }
+  assert.equal(settledVisit(none), none)
+  assert.equal(settledVisit(undefined), undefined)
+})
+
+test('#275: the new-message pills settle the visit once the divider was seen and the chat moved on', () => {
+  const header = readFileSync(new URL('../src/client/header.js', import.meta.url), 'utf8')
+  assert.match(header, /movedOnSince\(visit, state\[sessionId\], hiddenTurns\)/)
+  assert.match(header, /if \(above\.seen && movedOn\) actions\?\.settleVisit\?\.\(sessionId\)/)
+  const index = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
+  assert.match(index, /settleVisit: id => ui\.set/)
 })

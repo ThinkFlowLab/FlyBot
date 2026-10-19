@@ -4,7 +4,7 @@ import { currentPart, latestMemoryChange } from './text.js'
 import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
 import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { ActivityIndicator } from './activity-row.js'
-import { clockLabel, openingTurn, unseenSince } from './cells.js'
+import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { t } from './i18n.js'
 import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 
@@ -154,7 +154,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     h(MemoryNotice, { shown: memoryNotice }),
     h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow))),
     h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),
-    h(NewMessagePills, { key: sessionId, sessionId, useSessions, useUi, useTurnClock }),
+    h(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
     h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }))
 }
 
@@ -209,7 +209,7 @@ function useTranscriptView() {
   return view
 }
 
-function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+function NewMessagePills({ sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }) {
   const replies = useSessions((list) => {
     const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline
     return Array.isArray(outline) ? outline.reduce((count, entry) => count + (entry.response ? 1 : 0), 0) : 0
@@ -229,6 +229,10 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
   const [above, setAbove] = useState({ seen: false, dismissed: false })
   useEffect(() => { setRelease({ base: unpinned ? replies : null, dismissed: false }) }, [unpinned])
   useEffect(() => { if (view?.divider === 'in-view') setAbove(state => (state.seen ? state : { ...state, seen: true })) }, [view?.divider])
+  // Once the divider has been on screen, the next turn the chat shows (a friend's new line, the
+  // user's own message) settles the visit and the divider goes, in every chat (#275).
+  const movedOn = useTurnClock(state => movedOnSince(visit, state[sessionId], hiddenTurns))
+  useEffect(() => { if (above.seen && movedOn) actions?.settleVisit?.(sessionId) }, [above.seen, movedOn, sessionId])
   const fresh = release.base === null ? 0 : replies - release.base
   const showDown = unpinned && fresh > 0 && !release.dismissed
   const showUp = view?.divider === 'above' && !above.seen && !above.dismissed

@@ -16,7 +16,7 @@ import { watchFaceMenu } from './face-at-filter.js'
 import { VOICE_BUNDLE } from './speech.js'
 import { sameVersion } from './dsh-offer.js'
 import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
-import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell } from './cells.js'
+import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell, settledVisit } from './cells.js'
 import { Overlays } from './overlays.js'
 import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
 import { BROWSER_CSS } from './browser-pane.js'
@@ -528,6 +528,12 @@ export function apply(ctx) {
       const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null)
       ui.set(state => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }))
     },
+    // The NEW divider was seen and the chat moved on: it goes, as it would on leaving (#275).
+    settleVisit: id => ui.set((state) => {
+      const visit = state.visits?.[id]
+      const next = settledVisit(visit)
+      return next === visit ? state : { ...state, visits: { ...state.visits, [id]: next } }
+    }),
     endVisit: (id) => {
       leaveVisits([id])
       ui.set((state) => {

@@ -5691,6 +5691,15 @@ function openingTurn(turns, firstTurns, hiddenTurns) {
   return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
 }
 var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
+function movedOnSince(visit, turns, hiddenTurns) {
+  if (typeof visit?.entered !== "number") return false;
+  for (const key in turns ?? {}) {
+    if (hiddenTurns?.includes(Number(key))) continue;
+    if (turns[key].first !== void 0 && turns[key].first > visit.entered) return true;
+  }
+  return false;
+}
+var settledVisit = (visit) => typeof visit?.seen === "number" && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit;
 function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
   const turn = location2.turn;
   const time = location2.end.time;
@@ -7230,7 +7239,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
       (0, import_react11.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react11.createElement)(GoArrow))
     ),
     (0, import_react11.createElement)("span", { className: "bt-sr", role: "status" }, memoryNotice ? t("Memory updated") : ""),
-    (0, import_react11.createElement)(NewMessagePills, { key: sessionId, sessionId, useSessions, useUi, useTurnClock }),
+    (0, import_react11.createElement)(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
     (0, import_react11.createElement)(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions })
   );
 }
@@ -7285,7 +7294,7 @@ function useTranscriptView() {
   }, []);
   return view;
 }
-function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+function NewMessagePills({ sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }) {
   const replies = useSessions((list) => {
     const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline;
     return Array.isArray(outline) ? outline.reduce((count, entry) => count + (entry.response ? 1 : 0), 0) : 0;
@@ -7309,6 +7318,10 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
   (0, import_react11.useEffect)(() => {
     if (view?.divider === "in-view") setAbove((state) => state.seen ? state : { ...state, seen: true });
   }, [view?.divider]);
+  const movedOn = useTurnClock((state) => movedOnSince(visit, state[sessionId], hiddenTurns));
+  (0, import_react11.useEffect)(() => {
+    if (above.seen && movedOn) actions?.settleVisit?.(sessionId);
+  }, [above.seen, movedOn, sessionId]);
   const fresh = release.base === null ? 0 : replies - release.base;
   const showDown = unpinned && fresh > 0 && !release.dismissed;
   const showUp = view?.divider === "above" && !above.seen && !above.dismissed;
@@ -16330,6 +16343,12 @@ function apply(ctx) {
       const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null);
       ui2.set((state) => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }));
     },
+    // The NEW divider was seen and the chat moved on: it goes, as it would on leaving (#275).
+    settleVisit: (id) => ui2.set((state) => {
+      const visit = state.visits?.[id];
+      const next = settledVisit(visit);
+      return next === visit ? state : { ...state, visits: { ...state.visits, [id]: next } };
+    }),
     endVisit: (id) => {
       leaveVisits([id]);
       ui2.set((state) => {
