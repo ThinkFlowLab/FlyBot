@@ -52,6 +52,56 @@ npm run verify
 
 If `topics.json` conflicts, keep both sides' entries (one patch per edited upstream file; a new file needs none).
 
+## Agent operating model
+
+Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled routines run on the Grok Bot box, each with one job. A routine does only its own job.
+
+### Routines
+
+| Routine | Schedule | Job |
+| --- | --- | --- |
+| Product self-test | every 12 h | Uses FlyBot and Bot Social as a user and **only files issues**: no PRs, no pushed branches, no code changes. Each issue states the expected behavior and the change scope. Search for duplicates first. |
+| Repo maintenance | every 2 h, FlyBot and Bot Social separately | The **only** routine that opens fix PRs. Each run: review open PRs against the design rules; triage every open issue (fixed, duplicate or obsolete: close with a comment; still valid: readiness check below); label every open issue and PR; develop only `agent-ready` issues; merge ready PRs through the merge queue within the gates below. Never deploys. Never edits `CHANGELOG.md` or a version number. |
+| Daily release | about 02:00 Asia/Shanghai | Publishes a real semver GitHub release (tag = `core/package.json` version, patch bump per day, skipped when there are no changelog fragments) through a mechanical release PR. It owns `CHANGELOG.md` and the version. The files and the approval are in [Standing approval](#standing-approval-mechanical-release-prs). |
+
+### Issue labels
+
+- **Type** (exactly one): `bug`, `enhancement`, `documentation`, `accessibility`.
+- **Area** (one or more): `area:social`, `area:ui`, `area:automation`, `area:release`, `area:security`, `area:docs`.
+- **Source:** `self-test`.
+- **State:** `needs-info` (spec unclear), `needs-human` (needs a design decision from the owner; the comment says what), `awaiting-approval` (PR is green and waits for T2/T3 approval or an independent review PASS), `agent-ready`, `agent-working`, `agent-pr`, `hold`.
+- **Controller-managed, never set by hand:** `risk:T0` to `risk:T3`, `agent-task`, `status:done`.
+- `hold` means automation leaves the item alone.
+
+### Triage: when an issue is `agent-ready`
+
+Label `agent-ready`, with a triage comment, only when all three hold:
+
+1. Every design conflict is resolved (owner design rules, recorded owner decisions, RFC/decision issues, other open issues and PRs), with no open question for the owner.
+2. The expected behavior and the change scope are clear.
+3. It is not `hold`, not a tracking/umbrella issue, and not team-via-groups work (that waits for the owner's go-ahead).
+
+Otherwise label `needs-human` or `needs-info` and name the blocking conflict or question in a comment. Agents develop **only** `agent-ready` issues.
+
+### Claim, PR, release of a claim
+
+- Before work: skip the issue if someone else is assigned. Otherwise assign it to `Birfy`, add `agent-working`, and post a claim comment that names the branch.
+- Stopping without a PR: unassign, remove `agent-working`, and comment why.
+- The PR says `Fixes #N`, is assigned to `Birfy` and labeled `agent-pr`.
+
+### Gates
+
+- A T2 or T3 PR needs an independent PASS at the head commit from a reviewer in [`.github/agent/review-policy.json`](.github/agent/review-policy.json) (the author never counts) **and** maintainer approval. Any new commit voids a PASS.
+- Agents never bypass a gate and never admin-merge. The merge queue squashes the PR title and body, so `Docs-not-needed:` lines go in the PR **body**. Run `verify` with `TZ=UTC`.
+
+### Hard rules for agents
+
+1. The self-test routine files issues only; the maintenance routine opens PRs; the release routine owns `CHANGELOG.md` and the version.
+2. No deploy of production Bot Social, and no change to the owner's local instances, without the owner's explicit yes.
+3. An approval is given only through an explicit UI control, never by a typed chat reply (#349).
+4. Connector tools are on by default for the owner's Bots and off by default for other people's, until the owner opts in (#359).
+5. Bot Social has no keyword commitment scan.
+
 ## What this project is
 
 FlyBot is a team of long-lived Bots, built on DeepSeek Harness (DSH). It has two parts:
