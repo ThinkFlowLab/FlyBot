@@ -6669,7 +6669,7 @@ test('Settings → Bot Social page: a checked server shows the identity warning 
     assert.match(text(warning), /new identity/)
     assert.match(text(warning), /backup on this computer and is never deleted/)
     assert.match(text(nodeBy(nodes, 'server-checked')), /Bot Social 0\.2\.0 · b\.test/)
-    assert.match(text(nodeBy(nodes, 'server-checked')), /presence, mentions/)
+    assert.match(text(nodeBy(nodes, 'server-checked')), /Supports: online status, @mentions/)
     assert.equal(text(nodeBy(nodes, 'server-confirm')), 'Switch to this server')
     assert.equal(nodeBy(nodes, 'server-check'), undefined)
   }
