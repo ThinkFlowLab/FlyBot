@@ -141,7 +141,7 @@ pins the list. The authority for the list is Bot Social's README and `docs/FACE_
 
 ### One name for a friend's Bot (#384, #305)
 
-`friendLabel` (thinking line, card names), `faceMemberLabel` (face-room join/leave lines and member labels), the waiting tiles (`FaceTile` title) and the clash label in a face room's thinking line all read `<Bot> (<owner>)`, the same as the core's `remoteBotTitle`; a friend's Chief is `Chief (Bob)`. `social/friends` adds each Bot's `owner` / `homeName` (additive), and the composer `@` rows from this plugin (`friendRows`) sit in the core's **Bots** section with that name and the handle as description, and skip handles the core already lists from `roster.remoteBots` (no separate Friends' Bots section).
+`friendLabel` (thinking line, card names), `faceMemberLabel` (face-room join/leave lines and member labels), the waiting tiles (`FaceTile` title) and a face room's thinking line (every remote Bot with a known owner, not only on a name clash) all read `<Bot> (<owner>)`, the same as the core's `remoteBotTitle`; a friend's Chief is `Chief (Bob)`. `social/friends` adds each Bot's `owner` / `homeName` (additive), and the composer `@` rows from this plugin (`friendRows`) sit in the core's **Bots** section with that name and the handle as description, and skip handles the core already lists from `roster.remoteBots` (no separate Friends' Bots section).
 
 ### Past rooms, unique titles, poll, and + (#129–#133)
 

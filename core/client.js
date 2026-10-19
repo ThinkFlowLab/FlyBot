@@ -1353,7 +1353,7 @@ function pickerBotLabel(bot) {
 }
 function ownerNameOf(record) {
   if (!record) return "";
-  return cleanPeerName(record.ownerName || record.homeName || record.owner || record.ownerHome || record.home || ownerFromHandle(record.handle), "");
+  return cleanPeerName(record.ownerName || record.owner || record.homeName || record.ownerHome || record.home || ownerFromHandle(record.handle), "");
 }
 function isChiefRecord(record) {
   if (!record) return false;
@@ -6100,11 +6100,11 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
   };
   const pinned = bot.pinned === true && !tile;
-  const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
-  const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name;
-  const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown;
-  const owner = remoteRecord ? ownerNameOf(remoteRecord) || cleanPeerName(bot.remote.handle) : "";
-  const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : "");
+  const remoteRecord2 = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
+  const shown = remoteRecord2 ? remoteBotTitle(remoteRecord2) : bot.name;
+  const rowName = remoteRecord2 ? cleanPeerName(bot.name, shown) : shown;
+  const owner = remoteRecord2 ? ownerNameOf(remoteRecord2) || cleanPeerName(bot.remote.handle) : "";
+  const secondLine = awayLine || preview || (remoteRecord2 ? t("Friend's Bot") : "");
   const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
     return (0, import_react9.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react9.createElement)(
@@ -6133,7 +6133,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
       "data-bot-id": id,
-      title: remoteRecord ? shown : wide ? void 0 : bot.name,
+      title: remoteRecord2 ? shown : wide ? void 0 : bot.name,
       onClick: () => actions.openSession(id),
       onContextMenu
     },
@@ -7405,10 +7405,18 @@ function mentionRows(roster, sessionId, query = "") {
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
     rows.push({ room: here.room, text: `@${everyone} ` });
   }
-  if (!face) rows.push(...remoteMentionRows(roster, query));
-  return rows;
+  if (face) return rows;
+  const seatHandles = new Set(bots.filter((bot) => bot.remote).map((bot) => normHandle(remoteRecord(bot)?.handle)).filter(Boolean));
+  if (here.room) return [...rows, ...remoteMentionRows(roster, query).filter((row) => !seatHandles.has(normHandle(row.remote.handle)))];
+  const remoteHandles = new Set(remoteMentionRows(roster, "").map((row) => normHandle(row.remote.handle)));
+  return [
+    ...rows.filter((row) => !(row.bot && remoteHandles.has(normHandle(remoteRecord(row.bot)?.handle)))),
+    ...remoteMentionRows(roster, query)
+  ];
 }
 var isFaceRoom = (room2) => room2?.origin === "face-to-face";
+var normHandle = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
+var remoteRecord = (bot) => bot?.remote ? bot.remote === true ? bot : bot.remote : null;
 var myOwnerName = (roster, live, bot) => {
   const seat = live.find((p) => !p.remote && p.kind !== "human" && (p.id === bot.id || bot.handle && p.handle === bot.handle));
   return cleanPeerName(seat?.ownerName || roster.self?.displayName, "");
@@ -7459,10 +7467,10 @@ function atSources({ roster, sessions, launched, iconFor }) {
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
         // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
-        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
+        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
         ...row.bot?.role && !face ? { description: row.bot.role } : {},
         ...row.remote ? { description: row.remote.handle } : {},
-        ...row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {},
+        ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
         // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
         ...row.room ? { description: face ? t("Every Bot in this room") : t("{count} members", { count: row.room.members.length }) } : {},
         icon: iconFor(row),

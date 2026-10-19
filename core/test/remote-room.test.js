@@ -473,7 +473,8 @@ test('@ menu in a room lists humans, Chiefs and published remotes', () => {
   assert.ok(names.includes('Chief A'))
   assert.ok(names.includes('Alice'))
   assert.ok(names.some(name => String(name).includes('Coder')))
-  assert.ok(rows.some(row => row.remote?.handle === '@coder.bob.home'))
+  // Seated and published: offered once, by its seat (#384).
+  assert.equal(rows.filter(row => (row.remote ?? row.bot?.remote)?.handle === '@coder.bob.home').length, 1)
 })
 
 function startChannel(t, team) {

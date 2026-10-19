@@ -5179,6 +5179,9 @@ test('#297: a friend\'s Bot thinking shows as one quiet line above the composer;
     { remote: true, handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob' },
   ] })
   assert.equal(line(items, { room: room('open') }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief (Carol) is thinking…', 'two Bots with one name keep their owner')
+  // A unique name still carries its owner: the one name Members and the @ menu use (#384).
+  const solo = { ...room('open'), participants: [{ remote: false, displayName: 'Chief' }, { remote: true, handle: '@chief.carol.home', displayName: 'Chief', ownerName: 'Carol' }] }
+  assert.equal(line(items, { room: solo }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief (Carol) is thinking…')
   assert.equal(line(items, { room: room('left') }), undefined)
   assert.equal(line(items, { room: room('candidate') }), undefined)
   assert.equal(line(items, { room: { ...room('open'), face: { roomId: 'frm_2', status: 'open' } } }), undefined, 'another room\'s Bots never show here')

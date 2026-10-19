@@ -562,7 +562,7 @@ diff --git a/client.js b/client.js
 +}
 +function ownerNameOf(record) {
 +  if (!record) return "";
-+  return cleanPeerName(record.ownerName || record.homeName || record.owner || record.ownerHome || record.home || ownerFromHandle(record.handle), "");
++  return cleanPeerName(record.ownerName || record.owner || record.homeName || record.ownerHome || record.home || ownerFromHandle(record.handle), "");
 +}
 +function isChiefRecord(record) {
 +  if (!record) return false;
@@ -3615,8 +3615,7 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -3629,7 +3628,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -3963,11 +3963,11 @@ diff --git a/client.js b/client.js
    };
    const pinned = bot.pinned === true && !tile;
 -  const label = [bot.name, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", approval ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
-+  const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
-+  const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name;
-+  const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown;
-+  const owner = remoteRecord ? ownerNameOf(remoteRecord) || cleanPeerName(bot.remote.handle) : "";
-+  const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : "");
++  const remoteRecord2 = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
++  const shown = remoteRecord2 ? remoteBotTitle(remoteRecord2) : bot.name;
++  const rowName = remoteRecord2 ? cleanPeerName(bot.name, shown) : shown;
++  const owner = remoteRecord2 ? ownerNameOf(remoteRecord2) || cleanPeerName(bot.remote.handle) : "";
++  const secondLine = awayLine || preview || (remoteRecord2 ? t("Friend's Bot") : "");
 +  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
    if (tile && wide) {
 -    return (0, import_react8.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react8.createElement)(
@@ -3998,7 +3998,7 @@ diff --git a/client.js b/client.js
        "aria-current": active ? "page" : void 0,
        "data-bot-id": id,
 -      title: wide ? void 0 : bot.name,
-+      title: remoteRecord ? shown : wide ? void 0 : bot.name,
++      title: remoteRecord2 ? shown : wide ? void 0 : bot.name,
        onClick: () => actions.openSession(id),
        onContextMenu
      },
@@ -4891,12 +4891,14 @@ diff --git a/client.js b/client.js
    );
    const toLatest = () => {
      const scroller = document.querySelector("[data-conversation-scroll]");
-@@ -5704,8 +5704,8 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+@@ -5703,9 +5703,9 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+     else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
    };
    const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
-   return (0, import_react_dom4.createPortal)(
+-  return (0, import_react_dom4.createPortal)(
 -    (0, import_react9.createElement)(
 -      import_react9.Fragment,
++  return (0, import_react_dom4.createPortal)(
 +    (0, import_react10.createElement)(
 +      import_react10.Fragment,
        null,
@@ -5057,7 +5059,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -5922,15 +5922,49 @@ var conversationOf = (roster, sessionId) => {
+@@ -5922,15 +5922,57 @@ var conversationOf = (roster, sessionId) => {
  function mentionRows(roster, sessionId, query = "") {
    const here = conversationOf(roster, sessionId);
    if (here === null) return null;
@@ -5084,10 +5086,19 @@ diff --git a/client.js b/client.js
    if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
      rows.push({ room: here.room, text: `@${everyone} ` });
    }
-+  if (!face) rows.push(...remoteMentionRows(roster, query));
-   return rows;
+-  return rows;
++  if (face) return rows;
++  const seatHandles = new Set(bots.filter((bot) => bot.remote).map((bot) => normHandle(remoteRecord(bot)?.handle)).filter(Boolean));
++  if (here.room) return [...rows, ...remoteMentionRows(roster, query).filter((row) => !seatHandles.has(normHandle(row.remote.handle)))];
++  const remoteHandles = new Set(remoteMentionRows(roster, "").map((row) => normHandle(row.remote.handle)));
++  return [
++    ...rows.filter((row) => !(row.bot && remoteHandles.has(normHandle(remoteRecord(row.bot)?.handle)))),
++    ...remoteMentionRows(roster, query)
++  ];
  }
 +var isFaceRoom = (room2) => room2?.origin === "face-to-face";
++var normHandle = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
++var remoteRecord = (bot) => bot?.remote ? bot.remote === true ? bot : bot.remote : null;
 +var myOwnerName = (roster, live, bot) => {
 +  const seat = live.find((p) => !p.remote && p.kind !== "human" && (p.id === bot.id || bot.handle && p.handle === bot.handle));
 +  return cleanPeerName(seat?.ownerName || roster.self?.displayName, "");
@@ -5121,10 +5132,10 @@ diff --git a/client.js b/client.js
 +      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
 +      const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
 +        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
-+        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
++        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
 +        ...row.bot?.role && !face ? { description: row.bot.role } : {},
 +        ...row.remote ? { description: row.remote.handle } : {},
-+        ...row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {},
++        ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
 +        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
 +        ...row.room ? { description: face ? t("Every Bot in this room") : t("{count} members", { count: row.room.members.length }) } : {},
          icon: iconFor(row),

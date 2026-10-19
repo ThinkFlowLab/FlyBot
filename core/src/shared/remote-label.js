@@ -77,7 +77,7 @@ export function pickerBotLabel(bot) {
 
 export function ownerNameOf(record) {
   if (!record) return ''
-  return cleanPeerName(record.ownerName || record.homeName || record.owner || record.ownerHome || record.home || ownerFromHandle(record.handle), '')
+  return cleanPeerName(record.ownerName || record.owner || record.homeName || record.ownerHome || record.home || ownerFromHandle(record.handle), '')
 }
 
 export function isChiefRecord(record) {

@@ -1069,8 +1069,8 @@ window.__ModuleLoader__.load({
         const people = (room.participants ?? []).filter(p => p.remote)
         const own = people.find(p => String(p.handle ?? '').toLowerCase() === String(item.handle).toLowerCase())
         const name = String(own?.displayName || own?.name || item.name || '').trim()
-        const clash = own && people.filter(p => String(p.displayName || p.name || '').trim() === name).length > 1
-        out.push(clash && own.ownerName ? `${name} (${own.ownerName})` : name)
+        // One name everywhere (#384): "Coder (Bob)", as Members and the @ menu say it.
+        out.push(own?.ownerName ? `${name} (${own.ownerName})` : name)
       }
       return out
     }

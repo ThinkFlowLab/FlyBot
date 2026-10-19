@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { formatSessionReferenceMention, parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
 import { BOTS_SOURCE, CHATS_SOURCE, atSources, chatRows, mentionRows, sessionMention } from '../src/client/at-menu.js'
 import { indexRoster } from '../src/client/sources.js'
+import { remoteBotTitle } from '../src/shared/remote-label.js'
 
 const roster = indexRoster({
   bots: [
@@ -137,5 +138,36 @@ test('#305: a face room offers each of its Bots once, named Bot (Person), and no
   assert.equal(mentionRows(legacy, 'face')[0].bot.label, 'Chief (you)')
   // Outside a face room the published friends' Bots still join the menu.
   const group = indexRoster({ ...face, rooms: [{ ...face.rooms[0], origin: undefined }] })
-  assert.equal(mentionRows(group, 'face').filter(row => row.remote).length, 2)
+  // A friend's Bot already seated in the group is offered once, by its seat (#384).
+  assert.deepEqual(mentionRows(group, 'face').filter(row => row.remote).map(row => row.remote.handle), ['@helper.other.home'])
+})
+
+test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, by its handle, named Bot (owner)', async () => {
+  const remote = { handle: '@coder.bob.home', name: 'Coder', home: '@bob.home', owner: 'Bob', homeName: 'Family Workspace' }
+  const chat = indexRoster({
+    bots: [
+      { id: 'chief', name: 'Chief', sessionId: 'chief' },
+      { id: 'coder-chat', name: 'Coder', sessionId: 'coder-chat', remote: { ...remote, displayName: 'Coder' } },
+      { id: 'helper-chat', name: 'Helper', sessionId: 'helper-chat', remote: { handle: '@helper.ann.home', displayName: 'Helper', owner: 'Ann' } },
+    ],
+    rooms: [],
+    remoteBots: [remote],
+  })
+  const rows = mentionRows(chat, 'chief')
+  assert.equal(rows.filter(row => (row.remote ?? row.bot?.remote)?.handle === '@coder.bob.home').length, 1)
+  assert.deepEqual(rows.map(row => row.text), ['@Helper ', '@coder.bob.home '])
+  const [bots] = atSources({
+    roster: { getSnapshot: () => chat },
+    sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
+    launched: () => false,
+    iconFor: () => 'bot',
+  })
+  const listed = await bots.candidates({ sessionId: 'chief' }, { query: '' })
+  // The human owner names the Bot, not the home's label; the handle is the second line.
+  assert.deepEqual(listed.slice(0, 2).map(row => [row.name, row.description]), [
+    ['Helper (Ann)', '@helper.ann.home'],
+    ['Coder (Bob)', '@coder.bob.home'],
+  ])
+  assert.equal(remoteBotTitle({ displayName: 'Coder', owner: 'Bob', homeName: 'Family Workspace' }), 'Coder (Bob)')
+  assert.equal(remoteBotTitle({ displayName: 'Coder', homeName: 'Family Workspace' }), 'Coder (Family Workspace)')
 })
