@@ -62,7 +62,10 @@
     "src/client/bot-draft.js",
     "test/create-bot.test.js",
     "src/client/storage.js",
-    "src/client/activity-row.js"
+    "src/client/activity-row.js",
+    "src/client/awaiting.js",
+    "test/friend-chat-awaiting.test.js",
+    "test/friend-chat-presence.test.js"
   ],
   "0005-social-seams": [
     "src/host/channel.js",
