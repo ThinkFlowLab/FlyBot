@@ -26,7 +26,7 @@
 //   chips; get_friend_file saves one (hash verified) and hands it over as untrusted.
 // - Backward compat: without a home, config.botId + token use the per-bot identity
 //   (start_conversation / send_message) as before.
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -1230,38 +1230,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }))
 
   // ------------------------------------------------------------ transport
-  // Bot Social pauses conversations by policy (turn budget reached, loop suspected,
-  // emergency stop) and rejects sends with `conversation_paused`. The pause belongs to
-  // the conversation, not to the member that hit it: resending or switching members
-  // cannot help, so both send paths turn the error into one that says what does.
-  // Friend chats Bot Social paused, by the friend Bot's handle (#404): the chat shows a paused notice
-  // with Extend until a send goes through, the chat is extended, or Bot Social says it resumed.
+  // Bot Social pauses a conversation when it suspects a loop between the Bots (or on an emergency
+  // stop) and rejects that send with `conversation_paused`. There is no turn limit any more (owner
+  // decision 2026-10-19 18:05; Bot Social #28), and a line the owner typed is never checked for a loop
+  // there. A paused chat is not a dead end: send_as_member opens a fresh conversation for the pair's
+  // next message, so both send paths say "send it again" and nothing needs Extend (no Extend in FlyBot).
+  // Friend chats Bot Social paused, by the friend Bot's handle (#404): the chat shows a quiet paused
+  // notice until a send to that Bot goes through.
   const pausedChats = new Map()
-  const pendingExtends = new Map()
-  // Turns one Extend adds (Bot Social's default; it takes 1-20), and how long its code lives.
-  const EXTEND_TURNS = 4
-  const EXTEND_CODE_MS = 5 * 60_000
   const notePaused = (handle, error) => {
     const key = norm(handle)
     if (!key || key === '@') return
-    const reason = String(error?.message ?? error ?? '').replace(/^Bot Social\s+\S+:\s*/, '').replace(/;\s*owners? can extend[^;)]*/i, '').trim().slice(0, 120)
-    pausedChats.set(key, { reason, at: now(), ...(pausedChats.get(key)?.conversationId ? { conversationId: pausedChats.get(key).conversationId } : {}) })
+    pausedChats.set(key, { reason: pauseReason(error).slice(0, 120), at: now() })
   }
-  const clearPaused = (handle) => {
-    const key = norm(handle)
-    pausedChats.delete(key)
-    for (const [id, item] of pendingExtends) if (item.handle === key) pendingExtends.delete(id)
-  }
-  // The paused conversation between one of my members and that Bot (newest first). The paused send's
-  // error names none, so the owner's conversation list is read (list_conversations).
-  async function pausedConversationWith(handle) {
-    const mine = new Set(flybot.bot.list().map(bot => activeMember(bot.id)?.handle).filter(Boolean).map(norm))
-    const listed = await client.callTool('list_conversations', {})
-    const ends = item => [norm(item?.initiator?.handle), norm(item?.peer?.handle)]
-    return (listed?.conversations ?? [])
-      .filter(item => /^paused/.test(String(item?.status ?? '')) && ends(item).includes(handle) && ends(item).some(end => end !== handle && mine.has(end)))
-      .sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))[0]
-  }
+  const clearPaused = (handle) => { pausedChats.delete(norm(handle)) }
+  // Bot Social's own reason, without its "owners can extend" tail (a FlyBot owner has no such step).
+  const pauseReason = error => String(error?.message ?? error ?? '').replace(/^Bot Social\s+\S+:\s*/, '').replace(/;\s*owners? can extend[^;)]*/i, '').trim()
   const isPaused = error => error?.code === 'conversation_paused' || /conversation_paused|turn budget exhausted|loop detected|conversation paused/i.test(String(error?.message ?? error))
   // Bot Social refuses a first message to a friend's Bot that is not shared with the sender (its
   // owner only joined an invite, #336): 403 bot_not_shared, nothing stored or delivered, and that
@@ -1283,11 +1267,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   const mapSendError = (error, handle) => {
     if (isNotShared(error)) return notSharedError(handle, { lead: 'Not delivered: ' })
     if (!isPaused(error)) return error
-    // Only steps a FlyBot owner can take (#404): a FlyBot owner cannot sign in to the Bot
-    // Social website, so the text never sends them there. Extend is the paused notice's button in
-    // the friend's chat (PausedChat), approved there on a card; `extendable` tells the host so.
-    const reason = String(error?.message ?? error).replace(/^Bot Social\s+\S+:\s*/, '').replace(/;\s*owners? can extend[^;)]*/i, '').trim()
-    return Object.assign(new Error(`Bot Social paused this conversation (${reason}). Resending cannot help: use Extend in the chat with that friend's Bot (you approve it there), or remove and re-add this friend to start a new one.`), { code: 'conversation_paused', paused: true, extendable: true })
+    // Only steps a FlyBot owner can take (#404), never the Bot Social website. The pause belongs to that
+    // conversation: the next send opens a fresh one, so sending again is the step (`resend` tells the host).
+    return Object.assign(new Error(`Bot Social paused that chat (${pauseReason(error)}). Send your message again: it starts a new chat.`), { code: 'conversation_paused', paused: true, resend: true })
   }
   // Direct chat (Friends' Bots row): one short English line with a next step. The
   // remote-chat host prefixes "Not sent:". Keep the Bot Social tool name out of the UI.
@@ -1581,8 +1563,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           saveSettings()
         }
         if (event.event_type === 'conversation.resumed') {
-          // Extended elsewhere (the friend's owner, say): the paused notice goes away.
-          for (const [handle, entry] of pausedChats) if (entry.conversationId && entry.conversationId === event.conversation_id) clearPaused(handle)
+          // Resumed elsewhere (the friend's owner, say): nothing to show; the notice clears on the next send.
           done()
           continue
         }
@@ -1964,49 +1945,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }))
   disposers.push(flybot.api.handle('social/remote-bots', async payload => remoteBots({ fresh: payload?.fresh === true }), { read: true }))
   disposers.push(flybot.api.handle('social/hide-remote', async ({ handle } = {}) => hideRemote(handle)))
-  // Extend a paused friend chat (#404), owner UI only, never a model tool. Bot Social's
-  // extend_conversation is two-step: the first call changes nothing and returns a one-time code.
-  // Extend… makes that call and shows the normal approval card; the code stays on this host (never
-  // sent to the browser or a model). Only the owner's Approve click makes the second call with it;
-  // Reject drops the code and calls nothing. No typed reply can approve it (#349).
+  // A friend chat Bot Social paused (#404): read by the chat's quiet notice. Nothing here resumes or
+  // extends a chat: the next send opens a fresh conversation (no turn limit, Bot Social #28).
   disposers.push(flybot.api.handle('social/paused', async ({ handle } = {}) => {
     const entry = pausedChats.get(norm(handle))
     return { paused: entry ? { reason: entry.reason, at: entry.at } : null }
   }, { read: true }))
-  disposers.push(flybot.api.handle('social/extend-request', async ({ handle } = {}) => {
-    const key = norm(handle)
-    const entry = pausedChats.get(key)
-    if (!entry) throw new Error('This chat is not paused.')
-    const conversation = await pausedConversationWith(key)
-    if (!conversation) {
-      clearPaused(key)
-      throw new Error('Bot Social has no paused chat with this Bot any more. Send your message again.')
-    }
-    entry.conversationId = conversation.conversation_id
-    const args = { conversation_id: conversation.conversation_id, extra_turns: EXTEND_TURNS }
-    const first = await client.callTool('extend_conversation', args)
-    if (first?.status !== 'confirmation_required' || typeof first.confirm_code !== 'string') throw new Error('Bot Social did not ask to confirm the extension. Try again.')
-    for (const [id, item] of pendingExtends) if (item.handle === key) pendingExtends.delete(id)
-    const id = randomUUID()
-    pendingExtends.set(id, { handle: key, args, code: first.confirm_code, expiresAt: Date.parse(first.expires_at) || now() + EXTEND_CODE_MS })
-    const turn = conversation.turn ?? first.summary?.conversation?.turn
-    return {
-      id,
-      handle: key,
-      extraTurns: EXTEND_TURNS,
-      ...(Number.isFinite(turn?.count) && Number.isFinite(turn?.max) ? { turns: { count: turn.count, max: turn.max } } : {}),
-    }
-  }))
-  disposers.push(flybot.api.handle('social/extend-decide', async ({ id, decision } = {}) => {
-    const pendingExtend = pendingExtends.get(String(id ?? ''))
-    if (!pendingExtend) throw new Error('This request is no longer open. Click Extend again.')
-    pendingExtends.delete(String(id))
-    if (decision !== 'approve') return { status: 'rejected' }
-    if (pendingExtend.expiresAt <= now()) throw new Error('This request expired. Click Extend again.')
-    const result = await client.callTool('extend_conversation', { ...pendingExtend.args, confirm_code: pendingExtend.code })
-    clearPaused(pendingExtend.handle)
-    return { status: 'extended', extraTurns: pendingExtend.args.extra_turns, ...(Number.isFinite(result?.max_turns) ? { maxTurns: result.max_turns } : {}) }
-  }))
   // People with access is one row per person (#383): two grants of one Bot to the same person
   // (two invites, joined by two of their Bots) are one row, and its Revoke removes both.
   function accessRows(botId, grants) {
