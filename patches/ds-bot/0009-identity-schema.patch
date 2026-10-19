@@ -3,6 +3,39 @@ FlyBot patch 0009-identity-schema on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gen
 diff --git a/test/roster.test.js b/test/roster.test.js
 --- a/test/roster.test.js
 +++ b/test/roster.test.js
+@@ -119,6 +119,32 @@ test('other Bots start on the default model and greet at once', async (t) => {
+   assert.deepEqual(sent.map(entry => entry.sessionId), [writer.id])
+ })
+ 
++test('a Bot made by the Main Bot starts on the Main Bot\'s model and level before its first request (#410)', async (t) => {
++  const reasoning = { 'deepseek/deepseek-v4-pro': { reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } } }
++  // The profile default is the first served model (flash); Chief runs on pro.
++  const { call, stop, sent, selected, ctx } = start(undefined, { models: ['deepseek-v4-flash', 'deepseek-v4-pro'], reasoning })
++  t.after(stop)
++  const chief = (await call('state', {})).value.mainBotId
++  await call('update-bot', { id: chief, model: 'deepseek/deepseek-v4-pro', effort: 'low' })
++  await until(() => sent.some(entry => entry.sessionId === chief))
++  await ctx.registeredTools.get('create_bot').execute({ name: 'Writer', role: 'Writer', instructions: 'Write.' }, { agent: { id: chief } })
++  const writer = (await call('state', {})).value.bots.find(entry => entry.name === 'Writer')
++  assert.equal(writer.model, 'deepseek/deepseek-v4-pro')
++  assert.equal(writer.effort, 'low')
++  await until(() => sent.some(entry => entry.sessionId === writer.id))
++  // No model selection for the new Bot ever names the profile default.
++  const own = selected.filter(request => request.sessionId === writer.id)
++  assert.ok(own.length > 0)
++  assert.ok(own.every(request => request.model === 'deepseek-v4-pro'), JSON.stringify(own))
++  // A model the Main Bot names still wins; a Bot the user makes keeps the default.
++  await ctx.registeredTools.get('create_bot').execute({ name: 'Editor', role: 'Editor', instructions: 'Edit.', model: 'deepseek/deepseek-v4-flash' }, { agent: { id: chief } })
++  const editor = (await call('state', {})).value.bots.find(entry => entry.name === 'Editor')
++  assert.equal(editor.model, 'deepseek/deepseek-v4-flash')
++  assert.equal(editor.effort, undefined)
++  const typed = (await call('create-bot', { name: 'Typist' })).value
++  assert.equal(typed.model, 'deepseek/deepseek-v4-flash')
++})
++
+ test('a new name must be one "@" can call; a name saved before the rule still saves', async (t) => {
+   const { call, stop } = start(undefined, { models: ['deepseek-v4-flash'] })
+   t.after(stop)
 @@ -526,3 +526,34 @@ test('a write that fails at save time archives the Session it made', async (t) =
    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
    assert.equal(Object.values(saved.bots).some(bot => bot.name === 'Phantom'), false)
