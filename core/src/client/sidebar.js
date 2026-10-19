@@ -3,7 +3,7 @@ import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, us
 import { createPortal } from 'react-dom'
 import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { isMainOf } from './sources.js'
-import { currentPart, nameMentions, previewOf, relativeShort } from './text.js'
+import { currentPart, nameMentions, previewOf, relativeShort, unsentReplyTurns } from './text.js'
 import { PlusIcon, SearchIcon, GaugeIcon, PlugIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, FlyBotMark } from './icons.js'
 import { MAIN_LOOK } from './characters.js'
 import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
@@ -42,7 +42,7 @@ const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase
 function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useActivity, useWork, wide, marked, asRow = false }) {
   const id = bot.id
   const part = currentPart(bot)
-  const preview = useSessions(list => nameMentions(previewOf(list, part, roster.exchangeTurns[part]), roster))
+  const preview = useSessions(list => nameMentions(previewOf(list, part, roster.exchangeTurns[part], unsentReplyTurns(bot, part)), roster))
   const running = useSessionStatus(map => map.get(part)?.running === true)
   const active = useSessionRetainInfo(part, info => (info?.retainedBy?.mainView ?? 0) > 0)
   const unread = useSessionStatus(map => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== undefined) || (marked && !active)

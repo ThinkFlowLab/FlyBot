@@ -109,6 +109,8 @@ const ZH = {
   'Messages waiting for your approval': '等你批准的消息',
   'Waiting for approval': '等待批准',
   'Not sent': '未发出',
+  'Sent to {to}': '已发给 {to}',
+  'Not sent: delivery failed': '未发出：发送失败',
   '{from} → {to}': '{from} → {to}',
   '+{count} more': '另有 {count} 条',
   delegated: '委托转达',

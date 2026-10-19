@@ -283,7 +283,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,63 @@ const ZH = {
+@@ -41,22 +41,65 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -331,6 +331,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Messages waiting for your approval': '等你批准的消息',
 +  'Waiting for approval': '等待批准',
 +  'Not sent': '未发出',
++  'Sent to {to}': '已发给 {to}',
++  'Not sent: delivery failed': '未发出：发送失败',
 +  '{from} → {to}': '{from} → {to}',
 +  '+{count} more': '另有 {count} 条',
 +  delegated: '委托转达',
@@ -964,11 +966,31 @@ diff --git a/src/client/text.js b/src/client/text.js
  // While a Session's history loads, a card asked in it may yet be drawn at its call,
  // so the docks hold it back until then.
  export const historyLoading = snapshot => snapshot?.openState === 'cold' || snapshot?.openState === 'loading'
-@@ -207,7 +207,8 @@ export function previewOf(list, id, hiddenTurns = []) {
+@@ -200,14 +200,26 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
+ }
+ 
+ // Latest visible line for a sidebar row; Bot-to-Bot exchange turns stay out of it.
+-export function previewOf(list, id, hiddenTurns = []) {
++// A local Bot's replies to friends that were held and not (yet) sent (#418), by turn of that chat.
++export function heldReplyOf(bot, sessionId, turn) {
++  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : []
++  let found
++  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply
++  return found
++}
++export const unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : [])
++  .filter(reply => reply.sessionId === sessionId && reply.status !== 'approved').map(reply => reply.turn)
++
++// `unsentTurns`: turns whose reply is held or was not sent; the preview shows their prompt instead.
++export function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
+   const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
+   if (!Array.isArray(outline)) return ''
+   for (let index = outline.length - 1; index >= 0; index -= 1) {
      const entry = outline[index]
      if (hiddenTurns.includes(entry.turn)) continue
-     const text = entry.response || entry.prompt || ''
+-    const text = entry.response || entry.prompt || ''
 -    if (text !== '') return stripHeader(text).replace(/\s+/g, ' ').trim()
++    const text = (unsentTurns.includes(entry.turn) ? '' : entry.response) || entry.prompt || ''
 +    // The outline flattens a reply to one line, so its trace ends at a space there.
 +    if (text !== '') return stripTrace(stripHeader(text)).replace(/\s+/g, ' ').trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, '')
    }
@@ -2040,7 +2062,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            }
            const own = rt.chatOwners.get(id)
            if (own !== undefined) rt.dropKickoff(own)
-@@ -386,6 +386,9 @@ export function install(rt) {
+@@ -386,11 +386,16 @@ export function install(rt) {
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -2050,6 +2072,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const joined = entry.joined ?? []
          const texts = entry.texts
          const { lastText, lastCalled } = entry
+         // A turn stopped for a switch goes on in the next part, which answers instead.
+         const switched = entry.switched === true
++        // The turn whose text answers a friend's line: a held reply is drawn on it, in place (#418).
++        const answeredTurn = entry.turn
+         entry.turn = undefined
+         entry.info = undefined
+         entry.texts = []
 @@ -401,6 +401,8 @@ export function install(rt) {
          entry.calls = undefined
          entry.lastText = undefined
@@ -2074,7 +2103,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const answer = (source, reply) => {
 +          if (fromRemote(source)) {
 +            if (failure === undefined && reply !== '') {
-+              void rt.flybotReplyRemote?.({ from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home, text: reply, replyTo: source.exchangeId })
++              void rt.flybotReplyRemote?.({ from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home, text: reply, replyTo: source.exchangeId, replyIn: { sessionId: id, turn: answeredTurn } })
 +                // A refused reply resolves, it does not throw: say so, or it is lost without a trace (#272).
 +                .then(result => { if (result?.action === 'deny') rt.warn('ds-bot: reply to %s not sent: %s', source.remote.handle, result.reason) })
 +                .catch(error => rt.warn('ds-bot: reply to %s failed: %s', source.remote.handle, error))
