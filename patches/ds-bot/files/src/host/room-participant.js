@@ -36,9 +36,8 @@ export function createDshRoomParticipant(rt) {
   // round, or null when the round was stopped. The wait restarts on each event of the
   // member's Session, so a member at work is never cut off. `by` is the member that
   // called it, which answers what the turn posts after the round moved on.
-  async function runTurn({ room, member, sessionId, text, note, signal, started, by, origin }) {
+  async function runTurn({ room, member, sessionId, text, note, signal, started, by, origin, exchangeId = randomUUID() }) {
     if (signal.aborted) return null
-    const exchangeId = randomUUID()
     const turn = { botId: member.id, sessionId, exchangeId }
     started.push(turn)
     // Checked before the delivery, which may start the turn at once.

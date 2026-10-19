@@ -398,7 +398,10 @@ export interface FlyBot {
     applyFaceLine(roomId: string, line: Record<string, unknown>): unknown
     ofFace(serverId: string): { id: string; face?: { roomId?: string; eventCursor?: number } } | undefined
     dropFace(roomId: string): Promise<boolean | undefined>
+    /** `fn` answers `{ held: true, approvalId }` for a Bot line the server holds for the owner's approval (#456). */
     onFaceLine(fn: ((room: { id: string; face?: { roomId?: string }; members?: string[] }, line: Record<string, unknown>) => unknown) | undefined): () => void
+    /** The owner's decision on a held face-room line, by its approval id; true when a room had it (#456). */
+    settleHeld?(approvalId: string, decision: 'approved' | 'rejected'): boolean
     postNotice(roomId: string, text: string): unknown
     postRemote(roomId: string, msg: { handle?: string; name?: string; text?: string }): unknown
     /** Inbox envelope → inbound-share room (join/line/leave). */

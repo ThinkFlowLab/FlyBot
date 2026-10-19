@@ -41,7 +41,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,21 +78,65 @@ var ZH = {
+@@ -78,21 +78,66 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -88,6 +88,7 @@ diff --git a/client.js b/client.js
 +  "Messages waiting for your approval": "等你批准的消息",
 +  "Waiting for approval": "等待批准",
 +  "Not sent": "未发出",
++  "{name} · Not sent": "{name} · 未发出",
 +  "Sent to {to}": "已发给 {to}",
 +  "Auto-sent to {to}": "已自动发给 {to}",
 +  "Not sent: delivery failed": "未发出：发送失败",
@@ -1002,14 +1003,6 @@ diff --git a/client.js b/client.js
 -  const byId = {};
 -  for (const bot of value.bots) {
 -    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
--  }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1043,29 +1036,23 @@ diff --git a/client.js b/client.js
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
    }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
--  }
--  return { ...state, [sessionId]: own };
++}
 +function PersonMark({ size = 22 }) {
 +  return (0, import_react.createElement)(
 +    "span",
@@ -1077,93 +1064,10 @@ diff --git a/client.js b/client.js
 +      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
 +    )
 +  );
- }
--
--// src/client/themes.js
--var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
--var THEMES = {
--  deepseek: {
--    label: "DeepSeek",
--    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
--    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
--  },
--  mono: {
--    label: "Mono",
--    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
--    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
--  },
--  paper: {
--    label: "Paper",
--    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
--    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
--  },
--  moonlight: {
--    label: "Moonlight",
--    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
--    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
--};
--var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
--function themeVars(mode, dark, accent = mode.accent) {
--  return {
--    "--bt-ink": mode.text,
--    "--bt-ink-2": rgba(mode.text, 0.6),
--    "--bt-ink-3": rgba(mode.text, 0.36),
--    "--bt-bubble": mode.bubble,
--    "--bt-sidebar": mode.sidebar,
--    "--bt-main": mode.bg,
--    "--bt-card": mode.card,
--    "--bt-line": rgba(mode.text, 0.08),
--    "--bt-line-2": rgba(mode.text, 0.15),
--    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
--    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
--    "--bt-accent": accent,
--    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
--    "--bt-user": mode.user,
--    "--bt-user-ink": mode.userText,
--    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
--    "--bt-tag-ink": rgba(mode.text, 0.58)
--  };
++}
 +function AdminStar() {
 +  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
- }
--var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
--var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
--html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
--${theme.css ?? ""}`;
--var shellTokens = ({ light, dark }) => ({
--  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
--  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
--  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
--  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
--  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
--  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
--});
--var customThemes = {};
--var registry = createSource(0);
--var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
--function registerShape(id, shape) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
--  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
--  const at = shape.eyes?.at;
--  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
--  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
--  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
--  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
--  const previous = SHAPES[id];
--  SHAPES[id] = {
--    label: String(shape.label ?? id),
--    size,
--    body: shape.body,
--    eyes,
--    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
--  };
--  const refresh = () => {
--    markupCache.clear();
--    maskCache.delete(id);
--    registry.set((value) => value + 1);
--  };
--  refresh();
++}
 +function MainStar() {
 +  return (0, import_react.createElement)(
 +    "svg",
@@ -1209,10 +1113,15 @@ diff --git a/client.js b/client.js
 +    const size = frame * 5 / 9;
 +    const rest = frame - size;
 +    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-+  }
+   }
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 +  const half = frame / 2;
 +  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+}
+ }
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
 +function roomAvatarPeople(room2, roster) {
 +  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
 +  const seen = new Set(members.map((bot) => bot.id));
@@ -1245,7 +1154,13 @@ diff --git a/client.js b/client.js
 +  }
 +  if (members.length === 1 && remotes.length === 0) return [members[0], null];
 +  return [...members, ...remotes];
-+}
+ }
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people = roomAvatarPeople(room2, roster);
 +  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
@@ -1257,7 +1172,8 @@ diff --git a/client.js b/client.js
 +      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 +      people.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 +    );
-+  }
+   }
+-  return { ...state, [sessionId]: own };
 +  const seats = clusterSeats(Math.min(people.length, 4), size);
 +  const overflow = people.length > 4 ? people.length - 3 : 0;
 +  const gap = size / 14;
@@ -1276,15 +1192,97 @@ diff --git a/client.js b/client.js
 +      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 +    })
 +  );
-+}
-+
+ }
+ 
+-// src/client/themes.js
+-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+-var THEMES = {
+-  deepseek: {
+-    label: "DeepSeek",
+-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+-  },
+-  mono: {
+-    label: "Mono",
+-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+-  },
+-  paper: {
+-    label: "Paper",
+-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+-  },
+-  moonlight: {
+-    label: "Moonlight",
+-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
+-  }
 +// src/client/approval-claims.js
 +var claims = /* @__PURE__ */ new Map();
 +var claimListeners = /* @__PURE__ */ new Set();
 +var openChats = /* @__PURE__ */ new Map();
 +var changed = () => {
 +  for (const fn of [...claimListeners]) fn();
-+};
+ };
+-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+-function themeVars(mode, dark, accent = mode.accent) {
+-  return {
+-    "--bt-ink": mode.text,
+-    "--bt-ink-2": rgba(mode.text, 0.6),
+-    "--bt-ink-3": rgba(mode.text, 0.36),
+-    "--bt-bubble": mode.bubble,
+-    "--bt-sidebar": mode.sidebar,
+-    "--bt-main": mode.bg,
+-    "--bt-card": mode.card,
+-    "--bt-line": rgba(mode.text, 0.08),
+-    "--bt-line-2": rgba(mode.text, 0.15),
+-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+-    "--bt-accent": accent,
+-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+-    "--bt-user": mode.user,
+-    "--bt-user-ink": mode.userText,
+-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+-    "--bt-tag-ink": rgba(mode.text, 0.58)
+-  };
+-}
+-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+-${theme.css ?? ""}`;
+-var shellTokens = ({ light, dark }) => ({
+-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+-});
+-var customThemes = {};
+-var registry = createSource(0);
+-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+-function registerShape(id, shape) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+-  const at = shape.eyes?.at;
+-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+-  const previous = SHAPES[id];
+-  SHAPES[id] = {
+-    label: String(shape.label ?? id),
+-    size,
+-    body: shape.body,
+-    eyes,
+-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+-  };
+-  const refresh = () => {
+-    markupCache.clear();
+-    maskCache.delete(id);
+-    registry.set((value) => value + 1);
+-  };
+-  refresh();
 +function chatOpened(sessionId, delta) {
 +  const count = (openChats.get(sessionId) ?? 0) + delta;
 +  if (count > 0) openChats.set(sessionId, count);
@@ -1471,7 +1469,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-   };
++  };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1495,7 +1493,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-+  };
+   };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1767,7 +1765,15 @@ diff --git a/client.js b/client.js
 +    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  }
 +  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
-+}
+ }
+-function previewOf(list, id, hiddenTurns = []) {
+-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-  if (!Array.isArray(outline)) return "";
+-  for (let index = outline.length - 1; index >= 0; index -= 1) {
+-    const entry = outline[index];
+-    if (hiddenTurns.includes(entry.turn)) continue;
+-    const text = entry.response || entry.prompt || "";
+-    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
@@ -1779,17 +1785,21 @@ diff --git a/client.js b/client.js
 +    const count = (own[callId] ?? 0) + delta;
 +    if (count > 0) own[callId] = count;
 +    else delete own[callId];
-+  }
+   }
+-  return "";
 +  return { ...state, [sessionId]: own };
  }
--function previewOf(list, id, hiddenTurns = []) {
--  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
--  if (!Array.isArray(outline)) return "";
--  for (let index = outline.length - 1; index >= 0; index -= 1) {
--    const entry = outline[index];
--    if (hiddenTurns.includes(entry.turn)) continue;
--    const text = entry.response || entry.prompt || "";
--    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
+-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+-function usageOf(list, ids) {
+-  let input = 0;
+-  let cacheRead = 0;
+-  let output = 0;
+-  for (const id of ids) {
+-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+-    if (!usage) continue;
+-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+-    cacheRead += usage.cacheReadTokens ?? 0;
+-    output += usage.outputTokens ?? 0;
 +
 +// src/client/themes.js
 +var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
@@ -1814,7 +1824,9 @@ diff --git a/client.js b/client.js
 +    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 +    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
    }
--  return "";
+-  if (input + output === 0) return "";
+-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 +};
 +var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 +function themeVars(mode, dark, accent = mode.accent) {
@@ -1837,18 +1849,7 @@ diff --git a/client.js b/client.js
 +    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
 +    "--bt-tag-ink": rgba(mode.text, 0.58)
 +  };
- }
--var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
--function usageOf(list, ids) {
--  let input = 0;
--  let cacheRead = 0;
--  let output = 0;
--  for (const id of ids) {
--    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
--    if (!usage) continue;
--    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
--    cacheRead += usage.cacheReadTokens ?? 0;
--    output += usage.outputTokens ?? 0;
++}
 +var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 +var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
 +html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
@@ -1896,10 +1897,7 @@ diff --git a/client.js b/client.js
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
 +    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-   }
--  if (input + output === 0) return "";
--  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
--  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
++  }
 +  const previous = customThemes[id];
 +  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
 +  registry3.set((value) => value + 1);
@@ -2090,7 +2088,7 @@ diff --git a/client.js b/client.js
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
-+.bt-bubble-held{background:transparent;border:1px dashed var(--bt-line-2);color:var(--bt-ink-2)}
++.bt-event.bt-not-sent{gap:6px;color:var(--bt-ink-3)}
  .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
  .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
  .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
@@ -2449,19 +2447,7 @@ diff --git a/client.js b/client.js
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
- }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
++}
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2479,7 +2465,19 @@ diff --git a/client.js b/client.js
 +    offSessions?.();
 +    offRoster?.();
 +  };
-+}
+ }
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +function installBrandChrome() {
 +  if (typeof document === "undefined") return () => {
 +  };
@@ -3655,8 +3653,30 @@ diff --git a/client.js b/client.js
 +    return held !== "" && (held === line || held.length >= 799 && line.startsWith(held));
 +  });
  }
- function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
+-function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
 -  const lead = (0, import_react6.createElement)(
++var HELD_SENDING_MS = 6e4;
++function heldLineState(room2, { seq, botId, text } = {}, now = Date.now()) {
++  if (room2?.origin !== "face-to-face" || !Array.isArray(room2.heldLines)) return void 0;
++  const said = String(text ?? "").trim();
++  const entry = room2.heldLines.filter((item) => seq !== void 0 && item?.seq !== void 0 ? item.seq === seq : item?.botId === botId && String(item?.text ?? "").trim() === said).at(-1);
++  if (entry === void 0) return void 0;
++  if (entry.status === "rejected") return "rejected";
++  if (entry.status === "sending" && now - (Number(entry.at) || 0) > HELD_SENDING_MS) return void 0;
++  if (entry.status !== "pending" && entry.status !== "sending") return void 0;
++  return room2.face?.status === "left" || room2.face?.status === "closed" ? "rejected" : "held";
++}
++function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi, seq }) {
++  const held = heldLineState(room2, { seq, botId: bot.id, text });
++  if (held === "rejected") {
++    return (0, import_react8.createElement)(
++      "div",
++      { className: "bt-event bt-not-sent", "data-flybot": "held-not-sent", role: "status" },
++      (0, import_react8.createElement)(BotMark, { bot, size: 16 }),
++      (0, import_react8.createElement)("span", null, t("{name} · Not sent", { name: bot.name }))
++    );
++  }
++  if (held === "held" || isHeldLine(room2, text, bot)) return null;
 +  const lead = (0, import_react8.createElement)(
      "button",
      { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
@@ -3670,27 +3690,6 @@ diff --git a/client.js b/client.js
 +    bot.name,
 +    room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +  );
-+  if (isHeldLine(room2, text, bot)) {
-+    return (0, import_react8.createElement)(
-+      "div",
-+      { className: "bt-group-msg" },
-+      name,
-+      (0, import_react8.createElement)(
-+        "div",
-+        { className: "bt-astack", "data-lead": "" },
-+        (0, import_react8.createElement)(
-+          "div",
-+          { className: "bt-msg" },
-+          (0, import_react8.createElement)(
-+            "div",
-+            { className: "bt-msg-line" },
-+            lead,
-+            (0, import_react8.createElement)("div", { className: "bt-bubble bt-bubble-held", "data-flybot": "held-line", role: "status" }, t("Waiting for approval"))
-+          )
-+        )
-+      )
-+    );
-+  }
 +  return (0, import_react8.createElement)(
      "div",
      { className: "bt-group-msg" },
@@ -4204,7 +4203,7 @@ diff --git a/client.js b/client.js
 +          useUi
 +        });
 +      }
-+      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
      }),
      pending.map((id) => {
        const bot = roster.byId[id];

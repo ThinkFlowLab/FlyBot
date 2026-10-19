@@ -109,6 +109,7 @@ const ZH = {
   'Messages waiting for your approval': '等你批准的消息',
   'Waiting for approval': '等待批准',
   'Not sent': '未发出',
+  '{name} · Not sent': '{name} · 未发出',
   'Sent to {to}': '已发给 {to}',
   'Auto-sent to {to}': '已自动发给 {to}',
   'Not sent: delivery failed': '未发出：发送失败',

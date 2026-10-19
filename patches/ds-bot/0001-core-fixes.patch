@@ -283,7 +283,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,66 @@ const ZH = {
+@@ -41,22 +41,67 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -331,6 +331,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Messages waiting for your approval': '等你批准的消息',
 +  'Waiting for approval': '等待批准',
 +  'Not sent': '未发出',
++  '{name} · Not sent': '{name} · 未发出',
 +  'Sent to {to}': '已发给 {to}',
 +  'Auto-sent to {to}': '已自动发给 {to}',
 +  'Not sent: delivery failed': '未发出：发送失败',

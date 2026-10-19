@@ -2333,6 +2333,105 @@ test('face-to-face send pending_approval uses decide_approval', async (t) => {
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
 })
 
+test('#456: a Bot line Bot Social holds is answered as held, follows the Approve/Reject click, and a reject leaves no "Rejected." room note', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const heldItem = {
+    approval_id: 'apr-face-1',
+    kind: 'face_room_message',
+    status: 'pending',
+    sender_kind: 'bot',
+    bot_id: 'm1',
+    room_id: 'frm_123456',
+    message: { payload: { text: 'Researcher: hold me' } },
+    summary: 'To the room: Researcher: hold me',
+  }
+  let queue = []
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    queue = queue.filter(item => item.approval_id !== a.approval_id)
+    return { approval_id: a.approval_id, decision: a.decision }
+  }
+  let fanout
+  const settled = []
+  const notices = []
+  const origScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = origScope(name)
+    const origOn = scoped.rooms.onFaceLine.bind(scoped.rooms)
+    scoped.rooms.onFaceLine = (fn) => { fanout = fn; return origOn(fn) }
+    const origSettle = scoped.rooms.settleHeld?.bind(scoped.rooms)
+    scoped.rooms.settleHeld = (id, decision) => { settled.push([id, decision]); return origSettle?.(id, decision) }
+    const origNotice = scoped.rooms.postNotice.bind(scoped.rooms)
+    scoped.rooms.postNotice = (roomId, text) => { notices.push(text); return origNotice(roomId, text) }
+    return scoped
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  const room = ctx.flybot.rooms.ofFace('frm_123456')
+  const chief = 'a'
+  // The local Bot's line comes back held: the room keeps it off its bubbles until the owner clicks.
+  const answer = await fanout(room, { authorKind: 'bot', botId: chief, authorId: chief, who: 'Chief', text: 'hold me' })
+  assert.deepEqual(answer, { held: true, approvalId: 'apr-face-1' })
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, 'a Bot line is never approved for the owner')
+  // A line that went out is not held.
+  assert.equal(await fanout(room, { authorKind: 'bot', botId: chief, authorId: chief, who: 'Chief', text: 'plain hello' }), undefined)
+  queue = [heldItem]
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1)
+  notices.length = 0
+  const rejected = (await call('flybot/social/decide-approval', { approvalId: 'apr-face-1', decision: 'reject' })).value
+  assert.equal(rejected.status, 'rejected')
+  assert.deepEqual(settled, [['apr-face-1', 'rejected']], 'the room line turns into "Not sent"')
+  assert.equal(notices.includes(REJECT_NOTE), false, 'no "Rejected." note in a face room')
+  queue = [{ ...heldItem, approval_id: 'apr-face-2' }]
+  await call('flybot/social/status', {})
+  await call('flybot/social/decide-approval', { approvalId: 'apr-face-2', decision: 'approve' })
+  assert.deepEqual(settled.at(-1), ['apr-face-2', 'approved'])
+})
+
+test('#456: a face-room event read twice (two polls at once) reaches the room once, so its Bots answer it once', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const humans = []
+  const origScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = origScope(name)
+    const origHuman = scoped.rooms.postHuman?.bind(scoped.rooms)
+    scoped.rooms.postHuman = (id, line) => { humans.push(line.text); return origHuman(id, line) }
+    return scoped
+  }
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { code: '123456' })
+  const body = server.face.rooms.get('frm_123456')
+  body.event_cursor += 1
+  body.events.push({
+    event_id: `fev_${body.event_cursor}`, event_cursor: body.event_cursor, type: 'room.message',
+    from: { handle: '@chief.boxa.home', display_name: 'Chief', owner_name: 'BoxA', published: false, label: 'Chief · BoxA' },
+    trust: 'peer_untrusted', untrusted_content: { text: encodeFaceHuman({ who: 'BoxA', text: 'Line one from A' }) },
+  })
+  await Promise.all([call('flybot/social/face-rooms', { poll: true }), call('flybot/social/face-rooms', { poll: true })])
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(humans, ['Line one from A'], 'posted for a round once')
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.equal(hosted.log.filter(line => String(line.text).includes('Line one from A')).length, 1, 'logged once')
+})
+
 function loadSocialClient(callImpl) {
   const registered = []
   const entries = []
@@ -3039,6 +3138,28 @@ test('#126: a face-room hold shows in that chat with a readable name', () => {
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
   assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → the room')))
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('hello there')))
+})
+
+test('#456: a face-room hold names its Bot with its person, as the room does; a friend\'s Bot of the same name is not used', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([
+    [{ id: 'apr-face', kind: 'face_room_message', roomId: 'frm_1', from: 'Researcher', toName: 'the room', text: 'Line one: got it' }],
+    [],
+    '',
+  ])
+  const room = {
+    origin: 'face-to-face', id: 'g1', face: { roomId: 'frm_1' },
+    presentedParticipants: [
+      { kind: 'bot', remote: true, displayName: 'Researcher', label: 'Researcher (Bob)' },
+      { kind: 'bot', displayName: 'Researcher', label: 'Researcher (Alice)' },
+      { kind: 'human', displayName: 'Alice', label: 'Alice' },
+    ],
+  }
+  const tree = walk(plugin.ChatApprovalDock({ room }))
+  assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Researcher (Alice) → the room')))
+  // With no label known the card keeps the Bot's name.
+  const bare = walk(pluginOf([[{ id: 'apr-face', kind: 'face_room_message', roomId: 'frm_1', from: 'Researcher', toName: 'the room', text: 'x' }], [], '']).ChatApprovalDock({ room: { ...room, presentedParticipants: [] } }))
+  assert.ok(bare.some(n => n.props.className === 'fs-sub' && n.children.includes('Researcher → the room')))
 })
 
 test('#188: a face-room hold shows only in its own room, never in a newer one', () => {
@@ -4194,11 +4315,9 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Auto-send from now on')), false)
   ownerNodes.find(n => n.type === 'button' && n.children.includes('Reject')).props.onClick()
   assert.deepEqual(decided.at(-1), ['apr-hold-1', 'reject'])
-  const done = plugin.ChatApproval({ item: { ...pending[0], status: 'approved' } })
-  const doneNodes = []
-  collect(done, doneNodes)
-  assert.ok(doneNodes.some(n => n.props['data-state'] === 'approved'))
-  assert.ok(doneNodes.some(n => n.children?.includes?.('Approved') || (Array.isArray(n.children) && n.children.includes('Approved'))))
+  // A decided card draws nothing: no "Approved" / "Rejected" stub is left in the chat (#456).
+  assert.equal(plugin.ChatApproval({ item: { ...pending[0], status: 'approved' } }), null)
+  assert.equal(plugin.ChatApproval({ item: { ...pending[0], status: 'rejected' } }), null)
 })
 
 test('Remove this Bot leaves rooms only through social/hide-remote, not a second client-side removal', async () => {

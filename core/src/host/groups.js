@@ -56,6 +56,31 @@ const appendRoom = (room, line) => {
   const stamped = { ...line, seq: room.seq }
   room.log = [...room.log, stamped].slice(-ROOM_LOG_MAX)
   void fanoutRoomLine(room, stamped)
+  return stamped
+}
+
+// One answer per Bot to a person's plain line in a face-to-face room (#295, #456). The room keeps the
+// line's seq, the Bots that answered it and the turns it asked for; a Bot asked again for the same line
+// (the line delivered twice, or a turn that went on working and posts late after a second one) passes.
+// A newer person line ends it, so a follow-up is always answered.
+const lastPersonLine = (room) => {
+  const log = room.log ?? []
+  for (let at = log.length - 1; at >= 0; at -= 1) {
+    const line = log[at]
+    if (!line.kind && line.botId === undefined && line.authorKind !== 'bot') return line
+  }
+  return undefined
+}
+const lastPersonSeq = room => lastPersonLine(room)?.seq ?? 0
+const FACE_ASKED_KEPT = 24
+const currentFaceLine = (room, seq) => (room.faceLine !== undefined && room.faceLine.seq === seq && lastPersonSeq(room) === seq ? room.faceLine : undefined)
+// `authorId`: a friend's line is only tracked once it is in the log (applyFaceLine logs it first).
+function openFaceLine(room, authorId) {
+  const person = lastPersonLine(room)
+  const seq = person?.seq ?? 0
+  if (seq === 0 || (authorId !== undefined && person.authorId !== authorId)) return undefined
+  if (room.faceLine?.seq !== seq) room.faceLine = { seq, answered: [], asked: [] }
+  return seq
 }
 
 // Lines a face-room send already put in the log and on the wire; the round that answers them
@@ -296,6 +321,7 @@ export function install(rt) {
         if (route) {
           round.route = route
           round.single = true
+          round.faceLine = openFaceLine(room)
           speakers = lastFirst(speakers, route)
         }
       }
@@ -390,7 +416,7 @@ export function install(rt) {
       }
       // One answer for a line that is not for everyone (#299): once a Bot has answered, the Bots still waiting are not
       // asked at all (no model call, no line), so three Bots never post three similar answers.
-      if (answeredAlready(round)) {
+      if (answeredAlready(round) || currentFaceLine(room, round.faceLine)?.answered.includes(member.id)) {
         slot.status = 'passed'
         round.passed.push(member.name)
         continue
@@ -414,7 +440,11 @@ export function install(rt) {
       round.shown?.push(member.id)
       const text = session.brief === undefined ? prompt : `${session.brief}\n\n${prompt}`
       if (!signal.aborted) room.seen[member.id] = room.seq
-      const result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by, origin: roundOrigins.get(round) })
+      const exchangeId = randomUUID()
+      // A turn asked for this line may post late; it still counts as this line's answer (#456).
+      const asked = currentFaceLine(room, round.faceLine)
+      if (asked !== undefined) asked.asked = [...asked.asked, exchangeId].slice(-FACE_ASKED_KEPT)
+      const result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by, origin: roundOrigins.get(round), exchangeId })
       const reply = result === null || typeof result === 'object' ? result : stripOwnName(member.name, String(result ?? '').trim())
       round.speaking = null
       if (reply?.failure !== undefined) {
@@ -442,9 +472,18 @@ export function install(rt) {
         if (reply?.missed) round.replies.push({ kind: 'missed', botId: member.id, name: member.name, color: member.color, time: Date.now() })
         continue
       }
+      const heard = currentFaceLine(room, round.faceLine)
+      // A second answer to the same line is dropped, never posted (#456).
+      if (heard?.answered.includes(member.id)) {
+        slot.status = 'passed'
+        round.passed.push(member.name)
+        continue
+      }
+      heard?.answered.push(member.id)
       slot.status = 'posted'
-      appendRoom(room, rt.authoredRoomLine?.(room, { who: member.name, botId: member.id, authorId: member.id, authorKind: 'bot', text: reply }) ?? { who: member.name, botId: member.id, text: reply })
-      round.replies.push({ botId: member.id, name: member.name, color: member.color, text: reply, time: Date.now() })
+      const posted = appendRoom(room, rt.authoredRoomLine?.(room, { who: member.name, botId: member.id, authorId: member.id, authorKind: 'bot', text: reply }) ?? { who: member.name, botId: member.id, text: reply })
+      // The line's seq lets the chat find its held state (#456).
+      round.replies.push({ botId: member.id, name: member.name, color: member.color, text: reply, time: Date.now(), seq: posted.seq })
       void rt.save().catch(() => {})
       // Only the admin's "@all" calls everyone, so a member cannot set off a storm.
       const leads = rt.isAdminOf(room, member.id)
@@ -517,6 +556,9 @@ export function install(rt) {
         })),
         // One pass: a plain line's speakers do not call each other on (#295), so Bots in two homes cannot loop.
         ...(isPlainFaceLine(room, opener) ? { single: true } : {}),
+        // A person's plain line, the friend's attested one too, is answered once per Bot (#456).
+        ...(isPlainFaceLine(room, opener) ? { faceLine: openFaceLine(room) } : {}),
+        ...(!isPlainFaceLine(room, opener) && opener.plain === true && isFaceRoom(room) ? { faceLine: openFaceLine(room, String(opener.human?.authorId ?? '')) } : {}),
         speaking: null,
         turns: 0,
         replies: [],
@@ -720,6 +762,13 @@ export function install(rt) {
     if (room === undefined || member === undefined || !room.members.includes(member.id)) return
     const text = stripOwnName(member.name, reply)
     if (isPass(text)) return
+    // A late answer to a face-room line this Bot already answered is dropped (#456).
+    const heard = isFaceRoom(room) && room.faceLine?.asked?.includes(info.exchangeId) ? currentFaceLine(room, room.faceLine.seq) : undefined
+    if (heard?.answered.includes(member.id)) {
+      rt.warn('ds-bot: %s already answered this line in %s; its second answer is not posted', member.name, room.name)
+      return
+    }
+    heard?.answered.push(member.id)
     const quiet = (room.lateRounds ?? 0) >= ROOM_LATE_ROUNDS
     if (!quiet) room.lateRounds = (room.lateRounds ?? 0) + 1
     await rt.save()

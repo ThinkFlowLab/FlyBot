@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 
-// #306 item 5: a Bot line held for approval has its text in the approval card once; its bubble in a
-// Face-to-face room says only that it waits.
+// #306 item 5, #456: a Bot line held for approval has its text in the approval card only; a Face-to-face
+// room draws no bubble for it until Approve, and a rejected one is one grey "Not sent" line.
 
 async function load(entry) {
   const bundle = await build({
@@ -46,7 +46,7 @@ const find = (node, match) => {
   return [...(match(node) ? [node] : []), ...find(node.children, match)]
 }
 
-const { GroupReplies, ToolCell, isHeldLine } = await load('cells.js')
+const { GroupReplies, ToolCell, isHeldLine, heldLineState } = await load('cells.js')
 
 const chief = { id: 'chief', name: 'Chief', color: 'green' }
 const held = (text, over = {}) => ({ id: 'ap1', kind: 'face_room_message', status: 'pending', from: 'Chief', roomId: 'frm_1', text, ...over })
@@ -56,28 +56,67 @@ const draw = (room, replies) => {
   const content = [{ type: 'text', text: JSON.stringify({ replies }) }]
   return expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles'])
 }
-const said = (text) => ({ botId: 'chief', name: 'Chief', text })
+const said = (text, seq) => ({ botId: 'chief', name: 'Chief', text, ...(seq !== undefined ? { seq } : {}) })
 const shownText = drawn => find(drawn, node => node.type?.name === 'MarkdownText').map(node => node.props.text)
+const notSent = drawn => find(drawn, node => node.props?.['data-flybot'] === 'held-not-sent')
+const textOf = node => find(node, () => true).flatMap(item => (item.children ?? []).filter(child => typeof child === 'string')).join('')
 
-test('a held Bot line is one short waiting bubble; its text stays in the approval card', () => {
+test('a held Bot line is no bubble at all before Approve; its text stays in the approval card', () => {
   const drawn = draw(roomWith([held('Draft: ship it on Friday')]), [said('Draft: ship it on Friday')])
-  const [bubble] = find(drawn, node => node.props?.['data-flybot'] === 'held-line')
-  assert.ok(bubble, 'a waiting bubble')
-  assert.deepEqual(bubble.children, ['Waiting for approval'])
   assert.equal(shownText(drawn).length, 0, 'the line text is not drawn in the room')
-  // The Bot's name and avatar stay, so the waiting state is still the Bot's.
-  assert.equal(find(drawn, node => node.props?.className === 'bt-group-name' && node.children.includes('Chief')).length, 1)
-  assert.equal(find(drawn, node => node.props?.className === 'bt-lead').length, 1)
+  assert.equal(find(drawn, node => node.props?.className === 'bt-group-msg').length, 0, 'no bubble, no waiting stub')
+  assert.equal(find(drawn, node => node.props?.className === 'bt-group-name').length, 0)
+  assert.equal(notSent(drawn).length, 0)
 })
 
-test('only the held line waits: other lines, and once the hold is decided, the line, are full bubbles', () => {
+test('only the held line is left out: other lines, and once the hold is decided, the line, are full bubbles', () => {
   const room = roomWith([held('Draft: ship it on Friday')])
   const drawn = draw(room, [said('Earlier note'), said('Draft: ship it on Friday')])
-  assert.equal(find(drawn, node => node.props?.['data-flybot'] === 'held-line').length, 1)
   assert.deepEqual(shownText(drawn), ['Earlier note'])
   const decided = draw(roomWith([]), [said('Draft: ship it on Friday')])
-  assert.equal(find(decided, node => node.props?.['data-flybot'] === 'held-line').length, 0)
   assert.deepEqual(shownText(decided), ['Draft: ship it on Friday'])
+})
+
+// The host's own record of each held line on the room (#456), by log seq.
+const withHeld = (heldLines, face = { status: 'open' }) => ({ ...roomWith([]), face, heldLines })
+const entry = (status, over = {}) => ({ seq: 7, botId: 'chief', text: 'Line one: got it, noodles', status, at: Date.now(), ...over })
+
+test('#456: a line the host is sending or Bot Social holds is not drawn; approved, it is a bubble', () => {
+  for (const status of ['sending', 'pending']) {
+    const drawn = draw(withHeld([entry(status, { approvalId: 'ap1' })]), [said('Line one: got it, noodles', 7)])
+    assert.equal(shownText(drawn).length, 0, `${status}: no bubble`)
+    assert.equal(notSent(drawn).length, 0, `${status}: no Not sent line`)
+  }
+  // Approve drops the record: the line is an ordinary bubble.
+  assert.deepEqual(shownText(draw(withHeld([]), [said('Line one: got it, noodles', 7)])), ['Line one: got it, noodles'])
+  // Another line of the same Bot (another seq) is drawn.
+  assert.deepEqual(shownText(draw(withHeld([entry('pending')]), [said('Line one: got it, noodles', 8)])), ['Line one: got it, noodles'])
+})
+
+test('#456: a rejected line is one grey "Not sent" line, never its words, after a reload and in Past rooms', () => {
+  const drawn = draw(withHeld([entry('rejected', { approvalId: 'ap1' })]), [said('Line one: got it, noodles', 7)])
+  assert.equal(shownText(drawn).length, 0, 'the rejected words are not drawn')
+  const [line] = notSent(drawn)
+  assert.ok(line, 'a Not sent line')
+  assert.match(line.props.className, /bt-event/)
+  assert.equal(textOf(line), 'Chief · Not sent')
+  assert.doesNotMatch(textOf(line), /noodles/)
+  // Past rooms: the same record in a closed room still reads Not sent; a line still waiting when the room
+  // ended never left, so it reads Not sent too.
+  for (const status of ['rejected', 'pending']) {
+    const past = draw(withHeld([entry(status)], { status: 'closed' }), [said('Line one: got it, noodles', 7)])
+    assert.equal(shownText(past).length, 0)
+    assert.equal(notSent(past).length, 1, `${status} in a closed room`)
+  }
+})
+
+test('#456: a late post (no seq) is found by its Bot and its exact text; a stale send is drawn as before', () => {
+  const room = withHeld([entry('rejected', { seq: 9 })])
+  assert.equal(heldLineState(room, { botId: 'chief', text: 'Line one: got it, noodles' }), 'rejected')
+  assert.equal(heldLineState(room, { botId: 'writer', text: 'Line one: got it, noodles' }), undefined, 'another Bot\'s words')
+  assert.equal(heldLineState(room, { botId: 'chief', text: 'Something else' }), undefined)
+  assert.equal(heldLineState(withHeld([entry('sending', { at: Date.now() - 120_000 })]), { seq: 7, botId: 'chief' }), undefined, 'a send cut off by a restart')
+  assert.equal(heldLineState({ ...room, origin: 'group' }, { botId: 'chief', text: 'Line one: got it, noodles' }), undefined, 'only face rooms')
 })
 
 test('the held text matches however the card cleaned it: spacing, the "To the room:" lead, the 800-character cap', () => {
@@ -99,7 +138,7 @@ test('the held line waits only for the Bot that sent it: another Bot saying the 
     { botId: 'chief', name: 'Chief', text: 'Draft: ship it on Friday' },
   ] }) }]
   const drawn = expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles'])
-  assert.equal(find(drawn, node => node.props?.['data-flybot'] === 'held-line').length, 1, 'only Chief\'s line waits')
+  assert.equal(find(drawn, node => node.props?.className === 'bt-group-msg').length, 1, 'only Chief\'s line is left out')
   assert.deepEqual(shownText(drawn), ['Draft: ship it on Friday'], 'Writer\'s identical line is drawn')
   assert.equal(isHeldLine(room, 'Draft: ship it on Friday', writer), false)
   assert.equal(isHeldLine(room, 'Draft: ship it on Friday', chief), true)
@@ -116,14 +155,14 @@ test('only a Face-to-face room hides a held line, and only for a held room line'
   assert.equal(isHeldLine({ origin: 'face-to-face' }, 'hello'), false)
 })
 
-test('the waiting copy has a Chinese string', () => {
+test('the Not sent copy has a Chinese string', () => {
   const zh = readFileSync(new URL('../src/client/i18n.js', import.meta.url), 'utf8')
-  assert.match(zh, /'Waiting for approval': '等待批准'/)
+  assert.match(zh, /'\{name\} · Not sent': '\{name\} · 未发出'/)
 })
 
-test('the waiting bubble has a style of its own', () => {
+test('the Not sent line is a quiet grey event line', () => {
   const css = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8')
-  assert.match(css, /\.bt-bubble-held\{[^}]*dashed/)
+  assert.match(css, /\.bt-event\.bt-not-sent\{[^}]*color:var\(--bt-ink-3\)/)
 })
 
 test('a held message to a friend is no bubble at all: the Bot\'s send is not drawn, the card is the one place', () => {

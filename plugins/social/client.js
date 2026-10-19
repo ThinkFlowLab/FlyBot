@@ -909,11 +909,8 @@ window.__ModuleLoader__.load({
     }
     function ChatApproval({ item, canDecide = true, busy, onDecide, t } = {}) {
       const [open, setOpen] = useState(false)
-      if (!item) return null
-      if (item.status === 'approved' || item.status === 'rejected') {
-        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': item.status, role: 'status' },
-          h('div', { className: 'fs-name' }, item.status === 'approved' ? 'Approved' : 'Rejected'))
-      }
+      // A decided card goes at once, no "Approved" / "Rejected" stub (#456): the chat itself shows the outcome.
+      if (!item || item.status === 'approved' || item.status === 'rejected') return null
       if (canDecide !== true) {
         return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
           h('div', { className: 'fs-name' }, WAITING_OTHERS))
@@ -969,6 +966,16 @@ window.__ModuleLoader__.load({
         if (sessionId && item.sessionId === sessionId) return true
         return false
       })
+    }
+
+    // A held room line names its Bot the way the room does, with its person (#384, #456): "Researcher (Alice)".
+    function faceFromLabel(item, room) {
+      if (item?.kind !== 'face_room_message' || room?.origin !== 'face-to-face') return ''
+      const name = String(item.from ?? '').trim().toLowerCase()
+      if (!name) return ''
+      const own = (room.presentedParticipants ?? []).find(p => p?.kind === 'bot' && !p.remote && p.leftSeq === undefined
+        && String(p.displayName || p.name || '').trim().toLowerCase() === name)
+      return typeof own?.label === 'string' ? own.label.trim() : ''
     }
 
     function friendChatOf(roster, handle) {
@@ -1139,7 +1146,11 @@ window.__ModuleLoader__.load({
       }, [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
       // The friend's Bot by name and owner, as the chat list shows it.
-      const named = list => list.map((item) => { const label = friendLabel(roster, item.to); return label ? { ...item, toName: label } : item })
+      const named = list => list.map((item) => {
+        const label = friendLabel(roster, item.to)
+        const from = faceFromLabel(item, room)
+        return label || from ? { ...item, ...(label ? { toName: label } : {}), ...(from ? { from } : {}) } : item
+      })
       // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418): no dock draws it.
       const mine = [
         ...approvalsForOpenChat(named(items), session),
@@ -1173,9 +1184,10 @@ window.__ModuleLoader__.load({
             autoSend = result?.autoSend
           }
           const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
-          const mark = list => list.map(entry => entry.id === item.id ? { ...entry, status } : entry)
-          setItems(mark)
-          setLocal(mark)
+          // The decided card leaves now (#456); the next load agrees.
+          const drop = list => list.filter(entry => entry.id !== item.id)
+          setItems(drop)
+          setLocal(drop)
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
         } finally { setBusy('') }
       }

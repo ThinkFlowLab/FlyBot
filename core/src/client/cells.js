@@ -228,12 +228,12 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
   return h('div', { className: 'bt-event' }, parts)
 }
 
-// A Bot line that Bot Social holds for the owner's approval has its text in the approval card; the
-// bubble keeps only the state, so the text shows once (#306). The host's pending list (`pendingApprovals`)
+// A Bot line that Bot Social holds for the owner's approval has its text in the approval card only, and
+// the room draws no bubble for it until Approve (#306, #456). The host's pending list (`pendingApprovals`)
 // carries the held text whitespace-collapsed and capped at 800 characters (799 once trimmed), without a "To the room:" lead.
 const heldForm = text => String(text ?? '').replace(/\s+/g, ' ').trim().replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
 // The card names the sending Bot in `from`; a bubble is held only when its own Bot sent the held text, so
-// another Bot's identical words are not turned into "Waiting for approval" (#306). A card that names no sender
+// another Bot's identical words are not hidden (#306). A card that names no sender
 // matches by text alone, as before.
 const sameName = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim().toLowerCase() === String(b ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
 export function isHeldLine(room, text, bot) {
@@ -248,19 +248,39 @@ export function isHeldLine(room, text, bot) {
   })
 }
 
+// A face-room line my own Bot wrote, as the host tracks it on the room (`heldLines`, #456): `held` while it is
+// being sent or waits for the owner's Approve / Reject, `rejected` once rejected, or when the room ended before
+// anyone decided (it never left), so it reads the same after a reload and in Past rooms. A line drawn with its
+// log seq is found by it; a late post (no seq) by its Bot and its exact text.
+const HELD_SENDING_MS = 60_000
+export function heldLineState(room, { seq, botId, text } = {}, now = Date.now()) {
+  if (room?.origin !== 'face-to-face' || !Array.isArray(room.heldLines)) return undefined
+  const said = String(text ?? '').trim()
+  const entry = room.heldLines.filter(item => (seq !== undefined && item?.seq !== undefined
+    ? item.seq === seq
+    : item?.botId === botId && String(item?.text ?? '').trim() === said)).at(-1)
+  if (entry === undefined) return undefined
+  if (entry.status === 'rejected') return 'rejected'
+  // A send a restart cut off never got an answer: the line is drawn as before.
+  if (entry.status === 'sending' && now - (Number(entry.at) || 0) > HELD_SENDING_MS) return undefined
+  if (entry.status !== 'pending' && entry.status !== 'sending') return undefined
+  return room.face?.status === 'left' || room.face?.status === 'closed' ? 'rejected' : 'held'
+}
+
 // One Bot message inside a group chat: avatar, name (with its group role), bubble.
-function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
+function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq }) {
+  const held = heldLineState(room, { seq, botId: bot.id, text })
+  // Rejected: one grey line where the bubble would have been, never the words (#456).
+  if (held === 'rejected') {
+    return h('div', { className: 'bt-event bt-not-sent', 'data-flybot': 'held-not-sent', role: 'status' },
+      h(BotMark, { bot, size: 16 }), h('span', null, t('{name} · Not sent', { name: bot.name })))
+  }
+  // Waiting: the words are on the owner's approval card only; the bubble comes after Approve (#456).
+  if (held === 'held' || isHeldLine(room, text, bot)) return null
   const lead = h('button', { type: 'button', className: 'bt-lead', 'aria-label': t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
     h(BotMark, { bot, size: 22 }))
   const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
     room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
-  if (isHeldLine(room, text, bot)) {
-    return h('div', { className: 'bt-group-msg' }, name,
-      h('div', { className: 'bt-astack', 'data-lead': '' },
-        h('div', { className: 'bt-msg' },
-          h('div', { className: 'bt-msg-line' }, lead,
-            h('div', { className: 'bt-bubble bt-bubble-held', 'data-flybot': 'held-line', role: 'status' }, t('Waiting for approval'))))))
-  }
   return h('div', { className: 'bt-group-msg' }, name,
     h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
 }
@@ -859,7 +879,7 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
           useUi,
         })
       }
-      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
+      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, seq: reply.seq })
     }),
     pending.map((id) => {
       const bot = roster.byId[id]

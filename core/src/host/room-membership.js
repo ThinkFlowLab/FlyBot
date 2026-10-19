@@ -41,6 +41,8 @@ import { hasAnyGrant, mayShareRoom } from './reach.js'
 
 const KINDS = new Set(['human', 'bot'])
 const ROLES = new Set(['admin', 'member'])
+// Held face-room lines kept per room (#456): the newest, so a long room cannot grow its record forever.
+const HELD_LINES_KEPT = 50
 
 export const PARTICIPANT_KINDS = ['human', 'bot']
 export const ROOM_ROLES = ['admin', 'member']
@@ -870,8 +872,22 @@ export function install(rt) {
   // speak outside (bot.send then runs the reach policy on every single send).
   rt.fanoutRoomLine = async function fanoutRoomLine(room, line) {
     if (isFaceRoom(room)) {
-      try { await rt.faceRoomFanout?.(room, line) } catch (error) {
+      // A line my own Bot wrote is not a room bubble until it has left (#456): it is `sending` from here,
+      // `pending` while Bot Social holds it for the owner's Approve / Reject, and dropped from the list
+      // once it went out. Only the owner's click (settleHeldLine) moves a pending line on.
+      const held = rt.faceRoomFanout && isLocalBotLine(line) ? holdLine(room, line) : undefined
+      let result
+      try { result = await rt.faceRoomFanout?.(room, line) } catch (error) {
         rt.warn?.('ds-bot: face-room line not sent: %s', error)
+      }
+      if (held !== undefined) {
+        if (result?.held === true && typeof result.approvalId === 'string' && result.approvalId) {
+          held.status = 'pending'
+          held.approvalId = result.approvalId
+        } else {
+          room.heldLines = (room.heldLines ?? []).filter(entry => entry !== held)
+        }
+        void Promise.resolve(rt.save?.()).catch(() => {})
       }
       return
     }
@@ -902,6 +918,29 @@ export function install(rt) {
         ...from,
       }, 'room')
     }
+  }
+
+  const isLocalBotLine = line => !line?.kind && line?.remote !== true && line?.authorKind === 'bot'
+    && typeof (line.botId ?? line.authorId) === 'string' && rt.botOf?.(line.botId ?? line.authorId) !== undefined
+  function holdLine(room, line) {
+    const entry = { seq: line.seq, botId: line.botId ?? line.authorId, text: String(line.text ?? ''), status: 'sending', at: Date.now() }
+    room.heldLines = [...(room.heldLines ?? []), entry].slice(-HELD_LINES_KEPT)
+    return entry
+  }
+  // The owner decided a held room line on its card (#456): approved, it is a plain bubble from now on;
+  // rejected, it stays a grey "Not sent" line, after a reload and in Past rooms too.
+  rt.settleHeldLine = function settleHeldLine(approvalId, decision) {
+    const id = String(approvalId ?? '')
+    if (!id || (decision !== 'approved' && decision !== 'rejected')) return false
+    for (const room of Object.values(state.rooms ?? {})) {
+      const entry = (room.heldLines ?? []).find(item => item.approvalId === id)
+      if (entry === undefined) continue
+      if (decision === 'approved') room.heldLines = room.heldLines.filter(item => item !== entry)
+      else entry.status = 'rejected'
+      void Promise.resolve(rt.save?.()).catch(() => {})
+      return true
+    }
+    return false
   }
 
   // A Bot that no longer qualifies (grant revoked, owner removed) leaves every room

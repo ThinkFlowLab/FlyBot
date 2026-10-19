@@ -997,7 +997,8 @@ export function install(rt) {
       dropFace: roomId => rt.dropFaceRoom?.(roomId),
       // `fn(room, line, { mentions })`: for the room owner's own typed line, `mentions` is the server handle of
       // every Bot its "@" names (the picker's labels read against this room), so the transport can send the
-      // explicit list with the line (#293). Bot lines carry none.
+      // explicit list with the line (#293). Bot lines carry none. `fn` answers `{ held: true, approvalId }` for a
+      // Bot line the server holds for the owner's approval (#456); the room then shows it on its card only.
       onFaceLine(fn) {
         if (typeof fn !== 'function') { rt.faceRoomFanout = undefined; return () => {} }
         const wrapped = (room, line) => {
@@ -1007,6 +1008,9 @@ export function install(rt) {
         rt.faceRoomFanout = wrapped
         return () => { if (rt.faceRoomFanout === wrapped) rt.faceRoomFanout = undefined }
       },
+      // The owner's Approve / Reject of a held face-room line (#456), by its Bot Social approval id: an
+      // approved line is a bubble from then on, a rejected one a grey "Not sent" line.
+      settleHeld: (approvalId, decision) => rt.settleHeldLine?.(approvalId, decision) === true,
       postNotice: (roomId, text) => {
         const room = rt.roomOf(roomId)
         if (!room || typeof rt.postToRoom !== 'function') return

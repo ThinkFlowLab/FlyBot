@@ -60,7 +60,7 @@ export function install(rt) {
       }
     }),
     // `parts`: the members' hidden group Sessions and their earlier segments, for usage.
-    rooms: Object.values(state.rooms).map(({ log, seen, botRounds, lateRounds, sessions, segments, ...room }) => {
+    rooms: Object.values(state.rooms).map(({ log, seen, botRounds, lateRounds, sessions, segments, faceLine, ...room }) => {
       const parts = [...Object.values(sessions ?? {}), ...Object.values(segments ?? {}).flat().map(segment => segment.sessionId)]
       const last = (log ?? []).filter(line => line.kind === undefined).at(-1)
       const previewText = last ? unwrapUntrusted(last.text) : ''

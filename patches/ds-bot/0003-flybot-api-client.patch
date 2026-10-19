@@ -524,16 +524,16 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  }
  
  function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
-@@ -170,16 +170,137 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+@@ -170,16 +170,157 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
    return h('div', { className: 'bt-event' }, parts)
  }
  
-+// A Bot line that Bot Social holds for the owner's approval has its text in the approval card; the
-+// bubble keeps only the state, so the text shows once (#306). The host's pending list (`pendingApprovals`)
++// A Bot line that Bot Social holds for the owner's approval has its text in the approval card only, and
++// the room draws no bubble for it until Approve (#306, #456). The host's pending list (`pendingApprovals`)
 +// carries the held text whitespace-collapsed and capped at 800 characters (799 once trimmed), without a "To the room:" lead.
 +const heldForm = text => String(text ?? '').replace(/\s+/g, ' ').trim().replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
 +// The card names the sending Bot in `from`; a bubble is held only when its own Bot sent the held text, so
-+// another Bot's identical words are not turned into "Waiting for approval" (#306). A card that names no sender
++// another Bot's identical words are not hidden (#306). A card that names no sender
 +// matches by text alone, as before.
 +const sameName = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim().toLowerCase() === String(b ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
 +export function isHeldLine(room, text, bot) {
@@ -548,8 +548,36 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  })
 +}
 +
++// A face-room line my own Bot wrote, as the host tracks it on the room (`heldLines`, #456): `held` while it is
++// being sent or waits for the owner's Approve / Reject, `rejected` once rejected, or when the room ended before
++// anyone decided (it never left), so it reads the same after a reload and in Past rooms. A line drawn with its
++// log seq is found by it; a late post (no seq) by its Bot and its exact text.
++const HELD_SENDING_MS = 60_000
++export function heldLineState(room, { seq, botId, text } = {}, now = Date.now()) {
++  if (room?.origin !== 'face-to-face' || !Array.isArray(room.heldLines)) return undefined
++  const said = String(text ?? '').trim()
++  const entry = room.heldLines.filter(item => (seq !== undefined && item?.seq !== undefined
++    ? item.seq === seq
++    : item?.botId === botId && String(item?.text ?? '').trim() === said)).at(-1)
++  if (entry === undefined) return undefined
++  if (entry.status === 'rejected') return 'rejected'
++  // A send a restart cut off never got an answer: the line is drawn as before.
++  if (entry.status === 'sending' && now - (Number(entry.at) || 0) > HELD_SENDING_MS) return undefined
++  if (entry.status !== 'pending' && entry.status !== 'sending') return undefined
++  return room.face?.status === 'left' || room.face?.status === 'closed' ? 'rejected' : 'held'
++}
++
  // One Bot message inside a group chat: avatar, name (with its group role), bubble.
- function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
+-function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi }) {
++function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq }) {
++  const held = heldLineState(room, { seq, botId: bot.id, text })
++  // Rejected: one grey line where the bubble would have been, never the words (#456).
++  if (held === 'rejected') {
++    return h('div', { className: 'bt-event bt-not-sent', 'data-flybot': 'held-not-sent', role: 'status' },
++      h(BotMark, { bot, size: 16 }), h('span', null, t('{name} · Not sent', { name: bot.name })))
++  }
++  // Waiting: the words are on the owner's approval card only; the bubble comes after Approve (#456).
++  if (held === 'held' || isHeldLine(room, text, bot)) return null
    const lead = h('button', { type: 'button', className: 'bt-lead', 'aria-label': t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
      h(BotMark, { bot, size: 22 }))
 -  return h('div', { className: 'bt-group-msg' },
@@ -557,13 +585,6 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 -      room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null),
 +  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
 +    room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
-+  if (isHeldLine(room, text, bot)) {
-+    return h('div', { className: 'bt-group-msg' }, name,
-+      h('div', { className: 'bt-astack', 'data-lead': '' },
-+        h('div', { className: 'bt-msg' },
-+          h('div', { className: 'bt-msg-line' }, lead,
-+            h('div', { className: 'bt-bubble bt-bubble-held', 'data-flybot': 'held-line', role: 'status' }, t('Waiting for approval'))))))
-+  }
 +  return h('div', { className: 'bt-group-msg' }, name,
      h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
  }
@@ -786,10 +807,11 @@ diff --git a/src/client/cells.js b/src/client/cells.js
            t('{name} could not answer: {reason}', { name: bot.name, reason: failureLabel(reply.code, reply.text) }))
        }
        if (reply.kind === 'lookup') {
-@@ -599,6 +599,23 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -599,7 +599,24 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
        if (reply.kind === 'stopped') {
          return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
        }
+-      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
 +      if (reply.kind === 'notice' && room?.origin === 'face-to-face' && String(reply.text ?? '').trim() === WAITING_OTHERS_NOTICE) return null
 +      if (reply.kind === 'notice' || reply.kind === 'joined' || reply.kind === 'left' || reply.kind === 'started') {
 +        return h('div', { key: `notice-${index}`, className: 'bt-event', 'data-flybot': 'face-notice' }, remoteMessageText(reply.text))
@@ -807,9 +829,10 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +          useUi,
 +        })
 +      }
-       return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
++      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, seq: reply.seq })
      }),
      pending.map((id) => {
+       const bot = roster.byId[id]
 diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 --- a/src/client/context-menu.js
 +++ b/src/client/context-menu.js
@@ -2151,7 +2174,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
-+.bt-bubble-held{background:transparent;border:1px dashed var(--bt-line-2);color:var(--bt-ink-2)}
++.bt-event.bt-not-sent{gap:6px;color:var(--bt-ink-3)}
  .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
  .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
  .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}

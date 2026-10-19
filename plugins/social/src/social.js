@@ -2217,7 +2217,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   async function postRejectNote(approvalId) {
     const item = pendingCache.items.find(entry => entry.id === approvalId)
-    if (!item) return
+    // A rejected room line already reads "Not sent" where it would have stood (#456): no second note.
+    if (!item || item.kind === 'face_room_message') return
     await postChatNote(item, REJECT_NOTE)
     settings.approvalNotices ??= {}
     settings.approvalNotices[approvalId] = { at: now(), kind: 'rejected' }
@@ -2451,6 +2452,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const item = Array.isArray(pending) ? pending.find(entry => entry.id === id) : undefined
     if (mapped === 'rejected') await postRejectNote(id)
     const result = await confirmedCall('decide_approval', { approval_id: id, decision: mapped })
+    // A held face-room line follows the click: a bubble once approved, a grey "Not sent" line once rejected (#456).
+    flybot.rooms?.settleHeld?.(id, mapped)
     // The decided hold leaves the badge now; the rest stay until the next fetch (#226).
     setPending(pendingCache.items.filter(entry => entry.id !== id))
     pendingCache.at = 0
@@ -2684,6 +2687,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       joinCode: prev?.joinCode,
     }, asBot)
     let seen = settings.faceRooms[snapshot.roomId].seen
+    // The core room keeps every event id it logged: an event it refuses as already logged is not delivered again.
+    const firstTime = (applied, line) => typeof flybot.rooms.applyFaceLine !== 'function' || !line.eventId || applied !== undefined
     const joinedFromEvents = new Set()
     const alreadyJoined = (text) => {
       const body = String(text ?? '')
@@ -2708,15 +2713,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (alreadyJoined(line.text)) continue
           seen = rememberEvent(seen, `join-text:${line.text}`)
         }
-        flybot.rooms.applyFaceLine?.(room.id, line)
-        void flybot.rooms.postNotice?.(room.id, line.text)
+        if (firstTime(flybot.rooms.applyFaceLine?.(room.id, line), line)) void flybot.rooms.postNotice?.(room.id, line.text)
       } else if (line.human || line.authorKind === 'human') {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
         if (local) continue
         const who = line.who || 'Someone'
-        flybot.rooms.applyFaceLine?.(room.id, { ...line, who, remote: true, authorKind: 'human' })
-        if (flybot.rooms.postHuman) void flybot.rooms.postHuman(room.id, { authorId: line.authorId, name: who, text: line.text, ...(line.mentions ? { mentions: line.mentions } : {}), ...(line.attested === true ? { attested: true } : {}) })
-        else void flybot.rooms.postNotice?.(room.id, `${who}: ${line.text}`)
+        // A line the room already has (two polls, or a start and a poll, read the same event) starts no
+        // second round, so each Bot here answers it once (#456).
+        const fresh = firstTime(flybot.rooms.applyFaceLine?.(room.id, { ...line, who, remote: true, authorKind: 'human' }), line)
+        if (fresh && flybot.rooms.postHuman) void flybot.rooms.postHuman(room.id, { authorId: line.authorId, name: who, text: line.text, ...(line.mentions ? { mentions: line.mentions } : {}), ...(line.attested === true ? { attested: true } : {}) })
+        else if (fresh) void flybot.rooms.postNotice?.(room.id, `${who}: ${line.text}`)
       } else {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
         if (local) continue
@@ -2949,6 +2955,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
               .catch(error => warn('face-room owner line not approved', error))
           }
           pendingCache.at = 0
+          // A Bot's held line lives on its card until the owner decides; the room draws no bubble for it (#456).
+          if (!outbound.human && sent.approvalId) return { held: true, approvalId: String(sent.approvalId) }
         }
       } catch (error) {
         warn('face-room send failed', error)

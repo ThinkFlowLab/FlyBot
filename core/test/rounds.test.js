@@ -592,6 +592,129 @@ test('#287: a face-room line the send path posted is logged and sent once, wheth
   assert.deepEqual(count('second line'), [1, 1])
 })
 
+test('#456: a Bot line Bot Social holds stays off the room until the owner decides; Reject keeps it Not sent in the saved room', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt, home } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_hold',
+    localId: 'face-hold',
+    status: 'open',
+    members: [{ handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false }],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }],
+  })
+  let release
+  const answered = new Promise(resolve => { release = resolve })
+  // The transport answers like social.js: a Bot line Bot Social holds comes back with its approval id.
+  rt.faceRoomFanout = async (room, line) => {
+    if (line.authorKind !== 'bot') return undefined
+    await answered
+    return { held: true, approvalId: 'apr-hold-1' }
+  }
+  sent.length = 0
+  await emit(hosted.id, userMessage('noodles tonight?'))
+  const running = relay(hosted.id, 'hold-1')
+  const turn = await turnFor(sent)
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'Line one: got it, noodles', 1)
+  // While the send is out the line is `sending`: no bubble before the server's answer.
+  const sending = await waitFor(() => hosted.heldLines?.[0])
+  assert.deepEqual([sending.botId, sending.text, sending.status], [chief, 'Line one: got it, noodles', 'sending'])
+  release()
+  const done = JSON.parse(await running)
+  const reply = done.replies.find(item => item.botId === chief)
+  assert.equal(reply.seq, sending.seq, 'the drawn reply carries the seq its held record names')
+  const pending = await waitFor(() => (hosted.heldLines?.[0]?.status === 'pending' ? hosted.heldLines[0] : undefined))
+  assert.equal(pending.approvalId, 'apr-hold-1')
+  const view = (await call('state', {})).value.rooms.find(room => room.id === hosted.id)
+  assert.equal(view.heldLines[0].status, 'pending', 'the chat reads the held state from the room')
+  assert.equal(view.faceLine, undefined, 'the per-line answer record stays on the host')
+  // Reject: the line stays as a rejected record (a grey Not sent line), in the saved state too.
+  assert.equal(rt.settleHeldLine('apr-hold-1', 'rejected'), true)
+  assert.equal(hosted.heldLines[0].status, 'rejected')
+  await rt.save()
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).rooms[hosted.id]
+  assert.equal(saved.heldLines[0].status, 'rejected', 'a reload still knows it was rejected')
+  // An unknown approval, or a decision that is neither, changes nothing.
+  assert.equal(rt.settleHeldLine('apr-other', 'approved'), false)
+  assert.equal(rt.settleHeldLine('apr-hold-1', 'maybe'), false)
+
+  // A line that went out (not held) leaves no record; an approved one is dropped, so it is a plain bubble.
+  rt.faceRoomFanout = async (room, line) => (line.authorKind === 'bot' && line.text === 'held again' ? { held: true, approvalId: 'apr-hold-2' } : { held: false })
+  sent.length = 0
+  await emit(hosted.id, userMessage('and dessert?'))
+  const second = relay(hosted.id, 'hold-2')
+  const next = await turnFor(sent)
+  await answer(next.sessionId, next.message.source.exchangeId, 'held again', 2)
+  await second
+  await waitFor(() => (hosted.heldLines.some(item => item.approvalId === 'apr-hold-2') ? true : undefined))
+  assert.equal(rt.settleHeldLine('apr-hold-2', 'approved'), true)
+  assert.deepEqual(hosted.heldLines.map(item => item.approvalId), ['apr-hold-1'])
+  sent.length = 0
+  await emit(hosted.id, userMessage('thanks'))
+  const third = relay(hosted.id, 'hold-3')
+  const last = await turnFor(sent)
+  await answer(last.sessionId, last.message.source.exchangeId, 'sent straight away', 3)
+  await third
+  await settle()
+  assert.deepEqual(hosted.heldLines.map(item => item.approvalId), ['apr-hold-1'], 'a line that left needs no record')
+})
+
+test('#456: each Bot answers a person\'s plain face-room line once: a second delivery and a late second answer are dropped', async (t) => {
+  const { call, emit, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_once',
+    localId: 'face-once',
+    status: 'open',
+    members: [
+      { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+      { handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob', published: false },
+    ],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }],
+  })
+  // A friend's attested plain line, as social.js delivers it: logged by event id, then posted for the round.
+  const friendLine = async (eventId, text) => {
+    const logged = rt.applyFaceRoomLine(hosted, { eventId, who: 'Bob', text, authorId: '@bob.home', authorKind: 'human', remote: true })
+    await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, plain: true, human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text }] } })
+    return logged
+  }
+  sent.length = 0
+  assert.ok(await friendLine('ev-1', 'Line one from A: noodles, budget 50'))
+  const first = relay(hosted.id, 'once-1')
+  const turn = await turnFor(sent)
+  assert.ok(turn, 'my Chief answers the friend\'s plain line')
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'Noodles it is', 1)
+  await first
+  // The same line reaches the room again (two polls read one event): Chief is not asked a second time.
+  assert.equal(rt.applyFaceRoomLine(hosted, { eventId: 'ev-1', who: 'Bob', text: 'Line one from A: noodles, budget 50', authorId: '@bob.home', authorKind: 'human', remote: true }), undefined, 'the event is logged once')
+  sent.length = 0
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, plain: true, human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text: 'Line one from A: noodles, budget 50' }] } })
+  const again = JSON.parse(await relay(hosted.id, 'once-2'))
+  assert.equal(sent.some(entry => entry.message?.source?.role === 'room'), false, 'no second turn for the same line')
+  assert.equal(again.replies.filter(item => item.botId === chief && item.kind === undefined).length, 0)
+  assert.equal(hosted.log.filter(line => line.botId === chief && !line.kind).length, 1, 'one answer in the room')
+  // A late answer from a turn asked for that same line is not posted either.
+  sent.length = 0
+  await rt.lateRoomReply(turn.sessionId, { exchangeId: turn.message.source.exchangeId, roomId: hosted.id }, 'Line one from B: got it, noodles')
+  assert.equal(sent.some(entry => entry.message?.source?.role === 'post'), false, 'the second answer is dropped')
+  // A turn asked for something else still posts what it ends with.
+  await rt.lateRoomReply(turn.sessionId, { exchangeId: 'some-other-ask', roomId: hosted.id }, 'Here is the menu I looked up')
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'post').length, 1)
+  // A new line from the friend is answered again.
+  sent.length = 0
+  await friendLine('ev-2', 'And dessert?')
+  const third = relay(hosted.id, 'once-3')
+  const follow = await turnFor(sent)
+  assert.ok(follow, 'a new line is answered')
+  await answer(follow.sessionId, follow.message.source.exchangeId, 'Mango pudding', 2)
+  await third
+})
+
 test('a message sent between rounds still opens a full round', async (t) => {
   const { call, emit, userMessage, relay, answer, stop, sent } = start()
   t.after(stop)

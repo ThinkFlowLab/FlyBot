@@ -145,6 +145,7 @@ var ZH = {
   "Messages waiting for your approval": "等你批准的消息",
   "Waiting for approval": "等待批准",
   "Not sent": "未发出",
+  "{name} · Not sent": "{name} · 未发出",
   "Sent to {to}": "已发给 {to}",
   "Auto-sent to {to}": "已自动发给 {to}",
   "Not sent: delivery failed": "未发出：发送失败",
@@ -3163,7 +3164,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 
 .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
 .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
-.bt-bubble-held{background:transparent;border:1px dashed var(--bt-line-2);color:var(--bt-ink-2)}
+.bt-event.bt-not-sent{gap:6px;color:var(--bt-ink-3)}
 .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
 .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
 .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
@@ -5307,7 +5308,28 @@ function isHeldLine(room2, text, bot) {
     return held !== "" && (held === line || held.length >= 799 && line.startsWith(held));
   });
 }
-function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
+var HELD_SENDING_MS = 6e4;
+function heldLineState(room2, { seq, botId, text } = {}, now = Date.now()) {
+  if (room2?.origin !== "face-to-face" || !Array.isArray(room2.heldLines)) return void 0;
+  const said = String(text ?? "").trim();
+  const entry = room2.heldLines.filter((item) => seq !== void 0 && item?.seq !== void 0 ? item.seq === seq : item?.botId === botId && String(item?.text ?? "").trim() === said).at(-1);
+  if (entry === void 0) return void 0;
+  if (entry.status === "rejected") return "rejected";
+  if (entry.status === "sending" && now - (Number(entry.at) || 0) > HELD_SENDING_MS) return void 0;
+  if (entry.status !== "pending" && entry.status !== "sending") return void 0;
+  return room2.face?.status === "left" || room2.face?.status === "closed" ? "rejected" : "held";
+}
+function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi, seq }) {
+  const held = heldLineState(room2, { seq, botId: bot.id, text });
+  if (held === "rejected") {
+    return (0, import_react8.createElement)(
+      "div",
+      { className: "bt-event bt-not-sent", "data-flybot": "held-not-sent", role: "status" },
+      (0, import_react8.createElement)(BotMark, { bot, size: 16 }),
+      (0, import_react8.createElement)("span", null, t("{name} · Not sent", { name: bot.name }))
+    );
+  }
+  if (held === "held" || isHeldLine(room2, text, bot)) return null;
   const lead = (0, import_react8.createElement)(
     "button",
     { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
@@ -5319,27 +5341,6 @@ function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }
     bot.name,
     room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
   );
-  if (isHeldLine(room2, text, bot)) {
-    return (0, import_react8.createElement)(
-      "div",
-      { className: "bt-group-msg" },
-      name,
-      (0, import_react8.createElement)(
-        "div",
-        { className: "bt-astack", "data-lead": "" },
-        (0, import_react8.createElement)(
-          "div",
-          { className: "bt-msg" },
-          (0, import_react8.createElement)(
-            "div",
-            { className: "bt-msg-line" },
-            lead,
-            (0, import_react8.createElement)("div", { className: "bt-bubble bt-bubble-held", "data-flybot": "held-line", role: "status" }, t("Waiting for approval"))
-          )
-        )
-      )
-    );
-  }
   return (0, import_react8.createElement)(
     "div",
     { className: "bt-group-msg" },
@@ -5936,7 +5937,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
           useUi
         });
       }
-      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
+      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
     }),
     pending.map((id) => {
       const bot = roster.byId[id];
