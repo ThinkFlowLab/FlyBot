@@ -74,3 +74,9 @@ test('a friend\'s reply arriving clears the wait before it is written into the c
   await rt.remoteChats.deliver({ handle: '@bot-1.danyang.home', text: 'hi' })
   assert.deepEqual(seen, {}, 'cleared before the reply is followed up')
 })
+
+test('a reply drawn in a later turn than my send ends the wait on screen, ahead of the roster (#443 follow-up)', () => {
+  const src = readFileSync(new URL('../src/client/activity-row.js', import.meta.url), 'utf8')
+  assert.match(src, /awaiting && !replied/)
+  assert.match(src, /lastTurnOnScreen\('assistant-step'\) > sendTurn\.current/)
+})

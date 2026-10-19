@@ -6110,6 +6110,45 @@ function findHost(where) {
   const tails = flow.querySelectorAll(":scope > * [data-turn-tail], :scope > [data-turn-tail]");
   return tails.length ? tails[tails.length - 1] : null;
 }
+var lastTurnOnScreen = (kind) => {
+  let top = -1;
+  for (const node of document.querySelectorAll(`[data-chat-flow-kind${kind ? `="${kind}"` : ""}][data-chat-turn]`)) top = Math.max(top, Number(node.dataset.chatTurn));
+  return top;
+};
+function useReplyAfterSend(remote, sending) {
+  const sendTurn = (0, import_react9.useRef)(-1);
+  const wasSending = (0, import_react9.useRef)(false);
+  const [replied, setReplied] = (0, import_react9.useState)(false);
+  (0, import_react9.useEffect)(() => {
+    if (!remote) return void 0;
+    if (sending) {
+      wasSending.current = true;
+      sendTurn.current = -1;
+      setReplied(false);
+      return void 0;
+    }
+    if (wasSending.current) {
+      wasSending.current = false;
+      sendTurn.current = lastTurnOnScreen();
+    }
+    if (sendTurn.current < 0) return void 0;
+    let frame = 0;
+    const check = () => {
+      frame = 0;
+      if (lastTurnOnScreen("assistant-step") > sendTurn.current) setReplied(true);
+    };
+    const observer = new MutationObserver(() => {
+      if (!frame) frame = requestAnimationFrame(check);
+    });
+    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
+    check();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [remote, sending]);
+  return replied;
+}
 function useRunningHost(active, where = RUNNING_HOST) {
   const [host, setHost] = (0, import_react9.useState)(null);
   (0, import_react9.useEffect)(() => {
@@ -6197,7 +6236,8 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   const sendRun = (0, import_react9.useRef)(false);
   if (!running) sendRun.current = false;
   else if (pendingInput > 0) sendRun.current = true;
-  const visible = bot?.remote !== void 0 ? !streaming && (running ? sendRun.current : awaiting) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
+  const replied = useReplyAfterSend(bot?.remote !== void 0, running && sendRun.current);
+  const visible = bot?.remote !== void 0 ? !streaming && (running ? sendRun.current : awaiting && !replied) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
   const lastRun = (0, import_react9.useRef)({ running, send: false });
   const bridging = bot?.remote !== void 0 && !streaming && lastRun.current.running && lastRun.current.send && !running;
   lastRun.current = { running, send: sendRun.current };
