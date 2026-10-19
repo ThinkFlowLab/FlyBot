@@ -1415,3 +1415,16 @@ test('#447: an orphan (its parent gone) is reattached by role, never left outsid
   assert.ok(lines.includes('moved Poet from a removed Bot to Chief'))
   assert.match(sp(m, qa), /Chief → FlyBot Lead → FlyBot QA/)
 })
+
+test('#447: without parent, a new Bot goes only down leads of groups it belongs to', async () => {
+  const m = await setup()
+  const team = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Test: runs the FlyBot tests'] })
+  const quality = (await child(m, m.root, 'Code Quality', 'reviews code and lint', { parent: 'FlyBot Lead' })).created.id
+  m.flybot.scope('flybot-tree').fields.set(quality, 'lead', { key: 'domain:dev', label: 'Dev' })
+  // A dev Bot that is not FlyBot's does not end up inside FlyBot's dev group.
+  assert.equal(f(m, (await child(m, m.root, 'Code Reviewer', 'reviews pull requests')).created.id, 'parent'), m.root)
+  // A FlyBot Bot goes under the FlyBot lead (the project group first).
+  assert.equal(f(m, (await child(m, m.root, 'FlyBot Linter', 'lints FlyBot code')).created.id, 'parent'), team.team.lead.id)
+  // Asked from inside FlyBot Lead, its dev group takes a dev Bot.
+  assert.equal(f(m, (await child(m, team.team.lead.id, 'Style Checker', 'checks code style')).created.id, 'parent'), quality)
+})

@@ -222,13 +222,13 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
     return plans.find(p => mode === 'daily' || p.freed >= 1 || p.takesIncoming)
   }
 
-  /** Runs a plan; resolves the lead id. Sync (returns the id) when the lead exists, else a Promise. */
   /** Marks an existing member as the lead of group `key` (journaled once). */
   function markLead(run, leadId, key, label) {
     if (get(leadId, 'lead')) return
     set(leadId, 'lead', { key, label })
     run.actions.push({ op: 'mark-lead', bot: leadId, name: snapshot()[leadId]?.name ?? leadId, key, label })
   }
+  /** Runs a plan; resolves the lead id. Sync (returns the id) when the lead exists, else a Promise. */
   function runPlan(run, parentId, plan) {
     if (!plan.lead) return createLead(run, parentId, plan)
     const leadId = plan.lead
@@ -241,17 +241,17 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   }
 
   // ------------------------------------------------------------ placement
-  /**
-   * Where a new Bot may go, best first: its namesake, then every tree Bot that leads a group it
-   * belongs to (most specific group first, then the shallower lead), then the root. A broad area is
-   * joined only through a lead made for it ("Work Lead"); a shared word never makes a lead.
-   */
   /** The lead groups strictly between `root` and `id` (exclusive of both). */
   const groupsAbove = (nodes, root, id) => {
     const out = []
     for (let at = nodes[id]?.parent, seen = new Set(); at && at !== root && nodes[at] && !seen.has(at); at = nodes[at].parent) { seen.add(at); const k = get(at, 'lead')?.key; if (k) out.push(k) }
     return out
   }
+  /**
+   * Where a new Bot may go, best first: its namesake, then every tree Bot that leads a group it
+   * belongs to (most specific group first, then the shallower lead), then the root. A broad area is
+   * joined only through a lead made for it ("Work Lead"); a shared word never makes a lead.
+   */
   function homesFor(nodes, root, x, { leadsOnly = false } = {}) {
     const keys = keysOf(x.p)
     const found = []
