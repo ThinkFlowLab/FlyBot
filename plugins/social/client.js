@@ -1532,10 +1532,11 @@ window.__ModuleLoader__.load({
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite'))),
         h('div', { className: 'fs-label', 'data-flybot': 'invite-heading' }, 'Invite a friend'),
         h('div', { className: 'fs-card', 'data-flybot': 'invite-group' },
-          // Which Bot the link shares is a labelled picker that shows the whole name, not a bare `C…` (#343).
+          // Which Bot the link shares is a labelled picker on its own line, not a bare `C…`; a name too long
+          // for the sidebar is whole in the tooltip and in the button's tooltip below (#343).
           mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'share-as', title: 'Your friend gets this Bot only.' },
             h('span', { className: 'fs-join-as-label' }, 'Share '),
-            h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
+            h('select', { className: 'fs-input', value: sharing, title: shareName, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
           // The button names the Bot the link shares; a long name ends in an ellipsis instead of being clipped.
           h('div', { className: 'fs-line', 'data-flybot': 'invite-line' },

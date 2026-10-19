@@ -6692,6 +6692,7 @@ test('#343: Add friend shows accepting and inviting as two labelled groups, each
   assert.ok(text(nodes[at('share-as')]).startsWith('Share'))
   assert.ok(at('share-bot') > at('share-as'), 'the invite picker sits inside its labelled line')
   assert.equal(text(nodes[at('mint-invite')]), 'Copy invite link for Scratchpad Helper', 'the button names the picked Bot')
+  assert.equal(nodes[at('share-bot')].props.title, 'Scratchpad Helper', 'a long name the picker clips is whole in its tooltip')
   // Done closes the panel from the bottom, after everything else.
   const done = nodes.findIndex(n => n.type === 'button' && text(n) === 'Done')
   assert.ok(done > at('mint-invite'), 'Done comes after the invite group')
