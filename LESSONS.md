@@ -50,5 +50,5 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 - **Seen:** 1× (PR #2 review / agent claim patterns)
 - **Trigger:** Agent or PR claims “fixed”, “tested”, “secure”, or “ready to merge”.
 - **Wrong:** Imply full validation when only part of the suite ran; omit tip SHA; treat author narrative as evidence.
-- **Right:** Name the tip SHA. List commands run and their results. List **not run** explicitly. PASS only when OpenCode and Codex agree on that tip. No “faster/safer” without a new Verifier PASS.
+- **Right:** Name the tip SHA. List commands run and their results. List **not run** explicitly. PASS only from the reviewer (the owner's reviewer Bot, self-PASS counts) at that tip. No “faster/safer” without a new Verifier PASS.
 - **Promote path:** After ≥3 days → [docs/code-standards.md](docs/code-standards.md#verifier-honesty).
