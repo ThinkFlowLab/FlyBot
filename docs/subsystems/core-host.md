@@ -128,6 +128,10 @@ credentials and team mode remain separate work under #55/#198.
 
 - Host-facing copy the user reads says FlyBot: workspace title, store / read-only messages, diagnostics table row, secrets descriptions, tools settings hints, parts notes, and update errors as **FlyBot core**. `update.js` still reads `package.json` `name` / `repository` for the check and GitHub links.
 
+### Test connection (#409)
+
+- `rt.testModel(botId)` (`models.js`, endpoint `test-model`, Bot-owner only in `authz.js` `BOT_TARGETED`) sends one real request on the route the Bot's next run takes (`desiredModel`): a one-line prompt, `maxTokens` 16, the model's least thinking (`off`, else its first level), a 30 s timeout, tagged to the Bot's chat as `other` usage. Nothing retries it, and a Bot runs at most one test at a time (a second click is refused). Any non-error finish, a reply cut off at the limit included, is a pass (`{ ok: true, ref, ms }`). A failure is `{ ok: false, ref, code }`, where `testFailure` maps the DSH failure (code, status, a missing-key message) to a fixed code; the provider's message is never returned or logged, since it may echo a key. A Bot with no model answers `NO_MODEL` without a request; a friend's Bot is refused.
+
 ### Diagnostics
 
 - Host diagnostics never depend on `ctx.logger`: DSH may export no logger, and a test or plugin-local host may carry one without `warn`. `rt.warn` still writes stderr and the diagnostics log in that case (`src/host/diagnostics.js`). Plugins reach the same log through `flybot.warn` (#68); see [plugin-runtime](plugin-runtime.md).
