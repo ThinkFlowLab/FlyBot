@@ -298,6 +298,14 @@ diff --git a/client.js b/client.js
    "Open updates": "打开更新",
    // Command palette
    Messages: "消息",
+@@ -446,6 +446,7 @@ var ZH = {
+   Reply: "回复",
+   "More message actions": "更多操作",
+   More: "更多",
++  Sharing: "分享",
+   Reactions: "表情",
+   "Message actions": "消息操作",
+   Download: "下载",
 @@ -459,6 +459,9 @@ var ZH = {
    "Replies from": "群聊回复：",
    "Reply from": "收到回复：",
@@ -902,7 +910,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,162 +1242,507 @@ function maskOf(shape) {
+@@ -1242,162 +1242,508 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1384,14 +1392,15 @@ diff --git a/client.js b/client.js
 +    (0, import_react2.createElement)(Safe, { entry, props: { actions, call: call2 } })
 +  )));
 +}
-+function FlyBotDetails({ bot, roster, actions }) {
++function FlyBotDetails({ bot, roster, actions, wrap }) {
 +  const entries2 = useSlot("flybot.bot.details");
 +  if (entries2.length === 0) return null;
-+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
++  const list = entries2.map((entry) => (0, import_react2.createElement)(
 +    "div",
 +    { key: entry.id, className: "bt-flybot-details", "data-flybot": entry.id },
 +    (0, import_react2.createElement)(Safe, { entry, props: { bot, roster, actions, call: call2 } })
-+  )));
++  ));
++  return wrap ? wrap(list) : (0, import_react2.createElement)(import_react2.Fragment, null, list);
 +}
 +var POLL_MS = 5e3;
 +var POINTER_DELAY_MS = 1200;
@@ -2111,6 +2120,16 @@ diff --git a/client.js b/client.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
+@@ -2679,7 +2679,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
+ @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
+ [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
+-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
++[data-composer-card]:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
++[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 55%,transparent)!important}
+ [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
+ [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
+ [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
 @@ -2691,6 +2691,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
  [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
@@ -4068,8 +4087,7 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -4086,7 +4104,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -7634,7 +7653,7 @@ diff --git a/client.js b/client.js
    const isMainBot = isMainOf(roster, bot.id);
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
    const isTile = roster.mainBotId === bot.id;
-@@ -8011,112 +8011,113 @@ function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -8011,112 +8011,114 @@ function BotSettingsForm({ bot, roster, actions, run }) {
      if (confirming) void run(actions.deleteBot(bot.id));
      else setConfirming(true);
    };
@@ -7729,6 +7748,8 @@ diff --git a/client.js b/client.js
 -    roster.memory === false ? null : (0, import_react18.createElement)(MemoryCard, { bot, actions }),
 -    (0, import_react18.createElement)(BotSchedules, { bot, roster, actions }),
 -    (0, import_react18.createElement)(
++    // Sharing sits near the top with a title like Profile and Model, not at the end of the page (#406).
++    (0, import_react21.createElement)(FlyBotDetails, { bot, roster, actions, wrap: (children) => (0, import_react21.createElement)(Card, { title: t("Sharing") }, children) }),
 +    (0, import_react21.createElement)(BotCapabilitiesCard, { bot, roster, actions, run, Card, SwitchRow }),
 +    (0, import_react21.createElement)(BotConnectorsCard, { bot, roster, actions, run, Card, SwitchRow }),
 +    roster.memory === false ? null : (0, import_react21.createElement)(MemoryCard, { bot, actions }),
@@ -7764,7 +7785,6 @@ diff --git a/client.js b/client.js
 +      isMainBot ? null : (0, import_react21.createElement)(SwitchRow, { label: t("Hide from sidebar"), hint: t("Search still finds it."), on: bot.hidden === true, onChange: (hidden) => run(actions.setFlags(bot.id, { hidden })) })
      ),
 -    (0, import_react18.createElement)(
-+    (0, import_react21.createElement)(FlyBotDetails, { bot, roster, actions }),
 +    (0, import_react21.createElement)(
        Card,
 -      { title: t("Manage") },
@@ -8834,8 +8854,9 @@ diff --git a/client.js b/client.js
 -    (0, import_react23.createElement)(
 +    (0, import_react26.createElement)(
        Card,
-       { title: t("Manage") },
+-      { title: t("Manage") },
 -      (0, import_react23.createElement)(
++      { title: t("More") },
 +      (0, import_react26.createElement)(
          "button",
          { type: "button", className: "bt-set-row bt-bs-row bt-bs-danger", "data-confirm": confirming || void 0, onClick: remove },

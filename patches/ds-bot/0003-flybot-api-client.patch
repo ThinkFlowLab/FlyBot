@@ -197,9 +197,12 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
          h(ModelMenu, { bot, roster, actions, run }))),
      h(Card, { title: t('Working folder') },
        h('div', { className: 'bt-set-row bt-bs-row' },
-@@ -232,21 +232,22 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -231,22 +231,24 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+     h(Card, { title: t('Instructions') },
        h(Row, { label: t('What this Bot does'), hint: t('Its job on the team. Part of the Bot\'s system prompt.'), stack: true },
          h(InlineText, { label: t('Instructions'), value: bot.instructions, multiline: true, placeholder: t('What this Bot is responsible for…'), onSave: instructions => save({ instructions }) }))),
++    // Sharing sits near the top with a title like Profile and Model, not at the end of the page (#406).
++    h(FlyBotDetails, { bot, roster, actions, wrap: children => h(Card, { title: t('Sharing') }, children) }),
      h(BotCapabilitiesCard, { bot, roster, actions, run, Card, SwitchRow }),
 +    h(BotConnectorsCard, { bot, roster, actions, run, Card, SwitchRow }),
      roster.memory === false ? null : h(MemoryCard, { bot, actions }),
@@ -218,7 +221,6 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
        h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: bot.pinned === true, onChange: pinned => run(actions.setFlags(bot.id, { pinned })) }),
        isMainBot ? null : h(SwitchRow, { label: t('Hide from sidebar'), hint: t('Search still finds it.'), on: bot.hidden === true, onChange: hidden => run(actions.setFlags(bot.id, { hidden })) })),
 -    h(Card, { title: t('Manage') },
-+    h(FlyBotDetails, { bot, roster, actions }),
 +    h(Card, { title: t('More') },
        h('button', { type: 'button', className: 'bt-set-row bt-bs-row', onClick: duplicate },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Duplicate')), h('span', { className: 'bt-set-hint' }, t('A copy with the same job and model, and fresh memory.'))),
@@ -1980,6 +1982,16 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
+@@ -862,7 +862,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
+ @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
+ [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, 'border-radius')}!important}
+-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
++[data-composer-card]:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
++[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 55%,transparent)!important}
+ [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
+ [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
+ [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
 @@ -874,6 +874,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
  [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}

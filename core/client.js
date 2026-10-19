@@ -582,6 +582,7 @@ var ZH = {
   Reply: "回复",
   "More message actions": "更多操作",
   More: "更多",
+  Sharing: "分享",
   Reactions: "表情",
   "Message actions": "消息操作",
   Download: "下载",
@@ -2141,14 +2142,15 @@ function FlyBotAccountHeader({ actions }) {
     (0, import_react2.createElement)(Safe, { entry, props: { actions, call: call2 } })
   )));
 }
-function FlyBotDetails({ bot, roster, actions }) {
+function FlyBotDetails({ bot, roster, actions, wrap }) {
   const entries2 = useSlot("flybot.bot.details");
   if (entries2.length === 0) return null;
-  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+  const list = entries2.map((entry) => (0, import_react2.createElement)(
     "div",
     { key: entry.id, className: "bt-flybot-details", "data-flybot": entry.id },
     (0, import_react2.createElement)(Safe, { entry, props: { bot, roster, actions, call: call2 } })
-  )));
+  ));
+  return wrap ? wrap(list) : (0, import_react2.createElement)(import_react2.Fragment, null, list);
 }
 var POLL_MS = 5e3;
 var POINTER_DELAY_MS = 1200;
@@ -3851,7 +3853,8 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
 [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+[data-composer-card]:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 55%,transparent)!important}
 [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
 [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
 [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
@@ -9994,6 +9997,8 @@ function BotSettingsForm({ bot, roster, actions, run }) {
         (0, import_react21.createElement)(InlineText, { label: t("Instructions"), value: bot.instructions, multiline: true, placeholder: t("What this Bot is responsible for…"), onSave: (instructions) => save({ instructions }) })
       )
     ),
+    // Sharing sits near the top with a title like Profile and Model, not at the end of the page (#406).
+    (0, import_react21.createElement)(FlyBotDetails, { bot, roster, actions, wrap: (children) => (0, import_react21.createElement)(Card, { title: t("Sharing") }, children) }),
     (0, import_react21.createElement)(BotCapabilitiesCard, { bot, roster, actions, run, Card, SwitchRow }),
     (0, import_react21.createElement)(BotConnectorsCard, { bot, roster, actions, run, Card, SwitchRow }),
     roster.memory === false ? null : (0, import_react21.createElement)(MemoryCard, { bot, actions }),
@@ -10019,7 +10024,6 @@ function BotSettingsForm({ bot, roster, actions, run }) {
       (0, import_react21.createElement)(SwitchRow, { label: t("Pin"), hint: t("Kept above the other chats."), on: bot.pinned === true, onChange: (pinned) => run(actions.setFlags(bot.id, { pinned })) }),
       isMainBot ? null : (0, import_react21.createElement)(SwitchRow, { label: t("Hide from sidebar"), hint: t("Search still finds it."), on: bot.hidden === true, onChange: (hidden) => run(actions.setFlags(bot.id, { hidden })) })
     ),
-    (0, import_react21.createElement)(FlyBotDetails, { bot, roster, actions }),
     (0, import_react21.createElement)(
       Card,
       { title: t("More") },
@@ -11194,7 +11198,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
     ),
     (0, import_react26.createElement)(
       Card,
-      { title: t("Manage") },
+      { title: t("More") },
       (0, import_react26.createElement)(
         "button",
         { type: "button", className: "bt-set-row bt-bs-row bt-bs-danger", "data-confirm": confirming || void 0, onClick: remove },

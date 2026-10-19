@@ -1,0 +1,1 @@
+Settings polish ([#406](https://github.com/ThinkFlowLab/FlyBot/issues/406)): a Bot's **Sharing** (invite and People with access) is now one titled card right after Instructions instead of the end of the page, a group chat's last card is called **More** like a Bot's, and the message box shows a clearly darker border while you type in it.

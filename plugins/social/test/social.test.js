@@ -4150,6 +4150,12 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
     ;(node.children ?? []).forEach(walk)
   }
   walk(plugin.BotSocialDetails({ bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } } }))
+  // #406: for an own Bot the host's titled card says Sharing; the plugin draws no second title.
+  const before = all.length
+  walk(plugin.BotSocialDetails({ bot: { id: 'bot-writer', name: 'Writer' } }))
+  const own = all.splice(before)
+  assert.ok(own.some(n => n.props['data-flybot'] === 'invite-to-bot'))
+  assert.ok(!own.some(n => n.children.includes('Sharing')))
   const remove = all.find(n => n.props['data-flybot'] === 'remove-friend-bot')
   assert.ok(remove)
   assert.equal(remove.props['aria-label'], 'Remove this Bot')

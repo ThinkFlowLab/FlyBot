@@ -155,11 +155,13 @@ export function FlyBotAccountHeader({ actions }) {
     h(Safe, { entry, props: { actions, call } }))))
 }
 
-export function FlyBotDetails({ bot, roster, actions }) {
+// `wrap` draws the entries inside a host frame (Bot settings' titled card); with no entries it draws nothing.
+export function FlyBotDetails({ bot, roster, actions, wrap }) {
   const entries = useSlot('flybot.bot.details')
   if (entries.length === 0) return null
-  return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-details', 'data-flybot': entry.id },
-    h(Safe, { entry, props: { bot, roster, actions, call } }))))
+  const list = entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-details', 'data-flybot': entry.id },
+    h(Safe, { entry, props: { bot, roster, actions, call } })))
+  return wrap ? wrap(list) : h(Fragment, null, list)
 }
 
 const POLL_MS = 5000
