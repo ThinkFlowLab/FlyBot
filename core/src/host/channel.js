@@ -81,6 +81,8 @@ export function install(rt) {
     exchangeTurns: state.exchangeTurns,
     // Per Session: turn → the person's name, for friends' lines Bot Social attests they typed themselves.
     remoteTypedTurns: state.remoteTypedTurns ?? {},
+    // Per friend chat: when my message left, while its reply has not come back (#443).
+    remoteAwaiting: state.remoteAwaiting ?? {},
     questions: state.questions,
     // FlyBot: friends' remote Bots, chat members with a remote badge (not team Bots).
     remoteBots: rt.flybotRemoteMembers?.() ?? [],

@@ -1097,7 +1097,9 @@ window.__ModuleLoader__.load({
     function PeerThinking({ room, bot } = {}) {
       useStyles()
       const [items, setItems] = useState([])
-      const watching = Boolean((typeof bot?.remote?.handle === 'string' && bot.remote.handle) || (room?.origin === 'face-to-face' && room.face?.roomId && room.face.status === 'open'))
+      // A friend's 1:1 chat has the host's one thinking row, with the friend's Bot mark, from my send
+      // until the reply lands (#443); a second line here flashed in after the reply. Face rooms keep it.
+      const watching = Boolean(room?.origin === 'face-to-face' && room.face?.roomId && room.face.status === 'open')
       useEffect(() => {
         if (!watching) { setItems([]); return undefined }
         let live = true
@@ -1111,7 +1113,7 @@ window.__ModuleLoader__.load({
         timer?.unref?.()
         return () => { live = false; clearInterval(timer) }
       }, [watching, bot?.remote?.handle, room?.id, room?.face?.roomId, room?.face?.status])
-      const text = thinkingLine(thinkingNames(items, { room, bot }))
+      const text = watching ? thinkingLine(thinkingNames(items, { room, bot })) : ''
       return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
     }
 

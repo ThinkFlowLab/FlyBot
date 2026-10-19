@@ -873,6 +873,9 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
 .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
 .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
+.bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}
+/* Between a friend's chat turns the row sits in the last turn's tail (#443), at the transcript's foot. */
+[data-turn-tail]>.bt-typing{margin-top:var(--dsh-chat-flow-gap,12px)}
 .bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
 .bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
 .bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}

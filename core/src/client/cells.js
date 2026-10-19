@@ -137,6 +137,15 @@ function useClosingText(node, useTurnData) {
   return tail.closing.finalNode?.seq === seq
 }
 
+// In a friend's chat the replies are the friend's Bot speaking (#443): its mark beside the bubble,
+// the same look its sidebar row, the header and the thinking row show. A "Not sent: …" line is
+// this home's own note about a send that failed, never the friend's words, so it has no mark.
+export function friendLead(bot, texts) {
+  if (bot?.remote === undefined || texts.length === 0) return undefined
+  if (texts.every(text => /^Not sent:/.test(text.trim()))) return undefined
+  return h('span', { className: 'bt-lead', title: bot.name, 'data-flybot': 'friend-lead' }, h(BotMark, { bot, size: 22 }))
+}
+
 export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
   const roster = useRoster(value => value)
   const data = node.data
@@ -161,7 +170,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const selfId = roster.byId[sessionId]?.id ?? sessionId
   const bubbles = texts.length ? (person
     ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
-    : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions })) : null
+    : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts) })) : null
   return h(Fragment, null,
     relays.map(relay => {
       const source = relay.source

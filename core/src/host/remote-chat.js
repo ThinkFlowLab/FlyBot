@@ -113,6 +113,18 @@ export function install(rt) {
     state.flybot.remoteSent ??= []
     return state.flybot.remoteSent
   }
+  // Friend chats waiting on a reply (#443): chat id → when the message left. Cleared when the
+  // friend's reply is written back (the echo turn), so the thinking row hands over to the reply.
+  const markAwaiting = (id, at) => {
+    state.remoteAwaiting ??= {}
+    if (at === undefined) {
+      if (state.remoteAwaiting[id] === undefined) return false
+      delete state.remoteAwaiting[id]
+      return true
+    }
+    state.remoteAwaiting[id] = at
+    return true
+  }
   async function forward(handle, turn) {
     const bot = chatOfHandle(handle)
     if (bot === undefined) return `Not sent: ${handle} is not a friend's Bot any more.`
@@ -125,7 +137,10 @@ export function install(rt) {
       await sender({ handle, text: turn.text, botId: bot.id, remote: { ...bot.remote } })
       sent.push(turn.messageId)
       if (sent.length > SENT_KEPT) sent.splice(0, sent.length - SENT_KEPT)
-      void rt.save().catch(() => {})
+      // The chat now waits for the friend's reply: the client keeps one thinking row up from
+      // this send until the reply lands (#443), across the gap between this turn and the echo.
+      markAwaiting(bot.id, Date.now())
+      await rt.save().catch(error => warn('ds-bot: saving a friend chat wait failed: %s', error))
       return ''
     } catch (error) {
       return notSentLine(error)
@@ -143,7 +158,11 @@ export function install(rt) {
     }
     async *stream(options) {
       const turn = remoteTurn(options.messages)
-      if (turn.kind === 'echo') yield* streamText(turn.text)
+      if (turn.kind === 'echo') {
+        const id = chatOfHandle(options.model)?.id
+        if (id !== undefined && markAwaiting(id)) void rt.save().catch(error => warn('ds-bot: saving a friend chat wait failed: %s', error))
+        yield* streamText(turn.text)
+      }
       else if (turn.kind === 'send') yield* streamText(await forward(options.model, turn))
       else yield* streamText('')
     }

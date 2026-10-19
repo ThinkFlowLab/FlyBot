@@ -165,6 +165,7 @@ export function install(rt) {
       questions: bySession(full.questions),
       exchangeTurns: bySession(full.exchangeTurns),
       remoteTypedTurns: bySession(full.remoteTypedTurns),
+      remoteAwaiting: bySession(full.remoteAwaiting),
       agents: alone() ? full.agents : [],
       secrets: alone() ? full.secrets : [],
       secretRequests: alone() ? full.secretRequests : {},

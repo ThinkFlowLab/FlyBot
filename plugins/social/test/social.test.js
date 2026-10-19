@@ -5310,7 +5310,7 @@ test('#191: an ended face room says so in plain view and names the person who le
   assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
 })
 
-test('#297: a friend\'s Bot thinking shows as one quiet line above the composer; nothing for other chats, rooms or no signal', () => {
+test('#297/#443: a face room\'s Bots thinking show as one quiet line above the composer; nothing for 1:1 friend chats, other chats, rooms or no signal', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const plugin = pluginOf([[]])
   const line = (items, props) => walk(pluginOf([items]).PeerThinking(props)).find(n => n.props?.['data-flybot'] === 'peer-thinking')
@@ -5320,15 +5320,14 @@ test('#297: a friend\'s Bot thinking shows as one quiet line above the composer;
     { scope: 'direct', handle: '@other.bob.home', name: 'Other' },
     { scope: 'face_room', handle: '@chief.carol.home', name: 'Chief', roomId: 'frm_1' },
   ]
-  const shown = line(items, dm)
-  assert.equal(shown.children.flat().map(n => n.children?.join?.('') ?? n).join(''), "Bob's Coder is thinking…")
-  assert.equal(shown.props.role, 'status')
-  assert.equal(walk(shown).find(n => n.props?.className === 'bt-shimmer')?.type, 'span')
-  // A friend's 1:1 chat names the Bot as the header does (#384): "Coder (Bob)".
+  // #443: a friend's 1:1 chat has the host's one thinking row (the friend's mark, from my send until the
+  // reply lands); this line would be a second one that flashed in after the reply.
+  assert.equal(line(items, dm), undefined, 'a friend\'s 1:1 chat: the host activity row, not this line')
   const owned = { bot: { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home', owner: 'Bob', homeName: 'Family Workspace' } } }
-  assert.equal(line(items, owned).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Coder (Bob) is thinking…')
-  assert.equal(line([], dm), undefined)
-  assert.equal(line(items, { bot: { id: 'r2', name: 'Other chat', remote: { handle: '@nobody.home' } } }), undefined)
+  assert.equal(line(items, owned), undefined)
+  // The name helper still says it as the header does (#384): "Coder (Bob)".
+  assert.equal(plugin.thinkingNames(items, owned).join('|'), 'Coder (Bob)')
+  assert.equal(plugin.thinkingNames(items, dm).join('|'), "Bob's Coder")
   assert.equal(line(items, { bot: { id: 'a', name: 'Chief' } }), undefined, 'a local Bot chat has its own activity row')
   const room = status => ({ id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status }, participants: [
     { remote: false, displayName: 'Chief' },

@@ -2637,7 +2637,7 @@ function createSource(initial) {
     }
   };
 }
-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 function indexRoster(value) {
   setLocalBots(value.bots);
@@ -3841,6 +3841,9 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
 .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
 .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
+.bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}
+/* Between a friend's chat turns the row sits in the last turn's tail (#443), at the transcript's foot. */
+[data-turn-tail]>.bt-typing{margin-top:var(--dsh-chat-flow-gap,12px)}
 .bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
 .bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
 .bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
@@ -5200,6 +5203,11 @@ function useClosingText(node, useTurnData) {
   if (!tail?.closing || seq === void 0) return true;
   return tail.closing.finalNode?.seq === seq;
 }
+function friendLead(bot, texts2) {
+  if (bot?.remote === void 0 || texts2.length === 0) return void 0;
+  if (texts2.every((text) => /^Not sent:/.test(text.trim()))) return void 0;
+  return (0, import_react8.createElement)("span", { className: "bt-lead", title: bot.name, "data-flybot": "friend-lead" }, (0, import_react8.createElement)(BotMark, { bot, size: 22 }));
+}
 function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
   const roster = useRoster((value) => value);
   const data = node.data;
@@ -5218,7 +5226,7 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
   const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : [];
   if (texts2.length === 0 && !reasoning && relays.length === 0) return null;
   const selfId = roster.byId[sessionId]?.id ?? sessionId;
-  const bubbles = texts2.length ? person ? (0, import_react8.createElement)(PersonMessage, { name: person, texts: texts2, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi }) : (0, import_react8.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null;
+  const bubbles = texts2.length ? person ? (0, import_react8.createElement)(PersonMessage, { name: person, texts: texts2, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi }) : (0, import_react8.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts2) }) : null;
   return (0, import_react8.createElement)(
     import_react8.Fragment,
     null,
@@ -6060,6 +6068,14 @@ function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
   return (0, import_react8.createElement)(import_react8.Fragment, null, drawn.map((call4, index) => (0, import_react8.createElement)(import_react8.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
 }
 
+// src/client/awaiting.js
+var AWAIT_REPLY_MS = 10 * 60 * 1e3;
+function awaitingReply(roster, sessionId, now = Date.now()) {
+  const at = roster?.remoteAwaiting?.[sessionId];
+  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
+  return now - at < AWAIT_REPLY_MS;
+}
+
 // src/client/activity-row.js
 var import_react9 = require("react");
 var import_react_dom2 = require("react-dom");
@@ -6071,7 +6087,30 @@ function elapsedLabel(ms) {
   const hours = Math.floor(minutes / 60);
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
 }
-function useRunningHost(active) {
+var RUNNING_HOST = "[data-chat-flow] > [data-chat-running]";
+var TAIL_HOST = "tail";
+var REMOTE_GRACE_MS = 1500;
+function useAwaitingReply(roster, sessionId) {
+  const at = roster?.remoteAwaiting?.[sessionId];
+  const [, tick] = (0, import_react9.useState)(0);
+  const shown = awaitingReply(roster, sessionId);
+  (0, import_react9.useEffect)(() => {
+    if (!shown) return void 0;
+    const timer = setTimeout(() => tick((n) => n + 1), Math.max(0, at + AWAIT_REPLY_MS - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [shown, at]);
+  return shown;
+}
+function findHost(where) {
+  if (where !== TAIL_HOST) return document.querySelector(where);
+  const flow = document.querySelector("[data-conversation-scroll] [data-chat-flow]") ?? document.querySelector("[data-chat-flow]");
+  if (!flow) return null;
+  const running = flow.querySelector(":scope > [data-chat-running]");
+  if (running) return running;
+  const tails = flow.querySelectorAll(":scope > * [data-turn-tail], :scope > [data-turn-tail]");
+  return tails.length ? tails[tails.length - 1] : null;
+}
+function useRunningHost(active, where = RUNNING_HOST) {
   const [host, setHost] = (0, import_react9.useState)(null);
   (0, import_react9.useEffect)(() => {
     if (!active) {
@@ -6081,7 +6120,7 @@ function useRunningHost(active) {
     let frame = 0;
     const find = () => {
       frame = 0;
-      const node = document.querySelector("[data-chat-flow] > [data-chat-running]");
+      const node = findHost(where);
       setHost((prev) => prev === node ? prev : node);
     };
     const observer = new MutationObserver(() => {
@@ -6093,7 +6132,7 @@ function useRunningHost(active) {
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [active]);
+  }, [active, where]);
   return host;
 }
 function useRowEntrances(replacing) {
@@ -6154,7 +6193,9 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   const streaming = entries2.some((entry) => entry.text);
   const tools = entries2.filter((entry) => !entry.text).sort((a, b) => a.at - b.at);
   const relaying = tools.some((entry) => entry.relay);
-  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
+  const awaiting = useAwaitingReply(roster, sessionId);
+  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0) || awaiting && !running;
+  const steady = awaiting || bot?.remote !== void 0 && !streaming;
   const tool = tools.at(-1);
   const inputRef = (0, import_react9.useRef)(0);
   const inputAt = Math.max(inputRef.current, pendingInput);
@@ -6185,11 +6226,16 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
       setPhase("in");
       return void 0;
     }
-    setPhase((current) => current === "in" ? "out" : current);
-    const timer = setTimeout(() => {
-      shift.current = document.querySelector("[data-conversation-scroll]")?.scrollTop ?? null;
-      setPhase((current) => current === "out" ? null : current);
-    }, 140);
+    let timer;
+    const leave = () => {
+      setPhase((current) => current === "in" ? "out" : current);
+      timer = setTimeout(() => {
+        shift.current = document.querySelector("[data-conversation-scroll]")?.scrollTop ?? null;
+        setPhase((current) => current === "out" ? null : current);
+      }, 140);
+    };
+    if (steady) timer = setTimeout(leave, REMOTE_GRACE_MS);
+    else leave();
     return () => clearTimeout(timer);
   }, [visible]);
   (0, import_react9.useLayoutEffect)(() => {
@@ -6213,12 +6259,18 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
     const timer = setInterval(() => setNow(Date.now()), 1e4);
     return () => clearInterval(timer);
   }, [phase]);
-  const host = useRunningHost(running);
+  const remote = bot?.remote !== void 0;
+  const host = useRunningHost(running || remote && phase !== null, running || !remote ? RUNNING_HOST : TAIL_HOST);
+  const drawn = (0, import_react9.useRef)(false);
+  const carry = drawn.current;
+  (0, import_react9.useEffect)(() => {
+    drawn.current = Boolean(host && phase !== null && shown);
+  }, [host, phase, shown]);
   if (!host || phase === null || !shown) return null;
   const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
   return (0, import_react_dom2.createPortal)((0, import_react9.createElement)(
     "div",
-    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "aria-hidden": true },
+    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "data-carry": carry && phase !== "out" ? "" : void 0, "data-remote": remote ? "" : void 0, "aria-hidden": true },
     bot ? (0, import_react9.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react9.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
     (0, import_react9.createElement)(
       "span",

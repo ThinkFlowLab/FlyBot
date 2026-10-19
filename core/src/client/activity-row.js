@@ -4,6 +4,7 @@ import { BotMark, RoomAvatar } from './mark.js'
 import { Shimmer, PHRASES } from './cells.js'
 import { reducedMotion } from './motion.js'
 import { t } from './i18n.js'
+import { AWAIT_REPLY_MS, awaitingReply } from './awaiting.js'
 
 // -------------------------------------------------------------------------
 // The activity row: the Bot's mark and a shimmering phrase at the transcript
@@ -20,21 +21,47 @@ export function elapsedLabel(ms) {
 }
 export { reducedMotion }
 
-function useRunningHost(active) {
+// Where the row draws: the shell's running status while a turn runs; between turns of a
+// friend's chat (#443), the tail of the transcript's last turn, so it stays below the last message.
+export const RUNNING_HOST = '[data-chat-flow] > [data-chat-running]'
+export const TAIL_HOST = 'tail'
+const REMOTE_GRACE_MS = 1500
+function useAwaitingReply(roster, sessionId) {
+  const at = roster?.remoteAwaiting?.[sessionId]
+  const [, tick] = useState(0)
+  const shown = awaitingReply(roster, sessionId)
+  useEffect(() => {
+    if (!shown) return undefined
+    const timer = setTimeout(() => tick(n => n + 1), Math.max(0, at + AWAIT_REPLY_MS - Date.now()) + 50)
+    return () => clearTimeout(timer)
+  }, [shown, at])
+  return shown
+}
+function findHost(where) {
+  if (where !== TAIL_HOST) return document.querySelector(where)
+  const flow = document.querySelector('[data-conversation-scroll] [data-chat-flow]') ?? document.querySelector('[data-chat-flow]')
+  if (!flow) return null
+  const running = flow.querySelector(':scope > [data-chat-running]')
+  if (running) return running
+  const tails = flow.querySelectorAll(':scope > * [data-turn-tail], :scope > [data-turn-tail]')
+  return tails.length ? tails[tails.length - 1] : null
+}
+
+function useRunningHost(active, where = RUNNING_HOST) {
   const [host, setHost] = useState(null)
   useEffect(() => {
     if (!active) { setHost(null); return undefined }
     let frame = 0
     const find = () => {
       frame = 0
-      const node = document.querySelector('[data-chat-flow] > [data-chat-running]')
+      const node = findHost(where)
       setHost(prev => (prev === node ? prev : node))
     }
     const observer = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(find) })
     observer.observe(document.querySelector('[data-conversation-scroll]') ?? document.body, { childList: true, subtree: true })
     find()
     return () => { cancelAnimationFrame(frame); observer.disconnect() }
-  }, [active])
+  }, [active, where])
   return host
 }
 
@@ -96,7 +123,12 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   const tools = entries.filter(entry => !entry.text).sort((a, b) => a.at - b.at)
   // Group chats show who is typing on their own while members speak.
   const relaying = tools.some(entry => entry.relay)
-  const visible = running && !streaming && !relaying && (bot !== undefined || room !== undefined)
+  // A friend's chat (#443): my message leaves in one short turn and the reply comes back in
+  // another, so the row stays up from the send until the reply lands, with the friend's Bot mark.
+  const awaiting = useAwaitingReply(roster, sessionId)
+  const visible = (running && !streaming && !relaying && (bot !== undefined || room !== undefined)) || (awaiting && !running)
+  // Between those two turns `running` drops for a moment; a short grace keeps the one row up.
+  const steady = awaiting || (bot?.remote !== undefined && !streaming)
   const tool = tools.at(-1)
   const inputRef = useRef(0)
   // A steer keeps the run going, so nothing else resets the row: fresh input is
@@ -127,11 +159,16 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   leaving.current = phase !== null && !visible
   useEffect(() => {
     if (visible) { setPhase('in'); return undefined }
-    setPhase(current => (current === 'in' ? 'out' : current))
-    const timer = setTimeout(() => {
-      shift.current = document.querySelector('[data-conversation-scroll]')?.scrollTop ?? null
-      setPhase(current => (current === 'out' ? null : current))
-    }, 140)
+    let timer
+    const leave = () => {
+      setPhase(current => (current === 'in' ? 'out' : current))
+      timer = setTimeout(() => {
+        shift.current = document.querySelector('[data-conversation-scroll]')?.scrollTop ?? null
+        setPhase(current => (current === 'out' ? null : current))
+      }, 140)
+    }
+    if (steady) timer = setTimeout(leave, REMOTE_GRACE_MS)
+    else leave()
     return () => clearTimeout(timer)
   }, [visible])
   // Removing the row at a pinned tail moves the transcript down; a tail
@@ -157,10 +194,15 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
     const timer = setInterval(() => setNow(Date.now()), 10000)
     return () => clearInterval(timer)
   }, [phase])
-  const host = useRunningHost(running)
+  const remote = bot?.remote !== undefined
+  const host = useRunningHost(running || (remote && phase !== null), running || !remote ? RUNNING_HOST : TAIL_HOST)
+  // The row moving between hosts (turn → between turns → turn) is the same row: no second entrance.
+  const drawn = useRef(false)
+  const carry = drawn.current
+  useEffect(() => { drawn.current = Boolean(host && phase !== null && shown) }, [host, phase, shown])
   if (!host || phase === null || !shown) return null
   const elapsed = now - shown.at >= 60000 ? elapsedLabel(now - shown.at) : null
-  return createPortal(h('div', { className: 'bt-typing', 'data-exiting': phase === 'out' ? '' : undefined, 'aria-hidden': true },
+  return createPortal(h('div', { className: 'bt-typing', 'data-exiting': phase === 'out' ? '' : undefined, 'data-carry': carry && phase !== 'out' ? '' : undefined, 'data-remote': remote ? '' : undefined, 'aria-hidden': true },
     bot ? h(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : h(RoomAvatar, { room, roster, size: 28 }),
     h('span', { className: 'bt-typing-text' },
       h('span', { key: `${shown.key}:${shown.at}`, className: 'bt-typing-label' },
