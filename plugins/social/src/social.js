@@ -67,6 +67,8 @@ import {
 
 export const NS = 'social'
 const REMOTE_TTL_MS = 30_000
+// The `by` of a refusal from the core owner policy (core/src/host/reach.js POLICY): no grant for that sender.
+const OWNER_POLICY = 'owner-policy'
 // Empty / missing / "@" stay empty. Prefixing '@' before the body is stripped
 // used to persist the literal "@" as a face-room `as` handle (#122).
 const norm = (handle) => {
@@ -1538,6 +1540,31 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return { shareRequests: shareRequests() }
   }))
 
+  // The friend's home took our message but its Bot did not get it: that home had not recorded its grant yet
+  // (Bot Social #30 `message.not_delivered`, #442). The owner's own chat with that Bot shows it as a Not sent
+  // line, where a send that failed here shows one; a Bot's own send (message_friend_bot) is only logged.
+  async function noteNotDelivered(local, event) {
+    const handle = norm(event.to?.handle)
+    if (!handle || handle === '@') return
+    if (settings.via[handle] !== local.id || !flybot.remote?.chats) {
+      warn(`a message to ${handle} did not reach that Bot (${cleanText(event.reason, 'not delivered')})`)
+      return
+    }
+    await flybot.remote.chats.deliver({
+      handle,
+      home: event.to?.home_handle ? norm(event.to.home_handle) : undefined,
+      name: cleanText(event.to?.display_name, handle),
+      text: `Not sent: ${friendBotTitle(handle)} was not ready to talk with you yet, so it did not get your message. Send it again.`,
+    })
+  }
+  // Tells the sender (through Bot Social) that this home could not hand their message to its Bot. A server
+  // without the tool (before Bot Social #30) only logs it.
+  async function reportNotDelivered(event) {
+    if (typeof event.message_id !== 'string' || !event.message_id) return
+    await client.callTool('report_not_delivered', { message_id: event.message_id, reason: 'not_shared_yet' })
+      .catch(error => warn('could not tell the sender the message was not delivered', error))
+  }
+
   let polling
   function pollInbox() {
     // Only the host that holds the team polls and delivers.
@@ -1574,6 +1601,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         }
         if (event.event_type === 'share.requested') {
           if (!seen.has(event.event_id)) noteShareRequest(local, event)
+          done()
+          continue
+        }
+        // Bot Social writes a join's grants before it confirms the join (#442, Bot Social #30), and this event
+        // comes before the friend's first message in this Bot's queue: record the grant now, so that message
+        // is judged with it. A failed sync leaves it to the retry below.
+        if ((event.event_type === 'relationship.changed' && event.status === 'active') || (event.event_type === 'grant.changed' && event.status === 'granted')) {
+          if (!seen.has(event.event_id)) await syncOutgoingGrants({ only: local.id }).catch(error => warn('grants not synced', error))
+          done()
+          continue
+        }
+        if (event.event_type === 'message.not_delivered') {
+          if (!seen.has(event.event_id)) await noteNotDelivered(local, event).catch(error => warn('not-delivered notice failed', error))
           done()
           continue
         }
@@ -1616,13 +1656,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           done()
           continue
         }
-        const outcome = await flybot.bot.send({
+        const deliverInbound = () => flybot.bot.send({
           from: { kind: 'remote', handle, home: event.from?.home_handle ? norm(event.from.home_handle) : undefined, name: typedBy ? `${typedBy} (typed via ${handle}, Bot Social)` : `${cleanText(event.from?.display_name, handle)} (${handle}, Bot Social)`, ...(typedBy ? { typedBy } : {}) },
           to: local.id,
           text,
           meta: { conversationId: event.conversation_id ?? null },
           ...(files.length ? { attachments: files.map(file => ({ id: file.id, name: safeName(file.name), size: Number(file.size) || 0, mime: String(file.mime ?? ''), ...(file.sha256 ? { sha256: file.sha256 } : {}) })) } : {}),
         })
+        let outcome = await deliverInbound()
+        // The owner policy refuses a sender this Bot has no grant for. Right after an invite join that can
+        // be a grant not synced yet (a server without Bot Social #30, or a lost relationship.changed): sync
+        // this Bot's grants once and judge the message again (#442). Still refused: the sender is told.
+        if (outcome?.action === 'deny' && outcome.by === OWNER_POLICY) {
+          await syncOutgoingGrants({ only: local.id }).catch(error => warn('grants not synced', error))
+          outcome = await deliverInbound()
+          if (outcome?.action === 'deny' && outcome.by === OWNER_POLICY) await reportNotDelivered(event)
+        }
         if (outcome?.action === 'deny') warn(`message from ${handle} refused: ${outcome.reason ?? 'denied'}`)
         else delivered += 1
         done()
