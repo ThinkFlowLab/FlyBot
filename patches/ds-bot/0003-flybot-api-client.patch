@@ -159,7 +159,11 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
  import { createElement as h, Fragment, useCallback, useEffect, useRef, useState } from 'react'
  import { paintCss } from './inks.js'
  import { CHARACTERS, PICKER_SHAPES, PICKER_COLUMNS, CHARACTER_COLORS, SHAPES, hasShape, shapeOf, bodyOf, maskBox, holes, nextMarkSerial } from './characters.js'
-@@ -8,6 +8,7 @@ import { ModelMenu, modelOf } from './model-menu.js'
+@@ -5,9 +5,11 @@ import { isMainOf } from './sources.js'
+ import { PencilIcon, ChevronRightIcon } from './icons.js'
+ import { lookOf, BotMark } from './mark.js'
+ import { ModelMenu, modelOf } from './model-menu.js'
++import { ModelTestRow, MODEL_TEST_CSS } from './model-test.js'
  import { FolderMenu } from './folder-menu.js'
  import { BotSchedules } from './schedules.js'
  import { BotCapabilitiesCard } from './capability-settings.js'
@@ -188,15 +192,18 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
    const isMainBot = isMainOf(roster, bot.id)
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
    const isTile = roster.mainBotId === bot.id
-@@ -222,7 +222,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -222,8 +222,9 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
        h(Row, { label: t('Label'), hint: t('Optional. Shown under the name.') }, h(InlineText, { label: t('Label'), value: bot.role, placeholder: t('Research, admin…'), maxLength: 24, onSave: role => save({ role }) }))),
      h(Card, { title: t('Model') },
        h('div', { className: 'bt-set-row bt-bs-row' },
 -        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Model')), h('span', { className: 'bt-set-hint' }, modelHint(bot, roster))),
+-        h(ModelMenu, { bot, roster, actions, run }))),
 +        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, modelHint(bot, roster))),
-         h(ModelMenu, { bot, roster, actions, run }))),
++        h(ModelMenu, { bot, roster, actions, run })),
++      bot.model ? h(ModelTestRow, { bot, modelName: modelOf(bot, roster)?.name }) : null),
      h(Card, { title: t('Working folder') },
        h('div', { className: 'bt-set-row bt-bs-row' },
+         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
 @@ -231,22 +231,24 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
      h(Card, { title: t('Instructions') },
        h(Row, { label: t('What this Bot does'), hint: t('Its job on the team. Part of the Bot\'s system prompt.'), stack: true },
@@ -225,6 +232,14 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
        h('button', { type: 'button', className: 'bt-set-row bt-bs-row', onClick: duplicate },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Duplicate')), h('span', { className: 'bt-set-hint' }, t('A copy with the same job and model, and fresh memory.'))),
          h('span', { className: 'bt-chevron' }, h(ChevronRightIcon))),
+@@ -269,6 +269,7 @@ label.bt-bs-row{cursor:text}
+ .bt-bs-row>.bt-set-copy{flex:1 1 auto}
+ .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
+ .bt-bs-row .bt-model-trigger{flex:none;max-width:58%}
++${MODEL_TEST_CSS}
+ .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
+ .bt-bs-input:hover{background:var(--bt-hover)}
+ .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js

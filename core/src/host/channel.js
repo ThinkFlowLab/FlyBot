@@ -190,6 +190,9 @@ export function install(rt) {
           return ok({ modelsKey: modelsKey() })
         case 'efforts':
           return ok(await rt.reasoningOf(String(body.ref ?? '')) ?? { efforts: [] })
+        case 'test-model':
+          await rt.load()
+          return ok(await rt.testModel(String(body.id ?? '')))
         case 'duplicate-bot':
           await rt.load()
           return ok(await rt.duplicateBot(body.id))

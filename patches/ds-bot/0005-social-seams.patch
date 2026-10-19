@@ -361,7 +361,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -100,20 +100,26 @@ export function install(rt) {
+@@ -100,25 +100,34 @@ export function install(rt) {
      return rt.save()
    }
  
@@ -392,6 +392,14 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'models':
            await rt.catalog({ fresh: true })
            return ok({ modelsKey: modelsKey() })
+         case 'efforts':
+           return ok(await rt.reasoningOf(String(body.ref ?? '')) ?? { efforts: [] })
++        case 'test-model':
++          await rt.load()
++          return ok(await rt.testModel(String(body.id ?? '')))
+         case 'duplicate-bot':
+           await rt.load()
+           return ok(await rt.duplicateBot(body.id))
 @@ -141,7 +141,7 @@ export function install(rt) {
            return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
          case 'create-bot': {

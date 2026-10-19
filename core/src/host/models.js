@@ -5,6 +5,28 @@ import { normalize, splitRef } from './text.js'
 
 const CATALOG_TTL_MS = 10_000
 const ROUTE_WAIT_MS = 30_000
+const TEST_TIMEOUT_MS = 30_000
+const TEST_MAX_TOKENS = 16
+const TEST_PROMPT = 'Reply with the single word OK.'
+
+// The outcome of a connection test as a code only (#409). A provider's own text can
+// echo part of a key, so none of it leaves the host: the client words each code.
+export function testFailure(failure, aborted = false) {
+  const code = typeof failure?.code === 'string' ? failure.code : ''
+  const message = String(failure?.message ?? '')
+  const status = typeof failure?.status === 'number' ? failure.status : Number(/^HTTP_(\d{3})$/.exec(code)?.[1] ?? NaN)
+  if (/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(message)) return 'NO_KEY'
+  if (code === 'AUTH' || code === 'INVALID_CREDENTIAL' || status === 401 || status === 403) return 'AUTH'
+  if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA' || status === 402) return 'QUOTA'
+  if (code === 'RATE_LIMIT' || status === 429) return 'RATE_LIMIT'
+  if (aborted || code === 'TIMEOUT' || code === 'ABORTED') return 'TIMEOUT'
+  if (code === 'NO_ADAPTER') return 'NOT_SERVED'
+  if (status === 404 || /\bmodel\b.{0,40}\b(?:not found|does not exist|not exist|unknown|not supported)\b/i.test(message)) return 'MODEL_NOT_FOUND'
+  if (code === 'TRANSPORT') return 'TRANSPORT'
+  if (code === 'SERVER' || (status >= 500 && status < 600)) return 'SERVER'
+  if (code === 'INVALID_REQUEST' || status === 400) return 'INVALID_REQUEST'
+  return 'UNKNOWN'
+}
 
 export function install(rt) {
   const { ctx, state } = rt
@@ -202,7 +224,54 @@ export function install(rt) {
     }
   }
 
+  // Test connection (#409): one tiny real request on the route the Bot's next run takes,
+  // so a pass means that run can reach its model. It may be billed, so a Bot runs
+  // at most one test at a time and nothing retries it.
+  const testing = new Set()
+  async function testModel(botId) {
+    const bot = state.bots?.[botId]
+    if (bot === undefined) throw Object.assign(new Error('Bot not found'), { code: 'bot/not-found' })
+    if (bot.remote) throw Object.assign(new Error('A friend\'s Bot runs on its owner\'s model.'), { code: 'bot/invalid' })
+    if (testing.has(botId)) throw Object.assign(new Error('A test is already running for this Bot.'), { code: 'bot/refused' })
+    testing.add(botId)
+    const started = Date.now()
+    try {
+      const ref = await desiredModel(bot)
+      if (ref === undefined) return { ok: false, code: 'NO_MODEL' }
+      const route = splitRef(ref)
+      const reasoning = await reasoningOf(ref)
+      const efforts = reasoning?.efforts ?? []
+      // The least thinking the model offers keeps the test to a handful of tokens.
+      const effort = efforts.some(entry => entry.id === 'off') ? 'off' : efforts.at(0)?.id
+      const sessionId = rt.chatOf?.(bot.id)
+      const messages = [{ role: 'user', content: [{ type: 'text', text: TEST_PROMPT }] }]
+      rt.tagUsage?.(messages, { sessionId, kind: 'other' })
+      const signal = AbortSignal.timeout(TEST_TIMEOUT_MS)
+      let finish
+      try {
+        for await (const chunk of ctx.llm.stream({
+          provider: route.provider,
+          model: route.model,
+          ...(sessionId === undefined ? {} : { sessionId }),
+          ...(effort === undefined ? {} : { reasoningEffort: effort }),
+          messages,
+          maxTokens: TEST_MAX_TOKENS,
+          signal,
+        })) if (chunk?.type === 'finish') finish = chunk.reason
+      } catch (error) {
+        return { ok: false, ref, code: testFailure(error, signal.aborted) }
+      }
+      // A stream that ends without its finish chunk proved nothing.
+      if (finish === undefined) return { ok: false, ref, code: 'UNKNOWN' }
+      if (finish.kind === 'error' || finish.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
+      return { ok: true, ref, ms: Date.now() - started }
+    } finally {
+      testing.delete(botId)
+    }
+  }
+
   Object.assign(rt, {
+    testModel,
     catalog, cachedCatalog: () => catalogCache.value, cachedDefault: () => pickDefault(catalogCache.value),
     defaultRef, defaultModel, resolveModel, desiredModel, reasoningOf, resolveEffort, desiredEffort,
     selectSessionModel, applyModel, waitForModel, syncModels,

@@ -465,6 +465,32 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Leave the group without an admin': '让群聊不设管理员',
    Unset: '取消',
    'Make admin': '设为管理员',
+@@ -215,6 +215,25 @@ const ZH = {
+   'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
+   'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
+   'Applies from the next message.': '从下一条消息开始生效。',
++  'Test connection': '测试连接',
++  'Testing…': '正在测试…',
++  'Sends one short request to this model. It may be billed.': '会向这个模型发送一条很短的请求，可能产生费用。',
++  'Works. {model} answered.': '连接正常，{model} 已回复。',
++  'Works. {model} answered in {seconds} s.': '连接正常，{model} 在 {seconds} 秒内回复。',
++  'Pick a model first.': '请先选择一个模型。',
++  'This model has no API key yet. Set one up in the model settings.': '这个模型还没有 API 密钥，请在模型设置里填写。',
++  'The API key was rejected. Check it in the model settings.': 'API 密钥被拒绝，请在模型设置里检查。',
++  'The account is out of quota.': '账户额度已用完。',
++  'Too many requests right now. Try again in a moment.': '请求太频繁，请稍后再试。',
++  'The model did not answer within 30 seconds.': '模型在 30 秒内没有回复。',
++  'This model is not available now. Check its provider in the model settings.': '这个模型现在不可用，请在模型设置里检查它的服务商。',
++  'The provider does not know this model. Check the model name.': '服务商没有这个模型，请检查模型名称。',
++  'Could not reach the model service. Check the endpoint address and your network.': '连不上模型服务，请检查接口地址和网络。',
++  'The model service failed. Try again later.': '模型服务出错，请稍后再试。',
++  'The model service refused the request. Check the endpoint and the model.': '模型服务拒绝了请求，请检查接口地址和模型。',
++  'The test failed.': '测试失败。',
++  'A test is already running for this Bot.': '这个 Bot 已经在测试中。',
++  "A friend's Bot runs on its owner's model.": '朋友的 Bot 使用它主人的模型。',
+   Profile: '资料',
+   Label: '标签',
+   'Optional. Shown under the name.': '可选，显示在名字下方。',
 @@ -238,6 +238,7 @@ const ZH = {
    'Kept above the other chats.': '排在其他对话上面。',
    'Search still finds it.': '仍然可以搜索到。',
@@ -1828,6 +1854,35 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 diff --git a/src/host/models.js b/src/host/models.js
 --- a/src/host/models.js
 +++ b/src/host/models.js
+@@ -5,6 +5,28 @@ import { normalize, splitRef } from './text.js'
+ 
+ const CATALOG_TTL_MS = 10_000
+ const ROUTE_WAIT_MS = 30_000
++const TEST_TIMEOUT_MS = 30_000
++const TEST_MAX_TOKENS = 16
++const TEST_PROMPT = 'Reply with the single word OK.'
++
++// The outcome of a connection test as a code only (#409). A provider's own text can
++// echo part of a key, so none of it leaves the host: the client words each code.
++export function testFailure(failure, aborted = false) {
++  const code = typeof failure?.code === 'string' ? failure.code : ''
++  const message = String(failure?.message ?? '')
++  const status = typeof failure?.status === 'number' ? failure.status : Number(/^HTTP_(\d{3})$/.exec(code)?.[1] ?? NaN)
++  if (/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(message)) return 'NO_KEY'
++  if (code === 'AUTH' || code === 'INVALID_CREDENTIAL' || status === 401 || status === 403) return 'AUTH'
++  if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA' || status === 402) return 'QUOTA'
++  if (code === 'RATE_LIMIT' || status === 429) return 'RATE_LIMIT'
++  if (aborted || code === 'TIMEOUT' || code === 'ABORTED') return 'TIMEOUT'
++  if (code === 'NO_ADAPTER') return 'NOT_SERVED'
++  if (status === 404 || /\bmodel\b.{0,40}\b(?:not found|does not exist|not exist|unknown|not supported)\b/i.test(message)) return 'MODEL_NOT_FOUND'
++  if (code === 'TRANSPORT') return 'TRANSPORT'
++  if (code === 'SERVER' || (status >= 500 && status < 600)) return 'SERVER'
++  if (code === 'INVALID_REQUEST' || status === 400) return 'INVALID_REQUEST'
++  return 'UNKNOWN'
++}
+ 
+ export function install(rt) {
+   const { ctx, state } = rt
 @@ -68,7 +68,9 @@ export function install(rt) {
    // The profile default model of DSH, when it is served; else the first served model.
    function pickDefault(entries) {
@@ -1868,6 +1923,61 @@ diff --git a/src/host/models.js b/src/host/models.js
      bot.appliedModel = ref
      if (effort === undefined) delete bot.appliedEffort
      else bot.appliedEffort = effort
+@@ -194,7 +194,54 @@ export function install(rt) {
+     }
+   }
+ 
++  // Test connection (#409): one tiny real request on the route the Bot's next run takes,
++  // so a pass means that run can reach its model. It may be billed, so a Bot runs
++  // at most one test at a time and nothing retries it.
++  const testing = new Set()
++  async function testModel(botId) {
++    const bot = state.bots?.[botId]
++    if (bot === undefined) throw Object.assign(new Error('Bot not found'), { code: 'bot/not-found' })
++    if (bot.remote) throw Object.assign(new Error('A friend\'s Bot runs on its owner\'s model.'), { code: 'bot/invalid' })
++    if (testing.has(botId)) throw Object.assign(new Error('A test is already running for this Bot.'), { code: 'bot/refused' })
++    testing.add(botId)
++    const started = Date.now()
++    try {
++      const ref = await desiredModel(bot)
++      if (ref === undefined) return { ok: false, code: 'NO_MODEL' }
++      const route = splitRef(ref)
++      const reasoning = await reasoningOf(ref)
++      const efforts = reasoning?.efforts ?? []
++      // The least thinking the model offers keeps the test to a handful of tokens.
++      const effort = efforts.some(entry => entry.id === 'off') ? 'off' : efforts.at(0)?.id
++      const sessionId = rt.chatOf?.(bot.id)
++      const messages = [{ role: 'user', content: [{ type: 'text', text: TEST_PROMPT }] }]
++      rt.tagUsage?.(messages, { sessionId, kind: 'other' })
++      const signal = AbortSignal.timeout(TEST_TIMEOUT_MS)
++      let finish
++      try {
++        for await (const chunk of ctx.llm.stream({
++          provider: route.provider,
++          model: route.model,
++          ...(sessionId === undefined ? {} : { sessionId }),
++          ...(effort === undefined ? {} : { reasoningEffort: effort }),
++          messages,
++          maxTokens: TEST_MAX_TOKENS,
++          signal,
++        })) if (chunk?.type === 'finish') finish = chunk.reason
++      } catch (error) {
++        return { ok: false, ref, code: testFailure(error, signal.aborted) }
++      }
++      // A stream that ends without its finish chunk proved nothing.
++      if (finish === undefined) return { ok: false, ref, code: 'UNKNOWN' }
++      if (finish.kind === 'error' || finish.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
++      return { ok: true, ref, ms: Date.now() - started }
++    } finally {
++      testing.delete(botId)
++    }
++  }
++
+   Object.assign(rt, {
++    testModel,
+     catalog, cachedCatalog: () => catalogCache.value, cachedDefault: () => pickDefault(catalogCache.value),
+     defaultRef, defaultModel, resolveModel, desiredModel, reasoningOf, resolveEffort, desiredEffort,
+     selectSessionModel, applyModel, waitForModel, syncModels,
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
@@ -3175,6 +3285,113 @@ diff --git a/test/models.test.js b/test/models.test.js
  test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
    const { rt } = bench({ reasoning: {
      'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },
+@@ -186,3 +186,106 @@ test('a Bot on the default model with its own thinking level leaves the default
+   await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', effort: 'low' })
+   assert.deepEqual(current(), fallback)
+ })
++
++// Test connection (#409): the request is mocked; no real model is called.
++function testRuntime({ stream, bots, efforts } = {}) {
++  const calls = []
++  const tagged = []
++  const ctx = {
++    llm: {
++      listProviders: () => Object.keys(PROVIDERS).map(id => ({ id })),
++      listModels: async id => PROVIDERS[id],
++      resolveModelInfo: async () => (efforts ? { reasoning: { efforts } } : {}),
++      stream: (options) => {
++        calls.push(options)
++        return stream(options, calls.length)
++      },
++    },
++    get: () => undefined,
++  }
++  const rt = {
++    ctx,
++    state: { bots: bots ?? { b1: { id: 'b1', name: 'Writer', model: 'ollama/kimi-k3', effort: 'high' } } },
++    chatOf: id => `chat-${id}`,
++    tagUsage: (messages, tag) => { tagged.push(tag); return messages },
++  }
++  install(rt)
++  return { rt, calls, tagged }
++}
++
++const finishWith = reason => async function* () { yield { type: 'text-delta', text: 'OK' }; yield { type: 'finish', reason } }
++
++test('a connection test sends one tiny request on the Bot\'s own route and reports success', async () => {
++  const { rt, calls, tagged } = testRuntime({ stream: finishWith({ kind: 'completed' }), efforts: [{ id: 'high' }, { id: 'off' }] })
++  const result = await rt.testModel('b1')
++  assert.equal(result.ok, true)
++  assert.equal(result.ref, 'ollama/kimi-k3')
++  assert.equal(typeof result.ms, 'number')
++  assert.equal(calls.length, 1)
++  const [call] = calls
++  assert.equal(call.provider, 'ollama')
++  assert.equal(call.model, 'kimi-k3')
++  assert.equal(call.sessionId, 'chat-b1')
++  assert.equal(call.reasoningEffort, 'off')
++  assert.ok(call.maxTokens <= 16)
++  assert.ok(call.signal instanceof AbortSignal)
++  assert.equal(call.messages.length, 1)
++  assert.deepEqual(tagged, [{ sessionId: 'chat-b1', kind: 'other' }])
++})
++
++test('a reply cut off at the token limit still counts as a working connection', async () => {
++  const { rt } = testRuntime({ stream: finishWith({ kind: 'max-tokens' }) })
++  assert.equal((await rt.testModel('b1')).ok, true)
++})
++
++test('a failed test answers with a code only, never the provider text', async () => {
++  const secret = 'sk-live-1234567890abcdef'
++  const cases = [
++    [{ code: 'AUTH', message: `Incorrect API key provided: ${secret}`, status: 401 }, 'AUTH'],
++    [{ code: 'UNKNOWN', message: 'no API key for provider route "deepseek-official"' }, 'NO_KEY'],
++    [{ code: 'QUOTA', message: 'Insufficient balance' }, 'QUOTA'],
++    [{ code: 'RATE_LIMIT', message: `slow down ${secret}` }, 'RATE_LIMIT'],
++    [{ code: 'TIMEOUT', message: 'idle timeout' }, 'TIMEOUT'],
++    [{ code: 'TRANSPORT', message: 'fetch failed ECONNREFUSED' }, 'TRANSPORT'],
++    [{ code: 'HTTP_404', message: 'Not Found', status: 404 }, 'MODEL_NOT_FOUND'],
++    [{ code: 'INVALID_REQUEST', message: 'The model `kimi-k3` does not exist', status: 400 }, 'MODEL_NOT_FOUND'],
++    [{ code: 'INVALID_REQUEST', message: 'bad request', status: 400 }, 'INVALID_REQUEST'],
++    [{ code: 'SERVER', message: 'upstream 502' }, 'SERVER'],
++    [{ code: 'NO_ADAPTER', message: 'no adapter registered for provider "ollama"' }, 'NOT_SERVED'],
++    [{ code: 'WEIRD', message: secret }, 'UNKNOWN'],
++  ]
++  for (const [failure, code] of cases) {
++    const { rt } = testRuntime({ stream: finishWith({ kind: 'error', failure }) })
++    const result = await rt.testModel('b1')
++    assert.deepEqual(result, { ok: false, ref: 'ollama/kimi-k3', code }, failure.message)
++    assert.ok(!JSON.stringify(result).includes(secret))
++  }
++})
++
++test('an aborted or throwing test is a timeout or a coded failure, not an exception', async () => {
++  const aborted = testRuntime({ stream: finishWith({ kind: 'aborted', failure: { code: 'ABORTED', message: 'aborted' } }) })
++  assert.equal((await aborted.rt.testModel('b1')).code, 'TIMEOUT')
++  const thrown = testRuntime({ stream: () => { throw Object.assign(new Error('Incorrect API key sk-abc'), { code: 'AUTH' }) } })
++  assert.deepEqual(await thrown.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'AUTH' })
++  const silent = testRuntime({ stream: async function* () { yield { type: 'text-delta', text: 'O' } } })
++  assert.deepEqual(await silent.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'UNKNOWN' })
++})
++
++test('a Bot runs one test at a time, and a Bot with no model sends nothing', async () => {
++  let release
++  const gate = new Promise((resolve) => { release = resolve })
++  const { rt, calls } = testRuntime({
++    stream: async function* () { await gate; yield { type: 'finish', reason: { kind: 'completed' } } },
++    bots: { b1: { id: 'b1', name: 'Writer', model: 'ollama/kimi-k3' }, b2: { id: 'b2', name: 'New' }, r1: { id: 'r1', name: 'Friend', remote: { handle: 'x' } } },
++  })
++  const first = rt.testModel('b1')
++  await assert.rejects(rt.testModel('b1'), /already running/)
++  release()
++  assert.equal((await first).ok, true)
++  assert.equal((await rt.testModel('b1')).ok, true)
++  assert.equal(calls.length, 2)
++  assert.deepEqual(await rt.testModel('b2'), { ok: false, code: 'NO_MODEL' })
++  await assert.rejects(rt.testModel('r1'), error => error.code === 'bot/invalid')
++  await assert.rejects(rt.testModel('missing'), error => error.code === 'bot/not-found')
++  assert.equal(calls.length, 2)
++})
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js

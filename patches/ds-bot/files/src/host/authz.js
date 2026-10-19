@@ -40,7 +40,7 @@ const BOT_TARGETED = new Set([
   'memory-view', 'memory-ask', 'memory-forget',
   'schedules', 'schedule-create', 'schedule-delete',
   'agent-session', 'agent-adopt', 'agent-archive', 'agent-rename', 'remove-agent',
-  'stop-member-work', 'set-main',
+  'stop-member-work', 'set-main', 'test-model',
 ])
 
 // Endpoints whose body names a room.

@@ -6,6 +6,7 @@ import { isMainOf } from './sources.js'
 import { PencilIcon, ChevronRightIcon } from './icons.js'
 import { lookOf, BotMark } from './mark.js'
 import { ModelMenu, modelOf } from './model-menu.js'
+import { ModelTestRow, MODEL_TEST_CSS } from './model-test.js'
 import { FolderMenu } from './folder-menu.js'
 import { BotSchedules } from './schedules.js'
 import { BotCapabilitiesCard } from './capability-settings.js'
@@ -227,7 +228,8 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
     h(Card, { title: t('Model') },
       h('div', { className: 'bt-set-row bt-bs-row' },
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, modelHint(bot, roster))),
-        h(ModelMenu, { bot, roster, actions, run }))),
+        h(ModelMenu, { bot, roster, actions, run })),
+      bot.model ? h(ModelTestRow, { bot, modelName: modelOf(bot, roster)?.name }) : null),
     h(Card, { title: t('Working folder') },
       h('div', { className: 'bt-set-row bt-bs-row' },
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
@@ -275,6 +277,7 @@ label.bt-bs-row{cursor:text}
 .bt-bs-row>.bt-set-copy{flex:1 1 auto}
 .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
 .bt-bs-row .bt-model-trigger{flex:none;max-width:58%}
+${MODEL_TEST_CSS}
 .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
 .bt-bs-input:hover{background:var(--bt-hover)}
 .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}

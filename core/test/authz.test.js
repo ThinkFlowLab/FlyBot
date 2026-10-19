@@ -85,8 +85,10 @@ test('owner cannot touch another owner Bot or room', async (t) => {
   assert.ok(actorA)
   assert.equal(actorA.memberId, 'owner-1')
   assert.equal(rt.authorize(actorA, 'update-bot', { id: 'a1' }).ok, true)
+  // A connection test may be billed: only the Bot's owner can start one (#409).
+  assert.equal(rt.authorize(actorA, 'test-model', { id: 'a1' }).ok, true)
 
-  for (const ep of ['update-bot', 'delete-bot', 'memory-view', 'memory-forget', 'set-flags']) {
+  for (const ep of ['update-bot', 'delete-bot', 'memory-view', 'memory-forget', 'set-flags', 'test-model']) {
     const gate = rt.authorize(actorA, ep, { id: 'b1' })
     assert.equal(gate.ok, false, ep)
     assert.equal(gate.code, 'bot/forbidden', ep)

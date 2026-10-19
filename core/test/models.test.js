@@ -210,3 +210,106 @@ test('a Bot on the default model with its own thinking level leaves the default 
   await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', effort: 'low' })
   assert.deepEqual(current(), fallback)
 })
+
+// Test connection (#409): the request is mocked; no real model is called.
+function testRuntime({ stream, bots, efforts } = {}) {
+  const calls = []
+  const tagged = []
+  const ctx = {
+    llm: {
+      listProviders: () => Object.keys(PROVIDERS).map(id => ({ id })),
+      listModels: async id => PROVIDERS[id],
+      resolveModelInfo: async () => (efforts ? { reasoning: { efforts } } : {}),
+      stream: (options) => {
+        calls.push(options)
+        return stream(options, calls.length)
+      },
+    },
+    get: () => undefined,
+  }
+  const rt = {
+    ctx,
+    state: { bots: bots ?? { b1: { id: 'b1', name: 'Writer', model: 'ollama/kimi-k3', effort: 'high' } } },
+    chatOf: id => `chat-${id}`,
+    tagUsage: (messages, tag) => { tagged.push(tag); return messages },
+  }
+  install(rt)
+  return { rt, calls, tagged }
+}
+
+const finishWith = reason => async function* () { yield { type: 'text-delta', text: 'OK' }; yield { type: 'finish', reason } }
+
+test('a connection test sends one tiny request on the Bot\'s own route and reports success', async () => {
+  const { rt, calls, tagged } = testRuntime({ stream: finishWith({ kind: 'completed' }), efforts: [{ id: 'high' }, { id: 'off' }] })
+  const result = await rt.testModel('b1')
+  assert.equal(result.ok, true)
+  assert.equal(result.ref, 'ollama/kimi-k3')
+  assert.equal(typeof result.ms, 'number')
+  assert.equal(calls.length, 1)
+  const [call] = calls
+  assert.equal(call.provider, 'ollama')
+  assert.equal(call.model, 'kimi-k3')
+  assert.equal(call.sessionId, 'chat-b1')
+  assert.equal(call.reasoningEffort, 'off')
+  assert.ok(call.maxTokens <= 16)
+  assert.ok(call.signal instanceof AbortSignal)
+  assert.equal(call.messages.length, 1)
+  assert.deepEqual(tagged, [{ sessionId: 'chat-b1', kind: 'other' }])
+})
+
+test('a reply cut off at the token limit still counts as a working connection', async () => {
+  const { rt } = testRuntime({ stream: finishWith({ kind: 'max-tokens' }) })
+  assert.equal((await rt.testModel('b1')).ok, true)
+})
+
+test('a failed test answers with a code only, never the provider text', async () => {
+  const secret = 'sk-live-1234567890abcdef'
+  const cases = [
+    [{ code: 'AUTH', message: `Incorrect API key provided: ${secret}`, status: 401 }, 'AUTH'],
+    [{ code: 'UNKNOWN', message: 'no API key for provider route "deepseek-official"' }, 'NO_KEY'],
+    [{ code: 'QUOTA', message: 'Insufficient balance' }, 'QUOTA'],
+    [{ code: 'RATE_LIMIT', message: `slow down ${secret}` }, 'RATE_LIMIT'],
+    [{ code: 'TIMEOUT', message: 'idle timeout' }, 'TIMEOUT'],
+    [{ code: 'TRANSPORT', message: 'fetch failed ECONNREFUSED' }, 'TRANSPORT'],
+    [{ code: 'HTTP_404', message: 'Not Found', status: 404 }, 'MODEL_NOT_FOUND'],
+    [{ code: 'INVALID_REQUEST', message: 'The model `kimi-k3` does not exist', status: 400 }, 'MODEL_NOT_FOUND'],
+    [{ code: 'INVALID_REQUEST', message: 'bad request', status: 400 }, 'INVALID_REQUEST'],
+    [{ code: 'SERVER', message: 'upstream 502' }, 'SERVER'],
+    [{ code: 'NO_ADAPTER', message: 'no adapter registered for provider "ollama"' }, 'NOT_SERVED'],
+    [{ code: 'WEIRD', message: secret }, 'UNKNOWN'],
+  ]
+  for (const [failure, code] of cases) {
+    const { rt } = testRuntime({ stream: finishWith({ kind: 'error', failure }) })
+    const result = await rt.testModel('b1')
+    assert.deepEqual(result, { ok: false, ref: 'ollama/kimi-k3', code }, failure.message)
+    assert.ok(!JSON.stringify(result).includes(secret))
+  }
+})
+
+test('an aborted or throwing test is a timeout or a coded failure, not an exception', async () => {
+  const aborted = testRuntime({ stream: finishWith({ kind: 'aborted', failure: { code: 'ABORTED', message: 'aborted' } }) })
+  assert.equal((await aborted.rt.testModel('b1')).code, 'TIMEOUT')
+  const thrown = testRuntime({ stream: () => { throw Object.assign(new Error('Incorrect API key sk-abc'), { code: 'AUTH' }) } })
+  assert.deepEqual(await thrown.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'AUTH' })
+  const silent = testRuntime({ stream: async function* () { yield { type: 'text-delta', text: 'O' } } })
+  assert.deepEqual(await silent.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'UNKNOWN' })
+})
+
+test('a Bot runs one test at a time, and a Bot with no model sends nothing', async () => {
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  const { rt, calls } = testRuntime({
+    stream: async function* () { await gate; yield { type: 'finish', reason: { kind: 'completed' } } },
+    bots: { b1: { id: 'b1', name: 'Writer', model: 'ollama/kimi-k3' }, b2: { id: 'b2', name: 'New' }, r1: { id: 'r1', name: 'Friend', remote: { handle: 'x' } } },
+  })
+  const first = rt.testModel('b1')
+  await assert.rejects(rt.testModel('b1'), /already running/)
+  release()
+  assert.equal((await first).ok, true)
+  assert.equal((await rt.testModel('b1')).ok, true)
+  assert.equal(calls.length, 2)
+  assert.deepEqual(await rt.testModel('b2'), { ok: false, code: 'NO_MODEL' })
+  await assert.rejects(rt.testModel('r1'), error => error.code === 'bot/invalid')
+  await assert.rejects(rt.testModel('missing'), error => error.code === 'bot/not-found')
+  assert.equal(calls.length, 2)
+})
