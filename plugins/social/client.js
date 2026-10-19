@@ -124,6 +124,8 @@ window.__ModuleLoader__.load({
 .fs-invite-link{width:100%;box-sizing:border-box;min-width:0}
 .fs-invite-actions{flex-wrap:wrap}
 .fs-btn-fit{width:auto}
+.fs-share-request .fs-line{justify-content:flex-end}
+.fs-share-request .fs-btn-primary{flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .fs-invite-new{margin-left:auto}
 .fs-sharing > .fs-label{padding:0 4px;text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
 .fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
@@ -1403,9 +1405,13 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState('')
       const [adding, setAdding] = useState(false)
       const [faceOpen, setFaceOpen] = useState(false)
-      const loadApprovals = () => call('social/status', {}).then(() => {
+      const [shareRequests, setShareRequests] = useState([])
+      const keepShareRequests = value => setShareRequests(Array.isArray(value?.shareRequests) ? value.shareRequests : [])
+      const loadApprovals = () => call('social/status', {}).then((value) => {
         setError('')
+        keepShareRequests(value)
       }, e => setError(errorText(e)))
+      const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(keepShareRequests, e => setError(errorText(e)))
       useEffect(() => {
         loadApprovals()
         if (typeof setInterval !== 'function') return undefined
@@ -1426,9 +1432,34 @@ window.__ModuleLoader__.load({
       }
       return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
+        h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest }),
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
         adding ? h(AddFriend, { actions, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
         faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null)
+    }
+
+    // "Share this Bot?" (#336): a friend's Bot tried to start a chat with one of my Bots that is not
+    // shared with them, and Bot Social refused it. Buttons only (#349): Share opens that Bot's Sharing,
+    // where the owner decides; Dismiss drops the card. Nothing is shared from here.
+    function ShareRequests({ items, actions, onDismiss } = {}) {
+      if (!Array.isArray(items) || items.length === 0) return null
+      return h('div', { className: 'fs-share-requests', 'data-flybot': 'share-requests' },
+        items.map((item) => {
+          const who = item.owner ? `${item.name} (${item.owner})` : item.name
+          const bot = item.botName || 'your Bot'
+          return h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'share-request' },
+            h('div', { className: 'fs-hint', 'data-flybot': 'share-request-text' }, `${who} tried to start a chat with ${bot}. ${bot} is not shared with them.`),
+            h('div', { className: 'fs-line' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'share-request-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+              h('button', {
+                type: 'button',
+                className: 'fs-btn fs-btn-sm fs-btn-primary',
+                'data-flybot': 'share-request-open',
+                title: `Open ${bot}'s Sharing`,
+                disabled: typeof actions?.openSettings !== 'function',
+                onClick: () => actions.openSettings('bots', item.botId),
+              }, `Share ${bot}…`)))
+        }))
     }
 
     // Add friend: accept a friend's invite, invite a friend to one of my Bots, and answer requests.
@@ -1956,6 +1987,7 @@ window.__ModuleLoader__.load({
       BotSocialDetails,
       SocialServerSettings,
       AddFriend,
+      ShareRequests,
       PendingApprovals,
       ChatApproval,
       holdReasonLine,

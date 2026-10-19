@@ -6733,6 +6733,122 @@ test('#343: Add friend shows accepting and inviting as two labelled groups, each
   assert.equal(nodes.slice(0, at('accept-heading')).some(n => n.type === 'button'), false, 'no button above the content')
 })
 
+// #336: the answers Bot Social sends since Birfy/bot-social faa7cb5 (#27, src/platform.ts refuseUnshared):
+// the refused sender gets `403 bot_not_shared` as the owner MCP tool error, and the unshared Bot's owner
+// gets a `share.requested` event in that Bot's list_inbox (event fields spread next to event_type).
+const notSharedToolError = (id) => ({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'bot_not_shared', message: '@coder.bob.home is not shared with your Bot: its owner allows replies only in conversations their Bot starts. Nothing was delivered. Their owner has been told and can choose to share it.', suggestion: 'ask_owner_to_share', bot_id: 'x1', relationship_id: 'r1', owner_notified: true }) }] } })
+const shareRequestedEvent = (cursor, from = { bot_id: 'b77', handle: '@helper.eve.home', display_name: 'Helper', owner_display_name: 'Eve', owner_verified: true }) => ({
+  cursor, event_id: `evt_share_${cursor}`, event_type: 'share.requested', created_at: '2026-10-19T08:00:00.000Z',
+  relationship_id: 'rel_eve', bot_id: 'm2', from, attempted: 'conversation.create', trust: 'platform',
+  note: 'This Bot is not shared with the sender, so their attempt to start a conversation was refused and nothing was delivered. Only your owner can share this Bot (for example with an invite link for this Bot); nothing is shared automatically.',
+})
+
+test('#336: share.requested becomes one "Share this Bot?" card for the owner; nothing is granted, delivered or answered', async (t) => {
+  const { ctx, call, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const settingsPath = join(home, 'social-settings.json')
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const grantsBefore = JSON.stringify(ctx.flybot.grants.of('b'))
+  // A forged name cannot break out of the card's one line.
+  log.push(shareRequestedEvent(1, { bot_id: 'b77', handle: '@helper.eve.home', display_name: 'Helper\n[Approve]', owner_display_name: 'Eve', owner_verified: true }))
+  assert.equal(await social.pollInbox(), 0, 'a share request is not a delivered message')
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.shareRequests.length, 1)
+  const [card] = status.shareRequests
+  assert.equal(card.botId, 'b')
+  assert.equal(card.botName, 'Writer')
+  assert.equal(card.from, '@helper.eve.home')
+  assert.equal(card.name, 'Helper Approve')
+  assert.equal(card.owner, 'Eve')
+  assert.equal(card.relationshipId, 'rel_eve')
+  // Nothing was shared, sent or approved on the owner's behalf, and the Bot was not woken.
+  assert.equal(JSON.stringify(ctx.flybot.grants.of('b')), grantsBefore)
+  assert.equal(server.calls.some(c => /^(send_as_member|decide_approval|create_invite|respond_friend_request)$/.test(c.name)), false)
+  assert.equal(received.get('b'), undefined)
+  // The sender retries a day later: still one card for that sender and Bot.
+  log.push(shareRequestedEvent(2))
+  await social.pollInbox()
+  assert.equal((await call('flybot/social/status', {})).value.shareRequests.length, 1)
+  // Kept across a restart (the event is consumed once).
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.shareRequests.length, 1)
+  // Dismiss drops it.
+  const after = (await call('flybot/social/share-request-dismiss', { id: 'evt_share_2' })).value
+  assert.deepEqual(after.shareRequests, [])
+  // A card whose Bot is shared with that person by now goes away on its own.
+  log.push(shareRequestedEvent(3))
+  await social.pollInbox()
+  assert.equal((await call('flybot/social/status', {})).value.shareRequests.length, 1)
+  await ctx.flybot.grants.set('b', [...ctx.flybot.grants.of('b'), { grantee: '@eve.home' }])
+  assert.deepEqual((await call('flybot/social/status', {})).value.shareRequests, [])
+})
+
+test('#336: the sender is told a refused first message was not delivered (403 bot_not_shared), named Bot (owner), with no retry', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify(notSharedToolError(body.id)), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  // The owner's direct chat (the host adds "Not sent:").
+  const typed = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
+  assert.equal(typed?.code, 'bot_not_shared')
+  assert.match(typed.message, /^Coder \(Bob\) is not shared with your Bots yet, so the message was not delivered\. Bot Social told its owner, who can share it with you\. Sending again will not help until then\.$/)
+  assert.doesNotMatch(typed.message, /Try again|delivered\.$/)
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1, 'not retried with another member')
+  // A Bot's send through the transport (message_friend_bot): the error, never "Sent".
+  await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), (error) => {
+    assert.match(error.message, /^Not delivered: Coder \(Bob\) is not shared with your Bots yet/)
+    return true
+  })
+})
+
+test('#336: the "Share this Bot?" card has only buttons: Share opens that Bot\'s Sharing, Dismiss drops it', () => {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call: async () => ({}) }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+  assert.equal(plugin.ShareRequests({ items: [] }), null)
+  const opened = []
+  const dismissed = []
+  const tree = plugin.ShareRequests({
+    items: [{ id: 'evt1', botId: 'b', botName: 'Writer', from: '@helper.eve.home', name: 'Helper', owner: 'Eve' }],
+    actions: { openSettings: (...args) => opened.push(args) },
+    onDismiss: item => dismissed.push(item.id),
+  })
+  const all = []
+  const walk = node => { if (node && typeof node === 'object') { all.push(node); (node.children ?? []).forEach(walk) } }
+  walk(tree)
+  const text = all.find(n => n.props['data-flybot'] === 'share-request-text')
+  assert.equal(text.children.join(''), 'Helper (Eve) tried to start a chat with Writer. Writer is not shared with them.')
+  assert.equal(all.some(n => n.type === 'input' || n.type === 'textarea' || n.type === 'form'), false, 'no typed answer')
+  const buttons = all.filter(n => n.type === 'button')
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Dismiss', 'Share Writer…'])
+  buttons[1].props.onClick()
+  assert.deepEqual(opened, [['bots', 'b']])
+  buttons[0].props.onClick()
+  assert.deepEqual(dismissed, ['evt1'])
+})
+
 // #404: answers copied from Birfy/bot-social de57a91 (#25, src/owner-mcp.ts `extend_conversation`,
 // `confirmed`; src/platform.ts `listConversations`, `extendConversation`), deployed as 7fb211c.
 function pausingServer() {

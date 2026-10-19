@@ -155,6 +155,8 @@ export const stripMarkers = (text) => {
   return out
 }
 const SEEN_KEPT = 1000
+// Open "Share this Bot?" cards kept (#336); the oldest goes first.
+const SHARE_REQUESTS_KEPT = 20
 const CREDENTIAL_NAME = /(^id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx|keychain)$|credential|secret|token|password|passwd|^flybot-social.*\.json$|^\.?env$|^\.netrc$|^known_hosts$|^authorized_keys$)/i
 const safeName = name => String(name ?? 'file').replace(/[\u0000-\u001f\u007f/\\:]/g, '_').replace(/^\.+/, '_').slice(0, 120) || 'file'
 // The text Copy puts on the clipboard for a per-Bot invite: what to do with the link, for a
@@ -1246,7 +1248,25 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       .sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))[0]
   }
   const isPaused = error => error?.code === 'conversation_paused' || /conversation_paused|turn budget exhausted|loop detected|conversation paused/i.test(String(error?.message ?? error))
-  const mapSendError = (error) => {
+  // Bot Social refuses a first message to a friend's Bot that is not shared with the sender (its
+  // owner only joined an invite, #336): 403 bot_not_shared, nothing stored or delivered, and that
+  // Bot's owner gets a share.requested card. Sending again cannot help until they share it.
+  const isNotShared = error => error?.code === 'bot_not_shared' || /bot_not_shared/.test(String(error?.message ?? error))
+  // A friend's Bot by its one name, "Coder (Bob)" (#384), else its handle.
+  const friendBotTitle = (handle) => {
+    const key = norm(handle)
+    const entry = serverRoster.find(item => (item.bots ?? []).some(bot => bot.handle === key))
+    const bot = entry?.bots.find(item => item.handle === key)
+    if (!bot) return key || 'This Bot'
+    const owner = cleanText(entry.owner || entry.name)
+    return owner ? `${bot.name} (${owner})` : bot.name
+  }
+  const notSharedError = (handle, { lead = '' } = {}) => {
+    const who = friendBotTitle(handle)
+    return Object.assign(new Error(`${lead}${who} is not shared with your Bots yet, so the message was not delivered. Bot Social told its owner, who can share it with you. Sending again will not help until then.`), { code: 'bot_not_shared' })
+  }
+  const mapSendError = (error, handle) => {
+    if (isNotShared(error)) return notSharedError(handle, { lead: 'Not delivered: ' })
     if (!isPaused(error)) return error
     // Only steps a FlyBot owner can take (#404): a FlyBot owner cannot sign in to the Bot
     // Social website, so the text never sends them there. Extend is the paused notice's button in
@@ -1256,8 +1276,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   // Direct chat (Friends' Bots row): one short English line with a next step. The
   // remote-chat host prefixes "Not sent:". Keep the Bot Social tool name out of the UI.
-  const userFacingSendError = (error) => {
+  const userFacingSendError = (error, handle) => {
     if (isPaused(error)) return mapSendError(error)
+    // The host prefixes "Not sent:"; the sentence keeps its own capital (a Bot's name).
+    if (isNotShared(error)) return notSharedError(handle)
     const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
     const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
     const blob = `${raw} ${error?.code ?? ''}`
@@ -1290,7 +1312,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   disposers.push(flybot.transports.add('bot-social', {
     async send(msg) {
-      try { return await sendOut(msg) } catch (error) { throw mapSendError(error) } finally { dropStaged(msg.attachments) }
+      try { return await sendOut(msg) } catch (error) { throw mapSendError(error, msg.target?.handle ?? msg.to?.handle) } finally { dropStaged(msg.attachments) }
     },
   }))
   async function sendOut(msg) {
@@ -1449,10 +1471,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // A pause belongs to the conversation, not to this member: another Bot cannot send either.
         if (isPaused(error)) { notePaused(target, error); throw mapSendError(error) }
         lastError = error
-        if (!/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw userFacingSendError(error)
+        if (!/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw userFacingSendError(error, target)
       }
     }
-    throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`))
+    throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`), target)
   }
   if (flybot.remote?.chats) disposers.push(flybot.remote.chats.onSend(sendChat))
 
@@ -1486,6 +1508,39 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     settings.seen.push(id)
     if (settings.seen.length > SEEN_KEPT) seen.delete(settings.seen.shift())
   }
+  // A friend's Bot tried to start a chat with one of my Bots that is not shared with them (#336).
+  // Bot Social refused it (403 bot_not_shared, nothing delivered) and told me with `share.requested`.
+  // It is kept as a card for the owner: Share opens that Bot's Sharing, Dismiss drops it. Nothing is
+  // granted here, no typed reply acts on it (#349), and the Bot never answers on its own.
+  // One card per sender and Bot; the event carries no peer content, and names are cleaned.
+  settings.shareRequests = Array.isArray(settings.shareRequests) ? settings.shareRequests : []
+  function noteShareRequest(local, event) {
+    const from = event.from?.handle ? norm(event.from.handle) : ''
+    if (!from || from === '@') return
+    const request = {
+      id: String(event.event_id ?? `${local.id}:${from}`),
+      botId: local.id,
+      from,
+      name: cleanText(event.from?.display_name, from),
+      owner: cleanText(event.from?.owner_display_name),
+      ...(event.relationship_id ? { relationshipId: String(event.relationship_id) } : {}),
+      at: typeof event.created_at === 'string' ? event.created_at : new Date(now()).toISOString(),
+    }
+    settings.shareRequests = [...settings.shareRequests.filter(item => isOpenShareRequest(item) && !(item.botId === local.id && item.from === from)), request].slice(-SHARE_REQUESTS_KEPT)
+  }
+  // Open cards only: a card whose Bot is gone, or that is shared with the sender by now, is not shown.
+  // Read-only (social/status is served by a read-only host too); the write paths prune it.
+  const isOpenShareRequest = item => Boolean(flybot.bot.get(item.botId)) && flybot.grants?.has?.(item.botId, item.from) !== true
+  function shareRequests() {
+    return settings.shareRequests.filter(isOpenShareRequest).map(item => ({ ...item, botName: flybot.bot.get(item.botId)?.name ?? '' }))
+  }
+  disposers.push(flybot.api.handle('social/share-request-dismiss', async ({ id } = {}) => {
+    const before = settings.shareRequests.length
+    settings.shareRequests = settings.shareRequests.filter(item => item.id !== String(id ?? '') && isOpenShareRequest(item))
+    if (settings.shareRequests.length !== before) saveSettings()
+    return { shareRequests: shareRequests() }
+  }))
+
   let polling
   function pollInbox() {
     // Only the host that holds the team polls and delivers.
@@ -1518,6 +1573,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         }
         if (String(event.event_type ?? '').startsWith('face_room.')) {
           void pollFaceRooms().catch(error => warn('face-room poll failed', error))
+          done()
+          continue
+        }
+        if (event.event_type === 'share.requested') {
+          if (!seen.has(event.event_id)) noteShareRequest(local, event)
           done()
           continue
         }
@@ -1727,6 +1787,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       pendingApprovals: approvals.length,
       approvals,
       autoApproveFaceRooms,
+      shareRequests: shareRequests(),
     }
   }
   disposers.push(flybot.api.handle('social/status', socialStatus, { read: true }))
