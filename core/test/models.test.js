@@ -291,6 +291,8 @@ test('an aborted or throwing test is a timeout or a coded failure, not an except
   assert.equal((await aborted.rt.testModel('b1')).code, 'TIMEOUT')
   const thrown = testRuntime({ stream: () => { throw Object.assign(new Error('Incorrect API key sk-abc'), { code: 'AUTH' }) } })
   assert.deepEqual(await thrown.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'AUTH' })
+  const silent = testRuntime({ stream: async function* () { yield { type: 'text-delta', text: 'O' } } })
+  assert.deepEqual(await silent.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'UNKNOWN' })
 })
 
 test('a Bot runs one test at a time, and a Bot with no model sends nothing', async () => {

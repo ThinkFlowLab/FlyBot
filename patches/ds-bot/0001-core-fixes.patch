@@ -1860,7 +1860,7 @@ diff --git a/src/host/models.js b/src/host/models.js
      bot.appliedModel = ref
      if (effort === undefined) delete bot.appliedEffort
      else bot.appliedEffort = effort
-@@ -194,7 +194,52 @@ export function install(rt) {
+@@ -194,7 +194,54 @@ export function install(rt) {
      }
    }
  
@@ -1901,7 +1901,9 @@ diff --git a/src/host/models.js b/src/host/models.js
 +      } catch (error) {
 +        return { ok: false, ref, code: testFailure(error, signal.aborted) }
 +      }
-+      if (finish?.kind === 'error' || finish?.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
++      // A stream that ends without its finish chunk proved nothing.
++      if (finish === undefined) return { ok: false, ref, code: 'UNKNOWN' }
++      if (finish.kind === 'error' || finish.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
 +      return { ok: true, ref, ms: Date.now() - started }
 +    } finally {
 +      testing.delete(botId)
@@ -3213,7 +3215,7 @@ diff --git a/test/models.test.js b/test/models.test.js
  test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
    const { rt } = bench({ reasoning: {
      'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },
-@@ -186,3 +186,104 @@ test('a Bot on the default model with its own thinking level leaves the default
+@@ -186,3 +186,106 @@ test('a Bot on the default model with its own thinking level leaves the default
    await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', effort: 'low' })
    assert.deepEqual(current(), fallback)
  })
@@ -3298,6 +3300,8 @@ diff --git a/test/models.test.js b/test/models.test.js
 +  assert.equal((await aborted.rt.testModel('b1')).code, 'TIMEOUT')
 +  const thrown = testRuntime({ stream: () => { throw Object.assign(new Error('Incorrect API key sk-abc'), { code: 'AUTH' }) } })
 +  assert.deepEqual(await thrown.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'AUTH' })
++  const silent = testRuntime({ stream: async function* () { yield { type: 'text-delta', text: 'O' } } })
++  assert.deepEqual(await silent.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'UNKNOWN' })
 +})
 +
 +test('a Bot runs one test at a time, and a Bot with no model sends nothing', async () => {

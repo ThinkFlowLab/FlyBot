@@ -261,7 +261,9 @@ export function install(rt) {
       } catch (error) {
         return { ok: false, ref, code: testFailure(error, signal.aborted) }
       }
-      if (finish?.kind === 'error' || finish?.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
+      // A stream that ends without its finish chunk proved nothing.
+      if (finish === undefined) return { ok: false, ref, code: 'UNKNOWN' }
+      if (finish.kind === 'error' || finish.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
       return { ok: true, ref, ms: Date.now() - started }
     } finally {
       testing.delete(botId)
