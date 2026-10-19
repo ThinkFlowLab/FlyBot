@@ -1775,7 +1775,7 @@ window.__ModuleLoader__.load({
     const featureLine = (features, t) => {
       const ids = Array.isArray(features) ? features.map(String) : []
       if (!ids.length) return t('No optional features listed.')
-      const words = ids.filter(id => FEATURE_WORDS[id]).map(id => t(FEATURE_WORDS[id]))
+      const words = ids.filter(id => Object.hasOwn(FEATURE_WORDS, id)).map(id => t(FEATURE_WORDS[id]))
       const others = ids.length - words.length
       const text = words.length
         ? t('Supports: {list}', { list: words.join(', ') }) + (others ? ` ${t('(+{count} more)', { count: others })}` : '')

@@ -6619,6 +6619,12 @@ test('Settings → Bot Social page: features in words, unknown ids only in the t
     const hint = all(plugin.SocialServerSettings(pageProps)).find(node => node.type === 'row' && node.props.label === 'Features').props.hint
     assert.equal(text(hint), 'Supports 1 optional feature')
   }
+  {
+    // Remote ids that name Object.prototype members are unknown features, not words.
+    const { plugin, all, text } = clientPlugin([serverView(), null, { ok: true, features: ['constructor', '__proto__', 'toString'] }])
+    const hint = all(plugin.SocialServerSettings(pageProps)).find(node => node.type === 'row' && node.props.label === 'Features').props.hint
+    assert.equal(text(hint), 'Supports 3 optional features')
+  }
 })
 
 test('Settings → Bot Social page: shows server, source and status; the switch form opens from Change server', () => {
