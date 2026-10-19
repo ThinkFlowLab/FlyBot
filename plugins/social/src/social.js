@@ -14,8 +14,9 @@
 //   list_remote_bots, with `via` naming the local Bots allowed to talk), shown in the roster (grouped by
 //   home, never in bot.list()).
 // - Middleware 'social': remote targets must belong to a friend home; then approval:
-//   the friend home's setting (config.approval.homes[home] / default), overridden per
-//   local Bot by the field social.autoApprove[home]. 'hold' → FlyBot approval card.
+//   Auto-send per pair (my Bot → that person, #417), the field social.autoApprove[home]
+//   on the local Bot; else the friend home's setting (an older home-wide Auto-send,
+//   config.approval.homes[home] / default). 'hold' → FlyBot approval card.
 // - Inbound: each member's server inbox is polled; messages reach that member's chat
 //   as untrusted text from the remote Bot (no owner approval). Outbound drafts the
 //   server holds (pending_approval) show in Friends' Bots until Approve / Reject.
@@ -353,7 +354,7 @@ export function unavailableError(reason) {
 export const SOCIAL_UI_ENDPOINTS = [
   'social/remote-bots', 'social/settings', 'social/status', 'social/overview', 'social/friends',
   'social/create-invite', 'social.createInvite', 'social/join-invite', 'social/respond', 'social/send',
-  'social/auto-approve', 'social/auto-accept', 'social/poll', 'social/approvals', 'social/decide-approval',
+  'social/auto-approve', 'social/auto-accept', 'social/auto-send', 'social/poll', 'social/approvals', 'social/decide-approval',
   'social/attachment',
   'social/face-join', 'social/face-rooms', 'social/face-leave', 'social/face-start', 'social/face-send',
   'social/face-auto',
@@ -1941,6 +1942,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         grantee,
         name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
         home,
+        // Auto-send for this pair (this Bot → that person), shown and changed on the row (#417).
+        ...(home ? { person: view.person || home, autoSend: approvalFor(botId, home) === 'auto' } : {}),
         relationshipId: grant.relationshipId,
         rooms: [...rooms],
       })
@@ -2228,10 +2231,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       return pendingCache.items
     }
   }
+  // Auto-send for all my Bots to that person (the friend's Bot settings, #417): it sets every
+  // pair at once, so a Bot's own choice for that person is cleared.
   async function setAutoAccept(friendHome, on) {
     const key = norm(friendHome)
     settings.autoAccept[key] = Boolean(on)
     saveSettings()
+    for (const bot of flybot.bot.list()) {
+      const own = flybot.fields.get(bot.id, 'autoApprove')
+      if (own && own[key] !== undefined) flybot.fields.set(bot.id, 'autoApprove', { ...own, [key]: undefined })
+    }
     // A friendship may hang on the home or on one member (a per-Bot invite), so every identity is asked.
     const identities = [homeArgs(), ...flybot.bot.list().map(bot => memberOf(bot.id)).filter(Boolean).map(member => ({ bot_id: member.bot_id }))]
     const done = new Set()
@@ -2242,14 +2251,75 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (norm(item.peer.handle) === key || homeOfPeer(item.peer.handle) === key) { done.add(item.relationship_id); await serverAutoApprove(item.relationship_id, Boolean(on)) }
       }
     }
-    return { home: key, autoAccept: autoAcceptOf(key) }
+    return { home: key, autoAccept: allAutoSend(key) }
   }
+  // On only while every Bot of mine auto-sends to that person; one Bot turned off in its Sharing reads off here.
+  const allAutoSend = key => flybot.bot.list().every(bot => approvalFor(bot.id, key) === 'auto') && (flybot.bot.list().length > 0 || autoAcceptOf(key))
   disposers.push(flybot.api.handle('social/auto-accept', async ({ home: friendHome, on } = {}) => {
     if (typeof friendHome !== 'string' || !friendHome) throw new Error('which friend?')
     return setAutoAccept(friendHome, on !== false)
   }))
+  // ------------------------------------------------------------ Auto-send per pair (#417)
+  // My Bot → that person, like per-Bot grants: stored on the local Bot (field autoApprove[home]),
+  // so one Bot's choice never covers my other Bots. An older home-wide entry still reads as on
+  // for every Bot until one is changed here. Bot Social's auto-approve is set on that Bot's own
+  // friendships with the person; a friendship held by my home (all my Bots) is turned off only
+  // when no other Bot of mine still auto-sends to them. The owner's switch or link is the consent.
+  const personOf = (botId, key) => {
+    for (const grant of flybot.grants?.of?.(botId) ?? []) {
+      const view = grantPersonView(grant)
+      if (view.home === key && view.person) return view.person
+    }
+    const friend = serverRoster.find(entry => entry.home === key)
+    return cleanText(friend?.owner || friend?.name || '') || key.replace(/^@/, '').replace(/\.home$/i, '')
+  }
+  const autoSendView = (bot, key) => ({ botId: bot.id, botName: bot.name, home: key, person: personOf(bot.id, key), autoSend: approvalFor(bot.id, key) === 'auto' })
+  async function pairRelationships(botId, key) {
+    const match = item => item?.status === 'active' && item.peer?.handle && item.relationship_id && (norm(item.peer.handle) === key || homeOfPeer(item.peer.handle) === key)
+    const idsOf = async args => [...new Set(((await client.callTool('list_friends', args).catch(() => undefined))?.friends ?? []).filter(match).map(item => item.relationship_id))]
+    const member = activeMember(botId)
+    const listed = member?.bot_id ? await idsOf({ bot_id: member.bot_id }) : []
+    const ofHome = await idsOf(homeArgs())
+    // The Bot's own friendships with that person (a per-Bot invite); else the home's, which covers all my Bots.
+    const own = listed.filter(id => !ofHome.includes(id))
+    if (own.length) return { ids: own, shared: false }
+    return { ids: [...new Set([...listed, ...ofHome])], shared: true }
+  }
+  async function setAutoSend(botId, friendHome, on) {
+    const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
+    if (!bot || bot.remote) throw new Error('Choose one of your Bots')
+    const key = norm(friendHome)
+    if (!key) throw new Error('which friend?')
+    flybot.fields.set(bot.id, 'autoApprove', { ...(flybot.fields.get(bot.id, 'autoApprove') ?? {}), [key]: Boolean(on) })
+    const { ids, shared } = await pairRelationships(bot.id, key)
+    const othersOn = shared && !on && flybot.bot.list().some(other => other.id !== bot.id && approvalFor(other.id, key) === 'auto')
+    if (!othersOn) {
+      settings.serverAutoApproved ??= []
+      for (const id of ids) {
+        // Set here by the owner: the home-wide catch-up sync leaves it as chosen.
+        if (await serverAutoApprove(id, Boolean(on)) && !settings.serverAutoApproved.includes(id)) settings.serverAutoApproved.push(id)
+      }
+      saveSettings()
+    }
+    return autoSendView(bot, key)
+  }
+  // `approvalId`: Auto-send from now on, on a held card; the pair is read from the hold itself
+  // (its sender Bot and recipient's home), never from what the page says.
+  disposers.push(flybot.api.handle('social/auto-send', async ({ botId, home: friendHome, on, approvalId } = {}) => {
+    if (approvalId !== undefined) {
+      const held = flybot.approvals?.get?.(String(approvalId))
+      const to = held?.request?.to
+      const handle = typeof to === 'string' ? to : to?.handle
+      if (!held || held.by !== 'social' || held.status === 'rejected' || typeof held.request?.from !== 'string' || typeof handle !== 'string' || !handle.startsWith('@')) {
+        throw new Error('This is not a held message from one of your Bots to a friend.')
+      }
+      return setAutoSend(held.request.from, (typeof to === 'object' && to?.home) || homeOfPeer(handle), true)
+    }
+    if (typeof friendHome !== 'string' || !friendHome) throw new Error('which friend?')
+    return setAutoSend(botId, friendHome, on !== false)
+  }))
   disposers.push(flybot.api.handle('social/settings', async () => ({
-    autoAccept: Object.fromEntries(remote.homes.map(entry => [entry.home, autoAcceptOf(entry.home)])),
+    autoAccept: Object.fromEntries(remote.homes.map(entry => [entry.home, allAutoSend(entry.home)])),
     autoApproveFaceRooms: await faceAutoApprove().catch(() => false),
   }), { read: true }))
   disposers.push(flybot.api.handle('social/poll', async () => ({ delivered: await pollInbox() })))
@@ -2267,18 +2337,20 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (isHomeLevelHandle(to)) return to
     return homeOfPeer(to)
   }
-  // Always approve: this card only, then the existing Auto-send for that pair (friend home
-  // or face-room Auto-send). Never a new global switch; never decide a different hold.
+  // Auto-send from now on: this card, then Auto-send for that pair only (my Bot that wrote it →
+  // that person, #417) or face-room Auto-send. Never a home-wide or global switch; never decide a
+  // different hold. A hold no Bot of mine wrote turns nothing on.
   async function enableAutoSendForItem(item) {
     if (!item) return undefined
     if (item.kind === 'face_room_message') {
       await setFaceAutoApprove(true)
       return { from: item.from || 'Bot', to: item.toName || 'the room', scope: 'face' }
     }
-    const home = await friendHomeOfApproval(item)
-    if (!home) return undefined
-    await setAutoAccept(home, true)
-    return { from: item.from || 'Bot', to: item.toName || home, home, scope: 'friend' }
+    const bot = item.botId ? flybot.bot.list().find(entry => memberOf(entry.id)?.bot_id === item.botId) : undefined
+    const home = bot ? await friendHomeOfApproval(item) : ''
+    if (!bot || !home) return undefined
+    const view = await setAutoSend(bot.id, home, true)
+    return { from: view.botName, to: view.person, botId: view.botId, botName: view.botName, person: view.person, home, scope: 'pair' }
   }
   // Owner click is the consent, same as Accept / Join: request and use the confirm code here.
   disposers.push(flybot.api.handle('social/decide-approval', async ({ approvalId, decision, always } = {}) => {

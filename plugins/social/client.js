@@ -876,16 +876,19 @@ window.__ModuleLoader__.load({
       const to = readableParty(item?.toName) || (item?.kind === 'face_room_message' ? 'the room' : readableParty(item?.to, 'friend'))
       return { from, to }
     }
-    const autoSendToast = (from, to) => `Auto-send on for ${from} → ${to}. Change it anytime in settings.`
-    function homeOfHandle(value) {
-      const raw = typeof value === 'object' && value
-        ? String(value.handle ?? value.home ?? '')
-        : String(value ?? '')
-      const body = raw.trim().replace(/^@+/, '').toLowerCase()
-      if (!body) return ''
-      const parts = body.split('.')
-      if (parts.length >= 2 && parts.at(-1) === 'home') return `@${parts.at(-2)}.home`
-      return `@${body}`
+    // One term, Auto-send (#417): the toast names my Bot, the person, and where to turn it off.
+    const AUTO_SEND_LINK = 'Auto-send from now on'
+    const autoSendToast = (view) => view?.scope === 'face'
+      ? `Auto-send is on for ${view.from || 'your Bots'} → ${view.to || 'the room'}. Turn it off in the room overview.`
+      : view?.botName && view?.person
+        ? `Auto-send is on for ${view.botName} → ${view.person}. Turn it off in ${view.botName} → Sharing → People with access.`
+        : 'Sent. Auto-send was not turned on: no Bot of yours wrote this.'
+    // Auto-send from now on for a held message of my Bot (#417): that pair only, my Bot → that person.
+    // The host reads the pair from the hold (`approvalId`); the answer feeds autoSendToast.
+    async function autoSendPair(callHost, approvalId) {
+      if (!approvalId) return undefined
+      const view = await callHost('social/auto-send', { approvalId })
+      return view?.autoSend === true ? { ...view, scope: 'pair' } : undefined
     }
 
     // Why Bot Social held a send, in words (#371). `t` is the host's translator (zh in a zh UI); without one the
@@ -931,7 +934,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')),
           // Two buttons are the decision; the standing choice is a quiet link, not a third button (#260).
-          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, 'Always approve')))
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, AUTO_SEND_LINK)))
     }
 
     function approvalsForOpenChat(items, { sessionId, room, bot, roster } = {}) {
@@ -1145,26 +1148,24 @@ window.__ModuleLoader__.load({
         try {
           const always = decision === 'always'
           const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
+          let autoSend
           if (item.source === 'local') {
             await call('decide', { id: item.id, decision: mapped })
             if (always) {
-              if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') await call('social/face-auto', { on: true })
-              else {
-                const home = item.home || homeOfHandle(item.to)
-                if (home) await call('social/auto-accept', { home, on: true })
-              }
+              if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') {
+                await call('social/face-auto', { on: true })
+                autoSend = { ...holdParties(item), scope: 'face' }
+              } else autoSend = await autoSendPair(call, item.id)
             }
           } else {
-            await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
+            const result = await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
+            autoSend = result?.autoSend
           }
           const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           const mark = list => list.map(entry => entry.id === item.id ? { ...entry, status } : entry)
           setItems(mark)
           setLocal(mark)
-          if (always && status === 'approved') {
-            const { from, to } = holdParties(item)
-            actions?.notify?.(autoSendToast(from, to))
-          }
+          if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
         } finally { setBusy('') }
       }
       const approveAll = async () => {
@@ -1631,6 +1632,16 @@ window.__ModuleLoader__.load({
         } catch (e) { setError(errorText(e)) }
         finally { setBusy('') }
       }
+      // Auto-send for this pair, next to Revoke (#417): off brings back the approval card on the next reply.
+      const toggleAutoSend = async (grant, on) => {
+        setBusy(`auto:${grant.id}`)
+        setError('')
+        try {
+          await call('social/auto-send', { botId: bot.id, home: grant.home, on })
+          setView(await call('social/access', { botId: bot.id }))
+        } catch (e) { setError(errorText(e)) }
+        finally { setBusy('') }
+      }
       const grants = view?.grants ?? []
       return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
         h('div', { className: 'fs-name' }, 'People with access'),
@@ -1643,6 +1654,13 @@ window.__ModuleLoader__.load({
               ? h('span', { className: 'fs-sub' }, grant.home)
               : null,
             (grant.rooms ?? []).length ? h('span', { className: 'fs-hint' }, `In use: ${(grant.rooms ?? []).map(room => room.name || room.id).join(', ')}`) : null),
+          grant.home ? h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
+            h('input', {
+              type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
+              'aria-label': `Auto-send ${bot.name || 'this Bot'} → ${grant.person || grant.home}`,
+              onChange: e => { void toggleAutoSend(grant, e.target.checked) },
+            }),
+            'Auto-send') : null,
           h('button', {
             type: 'button', className: 'fs-btn', disabled: Boolean(busy),
             'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
@@ -1696,12 +1714,13 @@ window.__ModuleLoader__.load({
         } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
       }
       return h('div', { className: 'fs fs-friend-settings', 'data-flybot': 'friend-chat-settings' },
-        // Auto-send covers every message from your Bots to this friend's Bots (#230 names the pair).
+        // Auto-send for all my Bots to this person (#417 says what it covers; one Bot's own is in its Sharing).
         // The box holds the setting only; the destructive link sits apart, below it (#274).
         h('div', { className: 'fs-card fs-friend-auto', 'data-flybot': 'friend-auto-box' },
           h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
             h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
-            `Auto-send to ${who}`)),
+            `Auto-send my Bots' replies to ${who}`),
+          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`)),
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
             h('span', { className: 'fs-hint' }, `Remove ${bot.name}? ${who} can share it again.`),
@@ -1979,6 +1998,8 @@ window.__ModuleLoader__.load({
       FaceAutoSend,
       ConfirmLeave,
       PausedChat,
+      autoSendToast,
+      autoSendPair,
       apply(ctx) {
         let offs = []
         let tries = 0
