@@ -262,6 +262,7 @@ export function install(rt) {
   // just after it, so later policies (audit, leak prevention) still run.
   const evaluate = async (msg, { after } = {}) => {
     const skip = new Set()
+    let autoSent
     let resumed = after === undefined || !chain.some(m => m.name === after)
     for (const middleware of chain) {
       if (!resumed) { if (middleware.name === after) resumed = true; continue }
@@ -280,12 +281,18 @@ export function install(rt) {
         for (const name of verdict.bypass ?? []) {
           if (granted.includes(name) || granted.includes('*')) skip.add(name)
         }
+        // A policy that would have held this but the owner's Auto-send lets it go says so (#417):
+        // the chat marks the reply Auto-sent. Display only, never authority.
+        if (verdict.autoSent === true) {
+          const recipient = typeof verdict.recipient === 'string' ? verdict.recipient.trim().slice(0, 120) : ''
+          autoSent = { by: middleware.name, ...(recipient ? { recipient } : {}) }
+        }
         continue
       }
       const recipient = verdict.action === 'hold' && typeof verdict.recipient === 'string' ? verdict.recipient.trim().slice(0, 120) : ''
       return { action: verdict.action, reason: verdict.reason || `${verdict.action} by ${middleware.name}`, by: middleware.name, ...(recipient ? { recipient } : {}) }
     }
-    return { action: 'allow' }
+    return { action: 'allow', ...(autoSent ? { autoSent } : {}) }
   }
 
   const transports = new Map()
@@ -454,7 +461,27 @@ export function install(rt) {
   // A local Bot's replies to friends that were held, and what became of them (#418): the chat draws
   // each on the turn it answers (pending, sent, not sent). No text: the turn shows it already.
   const SENT = new Set(['approved'])
-  rt.heldRepliesOf = (botId) => Object.values(store())
+  // A Bot's reply to a friend that left through the owner's Auto-send (#417): kept by the turn it
+  // answers so the chat marks it Auto-sent where #418 would have held it. No text.
+  const AUTO_SENT_KEPT = 200
+  const autoSentList = () => {
+    state.flybot ??= {}
+    state.flybot.autoSent ??= []
+    return state.flybot.autoSent
+  }
+  const noteAutoSent = async (msg, { by, recipient }) => {
+    const replyIn = msg.meta?.replyIn
+    if (msg.via !== 'auto-reply' || typeof msg.from !== 'string' || typeof replyIn?.sessionId !== 'string' || replyIn.turn === undefined) return
+    const list = autoSentList()
+    list.push({ id: msg.exchangeId, by, botId: msg.from, sessionId: replyIn.sessionId, turn: replyIn.turn, to: toRemote(msg.to)?.handle ?? null, ...(recipient ? { recipientName: recipient } : {}), at: Date.now() })
+    if (list.length > AUTO_SENT_KEPT) list.splice(0, list.length - AUTO_SENT_KEPT)
+    try { await rt.save() } catch (error) { warn('flybot: auto-sent mark not saved: %s', error) }
+  }
+  const autoSentOf = botId => (state.flybot?.autoSent ?? []).filter(entry => entry.botId === botId).map(entry => ({
+    id: entry.id, by: entry.by, status: 'auto', sessionId: entry.sessionId, turn: entry.turn, to: entry.to,
+    ...(entry.recipientName ? { toOwner: entry.recipientName } : {}),
+  }))
+  const heldOf = (botId) => Object.values(store())
     // A record held again by a later rule (`next`) is replaced by that newer hold for the same turn.
     .filter(a => a.request?.from === botId && a.request?.via === 'auto-reply' && a.request?.meta?.replyIn && a.next === undefined)
     .sort((a, b) => a.createdAt - b.createdAt)
@@ -468,6 +495,7 @@ export function install(rt) {
       ...(a.recipientName ? { toOwner: a.recipientName } : {}),
       ...(a.status === 'failed' && a.error ? { error: String(a.error).slice(0, 200) } : {}),
     }))
+  rt.heldRepliesOf = (botId) => [...autoSentOf(botId), ...heldOf(botId)]
 
   const approvals = {
     // Under member enforcement a member sees only the holds of their own Bots; the
@@ -553,7 +581,9 @@ export function install(rt) {
       }
       return { action: 'hold', approvalId: approval.id, reason: verdict.reason, by: verdict.by }
     }
-    return { action: 'allow', exchangeId: await dispatch(msg) }
+    const exchangeId = await dispatch(msg)
+    if (verdict.autoSent) await noteAutoSent(msg, verdict.autoSent)
+    return { action: 'allow', exchangeId }
   }
 
   // File metadata a send carries (names and sizes for the approval card; a path or a

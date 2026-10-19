@@ -146,6 +146,7 @@ var ZH = {
   "Waiting for approval": "等待批准",
   "Not sent": "未发出",
   "Sent to {to}": "已发给 {to}",
+  "Auto-sent to {to}": "已自动发给 {to}",
   "Not sent: delivery failed": "未发出：发送失败",
   "{from} → {to}": "{from} → {to}",
   "+{count} more": "另有 {count} 条",
@@ -2566,7 +2567,7 @@ function heldReplyOf(bot, sessionId, turn) {
   for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply;
   return found;
 }
-var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved").map((reply) => reply.turn);
+var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
 function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
   const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
   if (!Array.isArray(outline)) return "";
@@ -4991,7 +4992,7 @@ function HeldReplyActions({ held, actions }) {
     return (0, import_react7.createElement)(
       "div",
       { className: "bt-held-note", "data-state": held.status, title: failed && held.error ? held.error : void 0 },
-      (0, import_react7.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
+      (0, import_react7.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : held.status === "auto" ? t("Auto-sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
       failed ? (0, import_react7.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
       error ? (0, import_react7.createElement)("span", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
     );

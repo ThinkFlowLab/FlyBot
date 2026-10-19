@@ -110,6 +110,7 @@ const ZH = {
   'Waiting for approval': '等待批准',
   'Not sent': '未发出',
   'Sent to {to}': '已发给 {to}',
+  'Auto-sent to {to}': '已自动发给 {to}',
   'Not sent: delivery failed': '未发出：发送失败',
   '{from} → {to}': '{from} → {to}',
   '+{count} more': '另有 {count} 条',

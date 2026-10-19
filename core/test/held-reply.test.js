@@ -91,6 +91,12 @@ test('after the decision the reply says Sent or Not sent in place, and they diff
   assert.ok(strings(rejected).includes('Not sent'))
   assert.deepEqual(find(failed, n => n.type === 'button').map(text), ['Retry'])
   assert.equal(find(sent, n => n.type === 'button').length + find(rejected, n => n.type === 'button').length, 0)
+  // #417: a reply that left through Auto-send looks sent and says so, quietly.
+  const auto = wrapper(draw(chief([held('auto')])))
+  assert.equal(auto.props['data-state'], 'auto')
+  assert.equal(auto.props['data-held'], undefined)
+  assert.ok(strings(auto).includes('Auto-sent to SelfB1238'))
+  assert.equal(find(auto, n => n.type === 'button').length, 0)
 })
 
 test('a friend\'s Bot with a listed chat is named as the chat list names it; no held reply, no wrapper', () => {
@@ -112,6 +118,7 @@ test('the list preview shows the friend\'s line, not a reply that was not sent; 
   assert.deepEqual(unsentReplyTurns(bot, 'chief'), [3])
   assert.equal(previewOf(list, 'chief', [], unsentReplyTurns(bot, 'chief')), 'What is 2+2?')
   assert.equal(previewOf(list, 'chief', [], unsentReplyTurns({ heldReplies: [held('approved')] }, 'chief')), '4.')
+  assert.deepEqual(unsentReplyTurns({ heldReplies: [held('auto')] }, 'chief'), [], 'an auto-sent reply went (#417)')
   const turns = readFileSync(new URL('../src/host/turns.js', import.meta.url), 'utf8')
   assert.match(turns, /replyIn: \{ sessionId: id, turn: answeredTurn \}/)
 })
