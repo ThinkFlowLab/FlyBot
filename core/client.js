@@ -15274,7 +15274,7 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
 
 // src/client/friend-lines.js
 function friendLineNews(bots, known, isOpen, selfId) {
-  const next = { ...known ?? {} };
+  const next = { ...known };
   const unread = [];
   for (const bot of bots ?? []) {
     const at = bot?.friendLineAt;

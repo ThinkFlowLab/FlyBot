@@ -8,7 +8,7 @@
 // `known`: the saved record, or null when this browser has none yet. `isOpen(bot)`: its chat is on
 // screen now. Returns the record to save and the Bots to mark unread.
 export function friendLineNews(bots, known, isOpen, selfId) {
-  const next = { ...(known ?? {}) }
+  const next = { ...known }
   const unread = []
   for (const bot of bots ?? []) {
     const at = bot?.friendLineAt
