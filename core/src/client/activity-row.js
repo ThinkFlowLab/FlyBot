@@ -132,10 +132,14 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   if (!running) sendRun.current = false
   else if (pendingInput > 0) sendRun.current = true
   const visible = bot?.remote !== undefined
-    ? !streaming && (awaiting || (running && sendRun.current))
+    ? !streaming && (running ? sendRun.current : awaiting)
     : (running && !streaming && !relaying && (bot !== undefined || room !== undefined))
   // Between those two turns `running` drops for a moment; a short grace keeps the one row up.
-  const steady = awaiting || (bot?.remote !== undefined && !streaming)
+  // Only the end of my send turn is bridged; the reply's own turn (the echo) hides the row at once.
+  const lastRun = useRef({ running, send: false })
+  const bridging = bot?.remote !== undefined && !streaming && lastRun.current.running && lastRun.current.send && !running
+  lastRun.current = { running, send: sendRun.current }
+  const steady = bridging
   const tool = tools.at(-1)
   const inputRef = useRef(0)
   // A steer keeps the run going, so nothing else resets the row: fresh input is

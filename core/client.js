@@ -6197,8 +6197,11 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   const sendRun = (0, import_react9.useRef)(false);
   if (!running) sendRun.current = false;
   else if (pendingInput > 0) sendRun.current = true;
-  const visible = bot?.remote !== void 0 ? !streaming && (awaiting || running && sendRun.current) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
-  const steady = awaiting || bot?.remote !== void 0 && !streaming;
+  const visible = bot?.remote !== void 0 ? !streaming && (running ? sendRun.current : awaiting) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
+  const lastRun = (0, import_react9.useRef)({ running, send: false });
+  const bridging = bot?.remote !== void 0 && !streaming && lastRun.current.running && lastRun.current.send && !running;
+  lastRun.current = { running, send: sendRun.current };
+  const steady = bridging;
   const tool = tools.at(-1);
   const inputRef = (0, import_react9.useRef)(0);
   const inputAt = Math.max(inputRef.current, pendingInput);
