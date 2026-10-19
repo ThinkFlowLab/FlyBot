@@ -62,3 +62,15 @@ test('the reply turn hides the row at once; only the end of my send turn gets th
   assert.match(src, /const steady = bridging/)
   assert.match(src, /lastRun\.current\.running && lastRun\.current\.send && !running/)
 })
+
+test('a friend\'s reply arriving clears the wait before it is written into the chat (#443 follow-up)', async () => {
+  const { state, rt } = rig()
+  state.remoteAwaiting = { r1: 1 }
+  let seen
+  rt.botOf = () => state.bots.r1
+  rt.chatOf = () => ({})
+  rt.resolveAgent = async () => ({ followup() { seen = { ...state.remoteAwaiting } }, session: {} })
+  rt.ctx.sessions = { flush: async () => {} }
+  await rt.remoteChats.deliver({ handle: '@bot-1.danyang.home', text: 'hi' })
+  assert.deepEqual(seen, {}, 'cleared before the reply is followed up')
+})

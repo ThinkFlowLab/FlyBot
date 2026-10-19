@@ -258,6 +258,8 @@ export function install(rt) {
     const bot = rt.botOf(id)
     const agent = await rt.resolveAgent(rt.chatOf(id))
     const shownName = cleanName(bot?.name ?? name ?? handle)
+    // The reply is here: the thinking row goes before the reply is drawn, not a beat after it (#443).
+    if (markAwaiting(id)) await rt.save().catch(error => warn('ds-bot: saving a friend chat wait failed: %s', error))
     const typedBy = human === true && typeof ownerName === 'string' && ownerName.trim() ? cleanName(ownerName) : ''
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: `[Message from ${shownName} (${cleanName(handle)})]\n${fenceUntrusted(shownName, text)}` }],
