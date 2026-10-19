@@ -272,16 +272,18 @@ export function missingModelKey(message) {
   return { route: /provider route "([^"]+)"/i.exec(text)?.[1] ?? '' }
 }
 
-// The ways out under a missing-credential failure: the DeepSeek routes get the same
-// choices as a Bot with no model yet; any other route opens the model settings.
+// The ways out under a missing-credential failure: a DeepSeek route gets the same
+// choices as a Bot with no model yet; any other or unnamed route opens the model settings.
 export function modelKeyChoices(actions, route) {
-  if (route === '' || /^deepseek/i.test(route)) return setupChoices(actions)
+  if (/^deepseek/i.test(route)) return setupChoices(actions)
   return [[t('Manage models'), openHarnessSettings]]
 }
 
 // DSH's terminal turn error, redrawn so a missing model credential has its fix right
 // under it (#405) instead of an environment variable name. Every other failure reads as
 // DSH writes it: the copy comes from the shell's own chat strings (`locale: 'chat'`).
+// The raw provider text of a missing-key failure is not drawn at all: like `turnFailure`
+// (host turns.js) drops AUTH messages, a provider may echo part of a key in it.
 export function TurnErrorCell({ node, t: chatT, actions }) {
   const data = node?.data ?? {}
   const code = typeof data.code === 'string' && data.code ? data.code : undefined
@@ -302,7 +304,7 @@ export function TurnErrorCell({ node, t: chatT, actions }) {
     h('span', { className: 'bt-turn-error-dot', 'aria-hidden': true }),
     h('div', { className: 'bt-turn-error-copy' },
       h('span', { className: 'bt-turn-error-title' }, title),
-      h('span', { className: 'bt-turn-error-message', title: missing ? raw : undefined }, message),
+      h('span', { className: 'bt-turn-error-message' }, message),
       code ? h('code', { className: 'bt-turn-error-code' }, code) : null),
     choices.length > 0 ? h('div', { className: 'bt-turn-error-actions' },
       choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))) : null)

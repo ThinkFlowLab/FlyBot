@@ -8115,7 +8115,7 @@ function missingModelKey(message) {
   return { route: /provider route "([^"]+)"/i.exec(text)?.[1] ?? "" };
 }
 function modelKeyChoices(actions, route) {
-  if (route === "" || /^deepseek/i.test(route)) return setupChoices(actions);
+  if (/^deepseek/i.test(route)) return setupChoices(actions);
   return [[t("Manage models"), openHarnessSettings]];
 }
 function TurnErrorCell({ node, t: chatT, actions }) {
@@ -8138,7 +8138,7 @@ function TurnErrorCell({ node, t: chatT, actions }) {
       "div",
       { className: "bt-turn-error-copy" },
       (0, import_react14.createElement)("span", { className: "bt-turn-error-title" }, title),
-      (0, import_react14.createElement)("span", { className: "bt-turn-error-message", title: missing ? raw : void 0 }, message),
+      (0, import_react14.createElement)("span", { className: "bt-turn-error-message" }, message),
       code ? (0, import_react14.createElement)("code", { className: "bt-turn-error-code" }, code) : null
     ),
     choices.length > 0 ? (0, import_react14.createElement)(

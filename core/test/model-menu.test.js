@@ -125,11 +125,16 @@ test('a run that failed for a missing API key offers the model setup right under
   assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY|launching environment/)
   const labels = nodes(tree, node => node.type === 'button').map(button => button.children[0])
   assert.deepEqual([...labels], ['Enter a DeepSeek API key', 'Open settings to set up a custom model'])
-  // The raw error stays on hover for a report.
-  assert.equal(nodes(tree, node => node.props.className === 'bt-turn-error-message')[0].props.title, raw)
+  // The raw provider text is never drawn, not even on hover (a provider may echo a key).
+  assert.equal(nodes(tree, node => node.props.className === 'bt-turn-error-message')[0].props.title, undefined)
+  const echoed = TurnErrorCell({ node: { data: { message: 'No API key found for sk-abc123', code: 'AUTH' } }, t: chatT, actions: {} })
+  assert.ok(!JSON.stringify(echoed).includes('sk-abc123'))
   // Another route opens the model settings; any other failure reads as DSH writes it, no buttons.
   const other = TurnErrorCell({ node: { data: { message: 'no API key for provider route "openrouter"' } }, t: chatT, actions: {} })
   assert.deepEqual([...nodes(other, node => node.type === 'button').map(button => button.children[0])], ['Manage models'])
+  // A provider that does not name its route is not assumed to be DeepSeek.
+  const unnamed = TurnErrorCell({ node: { data: { message: 'API key not configured' } }, t: chatT, actions: {} })
+  assert.deepEqual([...nodes(unnamed, node => node.type === 'button').map(button => button.children[0])], ['Manage models'])
   const quota = TurnErrorCell({ node: { data: { message: 'raw quota text', code: 'QUOTA' } }, t: chatT, actions: {} })
   assert.match(text(quota), /quota gone/)
   assert.match(text(quota), /QUOTA/)
