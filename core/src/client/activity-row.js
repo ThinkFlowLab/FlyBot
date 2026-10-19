@@ -126,7 +126,14 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   // A friend's chat (#443): my message leaves in one short turn and the reply comes back in
   // another, so the row stays up from the send until the reply lands, with the friend's Bot mark.
   const awaiting = useAwaitingReply(roster, sessionId)
-  const visible = (running && !streaming && !relaying && (bot !== undefined || room !== undefined)) || (awaiting && !running)
+  // A friend chat's run is either my send (it starts from a submission) or the friend's reply being
+  // written back (the echo: no submission). The echo never shows the row: the reply is the answer (#443).
+  const sendRun = useRef(false)
+  if (!running) sendRun.current = false
+  else if (pendingInput > 0) sendRun.current = true
+  const visible = bot?.remote !== undefined
+    ? !streaming && (awaiting || (running && sendRun.current))
+    : (running && !streaming && !relaying && (bot !== undefined || room !== undefined))
   // Between those two turns `running` drops for a moment; a short grace keeps the one row up.
   const steady = awaiting || (bot?.remote !== undefined && !streaming)
   const tool = tools.at(-1)

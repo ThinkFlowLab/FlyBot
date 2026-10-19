@@ -62,7 +62,7 @@ diff --git a/src/client/activity-row.js b/src/client/activity-row.js
    return host
  }
  
-@@ -96,7 +96,12 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
+@@ -96,7 +96,19 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
    const tools = entries.filter(entry => !entry.text).sort((a, b) => a.at - b.at)
    // Group chats show who is typing on their own while members speak.
    const relaying = tools.some(entry => entry.relay)
@@ -70,7 +70,14 @@ diff --git a/src/client/activity-row.js b/src/client/activity-row.js
 +  // A friend's chat (#443): my message leaves in one short turn and the reply comes back in
 +  // another, so the row stays up from the send until the reply lands, with the friend's Bot mark.
 +  const awaiting = useAwaitingReply(roster, sessionId)
-+  const visible = (running && !streaming && !relaying && (bot !== undefined || room !== undefined)) || (awaiting && !running)
++  // A friend chat's run is either my send (it starts from a submission) or the friend's reply being
++  // written back (the echo: no submission). The echo never shows the row: the reply is the answer (#443).
++  const sendRun = useRef(false)
++  if (!running) sendRun.current = false
++  else if (pendingInput > 0) sendRun.current = true
++  const visible = bot?.remote !== undefined
++    ? !streaming && (awaiting || (running && sendRun.current))
++    : (running && !streaming && !relaying && (bot !== undefined || room !== undefined))
 +  // Between those two turns `running` drops for a moment; a short grace keeps the one row up.
 +  const steady = awaiting || (bot?.remote !== undefined && !streaming)
    const tool = tools.at(-1)
@@ -2191,7 +2198,15 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -820,6 +820,7 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -814,12 +814,13 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
+ /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
+    without its copy and branch row; a tail with nothing in it takes no room. */
+-[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]){display:none!important}
+-[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))){display:none!important}
++[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]):not(.bt-typing){display:none!important}
++[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))):not(:has(>[data-turn-tail]>.bt-typing)){display:none!important}
+ /* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
     the shell's new-session hero: no headline, no workspace or mode picker, and the
     composer stays docked at the bottom. */
  [data-content-phase=hero] [class*="_scrollBody"]{justify-content:flex-end!important}

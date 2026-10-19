@@ -3823,8 +3823,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
 [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
 /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
    without its copy and branch row; a tail with nothing in it takes no room. */
-[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]){display:none!important}
-[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))){display:none!important}
+[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]):not(.bt-typing){display:none!important}
+[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))):not(:has(>[data-turn-tail]>.bt-typing)){display:none!important}
 /* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
    the shell's new-session hero: no headline, no workspace or mode picker, and the
    composer stays docked at the bottom. */
@@ -6194,7 +6194,10 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   const tools = entries2.filter((entry) => !entry.text).sort((a, b) => a.at - b.at);
   const relaying = tools.some((entry) => entry.relay);
   const awaiting = useAwaitingReply(roster, sessionId);
-  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0) || awaiting && !running;
+  const sendRun = (0, import_react9.useRef)(false);
+  if (!running) sendRun.current = false;
+  else if (pendingInput > 0) sendRun.current = true;
+  const visible = bot?.remote !== void 0 ? !streaming && (awaiting || running && sendRun.current) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
   const steady = awaiting || bot?.remote !== void 0 && !streaming;
   const tool = tools.at(-1);
   const inputRef = (0, import_react9.useRef)(0);
