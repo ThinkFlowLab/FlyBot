@@ -731,10 +731,12 @@ export const SIDEBAR_CSS = `
 @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
 @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
 
-.bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
-.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
+.bt-row-wrap{position:relative;display:flex;align-items:center;width:100%;min-width:0}
+.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0;width:100%}
 .bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
-.bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
+/* Gear sits over the row so hover/selected fill the same full-width band as a plain row (#384). */
+.bt-row-settings{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:1;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
+.bt-row-wrap:hover>.bt-row,.bt-row-wrap:focus-within>.bt-row{padding-right:36px}
 .bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 .bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
 .bt-row-settings svg{width:15px;height:15px}

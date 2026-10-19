@@ -1,8 +1,8 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
-import { fnv1a, lookOf, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
+import { fnv1a, lookOf, lookAvoidingLocals, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
 import { t } from './i18n.js'
 
-export { colorOf, lookOf, remoteSeed, lookBotForRemote } from './characters.js'
+export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
 
 // -------------------------------------------------------------------------
 // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.
@@ -47,7 +47,8 @@ function useGaze(ref, enabled) {
 // of animations.
 const FIDGETS = ['hop', 'sway', 'stretch', 'look']
 export function BotMark({ bot, look: given, size = 36, state = 'idle', live = false, gaze = false, pokeable = false, label }) {
-  const look = given ?? lookOf(bot)
+  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384).
+  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot))
   const ref = useRef(null)
   const maskId = useRef('')
   if (maskId.current === '') maskId.current = `bt-mark-${nextMarkSerial()}`

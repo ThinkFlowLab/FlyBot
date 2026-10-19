@@ -19,7 +19,7 @@ Grok Bot is the single entry point for humans; it schedules OpenCode (implements
 3. **Verify locally:** `npm run verify` at the repo root (Node 22+, see Commands).
 4. **PR** to `main`. Imperative English title, `Fixes #N` in the body, and what you ran and did **not** run at the tip SHA. A user-visible change adds one fragment `changelog.d/<issue-or-slug>.<kind>.md` ([changelog.d/README.md](changelog.d/README.md)); never edit `CHANGELOG.md` in a feature PR. Squash is the only merge method; the PR title and body become the commit message, so keep the body short.
 5. **CI.** The required check is `tests-ok`. It is green only when `test`, `plugins (tree)`, `plugins (social)` and `package` all pass. Never merge around a red check.
-6. **Review and merge.** Review the **tip SHA** with [`review-pr`](.claude/skills/review-pr/SKILL.md) (PASS / FAIL / INC); a tip move voids the PASS. **Standing delegation, T0/T1 only:** an agent may enable auto-merge when the PR's tier is T0 or T1 (`node .github/scripts/risk-gate.mjs --pr <n>`), its tip carries an independent PASS from a login in [`.github/agent/review-policy.json`](.github/agent/review-policy.json) — the `reviewed tip` report, never the PR's own author — and the required checks are green: `gh pr merge --auto --squash --match-head-commit <sha>`. `main` requires a merge queue: that command enqueues the PR (gh may answer `The merge strategy for main is set by the merge queue` or `already queued`), the queue performs the squash merge, and a plain `--squash` merge is refused; do not retry ([merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge)). T2 and T3 always wait for the maintainer's one-click approval, and so does any PR without a PASS at its tip, except a mechanical release PR under the [standing approval](#standing-approval-mechanical-release-prs) below. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
+6. **Review and merge.** Merge by tier ([`risk-gate.mjs`](.github/scripts/risk-gate.mjs): `node .github/scripts/risk-gate.mjs --pr <n>`). **T0 and T1** (owner decision 2026-10-19 11:45): an agent may enqueue the PR once `tests-ok` is green at its tip, it is mergeable, and it conforms to the design rules. No PASS and no human approval is needed. **T2 and T3** need the maintainer's approval through GitHub (a human) **and** a PASS at the tip SHA from [`review-pr`](.claude/skills/review-pr/SKILL.md) (PASS / FAIL / INC), with green checks. **Self-review counts** (owner decision 2026-10-19 11:43): a PR opened by the owner's Bot/agent (the `Birfy` account) may be PASSed by the owner's own reviewer Bot/agent; no independent reviewer is required. A tip move (any new commit) voids the PASS. The self-PASS never replaces the maintainer's approval or green CI. Enqueue with `gh pr merge --auto --squash --match-head-commit <sha>`. `main` requires a merge queue: that command enqueues the PR (gh may answer `The merge strategy for main is set by the merge queue` or `already queued`), the queue performs the squash merge, and a plain `--squash` merge is refused; do not retry ([merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge)). Never admin-merge and never bypass a gate. Exception: a mechanical release PR under the [standing approval](#standing-approval-mechanical-release-prs) below. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
 7. **Stop** and hand over to the maintainer on a security-sensitive change, an unresolved maintainer decision, or when you cannot get a green tip.
 
 When a class of bug repeats, date a lesson in LESSONS.md (`Seen N×`); after **≥3 days** promote the durable rule into `docs/code-standards.md` / CONTRIBUTING.
@@ -51,6 +51,58 @@ npm run verify
 ```
 
 If `topics.json` conflicts, keep both sides' entries (one patch per edited upstream file; a new file needs none).
+
+## Agent operating model
+
+Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled routines run on the Grok Bot box, each with one job. A routine does only its own job.
+
+### Routines
+
+| Routine | Schedule | Job |
+| --- | --- | --- |
+| Product self-test | every 12 h | Uses FlyBot and Bot Social as a user and **only files issues**: no PRs, no pushed branches, no code changes. Each issue states the expected behavior and the change scope. Search for duplicates first. |
+| Repo maintenance | every 2 h, FlyBot and Bot Social separately | The **only** routine that opens fix PRs. Each run: review open PRs against the design rules; triage every open issue (fixed, duplicate or obsolete: close with a comment; still valid: readiness check below); label every open issue and PR; develop only `agent-ready` issues; merge ready PRs through the merge queue within the gates below. Never deploys. Never edits `CHANGELOG.md` or a version number. |
+| Daily release | about 02:00 Asia/Shanghai | Publishes a real semver GitHub release (tag = `core/package.json` version, patch bump per day, skipped when there are no changelog fragments) through a mechanical release PR. It owns `CHANGELOG.md` and the version. The files and the approval are in [Standing approval](#standing-approval-mechanical-release-prs). |
+
+### Issue labels
+
+- **Type** (exactly one): `bug`, `enhancement`, `documentation`, `accessibility`.
+- **Area** (one or more): `area:social`, `area:ui`, `area:automation`, `area:release`, `area:security`, `area:docs`.
+- **Source:** `self-test`.
+- **State:** `needs-info` (spec unclear), `needs-human` (needs a design decision from the owner; the comment says what), `awaiting-approval` (T2/T3 PR is green and waits for the maintainer's approval or a PASS at its tip), `agent-ready`, `agent-working`, `agent-pr`, `hold`.
+- **Controller-managed, never set by hand:** `risk:T0` to `risk:T3`, `agent-task`, `status:done`.
+- `hold` means automation leaves the item alone.
+
+### Triage: when an issue is `agent-ready`
+
+Label `agent-ready`, with a triage comment, only when all three hold:
+
+1. Every design conflict is resolved (owner design rules, recorded owner decisions, RFC/decision issues, other open issues and PRs), with no open question for the owner.
+2. The expected behavior and the change scope are clear.
+3. It is not `hold`, not a tracking/umbrella issue, and not team-via-groups work (that waits for the owner's go-ahead).
+
+Otherwise label `needs-human` or `needs-info` and name the blocking conflict or question in a comment. Agents develop **only** `agent-ready` issues.
+
+### Claim, PR, release of a claim
+
+- Before work: skip the issue if someone else is assigned. Otherwise assign it to `Birfy`, add `agent-working`, and post a claim comment that names the branch.
+- Stopping without a PR: unassign, remove `agent-working`, and comment why.
+- The PR says `Fixes #N`, is assigned to `Birfy` and labeled `agent-pr`.
+
+### Gates
+
+- **T0 / T1:** merge through the merge queue once `tests-ok` is green at the tip, the PR is mergeable and design-conformant. No PASS and no human approval is required.
+- **T2 / T3:** the maintainer's approval through GitHub (a human) **and** a PASS at the head commit from a reviewer in [`.github/agent/review-policy.json`](.github/agent/review-policy.json), with green CI. **Self-PASS counts:** a PR opened by the owner's Bot/agent (`Birfy`) may be PASSed by the owner's own reviewer Bot/agent (the policy's `selfReview` list); an independent reviewer is no longer required. The self-PASS never replaces the maintainer's approval.
+- Any new commit voids a PASS (and a stale approval). CI green, the merge queue and the no-bypass rule apply to every tier.
+- Agents never bypass a gate and never admin-merge (the routines run as the maintainer account `Birfy`, but use it only for the actions above, never for admin merge, bypass or changing protection rules). The merge queue squashes the PR title and body, so a `Docs-not-needed:` line goes in the PR **body** and also in a branch commit message (`npm run arch-docs` reads only the branch's commits). Run `verify` with `TZ=UTC`.
+
+### Hard rules for agents
+
+1. The self-test routine files issues only; the maintenance routine opens PRs; the release routine owns `CHANGELOG.md` and the version.
+2. No deploy of production Bot Social, and no change to the owner's local instances, without the owner's explicit yes.
+3. An approval is given only through an explicit UI control, never by a typed chat reply (#349).
+4. Connector tools are on by default for the owner's Bots and off by default for other people's, until the owner opts in (#359).
+5. Bot Social has no keyword commitment scan.
 
 ## What this project is
 

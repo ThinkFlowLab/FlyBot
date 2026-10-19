@@ -106,7 +106,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      state.workspaceId = workspace.id
      await rt.save()
      return workspace.id
-@@ -58,16 +58,24 @@ export function install(rt) {
+@@ -58,16 +58,33 @@ export function install(rt) {
  
    // `pickModel` leaves the model to the user: the chat opens on a model card, and the
    // greeting waits until a model is chosen. So does a Bot made when no model is served.
@@ -126,8 +126,19 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +    } else if (cleanName === '') throw new Error('A friend\'s Bot needs a name')
      const cleanAvatarValue = cleanAvatar(avatar)
      // The model is fixed at creation, so a later change of the DSH default leaves it alone.
-     const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : await rt.defaultModel()
-     const effortId = modelRef !== undefined && effort !== undefined ? await rt.resolveEffort(modelRef, effort) : undefined
+-    const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : await rt.defaultModel()
+-    const effortId = modelRef !== undefined && effort !== undefined ? await rt.resolveEffort(modelRef, effort) : undefined
++    // A Bot made by another Bot (create_bot, a tree child) with no model named starts on its
++    // maker's effective model and thinking level (#410; the level resolved against that
++    // model, as applyModel does for the maker), set before its first request, so it never
++    // tries an unconfigured profile default first. A friend's Bot is never a maker here.
++    const maker = !model && !pickModel && !isRemote && createdBy ? rt.botOf(createdBy) : undefined
++    const inherited = maker && !maker.remote ? await rt.desiredModel(maker) : undefined
++    const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : inherited ?? await rt.defaultModel()
++    const inheritedEffort = effort === undefined && inherited !== undefined ? maker.effort : undefined
++    const effortId = modelRef === undefined ? undefined
++      : effort !== undefined ? await rt.resolveEffort(modelRef, effort)
++        : inheritedEffort !== undefined ? await rt.resolveEffort(modelRef, inheritedEffort).catch(() => undefined) : undefined
      const dir = workDir === undefined || workDir === null ? undefined : await rt.cleanWorkDir(workDir)
 +    // Every Bot binds to the team's one owner (#47), resolved before the Session exists
 +    // so a failure here leaves nothing to clean up.
@@ -829,6 +840,15 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        return `Stopped ${target.name} in ${running.map(whereOf).join(' and ')}. It is told why in a new turn, whose reply comes back to you.`
      },
    }))
+@@ -175,7 +175,7 @@ export function install(rt) {
+       role: { type: 'string', required: true, description: 'Two-to-four character role label shown under the name' },
+       instructions: { type: 'string', required: true, description: 'What this Bot is responsible for and how it should work' },
+       brief: { type: 'string', description: 'Why the user wants it, passed to the new Bot as its first context' },
+-      model: { type: 'string', description: 'Model the Bot runs on, as provider/model or a model id. Only when the user names one; otherwise the DSH default model.' },
++      model: { type: 'string', description: 'Model the Bot runs on, as provider/model or a model id. Only when the user names one; otherwise the new Bot starts on your own model.' },
+       work_dir: WORK_DIR_PARAM,
+     },
+     output,
 @@ -257,7 +257,7 @@ export function install(rt) {
      }
      return { bots, unknown }

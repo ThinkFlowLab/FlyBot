@@ -1220,9 +1220,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   const isPaused = error => error?.code === 'conversation_paused' || /conversation_paused|turn budget exhausted|loop detected|conversation paused/i.test(String(error?.message ?? error))
   const mapSendError = (error) => {
     if (!isPaused(error)) return error
-    const reason = String(error?.message ?? error).replace(/^Bot Social\s+\S+:\s*/, '')
-    const at = config.server ? ` at ${String(config.server).replace(/\/+$/, '')}/ui` : ''
-    return new Error(`Bot Social paused this conversation (${reason}). Resending cannot help: approve pending messages or extend the conversation in the Bot Social console${at}, or remove and re-add this friend to start a new one.`)
+    // Only steps a FlyBot owner can take (#404): a FlyBot owner cannot sign in to the Bot
+    // Social website, so the text never sends them there (nor repeats the server's
+    // "owners can extend" hint, which has no FlyBot action yet).
+    const reason = String(error?.message ?? error).replace(/^Bot Social\s+\S+:\s*/, '').replace(/;\s*owners? can extend[^;)]*/i, '').trim()
+    return new Error(`Bot Social paused this conversation (${reason}). Resending cannot help: approve any message waiting in this chat, or remove and re-add this friend to start a new one.`)
   }
   // Direct chat (Friends' Bots row): one short English line with a next step. The
   // remote-chat host prefixes "Not sent:". Keep the Bot Social tool name out of the UI.
@@ -1254,9 +1256,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     const short = (body || raw).slice(0, 100).replace(/\.$/, '')
     if (!short || /^[a-z0-9_]+$/i.test(short)) {
-      return new Error('the message could not leave. Try again, or open the Bot Social console.')
+      return new Error('the message could not leave. Try again.')
     }
-    return new Error(`${short}. Try again, or open the Bot Social console.`)
+    return new Error(`${short}. Try again.`)
   }
   disposers.push(flybot.transports.add('bot-social', {
     async send(msg) {

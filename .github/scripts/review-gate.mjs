@@ -4,11 +4,13 @@
 //   node review-gate.mjs --pr 12 [--repo owner/repo]              # by hand
 //   node review-gate.mjs --pr 12 --sha <head>                     # judge another tip
 //
-// It answers one question: does this pull request's current head carry an independent
-// Verifier PASS? `decide` is the whole rule:
+// It answers one question: does this pull request's current head carry a Verifier PASS?
+// `decide` is the whole rule:
 //   - the report is a pull request comment or a review body by a login listed in
 //     .github/agent/review-policy.json's `reviewers` (the file the base branch holds);
-//   - it is not the pull request author's own report: no self-review;
+//   - it is not the pull request author's own report, unless the author is listed in the policy's
+//     `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, acting as Birfy, may PASS
+//     its own pull requests; any other author still needs someone else);
 //   - it carries the Verifier block review-pr already writes, with a `Tip SHA:` that is the
 //     head being judged and a `Verdict:`;
 //   - the verdict is PASS, the report lists a command it `Ran:`, and it says what was
@@ -67,6 +69,7 @@ export function decide({ head, author, reports, policy }) {
   const headSha = String(head ?? '').toLowerCase()
   const authorLogin = String(author ?? '').toLowerCase()
   const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
+  const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
   const reasons = []
   const judged = []
 
@@ -80,7 +83,7 @@ export function decide({ head, author, reports, policy }) {
       reasons.push(`${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
       continue
     }
-    if (login(r) === authorLogin) { reasons.push(`${where(r)}: the pull request's own author is not a reviewer`); continue }
+    if (login(r) === authorLogin && !selfReview.has(authorLogin)) { reasons.push(`${where(r)}: the pull request's own author is not a reviewer (not in selfReview)`); continue }
     if (!reviewers.has(login(r))) { reasons.push(`${where(r)}: not a reviewer listed in .github/agent/review-policy.json`); continue }
     entry.counts = true
   }
@@ -118,7 +121,7 @@ export function render(result, { pr, head, author } = {}) {
     '',
     result.ok
       ? `${result.by} passed this tip.`
-      : `No independent PASS names this tip: ${result.reason}.`,
+      : `No PASS names this tip: ${result.reason}.`,
     '',
     `Pull request #${pr}, author ${author}, head \`${String(head).slice(0, SHORT)}\`.`,
   ]

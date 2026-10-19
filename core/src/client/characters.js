@@ -100,6 +100,54 @@ export function lookOf(bot) {
   }
 }
 
+// Fingerprints of a drawn look: shape+color, or a custom image/emoji. Used to keep a friend's
+// fallback avatar from matching one of my own Bots exactly (#384) until real look sync lands.
+// A named ink and its rendered hex (light or dark, any case) count as the same color, since
+// Bot Social publishes colors as lowercase hex.
+const colorKeys = (color) => {
+  const value = String(color ?? '')
+  if (Object.hasOwn(INKS, value)) return [value, ...INKS[value].map(hex => hex.toLowerCase())]
+  return [isHex(value) ? value.toLowerCase() : value]
+}
+export function lookKeys(look) {
+  if (look?.image) return [`image:${String(look.image).slice(0, 96)}`]
+  if (look?.emoji) return [`emoji:${look.emoji}`]
+  return colorKeys(look?.color).map(color => `shape:${shapeId(look?.shape)}:${color}`)
+}
+export const lookKey = look => lookKeys(look)[0]
+
+// The roster's own Bots, set whenever the roster is indexed, so every surface that draws a
+// friend's Bot (sidebar, header, palette, details, transcript marks) avoids the same looks.
+let localBots = []
+export function setLocalBots(bots) {
+  localBots = (Array.isArray(bots) ? bots : []).filter(item => item && !item.remote)
+}
+
+// A friend's Bot with no published look: step the seeded shape (then the color) until it
+// differs from every local Bot's look. A stored image/emoji/shape is left alone (that is
+// the friend's real look).
+export function lookAvoidingLocals(bot, locals = localBots) {
+  const look = lookOf(bot)
+  const avatar = bot?.avatar ?? {}
+  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji) || hasShape(avatar.shape)) return look
+  const own = (Array.isArray(locals) ? locals : []).filter(item => item && !item.remote)
+  if (own.length === 0) return look
+  const taken = new Set(own.flatMap(item => lookKeys(lookOf(item))))
+  const free = candidate => !lookKeys(candidate).some(key => taken.has(key))
+  if (free(look)) return look
+  // Prefer the friendly defaults, then the rest of the picker; never pick whale (Main Bot's mark).
+  const shapes = [...DEFAULT_SHAPES, ...PICKER_SHAPES.filter(id => id !== 'whale' && !DEFAULT_SHAPES.includes(id))]
+  const colors = [look.color, ...DEFAULT_COLORS.filter(color => !colorKeys(color).some(key => colorKeys(look.color).includes(key)))]
+  const first = Math.max(0, shapes.indexOf(shapeId(look.shape)))
+  for (const color of colors) {
+    for (let n = 1; n <= shapes.length; n += 1) {
+      const candidate = { ...look, color, shape: shapes[(first + n) % shapes.length] }
+      if (free(candidate)) return candidate
+    }
+  }
+  return look
+}
+
 // Registered shapes join the characters: `body(paint)` returns SVG markup in a
 // `size` box and `eyes` lists the two capsules.
 export const SHAPES = {}

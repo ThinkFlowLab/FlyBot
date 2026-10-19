@@ -1,5 +1,6 @@
 {
   "version": 1,
-  "note": "Who may record a PASS that counts, for the `reviewed tip` report (Phase 1: report only; see docs/autonomous-dev.md). A login listed here is not a merge right: the report is read when a tip is judged, and a T0/T1 auto-merge needs it under the standing delegation in AGENTS.md step 6. The pull request's own author never counts, even if listed. Add the reviewer agent's login here when the delegation lands. Editing this file is itself T3.",
-  "reviewers": ["hsliuustc0106", "Birfy"]
+  "note": "Who may record a PASS that counts, for the `reviewed tip` report (Phase 1: report only; see docs/autonomous-dev.md). A login listed here is not a merge right: the report is read when a tip is judged, and a PASS is required only for T2/T3 (with the maintainer's approval); T0/T1 merge on green CI without one (AGENTS.md step 6). A pull request's own author does not count unless the author is listed in `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, which acts as Birfy, may PASS its own pull requests). A self-PASS never replaces the maintainer's approval of a T2/T3 pull request or green CI. Editing this file is itself T3.",
+  "reviewers": ["hsliuustc0106", "Birfy"],
+  "selfReview": ["Birfy"]
 }

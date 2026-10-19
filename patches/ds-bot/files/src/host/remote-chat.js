@@ -30,7 +30,7 @@ export function notSentLine(error) {
   const body = raw.replace(/^Bot Social\s+[A-Za-z0-9_.-]+:\s*/i, '').trim()
   const blob = `${raw} ${error?.code ?? ''}`
   if (/paused|turn budget|loop detected|emergency stop/i.test(blob)) {
-    return 'Not sent: this chat is paused. Open the Bot Social console to resume it.'
+    return 'Not sent: this chat is paused. Approve any message waiting here, or remove and re-add this friend to start a new chat.'
   }
   if (/has no grant|has not been granted|cannot message friends|cannot message their Bots/i.test(blob)) {
     return 'Not sent: none of your Bots is invited to this friend. Invite them from Bot settings.'
@@ -55,9 +55,9 @@ export function notSentLine(error) {
   }
   const short = (body || raw).slice(0, 80).replace(/\.$/, '')
   if (!short || /^[a-z0-9_]+$/i.test(short)) {
-    return 'Not sent: the message could not leave. Try again, or open the Bot Social console.'
+    return 'Not sent: the message could not leave. Try again.'
   }
-  return `Not sent: ${short}. Try again, or open the Bot Social console.`
+  return `Not sent: ${short}. Try again.`
 }
 
 /**

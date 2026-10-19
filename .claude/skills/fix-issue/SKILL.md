@@ -49,14 +49,14 @@ node scripts/ds-bot-patches.mjs generate && node scripts/ds-bot-patches.mjs chec
 
 ## 5. Independent review loop
 
-1. A **separate agent with fresh context** reviews the PR tip following [review-pr](../review-pr/SKILL.md): it re-runs the gates itself and re-verifies red-at-base mechanically (worktree at base + only the test files copied in). The implementer's claims are narrative, not evidence.
+1. The owner's reviewer agent, **in a separate session with fresh context** (it may share the `Birfy` account: self-PASS counts, owner decision 2026-10-19), reviews the PR tip following [review-pr](../review-pr/SKILL.md): it re-runs the gates itself and re-verifies red-at-base mechanically (worktree at base + only the test files copied in). The implementer's claims are narrative, not evidence.
 2. Findings → fix the class, add the test, push. **A tip advance voids the previous PASS** — the reviewer re-reviews the delta and re-runs the gates at the new tip.
 3. A non-blocking note whose root cause lies outside the diff becomes a follow-up issue immediately (security ones into the #9 queue), not a comment lost in the PR.
 
 ## 6. Merge and cleanup
 
-- Merge only when all hold **on the same tip**: review PASS (and implementer↔reviewer agreement, or a maintainer waiver of one side), required checks green, and either the maintainer's go or the standing T0/T1 delegation below. Tip moved → start over from the review.
-- **Standing delegation (T0/T1 only).** An agent may enable auto-merge itself when `node .github/scripts/risk-gate.mjs --pr <n>` reports **T0 or T1**, the `reviewed tip` report shows a PASS at the current head by a login in `.github/agent/review-policy.json` (never the PR's own author), and `tests-ok` is green. Then `gh pr merge --auto --squash --match-head-commit <sha>`. T2, T3 and any pull request without a PASS at its tip wait for the maintainer.
+- Merge only when all hold **on the same tip**, by tier (owner decisions 2026-10-19): **T0/T1:** required checks green, mergeable, design-conformant; no PASS and no human approval needed. **T2/T3:** required checks green, a PASS at the tip (self-PASS counts: the owner's reviewer agent may PASS a PR opened as `Birfy`), **and** the maintainer's approval through GitHub (a human). Tip moved (any new commit) → the PASS is void, start over from the review.
+- **T0/T1 merge.** An agent may enqueue the PR itself when `node .github/scripts/risk-gate.mjs --pr <n>` reports **T0 or T1** and `tests-ok` is green: `gh pr merge --auto --squash --match-head-commit <sha>`. T2 and T3 wait for the maintainer. Never admin-merge, never bypass a gate.
 - **Merge queue.** `main` requires one. The command above enqueues the PR; gh may print `The merge strategy for main is set by the merge queue` or `already queued`, which is success, not a refusal. The queue runs `Test` on a `gh-readonly-queue/main/pr-<n>-<sha>` entry and squash-merges it; a plain `gh pr merge --squash` is refused. Do not retry; check `isInMergeQueue` (GraphQL) or wait for the PR to read MERGED.
 - Then: fetch and fast-forward main, delete the branch locally and remotely, remove the worktree, and carry follow-up issues (not TODOs).
 

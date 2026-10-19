@@ -1593,15 +1593,17 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // shell's footer classes are CSS-module names, so they match on their stems.
  export const SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -658,4 +658,12 @@ export const SIDEBAR_CSS = `
+@@ -658,4 +658,14 @@ export const SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
 +
-+.bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
-+.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
++.bt-row-wrap{position:relative;display:flex;align-items:center;width:100%;min-width:0}
++.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0;width:100%}
 +.bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
-+.bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
++/* Gear sits over the row so hover/selected fill the same full-width band as a plain row (#384). */
++.bt-row-settings{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:1;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
++.bt-row-wrap:hover>.bt-row,.bt-row-wrap:focus-within>.bt-row{padding-right:36px}
 +.bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 +.bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
 +.bt-row-settings svg{width:15px;height:15px}
@@ -1945,7 +1947,16 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js
-@@ -29,18 +29,41 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict'
+ import { readdirSync, readFileSync } from 'node:fs'
+ import { test } from 'node:test'
+-import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf } from '../src/client/characters.js'
++import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf, lookKey, lookKeys, lookAvoidingLocals, PICKER_SHAPES } from '../src/client/characters.js'
+ import { indexRoster } from '../src/client/sources.js'
+ 
+ const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
+@@ -29,19 +29,95 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
    assert.equal(photo.shape, defaultShape('chief'))
  })
  
@@ -1991,6 +2002,60 @@ diff --git a/test/looks.test.js b/test/looks.test.js
    // A group chat's entries open its own settings the same way.
    assert.match(text('context-menu.js'), /\[t\('Group settings'\), GearIcon, \(\) => actions\.openSettings\('groups', room\.id\)\]/)
    assert.ok(!text('mark.js').includes('WhaleLogo'))
+ })
++
++
++test('a friend\'s Bot fallback look never matches one of my own Bots exactly (#384)', () => {
++  const mine = { id: 'chief', name: 'Chief', color: 'deepseek', avatar: { shape: 'whale' } }
++  // Force a remote seed that would otherwise collide: same shape+color as mine via stored fields cleared.
++  const friend = { id: 'remote-1', name: 'Chief', remote: { handle: '@chief.friend.home' }, color: 'deepseek', avatar: { shape: 'whale' } }
++  // Stored shape is the friend's real look — leave it (sync already happened).
++  assert.deepEqual(lookAvoidingLocals(friend, [mine]), lookOf(friend))
++  // Seeded fallback that collides: no avatar.shape, color matches MAIN whale via explicit color + lucky seed.
++  // Build a remote whose lookOf equals mine by copying shape/color through seed collision is hard;
++  // instead pass a bot whose lookOf we control by setting color and relying on lookAvoidingLocals
++  // only when avatar has no shape — craft locals that take the remote's seeded key.
++  const seeded = { id: 'r2', name: 'Helper', remote: { handle: '@helper.other.home' } }
++  const seededLook = lookOf(seeded)
++  const twin = { id: 'local-twin', name: 'Twin', color: seededLook.color, avatar: { shape: seededLook.shape } }
++  const avoided = lookAvoidingLocals(seeded, [twin])
++  assert.notEqual(lookKey(avoided), lookKey(lookOf(twin)), 'fallback must differ from the local twin')
++  assert.equal(avoided.color, seededLook.color, 'color stays; only shape steps')
++  assert.notEqual(avoided.shape, 'whale', 'never steal the Main Bot whale')
++  // No locals: unchanged.
++  assert.deepEqual(lookAvoidingLocals(seeded, []), seededLook)
++  // Image / emoji keep the published look even if a local matches.
++  const pictured = { ...seeded, avatar: { image: 'https://example.test/a.png' } }
++  assert.equal(lookAvoidingLocals(pictured, [twin]).image, 'https://example.test/a.png')
++})
++
++test('fallback avoidance treats a named ink and its published hex as one color, and survives a full shape set (#384)', () => {
++  const seeded = { id: 'r3', name: 'Scout', remote: { handle: '@scout.other.home' } }
++  const seededLook = lookOf(seeded)
++  // Bot Social publishes colors as lowercase hex; my own Bot uses the named ink.
++  const published = { ...seeded, color: '#2a92fe' }
++  const mine = { id: 'mine-blue', name: 'Blue', color: 'blue', avatar: { shape: lookOf(published).shape } }
++  const avoided = lookAvoidingLocals(published, [mine])
++  assert.ok(!lookKeys(avoided).some(key => lookKeys(lookOf(mine)).includes(key)), 'blue and #2a92fe are the same drawn color')
++  // My own Bots take every non-whale shape in the fallback color: the color steps too.
++  const all = PICKER_SHAPES.filter(id => id !== 'whale').map((shape, index) => ({ id: `own-${index}`, name: `Own ${index}`, color: seededLook.color, avatar: { shape } }))
++  const escaped = lookAvoidingLocals(seeded, all)
++  const taken = new Set(all.flatMap(bot => lookKeys(lookOf(bot))))
++  assert.ok(!lookKeys(escaped).some(key => taken.has(key)), 'never hands back a taken look')
++  assert.notEqual(escaped.shape, 'whale')
++})
++
++test('indexing the roster registers own Bots, so every BotMark of a friend avoids them (#384)', () => {
++  const seeded = { id: 'r4', name: 'Pal', remote: { handle: '@pal.other.home' } }
++  const seededLook = lookOf(seeded)
++  const twin = { id: 'local-twin-2', name: 'Twin', color: seededLook.color, avatar: { shape: seededLook.shape } }
++  indexRoster({ bots: [twin, seeded], rooms: [] })
++  assert.notEqual(lookKey(lookAvoidingLocals(seeded)), lookKey(lookOf(twin)))
++  indexRoster({ bots: [], rooms: [] })
++  assert.deepEqual(lookAvoidingLocals(seeded), seededLook)
++  // BotMark (palette, details drawer, transcript cells) uses the registry when no look is given.
++  assert.match(readFileSync(new URL('../src/client/mark.js', import.meta.url), 'utf8'), /given \?\? \(bot\?\.remote \? lookAvoidingLocals\(bot\) : lookOf\(bot\)\)/)
++})
 diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 --- a/test/mention-rule.test.js
 +++ b/test/mention-rule.test.js

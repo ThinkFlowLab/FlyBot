@@ -1548,7 +1548,7 @@ test('Friends\' Bots (#69): no cue when status reports no pending approvals', ()
   assert.equal(plugin.PendingApprovals({ items: [] }), null)
 })
 
-test('a paused conversation explains the pause and names the console, without retrying other members', async (t) => {
+test('a paused conversation explains the pause with steps a FlyBot owner can take, without retrying other members (#404)', async (t) => {
   const { ctx, stop } = await team()
   t.after(stop)
   const server = mockServer()
@@ -1568,8 +1568,10 @@ test('a paused conversation explains the pause and names the console, without re
   await social.registerAll()
   // The user's direct chat: the error says the conversation is paused and what does help,
   // and the pause is not retried with the friendship's other member Bots.
-  await assert.rejects(social.sendChat({ handle: '@coder.bob.home', text: 'hello there' }),
-    /Bot Social paused this conversation \(turn budget exhausted.*https:\/\/social\.test\/ui/)
+  const paused = await social.sendChat({ handle: '@coder.bob.home', text: 'hello there' }).then(() => null, error => error)
+  assert.match(paused?.message ?? '', /^Bot Social paused this conversation \(turn budget exhausted\)\. Resending cannot help: approve any message waiting in this chat, or remove and re-add this friend/)
+  // No dead end: a FlyBot owner cannot sign in to the Bot Social website.
+  assert.doesNotMatch(paused.message, /console|\/ui\b|social\.test|owners can extend/i)
   assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1)
   // The same for a Bot's send through the transport (message_friend_bot).
   await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), /paused this conversation/)

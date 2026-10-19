@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf } from '../src/client/characters.js'
+import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf, lookKey, lookKeys, lookAvoidingLocals, PICKER_SHAPES } from '../src/client/characters.js'
 import { indexRoster } from '../src/client/sources.js'
 
 const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
@@ -67,4 +67,57 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
   // A group chat's entries open its own settings the same way.
   assert.match(text('context-menu.js'), /\[t\('Group settings'\), GearIcon, \(\) => actions\.openSettings\('groups', room\.id\)\]/)
   assert.ok(!text('mark.js').includes('WhaleLogo'))
+})
+
+
+test('a friend\'s Bot fallback look never matches one of my own Bots exactly (#384)', () => {
+  const mine = { id: 'chief', name: 'Chief', color: 'deepseek', avatar: { shape: 'whale' } }
+  // Force a remote seed that would otherwise collide: same shape+color as mine via stored fields cleared.
+  const friend = { id: 'remote-1', name: 'Chief', remote: { handle: '@chief.friend.home' }, color: 'deepseek', avatar: { shape: 'whale' } }
+  // Stored shape is the friend's real look — leave it (sync already happened).
+  assert.deepEqual(lookAvoidingLocals(friend, [mine]), lookOf(friend))
+  // Seeded fallback that collides: no avatar.shape, color matches MAIN whale via explicit color + lucky seed.
+  // Build a remote whose lookOf equals mine by copying shape/color through seed collision is hard;
+  // instead pass a bot whose lookOf we control by setting color and relying on lookAvoidingLocals
+  // only when avatar has no shape — craft locals that take the remote's seeded key.
+  const seeded = { id: 'r2', name: 'Helper', remote: { handle: '@helper.other.home' } }
+  const seededLook = lookOf(seeded)
+  const twin = { id: 'local-twin', name: 'Twin', color: seededLook.color, avatar: { shape: seededLook.shape } }
+  const avoided = lookAvoidingLocals(seeded, [twin])
+  assert.notEqual(lookKey(avoided), lookKey(lookOf(twin)), 'fallback must differ from the local twin')
+  assert.equal(avoided.color, seededLook.color, 'color stays; only shape steps')
+  assert.notEqual(avoided.shape, 'whale', 'never steal the Main Bot whale')
+  // No locals: unchanged.
+  assert.deepEqual(lookAvoidingLocals(seeded, []), seededLook)
+  // Image / emoji keep the published look even if a local matches.
+  const pictured = { ...seeded, avatar: { image: 'https://example.test/a.png' } }
+  assert.equal(lookAvoidingLocals(pictured, [twin]).image, 'https://example.test/a.png')
+})
+
+test('fallback avoidance treats a named ink and its published hex as one color, and survives a full shape set (#384)', () => {
+  const seeded = { id: 'r3', name: 'Scout', remote: { handle: '@scout.other.home' } }
+  const seededLook = lookOf(seeded)
+  // Bot Social publishes colors as lowercase hex; my own Bot uses the named ink.
+  const published = { ...seeded, color: '#2a92fe' }
+  const mine = { id: 'mine-blue', name: 'Blue', color: 'blue', avatar: { shape: lookOf(published).shape } }
+  const avoided = lookAvoidingLocals(published, [mine])
+  assert.ok(!lookKeys(avoided).some(key => lookKeys(lookOf(mine)).includes(key)), 'blue and #2a92fe are the same drawn color')
+  // My own Bots take every non-whale shape in the fallback color: the color steps too.
+  const all = PICKER_SHAPES.filter(id => id !== 'whale').map((shape, index) => ({ id: `own-${index}`, name: `Own ${index}`, color: seededLook.color, avatar: { shape } }))
+  const escaped = lookAvoidingLocals(seeded, all)
+  const taken = new Set(all.flatMap(bot => lookKeys(lookOf(bot))))
+  assert.ok(!lookKeys(escaped).some(key => taken.has(key)), 'never hands back a taken look')
+  assert.notEqual(escaped.shape, 'whale')
+})
+
+test('indexing the roster registers own Bots, so every BotMark of a friend avoids them (#384)', () => {
+  const seeded = { id: 'r4', name: 'Pal', remote: { handle: '@pal.other.home' } }
+  const seededLook = lookOf(seeded)
+  const twin = { id: 'local-twin-2', name: 'Twin', color: seededLook.color, avatar: { shape: seededLook.shape } }
+  indexRoster({ bots: [twin, seeded], rooms: [] })
+  assert.notEqual(lookKey(lookAvoidingLocals(seeded)), lookKey(lookOf(twin)))
+  indexRoster({ bots: [], rooms: [] })
+  assert.deepEqual(lookAvoidingLocals(seeded), seededLook)
+  // BotMark (palette, details drawer, transcript cells) uses the registry when no look is given.
+  assert.match(readFileSync(new URL('../src/client/mark.js', import.meta.url), 'utf8'), /given \?\? \(bot\?\.remote \? lookAvoidingLocals\(bot\) : lookOf\(bot\)\)/)
 })

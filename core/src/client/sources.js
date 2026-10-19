@@ -1,3 +1,5 @@
+import { setLocalBots } from './characters.js'
+
 // -------------------------------------------------------------------------
 // Small observable sources for the inject `hooks` compartment.
 
@@ -24,6 +26,7 @@ export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?
 // and `sessionId` its current one. Every part id finds the Bot; Session state
 // (running, unread, turns) is read from the current part, team state from the Bot id.
 export function indexRoster(value) {
+  setLocalBots(value.bots)
   const byId = {}
   for (const bot of value.bots) {
     for (const id of [...(bot.parts ?? []), bot.sessionId ?? bot.id, bot.id]) byId[id] = bot

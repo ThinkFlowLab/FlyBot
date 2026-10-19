@@ -70,8 +70,17 @@ export function install(rt) {
     } else if (cleanName === '') throw new Error('A friend\'s Bot needs a name')
     const cleanAvatarValue = cleanAvatar(avatar)
     // The model is fixed at creation, so a later change of the DSH default leaves it alone.
-    const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : await rt.defaultModel()
-    const effortId = modelRef !== undefined && effort !== undefined ? await rt.resolveEffort(modelRef, effort) : undefined
+    // A Bot made by another Bot (create_bot, a tree child) with no model named starts on its
+    // maker's effective model and thinking level (#410; the level resolved against that
+    // model, as applyModel does for the maker), set before its first request, so it never
+    // tries an unconfigured profile default first. A friend's Bot is never a maker here.
+    const maker = !model && !pickModel && !isRemote && createdBy ? rt.botOf(createdBy) : undefined
+    const inherited = maker && !maker.remote ? await rt.desiredModel(maker) : undefined
+    const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : inherited ?? await rt.defaultModel()
+    const inheritedEffort = effort === undefined && inherited !== undefined ? maker.effort : undefined
+    const effortId = modelRef === undefined ? undefined
+      : effort !== undefined ? await rt.resolveEffort(modelRef, effort)
+        : inheritedEffort !== undefined ? await rt.resolveEffort(modelRef, inheritedEffort).catch(() => undefined) : undefined
     const dir = workDir === undefined || workDir === null ? undefined : await rt.cleanWorkDir(workDir)
     // Every Bot binds to the team's one owner (#47), resolved before the Session exists
     // so a failure here leaves nothing to clean up.

@@ -1698,6 +1698,41 @@ function lookOf(bot) {
     color: colorOf(bot)
   };
 }
+var colorKeys = (color) => {
+  const value = String(color ?? "");
+  if (Object.hasOwn(INKS, value)) return [value, ...INKS[value].map((hex) => hex.toLowerCase())];
+  return [isHex(value) ? value.toLowerCase() : value];
+};
+function lookKeys(look) {
+  if (look?.image) return [`image:${String(look.image).slice(0, 96)}`];
+  if (look?.emoji) return [`emoji:${look.emoji}`];
+  return colorKeys(look?.color).map((color) => `shape:${shapeId(look?.shape)}:${color}`);
+}
+var lookKey = (look) => lookKeys(look)[0];
+var localBots = [];
+function setLocalBots(bots) {
+  localBots = (Array.isArray(bots) ? bots : []).filter((item) => item && !item.remote);
+}
+function lookAvoidingLocals(bot, locals = localBots) {
+  const look = lookOf(bot);
+  const avatar = bot?.avatar ?? {};
+  if (avatar.image || typeof avatar.emoji === "string" && avatar.emoji || hasShape(avatar.shape)) return look;
+  const own = (Array.isArray(locals) ? locals : []).filter((item) => item && !item.remote);
+  if (own.length === 0) return look;
+  const taken = new Set(own.flatMap((item) => lookKeys(lookOf(item))));
+  const free = (candidate) => !lookKeys(candidate).some((key) => taken.has(key));
+  if (free(look)) return look;
+  const shapes = [...DEFAULT_SHAPES, ...PICKER_SHAPES.filter((id) => id !== "whale" && !DEFAULT_SHAPES.includes(id))];
+  const colors = [look.color, ...DEFAULT_COLORS.filter((color) => !colorKeys(color).some((key) => colorKeys(look.color).includes(key)))];
+  const first = Math.max(0, shapes.indexOf(shapeId(look.shape)));
+  for (const color of colors) {
+    for (let n = 1; n <= shapes.length; n += 1) {
+      const candidate = { ...look, color, shape: shapes[(first + n) % shapes.length] };
+      if (free(candidate)) return candidate;
+    }
+  }
+  return look;
+}
 var SHAPES = {};
 for (const [id, character] of Object.entries(CHARACTERS)) {
   const layers = [
@@ -1793,7 +1828,7 @@ function useGaze(ref, enabled) {
 }
 var FIDGETS = ["hop", "sway", "stretch", "look"];
 function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
-  const look = given ?? lookOf(bot);
+  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
   const ref = (0, import_react.useRef)(null);
   const maskId = (0, import_react.useRef)("");
   if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
@@ -2262,6 +2297,7 @@ function createSource(initial) {
 var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 function indexRoster(value) {
+  setLocalBots(value.bots);
   const byId = {};
   for (const bot of value.bots) {
     for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
@@ -6858,10 +6894,12 @@ var SIDEBAR_CSS = `
 @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
 @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
 
-.bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
-.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
+.bt-row-wrap{position:relative;display:flex;align-items:center;width:100%;min-width:0}
+.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0;width:100%}
 .bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
-.bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
+/* Gear sits over the row so hover/selected fill the same full-width band as a plain row (#384). */
+.bt-row-settings{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:1;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
+.bt-row-wrap:hover>.bt-row,.bt-row-wrap:focus-within>.bt-row{padding-right:36px}
 .bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 .bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
 .bt-row-settings svg{width:15px;height:15px}

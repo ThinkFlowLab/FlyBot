@@ -3,7 +3,7 @@
   "note": "Phase 0: these rules only REPORT a tier (see docs/autonomous-dev.md). Nothing reads them to block or merge. Editing this file is itself T3.",
   "tiers": {
     "T3": {
-      "meaning": "high risk: a human one-click approval at the current head; never auto-merged",
+      "meaning": "high risk: the maintainer's approval (a human, via GitHub) at the current head and a PASS at the tip (self-PASS counts); never auto-merged",
       "paths": [
         ".github/**", ".claude/**", ".agents/**", "scripts/**", "core/scripts/**",
         "AGENTS.md", "CONTRIBUTING.md", "LESSONS.md", "docs/code-standards.md", "docs/autonomous-dev.md",
@@ -26,15 +26,15 @@
       "topics": ["create_child_bot"]
     },
     "T2": {
-      "meaning": "medium risk: host/plugin code, and any path no rule names (never silently T0/T1); a later phase may auto-merge it behind a smoke gate",
+      "meaning": "medium risk: host/plugin code, and any path no rule names (never silently T0/T1); the maintainer's approval and a PASS at the tip (self-PASS counts)",
       "paths": ["core/index.js", "core/src/host/**", "core/types/**", "plugins/**"]
     },
     "T1": {
-      "meaning": "low risk: client code, tests, generated files",
+      "meaning": "low risk: client code, tests, generated files; merges through the queue on green CI, no PASS or approval needed",
       "paths": ["core/src/client/**", "core/client.js", "patches/**", "core/test/**", "plugins/*/test/**", "CHANGELOG.md", "changelog.d/**"]
     },
     "T0": {
-      "meaning": "lowest risk: documentation",
+      "meaning": "lowest risk: documentation; merges through the queue on green CI, no PASS or approval needed",
       "paths": ["docs/**", "README.md", "README.zh.md"]
     }
   },

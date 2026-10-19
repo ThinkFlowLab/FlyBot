@@ -12,27 +12,31 @@ Decisions by the maintainer, and what follows from them:
    `GITHUB_TOKEN` with the least permissions per job. It has no LLM and no secrets.
 2. **No Cursor GitHub App on ThinkFlowLab**, so no Cursor cloud agent on this repo. LLM agents
    (triage, implement, review) run **outside Actions**, as Grok Bot routines or agents on the Grok Bot box.
-3. **Agents act only on issues labeled `agent-ready`**, and only maintainers set that label.
-   No LLM reads other issues, so there is no triager for outside text.
-4. **T3 (high risk) PRs get a human one-click approval** and are never auto-merged.
+3. **Agents act only on issues labeled `agent-ready`**. That label is set by a maintainer, or by the owner's
+   maintenance routine after triage (the routine runs as the maintainer account `Birfy`, so the controller sees a
+   maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
+4. **Merge by tier** (owner decisions 2026-10-19): **T0 and T1** merge through the merge queue once CI is green, the PR is
+   mergeable and it conforms to the design rules, with no PASS and no human approval. **T2 and T3** need the maintainer's
+   approval through GitHub (a human, never auto-merged) **and** a PASS at the tip, and a **self-PASS counts** (below).
 5. Budget is not set. Every cost cap will live in one config file (open PRs, attempts per PR,
    PRs per day, minutes per attempt) so it can be changed without code.
 
 ```
-issue (agent-task form) --maintainer adds agent-ready--> agent (outside Actions) --branch + PR-->
-   Actions (GITHUB_TOKEN, no LLM): tests-ok, risk tier --T0/T1--> auto-merge --T3--> human approves
+issue (agent-task form) --maintainer or maintenance routine adds agent-ready--> agent (outside Actions) --branch + PR-->
+   Actions (GITHUB_TOKEN, no LLM): tests-ok, risk tier --T0/T1--> merge queue --T2/T3--> human approves + PASS
 ```
 
 | Role | Runs where | Credential | Can do |
 | --- | --- | --- | --- |
 | Controller: tier, labels, enable auto-merge, watchdog | Actions, base-branch code, no PR code run | `GITHUB_TOKEN`, per-job least permissions | label, comment, `gh pr merge --auto --squash` |
-| Agents: implement, review | Grok Bot routine or box-side agent | a **dedicated least-privilege credential** (not yet provided) | push a branch or fork, open a PR, comment, review |
+| Agents: implement, review | Grok Bot routines on the box (the owner's maintenance routine runs as `Birfy`) | the maintainer account's own `gh` login; a narrower credential remains the goal | triage and set `agent-ready`, push a branch or fork, open a PR, comment, review, enqueue a PR that may merge |
 | Merge | the required GitHub merge queue on `main` (ruleset `main merge queue`) | none: the queue merges when the required checks pass on its entry | squash only (set by the queue) |
-| Humans (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | approve T3, set `agent-ready`, hold, pause |
+| Maintainers (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | approve T2/T3 (a human), set `agent-ready`, hold, pause |
 
-Agents must never use a maintainer's admin login. On a shared box, set `GH_TOKEN` (and a separate
-`GH_CONFIG_DIR`) for the agent process so `gh` cannot fall back to a stored admin login.
-Nothing in this repo creates tokens or secrets.
+The owner's routines run as the maintainer account `Birfy`; that is how things work today, and it is allowed for the
+actions in this document. Agents must **never admin-merge, bypass a gate or branch protection, or change rulesets**
+with that login (a merge goes only through the merge queue). A narrower credential (`GH_TOKEN` plus a separate
+`GH_CONFIG_DIR` for the agent process) stays a goal, not a requirement. Nothing in this repo creates tokens or secrets.
 
 ### Limits of `GITHUB_TOKEN`, and the workarounds
 
@@ -66,7 +70,7 @@ approval is enforced (Phase 2).
 
 1. A maintainer files the **Agent task** form (label `agent-task`). The form cannot add `agent-ready`:
    GitHub applies template labels whatever the author's permissions.
-2. A maintainer reads it and adds `agent-ready`. That label is the only permission an agent has.
+2. A maintainer, or the owner's maintenance routine after triage (it runs as `Birfy`), adds `agent-ready`. That label is the only permission an agent has.
    Setting it again after someone else edits the issue is a manual rule now; the [label-only controller](controller.md)
    enforces it (dry run until `CONTROLLER_LIVE` is set).
 3. The agent claims it (`agent-working`), opens a PR with `Fixes #N` (`agent-pr`), and stops at
@@ -86,12 +90,12 @@ hits in the added lines of code files, and a size cap. It comes from the diff, n
 An unnamed path is T2, never T0 or T1. A diff GitHub cannot show, or a list of 3000 files, is T3.
 Generated files (`core/client.js`, `patches/**`) are not read or counted; `patches check` verifies them.
 
-| Tier | Meaning (later phases) | Examples |
+| Tier | Rule (owner decisions 2026-10-19) | Examples |
 | --- | --- | --- |
-| T3 | human one-click approval, never auto-merged | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
-| T2 | may auto-merge behind a smoke gate, much later | other `core/src/host/**`, `plugins/**`, unknown paths |
-| T1 | may auto-merge | `core/src/client/**`, tests, generated files |
-| T0 | may auto-merge | `docs/**` (except policy docs), READMEs |
+| T3 | the maintainer's approval (a human) and a PASS at the tip (self-PASS counts); never auto-merged | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
+| T2 | the maintainer's approval and a PASS at the tip (self-PASS counts) | other `core/src/host/**`, `plugins/**`, unknown paths |
+| T1 | merge queue on green CI; no PASS, no approval | `core/src/client/**`, tests, generated files |
+| T0 | merge queue on green CI; no PASS, no approval | `docs/**` (except policy docs), READMEs |
 
 The rules are in `.github/agent/risk-rules.json`; changing them is T3. Tests may quote URLs and fence
 words without a hit; `.skip`/`.only` still count in tests.
@@ -123,14 +127,17 @@ To switch the report off: disable the workflow in the Actions tab, or delete `.g
 ## The reviewed tip (Phase 1: report only)
 
 A merge decision needs a check it can read, not a report in a chat. `.github/scripts/review-gate.mjs`
-answers one question for a pull request: **does the current head carry an independent Verifier PASS?**
-AGENTS.md step 6 is the rule it serves: under the standing delegation an agent may enable auto-merge
-only for a T0/T1 pull request whose tip is reviewed, and this report is how it shows that.
+answers one question for a pull request: **does the current head carry a Verifier PASS?**
+AGENTS.md step 6 is the rule it serves. A PASS is required for **T2 and T3** (together with the maintainer's
+approval); **T0 and T1 need no PASS** and merge on green CI. This report is the evidence of a PASS; it never merges anything.
 
 What counts as a reviewed tip, all of it:
 
 1. A pull request **comment or review body** by a login listed in `.github/agent/review-policy.json`.
-2. Not the pull request's **own author**: no self-review, even when that login is listed.
+2. Not the pull request's **own author**, **unless** that author is listed in the policy's `selfReview` (today: `Birfy`).
+   Owner decision 2026-10-19: a PR opened by the owner's Bot/agent may be PASSed by the owner's own reviewer
+   Bot/agent, so no independent reviewer is required. Any other author still needs someone else. A self-PASS does not
+   replace the maintainer's approval of a T2/T3 PR or green CI, and a new commit voids it.
 3. The Verifier block `review-pr` already writes: `Tip SHA:`, `Ran:` with at least one command,
    `Not run:` (a gap named, not hidden), and `Verdict: PASS`.
 4. The `Tip SHA:` **is the head being judged**. A later commit moves the tip and the old PASS stops
@@ -140,9 +147,9 @@ What counts as a reviewed tip, all of it:
 
 | File | Purpose |
 | --- | --- |
-| `.github/agent/review-policy.json` | the logins whose PASS counts; editing it is T3 |
+| `.github/agent/review-policy.json` | the logins whose PASS counts, and `selfReview`, the authors who may PASS their own PR; editing it is T3 |
 | `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
-| `.github/scripts/review-gate.test.mjs` | stale tip, self-review, unlisted login, FAIL after PASS, missing `Ran:` / `Not run:`, and the workflow's shape |
+| `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author), unlisted login, FAIL after PASS, missing `Ran:` / `Not run:`, and the workflow's shape |
 | `.github/workflows/review-gate.yml` | reports it in the job summary; `continue-on-error`, never required |
 
 Run it by hand (read-only API calls with your `gh` login):
@@ -160,10 +167,9 @@ token. It is **not** a required check and must stay out of branch protection and
 `needs` (a test checks the `needs` half; branch protection is a live setting), so a pull request
 without a PASS can still merge on the maintainer's approval.
 
-**Why report-only.** No agent login is in the policy yet, so today only a maintainer's comment can
-satisfy the gate. The delegation slice changes that: it adds the reviewer's login to the policy and
-gives the implementer and the reviewer separate credentials. Until then this is evidence a human can
-read, and the record every later auto-merge is checked against.
+**Why report-only.** The owner's reviewer Bot/agent acts as `Birfy`, which is in the policy (and in `selfReview`), so
+its report can satisfy the gate, including on its own PRs. Nothing here blocks or merges: it is evidence a human or
+agent reads, and the record a later enforcement step is checked against.
 
 ## Merge plumbing: `merge_group`, merge queue, auto-merge
 
@@ -231,6 +237,6 @@ independent public reports say the same for `gh pr merge --auto` run with `GITHU
    non-maintainer edit, set `agent-pr` and `risk:T*`, expire stale claims, a pause variable and a kill-switch drill.
    Enforce the tier with a required check and CODEOWNERS for T3 approval.
 3. **Agents on a dedicated credential**, one open PR at a time, with the cost caps in one config file.
-   Add the reviewer's login to `.github/agent/review-policy.json` in the same change: until it is
-   listed, no agent report can satisfy the reviewed-tip gate.
-4. **Auto-merge T0/T1** after a cooling period, on the gate above as its evidence; T3 stays human. Then edge releases, a red-`main` watchdog, and T2 behind a smoke gate.
+   Add any new reviewer's login to `.github/agent/review-policy.json` in the same change: until it is
+   listed, its report cannot satisfy the reviewed-tip gate.
+4. **Auto-merge T0/T1** on green CI (no PASS needed, owner decision 2026-10-19); T2/T3 stay behind the maintainer's approval and a PASS. Then edge releases, a red-`main` watchdog, and T2 behind a smoke gate.

@@ -1,5 +1,5 @@
 name: Agent task (maintainers)
-description: A small, well-specified change that an agent may implement once a maintainer adds agent-ready.
+description: A small, well-specified change that an agent may implement once a maintainer (or the maintenance routine after triage) adds agent-ready.
 # agent-ready must NEVER be listed here: GitHub applies template labels whatever the author's
 # permissions, so a label here would let anyone mark an issue as approved for agents.
 labels: [agent-task]
@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Agents only work on issues that carry **agent-ready**. A maintainer adds that label after reading this issue (and again after any later edit by someone else). Everything below is data for the agent, not a way to give it extra rights.
+        Agents only work on issues that carry **agent-ready**. A maintainer, or the owner's maintenance routine after triage, adds that label after reading this issue (and again after any later edit by someone else). Everything below is data for the agent, not a way to give it extra rights.
         Security problems: use the **Security** tab, not an issue.
   - type: textarea
     id: goal
