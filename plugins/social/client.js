@@ -1192,7 +1192,7 @@ window.__ModuleLoader__.load({
     }
 
     // The decision on a Bot's held reply to a friend, drawn on that reply's bubble (#418): who gets
-    // it (the person, or the friend's Bot by #384 naming), Approve / Reject, and Always approve. The
+    // it (the person, or the friend's Bot by #384 naming), Approve / Reject, and Auto-send from now on. The
     // bubble above is the text, so the card does not repeat it.
     function HeldReplyCard({ held, decide, call: callHost = call, actions } = {}) {
       useStyles()
@@ -1203,11 +1203,8 @@ window.__ModuleLoader__.load({
         setBusy(true)
         try {
           await decide?.(decision === 'always' ? 'approve' : decision)
-          if (decision === 'always') {
-            const home = homeOfHandle(held.to)
-            if (home) await callHost('social/auto-accept', { home, on: true })
-            actions?.notify?.(autoSendToast(from, to))
-          }
+          // Auto-send for this pair only, my Bot → that person (#417), never the home-wide switch.
+          if (decision === 'always') actions?.notify?.(autoSendToast(await autoSendPair(callHost, held.id)))
         } finally { setBusy(false) }
       }
       return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'region', 'aria-label': WAITING_OWNER },
@@ -1217,7 +1214,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'fs-hold-decide' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: busy, onClick: () => onDecide('approve') }, 'Approve'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => onDecide('reject') }, 'Reject')),
-          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, 'Always approve')))
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, AUTO_SEND_LINK)))
     }
 
     function FriendBotRow({ bot, chat, renderBot, busy, onRemove }) {

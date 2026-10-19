@@ -6930,16 +6930,19 @@ test('#418: the held reply is decided on its bubble, not in a dock, and names th
   const decided = []
   const held = { id: 'apr-418', by: 'social', status: 'pending', from: 'Chief', to: '@chief.selfb1238.home', toName: 'SelfB1238' }
   const notes = []
-  const card = walk(pluginOf([false]).HeldReplyCard({ held, decide: async d => { decided.push(d) }, call: async (e, p) => { calls.push([e, p]) }, actions: { notify: n => notes.push(n) } }))
+  const hostCall = async (e, p) => { calls.push([e, p]); return e === 'social/auto-send' ? { autoSend: true, botName: 'Chief', person: 'SelfB1238' } : {} }
+  const card = walk(pluginOf([false]).HeldReplyCard({ held, decide: async d => { decided.push(d) }, call: hostCall, actions: { notify: n => notes.push(n) } }))
   assert.ok(card.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → SelfB1238')))
   assert.equal(card.some(n => n.props.className === 'fs-draft'), false, 'the bubble is the text; the card does not repeat it')
   const buttons = card.filter(n => n.type === 'button')
-  assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Always approve'])
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Auto-send from now on'])
   await buttons[1].props.onClick()
   await buttons[2].props.onClick()
   assert.deepEqual(decided, ['reject', 'approve'])
-  assert.equal(JSON.stringify(calls.at(-1)), JSON.stringify(['social/auto-accept', { home: '@selfb1238.home', on: true }]))
-  assert.match(notes[0], /Chief → SelfB1238/)
+  // Auto-send for this pair only (#417): the host reads the pair from the hold; the home-wide switch is not touched.
+  assert.equal(JSON.stringify(calls.at(-1)), JSON.stringify(['social/auto-send', { approvalId: 'apr-418' }]))
+  assert.equal(calls.some(([e]) => e === 'social/auto-accept'), false)
+  assert.equal(notes[0], 'Auto-send is on for Chief → SelfB1238. Turn it off in Chief → Sharing → People with access.')
 })
 
 // #336: the answers Bot Social sends since Birfy/bot-social faa7cb5 (#27, src/platform.ts refuseUnshared):
