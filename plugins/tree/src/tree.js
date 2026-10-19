@@ -6,6 +6,7 @@
 import { checkCreate } from './limits.js'
 import { systemPrompt, withTreeBlock, hasTreeBlock } from './prompt.js'
 import { forestOf } from './forest.js'
+import { createPlacement } from './placement.js'
 export { forestOf }
 
 export const TREE_KEYS = new Set(['parent', 'treeRole'])
@@ -41,6 +42,9 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     if (next !== String(current ?? '').trim()) fb.setSystemPrompt(id, next)
   }
   const refreshPrompt = (id, nodes = snapshot()) => { if (nodes[id]) writeBlock(id, promptFor(id, nodes)) }
+  // After a placement or repair any trace or child list may have changed; writeBlock skips unchanged prompts.
+  const refreshAll = () => { const nodes = snapshot(); for (const id of Object.keys(nodes)) refreshPrompt(id, nodes) }
+  const placement = createPlacement({ fb, limits, snapshot, childrenOf, depthOf, warn })
 
   // ---------------------------------------------------------------- root
   /** The Main Bot (Chief): config.rootBotId if it exists, else the Main Bot named 'Chief', else the first Main Bot. */
@@ -77,14 +81,16 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     if (fb.getField(chief.id, 'treeRole') !== ROOT_ROLE) fb.setField(chief.id, 'treeRole', ROOT_ROLE)
     migrateLegacyRoots(chief.id)
     if (adoptExisting) adoptUnattached(chief.id)
-    const nodes = snapshot()
-    for (const id of [chief.id, ...childrenOf(nodes, chief.id).map(c => c.id)]) refreshPrompt(id, nodes)
+    placement.repair()
+    refreshAll()
     return chief.id
   }
 
   /**
-   * Every local bot with no tree fields (and not retired) becomes a child of the root, up to
-   * maxChildren; the rest stay unattached with a warning. Remote bots are never in bot.list().
+   * Every local bot with no tree fields (and not retired) is placed in the tree by the tree's limits
+   * (placement.js): under the root while it has room, else under the closest match, after grouping
+   * matching siblings, or one level down. A bot is left outside only when the whole tree is full.
+   * Remote bots are never in bot.list(). Bots are placed in list (creation) order.
    */
   function adoptUnattached(rootId) {
     const adopted = [], skipped = []
@@ -93,13 +99,11 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
       if (fb.getField(b.id, 'retired') === true) continue
       if (fb.getField(b.id, 'parent') !== undefined || fb.getField(b.id, 'treeRole') !== undefined) continue
       if (b.isMain === true && !rootBotId) continue // another Main Bot stays outside the tree
-      if (childrenOf(snapshot(), rootId).length >= limits.maxChildren) { skipped.push(b.name); continue }
-      fb.setField(b.id, 'treeRole', String(b.role ?? '').trim())
-      fb.setField(b.id, 'parent', rootId)
-      adopted.push(b.id)
+      if (placement.place(b, rootId) === undefined) skipped.push(b.name)
+      else adopted.push(b.id)
     }
-    if (skipped.length) warn(`flybot-tree: ${skipped.length} bot(s) left outside the tree because the root already has maxChildren=${limits.maxChildren} children: ${skipped.join(', ')}`)
-    if (adopted.length) { const nodes = snapshot(); for (const id of adopted) refreshPrompt(id, nodes) }
+    if (skipped.length) warn(`flybot-tree: ${skipped.length} bot(s) left outside the tree because every Bot in it is at maxChildren=${limits.maxChildren} or maxDepth=${limits.maxDepth}: ${skipped.join(', ')}`)
+    if (adopted.length) refreshAll()
     return { adopted, skipped }
   }
 
@@ -188,31 +192,17 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     emit(change)
   }
   /**
-   * After deletion: the removed bot's children re-attach to its parent (from the event's last record).
-   * Every reparented child and its descendants get a fresh prompt (their trace no longer names the
-   * deleted bot). maxChildren is NOT enforced here: deleting a bot never orphans or drops its
-   * children; if the new parent ends up over the limit we only warn, and create_child_bot keeps
-   * refusing new children there until it is back under the limit.
+   * After deletion: the removed bot's children re-attach to its parent (from the event's last record),
+   * so no child is dropped. If that parent is now over maxChildren, placement.repair() moves its
+   * newest children down (closest match first) until it is back within the limit (#446). Every
+   * moved Bot and its descendants get a fresh prompt (their trace no longer names the deleted bot).
    */
   function onBotRemoved({ botId, parent }) {
     if (parent === undefined) return // not a tree bot
     const up = parent ?? null
-    const moved = childrenOf(snapshot(), botId)
-    for (const child of moved) fb.setField(child.id, 'parent', up)
-    const nodes = snapshot()
-    if (up && nodes[up]) {
-      refreshPrompt(up, nodes)
-      const count = childrenOf(nodes, up).length
-      if (count > limits.maxChildren) warn(`flybot-tree: ${nodes[up].name} now has ${count} children after a deletion (maxChildren=${limits.maxChildren}); kept all, new children are refused until it is under the limit`)
-    }
-    const stack = moved.map(c => c.id), seen = new Set()
-    while (stack.length) {
-      const id = stack.pop()
-      if (seen.has(id)) continue
-      seen.add(id)
-      refreshPrompt(id, nodes)
-      for (const c of childrenOf(nodes, id)) stack.push(c.id)
-    }
+    for (const child of childrenOf(snapshot(), botId)) fb.setField(child.id, 'parent', up)
+    placement.repair()
+    refreshAll()
     emit({ botId, key: 'removed' })
   }
   const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn) }

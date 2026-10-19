@@ -138,3 +138,24 @@ test('#90 on the real host: a friend reaches a granted tree Bot directly, never 
     await h.stop()
   }
 })
+
+test('#446 on the real host: core create_bot cannot get past maxChildren; the new Bot is placed in the tree before the tool answers', async () => {
+  const h = await start()
+  try {
+    const fork = h.ctx.plugin(tree, { maxChildren: 1 })
+    const tf = h.fb.scope('flybot-tree').fields
+    await waitFor(() => tf.get('b', 'parent') === 'a') // Writer fills Chief's only slot
+    assert.match(JSON.parse(await h.tool('create_child_bot', { name: 'Editor', role_description: 'edit' }, 'a')).error, /limit reached: Chief already has 1 children \(maxChildren=1\)/)
+    const answer = await h.tool('create_bot', { name: 'Editor', role: 'Edit', instructions: 'Edit texts' }, 'a')
+    assert.match(String(answer), /Created Editor/)
+    const editor = h.fb.bot.list().find(b => b.name === 'Editor')
+    assert.ok(editor, 'create_bot made the Bot')
+    assert.equal(tf.get(editor.id, 'parent'), 'b', 'placed one level down, under Writer, right away')
+    assert.equal(h.fb.bot.list().filter(b => tf.get(b.id, 'parent') === 'a').length, 1, 'Chief stays within maxChildren')
+    assert.match(h.fb.bot.get('b').systemPrompt, /COORDINATOR[\s\S]*- Editor/)
+    assert.match(h.fb.bot.get('a').systemPrompt, /Do not use create_bot to get around them/)
+    fork.dispose()
+  } finally {
+    await h.stop()
+  }
+})

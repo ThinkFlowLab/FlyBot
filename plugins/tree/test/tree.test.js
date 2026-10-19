@@ -598,7 +598,7 @@ test('client forestOf is an identical copy of src/forest.js', async () => {
   assert.deepEqual(forestOf([{ id: 'a', name: 'A', fields: { 'flybot-tree': { parent: 'a', treeRole: 'x' } } }]).map(n => n.id), ['a']) // self-parent -> top level
 })
 
-test('adoption: existing local bots without tree fields become children of Chief; retired/remote/main skipped; maxChildren respected', async () => {
+test('adoption: existing local bots without tree fields join the tree under Chief; retired/remote/main skipped; maxChildren respected (#446)', async () => {
   const m = createMockFlybot()
   const chief = m.addBot({ name: 'Chief', isMain: true })
   const names = ['研究员', '数据分析师', '文案', '程序员']
@@ -610,8 +610,9 @@ test('adoption: existing local bots without tree fields become children of Chief
   await tree.ensureRoot()
   const kids = (await m.call(chief, 'list_children')).children.map(c => c.name)
   assert.deepEqual(kids, ['研究员', '数据分析师', '文案']) // maxChildren=3
-  assert.equal(f(m, ids[3], 'parent'), undefined) // left unattached
-  assert.match(warns.join('\n'), /1 bot\(s\) left outside the tree[\s\S]*maxChildren=3[\s\S]*程序员/)
+  assert.equal(f(m, ids[3], 'parent'), ids[0]) // Chief is full and nothing matches: one level down, fewest descendants, oldest first
+  assert.doesNotMatch(warns.join('\n'), /left outside/)
+  assert.match(warns.join('\n'), /placed 程序员 under 研究员 \(Chief is full \(maxChildren=3\)/)
   assert.equal(f(m, retired, 'parent'), undefined); assert.equal(f(m, main2, 'parent'), undefined)
   assert.match(sp(m, ids[0]), /^研究员 own\n\n<!-- flybot-tree:start -->/) // own prompt kept, tree block added
   assert.match(sp(m, chief), /COORDINATOR[\s\S]*- 研究员/)
@@ -620,7 +621,8 @@ test('adoption: existing local bots without tree fields become children of Chief
   assert.equal((await send(chief, ids[0])).action, 'allow')
   assert.equal((await send(ids[0], chief)).action, 'allow')
   assert.equal((await send(ids[0], ids[1])).action, 'deny') // siblings
-  assert.equal((await send(ids[0], ids[3])).action, 'deny') // tree bot -> local non-tree bot
+  assert.equal((await send(ids[0], ids[3])).action, 'allow') // 程序员 is now 研究员's child
+  assert.equal((await send(ids[1], ids[3])).action, 'deny') // not its parent
   // idempotent; host-side sync forest
   await tree.ensureRoot()
   assert.equal((await m.call(chief, 'list_children')).children.length, 3)
@@ -818,7 +820,7 @@ test('issue 15 (1): control notices (stopped, report) bypass tree policy; a Main
   assert.equal((await send(o, dev)).action, 'deny')
 })
 
-test('issue 15 (2): deleting a middle node refreshes every reparented child (and its subtree); overflow warns', async () => {
+test('issue 15 (2) / #446: deleting a middle node refreshes every reparented child (and its subtree); an overflow is repaired, nothing dropped', async () => {
   const warnings = []
   const m = createMockFlybot()
   m.addBot({ name: 'Chief', isMain: true, systemPrompt: '' })
@@ -827,11 +829,18 @@ test('issue 15 (2): deleting a middle node refreshes every reparented child (and
   const work = await make(m, m.root, 'Work'); await make(m, m.root, 'Life')
   const dev = await make(m, work, 'Dev'); const ops = await make(m, work, 'Ops'); const qa = await make(m, dev, 'QA')
   assert.match(sp(m, dev), /Work/); assert.match(sp(m, qa), /Work/)
+  const life = m.tree.childrenOf(m.tree.snapshot(), m.root).find(c => c.name === 'Life').id
   m.removeBot(work)
-  for (const id of [dev, ops]) assert.equal(f(m, id, 'parent'), m.root)
-  for (const id of [dev, ops, qa]) { assert.doesNotMatch(sp(m, id), /Work/); assert.match(sp(m, id), /Chief/) }
+  // Chief would have Life, Dev and Ops (3 > maxChildren=2): the newest (Ops) moves one level down,
+  // under the child with the fewest descendants (Life; Dev has QA). No Bot is deleted.
+  assert.equal(f(m, dev, 'parent'), m.root)
+  assert.equal(f(m, ops, 'parent'), life)
+  assert.equal(m.tree.childrenOf(m.tree.snapshot(), m.root).length, 2)
+  for (const id of [dev, ops, qa]) { assert.ok(m.bots.has(id)); assert.doesNotMatch(sp(m, id), /Work/); assert.match(sp(m, id), /Chief/) }
   assert.match(sp(m, qa), /Chief → Dev → QA/)
-  assert.ok(warnings.some(w => /maxChildren=2/.test(w)), 'overflow is logged')
+  assert.match(sp(m, ops), /Chief → Life → Ops/)
+  assert.match(sp(m, life), /COORDINATOR[\s\S]*- Ops/)
+  assert.ok(warnings.some(w => /moved Ops under Life \(Chief was over maxChildren=2\)/.test(w)), 'the move is logged')
   await assert.rejects(m.call(m.root, 'create_child_bot', { name: 'New', role_description: 'x' }).then(r => { if (r.error || !r.created) throw new Error(r.error ?? 'refused') }))
 })
 
@@ -913,4 +922,78 @@ test('adapter refuses a flybot API version it was not written for', async () => 
   const { createAdapter, FLYBOT_API } = await import('../src/adapter.js')
   const m = createMockFlybot()
   assert.throws(() => createAdapter({ ...m.flybot, scope: m.flybot.scope, version: FLYBOT_API + 1 }), /needs flybot API v1/)
+})
+
+// #446: core create_bot (here: flybot.bot.create with no tree fields, which is what it ends in) must
+// not get past maxChildren; a full level is reorganized automatically, never left outside the tree.
+async function fullChief(maxChildren = 3, names = ['Cooking', 'Travel', 'Garden']) {
+  const m = createMockFlybot()
+  const chief = m.addBot({ name: 'Chief', isMain: true })
+  const warns = []
+  const { tree } = plugin.apply({ flybot: m.flybot, logger: () => ({ warn: (...a) => warns.push(a.join(' ')) }) }, { maxChildren })
+  await tree.ensureRoot()
+  const kids = {}
+  for (const name of names) kids[name] = (await m.call(chief, 'create_child_bot', { name, role_description: `${name} stuff` })).created.id
+  return { m, tree, chief, kids, warns, children: id => tree.childrenOf(tree.snapshot(), id).map(c => c.name) }
+}
+
+test('#446: create_child_bot still refuses at maxChildren; create_bot Bots are placed by the same limits at once', async () => {
+  const { m, chief, kids, warns, children } = await fullChief()
+  assert.match((await m.call(chief, 'create_child_bot', { name: 'FlyBot Dev', role_description: 'x' })).error, /limit reached: Chief already has 3 children \(maxChildren=3\)/)
+  const team = []
+  for (const name of ['FlyBot Dev', 'FlyBot Test', 'FlyBot Maint', 'FlyBot Repo']) {
+    const id = await m.flybot.bot.create({ name }) // the create_bot path: no tree fields
+    assert.ok(f(m, id, 'parent'), `${name} is in the tree as soon as create returns`)
+    team.push(id)
+  }
+  assert.deepEqual(children(chief), ['Cooking', 'Travel', 'Garden']) // still within maxChildren
+  // The first goes one level down (no match, nothing to group); the rest join it: a lead with children.
+  assert.equal(f(m, team[0], 'parent'), kids.Cooking)
+  for (const id of team.slice(1)) assert.equal(f(m, id, 'parent'), team[0])
+  assert.deepEqual(children(team[0]), ['FlyBot Test', 'FlyBot Maint', 'FlyBot Repo'])
+  assert.match(sp(m, team[0]), /COORDINATOR[\s\S]*- FlyBot Test/)
+  assert.match(warns.join('\n'), /placed FlyBot Test under FlyBot Dev \(closest match for FlyBot Test\)/)
+})
+
+test('#446: a full level is consolidated (matching siblings under their oldest member) before a newcomer goes down a level', async () => {
+  const { m, chief, kids, warns, children } = await fullChief(3, ['Docs Writer', 'Code Writer', 'Travel'])
+  const cooking = await m.flybot.bot.create({ name: 'Cooking' })
+  assert.equal(f(m, kids['Code Writer'], 'parent'), kids['Docs Writer'])
+  assert.equal(f(m, cooking, 'parent'), chief)
+  assert.deepEqual(children(chief), ['Docs Writer', 'Travel', 'Cooking'])
+  assert.match(warns.join('\n'), /moved Code Writer under Docs Writer \(Chief was over maxChildren=3; grouped with Docs Writer\)/)
+  assert.match(sp(m, kids['Code Writer']), /Chief → Docs Writer → Code Writer/)
+})
+
+test('#446: a duplicate-named Bot joins its namesake instead of becoming a second sibling with that name', async () => {
+  const { m, chief, kids, children } = await fullChief(8, ['Editor', 'Travel'])
+  const dup = await m.flybot.bot.create({ name: 'editor' })
+  assert.equal(f(m, dup, 'parent'), kids.Editor)
+  assert.deepEqual(children(chief), ['Editor', 'Travel'])
+})
+
+test('#446: freeing a slot under Chief moves nobody up by list order; placement is deterministic', async () => {
+  const { m, tree, chief, kids, children } = await fullChief()
+  const dev = await m.flybot.bot.create({ name: 'FlyBot Dev' })
+  const test2 = await m.flybot.bot.create({ name: 'FlyBot Test' })
+  const before = Object.fromEntries(Object.values(tree.snapshot()).map(n => [n.id, n.parent]))
+  m.removeBot(kids.Garden)
+  await tree.ensureRoot()
+  assert.deepEqual(children(chief), ['Cooking', 'Travel'])
+  assert.equal(f(m, dev, 'parent'), before[dev]); assert.equal(f(m, test2, 'parent'), dev)
+  // The next new Bot takes the free slot itself.
+  const next = await m.flybot.bot.create({ name: 'Music' })
+  assert.equal(f(m, next, 'parent'), chief)
+})
+
+test('#446: placement and repair keep every parent within maxChildren and every Bot within maxDepth', async () => {
+  const { m, tree, chief } = await fullChief(2, ['A1', 'B1'])
+  for (let i = 0; i < 12; i++) await m.flybot.bot.create({ name: `Extra ${i}` })
+  const nodes = tree.snapshot()
+  assert.equal(Object.keys(nodes).length, 15) // Chief + 2 + 12: nobody left outside
+  for (const id of Object.keys(nodes)) {
+    assert.ok(tree.childrenOf(nodes, id).length <= 2, `${nodes[id].name} within maxChildren`)
+    assert.ok(tree.depthOf(nodes, id) <= 5, `${nodes[id].name} within maxDepth`)
+  }
+  assert.equal(nodes[chief].parent, null)
 })

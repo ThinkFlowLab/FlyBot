@@ -36,7 +36,7 @@ Turns your Bots into one recursive tree that splits a request into parts, sends 
 
 *Demo: Chief starts alone in the sidebar, creates the child Bots Travel, Food and Budget, hands each one a part, and then combines their answers into one plan. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-tree.mp4)
 
-- **One root.** The tree's root is the Main Bot (Chief); no new bot is created for it. A separate `Root` bot is created only if the team has Bots but no Main Bot. Existing local Bots join under the root as its children, up to `maxChildren`.
+- **One root.** The tree's root is the Main Bot (Chief); no new bot is created for it. A separate `Root` bot is created only if the team has Bots but no Main Bot. Every other local Bot joins the tree, including one made with `create_bot` or the Bot list, under the same limits as `create_child_bot`. When a level is full, the tree reorganizes itself instead of leaving a Bot outside: the new Bot goes under the best-matching Bot (shared name words), matching siblings are grouped under their oldest member, or it moves one level down. Bots are only moved, never deleted, and each move is logged.
 - **Children on demand.** Any tree Bot (not only the Main/root) calls `create_child_bot(name, role_description)` to make a child directly under *itself*; the tool takes no parent argument. Calls are handled one at a time per parent, so parallel calls never go over the limits or create two siblings with the same name. The rules:
   - names are 1–40 characters, and duplicate sibling names are rejected (case and spaces ignored);
   - depth is at most 5 (the root counts as 1), with at most 8 children per Bot (set in `limits.json` or the plugin config);
@@ -49,10 +49,10 @@ Turns your Bots into one recursive tree that splits a request into parts, sends 
   - the root may also message any local Bot;
   - local Bots outside the tree may message only the root;
   - `stopped` and `report` notices are never blocked, so Chief can always stop any Bot.
-- **Reparenting.** When a Bot is deleted, its children move up to its parent. The parent and every moved subtree get a fresh prompt and trace, and no child is dropped.
+- **Reparenting.** When a Bot is deleted, its children move up to its parent. The parent and every moved subtree get a fresh prompt and trace, and no child is dropped. If the parent is then over `maxChildren`, its newest children move one level down the same way.
 - **Trace line.** When a tree Bot answers its *parent*, it starts the answer with its path, e.g. `Chief → Work → Dev`. Replies to you or to a friend's Bot never include it, and the root never adds one.
 - **Your prompts are kept.** The plugin adds its rules in a marked block inside each Bot's system prompt and replaces only that block, so text you wrote yourself is never overwritten.
-- **Sidebar.** The Bot list is drawn as one expandable tree with Chief on top. Bots outside the tree are shown directly under Chief.
+- **Sidebar.** The Bot list is drawn as one expandable tree with Chief on top. Retired Bots and other Main Bots are shown directly under Chief; every other Bot is drawn where the tree has it.
 
 Install (needs the core, `path:/core`):
 
