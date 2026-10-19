@@ -38,7 +38,7 @@ test('the roster carries remoteAwaiting and the activity row keeps one row with 
   assert.match(channel, /remoteAwaiting: state\.remoteAwaiting \?\? \{\}/)
   const row = await import('../src/client/awaiting.js')
   const src = readFileSync(new URL('../src/client/activity-row.js', import.meta.url), 'utf8')
-  assert.match(src, /\(awaiting && !running\)/, 'the row stays up between the send turn and the reply turn')
+  assert.match(src, /running ? sendRun.current : awaiting/, 'the row stays up between the send turn and the reply turn')
   assert.match(src, /'data-carry'/, 'moving between hosts is no second entrance')
   {
     const roster = at => ({ remoteAwaiting: { r1: at }, byId: { r1: { remote: { handle: '@a.b.home' } }, c: {} } })
