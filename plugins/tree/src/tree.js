@@ -1,12 +1,16 @@
 // Tree model over per-bot fields (all sync, namespaced to 'flybot-tree'). Fields used:
 //   parent:   parent bot id (absent/null for the root)    (the tree edge)
 //   treeRole: role description; 'root' marks the root      (marks a bot as a tree member)
+// Self-organization (src/organize.js, #446) also keeps: lead { key, label } on a group lead,
+// archived { at, reason, parent, treeRole, into? } on an archived Bot (out of the tree, never
+// deleted), idle (since), activity { at, tools }, seenAt, mergedFrom, pinned (until, after an undo),
+// organizing (placement pending), and on the root reorg { runs, dismissed, dailyAt } (the journal).
 // The root is ds-bot's Main Bot (Chief, BotView.isMain), adopted with treeRole 'root'. A separate
 // root bot is created only when the team has no Main Bot at all.
 import { checkCreate } from './limits.js'
 import { systemPrompt, withTreeBlock, hasTreeBlock } from './prompt.js'
 import { forestOf } from './forest.js'
-import { createPlacement } from './placement.js'
+import { createOrganizer } from './organize.js'
 export { forestOf }
 
 export const TREE_KEYS = new Set(['parent', 'treeRole'])
@@ -14,7 +18,7 @@ export const ROOT_ROLE = 'root'
 const LEGACY_ROOT_ROLE = 'Top-level coordinator for everything.'
 const ROOT_LABEL = 'Main bot and root of the tree'
 
-export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExisting = true, warn = () => {} } = {}) {
+export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExisting = true, warn = () => {}, classify, tidy, now = Date.now } = {}) {
   const listeners = new Set()
 
   function snapshot() {
@@ -33,7 +37,23 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
 
   const promptFor = (id, nodes = snapshot()) => {
     const n = nodes[id]
-    return n && systemPrompt({ name: n.name, role: n.role, trace: traceOf(nodes, id), children: childrenOf(nodes, id), root: n.root })
+    return n && systemPrompt({ name: n.name, role: n.role, trace: traceOf(nodes, id), children: childrenOf(nodes, id), root: n.root, notes: notesFor(id, n) })
+  }
+  const stamp = at => { const d = new Date(at); const p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` }
+  // The Main Bot hears what the last reorganization did (the owner sees it in the tree view); a kept
+  // Bot hears whose role it took over in a merge.
+  function notesFor(id, n) {
+    const notes = []
+    if (n.root) {
+      const last = organizer.overview().runs[0]
+      if (last && !last.undone && now() - last.at < 7 * 24 * 60 * 60 * 1000) {
+        const lines = last.summary ?? []
+        notes.push(`Last automatic tree reorganization (${stamp(last.at)}): ${lines.slice(0, 6).join('; ')}${lines.length > 6 ? `; and ${lines.length - 6} more` : ''}. The owner sees it in the tree view and can undo it there; tell them what moved if they ask about the team.`)
+      }
+    }
+    const merged = fb.getField(id, 'mergedFrom')
+    if (Array.isArray(merged) && merged.length) notes.push(`You took over the role of ${merged.map(m => m.name).join(', ')} (merged into you; the old Bot is archived with its own chat history).`)
+    return notes
   }
   // Prompt injection: only the tree's marked block is replaced; other text (e.g. Chief's own) stays.
   const writeBlock = (id, block) => {
@@ -44,7 +64,8 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   const refreshPrompt = (id, nodes = snapshot()) => { if (nodes[id]) writeBlock(id, promptFor(id, nodes)) }
   // After a placement or repair any trace or child list may have changed; writeBlock skips unchanged prompts.
   const refreshAll = () => { const nodes = snapshot(); for (const id of Object.keys(nodes)) refreshPrompt(id, nodes) }
-  const placement = createPlacement({ fb, limits, snapshot, childrenOf, depthOf, warn })
+  const findRootId = () => { const nodes = snapshot(); return Object.values(nodes).find(n => n.root)?.id ?? Object.values(nodes).find(n => n.parent === null)?.id }
+  const organizer = createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, warn, refreshAll: () => refreshAll(), writeBlock: (id, block) => writeBlock(id, block), findRootId, now, classify, tidy })
 
   // ---------------------------------------------------------------- root
   /** The Main Bot (Chief): config.rootBotId if it exists, else the Main Bot named 'Chief', else the first Main Bot. */
@@ -81,30 +102,35 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     if (fb.getField(chief.id, 'treeRole') !== ROOT_ROLE) fb.setField(chief.id, 'treeRole', ROOT_ROLE)
     migrateLegacyRoots(chief.id)
     if (adoptExisting) adoptUnattached(chief.id)
-    placement.repair()
+    organizer.repair()
     refreshAll()
     return chief.id
   }
 
   /**
-   * Every local bot with no tree fields (and not retired) is placed in the tree by the tree's limits
-   * (placement.js): under the root while it has room, else under the closest match, after grouping
-   * matching siblings, or one level down. A bot is left outside only when the whole tree is full.
-   * Remote bots are never in bot.list(). Bots are placed in list (creation) order.
+   * Every local bot with no tree fields (not retired, not archived) is placed in the tree by role
+   * (organize.js): into the group that matches it, under the tree's limits; a full level is regrouped
+   * under role leads first. A bot that fits no group anywhere stays outside (logged). Remote bots are
+   * never in bot.list(). Bots are placed in list (creation) order.
    */
   function adoptUnattached(rootId) {
-    const adopted = [], skipped = []
+    const adopted = [], skipped = [], pending = []
     for (const b of fb.listBots()) {
       if (b.id === rootId || fb.isRemote?.(b.id)) continue
-      if (fb.getField(b.id, 'retired') === true) continue
+      if (fb.getField(b.id, 'retired') === true || fb.getField(b.id, 'archived') !== undefined) continue
+      if (fb.getField(b.id, 'organizing') === true) {
+        if (organizer.busy()) continue // being placed, or a lead being set up
+        fb.setField(b.id, 'organizing', null) // left over from a stopped run: place it now
+      }
       if (fb.getField(b.id, 'parent') !== undefined || fb.getField(b.id, 'treeRole') !== undefined) continue
       if (b.isMain === true && !rootBotId) continue // another Main Bot stays outside the tree
-      if (placement.place(b, rootId) === undefined) skipped.push(b.name)
+      const at = organizer.place(b, rootId)
+      if (at instanceof Promise) pending.push(at)
+      else if (at === undefined) skipped.push(b.name)
       else adopted.push(b.id)
     }
-    if (skipped.length) warn(`flybot-tree: ${skipped.length} bot(s) left outside the tree because every Bot in it is at maxChildren=${limits.maxChildren} or maxDepth=${limits.maxDepth}: ${skipped.join(', ')}`)
     if (adopted.length) refreshAll()
-    return { adopted, skipped }
+    return { adopted, skipped, pending }
   }
 
   /**
@@ -193,19 +219,20 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   }
   /**
    * After deletion: the removed bot's children re-attach to its parent (from the event's last record),
-   * so no child is dropped. If that parent is now over maxChildren, placement.repair() moves its
-   * newest children down (closest match first) until it is back within the limit (#446). Every
-   * moved Bot and its descendants get a fresh prompt (their trace no longer names the deleted bot).
+   * so no child is dropped. If that parent is now over maxChildren, organizer.repair() regroups its
+   * children by role under a lead until it is back within the limit (#446). Every moved Bot and its
+   * descendants get a fresh prompt (their trace no longer names the deleted bot).
    */
   function onBotRemoved({ botId, parent }) {
     if (parent === undefined) return // not a tree bot
     const up = parent ?? null
     for (const child of childrenOf(snapshot(), botId)) fb.setField(child.id, 'parent', up)
-    placement.repair()
+    organizer.repair()
     refreshAll()
     emit({ botId, key: 'removed' })
   }
   const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn) }
 
-  return { limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
+  const { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, idle: settled } = organizer
+  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, settled, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
 }

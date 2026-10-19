@@ -21,7 +21,8 @@ export function toParameterMap(p) {
 
 export function createMockFlybot() {
   const bots = new Map() // id -> { id, name, systemPrompt, fields: { [plugin]: {...} } }
-  const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set() }
+  const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set(), 'turn.start': new Set(), 'tool.start': new Set() }
+  const apis = new Map()
   const middlewares = []
   const tools = new Map()
   const scopes = []
@@ -101,6 +102,7 @@ export function createMockFlybot() {
           priority: PRIORITY,
         }),
       },
+      api: { handle: (name, fn) => { if (apis.has(name)) throw new Error(`flybot: api ${name} exists`); apis.set(name, fn); return () => apis.delete(name) } },
       tools: { register: t => { const spec = { ...t, parameters: toParameterMap(t.parameters) }; tools.set(t.name, spec); return () => tools.delete(t.name) } },
       grants: {
         of: id => clone(grants.get(id) ?? []),
@@ -127,5 +129,8 @@ export function createMockFlybot() {
     if (!t || !visible) throw new Error(`tool ${name} not visible to ${botId}`)
     return t.execute(args, { botId })
   }
-  return { flybot, bots, tools, middlewares, scopes, remote, removeBot, addBot, setGrants, call }
+  // UI endpoint call (flybot.call in the browser) and an activity feed event, like the host's.
+  const api = async (name, payload = {}) => { const fn = apis.get(name); if (!fn) throw new Error(`Unknown FlyBot endpoint ${name}`); return fn(payload) }
+  const feed = (ev, payload) => fire(ev, payload)
+  return { flybot, bots, tools, middlewares, scopes, remote, removeBot, addBot, setGrants, call, api, feed }
 }

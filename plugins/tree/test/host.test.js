@@ -139,21 +139,39 @@ test('#90 on the real host: a friend reaches a granted tree Bot directly, never 
   }
 })
 
-test('#446 on the real host: core create_bot cannot get past maxChildren; the new Bot is placed in the tree before the tool answers', async () => {
+test('#446 on the real host: core create_bot cannot get past maxChildren; a full level is regrouped by role, logged and undoable through the UI endpoints', async () => {
   const h = await start()
   try {
-    const fork = h.ctx.plugin(tree, { maxChildren: 1 })
+    const fork = h.ctx.plugin(tree, { maxChildren: 2 })
     const tf = h.fb.scope('flybot-tree').fields
-    await waitFor(() => tf.get('b', 'parent') === 'a') // Writer fills Chief's only slot
-    assert.match(JSON.parse(await h.tool('create_child_bot', { name: 'Editor', role_description: 'edit' }, 'a')).error, /limit reached: Chief already has 1 children \(maxChildren=1\)/)
+    await waitFor(() => tf.get('b', 'parent') === 'a') // Writer joins Chief
+    const travel = JSON.parse(await h.tool('create_child_bot', { name: 'Travel', role_description: 'trips' }, 'a')).created.id
+    assert.match(JSON.parse(await h.tool('create_child_bot', { name: 'Editor', role_description: 'edit' }, 'a')).error, /limit reached: Chief already has 2 children \(maxChildren=2\)/)
     const answer = await h.tool('create_bot', { name: 'Editor', role: 'Edit', instructions: 'Edit texts' }, 'a')
     assert.match(String(answer), /Created Editor/)
     const editor = h.fb.bot.list().find(b => b.name === 'Editor')
     assert.ok(editor, 'create_bot made the Bot')
-    assert.equal(tf.get(editor.id, 'parent'), 'b', 'placed one level down, under Writer, right away')
-    assert.equal(h.fb.bot.list().filter(b => tf.get(b.id, 'parent') === 'a').length, 1, 'Chief stays within maxChildren')
-    assert.match(h.fb.bot.get('b').systemPrompt, /COORDINATOR[\s\S]*- Editor/)
+    // Writer and Editor share a role (writing): a new Writing Lead takes both; Travel stays. Never over the cap.
+    await waitFor(() => tf.get(editor.id, 'parent') !== undefined)
+    const lead = h.fb.bot.list().find(b => b.name === 'Writing Lead')
+    assert.ok(lead, 'a lead with a clear role was created')
+    assert.equal(tf.get(editor.id, 'parent'), lead.id)
+    assert.equal(tf.get('b', 'parent'), lead.id)
+    assert.equal(tf.get(travel, 'parent'), 'a')
+    assert.equal(h.fb.bot.list().filter(b => tf.get(b.id, 'parent') === 'a').length, 2, 'Chief stays within maxChildren')
+    assert.match(h.fb.bot.get(lead.id).systemPrompt, /COORDINATOR[\s\S]*- Writer[\s\S]*- Editor/)
     assert.match(h.fb.bot.get('a').systemPrompt, /Do not use create_bot to get around them/)
+    assert.match(h.fb.bot.get('a').systemPrompt, /Last automatic tree reorganization .*created Writing Lead under Chief/)
+    // The tree view reads the journal and undoes it through the UI endpoints.
+    const overview = await h.call('flybot/tree/reorg', {})
+    const [run] = overview.value?.runs ?? []
+    assert.ok(run, JSON.stringify(overview).slice(0, 300))
+    assert.deepEqual(run.summary.slice(0, 2), ['created Writing Lead under Chief to lead the Writing group', 'moved Writer from Chief to Writing Lead'])
+    const undone = await h.call('flybot/tree/undo', { runId: run.id })
+    const result = undone.value ?? {}
+    // Chief is full again with Writer back: the new Editor stays under its lead, which therefore stays.
+    assert.ok(Array.isArray(result.kept), JSON.stringify(undone).slice(0, 300))
+    assert.ok(h.fb.bot.list().some(b => b.id === editor.id) && h.fb.bot.list().some(b => b.id === lead.id), 'nothing deleted')
     fork.dispose()
   } finally {
     await h.stop()

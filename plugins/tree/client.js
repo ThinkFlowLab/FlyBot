@@ -311,11 +311,13 @@ window.__ModuleLoader__.load({
     // re-registered whenever the structure changes (field changes and a 10 s poll), which re-renders.
     function registerStructure(flybot) {
       let parents = new Map()
-      let key = '[]'
+      let statuses = new Map()
+      let key = '[[],[]]'
       let stopped = false
       // menuItems: entries ds-bot adds to a Bot's right-click menu ({ bot } → [{ id, label, visible, run }]).
       const menuItems = makeMenuItems(flybot)
-      const entry = () => ({ id: 'flybot-tree', order: 90, parentOf: id => parents.get(id), menuItems })
+      const nodeActions = makeStatusTag(() => statuses)
+      const entry = () => ({ id: 'flybot-tree', order: 90, parentOf: id => parents.get(id), menuItems, nodeActions })
       let off = flybot.slots.register('flybot.sidebar.structure', entry())
       const refresh = async () => {
         let bots
@@ -324,15 +326,18 @@ window.__ModuleLoader__.load({
         const next = new Map()
         const walk = (node, parent) => { if (parent) next.set(node.id, parent); for (const c of node.children) walk(c, node.id) }
         for (const top of forestOf(bots)) walk(top, null)
-        const nextKey = JSON.stringify([...next])
+        const tags = new Map()
+        for (const b of bots ?? []) { const s = statusOf(b); if (s) tags.set(b.id, s) }
+        const nextKey = JSON.stringify([[...next], [...tags]])
         if (nextKey === key) return
         key = nextKey
         parents = next
+        statuses = tags
         off()
         off = flybot.slots.register('flybot.sidebar.structure', entry())
       }
       const offs = []
-      try { offs.push(flybot.fields?.on?.('change', c => { if (c && (c.key === 'parent' || c.key === 'treeRole' || c.key === 'retired' || c.removed)) refresh() })) } catch { /* no change feed */ }
+      try { offs.push(flybot.fields?.on?.('change', c => { if (c && (c.key === 'parent' || c.key === 'treeRole' || c.key === 'retired' || c.key === 'archived' || c.key === 'idle' || c.removed)) refresh() })) } catch { /* no change feed */ }
       const timer = setInterval(refresh, REFRESH_MS)
       timer?.unref?.()
       void refresh()
@@ -341,6 +346,99 @@ window.__ModuleLoader__.load({
         clearInterval(timer)
         for (const o of offs) { try { o?.() } catch { /* already gone */ } }
         off()
+      }
+    }
+
+    // ---- Self-organization (#446): what the last reorganization did, with one-click undo, and an
+    // idle / archived tag after a Bot's row. The host keeps the journal on the root's 'reorg' field
+    // and answers 'tree/reorg', 'tree/undo' and 'tree/dismiss'.
+    const NOTICE_DAYS = 7
+    const NOTICE_LINES = 6
+    const REORG_CSS = `
+.flybot-reorg{margin:6px 4px;padding:10px 12px;border:1px solid var(--bt-line,rgba(20,20,20,.1));border-radius:10px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:12px;line-height:17px;color:var(--bt-ink,#141414)}
+.flybot-reorg-title{font-weight:600;margin:0 0 4px}
+.flybot-reorg-time{font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36));margin-left:6px}
+.flybot-reorg-list{margin:0 0 8px;padding-left:16px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.flybot-reorg-actions{display:flex;gap:6px}
+.flybot-reorg-btn{padding:3px 10px;border:1px solid var(--bt-line,rgba(20,20,20,.1));border-radius:6px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.flybot-reorg-btn:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.flybot-reorg-btn:focus-visible{outline:2px solid var(--bt-accent,#4d6bfe);outline-offset:1px}
+.flybot-reorg-btn[disabled]{opacity:.5;cursor:default}
+.flybot-reorg-note{margin-top:6px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.flybot-tree-tag{flex:none;align-self:center;margin-left:4px;padding:0 6px;border-radius:4px;font-size:11px;line-height:16px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.56))}
+`
+    function useReorgStyles() {
+      useEffect(() => {
+        const doc = globalThis.document
+        if (!doc || doc.getElementById('flybot-reorg-css')) return
+        const style = doc.createElement('style'); style.id = 'flybot-reorg-css'; style.textContent = REORG_CSS
+        doc.head?.appendChild(style)
+      }, [])
+    }
+    const clock = at => { const d = new Date(at); const p = v => String(v).padStart(2, '0'); return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}` }
+    /** The run the notice shows, or null: the newest one, within NOTICE_DAYS, not dismissed. */
+    function noticeRun(overview, now = Date.now()) {
+      const run = overview?.runs?.[0]
+      if (!run || overview.dismissed === run.id || now - run.at > NOTICE_DAYS * 24 * 60 * 60 * 1000) return null
+      return run
+    }
+    /** The notice body (pure, for tests): title, what moved, Undo / Dismiss. */
+    function ReorgCard({ run, busy = false, note = null, onUndo, onDismiss }) {
+      const lines = run.summary ?? []
+      const undone = Boolean(run.undone)
+      return h('div', { className: 'flybot-reorg', role: 'status', 'aria-label': 'Tree reorganized' },
+        h('div', { className: 'flybot-reorg-title' }, undone ? 'Tree reorganization undone' : 'Tree reorganized', h('span', { className: 'flybot-reorg-time' }, clock(run.at))),
+        h('ul', { className: 'flybot-reorg-list' }, ...lines.slice(0, NOTICE_LINES).map((line, i) => h('li', { key: i }, line)),
+          lines.length > NOTICE_LINES ? h('li', { key: 'more' }, `and ${lines.length - NOTICE_LINES} more`) : null),
+        undone && run.undone.kept?.length ? h('div', { className: 'flybot-reorg-note' }, `Kept: ${run.undone.kept.join('; ')}`) : null,
+        h('div', { className: 'flybot-reorg-actions' },
+          undone ? null : h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onUndo }, 'Undo'),
+          h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onDismiss }, 'Dismiss')),
+        note ? h('div', { className: 'flybot-reorg-note', role: 'alert' }, note) : null)
+    }
+    function makeReorgNotice(flybot) {
+      return function ReorgNotice() {
+        useReorgStyles()
+        const [overview, setOverview] = useState(null)
+        const [busy, setBusy] = useState(false)
+        const [note, setNote] = useState(null)
+        const load = useCallback(() => { Promise.resolve(flybot.call('tree/reorg', {})).then(v => setOverview(v ?? null), () => { /* an older host has no endpoint: no notice */ }) }, [])
+        useEffect(() => {
+          load()
+          let off
+          try { off = flybot.fields?.on?.('change', c => { if (c && c.key === 'reorg') load() }) } catch { /* no change feed */ }
+          const timer = setInterval(load, REFRESH_MS * 3)
+          return () => { clearInterval(timer); try { off?.() } catch { /* already gone */ } }
+        }, [load])
+        const run = noticeRun(overview)
+        if (!run) return null
+        const act = (endpoint) => async () => {
+          setBusy(true)
+          try {
+            const result = await flybot.call(endpoint, { runId: run.id })
+            setNote(result?.error ? String(result.error) : null)
+          } catch (error) { setNote(String(error?.message ?? error)) }
+          setBusy(false)
+          load()
+        }
+        return h(ReorgCard, { run, busy, note, onUndo: act('tree/undo'), onDismiss: act('tree/dismiss') })
+      }
+    }
+    // The tag after a Bot's row: 'idle' (no activity for a long time) or 'archived' (out of the tree;
+    // deleting it stays the owner's own click in the Bot menu).
+    function statusOf(bot) {
+      const own = bot?.fields?.['flybot-tree'] ?? {}
+      if (own.archived) return own.archived.reason === 'merged' && own.archived.intoName ? `archived · merged into ${own.archived.intoName}` : 'archived'
+      if (own.idle !== undefined && own.idle !== null) return 'idle'
+      // A Bot that fits no role group while every matching level is full: the sidebar says so instead of passing it off as Chief's child.
+      if (bot && bot.isMain !== true && !bot.remote && own.retired !== true && own.parent === undefined && own.treeRole === undefined) return 'outside the tree'
+      return null
+    }
+    function makeStatusTag(statuses) {
+      return function StatusTag({ bot }) {
+        useReorgStyles()
+        const text = statuses().get(bot?.id)
+        return text ? h('span', { className: 'flybot-tree-tag', title: text }, text) : null
       }
     }
 
@@ -356,10 +454,12 @@ window.__ModuleLoader__.load({
       if (globalThis.__flybot__) { globalThis.__flybot__.tree = helper; offs.push(() => { if (globalThis.__flybot__?.tree === helper) delete globalThis.__flybot__.tree }) }
       if (config?.sidebarSection === true) offs.push(ctx.flybot.slots.register('flybot.sidebar.section', { id: 'flybot-tree', order: 90, component: makeSection(ctx.flybot) }))
       if (ctx.flybot?.slots) offs.push(registerStructure(ctx.flybot))
+      // The reorganization notice (#446) is on by default (config.reorgNotice: false hides it); it draws nothing until a reorganization ran.
+      if (ctx.flybot?.slots && config?.reorgNotice !== false) offs.push(ctx.flybot.slots.register('flybot.sidebar.section', { id: 'flybot-tree-reorg', order: 89, component: makeReorgNotice(ctx.flybot) }))
       const off = () => { for (const fn of offs.splice(0)) fn?.() }
       ctx.effect?.(() => off, 'flybot-tree: tree helper')
       return off
     }
-    return { name: 'flybot-tree', inject, apply, forestOf, registerStructure, makeMenuItems, makeInviteAction, copyInvite, copyText, INVITE_CSS, buildForest, treeOf, TreeView, countNodes, EMPTY, CSS }
+    return { name: 'flybot-tree', inject, apply, forestOf, registerStructure, makeReorgNotice, ReorgCard, noticeRun, statusOf, makeStatusTag, REORG_CSS, makeMenuItems, makeInviteAction, copyInvite, copyText, INVITE_CSS, buildForest, treeOf, TreeView, countNodes, EMPTY, CSS }
   },
 })

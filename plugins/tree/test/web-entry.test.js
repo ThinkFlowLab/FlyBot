@@ -56,9 +56,10 @@ test('tree web entry activates under real Cordis once ds-bot provides flybot, an
   root.plugin({ name: 'ds-bot', apply: ctx => ctx.provide('flybot', flybot) })
   await new Promise(resolve => setTimeout(resolve, 100))
   assert.deepEqual(failures, [])
-  // Tree registers no sidebar section by default; it feeds ds-bot's Bot list through the
+  // Tree registers no Tree sidebar section by default; it feeds ds-bot's Bot list through the
   // public 'flybot.sidebar.structure' slot and exposes its synchronous helper.
-  assert.deepEqual(registry.entries('flybot.sidebar.section').map(e => e.id), [])
+  // Its only section is the reorganization notice (#446), which draws nothing until a reorganization ran.
+  assert.deepEqual(registry.entries('flybot.sidebar.section').map(e => e.id), ['flybot-tree-reorg'])
   assert.ok(registry.entries('flybot.sidebar.structure').length >= 1)
   assert.equal(typeof flybot.tree?.forest, 'function')
   assert.equal(typeof globalThis.__flybot__.tree?.forest, 'function')

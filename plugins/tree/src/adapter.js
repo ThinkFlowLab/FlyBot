@@ -11,6 +11,8 @@
 //     msg.target: { remote: false, id } | { remote: true, handle, home }
 //   bot.isRemote(ref) -> boolean ({ kind: 'remote' } or '@handle'; local ids never)
 //   bot.hasAnyGrant(id) -> boolean (a person accepted Invite to this Bot; may be absent on an older core)
+//   on('turn.start' | 'tool.start', fn) -> dispose  (team activity feed: ids, times, tool names; no text)
+//   api.handle(name, fn, { read? }) -> dispose      (UI endpoint, called from the browser as flybot.call(name))
 //   tools.register({ name, description, parameters, visibleTo(botId) SYNC, execute(args, { botId }) })
 //     NOTE: JSON Schema minLength/maxLength are dropped by register; execute() validates them.
 export const NS = 'flybot-tree'
@@ -51,5 +53,8 @@ export function createAdapter(flybot) {
     hasAnyGrant: id => (typeof bot.hasAnyGrant === 'function' ? bot.hasAnyGrant(id) === true : undefined),
     useSend: (name, handle) => bot.send.use({ name, priority: (bot.send.priority ?? SEND_PRIORITY_FALLBACK).ROUTING, handle }),
     registerTool: spec => tools.register(spec),
+    // Activity feed (metadata only). A core or mock without the event gives a no-op disposer.
+    onFeed: (event, fn) => { try { return fb.on(event, fn) } catch { return () => {} } },
+    handleApi: (name, fn, options) => (typeof fb.api?.handle === 'function' ? fb.api.handle(name, fn, options) : () => {}),
   }
 }

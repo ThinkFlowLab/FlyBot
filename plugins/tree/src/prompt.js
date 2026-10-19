@@ -10,19 +10,19 @@ export function traceRule(trace, root) {
 }
 // A granted tree Bot can be contacted from outside the tree (a friend's Bot, another owner's Bot).
 export const OUTSIDE_RULE = 'If someone has been granted access to you, a bot outside the tree (a friend\'s bot, or another owner\'s bot) may message you directly. Answer that sender directly, with no trace line, and delegate only to your own children, never to bots outside the tree.'
-export function systemPrompt({ name, role, trace, children, root = false }) {
+export function systemPrompt({ name, role, trace, children, root = false, notes = [] }) {
   const head = root
     ? [`Bot tree: you (${name}) are also the ROOT of a recursive bot tree of child bots. For tasks you delegate into the tree, follow these tree rules.`, `Your position: ${trace}`]
     : [`You are ${name}, a bot in a recursive bot tree. Your role: ${role || '(general)'}`, `Your position: ${trace}`]
   const tools = 'Tree tools: list_children() shows your current direct children (it may be newer than this prompt). create_child_bot(name, role_description) creates a child directly under you.'
-  // #446: create_bot is a Main Bot tool; the tree places what it makes by the same limits.
-  const limitRule = 'The tree limits (maxChildren, maxDepth) apply to every way of creating a bot. Do not use create_bot to get around them: a bot made with create_bot is placed in this tree by the same limits, under the closest matching bot when your level is full.'
+  // #446: create_bot is a Main Bot tool; the tree places what it makes by role, under the same limits.
+  const limitRule = 'The tree limits (maxChildren, maxDepth) apply to every way of creating a bot. Do not use create_bot to get around them: a bot made with create_bot is placed in this tree by its role, and when a level is full the tree regroups related bots under a lead (e.g. "FlyBot Lead") by itself.'
   if (!children.length) {
     return [...head, '',
       'You have no children: do the work yourself and answer concisely with concrete results.',
       'Only if the task clearly splits into a separate domain you cannot cover, you may create a child with create_child_bot and delegate to it.',
       'You may message only your parent and your direct children.', ...(root ? [limitRule] : [OUTSIDE_RULE]), tools,
-      traceRule(trace, root)].join('\n')
+      traceRule(trace, root), ...notes].join('\n')
   }
   return [...head, '',
     'You are a COORDINATOR. Your direct children (the only bots you may delegate to; you cannot see deeper levels):',
@@ -32,7 +32,7 @@ export function systemPrompt({ name, role, trace, children, root = false }) {
     '3. Send each child only its own self-contained part, all in parallel, then wait.',
     '4. Aggregate the answers into one concise answer for your parent (or the user). If only one child answered, pass its answer through unchanged.',
     `5. ${traceRule(trace, root)}`,
-    'You may message only your parent and your direct children.', ...(root ? [limitRule] : [OUTSIDE_RULE]), tools].join('\n')
+    'You may message only your parent and your direct children.', ...(root ? [limitRule] : [OUTSIDE_RULE]), tools, ...notes].join('\n')
 }
 
 // The tree's text is kept in a marked block inside the bot's systemPrompt, so text written by the
