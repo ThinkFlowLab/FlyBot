@@ -65,6 +65,7 @@ const ZH = {
   ' and ': '、',
   and: '和',
   '{count} members': '{count} 位成员',
+  '{count} member': '{count} 位成员',
   '1 person': '1 人',
   '{count} people': '{count} 人',
   '1 Bot': '1 个 Bot',

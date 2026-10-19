@@ -423,7 +423,7 @@ diff --git a/src/client/header.js b/src/client/header.js
  
  // -------------------------------------------------------------------------
  // Conversation header
-@@ -68,16 +68,65 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+@@ -68,20 +68,72 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
    const bot = roster.byId[sessionId]
    const room = roster.roomsById[sessionId]
    const detailsOpen = useUi(state => state.details === sessionId)
@@ -492,6 +492,13 @@ diff --git a/src/client/header.js b/src/client/header.js
    useEffect(() => {
      actions.beginVisit(sessionId)
      return () => actions.endVisit(sessionId)
+   }, [sessionId])
++  // A face room's "@" lists the room's people and Bots, not the shell's Sessions (#305).
++  const face = room?.origin === 'face-to-face'
++  useEffect(() => (face ? actions.filterFaceAtMenu?.(sessionId) : undefined), [sessionId, face])
+   // Group chats have no voice mode, so the composer CSS needs to know the Session kind.
+   useEffect(() => {
+     if (room) document.body.dataset.btRoom = ''
 @@ -97,7 +97,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
      },
      bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
@@ -1183,7 +1190,7 @@ diff --git a/test/at-menu.test.js b/test/at-menu.test.js
  test('"@" offers a group\'s members and everyone, or every other Bot in a Bot\'s chat', () => {
    assert.deepEqual(names(mentionRows(roster, 'room')), ['Chief', 'King', 'everyone'])
    assert.deepEqual(names(mentionRows(roster, 'chief-2')), ['King', 'Writer'])
-@@ -76,3 +76,80 @@ test('the chats join only the menu that "+" opened, and a pick inserts a session
+@@ -76,3 +76,93 @@ test('the chats join only the menu that "+" opened, and a pick inserts a session
    assert.deepEqual(bots.onPick({ candidate: mentions[1] }), { text: '@King ' })
    assert.deepEqual(await bots.candidates({ sessionId: 'plain' }, { query: '' }), [])
  })
@@ -1263,4 +1270,17 @@ diff --git a/test/at-menu.test.js b/test/at-menu.test.js
 +  ])
 +  assert.equal(remoteBotTitle({ displayName: 'Coder', owner: 'Bob', homeName: 'Family Workspace' }), 'Coder (Bob)')
 +  assert.equal(remoteBotTitle({ displayName: 'Coder', homeName: 'Family Workspace' }), 'Coder (Family Workspace)')
++})
++
++test('#305: "Everyone" in a group counts the Bots it reaches, seated friends\' Bots too, in the right number', async () => {
++  const room = (participants) => indexRoster({
++    bots: [{ id: 'chief', name: 'Chief', sessionId: 'chief' }],
++    rooms: [{ id: 'g', name: 'Launch', members: ['chief'], participants }],
++  })
++  const everyone = async (roster) => {
++    const [bots] = atSources({ roster: { getSnapshot: () => roster }, sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } }, launched: () => false, iconFor: () => 'bot' })
++    return (await bots.candidates({ sessionId: 'g' }, { query: 'every' })).find(row => row.name === 'Everyone')?.description
++  }
++  assert.equal(await everyone(room([{ kind: 'human', id: 'ann', displayName: 'Ann' }])), '1 member')
++  assert.equal(await everyone(room([{ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob' }])), '2 members')
 +})

@@ -132,6 +132,9 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     actions.beginVisit(sessionId)
     return () => actions.endVisit(sessionId)
   }, [sessionId])
+  // A face room's "@" lists the room's people and Bots, not the shell's Sessions (#305).
+  const face = room?.origin === 'face-to-face'
+  useEffect(() => (face ? actions.filterFaceAtMenu?.(sessionId) : undefined), [sessionId, face])
   // Group chats have no voice mode, so the composer CSS needs to know the Session kind.
   useEffect(() => {
     if (room) document.body.dataset.btRoom = ''

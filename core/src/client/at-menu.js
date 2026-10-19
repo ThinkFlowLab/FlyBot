@@ -2,7 +2,8 @@
 // The composer's "@" in a Bot's chat or a group chat: a Bot group that inserts
 // "@Name", and the chats that "+ → Reference a chat" opens in the same menu.
 // Both are sources of the shell's trigger menu; the shell's own file and session
-// rows stay beside them, because a source cannot be hidden for one Session.
+// rows stay beside them, because a source cannot be hidden for one Session (a face
+// room filters the session rows out of view: face-at-filter.js).
 import { mentionCandidates, remoteMentionRows } from './flybot-registry.js'
 import { cleanPeerName, ownerNameOf, remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
 import { t } from './i18n.js'
@@ -51,7 +52,7 @@ export function mentionRows(roster, sessionId, query = '') {
     .map(bot => ({ bot, text: `@${bot.name} ` }))
   const everyone = t('Everyone')
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {
-    rows.push({ room: here.room, text: `@${everyone} ` })
+    rows.push({ room: here.room, count: bots.filter(bot => bot.kind !== 'human').length, text: `@${everyone} ` })
   }
   // Friends' remote Bots are members of every chat, marked remote. Not of a face-to-face
   // room: only the Bots in that room can be reached there, each listed once above (#305).
@@ -69,6 +70,7 @@ export function mentionRows(roster, sessionId, query = '') {
 }
 
 const isFaceRoom = room => room?.origin === 'face-to-face'
+const memberCount = count => t(count === 1 ? '{count} member' : '{count} members', { count })
 const normHandle = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
 // A friend's Bot chat in the roster: its remote record (the Bot itself in older rosters).
 export const remoteRecord = bot => (bot?.remote ? (bot.remote === true ? bot : bot.remote) : null)
@@ -145,7 +147,7 @@ export function atSources({ roster, sessions, launched, iconFor }) {
         ...(row.remote ? { description: row.remote.handle } : {}),
         ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),
         // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-        ...(row.room ? { description: face ? t('Every Bot in this room') : t('{count} members', { count: row.room.members.length }) } : {}),
+        ...(row.room ? { description: face ? t('Every Bot in this room') : memberCount(row.count) } : {}),
         icon: iconFor(row),
         section: t('Bots'),
         value: row.text,

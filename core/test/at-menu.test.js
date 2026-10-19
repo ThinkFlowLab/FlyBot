@@ -173,3 +173,16 @@ test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, 
   assert.equal(remoteBotTitle({ displayName: 'Coder', owner: 'Bob', homeName: 'Family Workspace' }), 'Coder (Bob)')
   assert.equal(remoteBotTitle({ displayName: 'Coder', homeName: 'Family Workspace' }), 'Coder (Family Workspace)')
 })
+
+test('#305: "Everyone" in a group counts the Bots it reaches, seated friends\' Bots too, in the right number', async () => {
+  const room = (participants) => indexRoster({
+    bots: [{ id: 'chief', name: 'Chief', sessionId: 'chief' }],
+    rooms: [{ id: 'g', name: 'Launch', members: ['chief'], participants }],
+  })
+  const everyone = async (roster) => {
+    const [bots] = atSources({ roster: { getSnapshot: () => roster }, sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } }, launched: () => false, iconFor: () => 'bot' })
+    return (await bots.candidates({ sessionId: 'g' }, { query: 'every' })).find(row => row.name === 'Everyone')?.description
+  }
+  assert.equal(await everyone(room([{ kind: 'human', id: 'ann', displayName: 'Ann' }])), '1 member')
+  assert.equal(await everyone(room([{ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob' }])), '2 members')
+})
