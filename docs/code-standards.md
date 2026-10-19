@@ -38,10 +38,11 @@ When you report status on a change:
 
 ## Merge only a reviewed tip
 
-- Merge (or ask to open a PR for merge) only when:
-  - OpenCode implementation and Codex review both **PASS and agree** on the **same tip SHA**, and
+- By tier (owner decisions 2026-10-19; see AGENTS.md step 6):
+  - **T0/T1:** merge through the queue when required checks are green, the PR is mergeable and design-conformant. No PASS and no human approval needed.
+  - **T2/T3:** a **PASS** at the **same tip SHA** (a self-PASS by the owner's reviewer Bot/agent counts; no independent reviewer required) **and** the maintainer's approval through GitHub.
   - Required checks in CONTRIBUTING (`npm test`, client `--check`, `npm run lint`; smoke when host changes) are green or honestly listed as not run with a maintainer waiver.
-- Do not merge on a newer unreviewed commit; re-run the Verifier on the new tip.
+- Any new commit voids a PASS: re-run the Verifier on the new tip. Never admin-merge or bypass a gate.
 
 ## Architecture docs and owned paths
 

@@ -101,8 +101,8 @@ Do not fill contributor checkboxes or flip draft status unless asked.
 
 Post the report as a **pull request comment** (or the review body) only when a human asks for it, and
 only from the reviewer's own login: `.github/scripts/review-gate.mjs` reads the newest Verifier block
-that names the head, from a login in `.github/agent/review-policy.json`, and the pull request's own
-author never counts. Keep the block intact — `Tip SHA:`, `Ran:`, `Not run:`, `Verdict:` — because a
+that names the head, from a login in `.github/agent/review-policy.json`. The pull request's own
+author counts only when listed in the policy's `selfReview` (the owner's Bot/agent, `Birfy`, may PASS its own PR). Keep the block intact — `Tip SHA:`, `Ran:`, `Not run:`, `Verdict:` — because a
 missing `Ran:` command or `Not run:` line is reported as incomplete evidence, and a PASS at an older
-sha stops counting the moment the tip moves. Posting it is not merge authority: see AGENTS.md step 6
-for when the standing T0/T1 delegation lets an agent merge.
+sha stops counting the moment the tip moves. Posting it is not merge authority: see AGENTS.md step 6.
+T0/T1 need no PASS; T2/T3 need the maintainer's approval and a PASS at the tip.

@@ -38,10 +38,33 @@ test('a PASS that names an older tip does not count: the tip moved', () => {
   assert.match(r.reason, /not the tip/)
 })
 
-test('the pull request author never reviews their own tip, listed or not', () => {
+test('the pull request author does not review their own tip unless listed in selfReview', () => {
   const r = decide({ head: HEAD, author: 'codex-agent', reports: [comment('codex-agent')], policy })
   assert.equal(r.ok, false)
   assert.match(r.reason, /own author is not a reviewer/)
+  const other = decide({ head: HEAD, author: 'codex-agent', reports: [comment('codex-agent')], policy: { ...policy, selfReview: ['someone-else'] } })
+  assert.equal(other.ok, false, 'selfReview names the authors whose own PASS counts; a different login does not unlock this author')
+})
+
+test('self-review: a listed author may PASS their own pull request at the tip (owner decision 2026-10-19)', () => {
+  const selfPolicy = { reviewers: ['codex-agent', 'Birfy'], selfReview: ['Birfy'] }
+  const r = decide({ head: HEAD, author: 'Birfy', reports: [comment('Birfy')], policy: selfPolicy })
+  assert.equal(r.ok, true)
+  assert.equal(r.by, 'Birfy')
+  assert.equal(decide({ head: HEAD, author: 'birfy', reports: [comment('Birfy')], policy: selfPolicy }).ok, true, 'logins compare case-insensitively')
+})
+
+test('self-review keeps every other rule: tip, evidence, listed reviewer, newest wins', () => {
+  const selfPolicy = { reviewers: ['codex-agent', 'Birfy'], selfReview: ['Birfy'] }
+  const own = (body, at) => comment('Birfy', body, at)
+  const run = (reports, policy = selfPolicy) => decide({ head: HEAD, author: 'Birfy', reports, policy })
+  assert.equal(run([own(report({ tip: OLD }))]).ok, false, 'a new commit voids the self-PASS')
+  assert.equal(run([own(report({ ran: [] }))]).ok, false, 'no Ran: command, no evidence')
+  assert.equal(run([own(report({ notRun: false }))]).ok, false, 'no Not run: line, incomplete evidence')
+  assert.equal(run([own(report({ verdict: 'FAIL' }))]).verdict, 'FAIL')
+  assert.equal(run([own(report(), '2026-10-18T01:00:00Z'), own(report({ verdict: 'FAIL' }), '2026-10-18T02:00:00Z')]).ok, false, 'a later FAIL vetoes a self-PASS')
+  assert.equal(run([own(report())], { reviewers: ['codex-agent'], selfReview: ['Birfy'] }).ok, false, 'selfReview does not make an unlisted login a reviewer')
+  assert.equal(run([comment('codex-agent')]).ok, true, 'another listed reviewer still counts on that pull request')
 })
 
 test('a PASS from a login outside the policy does not count', () => {
@@ -136,6 +159,8 @@ test('the policy file lists at least one reviewer', () => {
   const p = loadPolicy(new URL('../agent/review-policy.json', import.meta.url))
   assert.ok(Array.isArray(p.reviewers) && p.reviewers.length > 0)
   for (const login of p.reviewers) assert.match(login, /^[\w-]+$/)
+  const reviewers = p.reviewers.map((l) => l.toLowerCase())
+  for (const login of p.selfReview ?? []) assert.ok(reviewers.includes(login.toLowerCase()), `selfReview ${login} must also be a reviewer`)
 })
 
 test('workflow: pull_request, read-only, not required, acts on nothing', () => {

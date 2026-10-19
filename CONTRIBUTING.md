@@ -15,7 +15,7 @@ Security reports: use the repository **Security** tab, not a public PR descripti
 For agent-driven work on this repository (Grok Bot as the human’s unified entry):
 
 1. Read [LESSONS.md](LESSONS.md) and [docs/code-standards.md](docs/code-standards.md) before coding.
-2. **OpenCode** implements (default model `opencode/step-5-preview-free`); **Codex** reviews the tip until both **PASS and agree**.
+2. **OpenCode** implements (default model `opencode/step-5-preview-free`); **Codex** reviews the tip. T2/T3 need a PASS at the tip (self-PASS counts) and the maintainer's approval; T0/T1 merge on green CI without a PASS (see AGENTS.md step 6).
 3. Security follow-ups from PR #2 first when open: issues #9 → #10 → #8, then other review bugs.
 4. One worktree / session per issue. Promote LESSONS into code-standards after ≥3 days when the rule stays true.
 5. Reviewers use [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md).
@@ -27,7 +27,7 @@ For agent-driven work on this repository (Grok Bot as the human’s unified entr
 - [ ] Material checks **not run** listed (smoke / Desktop / real model / …)
 - [ ] New regression fails without the fix, then passes with it (when adding tests)
 - [ ] Fix covers the **class** (shared fence helper, sanitization), not only one sample
-- [ ] OpenCode and Codex agree PASS on the same tip before merge / “open PR”
+- [ ] T2/T3: a PASS at the same tip (self-PASS counts) before merge / “open PR”; T0/T1 need none
 - [ ] `npm test`, `node scripts/build-client.mjs --check`, `npm run lint` green for code changes (or honestly waived)
 
 ## The rules that matter most

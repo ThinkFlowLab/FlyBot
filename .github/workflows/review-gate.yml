@@ -1,6 +1,6 @@
 name: Review gate (report only)
 
-# Phase 1 of docs/autonomous-dev.md. It says whether a pull request's tip carries an independent
+# Phase 1 of docs/autonomous-dev.md. It says whether a pull request's tip carries a
 # Verifier PASS (`Tip SHA:` + `Verdict: PASS`, by a login in .github/agent/review-policy.json), and
 # why not when it does not. It is NOT a required check: continue-on-error, never labels, comments,
 # approves or merges, and it must stay out of branch protection and out of `tests-ok`'s needs.
