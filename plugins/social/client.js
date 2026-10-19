@@ -1760,6 +1760,64 @@ window.__ModuleLoader__.load({
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
+    // A friend chat Bot Social paused (#404): the notice offers Extend, which raises the normal approval
+    // card in place. Only Approve extends (the host makes Bot Social's confirming call); Reject drops the
+    // request and changes nothing. Buttons only, no typed approval (#349).
+    function PausedChat({ bot } = {}) {
+      useStyles()
+      const handle = typeof bot?.remote?.handle === 'string' ? bot.remote.handle : ''
+      const [paused, setPaused] = useState(null)
+      const [card, setCard] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState(null)
+      useEffect(() => {
+        setPaused(null); setCard(null); setNote(null)
+        if (!handle) return undefined
+        let live = true
+        const load = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          call('social/paused', { handle }).then(value => { if (live) setPaused(value?.paused ?? null) }, () => {})
+        }
+        load()
+        if (typeof setInterval !== 'function') return () => { live = false }
+        const timer = setInterval(load, 5000)
+        timer?.unref?.()
+        return () => { live = false; clearInterval(timer) }
+      }, [handle])
+      const run = async (fn) => {
+        setBusy(true); setNote(null)
+        try { await fn() } catch (e) { setNote({ tone: 'error', text: errorText(e) }) } finally { setBusy(false) }
+      }
+      const extend = () => run(async () => { setCard(await call('social/extend-request', { handle })) })
+      const decide = decision => run(async () => {
+        const result = await call('social/extend-decide', { id: card.id, decision })
+        setCard(null)
+        if (result?.status === 'extended') {
+          setPaused(null)
+          setNote({ tone: 'ok', text: `Extended by ${result.extraTurns} turns. Send your message again.` })
+        }
+      })
+      if (!handle) return null
+      if (card) {
+        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'extend-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
+          h('div', { className: 'fs-label' }, WAITING_OWNER),
+          h('div', { className: 'fs-sub' }, `Extend this chat by ${card.extraTurns} turns`),
+          card.turns ? h('div', { className: 'fs-draft' }, `${card.turns.count} of ${card.turns.max} turns used.`) : null,
+          note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text) : null,
+          h('div', { className: 'fs-actions fs-chat-actions' },
+            h('span', { className: 'fs-hold-decide' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'extend-approve', disabled: busy, onClick: () => decide('approve') }, 'Approve'),
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'extend-reject', disabled: busy, onClick: () => decide('reject') }, 'Reject'))))
+      }
+      if (!paused) return note ? h('div', { className: 'fs-status', 'data-flybot': 'extend-note', 'data-tone': note.tone, role: 'status', style: { padding: '2px 4px' } }, note.text) : null
+      return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-paused', role: 'status' },
+        h('div', { className: 'fs-label' }, 'Chat paused'),
+        h('div', { className: 'fs-draft' }, paused.reason ? `Bot Social paused this chat (${paused.reason}).` : 'Bot Social paused this chat.'),
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null,
+        h('div', { className: 'fs-actions fs-chat-actions' },
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'extend-chat', disabled: busy, onClick: extend }, 'Extend…')))
+    }
+
     // + menu marks (#385), drawn like the host's line icons: people nearby, and a person to add.
     const lineMark = paths => function LineMark() {
       return h('svg', { width: 15, height: 15, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
@@ -1920,6 +1978,7 @@ window.__ModuleLoader__.load({
       FaceRooms,
       FaceAutoSend,
       ConfirmLeave,
+      PausedChat,
       apply(ctx) {
         let offs = []
         let tries = 0
@@ -1956,6 +2015,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
             slots().register('flybot.session.dock', { id: 'social-thinking', order: 60, component: PeerThinking }),
+            slots().register('flybot.session.dock', { id: 'social-paused', order: 45, component: PausedChat }),
           ]
           // For other plugins (the tree's per-node "Copy invite link"): ctx.flybot.social.canInvite(botId)
           // is synchronous; flybot.call('social.createInvite', { botId }) returns { link, text, ... }.

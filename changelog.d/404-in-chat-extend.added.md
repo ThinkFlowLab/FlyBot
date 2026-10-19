@@ -1,0 +1,1 @@
+A friend chat that Bot Social paused (turn budget reached, loop suspected) now shows a **Chat paused** notice with **Extend…**. It raises the usual approval card, and only **Approve** adds 4 turns on Bot Social, so the chat continues without removing and re-adding the friend ([#404](https://github.com/ThinkFlowLab/FlyBot/issues/404)).

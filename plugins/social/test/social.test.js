@@ -1569,7 +1569,7 @@ test('a paused conversation explains the pause with steps a FlyBot owner can tak
   // The user's direct chat: the error says the conversation is paused and what does help,
   // and the pause is not retried with the friendship's other member Bots.
   const paused = await social.sendChat({ handle: '@coder.bob.home', text: 'hello there' }).then(() => null, error => error)
-  assert.match(paused?.message ?? '', /^Bot Social paused this conversation \(turn budget exhausted\)\. Resending cannot help: approve any message waiting in this chat, or remove and re-add this friend/)
+  assert.match(paused?.message ?? '', /^Bot Social paused this conversation \(turn budget exhausted\)\. Resending cannot help: use Extend in the chat with that friend's Bot \(you approve it there\), or remove and re-add this friend/)
   // No dead end: a FlyBot owner cannot sign in to the Bot Social website.
   assert.doesNotMatch(paused.message, /console|\/ui\b|social\.test|owners can extend/i)
   assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1)
@@ -6731,4 +6731,118 @@ test('#343: Add friend shows accepting and inviting as two labelled groups, each
   assert.ok(done > at('mint-invite'), 'Done comes after the invite group')
   assert.ok(done > at('add-friend-done'))
   assert.equal(nodes.slice(0, at('accept-heading')).some(n => n.type === 'button'), false, 'no button above the content')
+})
+
+// #404: answers copied from Birfy/bot-social de57a91 (#25, src/owner-mcp.ts `extend_conversation`,
+// `confirmed`; src/platform.ts `listConversations`, `extendConversation`), deployed as 7fb211c.
+function pausingServer() {
+  const server = mockServer()
+  const state = { paused: true, extendCalls: [] }
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : {}
+    if (body.params?.name === 'send_as_member' && state.paused) {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'conversation_paused', message: 'turn budget exhausted; owners can extend the conversation' }) }] } }), { status: 200 })
+    }
+    return base(url, init)
+  }
+  server.tools.list_conversations = () => ({ conversations: [
+    { conversation_id: 'cnv_old', status: 'closed', outcome: 'abandoned', intent: { type: 'direct' }, initiator: { bot_id: 'm1', handle: '@chief.danyang.home', display_name: 'Chief', owner_display_name: 'Danyang', owner_verified: true }, peer: { bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob', owner_verified: true }, turn: { count: 3, max: 20 }, created_at: '2026-10-18T00:00:00.000Z', updated_at: '2026-10-18T00:10:00.000Z' },
+    { conversation_id: 'cnv_paused', status: 'paused_limit', outcome: null, intent: { type: 'direct' }, initiator: { bot_id: 'm1', handle: '@chief.danyang.home', display_name: 'Chief', owner_display_name: 'Danyang', owner_verified: true }, peer: { bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob', owner_verified: true }, turn: { count: 20, max: 20 }, created_at: '2026-10-19T00:00:00.000Z', updated_at: '2026-10-19T00:30:00.000Z' },
+  ] })
+  server.tools.extend_conversation = (a) => {
+    state.extendCalls.push(a)
+    if (a.confirm_code === undefined) {
+      return { status: 'confirmation_required', summary: { action: `extend conversation ${a.conversation_id} by ${a.extra_turns ?? 4} turns`, conversation: { conversation_id: a.conversation_id, status: 'paused_limit', turn: { count: 20, max: 20 }, initiator: '@chief.danyang.home', peer: '@coder.bob.home', summary: null } }, confirm_code: 'K7PQ2M', expires_at: new Date(Date.now() + 300_000).toISOString(), instructions_for_assistant: 'Nothing has been done yet. Show the summary to the owner and tell them: "To confirm, type K7PQ2M".' }
+    }
+    if (a.confirm_code !== 'K7PQ2M') throw new Error('invalid_confirm_code')
+    state.paused = false
+    return { conversation_id: a.conversation_id, status: 'open', max_turns: 20 + (a.extra_turns ?? 4) }
+  }
+  return { ...server, state }
+}
+
+test('#404: a paused friend chat offers Extend; only the owner\'s Approve makes the confirming call, Reject calls nothing', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = pausingServer()
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await call('flybot/social/paused', { handle: '@coder.bob.home' })).value.paused, null)
+  // The send fails with a structured pause the host can point to Extend.
+  const paused = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
+  assert.equal(paused?.code, 'conversation_paused')
+  assert.equal(paused.extendable, true)
+  assert.match(paused.message, /use Extend in the chat with that friend's Bot/)
+  assert.doesNotMatch(paused.message, /console|\/ui\b/i)
+  assert.equal((await call('flybot/social/paused', { handle: '@coder.bob.home' })).value.paused.reason, 'turn budget exhausted')
+  // Extend… asks Bot Social for the summary (step 1 changes nothing) and shows a card; the code stays on the host.
+  const card = (await call('flybot/social/extend-request', { handle: '@coder.bob.home' })).value
+  assert.equal(card.extraTurns, 4)
+  assert.deepEqual(card.turns, { count: 20, max: 20 })
+  assert.doesNotMatch(JSON.stringify(card), /K7PQ2M/, 'the one-time code never reaches the browser')
+  assert.deepEqual(server.state.extendCalls, [{ conversation_id: 'cnv_paused', extra_turns: 4 }])
+  // Reject: nothing more on the server, the chat stays paused, and the card is spent.
+  assert.equal((await call('flybot/social/extend-decide', { id: card.id, decision: 'reject' })).value.status, 'rejected')
+  assert.equal(server.state.extendCalls.length, 1)
+  assert.ok((await call('flybot/social/paused', { handle: '@coder.bob.home' })).value.paused)
+  assert.equal((await call('flybot/social/extend-decide', { id: card.id, decision: 'approve' })).ok, false, 'a decided card cannot be approved later')
+  assert.equal(server.state.extendCalls.length, 1)
+  // Approve: the second call carries the code for the same arguments; the notice clears and the next send goes out.
+  const again = (await call('flybot/social/extend-request', { handle: '@coder.bob.home' })).value
+  const done = (await call('flybot/social/extend-decide', { id: again.id, decision: 'approve' })).value
+  assert.deepEqual(done, { status: 'extended', extraTurns: 4, maxTurns: 24 })
+  assert.deepEqual(server.state.extendCalls.at(-1), { conversation_id: 'cnv_paused', extra_turns: 4, confirm_code: 'K7PQ2M' })
+  assert.equal((await call('flybot/social/paused', { handle: '@coder.bob.home' })).value.paused, null)
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'hello again' }), '')
+  // No model tool can extend a chat.
+  assert.equal([...ctx.registeredTools.keys()].some(name => /extend/i.test(name)), false)
+})
+
+test('#404: a Bot\'s paused send marks the chat paused too; Extend on a chat that is not paused is refused', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = pausingServer()
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const refused = await call('flybot/social/extend-request', { handle: '@writer.bob.home' })
+  assert.equal(refused.ok, false)
+  assert.equal(server.state.extendCalls.length, 0)
+  await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), (error) => {
+    assert.equal(error.extendable, true)
+    assert.match(error.message, /paused this conversation/)
+    return true
+  })
+  assert.ok((await call('flybot/social/paused', { handle: '@coder.bob.home' })).value.paused)
+})
+
+test('#404: the paused notice has an Extend button and its card only Approve / Reject buttons', () => {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call: async () => ({}) }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const render = (initial) => {
+    let i = 0
+    const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [i < initial.length ? initial[i++] : v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+    const all = []
+    const walk = node => { if (node && typeof node === 'object') { all.push(node); (node.children ?? []).forEach(walk) } }
+    walk(plugin.PausedChat({ bot: { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' } } }))
+    return { plugin, all }
+  }
+  assert.equal(render([]).plugin.PausedChat({ bot: { id: 'a', name: 'Chief' } }), null, 'not a friend chat')
+  const notice = render([{ reason: 'turn budget exhausted' }]).all
+  assert.ok(notice.some(n => n.props['data-flybot'] === 'chat-paused'))
+  assert.deepEqual(notice.filter(n => n.type === 'button').map(n => n.children.join('')), ['Extend…'])
+  const card = render([{ reason: 'turn budget exhausted' }, { id: 'x', extraTurns: 4, turns: { count: 20, max: 20 } }]).all
+  assert.ok(card.some(n => n.props['data-flybot'] === 'extend-approval'))
+  assert.ok(card.some(n => n.children.join('') === 'Extend this chat by 4 turns'))
+  assert.deepEqual(card.filter(n => n.type === 'button').map(n => n.children.join('')), ['Approve', 'Reject'])
+  assert.equal(card.some(n => n.type === 'input' || n.type === 'textarea' || n.type === 'form'), false, 'no typed code or answer')
 })
