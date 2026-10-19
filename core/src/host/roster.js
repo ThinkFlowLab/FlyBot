@@ -71,12 +71,13 @@ export function install(rt) {
     const cleanAvatarValue = cleanAvatar(avatar)
     // The model is fixed at creation, so a later change of the DSH default leaves it alone.
     // A Bot made by another Bot (create_bot, a tree child) with no model named starts on its
-    // maker's model and thinking level (#410), set before its first request, so it never
+    // maker's effective model and thinking level (#410; the level resolved against that
+    // model, as applyModel does for the maker), set before its first request, so it never
     // tries an unconfigured profile default first. A friend's Bot is never a maker here.
     const maker = !model && !pickModel && !isRemote && createdBy ? rt.botOf(createdBy) : undefined
     const inherited = maker && !maker.remote ? await rt.desiredModel(maker) : undefined
     const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : inherited ?? await rt.defaultModel()
-    const inheritedEffort = effort === undefined && inherited !== undefined && inherited === maker.model ? maker.effort : undefined
+    const inheritedEffort = effort === undefined && inherited !== undefined ? maker.effort : undefined
     const effortId = modelRef === undefined ? undefined
       : effort !== undefined ? await rt.resolveEffort(modelRef, effort)
         : inheritedEffort !== undefined ? await rt.resolveEffort(modelRef, inheritedEffort).catch(() => undefined) : undefined
