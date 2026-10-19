@@ -55,10 +55,10 @@ test("an inbound friend's message uses the friend's sidebar Bot (avatar, name), 
   const roster = { bots: [chat], remoteBots: [{ handle: '@chief.danyang.home', name: 'Chief' }] }
   const got = remoteSpeaker({ remote: { handle: '@chief.danyang.home' } }, roster)
   assert.equal(got.bot, chat)
-  assert.equal(got.name, "danyang's Chief")
+  assert.equal(got.name, 'Chief (danyang)')
   assert.equal(got.chatId, 'session-x')
   const other = remoteSpeaker({ remote: { handle: '@x.home' }, senderName: 'X' }, { bots: [], remoteBots: [] })
-  assert.equal(other.name, "X · x's Bot")
+  assert.equal(other.name, 'X (x)')
   assert.equal(other.bot.remote.handle, '@x.home')
   assert.notEqual(lookOf(other.bot).color, 'gray')
   assert.equal(other.chatId, undefined)

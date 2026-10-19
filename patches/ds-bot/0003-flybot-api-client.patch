@@ -12,7 +12,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  import { t } from './i18n.js'
  import { currentPart, relativeShort } from './text.js'
  
-@@ -25,18 +25,59 @@ const conversationOf = (roster, sessionId) => {
+@@ -25,18 +25,60 @@ const conversationOf = (roster, sessionId) => {
  export function mentionRows(roster, sessionId, query = '') {
    const here = conversationOf(roster, sessionId)
    if (here === null) return null
@@ -64,18 +64,19 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +    return true
 +  })
 +}
-+// In a face-to-face room a Bot is named as the Members panel names it: "Ann · Chief",
-+// "Me (you) · Chief" (#229, #305). Only the label changes; the inserted "@Name" stays the
++// In a face-to-face room a Bot is named as the Members panel names it: "Chief (Ann)",
++// "Chief (you)" (#229, #305, #384). Only the label changes; the inserted "@Name" stays the
 +// one the room routes on.
 +const faceLabel = (person, bot, mine) => {
++  if (mine) return t('{bot} (you)', { bot })
 +  if (!person) return bot
-+  return `${mine ? t('{name} (you)', { name: person }) : person} · ${bot}`
++  return `${bot} (${person})`
 +}
 +
  // The chats a message here can reference: every other Bot's chat, then the latest
  // conversations outside the team. Group chats stay out: a group's Session holds only
  // the user's messages, so a snapshot of it would miss every Bot's reply.
-@@ -78,14 +78,30 @@ export function atSources({ roster, sessions, launched, iconFor }) {
+@@ -78,14 +78,31 @@ export function atSources({ roster, sessions, launched, iconFor }) {
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -86,9 +87,10 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +      const snapshot = roster.getSnapshot()
 +      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
 +      const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-+        name: row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? `${row.remote.name} (${row.remote.handle})` : t('Everyone'),
++        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
++        name: row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
 +        ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
-+        ...(row.remote ? { description: remoteBotTitle(row.remote) } : {}),
++        ...(row.remote ? { description: row.remote.handle } : {}),
 +        ...(row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {}),
 +        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
 +        ...(row.room ? { description: face ? t('Every Bot in this room') : t('{count} members', { count: row.room.members.length }) } : {}),
@@ -2070,7 +2072,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  // like a name mention, under the display name from the roster.
 +  const parts = userTextParts('@bot-2a758c0f.danyang.home 你是?', members)
 +  assert.deepEqual(plain(parts.filter(part => part.bot).map(part => part.bot.id)), ['f'])
-+  assert.equal(parts[0].bot.mentionLabel, "代码审查官 · danyang's Bot")
++  assert.equal(parts[0].bot.mentionLabel, '代码审查官 (danyang)')
 +  assert.deepEqual(plain(parts[1]), { text: ' 你是?' })
 +  // The display-name form still matches the Bot itself, and an address before @ stays text.
 +  const named = userTextParts('@代码审查官 你是谁', members)
@@ -2094,7 +2096,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  const sent = "@SelfA's Chief  what is 2+2?"
 +  const partsB = userTextParts(sent, mentionableBots(onB, 'r'))
 +  assert.equal(partsB[0].bot.id, '@chief.selfa.home')
-+  assert.equal(partsB[0].bot.mentionLabel, 'SelfA · Chief')
++  assert.equal(partsB[0].bot.mentionLabel, 'Chief (SelfA)')
 +  assert.deepEqual(plain(partsB[1]), { text: ' what is 2+2?' })
 +  // A bare "@Chief" typed on B is B's own Chief, even when the room lists the friend's seat first.
 +  assert.equal(userTextParts('@Chief hi', mentionableBots(onB, 'r'))[0].bot.id, 'b1')
@@ -2109,7 +2111,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  const partsA = userTextParts(sent, mentionableBots(onA, 'r', { fromFriend: true }))
 +  assert.equal(partsA[0].bot.id, 'a1')
 +  assert.equal(partsA[0].label, "SelfA's Chief")
-+  assert.match(partsA[0].bot.mentionLabel, /^SelfA .* · Chief$/)
++  assert.equal(partsA[0].bot.mentionLabel, 'Chief (you)')
 +  // A friend's bare "@Chief" is the friend's own Chief, not mine.
 +  assert.equal(userTextParts('@Chief hi', mentionableBots(onA, 'r', { fromFriend: true }))[0].bot.id, '@chief.selfb.home')
 +  // A friend's Bot that is not in this room is not offered here.

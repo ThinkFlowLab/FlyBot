@@ -244,7 +244,7 @@ test('a friend\'s Bot chat is place remote: its transport turn is not a team Bot
   emit('rc', 'user/message', { source: { kind: 'bot', form: 'remote-chat', role: 'remote', exchangeId: 'fx1', hop: 0, remote: { handle: '@helper.uib.home' }, text: SECRET }, content: [{ type: 'text', text: SECRET }] }, 9000)
   assert.deepEqual(names(feed), ['exchange.delivered', 'turn.start', 'turn.end', 'exchange.delivered'])
   const [[, typed], [, start], [, end], [, reply]] = feed
-  const where = { handle: '@helper.uib.home', name: "Helper · UiB1415's Bot" }
+  const where = { handle: '@helper.uib.home', name: 'Helper (UiB1415)' }
   assert.deepEqual([typed.place, typed.remote, typed.role, typed.from, typed.to], ['remote', where, 'user', { kind: 'user' }, { botId: 'rc' }])
   assert.deepEqual([start.place, start.remote, start.botId, end.place, end.remote], ['remote', where, 'rc', 'remote', where])
   assert.deepEqual([reply.place, reply.role, reply.from, reply.exchangeId, reply.remote], ['remote', 'remote', { kind: 'remote', handle: '@helper.uib.home', name: where.name }, 'fx1', where])
@@ -259,7 +259,7 @@ test('a friend\'s request into a team Bot names the friend as the sidebar does, 
   t.after(stop)
   emit('a', 'user/message', { source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'q1', hop: 0, remote: { handle: '@Helper.uib.home' } }, content: [] }, 7000)
   const from = only(feed, 'exchange.delivered')[0].from
-  assert.deepEqual(from, { kind: 'remote', handle: '@Helper.uib.home', name: "Helper · UiB1415's Bot" })
+  assert.deepEqual(from, { kind: 'remote', handle: '@Helper.uib.home', name: 'Helper (UiB1415)' })
   // A friend nobody has published or opened a chat for keeps the handle only.
   emit('a', 'user/message', { source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'q2', hop: 0, remote: { handle: '@stranger.zed.home' } }, content: [] }, 7100)
   assert.deepEqual(only(feed, 'exchange.delivered')[1].from, { kind: 'remote', handle: '@stranger.zed.home' })

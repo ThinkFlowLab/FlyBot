@@ -23,8 +23,8 @@ test('picker hides gone, hidden, and home-level remotes; labels include the owne
   const listed = listedChatBots(roster)
   assert.deepEqual(listed.map(bot => bot.id), ['chief', 'r1', 'r2'])
   assert.equal(pickerBotLabel(listed[0]), 'Chief')
-  assert.equal(pickerBotLabel(listed[1]), "hsliu's Chief")
-  assert.equal(pickerBotLabel(listed[2]), "助手 · Friend's Bot")
+  assert.equal(pickerBotLabel(listed[1]), 'Chief (hsliu)')
+  assert.equal(pickerBotLabel(listed[2]), '助手 (Friend)')
 })
 
 test('new-chat splits a friend\'s Bot out of local members into remote participants', () => {

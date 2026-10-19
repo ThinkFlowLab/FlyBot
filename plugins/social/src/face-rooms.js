@@ -206,8 +206,7 @@ export function faceMemberLabel(member) {
   const owner = cleanFaceName(member?.owner_name || member?.ownerName, '')
   const name = distinctFaceBotName(member) || 'Bot'
   if (!owner || name.toLowerCase() === owner.toLowerCase()) return name
-  if (/^chief$/i.test(name)) return `${owner}'s Chief`
-  return `${name} · ${owner}`
+  return `${name} (${owner})`
 }
 
 export const FACE_HUMAN_MARK = 'FLYBOT-FACE-HUMAN'

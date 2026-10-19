@@ -72,12 +72,13 @@ const uniqueBy = (list, key) => {
     return true
   })
 }
-// In a face-to-face room a Bot is named as the Members panel names it: "Ann · Chief",
-// "Me (you) · Chief" (#229, #305). Only the label changes; the inserted "@Name" stays the
+// In a face-to-face room a Bot is named as the Members panel names it: "Chief (Ann)",
+// "Chief (you)" (#229, #305, #384). Only the label changes; the inserted "@Name" stays the
 // one the room routes on.
 const faceLabel = (person, bot, mine) => {
+  if (mine) return t('{bot} (you)', { bot })
   if (!person) return bot
-  return `${mine ? t('{name} (you)', { name: person }) : person} · ${bot}`
+  return `${bot} (${person})`
 }
 
 // The chats a message here can reference: every other Bot's chat, then the latest
@@ -124,9 +125,10 @@ export function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot()
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-        name: row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? `${row.remote.name} (${row.remote.handle})` : t('Everyone'),
+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
+        name: row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
         ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
-        ...(row.remote ? { description: remoteBotTitle(row.remote) } : {}),
+        ...(row.remote ? { description: row.remote.handle } : {}),
         ...(row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {}),
         // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
         ...(row.room ? { description: face ? t('Every Bot in this room') : t('{count} members', { count: row.room.members.length }) } : {}),

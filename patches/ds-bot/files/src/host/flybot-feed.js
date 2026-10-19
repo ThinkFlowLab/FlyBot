@@ -48,7 +48,7 @@ export function installFeed(rt, fire) {
     return entry
   }
 
-  // What the user calls a friend's Bot ("UiA1415's Chief", "Helper · UiB1415's Bot"), as the sidebar
+  // What the user calls a friend's Bot ("Chief (UiA1415)", "Helper (UiB1415)", #384), as the sidebar
   // does, from the published roster or the friend's chat. Untrusted (a peer chose it): cleaned, capped.
   const remoteTitle = (handle) => {
     try {

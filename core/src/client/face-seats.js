@@ -4,7 +4,7 @@ import { t } from './i18n.js'
 import { cleanPeerName, ownerNameOf } from '../shared/remote-label.js'
 
 // A face-to-face room lists people, each with the Bot they brought, named one way for every
-// member: "Bob · Chief", "Ann (you) · Chief" (#229). Names come from the participant records
+// member: "Chief (Bob)", "Chief (you)" (#229, #384). Names come from the participant records
 // (server member fields for a friend, the roster for my own Bot), never from message text.
 export function faceSeats(room, roster) {
   const live = (room.presentedParticipants ?? room.participants ?? []).filter(p => p.kind !== 'human' && p.leftSeq === undefined)
@@ -27,7 +27,9 @@ export function faceSeats(room, roster) {
   return seats
 }
 
+// One name per Bot (#384, #305): "Chief (Bob)", and my own "Chief (you)".
 export function faceSeatLabel(seat) {
+  if (seat.mine) return t('{bot} (you)', { bot: seat.bot })
   if (!seat.person) return seat.bot
-  return `${seat.mine ? t('{name} (you)', { name: seat.person }) : seat.person} · ${seat.bot}`
+  return `${seat.bot} (${seat.person})`
 }

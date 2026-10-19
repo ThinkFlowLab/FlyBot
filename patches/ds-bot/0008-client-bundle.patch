@@ -199,7 +199,7 @@ diff --git a/client.js b/client.js
    "Add to group chat": "加入群聊",
    "Message Bot": "给 Bot 发消息",
    "To:": "发给：",
-@@ -185,8 +185,10 @@ var ZH = {
+@@ -185,8 +185,11 @@ var ZH = {
    "Admin leads": "管理员主持",
    "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
    Everyone: "所有人",
@@ -207,6 +207,7 @@ diff --git a/client.js b/client.js
    "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
    "Members · {count}": "成员 · {count}",
 +  "{name} (you)": "{name}（你）",
++  "{bot} (you)": "{bot}（你的）",
    "Leave the group without an admin": "让群聊不设管理员",
    Unset: "取消",
    "Make admin": "设为管理员",
@@ -490,7 +491,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,315 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,314 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -570,13 +571,11 @@ diff --git a/client.js b/client.js
 +}
 +function remoteBotTitle(record) {
 +  const owner = ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
-+  const name = cleanPeerName(record?.displayName || record?.name, cleanPeerName(record?.handle, "Bot"));
-+  if (isChiefRecord(record)) return `${owner}'s Chief`;
-+  return `${name} · ${owner}'s Bot`;
++  const name = cleanPeerName(record?.displayName || record?.name, isChiefRecord(record) ? "Chief" : cleanPeerName(record?.handle, "Bot"));
++  return `${name} (${owner})`;
 +}
 +function remoteOwnerBadge(record) {
-+  const owner = ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
-+  return isChiefRecord(record) ? `${owner}'s Chief` : `${owner}'s Bot`;
++  return ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
 +}
 +function sharedRoomTitle(inviterName) {
 +  return `Shared room from ${cleanPeerName(inviterName, "a friend")}`;
@@ -610,7 +609,8 @@ diff --git a/client.js b/client.js
 +  const owner = trimmed(participant.ownerName);
 +  const handle = trimmed(participant.handle).replace(/^@+/, "");
 +  const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle });
-+  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : "", owner ? `${name} · ${owner}'s Bot` : "", handle];
++  const legacy = owner ? [`${name} · ${owner}`, `${owner} · ${name}`, `${name} · ${owner}'s Bot`, .../^chief$/i.test(trimmed(name)) ? [`${owner}'s Chief`] : []] : [];
++  const names = [name, participant.label, title, ...legacy, handle];
 +  return [...new Set(names.map(trimmed).filter(Boolean))];
 +}
 +
@@ -1245,7 +1245,7 @@ diff --git a/client.js b/client.js
 +  const bot = friendChatOf(approval, roster);
 +  if (bot) {
 +    const owner = bot.remote.owner || bot.remote.homeName;
-+    if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`;
++    if (owner) return `${bot.name} (${owner})`;
 +    return bot.name;
 +  }
 +  return approval.targetName ?? handle ?? String(approval.request?.to ?? "");
@@ -5057,7 +5057,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -5922,15 +5922,48 @@ var conversationOf = (roster, sessionId) => {
+@@ -5922,15 +5922,49 @@ var conversationOf = (roster, sessionId) => {
  function mentionRows(roster, sessionId, query = "") {
    const here = conversationOf(roster, sessionId);
    if (here === null) return null;
@@ -5102,13 +5102,14 @@ diff --git a/client.js b/client.js
 +  });
 +};
 +var faceLabel = (person, bot, mine) => {
++  if (mine) return t("{bot} (you)", { bot });
 +  if (!person) return bot;
-+  return `${mine ? t("{name} (you)", { name: person }) : person} · ${bot}`;
++  return `${bot} (${person})`;
 +};
  function chatRows(roster, list, sessionId) {
    const here = conversationOf(roster, sessionId);
    if (here === null) return [];
-@@ -5959,14 +5959,28 @@ function atSources({ roster, sessions, launched, iconFor }) {
+@@ -5959,14 +5959,29 @@ function atSources({ roster, sessions, launched, iconFor }) {
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -5119,9 +5120,10 @@ diff --git a/client.js b/client.js
 +      const snapshot = roster.getSnapshot();
 +      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
 +      const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-+        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? `${row.remote.name} (${row.remote.handle})` : t("Everyone"),
++        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
++        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
 +        ...row.bot?.role && !face ? { description: row.bot.role } : {},
-+        ...row.remote ? { description: remoteBotTitle(row.remote) } : {},
++        ...row.remote ? { description: row.remote.handle } : {},
 +        ...row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {},
 +        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
 +        ...row.room ? { description: face ? t("Every Bot in this room") : t("{count} members", { count: row.room.members.length }) } : {},
@@ -7887,7 +7889,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,125 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,126 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -7971,8 +7973,9 @@ diff --git a/client.js b/client.js
 +  return seats;
 +}
 +function faceSeatLabel(seat) {
++  if (seat.mine) return t("{bot} (you)", { bot: seat.bot });
 +  if (!seat.person) return seat.bot;
-+  return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
++  return `${seat.bot} (${seat.person})`;
 +}
 +
  // src/client/group-settings.js

@@ -306,6 +306,7 @@ var ZH = {
   "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
   "Members · {count}": "成员 · {count}",
   "{name} (you)": "{name}（你）",
+  "{bot} (you)": "{bot}（你的）",
   "Leave the group without an admin": "让群聊不设管理员",
   Unset: "取消",
   "Make admin": "设为管理员",
@@ -1361,13 +1362,11 @@ function isChiefRecord(record) {
 }
 function remoteBotTitle(record) {
   const owner = ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
-  const name = cleanPeerName(record?.displayName || record?.name, cleanPeerName(record?.handle, "Bot"));
-  if (isChiefRecord(record)) return `${owner}'s Chief`;
-  return `${name} · ${owner}'s Bot`;
+  const name = cleanPeerName(record?.displayName || record?.name, isChiefRecord(record) ? "Chief" : cleanPeerName(record?.handle, "Bot"));
+  return `${name} (${owner})`;
 }
 function remoteOwnerBadge(record) {
-  const owner = ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
-  return isChiefRecord(record) ? `${owner}'s Chief` : `${owner}'s Bot`;
+  return ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
 }
 function sharedRoomTitle(inviterName) {
   return `Shared room from ${cleanPeerName(inviterName, "a friend")}`;
@@ -1401,7 +1400,8 @@ function faceAliases(participant, name) {
   const owner = trimmed(participant.ownerName);
   const handle = trimmed(participant.handle).replace(/^@+/, "");
   const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle });
-  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : "", owner ? `${name} · ${owner}'s Bot` : "", handle];
+  const legacy = owner ? [`${name} · ${owner}`, `${owner} · ${name}`, `${name} · ${owner}'s Bot`, .../^chief$/i.test(trimmed(name)) ? [`${owner}'s Chief`] : []] : [];
+  const names = [name, participant.label, title, ...legacy, handle];
   return [...new Set(names.map(trimmed).filter(Boolean))];
 }
 
@@ -2140,7 +2140,7 @@ function recipientName(approval, roster) {
   const bot = friendChatOf(approval, roster);
   if (bot) {
     const owner = bot.remote.owner || bot.remote.homeName;
-    if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`;
+    if (owner) return `${bot.name} (${owner})`;
     return bot.name;
   }
   return approval.targetName ?? handle ?? String(approval.request?.to ?? "");
@@ -7423,8 +7423,9 @@ var uniqueBy = (list, key) => {
   });
 };
 var faceLabel = (person, bot, mine) => {
+  if (mine) return t("{bot} (you)", { bot });
   if (!person) return bot;
-  return `${mine ? t("{name} (you)", { name: person }) : person} · ${bot}`;
+  return `${bot} (${person})`;
 };
 function chatRows(roster, list, sessionId) {
   const here = conversationOf(roster, sessionId);
@@ -7457,9 +7458,10 @@ function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot();
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? `${row.remote.name} (${row.remote.handle})` : t("Everyone"),
+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
+        name: row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
         ...row.bot?.role && !face ? { description: row.bot.role } : {},
-        ...row.remote ? { description: remoteBotTitle(row.remote) } : {},
+        ...row.remote ? { description: row.remote.handle } : {},
         ...row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {},
         // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
         ...row.room ? { description: face ? t("Every Bot in this room") : t("{count} members", { count: row.room.members.length }) } : {},
@@ -10686,8 +10688,9 @@ function faceSeats(room2, roster) {
   return seats;
 }
 function faceSeatLabel(seat) {
+  if (seat.mine) return t("{bot} (you)", { bot: seat.bot });
   if (!seat.person) return seat.bot;
-  return `${seat.mine ? t("{name} (you)", { name: seat.person }) : seat.person} · ${seat.bot}`;
+  return `${seat.bot} (${seat.person})`;
 }
 
 // src/client/group-settings.js
