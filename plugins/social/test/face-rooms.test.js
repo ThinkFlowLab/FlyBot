@@ -109,7 +109,7 @@ test('peer names and system copy are sanitized', () => {
   assert.equal(faceMemberLabel({ display_name: 'Chief', owner_name: 'Alice' }), 'Chief (Alice)')
   assert.equal(distinctFaceBotName({ display_name: 'BoxA', owner_name: 'BoxA', handle: '@chief.boxa.home' }), 'Chief')
   assert.equal(faceMemberLabel({ display_name: 'BoxA', owner_name: 'BoxA', handle: '@chief.boxa.home' }), 'Chief (BoxA)')
-  assert.equal(faceMemberLabel({ display_name: 'Bot', owner_name: 'BoxA', handle: '@writer.boxa.home' }), 'Writer · BoxA')
+  assert.equal(faceMemberLabel({ display_name: 'Bot', owner_name: 'BoxA', handle: '@writer.boxa.home' }), 'Writer (BoxA)')
   assert.equal(alreadyLeftFace({ code: 'bot_not_found', message: 'That Bot is not one of yours on Bot Social.' }), true)
   assert.equal(alreadyLeftFace({ code: 'nope', message: 'busy' }), false)
 })
