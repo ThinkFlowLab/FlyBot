@@ -964,6 +964,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const listed = serverRoster.flatMap(entry => entry.bots ?? []).find(bot => bot.handle === handle)
     return listed ?? { handle, name: handle, home: homeOfPeer(handle), remote: true }
   }
+  const peerOwners = new Map()
+  const notePeerOwner = (handle, owner) => {
+    const name = cleanText(owner)
+    if (!handle || !name) return
+    peerOwners.delete(handle)
+    peerOwners.set(handle, name)
+    if (peerOwners.size > 200) peerOwners.delete(peerOwners.keys().next().value)
+  }
   const sendTarget = async msg => (await remoteBot(msg.target.handle)) ?? replyTarget(msg)
   const friendEntry = async friendHome => (await remoteBots()).homes.find(entry => entry.home === norm(friendHome))
   const homeOfPeer = (peerHandle) => {
@@ -1203,9 +1211,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
       // A Bot's files are always shown to the user first, whatever auto-accept says;
       // files the user picked in the composer are the user's own send.
-      // The card names who gets it by person (#418): the friend, not a Bot handle.
+      // The card names who gets it by person (#418): the friend, not a Bot handle. A Bot that was
+      // not shared with us (the talk-through Bot a reply goes back to) is named from its last line.
       const friend = serverRoster.find(entry => entry.home === norm(bot.home))
-      const recipient = cleanText(friend?.owner || friend?.name || '')
+      const recipient = cleanText(friend?.owner || peerOwners.get(norm(msg.target.handle)) || friend?.name || '')
       const named = recipient ? { recipient } : {}
       if (msg.attachments?.length && msg.via !== 'composer') return { action: 'hold', reason: 'a Bot attaches files: check them before they leave', ...named }
       // Adding a friend's Bot to a group (or a line in that group) is the owner's consent
@@ -1499,6 +1508,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           : said
         const handle = norm(event.from?.handle)
         const fromHome = event.from?.home_handle ? norm(event.from.home_handle) : undefined
+        // Who owns the Bot that wrote, so a held reply to it can name the person (#418); display only.
+        notePeerOwner(handle, event.from?.owner_display_name)
         // Bot Social stamps typed_by_owner when the sender's owner typed the line themselves (never
         // read from the text). Only then is it the person's line; the name is the person's, from the
         // server's owner_display_name.

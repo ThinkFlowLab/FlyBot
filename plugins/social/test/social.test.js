@@ -1085,6 +1085,7 @@ test('#272: a reply to the Bot that carried a request is held and leaves on appr
   assert.equal(server.calls.some(c => c.name === 'send_as_member'), false, 'nothing leaves before the owner decides')
   const [pending] = ctx.flybot.approvals.list()
   assert.ok(pending, 'the owner gets a card')
+  assert.equal(pending.recipientName, 'Bob', 'the card names the person, not the talk-through Bot (#418)')
   await ctx.flybot.approvals.decide(pending.id, 'approve')
   const sent = server.calls.filter(c => c.name === 'send_as_member')
   assert.equal(sent.length, 1)
