@@ -1495,17 +1495,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       ...(event.relationship_id ? { relationshipId: String(event.relationship_id) } : {}),
       at: typeof event.created_at === 'string' ? event.created_at : new Date(now()).toISOString(),
     }
-    settings.shareRequests = [...settings.shareRequests.filter(item => !(item.botId === local.id && item.from === from)), request].slice(-SHARE_REQUESTS_KEPT)
+    settings.shareRequests = [...settings.shareRequests.filter(item => isOpenShareRequest(item) && !(item.botId === local.id && item.from === from)), request].slice(-SHARE_REQUESTS_KEPT)
   }
-  // Open cards only: a card whose Bot is gone, or that is shared with the sender by now, is dropped.
+  // Open cards only: a card whose Bot is gone, or that is shared with the sender by now, is not shown.
+  // Read-only (social/status is served by a read-only host too); the write paths prune it.
+  const isOpenShareRequest = item => Boolean(flybot.bot.get(item.botId)) && flybot.grants?.has?.(item.botId, item.from) !== true
   function shareRequests() {
-    const open = settings.shareRequests.filter(item => flybot.bot.get(item.botId) && flybot.grants?.has?.(item.botId, item.from) !== true)
-    if (open.length !== settings.shareRequests.length) { settings.shareRequests = open; saveSettings() }
-    return open.map(item => ({ ...item, botName: flybot.bot.get(item.botId)?.name ?? '' }))
+    return settings.shareRequests.filter(isOpenShareRequest).map(item => ({ ...item, botName: flybot.bot.get(item.botId)?.name ?? '' }))
   }
   disposers.push(flybot.api.handle('social/share-request-dismiss', async ({ id } = {}) => {
     const before = settings.shareRequests.length
-    settings.shareRequests = settings.shareRequests.filter(item => item.id !== String(id ?? ''))
+    settings.shareRequests = settings.shareRequests.filter(item => item.id !== String(id ?? '') && isOpenShareRequest(item))
     if (settings.shareRequests.length !== before) saveSettings()
     return { shareRequests: shareRequests() }
   }))
