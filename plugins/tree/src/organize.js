@@ -153,7 +153,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
    * over maxChildren, not even for a moment.
    */
   async function createLead(run, parentId, plan) {
-    const memberNames = plan.movers.map(m => m.name)
+    const memberNames = plan.memberNames ?? plan.movers.map(m => m.name)
     let nodes = snapshot()
     let name = leadNameOf(plan.label)
     for (let i = 2; hostsName(nodes, parentId, name) || memberNames.some(m => norm(m) === norm(name)); i++) name = `${leadNameOf(plan.label)} ${i}`
@@ -223,14 +223,16 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   }
 
   /** Runs a plan; resolves the lead id. Sync (returns the id) when the lead exists, else a Promise. */
+  /** Marks an existing member as the lead of group `key` (journaled once). */
+  function markLead(run, leadId, key, label) {
+    if (get(leadId, 'lead')) return
+    set(leadId, 'lead', { key, label })
+    run.actions.push({ op: 'mark-lead', bot: leadId, name: snapshot()[leadId]?.name ?? leadId, key, label })
+  }
   function runPlan(run, parentId, plan) {
     if (!plan.lead) return createLead(run, parentId, plan)
     const leadId = plan.lead
-    const nodes = snapshot()
-    if (!get(leadId, 'lead')) {
-      set(leadId, 'lead', { key: plan.key, label: plan.label })
-      run.actions.push({ op: 'mark-lead', bot: leadId, name: nodes[leadId]?.name ?? leadId, key: plan.key, label: plan.label })
-    }
+    markLead(run, leadId, plan.key, plan.label)
     for (const m of plan.movers) {
       const now2 = snapshot()
       if (!m.incoming && now2[m.id]?.parent === parentId && fits(now2, leadId, { id: m.id, name: m.name, height: heightOf(now2, m.id) })) move(run, m.id, leadId)
@@ -244,15 +246,27 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
    * belongs to (most specific group first, then the shallower lead), then the root. A broad area is
    * joined only through a lead made for it ("Work Lead"); a shared word never makes a lead.
    */
-  function homesFor(nodes, root, x) {
+  /** The lead groups strictly between `root` and `id` (exclusive of both). */
+  const groupsAbove = (nodes, root, id) => {
+    const out = []
+    for (let at = nodes[id]?.parent, seen = new Set(); at && at !== root && nodes[at] && !seen.has(at); at = nodes[at].parent) { seen.add(at); const k = get(at, 'lead')?.key; if (k) out.push(k) }
+    return out
+  }
+  function homesFor(nodes, root, x, { leadsOnly = false } = {}) {
     const keys = keysOf(x.p)
     const found = []
     for (const id of subtreeOf(nodes, root)) {
       if (id === root) continue
-      if (norm(nodes[id].name) === norm(x.name)) { found.push({ id, rank: -1, depth: depthOf(nodes, id) }); continue } // the daily tidy merges them
+      if (norm(nodes[id].name) === norm(x.name)) { if (!leadsOnly) found.push({ id, rank: -1, depth: depthOf(nodes, id) }); continue } // the daily tidy merges them
       const lead = get(id, 'lead'), hasChildren = childrenOf(nodes, id).length > 0
       const ignored = ignoredAt(nodes, nodes[id].parent)
       let rank = Infinity
+      // #447 forward placement: only a marked group lead takes a new Bot, never one that could lead that
+      // group itself, and only down a path of groups it belongs to (no dev Bot inside "FlyBot Lead"'s Dev Lead unless it is FlyBot's).
+      if (leadsOnly) {
+        if (lead?.key && keys.includes(lead.key) && !canLead(x.p, lead.key, { names: [x.name] }) && groupsAbove(nodes, root, id).every(k => keys.includes(k))) found.push({ id, rank: KIND_RANK[kindOf(lead.key)] ?? 9, depth: depthOf(nodes, id) })
+        continue
+      }
       for (const k of keys) {
         if (ignored.has(k) && lead?.key !== k) continue
         if (kindOf(k) === 'word' || (kindOf(k) === 'area' && lead?.key !== k)) continue
@@ -356,6 +370,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
    */
   function repair() {
     const overFull = nodes => Object.keys(nodes).find(id => childrenOf(nodes, id).length > limits.maxChildren)
+    if (pending === 0) reattachOrphans()
     if (pending === 0) {
       for (let guard = 0; guard < 64; guard++) {
         const nodes = snapshot()
@@ -372,6 +387,32 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
     }
     if (!overFull(snapshot())) return undefined
     return enqueue(async () => { await repairInline(); refreshAll() })
+  }
+
+  /**
+   * Orphans (#447): a member whose parent is no longer in the tree (deleted while the plugin was off,
+   * archived, or never there) is never left outside for good. It moves, with its subtree, to the
+   * home its role points to (its group's lead, else the root) where it fits; a journaled move.
+   * One that fits nowhere yet is tried again on the next pass and keeps its subtree.
+   */
+  function reattachOrphans() {
+    const root = rootId()
+    let nodes = snapshot()
+    if (!root || !nodes[root]) return
+    const orphans = Object.values(nodes).filter(n => !n.root && n.id !== root && n.parent !== null && !nodes[n.parent])
+    if (!orphans.length) return
+    const run = begin('repair')
+    for (const o of orphans) {
+      nodes = snapshot()
+      const x = { id: o.id, name: o.name, height: heightOf(nodes, o.id), p: profile(nodes, o.id) }
+      const home = homesFor(nodes, root, x).find(at => !subtreeOf(nodes, o.id).includes(at) && fits(nodes, at, x))
+      if (!home) { warn(`flybot-tree: ${o.name} lost its parent and no level that fits its role has room yet; tried again on the next pass`); continue }
+      const from = o.parent
+      set(o.id, 'parent', home)
+      run.actions.push({ op: 'move', bot: o.id, name: o.name, from, fromName: fb.getBot(from)?.name ?? 'a removed Bot', to: home, toName: nodes[home].name })
+    }
+    commit(run)
+    if (run.actions.length) refreshAll()
   }
 
   // ------------------------------------------------------------ daily tidy
@@ -573,5 +614,13 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   const idle = () => pending === 0 ? Promise.resolve() : queue.then(() => idle())
 
   const busy = () => pending > 0
-  return { busy, place, repair, tidy, maybeTidy, undo, dismiss, overview, noteActivity, idle, planLevel, describeAction, repairArchiveNames }
+  /**
+   * Runs `job` in the reorganization queue (one at a time with placement, repair and tidy; a lead
+   * being set up there is not re-placed by adoption). Resolves the job's value, rejects with its error.
+   */
+  const exclusive = job => new Promise((resolve, reject) => { enqueue(async () => { try { resolve(await job()) } catch (error) { reject(error) } }) })
+  // The shared primitives explicit allocation (#447, src/allocate.js) is built on: the same role
+  // profiles, homes, limit checks, lead creation, moves and journal as the self-organization.
+  const shared = { profile, subtreeOf, heightOf, fits, homesFor, createLead, markLead, move, begin, commit, exclusive }
+  return { busy, place, repair, tidy, maybeTidy, undo, dismiss, overview, noteActivity, idle, planLevel, describeAction, repairArchiveNames, shared }
 }

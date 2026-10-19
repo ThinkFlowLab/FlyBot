@@ -177,3 +177,27 @@ test('#446 on the real host: core create_bot cannot get past maxChildren; a full
     await h.stop()
   }
 })
+
+test('#447 on the real host: find_bots, create_team (lead plus children) and create_child_bot(parent) register and work', async () => {
+  const h = await start()
+  try {
+    const fork = h.ctx.plugin(tree, {})
+    const tf = h.fb.scope('flybot-tree').fields
+    await waitFor(() => tf.get('b', 'parent') === 'a')
+    const team = JSON.parse(await h.tool('create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Test: runs the FlyBot tests'] }, 'a'))
+    assert.equal(team.error, undefined, JSON.stringify(team))
+    const lead = team.team.lead.id
+    assert.equal(tf.get(lead, 'parent'), 'a')
+    assert.deepEqual(h.fb.bot.list().filter(b => tf.get(b.id, 'parent') === lead).map(b => b.name).sort(), ['Dev', 'Test'])
+    const docs = JSON.parse(await h.tool('create_child_bot', { name: 'Docs', role_description: 'writes docs', parent: 'FlyBot Lead' }, 'a')).created
+    assert.equal(tf.get(docs.id, 'parent'), lead)
+    assert.match(JSON.parse(await h.tool('create_child_bot', { name: 'X', role_description: 'x', parent: lead }, 'b')).error, /parent must be you or one of your descendants/)
+    const found = JSON.parse(await h.tool('find_bots', { query: 'test' }, 'a'))
+    assert.deepEqual(found.bots.map(b => [b.name, b.depth, b.parent]).slice(0, 1), [['Test', 3, 'FlyBot Lead']])
+    const reused = JSON.parse(await h.tool('create_child_bot', { name: 'Test', role_description: 'runs the FlyBot tests' }, 'a'))
+    assert.equal(reused.reused?.path, 'Chief → FlyBot Lead → Test')
+    fork.dispose()
+  } finally {
+    await h.stop()
+  }
+})

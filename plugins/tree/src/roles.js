@@ -29,7 +29,7 @@ const GENERIC = new Set(`bot bots agent agents team the and for of to in on with
 const LEAD_WORDS = new Set(['lead', 'leader', 'manager', 'coordinator', 'head', 'director', 'captain', 'boss', 'supervisor'])
 const LEAD_CJK = ['负责人', '主管', '组长', '经理', '总管', '统筹']
 // Tools every Bot uses: they say nothing about its role.
-const COMMON_TOOLS = new Set(['message_bot', 'list_children', 'create_child_bot', 'create_bot', 'list_bots', 'stop_bot', 'reply', 'think', 'todo', 'memory', 'read', 'write'])
+const COMMON_TOOLS = new Set(['message_bot', 'list_children', 'create_child_bot', 'find_bots', 'create_team', 'create_bot', 'list_bots', 'stop_bot', 'reply', 'think', 'todo', 'memory', 'read', 'write'])
 const CJK = /[\u3400-\u9fff]/
 
 export const norm = s => String(s ?? '').trim().toLowerCase()
@@ -124,4 +124,25 @@ export function sameRole(a, b) {
   if (sa && sa === sb) return !a.roleText || !b.roleText || jaccard(a.roleText, b.roleText) >= 0.5
   if (a.domain && a.domain === b.domain && wordsOf(a.roleText).length >= 4 && jaccard(a.roleText, b.roleText) >= 0.8) return true
   return false
+}
+
+// Two role words that are the same or one a stem of the other ("test" / "tester" / "tests").
+const sameStem = (a, b) => a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)))
+/**
+ * How well a Bot (profile `p`) matches a search (profile `q` of the query text, #447 find_bots):
+ * { score, why }, score 0 = no match. The same role scores highest, then the query inside the name,
+ * shared role words, the same project, and last the same domain.
+ */
+export function matchOf(q, p, text = '') {
+  if (q.words.length && sameRole(q, p)) return { score: 100, why: 'same role' }
+  let score = 0
+  const why = []
+  const t = norm(text)
+  if (t && p.lowerName.includes(t)) { score += 60; why.push('name') } else if (t.length >= 3 && p.roleText.includes(t)) { score += 30; why.push('role') }
+  const shared = q.terms.filter(a => p.terms.some(b => sameStem(a, b)))
+  if (shared.length) { score += 20 * shared.length; why.push(`role words: ${shared.join(', ')}`) }
+  const project = q.projects.find(w => p.projects.includes(w))
+  if (project) { score += 15; why.push(`project ${project}`) }
+  if (q.domain && q.domain === p.domain) { score += 5; why.push(`domain ${BY_ID.get(q.domain).label}`) }
+  return { score, why: why.join('; ') }
 }

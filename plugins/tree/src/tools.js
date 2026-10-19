@@ -1,7 +1,9 @@
 import { MAX_NAME_LENGTH } from './limits.js' // = ds-bot roster's 40-character name truncation
-// Model tools. The caller comes from the tool context ({ botId }), never from arguments,
-// so a bot can only create children under itself. Visible to every tree member (#16 Option B:
-// not Main/root-only). maxChildren and depth stay in createChild; a new child is not granted.
+import { MAX_TEAM_LENGTH } from './allocate.js'
+// Model tools. The caller comes from the tool context ({ botId }), never from arguments. A Bot
+// creates only in its own downstream: `parent` must be the caller or one of its descendants (#447).
+// Visible to every tree member (#16 Option B: not Main/root-only). maxChildren and depth are
+// checked at the target parent; a new child is not granted. find_bots is read-only.
 // tools.register keeps only type/description/enum/items from JSON Schema (minLength/maxLength
 // are dropped), so every execute() validates its own arguments with validateArgs().
 
@@ -18,6 +20,7 @@ export function validateArgs(schema, args) {
       if (Number.isInteger(s.minLength) && n < s.minLength) return `${key} must be at least ${s.minLength} characters`
       if (Number.isInteger(s.maxLength) && n > s.maxLength) return `${key} must be at most ${s.maxLength} characters`
     }
+    if (s.type === 'array' && !Array.isArray(v)) return `${key} must be a list`
   }
   if (schema.additionalProperties === false) {
     const extra = Object.keys(a).filter(k => !Object.hasOwn(schema.properties ?? {}, k))
@@ -32,8 +35,27 @@ export const CREATE_CHILD_SCHEMA = Object.freeze({
   properties: {
     name: { type: 'string', minLength: 1, maxLength: MAX_NAME_LENGTH, description: 'Short domain name, e.g. "Cooking"' },
     role_description: { type: 'string', minLength: 1, maxLength: 1000, description: 'What the child is responsible for' },
+    parent: { type: 'string', maxLength: 100, description: 'Optional: id or name of the Bot to create it under: you (default) or one of your descendants' },
   },
   required: ['name', 'role_description'],
+  additionalProperties: false,
+})
+export const FIND_BOTS_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    query: { type: 'string', maxLength: 200, description: 'Optional: a name or role to look for, e.g. "tester". Empty lists your whole branch.' },
+  },
+  additionalProperties: false,
+})
+export const CREATE_TEAM_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    team: { type: 'string', minLength: 1, maxLength: MAX_TEAM_LENGTH, description: 'Project or group name, e.g. "FlyBot". Its lead is named "<team> Lead".' },
+    // The host keeps only type/description/enum/items, and DSH needs an object item to declare its keys, so members are "Name: role" strings.
+    members: { type: 'array', items: { type: 'string' }, description: 'The roles, at least 2, each "Name: what it is responsible for", e.g. "Dev: writes and fixes the code"' },
+    parent: { type: 'string', maxLength: 100, description: 'Optional: id or name of the Bot to put the lead under: you (default) or one of your descendants' },
+  },
+  required: ['team', 'members'],
   additionalProperties: false,
 })
 
@@ -55,14 +77,36 @@ export function registerTreeTools(fb, tree) {
       },
     }),
     fb.registerTool({
+      name: 'find_bots',
+      description: 'Read-only. Search the Bots in your branch (for the root: the whole tree) by name or role, with role, parent, depth and path. Use it before creating a Bot, to reuse one that already fits.',
+      parameters: FIND_BOTS_SCHEMA,
+      visibleTo: inTree,
+      async execute(args, { botId }) {
+        const bad = validateArgs(FIND_BOTS_SCHEMA, args ?? {})
+        if (bad) return fail(bad)
+        try { return tree.findBots(botId, args?.query) } catch (e) { return fail(e) }
+      },
+    }),
+    fb.registerTool({
       name: 'create_child_bot',
-      description: 'Create a NEW child bot directly under yourself, then delegate to it. Any tree bot may call this (not only the root). Only when none of your children fits; never a duplicate.',
+      description: 'Create ONE new Bot under yourself, or under one of your descendants with parent, then delegate to it. If a Bot with the same role already exists in your branch, it is reused and nothing is created. Without parent, a group lead in your branch that fits the new role (e.g. "FlyBot Lead") takes it. Any tree bot may call this (not only the root).',
       parameters: CREATE_CHILD_SCHEMA,
       visibleTo: inTree,
       async execute(args, { botId }) {
         const bad = validateArgs(CREATE_CHILD_SCHEMA, args)
         if (bad) return fail(bad)
-        try { return { created: await tree.createChild(botId, args.name, args.role_description) } } catch (e) { return fail(e) }
+        try { return await tree.allocateChild(botId, args.name, args.role_description, args.parent) } catch (e) { return fail(e) }
+      },
+    }),
+    fb.registerTool({
+      name: 'create_team',
+      description: 'Create a team for one project or group: "<team> Lead" with its members as children, one slot under you (or under parent, one of your descendants). An existing lead of that group and existing Bots with the same roles in your branch are reused.',
+      parameters: CREATE_TEAM_SCHEMA,
+      visibleTo: inTree,
+      async execute(args, { botId }) {
+        const bad = validateArgs(CREATE_TEAM_SCHEMA, args)
+        if (bad) return fail(bad)
+        try { return await tree.createTeam(botId, { team: args.team, members: args.members, parent: args.parent }) } catch (e) { return fail(e) }
       },
     }),
   ]

@@ -227,7 +227,8 @@ test('fix 4: create_child_bot enforces minLength/maxLength dropped by tools.regi
   assert.match((await c({ name: 'A', role_description: 'r'.repeat(1001) })).error, /role_description must be at most 1000/)
   assert.match((await c({ name: 'A' })).error, /role_description is required/)
   assert.match((await c({ name: 5, role_description: 'x' })).error, /name must be a string/)
-  assert.match((await c({ name: 'A', role_description: 'x', parent: 'bot9' })).error, /unknown argument: parent/)
+  assert.match((await c({ name: 'A', role_description: 'x', owner: 'bot9' })).error, /unknown argument: owner/)
+  assert.match((await c({ name: 'A', role_description: 'x', parent: 'bot9' })).error, /parent must be you or one of your descendants/) // #447
   assert.equal(m.bots.size, 1) // nothing created
   assert.ok((await c({ name: 'x'.repeat(40), role_description: 'r'.repeat(1000) })).created.id)
   assert.match((await m.call(m.root, 'list_children', { junk: 1 })).error, /unknown argument/)
@@ -1267,4 +1268,150 @@ test('#452 client: structure.include is false for archived and 归档-* names', 
   assert.equal(entry.include('pref'), false)
   assert.equal(entry.include('c'), true)
   dispose()
+})
+
+// #447 (owner decisions 2026-10-19 ~19:45 and 21:27 Asia/Shanghai): forward allocation. Reuse before
+// create (find_bots, same role anywhere in the branch), create_child_bot(parent?) only in the caller's
+// own downstream with limits at the target, project teams as a lead plus children, all on #446's
+// shared primitives; orphans are reattached, never left outside for good.
+const child = (m, parent, name, role, extra = {}) => m.call(parent, 'create_child_bot', { name, role_description: role, ...extra })
+const kidsOf = (m, id) => m.tree.childrenOf(m.tree.snapshot(), id).map(c => c.name)
+
+test('#447: create_child_bot reuses a Bot with the same role at depth 3 instead of a duplicate; find_bots shows name, role, parent, depth', async () => {
+  const m = await setup()
+  const eng = (await child(m, m.root, 'Engineering', 'Builds and tests the software')).created.id
+  const tester = (await child(m, eng, 'Tester', 'Runs the test suite and reports failures')).created.id
+  const life = (await child(m, m.root, 'Life', 'Home and family')).created.id
+  const before = m.bots.size
+  for (const [name, role] of [['Tester', 'Runs the test suite and reports failures'], ['tester bot', 'Runs the test suite']]) {
+    const r = await child(m, m.root, name, role)
+    assert.equal(r.created, undefined, `${name}: nothing created`)
+    assert.equal(r.reused.id, tester)
+    assert.equal(r.reused.depth, 3)
+    assert.equal(r.reused.path, 'Chief → Engineering → Tester')
+    assert.equal(r.reused.via, 'Engineering')
+    assert.match(r.note, /already exists: Chief → Engineering → Tester\. Reuse it \(delegate through Engineering\)/)
+  }
+  assert.equal(m.bots.size, before)
+  // find_bots: the root sees the whole tree; a match at depth 3 comes first.
+  const found = await m.call(m.root, 'find_bots', { query: 'tester' })
+  assert.equal(found.scope, 'the whole tree')
+  assert.deepEqual({ ...found.bots[0], role: undefined }, { id: tester, name: 'Tester', role: undefined, depth: 3, path: 'Chief → Engineering → Tester', parent: 'Engineering', children: 0, via: 'Engineering', match: 'same role' })
+  assert.equal(found.bots[0].role, 'Runs the test suite and reports failures')
+  assert.ok((await m.call(m.root, 'find_bots', { query: 'test' })).bots.some(b => b.id === tester), 'a stem of a role word matches')
+  const all = await m.call(m.root, 'find_bots', {})
+  assert.deepEqual(all.bots.map(b => [b.name, b.depth, b.parent]), [['Engineering', 2, 'Chief'], ['Life', 2, 'Chief'], ['Tester', 3, 'Engineering']])
+  assert.deepEqual(all.limits, { maxDepth: 5, maxChildren: 8 })
+  // A Bot sees and reuses only its own downstream.
+  const mine = await m.call(life, 'find_bots', { query: 'tester' })
+  assert.equal(mine.scope, 'the branch under Life')
+  assert.deepEqual(mine.bots, [])
+  assert.match((await m.call(life, 'find_bots', { query: 5 })).error, /query must be a string/)
+  const own = await child(m, life, 'Tester', 'Runs the test suite and reports failures')
+  assert.equal(f(m, own.created.id, 'parent'), life, 'outside its branch: created; the daily tidy merges duplicates')
+  // A different role with the same name is not a match.
+  assert.ok((await child(m, m.root, 'Tester', 'Tastes recipes in the kitchen')).created.id)
+})
+
+test('#447: create_child_bot with parent accepts only the caller or its descendants; limits are checked at the target parent', async () => {
+  const m = await setup({ maxChildren: 3, maxDepth: 3 })
+  const alpha = (await child(m, m.root, 'Alpha', 'a')).created.id
+  const beta = (await child(m, m.root, 'Beta', 'b')).created.id
+  // By name or id, under a descendant.
+  const a1 = await child(m, m.root, 'A1', 'one', { parent: 'alpha' })
+  assert.equal(f(m, a1.created.id, 'parent'), alpha)
+  assert.deepEqual(a1.created.parent, { id: alpha, name: 'Alpha' })
+  assert.equal(a1.created.path, 'Chief → Alpha → A1')
+  assert.equal(a1.created.depth, 3)
+  assert.equal(f(m, (await child(m, m.root, 'A2', 'two', { parent: alpha })).created.id, 'parent'), alpha)
+  assert.equal(f(m, (await child(m, alpha, 'A3', 'three', { parent: alpha })).created.id, 'parent'), alpha, 'the caller itself')
+  // Not the caller's downstream: a sibling, an ancestor, a stranger, an unknown name. Nothing created.
+  const size = m.bots.size
+  for (const parent of [beta, 'Beta', m.root, 'Chief', 'Nobody']) assert.match((await child(m, alpha, 'X', 'x', { parent })).error, /parent must be you or one of your descendants/, String(parent))
+  const o = await outsider(m)
+  assert.match((await child(m, m.root, 'X', 'x', { parent: o })).error, /parent must be you or one of your descendants/)
+  assert.equal(m.bots.size, size + 1)
+  // Limits at the target, not at the caller (Chief still has room).
+  assert.match((await child(m, m.root, 'A4', 'x', { parent: 'Alpha' })).error, /limit reached: Alpha already has 3 children \(maxChildren=3\)/)
+  assert.match((await child(m, m.root, 'Deep', 'x', { parent: a1.created.id })).error, /limit reached: a child of A1 would be at depth 4 \(maxDepth=3\)/)
+  assert.match((await child(m, m.root, 'a1', 'dup', { parent: 'Alpha' })).error, /already exists under Alpha/)
+  // The per-parent lock: parallel creates under one target never pass maxChildren.
+  await Promise.all(Array.from({ length: 6 }, (_, i) => child(m, m.root, `B${i}`, `b${i}`, { parent: 'Beta' })))
+  assert.equal(kidsOf(m, beta).length, 3)
+  assert.equal(kidsOf(m, m.root).length, 2)
+})
+
+test('#447: a project with several roles becomes a lead plus children, one slot under Chief; later Bots of the group join its lead', async () => {
+  const m = await setup()
+  for (const name of ['Cooking', 'Travel']) await make(m, m.root, name)
+  const before = m.bots.size
+  const roles = ['Dev: writes and fixes the FlyBot code', 'Test: runs the FlyBot test suite', 'Maintenance: keeps FlyBot dependencies and CI healthy', 'Repo: manages FlyBot issues and pull requests']
+  const r = await m.call(m.root, 'create_team', { team: 'FlyBot', members: roles })
+  assert.equal(r.error, undefined)
+  assert.deepEqual(kidsOf(m, m.root), ['Cooking', 'Travel', 'FlyBot Lead'], 'one new slot under Chief')
+  const lead = r.team.lead.id
+  assert.deepEqual(r.team.lead, { id: lead, name: 'FlyBot Lead', path: 'Chief → FlyBot Lead', created: true })
+  assert.deepEqual(kidsOf(m, lead), ['Dev', 'Test', 'Maintenance', 'Repo'])
+  assert.equal(m.bots.size, before + 5, 'exactly the lead and its four members')
+  assert.deepEqual(f(m, lead, 'lead'), { key: 'project:flybot', label: 'FlyBot' })
+  assert.match(f(m, lead, 'treeRole'), /^Lead of the FlyBot group: coordinates Dev, Test, Maintenance, Repo/)
+  assert.ok(r.team.members.every(x => x.created))
+  assert.match(r.note, /Team: Chief → FlyBot Lead → \{Dev, Test, Maintenance, Repo\}/)
+  assert.match(sp(m, r.team.members[3].id), /Chief → FlyBot Lead → Repo/)
+  assert.match(sp(m, lead), /COORDINATOR[\s\S]*- Dev: writes and fixes the FlyBot code/)
+  assert.deepEqual(m.tree.overview().runs, [], 'a fresh team is a plain create, not a reorganization')
+  // A later Bot of the group goes under its lead (no parent given); one that could lead it stays at the caller.
+  const docs = await child(m, m.root, 'FlyBot Docs', 'Writes the FlyBot docs')
+  assert.equal(docs.created.path, 'Chief → FlyBot Lead → FlyBot Docs')
+  assert.equal(f(m, (await child(m, m.root, 'Translator', 'Translates texts')).created.id, 'parent'), m.root)
+  // Asking again reuses the lead and the members with the same role; only the new role is created.
+  const again = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes and fixes the FlyBot code', 'Release: ships FlyBot versions'] })
+  assert.equal(again.team.lead.id, lead)
+  assert.equal(again.team.lead.reused, true)
+  assert.deepEqual(again.team.members.map(x => [x.name, Boolean(x.reused), Boolean(x.created)]), [['Dev', true, false], ['Release', false, true]])
+  assert.deepEqual(kidsOf(m, m.root), ['Cooking', 'Travel', 'FlyBot Lead', 'Translator'])
+  // Chief's prompt states the placement rules and the automatic safety net.
+  assert.match(sp(m, m.root), /find_bots[\s\S]*create_team[\s\S]*6 or more of your 8 children[\s\S]*automatic reorganization/)
+  // Bad input.
+  assert.match((await m.call(m.root, 'create_team', { team: 'X', members: ['Solo: alone'] })).error, /at least 2 members/)
+  assert.match((await m.call(m.root, 'create_team', { team: 'X', members: 'Dev: x' })).error, /members must be a list/)
+  assert.match((await m.call(m.root, 'create_team', { team: 'X', members: ['Dev', 'Test: t'] })).error, /"Name: role"/)
+  assert.match((await m.call(m.root, 'create_team', { team: 'x'.repeat(36), members: ['A: a', 'B: b'] })).error, /team must be at most 35/)
+  assert.match((await m.call(Object.values(m.tree.snapshot()).find(n => n.name === 'Cooking').id, 'create_team', { team: 'X', members: ['A: a', 'B: b'], parent: lead })).error, /parent must be you or one of your descendants/)
+})
+
+test('#447: a team at a full level takes the slot of a flat member it reuses; the move is journaled and undoable; no room is refused', async () => {
+  const m = await setup({ maxChildren: 3 })
+  for (const name of ['Cooking', 'Travel']) await make(m, m.root, name)
+  const dev = (await child(m, m.root, 'Dev', 'writes and fixes the FlyBot code')).created.id
+  assert.match((await m.call(m.root, 'create_team', { team: 'Garden', members: ['Planter: plants', 'Waterer: waters'] })).error, /limit reached: Chief already has 3 children[\s\S]*regroups this level by role on its own/)
+  const r = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes and fixes the FlyBot code', 'Test: runs the FlyBot test suite'] })
+  assert.equal(r.error, undefined)
+  assert.deepEqual(kidsOf(m, m.root), ['Cooking', 'Travel', 'FlyBot Lead'])
+  assert.deepEqual(kidsOf(m, r.team.lead.id), ['Dev', 'Test'])
+  assert.deepEqual(r.team.members.map(x => [x.name, Boolean(x.reused), Boolean(x.moved)]), [['Dev', true, true], ['Test', false, false]])
+  const run = m.tree.overview().runs[0]
+  assert.equal(run.trigger, 'team')
+  assert.deepEqual(run.summary, ['created FlyBot Lead under Chief to lead the FlyBot group', 'moved Dev from Chief to FlyBot Lead', 'placed new Test under FlyBot Lead'])
+  // Undo puts Dev back once Chief has room again; the lead keeps leading Test.
+  m.removeBot(Object.values(m.tree.snapshot()).find(n => n.name === 'Travel').id)
+  const u = await m.api('tree/undo', { runId: run.id })
+  assert.ok(u.restored.includes('Dev back under Chief'))
+  assert.equal(f(m, dev, 'parent'), m.root)
+  assert.ok(u.kept.some(k => /FlyBot Lead: still leads Test/.test(k)))
+})
+
+test('#447: an orphan (its parent gone) is reattached by role, never left outside for good', async () => {
+  const m = await setup()
+  const team = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Test: runs the FlyBot tests'] })
+  const scoped = m.flybot.scope('flybot-tree')
+  const qa = await scoped.bot.create({ name: 'FlyBot QA', fields: { parent: 'gone', treeRole: 'Checks FlyBot releases' } })
+  const plain = await scoped.bot.create({ name: 'Poet', fields: { parent: 'gone-too', treeRole: 'Writes poems' } })
+  await m.tree.ensureRoot(); await m.tree.settled()
+  assert.equal(f(m, qa, 'parent'), team.team.lead.id, 'into the lead of its group')
+  assert.equal(f(m, plain, 'parent'), m.root, 'else under the root')
+  const lines = m.tree.overview().runs.flatMap(r => r.summary)
+  assert.ok(lines.includes('moved FlyBot QA from a removed Bot to FlyBot Lead'), 'journaled (undoable)')
+  assert.ok(lines.includes('moved Poet from a removed Bot to Chief'))
+  assert.match(sp(m, qa), /Chief → FlyBot Lead → FlyBot QA/)
 })

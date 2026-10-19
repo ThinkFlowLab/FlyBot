@@ -11,6 +11,7 @@ import { checkCreate } from './limits.js'
 import { systemPrompt, withTreeBlock, hasTreeBlock } from './prompt.js'
 import { forestOf } from './forest.js'
 import { createOrganizer } from './organize.js'
+import { createAllocator } from './allocate.js'
 export { forestOf }
 
 export const TREE_KEYS = new Set(['parent', 'treeRole'])
@@ -37,7 +38,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
 
   const promptFor = (id, nodes = snapshot()) => {
     const n = nodes[id]
-    return n && systemPrompt({ name: n.name, role: n.role, trace: traceOf(nodes, id), children: childrenOf(nodes, id), root: n.root, notes: notesFor(id, n) })
+    return n && systemPrompt({ name: n.name, role: n.role, trace: traceOf(nodes, id), children: childrenOf(nodes, id), root: n.root, notes: notesFor(id, n), limits })
   }
   const stamp = at => { const d = new Date(at); const p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` }
   // The Main Bot hears what the last reorganization did (the owner sees it in the tree view); a kept
@@ -48,7 +49,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
       const last = organizer.overview().runs[0]
       if (last && !last.undone && now() - last.at < 7 * 24 * 60 * 60 * 1000) {
         const lines = last.summary ?? []
-        notes.push(`Last automatic tree reorganization (${stamp(last.at)}): ${lines.slice(0, 6).join('; ')}${lines.length > 6 ? `; and ${lines.length - 6} more` : ''}. The owner sees it in the tree view and can undo it there; tell them what moved if they ask about the team.`)
+        notes.push(`Last ${last.trigger === 'team' ? '' : 'automatic '}tree reorganization (${stamp(last.at)}): ${lines.slice(0, 6).join('; ')}${lines.length > 6 ? `; and ${lines.length - 6} more` : ''}. The owner sees it in the tree view and can undo it there; tell them what moved if they ask about the team.`)
       }
     }
     const merged = fb.getField(id, 'mergedFrom')
@@ -66,6 +67,8 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   const refreshAll = () => { const nodes = snapshot(); for (const id of Object.keys(nodes)) refreshPrompt(id, nodes) }
   const findRootId = () => { const nodes = snapshot(); return Object.values(nodes).find(n => n.root)?.id ?? Object.values(nodes).find(n => n.parent === null)?.id }
   const organizer = createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, warn, refreshAll: () => refreshAll(), writeBlock: (id, block) => writeBlock(id, block), findRootId, now, classify, tidy })
+  // Forward allocation (#447) on the organizer's shared primitives: find_bots, reuse, parent?, teams.
+  const allocator = createAllocator({ fb, limits, snapshot, childrenOf, depthOf, traceOf, shared: organizer.shared, createUnder: (parentId, name, role) => createChildNow(parentId, name, role), withParentLock: (id, fn) => withParentLock(id, fn), refreshAll: () => refreshAll(), classify })
 
   // ---------------------------------------------------------------- root
   /** The Main Bot (Chief): config.rootBotId if it exists, else the Main Bot named 'Chief', else the first Main Bot. */
@@ -157,7 +160,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     return rootTask
   }
   async function createRoot() {
-    const prompt = systemPrompt({ name: rootName, role: ROOT_LABEL, trace: rootName, children: [], root: true })
+    const prompt = systemPrompt({ name: rootName, role: ROOT_LABEL, trace: rootName, children: [], root: true, limits })
     return fb.createBot({ name: rootName, systemPrompt: withTreeBlock('', prompt), fields: { parent: null, treeRole: ROOT_ROLE } })
   }
 
@@ -173,7 +176,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     return run
   }
 
-  /** Creates a child under parentId (the CALLER; the tool never takes a parent argument). */
+  /** Creates a child directly under parentId (limits checked there, per-parent lock). The tool goes through allocator.createChild (reuse, parent?). */
   function createChild(parentId, name, roleDescription) {
     return withParentLock(parentId, () => createChildNow(parentId, name, roleDescription))
   }
@@ -236,5 +239,6 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn) }
 
   const { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, idle: settled, repairArchiveNames } = organizer
-  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
+  const { findBots, createChild: allocateChild, createTeam } = allocator
+  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
 }
