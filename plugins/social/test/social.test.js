@@ -4150,6 +4150,12 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
     ;(node.children ?? []).forEach(walk)
   }
   walk(plugin.BotSocialDetails({ bot: { name: 'hsliu', remote: { handle: '@hsliu.bot', home: '@hsliu.home', homeName: 'hsliu' } } }))
+  // #406: for an own Bot the host's titled card says Sharing; the plugin draws no second title.
+  const before = all.length
+  walk(plugin.BotSocialDetails({ bot: { id: 'bot-writer', name: 'Writer' } }))
+  const own = all.splice(before)
+  assert.ok(own.some(n => n.props['data-flybot'] === 'invite-to-bot'))
+  assert.ok(!own.some(n => n.children.includes('Sharing')))
   const remove = all.find(n => n.props['data-flybot'] === 'remove-friend-bot')
   assert.ok(remove)
   assert.equal(remove.props['aria-label'], 'Remove this Bot')
@@ -7173,4 +7179,28 @@ test('#404: the paused notice has an Extend button and its card only Approve / R
   assert.ok(card.some(n => n.children.join('') === 'Extend this chat by 4 turns'))
   assert.deepEqual(card.filter(n => n.type === 'button').map(n => n.children.join('')), ['Approve', 'Reject'])
   assert.equal(card.some(n => n.type === 'input' || n.type === 'textarea' || n.type === 'form'), false, 'no typed code or answer')
+})
+
+test('#417: a reply that left through Auto-send for that pair is marked Auto-sent on its turn, with no card and no wait', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const turned = await call('flybot/social/auto-send', { botId: 'a', home: '@bob.home', on: true })
+  assert.equal(turned.ok, true, JSON.stringify(turned))
+  const reply = (from, text, turn) => ctx.flybot.bot.send({ from, to: '@coder.bob.home', text, role: 'reply', via: 'auto-reply', meta: { replyTo: `x${turn}`, replyIn: { sessionId: from, turn } } })
+  assert.equal((await reply('a', '8.', 5)).action, 'allow')
+  assert.equal(ctx.flybot.approvals.list().length, 0, 'no card')
+  const view = (await call('state', {})).value
+  const chief = view.bots.find(bot => bot.id === 'a')
+  assert.deepEqual(chief.heldReplies.map(r => [r.status, r.sessionId, r.turn, r.to, r.toOwner]), [['auto', 'a', 5, '@coder.bob.home', 'Bob']])
+  assert.equal(chief.pendingCount, 0)
+  // Another Bot of mine still asks first: Auto-send is per pair.
+  assert.equal((await reply('b', '9.', 2)).action, 'hold')
+  // A Bot's own request (not a reply on a turn) is not marked.
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'ping' })).action, 'allow')
+  assert.equal((await call('state', {})).value.bots.find(bot => bot.id === 'a').heldReplies.length, 1)
 })

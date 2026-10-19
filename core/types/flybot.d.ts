@@ -232,7 +232,8 @@ export interface SendRequest {
  * The first 'deny' or 'hold' ends the chain. A throw counts as deny.
  */
 export type SendVerdict = undefined | null
-  | { action: 'allow'; bypass?: string[] }
+  /** `autoSent`: a hold this middleware would make was skipped by the owner's Auto-send; the chat marks the reply Auto-sent (#417). */
+  | { action: 'allow'; bypass?: string[]; autoSent?: boolean; recipient?: string }
   | { action: 'deny'; reason?: string }
   /** `recipient`: who receives it, as the owner knows them (a person's name); the card names it (#418). */
   | { action: 'hold'; reason?: string; recipient?: string }

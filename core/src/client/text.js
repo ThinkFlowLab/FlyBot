@@ -261,7 +261,7 @@ export function heldReplyOf(bot, sessionId, turn) {
   return found
 }
 export const unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : [])
-  .filter(reply => reply.sessionId === sessionId && reply.status !== 'approved').map(reply => reply.turn)
+  .filter(reply => reply.sessionId === sessionId && reply.status !== 'approved' && reply.status !== 'auto').map(reply => reply.turn)
 
 // `unsentTurns`: turns whose reply is held or was not sent; the preview shows their prompt instead.
 export function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {

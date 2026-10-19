@@ -127,7 +127,10 @@ window.__ModuleLoader__.load({
 .fs-share-request .fs-line{justify-content:flex-end}
 .fs-share-request .fs-btn-primary{flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .fs-invite-new{margin-left:auto}
-.fs-sharing > .fs-label{padding:0 4px;text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
+/* In Bot settings the host's titled Sharing card frames both parts (#406): one card, rows split by a line. */
+.bt-set-card .fs-sharing{gap:0}
+.bt-set-card .fs-sharing > .fs-card{margin:0;padding:10px 12px;border:0;border-radius:0;background:none}
+.bt-set-card .fs-sharing > .fs-card + .fs-card{border-top:.5px solid var(--bt-line,rgba(20,20,20,.08))}
 .fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
 .fs-face-item{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;overflow:hidden}
 .fs-face-row{display:flex;align-items:center;gap:6px;min-width:0;width:100%;padding:2px 0;flex-wrap:nowrap;overflow:hidden}
@@ -1806,8 +1809,8 @@ window.__ModuleLoader__.load({
         return h('div', { 'data-flybot': 'bot-social-details' },
           h(FriendChatSettings, { bot, actions }))
       }
+      // The host draws the Sharing title (#406).
       return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
-        h('div', { className: 'fs-label' }, 'Sharing'),
         h(InviteToBot, { bot }),
         h(ManageAccess, { bot }))
     }

@@ -1,0 +1,1 @@
+A Bot's reply that went out on its own because Auto-send is on for that pair now says **Auto-sent to …** under its bubble, so you can see in the chat that it left without your approval (part of [#417](https://github.com/ThinkFlowLab/FlyBot/issues/417)).

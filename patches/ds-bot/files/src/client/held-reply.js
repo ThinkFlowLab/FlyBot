@@ -49,7 +49,7 @@ export function HeldReplyActions({ held, actions }) {
   if (!waiting) {
     const failed = held.status === 'failed'
     return h('div', { className: 'bt-held-note', 'data-state': held.status, title: failed && held.error ? held.error : undefined },
-      h('span', null, held.status === 'approved' ? t('Sent to {to}', { to: held.toName }) : failed ? t('Not sent: delivery failed') : t('Not sent')),
+      h('span', null, held.status === 'approved' ? t('Sent to {to}', { to: held.toName }) : held.status === 'auto' ? t('Auto-sent to {to}', { to: held.toName }) : failed ? t('Not sent: delivery failed') : t('Not sent')),
       failed ? h('button', { type: 'button', className: 'bt-held-retry', disabled: busy, onClick: () => decide('retry') }, t('Retry')) : null,
       error ? h('span', { className: 'bt-flybot-approval-error', role: 'alert' }, error) : null)
   }

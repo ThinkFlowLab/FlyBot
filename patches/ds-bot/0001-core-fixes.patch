@@ -283,7 +283,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,65 @@ const ZH = {
+@@ -41,22 +41,66 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -332,6 +332,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Waiting for approval': '等待批准',
 +  'Not sent': '未发出',
 +  'Sent to {to}': '已发给 {to}',
++  'Auto-sent to {to}': '已自动发给 {to}',
 +  'Not sent: delivery failed': '未发出：发送失败',
 +  '{from} → {to}': '{from} → {to}',
 +  '+{count} more': '另有 {count} 条',
@@ -566,6 +567,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Open updates': '打开更新',
  
    // Command palette
+@@ -390,6 +390,7 @@ const ZH = {
+   Reply: '回复',
+   'More message actions': '更多操作',
+   More: '更多',
++  Sharing: '分享',
+   Reactions: '表情',
+   'Message actions': '消息操作',
+   Download: '下载',
 @@ -403,6 +403,9 @@ const ZH = {
    'Replies from': '群聊回复：',
    'Reply from': '收到回复：',
@@ -726,6 +735,15 @@ diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 --- a/src/client/model-menu.js
 +++ b/src/client/model-menu.js
+@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
+ import { currentPart } from './text.js'
+ import { CheckIcon, SlidersIcon } from './icons.js'
+ import { BotMark } from './mark.js'
+-import { openHarnessOnboarding, openHarnessSettings } from './sidebar.js'
++import { openHarnessModels, openHarnessOnboarding } from './sidebar.js'
+ import { SPRING_POP, SPRING_SHAPE, spring, useLinger } from './motion.js'
+ import { t } from './i18n.js'
+ 
 @@ -139,6 +139,8 @@ export function useAnchoredMenu() {
  // levels of the shown model when it has them.
  // `onPick`/`onPickEffort` replace saving to the Bot, for a Bot that does not exist yet.
@@ -735,6 +753,15 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    const { isOpen, shownPlace, leaving, button, menu, open, close } = useAnchoredMenu()
    const shown = modelOf(bot, roster)
    const current = bot.model ?? bot.appliedModel
+@@ -184,7 +184,7 @@ export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onP
+         : h('div', { className: 'bt-model-none' }, t('No models are set up in DeepSeek Harness yet.')),
+       effortRows(reasoning).length > 0 ? h(EffortRows, { reasoning, current: picked, onPick: pickEffort }) : null,
+       h('div', { className: 'bt-menu-sep', role: 'separator' }),
+-      h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); openHarnessSettings() } }, h(SlidersIcon), h('span', { className: 'bt-menu-label' }, t('Models and providers…')))), document.body) : null)
++      h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); openHarnessModels() } }, h(SlidersIcon), h('span', { className: 'bt-menu-label' }, t('Models and providers…')))), document.body) : null)
+ }
+ 
+ // The card a Bot's chat opens on while the Bot has no model, or has one that is no
 @@ -197,6 +197,10 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
    const shown = Boolean(bot) && currentPart(bot) === sessionId && roster.ready
    useEffect(() => { if (shown) void actions.refreshModels?.() }, [shown, sessionId])
@@ -746,6 +773,15 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    const models = roster.models ?? []
    const lost = bot.model ? !models.some(model => model.ref === bot.model) : false
    // An unknown catalog (none listed) cannot tell a lost model from a slow provider.
+@@ -225,7 +225,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
+             title: model.ref === roster.defaultModel ? `${model.ref} · ${t('Harness default')}` : model.ref,
+             onClick: () => pick(model.ref),
+           }, model.name, busy === model.ref ? h('span', { className: 'bt-model-spin', 'aria-label': t('Saving…') }) : null))))),
+-        h('button', { key: 'manage', type: 'button', className: 'bt-model-chip bt-model-chip-quiet', onClick: openHarnessSettings }, h(SlidersIcon), t('Manage models')),
++        h('button', { key: 'manage', type: 'button', className: 'bt-model-chip bt-model-chip-quiet', onClick: openHarnessModels }, h(SlidersIcon), t('Manage models')),
+       ]
+   return h('div', { className: 'bt-model-dock' },
+     h('div', { className: 'bt-astack', 'data-lead': '' },
 @@ -237,6 +237,15 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
      error ? h('div', { className: 'bt-secret-error bt-model-error', role: 'alert' }, error) : null)
  }
@@ -762,7 +798,12 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  // Ways to get a first model. The DeepSeek sign-in exists only where the shell carries
  // its account plugin (the Desktop); the API key and custom models use the shell's
  // own editors.
-@@ -248,6 +248,53 @@ function setupChoices(actions) {
+@@ -244,10 +244,57 @@ function setupChoices(actions) {
+   return [
+     actions.canSignIn?.() ? [t('Sign in to DeepSeek'), () => actions.signIn()] : null,
+     [t('Enter a DeepSeek API key'), () => openHarnessOnboarding('deepseek-official')],
+-    [t('Open settings to set up a custom model'), openHarnessSettings],
++    [t('Open settings to set up a custom model'), openHarnessModels],
    ].filter(Boolean)
  }
  
@@ -779,7 +820,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 +// choices as a Bot with no model yet; any other or unnamed route opens the model settings.
 +export function modelKeyChoices(actions, route) {
 +  if (/^deepseek/i.test(route)) return setupChoices(actions)
-+  return [[t('Manage models'), openHarnessSettings]]
++  return [[t('Manage models'), openHarnessModels]]
 +}
 +
 +// DSH's terminal turn error, redrawn so a missing model credential has its fix right
@@ -997,7 +1038,7 @@ diff --git a/src/client/text.js b/src/client/text.js
 +  return found
 +}
 +export const unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : [])
-+  .filter(reply => reply.sessionId === sessionId && reply.status !== 'approved').map(reply => reply.turn)
++  .filter(reply => reply.sessionId === sessionId && reply.status !== 'approved' && reply.status !== 'auto').map(reply => reply.turn)
 +
 +// `unsentTurns`: turns whose reply is held or was not sent; the preview shows their prompt instead.
 +export function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {

@@ -41,7 +41,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,21 +78,64 @@ var ZH = {
+@@ -78,21 +78,65 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -89,6 +89,7 @@ diff --git a/client.js b/client.js
 +  "Waiting for approval": "等待批准",
 +  "Not sent": "未发出",
 +  "Sent to {to}": "已发给 {to}",
++  "Auto-sent to {to}": "已自动发给 {to}",
 +  "Not sent: delivery failed": "未发出：发送失败",
 +  "{from} → {to}": "{from} → {to}",
 +  "+{count} more": "另有 {count} 条",
@@ -323,6 +324,14 @@ diff --git a/client.js b/client.js
    "Open updates": "打开更新",
    // Command palette
    Messages: "消息",
+@@ -446,6 +446,7 @@ var ZH = {
+   Reply: "回复",
+   "More message actions": "更多操作",
+   More: "更多",
++  Sharing: "分享",
+   Reactions: "表情",
+   "Message actions": "消息操作",
+   Download: "下载",
 @@ -459,6 +459,9 @@ var ZH = {
    "Replies from": "群聊回复：",
    "Reply from": "收到回复：",
@@ -927,7 +936,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,162 +1242,507 @@ function maskOf(shape) {
+@@ -1242,162 +1242,508 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1409,14 +1418,15 @@ diff --git a/client.js b/client.js
 +    (0, import_react2.createElement)(Safe, { entry, props: { actions, call: call2 } })
 +  )));
 +}
-+function FlyBotDetails({ bot, roster, actions }) {
++function FlyBotDetails({ bot, roster, actions, wrap }) {
 +  const entries2 = useSlot("flybot.bot.details");
 +  if (entries2.length === 0) return null;
-+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
++  const list = entries2.map((entry) => (0, import_react2.createElement)(
 +    "div",
 +    { key: entry.id, className: "bt-flybot-details", "data-flybot": entry.id },
 +    (0, import_react2.createElement)(Safe, { entry, props: { bot, roster, actions, call: call2 } })
-+  )));
++  ));
++  return wrap ? wrap(list) : (0, import_react2.createElement)(import_react2.Fragment, null, list);
 +}
 +var POLL_MS = 5e3;
 +var POINTER_DELAY_MS = 1200;
@@ -1576,10 +1586,13 @@ diff --git a/client.js b/client.js
  
  // src/shared/mentions.js
  var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
-@@ -1445,6 +1445,27 @@ function mentionSpans(text, bots, { references = [] } = {}) {
+@@ -1443,7 +1443,28 @@ function mentionSpans(text, bots, { references = [] } = {}) {
+     spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
+     at = end - 1;
    }
-   return spans;
- }
+-  return spans;
++  return spans;
++}
 +function unmatchedMentions(text, bots, { references = [] } = {}) {
 +  const value = String(text ?? "");
 +  const skip = [
@@ -1600,10 +1613,9 @@ diff --git a/client.js b/client.js
 +    if (word) missing.push(`@${word}`);
 +  }
 +  return missing;
-+}
+ }
  
  // src/client/text.js
- var MENTION_ORIGIN = "https://bots.local/";
 @@ -1463,6 +1463,19 @@ function mentionTarget(event) {
    const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
    return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
@@ -1685,7 +1697,7 @@ diff --git a/client.js b/client.js
 +  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply;
 +  return found;
 +}
-+var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved").map((reply) => reply.turn);
++var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
 +function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
    const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
    if (!Array.isArray(outline)) return "";
@@ -2134,6 +2146,16 @@ diff --git a/client.js b/client.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
+@@ -2679,7 +2679,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
+ @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
+ [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
+-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
++[data-composer-card]:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
++[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 55%,transparent)!important}
+ [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
+ [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
+ [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
 @@ -2691,6 +2691,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
  [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
@@ -2151,13 +2173,10 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
-@@ -2852,229 +2852,211 @@ function installCompiledStyles(text, tag) {
-     document.removeEventListener("load", onLoad, true);
-     clearTimeout(timer);
-     style.remove();
--  };
--}
--
+@@ -2855,226 +2855,208 @@ function installCompiledStyles(text, tag) {
+   };
+ }
+ 
 -// src/client/mark.js
 -var import_react2 = require("react");
 -var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -2258,22 +2277,6 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
-+  };
- }
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
-+
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -2305,13 +2308,19 @@ diff --git a/client.js b/client.js
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
+-  );
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2321,9 +2330,7 @@ diff --git a/client.js b/client.js
 +    if (!owner || seen.has(key)) continue;
 +    seen.add(key);
 +    out.push(owner);
-   }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
++  }
 +  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 +  return out.slice(0, 3);
 +}
@@ -2348,18 +2355,13 @@ diff --git a/client.js b/client.js
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
  }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2387,28 +2389,24 @@ diff --git a/client.js b/client.js
 +      isChief: bot.remote.isChief
 +    });
    }
--  const seats = clusterSeats(Math.min(people.length, 4), size);
--  const overflow = people.length > 4 ? people.length - 3 : 0;
--  const gap = size / 14;
--  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-cluster", style: { width: size, height: size } },
--    seats.map(([x, y, s], index) => {
--      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
--      const style = { left: x, top: y, width: s, height: s };
--      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
--      if (overflow > 0 && index === 3) {
--        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
--      }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
--    })
--  );
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
-+}
+ }
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2438,7 +2436,25 @@ diff --git a/client.js b/client.js
 +    link.rel = "icon";
 +    link.type = "image/svg+xml";
 +    document.head.appendChild(link);
-+  }
+   }
+-  const seats = clusterSeats(Math.min(people.length, 4), size);
+-  const overflow = people.length > 4 ? people.length - 3 : 0;
+-  const gap = size / 14;
+-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-cluster", style: { width: size, height: size } },
+-    seats.map(([x, y, s], index) => {
+-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+-      const style = { left: x, top: y, width: s, height: s };
+-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+-      if (overflow > 0 && index === 3) {
+-        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+-      }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+-    })
+-  );
 +  link.href = href;
 +  const retitle = () => {
 +    const next = brandTitle(document.title);
@@ -3296,7 +3312,7 @@ diff --git a/client.js b/client.js
 +    return (0, import_react7.createElement)(
 +      "div",
 +      { className: "bt-held-note", "data-state": held.status, title: failed && held.error ? held.error : void 0 },
-+      (0, import_react7.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
++      (0, import_react7.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : held.status === "auto" ? t("Auto-sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
 +      failed ? (0, import_react7.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
 +      error ? (0, import_react7.createElement)("span", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
 +    );
@@ -5016,6 +5032,25 @@ diff --git a/client.js b/client.js
    );
  }
  var openShellSettings = null;
+@@ -5259,6 +5259,18 @@ function openHarnessOnboarding(id) {
+     else openHarnessSettings();
+   });
+ }
++var MODELS_STEP_ID = "flybot-models";
++var MODELS_STEP_ORDER = 1e3;
++function ModelsSettingsStep({ explicit, complete, openSection }) {
++  (0, import_react10.useLayoutEffect)(() => {
++    if (explicit) openSection("models");
++    complete();
++  }, []);
++  return null;
++}
++function openHarnessModels() {
++  openHarnessOnboarding(MODELS_STEP_ID);
++}
+ function openThroughMenu(trigger) {
+   const before = new Set(document.querySelectorAll('[role="menu"]'));
+   trigger.click();
 @@ -5288,32 +5288,32 @@ function pressSettingsShortcut() {
    }));
  }
@@ -6105,8 +6140,9 @@ diff --git a/client.js b/client.js
 +      (0, import_react15.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
 +      (0, import_react15.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
          close();
-         openHarnessSettings();
+-        openHarnessSettings();
 -      } }, (0, import_react13.createElement)(SlidersIcon), (0, import_react13.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
++        openHarnessModels();
 +      } }, (0, import_react15.createElement)(SlidersIcon), (0, import_react15.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
      ), document.body) : null
    );
@@ -6145,7 +6181,7 @@ diff --git a/client.js b/client.js
          key: model.ref,
          type: "button",
          className: "bt-model-chip",
-@@ -6584,29 +6584,49 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
+@@ -6584,50 +6584,109 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
          "aria-label": `${model.name} · ${provider}`,
          title: model.ref === roster.defaultModel ? `${model.ref} · ${t("Harness default")}` : model.ref,
          onClick: () => pick2(model.ref)
@@ -6153,7 +6189,7 @@ diff --git a/client.js b/client.js
 +      }, model.name, busy === model.ref ? (0, import_react15.createElement)("span", { className: "bt-model-spin", "aria-label": t("Saving…") }) : null)))
      )),
 -    (0, import_react13.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessSettings }, (0, import_react13.createElement)(SlidersIcon), t("Manage models"))
-+    (0, import_react15.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessSettings }, (0, import_react15.createElement)(SlidersIcon), t("Manage models"))
++    (0, import_react15.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessModels }, (0, import_react15.createElement)(SlidersIcon), t("Manage models"))
    ];
 -  return (0, import_react13.createElement)(
 +  return (0, import_react15.createElement)(
@@ -6205,8 +6241,11 @@ diff --git a/client.js b/client.js
    );
  }
  function setupChoices(actions) {
-@@ -6616,18 +6616,57 @@ function setupChoices(actions) {
-     [t("Open settings to set up a custom model"), openHarnessSettings]
+   return [
+     actions.canSignIn?.() ? [t("Sign in to DeepSeek"), () => actions.signIn()] : null,
+     [t("Enter a DeepSeek API key"), () => openHarnessOnboarding("deepseek-official")],
+-    [t("Open settings to set up a custom model"), openHarnessSettings]
++    [t("Open settings to set up a custom model"), openHarnessModels]
    ].filter(Boolean);
  }
 +function missingModelKey(message) {
@@ -6216,7 +6255,7 @@ diff --git a/client.js b/client.js
 +}
 +function modelKeyChoices(actions, route) {
 +  if (/^deepseek/i.test(route)) return setupChoices(actions);
-+  return [[t("Manage models"), openHarnessSettings]];
++  return [[t("Manage models"), openHarnessModels]];
 +}
 +function TurnErrorCell({ node, t: chatT, actions }) {
 +  const data = node?.data ?? {};
@@ -7734,7 +7773,7 @@ diff --git a/client.js b/client.js
    const isMainBot = isMainOf(roster, bot.id);
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
    const isTile = roster.mainBotId === bot.id;
-@@ -8011,112 +8011,114 @@ function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -8011,112 +8011,115 @@ function BotSettingsForm({ bot, roster, actions, run }) {
      if (confirming) void run(actions.deleteBot(bot.id));
      else setConfirming(true);
    };
@@ -7831,6 +7870,8 @@ diff --git a/client.js b/client.js
 -    roster.memory === false ? null : (0, import_react18.createElement)(MemoryCard, { bot, actions }),
 -    (0, import_react18.createElement)(BotSchedules, { bot, roster, actions }),
 -    (0, import_react18.createElement)(
++    // Sharing sits near the top with a title like Profile and Model, not at the end of the page (#406).
++    (0, import_react22.createElement)(FlyBotDetails, { bot, roster, actions, wrap: (children) => (0, import_react22.createElement)(Card, { title: t("Sharing") }, children) }),
 +    (0, import_react22.createElement)(BotCapabilitiesCard, { bot, roster, actions, run, Card, SwitchRow }),
 +    (0, import_react22.createElement)(BotConnectorsCard, { bot, roster, actions, run, Card, SwitchRow }),
 +    roster.memory === false ? null : (0, import_react22.createElement)(MemoryCard, { bot, actions }),
@@ -7866,7 +7907,6 @@ diff --git a/client.js b/client.js
 +      isMainBot ? null : (0, import_react22.createElement)(SwitchRow, { label: t("Hide from sidebar"), hint: t("Search still finds it."), on: bot.hidden === true, onChange: (hidden) => run(actions.setFlags(bot.id, { hidden })) })
      ),
 -    (0, import_react18.createElement)(
-+    (0, import_react22.createElement)(FlyBotDetails, { bot, roster, actions }),
 +    (0, import_react22.createElement)(
        Card,
 -      { title: t("Manage") },
@@ -8944,8 +8984,9 @@ diff --git a/client.js b/client.js
 -    (0, import_react23.createElement)(
 +    (0, import_react27.createElement)(
        Card,
-       { title: t("Manage") },
+-      { title: t("Manage") },
 -      (0, import_react23.createElement)(
++      { title: t("More") },
 +      (0, import_react27.createElement)(
          "button",
          { type: "button", className: "bt-set-row bt-bs-row bt-bs-danger", "data-confirm": confirming || void 0, onClick: remove },
@@ -12384,7 +12425,7 @@ diff --git a/client.js b/client.js
      installCompiledStyles(MEMBER_CSS, "members"),
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
-@@ -14032,14 +14032,15 @@ function apply(ctx) {
+@@ -14032,14 +14032,17 @@ function apply(ctx) {
      shadow("sidebar.brand.mark", { priority: -10 }, BrandMark),
      shadow("sidebar.brand.name", { priority: -10 }, BrandName),
      shadow("sidebar.footer.action", { id: "bot-account", order: -200, inject: face }, FooterAccount),
@@ -12394,6 +12435,8 @@ diff --git a/client.js b/client.js
      // At priority -10 the whale wins the seat over a shell account plugin's own
      // launcher (the Desktop's "··· More"), which comes back in Agent mode.
      shadow("settings.launcher", { priority: -10, inject: face }, AccountLauncher),
++    // Opened on purpose, it lands Settings on the Models page (#407).
++    shadow("settings.onboarding", { id: MODELS_STEP_ID, order: MODELS_STEP_ORDER }, ModelsSettingsStep),
      shadow("shell.overlay", { id: "bot", order: 50, inject: face }, Overlays),
      shadow("shell.overlay", { id: "bot-signin", order: 55, inject: face }, DeepSeekSignIn),
 -    shadow("shell.overlay", { id: "bot-toast", order: 60, inject: face }, ErrorToast)

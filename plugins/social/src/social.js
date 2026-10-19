@@ -1223,7 +1223,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // Adding a friend's Bot to a group (or a line in that group) is the owner's consent
       // to share that room. The invited owner's Bot replies still go through the hold.
       if (msg.via === 'room' || msg.via === 'room-share') return undefined
-      if (approvalFor(msg.from, bot.home) === 'auto') return undefined
+      // Auto-send on for this pair (#417): it leaves without a card, and the chat marks it Auto-sent.
+      if (approvalFor(msg.from, bot.home) === 'auto') return { action: 'allow', autoSent: true, ...named }
       return { action: 'hold', reason: `messages to ${bot.home}'s Bots need your approval`, ...named }
     },
   }))
