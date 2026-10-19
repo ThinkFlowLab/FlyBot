@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf } from '../src/client/characters.js'
+import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf, lookKey, lookAvoidingLocals } from '../src/client/characters.js'
 import { indexRoster } from '../src/client/sources.js'
 
 const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
@@ -67,4 +67,29 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
   // A group chat's entries open its own settings the same way.
   assert.match(text('context-menu.js'), /\[t\('Group settings'\), GearIcon, \(\) => actions\.openSettings\('groups', room\.id\)\]/)
   assert.ok(!text('mark.js').includes('WhaleLogo'))
+})
+
+
+test('a friend\'s Bot fallback look never matches one of my own Bots exactly (#384)', () => {
+  const mine = { id: 'chief', name: 'Chief', color: 'deepseek', avatar: { shape: 'whale' } }
+  // Force a remote seed that would otherwise collide: same shape+color as mine via stored fields cleared.
+  const friend = { id: 'remote-1', name: 'Chief', remote: { handle: '@chief.friend.home' }, color: 'deepseek', avatar: { shape: 'whale' } }
+  // Stored shape is the friend's real look — leave it (sync already happened).
+  assert.deepEqual(lookAvoidingLocals(friend, [mine]), lookOf(friend))
+  // Seeded fallback that collides: no avatar.shape, color matches MAIN whale via explicit color + lucky seed.
+  // Build a remote whose lookOf equals mine by copying shape/color through seed collision is hard;
+  // instead pass a bot whose lookOf we control by setting color and relying on lookAvoidingLocals
+  // only when avatar has no shape — craft locals that take the remote's seeded key.
+  const seeded = { id: 'r2', name: 'Helper', remote: { handle: '@helper.other.home' } }
+  const seededLook = lookOf(seeded)
+  const twin = { id: 'local-twin', name: 'Twin', color: seededLook.color, avatar: { shape: seededLook.shape } }
+  const avoided = lookAvoidingLocals(seeded, [twin])
+  assert.notEqual(lookKey(avoided), lookKey(lookOf(twin)), 'fallback must differ from the local twin')
+  assert.equal(avoided.color, seededLook.color, 'color stays; only shape steps')
+  assert.notEqual(avoided.shape, 'whale', 'never steal the Main Bot whale')
+  // No locals: unchanged.
+  assert.deepEqual(lookAvoidingLocals(seeded, []), seededLook)
+  // Image / emoji keep the published look even if a local matches.
+  const pictured = { ...seeded, avatar: { image: 'https://example.test/a.png' } }
+  assert.equal(lookAvoidingLocals(pictured, [twin]).image, 'https://example.test/a.png')
 })

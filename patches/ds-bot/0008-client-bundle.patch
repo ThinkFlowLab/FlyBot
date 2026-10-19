@@ -797,7 +797,7 @@ diff --git a/client.js b/client.js
  // src/client/inks.js
  var INKS = {
    deepseek: ["#4D6BFE", "#6A84FF"],
-@@ -1177,12 +1177,27 @@ function defaultShape(id) {
+@@ -1177,15 +1177,52 @@ function defaultShape(id) {
    value = Math.imul(value ^ value >>> 13, 3266489909);
    return DEFAULT_SHAPES[((value ^ value >>> 16) >>> 0) % DEFAULT_SHAPES.length];
  }
@@ -827,6 +827,31 @@ diff --git a/client.js b/client.js
      color: colorOf(bot)
    };
  }
++function lookKey(look) {
++  if (look?.image) return `image:${String(look.image).slice(0, 96)}`;
++  if (look?.emoji) return `emoji:${look.emoji}`;
++  return `shape:${shapeId(look?.shape)}:${look?.color ?? ""}`;
++}
++function lookAvoidingLocals(bot, localBots = []) {
++  const look = lookOf(bot);
++  const avatar = bot?.avatar ?? {};
++  if (avatar.image || typeof avatar.emoji === "string" && avatar.emoji || hasShape(avatar.shape)) return look;
++  const locals = (Array.isArray(localBots) ? localBots : []).filter((item) => item && !item.remote);
++  if (locals.length === 0) return look;
++  const taken = new Set(locals.map((item) => lookKey(lookOf(item))));
++  if (!taken.has(lookKey(look))) return look;
++  const shapes = [...DEFAULT_SHAPES, ...PICKER_SHAPES.filter((id) => id !== "whale" && !DEFAULT_SHAPES.includes(id))];
++  let index = Math.max(0, shapes.indexOf(shapeId(look.shape)));
++  for (let n = 0; n < shapes.length; n += 1) {
++    index = (index + 1) % shapes.length;
++    const candidate = { ...look, shape: shapes[index] };
++    if (!taken.has(lookKey(candidate))) return candidate;
++  }
++  return look;
++}
+ var SHAPES = {};
+ for (const [id, character] of Object.entries(CHARACTERS)) {
+   const layers = [
 @@ -1206,8 +1206,8 @@ function bodyOf(def, paint, flat = false) {
      return "";
    }
@@ -838,10 +863,15 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,6 +1242,491 @@ function maskOf(shape) {
- }
- var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
- 
+@@ -1238,9 +1238,496 @@ function maskOf(shape) {
+     mask = svgUrl(`<mask id="e" ${maskBox(def.size)}>${holes(def, def.eyes.map(eyeMarkup).join("").replaceAll('class="bt-eye"', 'fill="#000"'))}</mask>${def.wrap ? `<g transform="${def.wrap}">${body}</g>` : body}`, def.size);
+     maskCache.set(shape, mask);
+   }
+-  return mask;
++  return mask;
++}
++var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
++
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -961,14 +991,15 @@ diff --git a/client.js b/client.js
 +  }, [state]);
 +  return settled;
 +}
-+function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
++function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false, locals }) {
 +  const settled = useSettled(state);
 +  if (bot === void 0) return (0, import_react.createElement)(BotMark, { size });
++  const look = bot.remote ? lookAvoidingLocals(bot, locals) : void 0;
 +  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
 +  return (0, import_react.createElement)(
 +    "span",
 +    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
-+    (0, import_react.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
++    (0, import_react.createElement)(BotMark, { bot, look, size, state: settled ? "done" : state, live, gaze, pokeable }),
 +    badgeKind === "working" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
 +    badgeKind === "alert" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
 +    badgeKind === "admin" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react.createElement)(StarIcon)) : null,
@@ -1021,7 +1052,8 @@ diff --git a/client.js b/client.js
 +}
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people = roomAvatarPeople(room2, roster);
-+  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
++  const locals = (roster?.bots ?? []).filter((item) => item && !item.remote);
++  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, look: bot.remote ? lookAvoidingLocals(bot, locals) : void 0, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
 +  if (people.length === 0) return (0, import_react.createElement)(BotMark, { size });
 +  if (size <= 20 && people.length > 1) {
 +    return (0, import_react.createElement)(
@@ -1300,7 +1332,8 @@ diff --git a/client.js b/client.js
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
 +    ) : null
 +  );
-+}
+ }
+-var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 +var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 +var FLYBOT_CSS = `
 +.bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
@@ -1326,10 +1359,9 @@ diff --git a/client.js b/client.js
 +.bt-flybot-pointer-note { opacity: .65; white-space: nowrap; }
 +.bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 +`;
-+
+ 
  // src/client/sources.js
  function createSource(initial) {
-   let value = initial;
 @@ -1262,7 +1262,7 @@ function createSource(initial) {
      }
    };
@@ -3927,7 +3959,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react8.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
 -      (0, import_react8.createElement)("span", { className: "bt-tile-name" }, bot.name),
 -      bot.role ? (0, import_react8.createElement)("span", { className: "bt-chip" }, bot.role) : null
-+      (0, import_react9.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
++      (0, import_react9.createElement)(BotAvatar, { bot, size: 60, state, main: true, locals: roster.bots }),
 +      (0, import_react9.createElement)("span", { className: "bt-tile-name" }, shown),
 +      bot.role ? (0, import_react9.createElement)("span", { className: "bt-chip" }, bot.role) : null
      ));
@@ -3950,7 +3982,7 @@ diff --git a/client.js b/client.js
 -    (0, import_react8.createElement)(BotAvatar, { bot, size: 36, state, main }),
 -    pinned && !wide ? (0, import_react8.createElement)(PinMark) : null,
 -    wide ? (0, import_react8.createElement)(
-+    (0, import_react9.createElement)(BotAvatar, { bot, size: 36, state, main }),
++    (0, import_react9.createElement)(BotAvatar, { bot, size: 36, state, main, locals: roster.bots }),
 +    pinned && !wide ? (0, import_react9.createElement)(PinMark) : null,
 +    wide ? (0, import_react9.createElement)(
        "span",
@@ -4619,15 +4651,17 @@ diff --git a/client.js b/client.js
  }
  var SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -5491,18 +5491,26 @@ var SIDEBAR_CSS = `
+@@ -5491,18 +5491,28 @@ var SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
 +
-+.bt-row-wrap{display:flex;align-items:center;width:100%;min-width:0}
-+.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0}
++.bt-row-wrap{position:relative;display:flex;align-items:center;width:100%;min-width:0}
++.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0;width:100%}
 +.bt-tree-item>.bt-row-wrap{flex:1 1 auto;width:auto;min-width:0}
-+.bt-row-settings{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-2px 8px -2px 2px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
++/* Gear sits over the row so hover/selected fill the same full-width band as a plain row (#384). */
++.bt-row-settings{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:1;flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3);cursor:pointer;opacity:0;pointer-events:none;transition:background-color .12s ease,color .12s ease,opacity .12s ease}
++.bt-row-wrap:hover>.bt-row,.bt-row-wrap:focus-within>.bt-row{padding-right:36px}
 +.bt-row-wrap:hover .bt-row-settings,.bt-row-wrap:focus-within .bt-row-settings{opacity:1;pointer-events:auto;color:var(--bt-ink-2);background:var(--bt-hover)}
 +.bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
 +.bt-row-settings svg{width:15px;height:15px}
@@ -4759,7 +4793,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react9.createElement)("span", { className: "bt-pill-name" }, bot?.name ?? room2?.name ?? (title || t("New chat"))),
 -      (0, import_react9.createElement)(MemoryNotice, { shown: memoryNotice }),
 -      (0, import_react9.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react9.createElement)(GoArrow))
-+      bot ? (0, import_react10.createElement)(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== void 0), badge: false }) : room2 ? (0, import_react10.createElement)(RoomAvatar, { room: room2, roster, size: 24 }) : null,
++      bot ? (0, import_react10.createElement)(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== void 0), badge: false, locals: roster.bots }) : room2 ? (0, import_react10.createElement)(RoomAvatar, { room: room2, roster, size: 24 }) : null,
 +      (0, import_react10.createElement)("span", { className: "bt-pill-name" }, name || title || t("New chat")),
 +      (0, import_react10.createElement)(MemoryNotice, { shown: memoryNotice }),
 +      (0, import_react10.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react10.createElement)(GoArrow))

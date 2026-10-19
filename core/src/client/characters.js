@@ -100,6 +100,35 @@ export function lookOf(bot) {
   }
 }
 
+// Fingerprint of a drawn look: shape+color, or a custom image/emoji. Used to keep a friend's
+// fallback avatar from matching one of my own Bots exactly (#384) until real look sync lands.
+export function lookKey(look) {
+  if (look?.image) return `image:${String(look.image).slice(0, 96)}`
+  if (look?.emoji) return `emoji:${look.emoji}`
+  return `shape:${shapeId(look?.shape)}:${look?.color ?? ''}`
+}
+
+// A friend's Bot with no published look: step the seeded shape until it differs from every
+// local Bot's look. A stored image/emoji/shape is left alone (that is the friend's real look).
+export function lookAvoidingLocals(bot, localBots = []) {
+  const look = lookOf(bot)
+  const avatar = bot?.avatar ?? {}
+  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji) || hasShape(avatar.shape)) return look
+  const locals = (Array.isArray(localBots) ? localBots : []).filter(item => item && !item.remote)
+  if (locals.length === 0) return look
+  const taken = new Set(locals.map(item => lookKey(lookOf(item))))
+  if (!taken.has(lookKey(look))) return look
+  // Prefer the friendly defaults, then the rest of the picker; never pick whale (Main Bot's mark).
+  const shapes = [...DEFAULT_SHAPES, ...PICKER_SHAPES.filter(id => id !== 'whale' && !DEFAULT_SHAPES.includes(id))]
+  let index = Math.max(0, shapes.indexOf(shapeId(look.shape)))
+  for (let n = 0; n < shapes.length; n += 1) {
+    index = (index + 1) % shapes.length
+    const candidate = { ...look, shape: shapes[index] }
+    if (!taken.has(lookKey(candidate))) return candidate
+  }
+  return look
+}
+
 // Registered shapes join the characters: `body(paint)` returns SVG markup in a
 // `size` box and `eyes` lists the two capsules.
 export const SHAPES = {}

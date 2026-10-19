@@ -476,9 +476,12 @@ diff --git a/src/client/header.js b/src/client/header.js
    useEffect(() => {
      actions.beginVisit(sessionId)
      return () => actions.endVisit(sessionId)
-@@ -97,7 +97,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+@@ -95,9 +95,9 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+       'aria-label': memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? name }) : t('View conversation details'),
+       onClick: () => (memoryNotice ? actions.openMemory(changed) : actions.toggleDetails(sessionId)),
      },
-     bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
+-    bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
++    bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false, locals: roster.bots })
        : room ? h(RoomAvatar, { room, roster, size: 24 }) : null,
 -    h('span', { className: 'bt-pill-name' }, bot?.name ?? room?.name ?? (title || t('New chat'))),
 +    h('span', { className: 'bt-pill-name' }, name || title || t('New chat')),
