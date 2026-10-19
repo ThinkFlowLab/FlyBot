@@ -3,7 +3,7 @@ FlyBot patch 0005-social-seams on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Genera
 diff --git a/src/client/characters.js b/src/client/characters.js
 --- a/src/client/characters.js
 +++ b/src/client/characters.js
-@@ -63,17 +63,72 @@ export function defaultShape(id) {
+@@ -63,17 +63,91 @@ export function defaultShape(id) {
    return DEFAULT_SHAPES[((value ^ (value >>> 16)) >>> 0) % DEFAULT_SHAPES.length]
  }
  
@@ -47,31 +47,50 @@ diff --git a/src/client/characters.js b/src/client/characters.js
    }
  }
  
-+// Fingerprint of a drawn look: shape+color, or a custom image/emoji. Used to keep a friend's
++// Fingerprints of a drawn look: shape+color, or a custom image/emoji. Used to keep a friend's
 +// fallback avatar from matching one of my own Bots exactly (#384) until real look sync lands.
-+export function lookKey(look) {
-+  if (look?.image) return `image:${String(look.image).slice(0, 96)}`
-+  if (look?.emoji) return `emoji:${look.emoji}`
-+  return `shape:${shapeId(look?.shape)}:${look?.color ?? ''}`
++// A named ink and its rendered hex (light or dark, any case) count as the same color, since
++// Bot Social publishes colors as lowercase hex.
++const colorKeys = (color) => {
++  const value = String(color ?? '')
++  if (Object.hasOwn(INKS, value)) return [value, ...INKS[value].map(hex => hex.toLowerCase())]
++  return [isHex(value) ? value.toLowerCase() : value]
++}
++export function lookKeys(look) {
++  if (look?.image) return [`image:${String(look.image).slice(0, 96)}`]
++  if (look?.emoji) return [`emoji:${look.emoji}`]
++  return colorKeys(look?.color).map(color => `shape:${shapeId(look?.shape)}:${color}`)
++}
++export const lookKey = look => lookKeys(look)[0]
++
++// The roster's own Bots, set whenever the roster is indexed, so every surface that draws a
++// friend's Bot (sidebar, header, palette, details, transcript marks) avoids the same looks.
++let localBots = []
++export function setLocalBots(bots) {
++  localBots = (Array.isArray(bots) ? bots : []).filter(item => item && !item.remote)
 +}
 +
-+// A friend's Bot with no published look: step the seeded shape until it differs from every
-+// local Bot's look. A stored image/emoji/shape is left alone (that is the friend's real look).
-+export function lookAvoidingLocals(bot, localBots = []) {
++// A friend's Bot with no published look: step the seeded shape (then the color) until it
++// differs from every local Bot's look. A stored image/emoji/shape is left alone (that is
++// the friend's real look).
++export function lookAvoidingLocals(bot, locals = localBots) {
 +  const look = lookOf(bot)
 +  const avatar = bot?.avatar ?? {}
 +  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji) || hasShape(avatar.shape)) return look
-+  const locals = (Array.isArray(localBots) ? localBots : []).filter(item => item && !item.remote)
-+  if (locals.length === 0) return look
-+  const taken = new Set(locals.map(item => lookKey(lookOf(item))))
-+  if (!taken.has(lookKey(look))) return look
++  const own = (Array.isArray(locals) ? locals : []).filter(item => item && !item.remote)
++  if (own.length === 0) return look
++  const taken = new Set(own.flatMap(item => lookKeys(lookOf(item))))
++  const free = candidate => !lookKeys(candidate).some(key => taken.has(key))
++  if (free(look)) return look
 +  // Prefer the friendly defaults, then the rest of the picker; never pick whale (Main Bot's mark).
 +  const shapes = [...DEFAULT_SHAPES, ...PICKER_SHAPES.filter(id => id !== 'whale' && !DEFAULT_SHAPES.includes(id))]
-+  let index = Math.max(0, shapes.indexOf(shapeId(look.shape)))
-+  for (let n = 0; n < shapes.length; n += 1) {
-+    index = (index + 1) % shapes.length
-+    const candidate = { ...look, shape: shapes[index] }
-+    if (!taken.has(lookKey(candidate))) return candidate
++  const colors = [look.color, ...DEFAULT_COLORS.filter(color => !colorKeys(color).some(key => colorKeys(look.color).includes(key)))]
++  const first = Math.max(0, shapes.indexOf(shapeId(look.shape)))
++  for (const color of colors) {
++    for (let n = 1; n <= shapes.length; n += 1) {
++      const candidate = { ...look, color, shape: shapes[(first + n) % shapes.length] }
++      if (free(candidate)) return candidate
++    }
 +  }
 +  return look
 +}
@@ -89,10 +108,20 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  import { t } from './i18n.js'
  
 -export { colorOf, lookOf } from './characters.js'
-+export { colorOf, lookOf, lookKey, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
++export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
  
  // -------------------------------------------------------------------------
  // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.
+@@ -47,7 +47,8 @@ function useGaze(ref, enabled) {
+ // of animations.
+ const FIDGETS = ['hop', 'sway', 'stretch', 'look']
+ export function BotMark({ bot, look: given, size = 36, state = 'idle', live = false, gaze = false, pokeable = false, label }) {
+-  const look = given ?? lookOf(bot)
++  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384).
++  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot))
+   const ref = useRef(null)
+   const maskId = useRef('')
+   if (maskId.current === '') maskId.current = `bt-mark-${nextMarkSerial()}`
 @@ -56,7 +56,7 @@ export function BotMark({ bot, look: given, size = 36, state = 'idle', live = fa
    const common = {
      ref,
@@ -129,24 +158,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  export function AdminStar() {
    return h('span', { className: 'bt-admin-star', role: 'img', 'aria-label': t('Admin') }, h(StarIcon, { size: 7 }))
  }
-@@ -104,12 +104,14 @@ function useSettled(state) {
-   return settled
- }
- 
--export function BotAvatar({ bot, size, state = 'idle', main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
-+export function BotAvatar({ bot, size, state = 'idle', main, admin, badge = true, live = true, gaze = false, pokeable = false, locals }) {
-   const settled = useSettled(state)
-   if (bot === undefined) return h(BotMark, { size })
-+  // A friend's Bot never shares the exact fallback avatar of one of my own Bots (#384).
-+  const look = bot.remote ? lookAvoidingLocals(bot, locals) : undefined
-   const badgeKind = !badge ? null : state === 'alert' ? 'alert' : state !== 'idle' ? 'working' : admin ? 'admin' : main ? 'main' : null
-   return h('span', { className: 'bt-mark', style: { width: size, height: size, '--bt-size': `${size}px` } },
--    h(BotMark, { bot, size, state: settled ? 'done' : state, live, gaze, pokeable }),
-+    h(BotMark, { bot, look, size, state: settled ? 'done' : state, live, gaze, pokeable }),
-     badgeKind === 'working' ? h('span', { className: 'bt-badge bt-badge-working', 'aria-label': t('Working'), role: 'img' }) : null,
-     badgeKind === 'alert' ? h('span', { className: 'bt-badge bt-badge-alert', 'aria-label': t('Waiting for your answer'), role: 'img' }, '?') : null,
-     badgeKind === 'admin' ? h('span', { className: 'bt-badge bt-badge-admin', 'aria-label': t('Admin'), role: 'img' }, h(StarIcon)) : null,
-@@ -130,12 +130,45 @@ function clusterSeats(count, frame) {
+@@ -130,10 +130,42 @@ function clusterSeats(count, frame) {
    return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]]
  }
  
@@ -189,13 +201,9 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 -  // A group with one Bot left shows the user beside it.
 -  const people = members.length === 1 ? [members[0], null] : members
 +  const people = roomAvatarPeople(room, roster)
-+  const locals = (roster?.bots ?? []).filter(item => item && !item.remote)
    const seat = (bot, seatSize, key) => (bot
--    ? h(BotMark, { key, bot, size: seatSize })
-+    ? h(BotMark, { key, bot, look: bot.remote ? lookAvoidingLocals(bot, locals) : undefined, size: seatSize })
+     ? h(BotMark, { key, bot, size: seatSize })
      : h('span', { key, className: 'bt-cluster-you', style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } }))
-   if (people.length === 0) return h(BotMark, { size })
-   // Inline sizes have no room for a cluster, so the members line up instead.
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js

@@ -78,7 +78,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       type: 'button', className: 'bt-tile', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
       'data-bot-id': id, title: preview || bot.name, onClick: () => actions.openSession(id), onContextMenu,
     },
-    h(BotAvatar, { bot, size: 60, state, main: true, locals: roster.bots }),
+    h(BotAvatar, { bot, size: 60, state, main: true }),
     h('span', { className: 'bt-tile-name' }, shown),
     bot.role ? h('span', { className: 'bt-chip' }, bot.role) : null))
   }
@@ -88,7 +88,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
     'data-bot-id': id, title: remoteRecord ? shown : wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
   },
-  h(BotAvatar, { bot, size: 36, state, main, locals: roster.bots }),
+  h(BotAvatar, { bot, size: 36, state, main }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
     h('span', { className: 'bt-row-name' },

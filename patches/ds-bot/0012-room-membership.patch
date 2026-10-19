@@ -476,12 +476,9 @@ diff --git a/src/client/header.js b/src/client/header.js
    useEffect(() => {
      actions.beginVisit(sessionId)
      return () => actions.endVisit(sessionId)
-@@ -95,9 +95,9 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
-       'aria-label': memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? name }) : t('View conversation details'),
-       onClick: () => (memoryNotice ? actions.openMemory(changed) : actions.toggleDetails(sessionId)),
+@@ -97,7 +97,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
      },
--    bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
-+    bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false, locals: roster.bots })
+     bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
        : room ? h(RoomAvatar, { room, roster, size: 24 }) : null,
 -    h('span', { className: 'bt-pill-name' }, bot?.name ?? room?.name ?? (title || t('New chat'))),
 +    h('span', { className: 'bt-pill-name' }, name || title || t('New chat')),
@@ -491,6 +488,12 @@ diff --git a/src/client/header.js b/src/client/header.js
 diff --git a/src/client/sources.js b/src/client/sources.js
 --- a/src/client/sources.js
 +++ b/src/client/sources.js
+@@ -1,3 +1,5 @@
++import { setLocalBots } from './characters.js'
++
+ // -------------------------------------------------------------------------
+ // Small observable sources for the inject `hooks` compartment.
+ 
 @@ -16,7 +16,7 @@ export function createSource(initial) {
    }
  }
@@ -500,6 +503,14 @@ diff --git a/src/client/sources.js b/src/client/sources.js
  // Any Main Bot holds the Main Bot powers; `mainBotId`, the first one, is the sidebar tile.
  export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?? []).includes(id)
  
+@@ -24,6 +24,7 @@ export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?
+ // and `sessionId` its current one. Every part id finds the Bot; Session state
+ // (running, unread, turns) is read from the current part, team state from the Bot id.
+ export function indexRoster(value) {
++  setLocalBots(value.bots)
+   const byId = {}
+   for (const bot of value.bots) {
+     for (const id of [...(bot.parts ?? []), bot.sessionId ?? bot.id, bot.id]) byId[id] = bot
 diff --git a/src/host/groups.js b/src/host/groups.js
 --- a/src/host/groups.js
 +++ b/src/host/groups.js

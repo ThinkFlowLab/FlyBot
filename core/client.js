@@ -1696,25 +1696,38 @@ function lookOf(bot) {
     color: colorOf(bot)
   };
 }
-function lookKey(look) {
-  if (look?.image) return `image:${String(look.image).slice(0, 96)}`;
-  if (look?.emoji) return `emoji:${look.emoji}`;
-  return `shape:${shapeId(look?.shape)}:${look?.color ?? ""}`;
+var colorKeys = (color) => {
+  const value = String(color ?? "");
+  if (Object.hasOwn(INKS, value)) return [value, ...INKS[value].map((hex) => hex.toLowerCase())];
+  return [isHex(value) ? value.toLowerCase() : value];
+};
+function lookKeys(look) {
+  if (look?.image) return [`image:${String(look.image).slice(0, 96)}`];
+  if (look?.emoji) return [`emoji:${look.emoji}`];
+  return colorKeys(look?.color).map((color) => `shape:${shapeId(look?.shape)}:${color}`);
 }
-function lookAvoidingLocals(bot, localBots = []) {
+var lookKey = (look) => lookKeys(look)[0];
+var localBots = [];
+function setLocalBots(bots) {
+  localBots = (Array.isArray(bots) ? bots : []).filter((item) => item && !item.remote);
+}
+function lookAvoidingLocals(bot, locals = localBots) {
   const look = lookOf(bot);
   const avatar = bot?.avatar ?? {};
   if (avatar.image || typeof avatar.emoji === "string" && avatar.emoji || hasShape(avatar.shape)) return look;
-  const locals = (Array.isArray(localBots) ? localBots : []).filter((item) => item && !item.remote);
-  if (locals.length === 0) return look;
-  const taken = new Set(locals.map((item) => lookKey(lookOf(item))));
-  if (!taken.has(lookKey(look))) return look;
+  const own = (Array.isArray(locals) ? locals : []).filter((item) => item && !item.remote);
+  if (own.length === 0) return look;
+  const taken = new Set(own.flatMap((item) => lookKeys(lookOf(item))));
+  const free = (candidate) => !lookKeys(candidate).some((key) => taken.has(key));
+  if (free(look)) return look;
   const shapes = [...DEFAULT_SHAPES, ...PICKER_SHAPES.filter((id) => id !== "whale" && !DEFAULT_SHAPES.includes(id))];
-  let index = Math.max(0, shapes.indexOf(shapeId(look.shape)));
-  for (let n = 0; n < shapes.length; n += 1) {
-    index = (index + 1) % shapes.length;
-    const candidate = { ...look, shape: shapes[index] };
-    if (!taken.has(lookKey(candidate))) return candidate;
+  const colors = [look.color, ...DEFAULT_COLORS.filter((color) => !colorKeys(color).some((key) => colorKeys(look.color).includes(key)))];
+  const first = Math.max(0, shapes.indexOf(shapeId(look.shape)));
+  for (const color of colors) {
+    for (let n = 1; n <= shapes.length; n += 1) {
+      const candidate = { ...look, color, shape: shapes[(first + n) % shapes.length] };
+      if (free(candidate)) return candidate;
+    }
   }
   return look;
 }
@@ -1813,7 +1826,7 @@ function useGaze(ref, enabled) {
 }
 var FIDGETS = ["hop", "sway", "stretch", "look"];
 function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
-  const look = given ?? lookOf(bot);
+  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
   const ref = (0, import_react.useRef)(null);
   const maskId = (0, import_react.useRef)("");
   if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
@@ -1893,15 +1906,14 @@ function useSettled(state) {
   }, [state]);
   return settled;
 }
-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false, locals }) {
+function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
   const settled = useSettled(state);
   if (bot === void 0) return (0, import_react.createElement)(BotMark, { size });
-  const look = bot.remote ? lookAvoidingLocals(bot, locals) : void 0;
   const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
   return (0, import_react.createElement)(
     "span",
     { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
-    (0, import_react.createElement)(BotMark, { bot, look, size, state: settled ? "done" : state, live, gaze, pokeable }),
+    (0, import_react.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
     badgeKind === "working" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
     badgeKind === "alert" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
     badgeKind === "admin" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react.createElement)(StarIcon)) : null,
@@ -1954,8 +1966,7 @@ function roomAvatarPeople(room2, roster) {
 }
 function RoomAvatar({ room: room2, roster, size = 36 }) {
   const people = roomAvatarPeople(room2, roster);
-  const locals = (roster?.bots ?? []).filter((item) => item && !item.remote);
-  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, look: bot.remote ? lookAvoidingLocals(bot, locals) : void 0, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
   if (people.length === 0) return (0, import_react.createElement)(BotMark, { size });
   if (size <= 20 && people.length > 1) {
     return (0, import_react.createElement)(
@@ -2284,6 +2295,7 @@ function createSource(initial) {
 var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 function indexRoster(value) {
+  setLocalBots(value.bots);
   const byId = {};
   for (const bot of value.bots) {
     for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
@@ -6105,7 +6117,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
         onClick: () => actions.openSession(id),
         onContextMenu
       },
-      (0, import_react9.createElement)(BotAvatar, { bot, size: 60, state, main: true, locals: roster.bots }),
+      (0, import_react9.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
       (0, import_react9.createElement)("span", { className: "bt-tile-name" }, shown),
       bot.role ? (0, import_react9.createElement)("span", { className: "bt-chip" }, bot.role) : null
     ));
@@ -6123,7 +6135,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       onClick: () => actions.openSession(id),
       onContextMenu
     },
-    (0, import_react9.createElement)(BotAvatar, { bot, size: 36, state, main, locals: roster.bots }),
+    (0, import_react9.createElement)(BotAvatar, { bot, size: 36, state, main }),
     pinned && !wide ? (0, import_react9.createElement)(PinMark) : null,
     wide ? (0, import_react9.createElement)(
       "span",
@@ -7010,7 +7022,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
         "aria-label": memoryNotice ? t("Memory updated. Open {name}'s memory", { name: roster.byId[changed]?.name ?? name }) : t("View conversation details"),
         onClick: () => memoryNotice ? actions.openMemory(changed) : actions.toggleDetails(sessionId)
       },
-      bot ? (0, import_react10.createElement)(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== void 0), badge: false, locals: roster.bots }) : room2 ? (0, import_react10.createElement)(RoomAvatar, { room: room2, roster, size: 24 }) : null,
+      bot ? (0, import_react10.createElement)(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== void 0), badge: false }) : room2 ? (0, import_react10.createElement)(RoomAvatar, { room: room2, roster, size: 24 }) : null,
       (0, import_react10.createElement)("span", { className: "bt-pill-name" }, name || title || t("New chat")),
       (0, import_react10.createElement)(MemoryNotice, { shown: memoryNotice }),
       (0, import_react10.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react10.createElement)(GoArrow))

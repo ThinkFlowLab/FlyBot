@@ -2,7 +2,7 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
 import { fnv1a, lookOf, lookAvoidingLocals, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
 import { t } from './i18n.js'
 
-export { colorOf, lookOf, lookKey, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
+export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
 
 // -------------------------------------------------------------------------
 // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.
@@ -47,7 +47,8 @@ function useGaze(ref, enabled) {
 // of animations.
 const FIDGETS = ['hop', 'sway', 'stretch', 'look']
 export function BotMark({ bot, look: given, size = 36, state = 'idle', live = false, gaze = false, pokeable = false, label }) {
-  const look = given ?? lookOf(bot)
+  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384).
+  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot))
   const ref = useRef(null)
   const maskId = useRef('')
   if (maskId.current === '') maskId.current = `bt-mark-${nextMarkSerial()}`
@@ -117,14 +118,12 @@ function useSettled(state) {
   return settled
 }
 
-export function BotAvatar({ bot, size, state = 'idle', main, admin, badge = true, live = true, gaze = false, pokeable = false, locals }) {
+export function BotAvatar({ bot, size, state = 'idle', main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
   const settled = useSettled(state)
   if (bot === undefined) return h(BotMark, { size })
-  // A friend's Bot never shares the exact fallback avatar of one of my own Bots (#384).
-  const look = bot.remote ? lookAvoidingLocals(bot, locals) : undefined
   const badgeKind = !badge ? null : state === 'alert' ? 'alert' : state !== 'idle' ? 'working' : admin ? 'admin' : main ? 'main' : null
   return h('span', { className: 'bt-mark', style: { width: size, height: size, '--bt-size': `${size}px` } },
-    h(BotMark, { bot, look, size, state: settled ? 'done' : state, live, gaze, pokeable }),
+    h(BotMark, { bot, size, state: settled ? 'done' : state, live, gaze, pokeable }),
     badgeKind === 'working' ? h('span', { className: 'bt-badge bt-badge-working', 'aria-label': t('Working'), role: 'img' }) : null,
     badgeKind === 'alert' ? h('span', { className: 'bt-badge bt-badge-alert', 'aria-label': t('Waiting for your answer'), role: 'img' }, '?') : null,
     badgeKind === 'admin' ? h('span', { className: 'bt-badge bt-badge-admin', 'aria-label': t('Admin'), role: 'img' }, h(StarIcon)) : null,
@@ -181,9 +180,8 @@ export function roomAvatarPeople(room, roster) {
 
 export function RoomAvatar({ room, roster, size = 36 }) {
   const people = roomAvatarPeople(room, roster)
-  const locals = (roster?.bots ?? []).filter(item => item && !item.remote)
   const seat = (bot, seatSize, key) => (bot
-    ? h(BotMark, { key, bot, look: bot.remote ? lookAvoidingLocals(bot, locals) : undefined, size: seatSize })
+    ? h(BotMark, { key, bot, size: seatSize })
     : h('span', { key, className: 'bt-cluster-you', style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } }))
   if (people.length === 0) return h(BotMark, { size })
   // Inline sizes have no room for a cluster, so the members line up instead.
