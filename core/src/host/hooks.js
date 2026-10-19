@@ -282,7 +282,8 @@ export function install(rt) {
         }
         continue
       }
-      return { action: verdict.action, reason: verdict.reason || `${verdict.action} by ${middleware.name}`, by: middleware.name }
+      const recipient = verdict.action === 'hold' && typeof verdict.recipient === 'string' ? verdict.recipient.trim().slice(0, 120) : ''
+      return { action: verdict.action, reason: verdict.reason || `${verdict.action} by ${middleware.name}`, by: middleware.name, ...(recipient ? { recipient } : {}) }
     }
     return { action: 'allow' }
   }
@@ -384,7 +385,7 @@ export function install(rt) {
     const audience = rt.roomOf?.(msg?.meta?.sessionId)?.id
     const ownerId = ownerOfRequest(msg)
     const approval = {
-      id: randomUUID(), status: 'pending', reason: verdict.reason, by: verdict.by, createdAt: Date.now(),
+      id: randomUUID(), status: 'pending', reason: verdict.reason, by: verdict.by, ...(verdict.recipient ? { recipientName: verdict.recipient } : {}), createdAt: Date.now(),
       request: clone(msg),
       // Server-derived provenance (#52): what was held, who owns the decision, where it
       // came from. Fields of msg itself (meta especially) are data, never authority.
@@ -449,6 +450,24 @@ export function install(rt) {
       approval.error = error?.message ?? String(error)
     }
   }
+
+  // A local Bot's replies to friends that were held, and what became of them (#418): the chat draws
+  // each on the turn it answers (pending, sent, not sent). No text: the turn shows it already.
+  const SENT = new Set(['approved'])
+  rt.heldRepliesOf = (botId) => Object.values(store())
+    // A record held again by a later rule (`next`) is replaced by that newer hold for the same turn.
+    .filter(a => a.request?.from === botId && a.request?.via === 'auto-reply' && a.request?.meta?.replyIn && a.next === undefined)
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map(a => ({
+      id: a.id,
+      by: a.by,
+      status: SENT.has(a.status) || a.status === 'pending' || a.status === 'failed' ? a.status : 'rejected',
+      sessionId: a.request.meta.replyIn.sessionId,
+      turn: a.request.meta.replyIn.turn,
+      to: toRemote(a.request.to)?.handle ?? null,
+      ...(a.recipientName ? { toOwner: a.recipientName } : {}),
+      ...(a.status === 'failed' && a.error ? { error: String(a.error).slice(0, 200) } : {}),
+    }))
 
   const approvals = {
     // Under member enforcement a member sees only the holds of their own Bots; the
@@ -1009,7 +1028,11 @@ export function install(rt) {
   built = true
   // A local Bot's answer to a friend's Bot (turns.js): back through bot.send, so the
   // plugin's middleware still decides (auto-accept, or the approval hold).
-  const replyRemote = ({ from, handle, home, text, replyTo }) => send({ from, to: { kind: 'remote', handle, ...(home ? { home } : {}) }, text, role: 'reply', via: 'auto-reply', meta: { replyTo } })
+  // `replyIn` names the chat and turn whose text this is, so a held reply is drawn on that turn (#418).
+  const replyRemote = ({ from, handle, home, text, replyTo, replyIn }) => send({
+    from, to: { kind: 'remote', handle, ...(home ? { home } : {}) }, text, role: 'reply', via: 'auto-reply',
+    meta: { replyTo, ...(typeof replyIn?.sessionId === 'string' && (Number.isInteger(replyIn.turn) || (typeof replyIn.turn === 'string' && replyIn.turn !== '')) ? { replyIn: { sessionId: replyIn.sessionId, turn: replyIn.turn } } : {}) },
+  })
   rt.flybotGrantsChanged = botId => { const bot = rt.botOf(botId); if (bot !== undefined && bot.remote === undefined) fire('bot.grants', view(bot)) }
   Object.assign(rt, { flybot, flybotReplyRemote: replyRemote, flybotEndpoint: endpoint, flybotRemoteMembers: remoteMembers.list, flybotSend: send, flybotIsRead: isReadEndpoint, flybotHideTools: hidePluginTools })
 }
