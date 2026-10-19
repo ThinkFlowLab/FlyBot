@@ -904,7 +904,8 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
 [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, 'border-radius')}!important}
-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+[data-composer-card]:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 55%,transparent)!important}
 [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
 [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
 [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}

@@ -523,6 +523,7 @@ const ZH = {
   Reply: '回复',
   'More message actions': '更多操作',
   More: '更多',
+  Sharing: '分享',
   Reactions: '表情',
   'Message actions': '消息操作',
   Download: '下载',
