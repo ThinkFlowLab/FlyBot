@@ -52,7 +52,7 @@ test('the row between turns is not hidden by the turn-tail rules, and the echo t
   const css = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8')
   // The tail hides everything but its slot, and an empty tail item hides itself: both spare the row.
   assert.match(css, /\[data-turn-tail\]>:not\(\[data-slot="conversation\.chat\.turnTail"\]\):not\(\.bt-typing\)\{display:none!important\}/)
-  assert.match(css, /\[data-chat-flow-kind="turn-tail"\]:not\(:has\(\[data-slot="conversation\.chat\.turnTail"\]:not\(:empty\)\)\):not\(:has\(>\[data-turn-tail\]>\.bt-typing\)\)\{display:none!important\}/)
+  assert.match(css, /\[data-chat-flow-kind="turn-tail"\]:not\(:has\(\[data-slot="conversation\.chat\.turnTail"\]:not\(:empty\)\)\):not\(:has\(\[data-turn-tail\]>\.bt-typing\)\)\{display:none!important\}/)
   const src = readFileSync(new URL('../src/client/activity-row.js', import.meta.url), 'utf8')
   assert.match(src, /\? !streaming && \(awaiting \|\| \(running && sendRun\.current\)\)/, 'a friend chat shows the row for my send and the wait, not for the echo')
 })

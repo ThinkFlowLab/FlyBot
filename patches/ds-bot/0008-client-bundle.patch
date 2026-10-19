@@ -2198,7 +2198,15 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2637,6 +2637,7 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -2631,12 +2631,13 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
+ /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
+    without its copy and branch row; a tail with nothing in it takes no room. */
+-[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]){display:none!important}
+-[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))){display:none!important}
++[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]):not(.bt-typing){display:none!important}
++[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))):not(:has(>[data-turn-tail]>.bt-typing)){display:none!important}
+ /* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
     the shell's new-session hero: no headline, no workspace or mode picker, and the
     composer stays docked at the bottom. */
  [data-content-phase=hero] [class*="_scrollBody"]{justify-content:flex-end!important}
@@ -4450,7 +4458,7 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4638,21 +4638,23 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
+@@ -4638,21 +4638,26 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
    const pendingInput = useSession((snapshot) => Math.max(0, ...(snapshot?.pendingSubmissions ?? []).filter((sub) => sub.placement !== "queued").map((sub) => sub.time)));
    const bot = roster.byId[sessionId];
    const room2 = roster.roomsById[sessionId];
@@ -4461,7 +4469,10 @@ diff --git a/client.js b/client.js
    const relaying = tools.some((entry) => entry.relay);
 -  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
 +  const awaiting = useAwaitingReply(roster, sessionId);
-+  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0) || awaiting && !running;
++  const sendRun = (0, import_react9.useRef)(false);
++  if (!running) sendRun.current = false;
++  else if (pendingInput > 0) sendRun.current = true;
++  const visible = bot?.remote !== void 0 ? !streaming && (awaiting || running && sendRun.current) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
 +  const steady = awaiting || bot?.remote !== void 0 && !streaming;
    const tool = tools.at(-1);
 -  const inputRef = (0, import_react7.useRef)(0);
