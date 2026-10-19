@@ -90,6 +90,10 @@ test('a failed 1:1 send is one short English line with a next step', () => {
     assert.match(notSentLine(new Error('Chief is not shared with that friend, so it cannot message their Bots. To allow it, share Chief with them in its settings → Sharing.')), /Invite them from Bot settings/)
     assert.match(notSentLine(new Error('no Bot of yours is friends with @x.y.home')), /Add them from \+ Add friend/)
     assert.equal(notSentLine(new Error('Not sent: already friendly.')), 'Not sent: already friendly.')
+    // #404: a paused chat and an unknown failure name only steps a FlyBot owner can take.
+    assert.equal(notSentLine(new Error('Bot Social paused this conversation (turn budget exhausted)')), 'Not sent: this chat is paused. Approve any message waiting here, or remove and re-add this friend to start a new chat.')
+    assert.equal(notSentLine(new Error('Bot Social send_as_member: weird_code')), 'Not sent: the message could not leave. Try again.')
+    assert.doesNotMatch(notSentLine(new Error('something odd happened')), /console/)
 });
 
 test('agent-instructions and notice messages after the typed text do not swallow it', () => {

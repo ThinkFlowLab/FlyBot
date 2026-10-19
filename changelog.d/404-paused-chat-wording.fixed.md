@@ -1,0 +1,1 @@
+A paused friend chat, and any other failed send to a friend's Bot, no longer tells you to open the Bot Social console (which a FlyBot owner cannot sign in to); it names only what you can do in FlyBot: approve a waiting message, or remove and re-add the friend (part of [#404](https://github.com/ThinkFlowLab/FlyBot/issues/404)).
