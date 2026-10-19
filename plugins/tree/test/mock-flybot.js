@@ -29,7 +29,7 @@ export function createMockFlybot() {
   const grants = new Map()
   let seq = 0
   const granted = b => (grants.get(b?.id) ?? []).some(g => !g.roomId)
-  const view = b => b && { id: b.id, name: b.name, isMain: b.isMain === true, granted: granted(b), createdAt: b.createdAt, createdBy: null, systemPrompt: b.systemPrompt ?? '', fields: clone(b.fields) }
+  const view = b => b && { id: b.id, name: b.name, isMain: b.isMain === true, granted: granted(b), createdAt: b.createdAt, createdBy: null, systemPrompt: b.systemPrompt ?? '', fields: clone(b.fields), ...(b.hidden === true ? { hidden: true } : {}) }
   const fire = (ev, payload) => { for (const fn of [...listeners[ev]]) fn({ ...payload }) }
   const onFor = plugin => (ev, fn, { all = false } = {}) => {
     if (!listeners[ev]) throw new Error(`flybot: unknown event ${ev}`)
@@ -94,7 +94,21 @@ export function createMockFlybot() {
           fire('bot.created', view(bots.get(id)))
           return id
         },
-        setSystemPrompt: (id, text) => { const b = bots.get(id); if (!b) throw new Error('flybot: unknown Bot ' + id); b.systemPrompt = String(text ?? '').trim() },
+setSystemPrompt: (id, text) => { const b = bots.get(id); if (!b) throw new Error('flybot: unknown Bot ' + id); b.systemPrompt = String(text ?? '').trim() },
+        update: async (id, patch = {}) => {
+          const b = bots.get(id); if (!b) throw new Error('flybot: unknown Bot ' + id)
+          if (patch.name !== undefined) {
+            const next = String(patch.name).trim()
+            const clash = [...bots.values()].find(o => o.id !== id && o.name === next)
+            if (!next || clash) throw new Error(`Name ${next} is not available`)
+            b.name = next
+          }
+          if (typeof patch.hidden === 'boolean') {
+            if (patch.hidden) b.hidden = true
+            else delete b.hidden
+          }
+          return view(b)
+        },
         fields,
         send: Object.assign((req, opts) => send({ via: plugin, ...req }, opts), {
           use: m => { if (middlewares.some(x => x.name === m.name)) throw new Error('exists'); middlewares.push(m); return () => { const i = middlewares.indexOf(m); if (i >= 0) middlewares.splice(i, 1) } },

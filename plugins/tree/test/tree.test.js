@@ -1207,3 +1207,64 @@ test('#446 client: reorganization notice (what moved, Undo, Dismiss), idle / arc
   assert.match(renderToString(reactStub.createElement(Tag, { bot: { id: 'x' } })), /class="flybot-tree-tag"[^>]*>idle</)
   assert.equal(renderToString(reactStub.createElement(Tag, { bot: { id: 'y' } })), '')
 })
+
+// #452 (owner decision 2026-10-19 22:23): reorg MOVEs / reparents; never renames to 归档- + recreate;
+// archived Bots (and leftover 归档-* names) stay out of the default Bot list; repair restores names.
+test('#452: reorganization MOVEs bots and never renames any Bot to 归档- / Archive-', async () => {
+  const { m, tree, kids } = await fullChief(4, ['Cooking', 'Shopping', 'Garden', 'Travel'])
+  const before = new Map([...m.bots.entries()].map(([id, b]) => [id, b.name]))
+  for (const name of ['FlyBot Dev', 'FlyBot Test', 'FlyBot Maint', 'FlyBot Repo']) await m.flybot.bot.create({ name })
+  await tree.settled()
+  for (const [id, name] of before) assert.equal(m.bots.get(id).name, name, `reorg must not rename ${name}`)
+  for (const b of m.bots.values()) assert.doesNotMatch(b.name, /^(?:归档|Archive)[-—–]/)
+  // Existing life Bots moved under Life Lead; names unchanged.
+  for (const id of Object.values(kids)) assert.equal(m.bots.get(id).name, before.get(id))
+})
+
+test('#452: archive sets hidden; undo clears it', async () => {
+  const DAY = 24 * 60 * 60 * 1000
+  let clock = Date.UTC(2026, 9, 19, 12)
+  const { m, tree, kids } = await fullChief(8, ['Editor', 'Travel'], { now: () => clock })
+  const dup = await m.flybot.bot.create({ name: 'Editor Bot' })
+  await tree.tidy(); clock += 2 * DAY; await tree.tidy()
+  assert.equal(f(m, dup, 'archived').into, kids.Editor)
+  assert.equal(m.bots.get(dup).hidden, true, 'archived Bot is hidden from the default list')
+  const { runs } = tree.overview()
+  assert.deepEqual(tree.undo(runs[0].id).kept, [])
+  assert.equal(f(m, dup, 'archived'), undefined)
+  assert.notEqual(m.bots.get(dup).hidden, true, 'undo clears hidden')
+})
+
+test('#452: repairArchiveNames restores 归档- when bare name is free; archives+hides when taken', async () => {
+  const { m, tree, chief } = await fullChief(8, ['Budget'])
+  const alone = m.addBot({ name: '归档-SoloDev', fields: { 'flybot-tree': { parent: chief, treeRole: 'dev' } } })
+  const live = m.addBot({ name: 'FlyBot 测试', fields: { 'flybot-tree': { parent: chief, treeRole: 'test' } } })
+  const dup = m.addBot({ name: '归档-FlyBot 测试', fields: { 'flybot-tree': { parent: chief, treeRole: 'test' } } })
+  await tree.repairArchiveNames()
+  assert.equal(m.bots.get(alone).name, 'SoloDev')
+  assert.notEqual(m.bots.get(alone).hidden, true)
+  assert.equal(m.bots.get(live).name, 'FlyBot 测试')
+  assert.equal(f(m, dup, 'archived').reason, 'prefix-duplicate')
+  assert.equal(m.bots.get(dup).hidden, true)
+  assert.equal(m.bots.get(dup).name, '归档-FlyBot 测试', 'name kept when bare name is taken; Bot is archived+hidden')
+})
+
+test('#452 client: structure.include is false for archived and 归档-* names', async () => {
+  const mod = loadClient()
+  const bots = [
+    { id: 'c', name: 'Chief', createdAt: 1, isMain: true, fields: { 'flybot-tree': { parent: null, treeRole: 'root' } } },
+    { id: 'live', name: 'FlyBot 开发', createdAt: 2, fields: { 'flybot-tree': { parent: 'c', treeRole: 'dev' } } },
+    { id: 'arch', name: 'Old', createdAt: 3, fields: { 'flybot-tree': { archived: { reason: 'idle' } } } },
+    { id: 'pref', name: '归档-FlyBot 维护', createdAt: 4, fields: { 'flybot-tree': { parent: 'c', treeRole: 'maint' } } },
+  ]
+  const entries = []
+  const dispose = mod.registerStructure({ slots: { register: (n, e) => { entries.push(e); return () => {} } }, bots: async () => bots })
+  await new Promise(r => setTimeout(r, 10))
+  const entry = entries.at(-1)
+  assert.equal(typeof entry.include, 'function')
+  assert.equal(entry.include('live'), true)
+  assert.equal(entry.include('arch'), false)
+  assert.equal(entry.include('pref'), false)
+  assert.equal(entry.include('c'), true)
+  dispose()
+})

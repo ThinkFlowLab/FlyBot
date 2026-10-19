@@ -61,8 +61,9 @@ test('the sidebar + menu wires plugin actions in after New group chat', () => {
   assert.match(sidebar, /Number\(foreign\(a\)\) - Number\(foreign\(b\)\)/)
   // With @flybot/tree on, a friend's Bot is not a tree node under Main; it stays in the flat list.
   assert.match(sidebar, /const inTree = entry => entry\.kind === 'bot' && !entry\.item\.remote/)
-  assert.match(sidebar, /botTree\(\[main, \.\.\.order\.filter\(inTree\)/)
-  assert.match(sidebar, /order\.filter\(entry => !\(tree && inTree\(entry\)\)\)/)
+  assert.match(sidebar, /structure\?\.include\?\.\(entry\.item\.id\) !== false/)
+  assert.match(sidebar, /botTree\(\[main, \.\.\.order\.filter\(listed\)/)
+  assert.match(sidebar, /order\.filter\(entry => !\(tree && inTree\(entry\)\) && !\(inTree\(entry\) && structure\?\.include/)
   assert.equal(DICTIONARY.zh['Copy my handle'], '复制我的 handle')
   assert.equal(DICTIONARY.zh['Face-to-face'], '面对面')
   assert.equal(DICTIONARY.zh['Face-to-face room'], '面对面房间')

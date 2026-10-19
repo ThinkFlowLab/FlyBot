@@ -102,6 +102,8 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     if (fb.getField(chief.id, 'treeRole') !== ROOT_ROLE) fb.setField(chief.id, 'treeRole', ROOT_ROLE)
     migrateLegacyRoots(chief.id)
     if (adoptExisting) adoptUnattached(chief.id)
+    // #452: restore 归档-* / Archive-* mis-renames; hide archived from the default sidebar.
+    try { const r = organizer.repairArchiveNames(); if (r && typeof r.then === 'function') r.catch(error => warn('flybot-tree: archive-name repair failed:', error?.message ?? error)) } catch (error) { warn('flybot-tree: archive-name repair failed:', error?.message ?? error) }
     organizer.repair()
     refreshAll()
     return chief.id
@@ -233,6 +235,6 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   }
   const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn) }
 
-  const { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, idle: settled } = organizer
-  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, settled, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
+  const { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, idle: settled, repairArchiveNames } = organizer
+  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
 }

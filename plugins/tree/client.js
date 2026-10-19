@@ -275,6 +275,8 @@ window.__ModuleLoader__.load({
     }
 
     const REFRESH_MS = 10000
+    // Same as organize.js ARCHIVE_NAME_RE (#452): mis-renamed archived Bots stay out of the list.
+    const ARCHIVE_NAME_RE = /^(?:归档|Archive)[-—–＿_\s]+/u
     // 'flybot.sidebar.section' is a FlyBot registry slot (ds-bot renders it), not a DSH
     // shell slot, so the section goes in through the browser flybot service.
     // ---- forest-of:start (identical copy of src/forest.js forestOf; a test keeps them in sync)
@@ -307,17 +309,19 @@ window.__ModuleLoader__.load({
 
     // ds-bot draws its own Bot list as one tree from the registry slot 'flybot.sidebar.structure'
     // ({ parentOf(botId) }): parents come from forestOf over the browser bots (fields included), so
-    // retired and non-tree Bots have no parent and ds-bot shows them directly under Chief. The entry is
+    // retired and non-tree Bots have no parent and ds-bot shows them under Chief; archived / 归档-*
+    // Bots are omitted via include() (#452). The entry is
     // re-registered whenever the structure changes (field changes and a 10 s poll), which re-renders.
     function registerStructure(flybot) {
       let parents = new Map()
       let statuses = new Map()
-      let key = '[[],[]]'
+      let key = '[[],[],[]]'  // parents, tags, hidden (#452)
       let stopped = false
       // menuItems: entries ds-bot adds to a Bot's right-click menu ({ bot } → [{ id, label, visible, run }]).
       const menuItems = makeMenuItems(flybot)
       const nodeActions = makeStatusTag(() => statuses)
-      const entry = () => ({ id: 'flybot-tree', order: 90, parentOf: id => parents.get(id), menuItems, nodeActions })
+      let hidden = new Set()
+      const entry = () => ({ id: 'flybot-tree', order: 90, parentOf: id => parents.get(id), include: id => !hidden.has(id), menuItems, nodeActions })
       let off = flybot.slots.register('flybot.sidebar.structure', entry())
       const refresh = async () => {
         let bots
@@ -327,12 +331,19 @@ window.__ModuleLoader__.load({
         const walk = (node, parent) => { if (parent) next.set(node.id, parent); for (const c of node.children) walk(c, node.id) }
         for (const top of forestOf(bots)) walk(top, null)
         const tags = new Map()
-        for (const b of bots ?? []) { const s = statusOf(b); if (s) tags.set(b.id, s) }
-        const nextKey = JSON.stringify([[...next], [...tags]])
+        const hide = new Set()
+        for (const b of bots ?? []) {
+          const st = statusOf(b); if (st) tags.set(b.id, st)
+          const own = b?.fields?.['flybot-tree'] ?? {}
+          // Archived (field) or leftover 归档-* / Archive-* names: not in the default Bot list (#452).
+          if (own.archived || ARCHIVE_NAME_RE.test(String(b?.name ?? ''))) hide.add(b.id)
+        }
+        const nextKey = JSON.stringify([[...next], [...tags], [...hide]])
         if (nextKey === key) return
         key = nextKey
         parents = next
         statuses = tags
+        hidden = hide
         off()
         off = flybot.slots.register('flybot.sidebar.structure', entry())
       }

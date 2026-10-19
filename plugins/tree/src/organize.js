@@ -11,12 +11,17 @@
 //   archived, never deleted), long-idle leaf Bots marked idle and archived after 30 days.
 // - Every change is a journal action on the root ('reorg' field): the tree view shows the last run
 //   and undoes it in one click. Nothing is ever deleted; an archived Bot keeps its chat and memory.
+// - Grouping always MOVES (reparents) existing Bots. It never renames a Bot to 归档- / Archive- and
+//   never recreates a same-role Bot to achieve a group (#452). Archive hides from the default sidebar.
 import { profileOf, keysOf, kindOf, KIND_RANK, labelOf, leadNameOf, canLead, sameRole, norm, DOMAINS } from './roles.js'
 import { systemPrompt, withTreeBlock, BLOCK_START } from './prompt.js'
 
 const DAY = 24 * 60 * 60 * 1000
 const DOMAIN_AREA = new Map(DOMAINS.map(d => [d.id, d.area]))
 export const DEFAULT_TIDY = Object.freeze({ idleDays: 14, archiveIdleDays: 30, mergeGraceDays: 1, pinDays: 14, keepRuns: 5 })
+/** Mis-archive rename prefix (Chief update_bot / manual): 归档-Name or Archive-Name. Reorg never writes this. */
+export const ARCHIVE_NAME_RE = /^(?:归档|Archive)[-—–＿_\s]+/u
+export const stripArchivePrefix = name => { const n = String(name ?? ''); return ARCHIVE_NAME_RE.test(n) ? n.replace(ARCHIVE_NAME_RE, '').trim() : n.trim() }
 const ACTIVITY_WRITE_MS = 60 * 60 * 1000
 const MAX_TOOLS = 8
 
@@ -27,6 +32,18 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   const cfg = { ...DEFAULT_TIDY, ...Object.fromEntries(Object.entries(tidyConfig).filter(([, v]) => Number.isFinite(v) && v >= 0)) }
   const get = (id, key) => fb.getField(id, key)
   const set = (id, key, value) => fb.setField(id, key, value)
+  // Hide / unhide in the core sidebar (bot.hidden). Optional on older hosts without bot.update.
+  const hideBot = (id, hidden) => {
+    if (typeof fb.updateBot !== 'function') return
+    try {
+      const out = fb.updateBot(id, { hidden: Boolean(hidden) })
+      if (out && typeof out.then === 'function') out.catch(error => warn('flybot-tree: could not set hidden:', error?.message ?? error))
+    } catch (error) { warn('flybot-tree: could not set hidden:', error?.message ?? error) }
+  }
+  const renameBot = (id, name) => {
+    if (typeof fb.updateBot !== 'function') return Promise.reject(new Error('bot.update is unavailable'))
+    return Promise.resolve(fb.updateBot(id, { name }))
+  }
 
   // ------------------------------------------------------------ profiles
   const infoOf = (nodes, id, extra = {}) => {
@@ -97,6 +114,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
       case 'archive': return a.reason === 'merged' ? `archived ${a.name} (merged into ${a.intoName})` : `archived ${a.name} (${a.reason})`
       case 'idle': return `marked ${a.name} idle`
       case 'mark-lead': return `made ${a.name} the lead of the ${a.label} group`
+      case 'repair-name': return a.toName ? `restored name ${a.toName} (was ${a.name})` : `hid mis-archived ${a.name}`
       default: return a.op
     }
   }
@@ -125,6 +143,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
     set(id, 'archived', record)
     set(id, 'parent', null); set(id, 'treeRole', null); set(id, 'idle', null)
     writeBlock(id, '')
+    hideBot(id, true) // out of the default Bot list (#452); search still finds it when un-hidden
     run.actions.push({ op: 'archive', bot: id, name: n.name, reason, parent: n.parent, treeRole: n.role, ...(extra.into ? { into: extra.into, intoName: extra.intoName } : {}) })
     return true
   }
@@ -452,6 +471,50 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
     set(botId, 'activity', { at: t, tools })
   }
 
+
+  // ------------------------------------------------------------ repair mis-named 归档-* / Archive-* (#452)
+  /**
+   * One-shot / idempotent: Bots renamed to 归档-X or Archive-X (never written by this plugin) are
+   * restored. If X is free, rename back to X and unhide. If X already exists, keep X, set archived
+   * on the prefixed Bot when it is a leaf, and hide it from the default sidebar. Grouping never
+   * uses this path; it only MOVEs.
+   */
+  async function repairArchiveNames() {
+    const run = begin('repair-names')
+    const bots = fb.listBots().filter(b => b && b.isMain !== true && !fb.isRemote?.(b.id))
+    for (const b of bots) {
+      if (!ARCHIVE_NAME_RE.test(b.name)) continue
+      const bare = stripArchivePrefix(b.name)
+      if (!bare) continue
+      const clash = bots.find(o => o.id !== b.id && norm(o.name) === norm(bare))
+      if (!clash) {
+        try {
+          await renameBot(b.id, bare)
+          hideBot(b.id, false)
+          run.actions.push({ op: 'repair-name', bot: b.id, name: b.name, toName: bare })
+        } catch (error) { warn(`flybot-tree: could not restore name of ${b.name}:`, error?.message ?? error) }
+        continue
+      }
+      // Duplicate of a live Bot with the bare name: archive (if leaf) and hide the prefixed one.
+      if (get(b.id, 'archived') === undefined) {
+        const nodes = snapshot()
+        if (nodes[b.id] && !childrenOf(nodes, b.id).length && !nodes[b.id].root) archive(run, b.id, 'prefix-duplicate')
+        else {
+          set(b.id, 'archived', { at: now(), reason: 'prefix-duplicate', parent: nodes[b.id]?.parent ?? null, treeRole: nodes[b.id]?.role ?? '', run: run.id })
+          if (nodes[b.id]) { set(b.id, 'parent', null); set(b.id, 'treeRole', null); writeBlock(b.id, '') }
+          hideBot(b.id, true)
+          run.actions.push({ op: 'repair-name', bot: b.id, name: b.name, into: clash.id, intoName: clash.name })
+        }
+      } else hideBot(b.id, true)
+    }
+    // Hide every Bot that already has archived set (older installs before hide-on-archive).
+    for (const b of fb.listBots()) {
+      if (b.isMain === true || fb.isRemote?.(b.id)) continue
+      if (get(b.id, 'archived') !== undefined) hideBot(b.id, true)
+    }
+    return commit(run)
+  }
+
   // ------------------------------------------------------------ undo
   /** Undoes the last reorganization (only the newest run that is not undone yet). */
   function undo(runId) {
@@ -476,6 +539,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
         const home = nodes[rec.parent] && fits(nodes, rec.parent, { id: a.bot, name, height: 1 }) ? rec.parent : undefined
         if (!home) { kept.push(`${name}: stays archived (${nodes[rec.parent]?.name ?? 'its old parent'} is full or gone)`); continue }
         set(a.bot, 'archived', null); set(a.bot, 'treeRole', rec.treeRole ?? ''); set(a.bot, 'parent', home); pin(a.bot)
+        hideBot(a.bot, false)
         if (rec.into) set(rec.into, 'mergedFrom', (get(rec.into, 'mergedFrom') ?? []).filter(m => m.id !== a.bot))
         restored.push(`${name} back in the tree under ${nodes[home].name}`)
       } else if (a.op === 'idle') {
@@ -509,5 +573,5 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   const idle = () => pending === 0 ? Promise.resolve() : queue.then(() => idle())
 
   const busy = () => pending > 0
-  return { busy, place, repair, tidy, maybeTidy, undo, dismiss, overview, noteActivity, idle, planLevel, describeAction }
+  return { busy, place, repair, tidy, maybeTidy, undo, dismiss, overview, noteActivity, idle, planLevel, describeAction, repairArchiveNames }
 }

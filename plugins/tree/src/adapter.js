@@ -35,6 +35,11 @@ export function createAdapter(flybot) {
   return {
     listBots: () => bot.list() ?? [],
     createBot: async spec => await bot.create(spec),
+    // #452: rename / hide (optional on older cores without bot.update).
+    updateBot: async (id, patch) => {
+      if (typeof bot.update !== 'function') throw new Error('flybot: bot.update is unavailable')
+      return bot.update(id, patch)
+    },
     getBot: id => bot.get?.(id) ?? (bot.list() ?? []).find(b => b.id === id),
     getSystemPrompt: id => (bot.get?.(id) ?? (bot.list() ?? []).find(b => b.id === id))?.systemPrompt ?? '',
     setSystemPrompt: (id, text) => bot.setSystemPrompt(id, text),

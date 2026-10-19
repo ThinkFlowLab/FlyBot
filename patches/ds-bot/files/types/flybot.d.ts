@@ -42,6 +42,8 @@ export interface BotView {
   color?: string
   /** Owner-chosen avatar ({ shape }, { image }, or { emoji }). Omitted when unset. */
   avatar?: { shape?: string; image?: string; emoji?: string }
+  /** True when hidden from the default Bot list (Search still finds it). */
+  hidden?: boolean
 }
 
 /** 'change' payload. Delivered for the listener's own plugin unless it subscribed with { all: true }. */
@@ -334,6 +336,8 @@ export interface FlyBot {
     of(sessionId: string): BotView | undefined
     /** Returns the new Bot's id. */
     create(spec: CreateBotSpec): Promise<BotId>
+    /** Rename and/or set sidebar flags. Plugins use this to hide archived Bots (#452). */
+    update(id: BotId, patch: { name?: string; hidden?: boolean }): Promise<BotView>
     setSystemPrompt(id: BotId, text: string): void
     /** Same object as FlyBot.fields. */
     fields: BotFields

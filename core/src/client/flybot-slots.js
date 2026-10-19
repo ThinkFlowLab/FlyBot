@@ -4,7 +4,8 @@
 // ds-bot's own components render whatever is registered:
 //
 //   flybot.sidebar.section  { id, order, component({ roster, actions, call }) }   below the Bot list
-//   flybot.sidebar.structure { id, order, parentOf(botId), menuItems?, nodeActions? }   the Bot list becomes one tree under the Main Bot;
+//   flybot.sidebar.structure { id, order, parentOf(botId), include?(botId), menuItems?, nodeActions? }   the Bot list becomes one tree under the Main Bot;
+//     include(botId) === false hides that Bot from the default list (e.g. tree-archived);
 //                            menuItems({ bot }) → [{ id, label, visible, run({ bot }) }] adds items to a Bot's right-click
 //                            menu (visible false hides one; a string from run shows as a toast; a throw as the error toast);
 //                            nodeActions({ bot }) is drawn after each tree row

@@ -358,8 +358,10 @@ export function TeamSidebar(props) {
   const [collapsed, setCollapsed] = useState({})
   const toggle = id => setCollapsed(value => ({ ...value, [id]: !value[id] }))
   // Only own Bots belong to the tree; a friend's Bot stays in the ordered list below it.
+  // structure.include(id) === false hides a Bot from the default list (e.g. tree-archived, #452).
   const inTree = entry => entry.kind === 'bot' && !entry.item.remote
-  const tree = structure && wide && main ? botTree([main, ...order.filter(inTree).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
+  const listed = entry => inTree(entry) && structure?.include?.(entry.item.id) !== false
+  const tree = structure && wide && main ? botTree([main, ...order.filter(listed).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
   useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
   useLandOnMainBot(roster, useSessions, actions)
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
@@ -383,7 +385,7 @@ export function TeamSidebar(props) {
     h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
       tree ? h('div', { className: 'bt-tree', role: 'group', 'aria-label': t('Bot tree') }, tree.map(node => h(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions })))
         : main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
-      order.filter(entry => !(tree && inTree(entry))).map(entry => (entry.kind === 'bot'
+      order.filter(entry => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false)).map(entry => (entry.kind === 'bot'
         ? h(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true })
         : entry.kind === 'room'
           ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })

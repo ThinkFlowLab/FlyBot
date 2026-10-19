@@ -139,6 +139,7 @@ export function install(rt) {
     systemPrompt: bot.systemPrompt ?? '', fields: clone(bot.fields ?? {}),
     ...(typeof bot.color === 'string' ? { color: bot.color } : {}),
     ...(bot.avatar && typeof bot.avatar === 'object' ? { avatar: clone(bot.avatar) } : {}),
+    ...(bot.hidden === true ? { hidden: true } : {}),
   })
   const persist = () => rt.save().catch(error => warn('flybot: save failed: %s', error))
 
@@ -605,6 +606,18 @@ export function install(rt) {
     })
   }
 
+  /** Rename and/or hide a Bot in the sidebar. Used by plugins (e.g. tree archive, #452). */
+  async function updateBotFields(id, patch = {}) {
+    const bot = rt.botOf(id)
+    if (bot === undefined) throw new Error(`flybot: unknown Bot ${id}`)
+    const name = patch.name !== undefined ? String(patch.name).trim() : undefined
+    const wantName = name !== undefined && name !== bot.name
+    const wantHidden = typeof patch.hidden === 'boolean' && Boolean(patch.hidden) !== Boolean(bot.hidden)
+    if (wantName) await rt.updateBot(id, { name })
+    if (wantHidden) await rt.setFlags(id, { hidden: Boolean(patch.hidden) })
+    return view(rt.botOf(id))
+  }
+
   async function send({ from, to, text, role = 'request', hop = 0, via = SHARED, meta, attachments } = {}) {
     await rt.load()
     if (typeof text !== 'string' || text.trim() === '') throw new Error('flybot: send needs text')
@@ -938,6 +951,7 @@ export function install(rt) {
       hasAnyGrant: id => rt.hasAnyGrant?.(id) === true,
       of: sessionId => view(rt.botOf(rt.selfOf(sessionId))),
       create: spec => create({ plugin, ...spec }),
+      update: (id, patch) => updateBotFields(id, patch),
       setSystemPrompt,
       // Same object as flybot.fields.
       fields,
