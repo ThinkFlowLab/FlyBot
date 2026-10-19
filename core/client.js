@@ -592,6 +592,8 @@ var ZH = {
   "Reply from": "收到回复：",
   "Message from": "收到消息：",
   "via {name}": "经由 {name}",
+  "{name} is talking to {bot} through Bot Social": "{name} 正通过 Bot Social 和 {bot} 对话",
+  "your Bot": "你的 Bot",
   "Stopped by": "叫停者：",
   "{count} messages with": "{count} 条消息，来自",
   "Routine started": "例行任务开始",
@@ -3055,9 +3057,10 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-round:active{transform:scale(.94)}
 .bt-list{display:flex;flex-direction:column;gap:3px;overflow-y:auto;min-height:0;flex:1 1 auto}
 .bt-tile-wrap{display:flex;justify-content:center;padding:20px 0 15px}
-.bt-tile{display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
+.bt-tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
 .bt-tile:hover{background:var(--bt-hover)}
 .bt-tile[aria-current=page]{background:var(--bt-active)}
+.bt-tile-unread{position:absolute;top:8px;right:12px}
 .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
 .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
@@ -5243,6 +5246,12 @@ function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi
     files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
   );
 }
+function FirstContact({ source, roster, sessionId }) {
+  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
+  const who = person || remoteSpeaker(source, roster).name;
+  const bot = roster.byId[sessionId]?.name ?? t("your Bot");
+  return (0, import_react7.createElement)("div", { className: "bt-event", "data-first-contact": source.remote.handle }, (0, import_react7.createElement)("span", null, t("{name} is talking to {bot} through Bot Social", { name: who, bot })));
+}
 function GlobeMark() {
   return (0, import_react7.createElement)(
     "svg",
@@ -5432,7 +5441,8 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
   function triggerBody() {
     if (source.form === "remote-chat") return null;
     if (source.remote?.handle) {
-      return (0, import_react7.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
+      const message = (0, import_react7.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
+      return source.remote.firstContact === true ? (0, import_react7.createElement)(import_react7.Fragment, null, (0, import_react7.createElement)(FirstContact, { source, roster, sessionId }), message) : message;
     }
     if (source.kind === "bot") {
       if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react7.createElement)(EarlierParts, { sessionId, roster, actions });
@@ -6139,6 +6149,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       },
       (0, import_react9.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
       (0, import_react9.createElement)("span", { className: "bt-tile-name" }, shown),
+      // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
+      unread && !waiting && !active ? (0, import_react9.createElement)("span", { className: "bt-unread bt-tile-unread", "aria-hidden": true }) : null,
       bot.role ? (0, import_react9.createElement)("span", { className: "bt-chip" }, bot.role) : null
     ));
   }
@@ -12994,6 +13006,7 @@ var STORAGE = {
   unread: "ds-bot:unread",
   reactions: "ds-bot:reactions",
   seen: "ds-bot:seen",
+  friendLines: "ds-bot:friend-lines",
   prefs: "ds-bot:prefs",
   surface: "ds-bot:surface",
   agentSessions: "ds-bot:agent-sessions",
@@ -15259,6 +15272,22 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
   };
 }
 
+// src/client/friend-lines.js
+function friendLineNews(bots, known, isOpen, selfId) {
+  const next = { ...known ?? {} };
+  const unread = [];
+  for (const bot of bots ?? []) {
+    const at = bot?.friendLineAt;
+    if (bot?.remote || !Number.isFinite(at)) continue;
+    if (selfId && bot.ownerId && bot.ownerId !== selfId) continue;
+    const shown = known?.[bot.id];
+    if (shown === at) continue;
+    next[bot.id] = at;
+    if (known && (shown === void 0 || at > shown) && !isOpen(bot)) unread.push(bot.id);
+  }
+  return { known: next, unread };
+}
+
 // src/client/surface.js
 function groupsFor({ mode, plain = false }) {
   return { shell: mode === "bot", conversation: mode === "bot" && !plain };
@@ -15544,6 +15573,12 @@ function apply(ctx) {
   } catch {
     seenAt = {};
   }
+  let friendLines = null;
+  try {
+    friendLines = JSON.parse(localStorage.getItem(STORAGE.friendLines) ?? "null");
+  } catch {
+    friendLines = null;
+  }
   const ui2 = createSource({ details: null, view: "details", renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} });
   const surface = createSource({ mode: readMode(), plain: false });
   let agentSessionCache = /* @__PURE__ */ new Set();
@@ -15614,6 +15649,18 @@ function apply(ctx) {
     }
     return { ...state, unread };
   });
+  const noteFriendLines = (value) => {
+    const visited = new Set(Object.keys(ui2.getSnapshot().visits ?? {}).map(seenKey));
+    const news = friendLineNews(value.bots, friendLines, (bot) => visited.has(bot.id), value.self?.memberId);
+    if (JSON.stringify(news.known) !== JSON.stringify(friendLines ?? null)) {
+      friendLines = news.known;
+      try {
+        localStorage.setItem(STORAGE.friendLines, JSON.stringify(friendLines));
+      } catch {
+      }
+    }
+    for (const id of news.unread) setUnread(id, true);
+  };
   const refreshed = /* @__PURE__ */ new Set();
   let pulls = 0;
   let applied = 0;
@@ -15646,6 +15693,7 @@ function apply(ctx) {
     if (value.unchanged || value.revision === current.revision && value.modelsKey === current.modelsKey) return;
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
     roster.set(indexRoster(value));
+    noteFriendLines(value);
     try {
       const ids = (value.agents ?? []).flatMap((agent) => agent.sessions ?? []);
       localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids));

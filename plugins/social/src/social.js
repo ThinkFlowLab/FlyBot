@@ -1743,14 +1743,29 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   const homeArgs = () => (home ? { bot_id: home.id } : config.botId ? { bot_id: config.botId } : {})
   const peerView = item => ({ relationshipId: item.relationship_id, status: item.status, handle: item.peer?.handle ? norm(item.peer.handle) : undefined, name: cleanText(item.peer?.display_name), owner: cleanText(item.peer?.owner_display_name), message: item.message ?? null, requestedAt: item.requested_at, expiresAt: item.expires_at })
+  // A friendship may hang on the home or on one member (a per-Bot invite, #420), so the home and every
+  // member identity are asked, as setAutoAccept does; one relationship is listed once. A member that
+  // cannot be read costs only its own rows; the home's answer still decides whether this fails.
   async function friendsOverview() {
     const overview = await client.callTool('list_friends', homeArgs())
-    return {
-      home: home ? home.handle : overview?.bot?.handle,
-      friends: (overview?.friends ?? []).map(peerView),
-      incoming: (overview?.pending_incoming ?? []).map(peerView),
-      outgoing: (overview?.pending_outgoing ?? []).map(peerView),
+    const members = home ? flybot.bot.list().map(bot => ({ bot, member: activeMember(bot.id) })).filter(entry => entry.member && entry.member.bot_id !== home.id) : []
+    const answers = [{ overview }, ...await Promise.all(members.map(async ({ bot, member }) => ({
+      bot,
+      overview: await client.callTool('list_friends', { bot_id: member.bot_id }).catch((error) => { warn(`friends of ${bot.name} not read`, error); return undefined }),
+    })))]
+    const listed = { friends: [], incoming: [], outgoing: [] }
+    const done = new Set()
+    for (const { bot, overview: answer } of answers) {
+      for (const [key, items] of [['friends', answer?.friends], ['incoming', answer?.pending_incoming], ['outgoing', answer?.pending_outgoing]]) {
+        for (const item of items ?? []) {
+          const id = item?.relationship_id
+          if (id !== undefined && done.has(id)) continue
+          if (id !== undefined) done.add(id)
+          listed[key].push({ ...peerView(item), ...(bot ? { botId: bot.id, botName: bot.name } : {}) })
+        }
+      }
     }
+    return { home: home ? home.handle : overview?.bot?.handle, ...listed }
   }
   disposers.push(flybot.api.handle('social/overview', async () => friendsOverview(), { read: true }))
   // Invites are per Bot: an invite names one local Bot (its member identity), and a friend who

@@ -60,7 +60,8 @@
     "src/client/create-bot.js",
     "test/turn-tail.test.js",
     "src/client/bot-draft.js",
-    "test/create-bot.test.js"
+    "test/create-bot.test.js",
+    "src/client/storage.js"
   ],
   "0005-social-seams": [
     "src/host/channel.js",

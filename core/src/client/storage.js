@@ -5,6 +5,7 @@ export const STORAGE = {
   unread: 'ds-bot:unread',
   reactions: 'ds-bot:reactions',
   seen: 'ds-bot:seen',
+  friendLines: 'ds-bot:friend-lines',
   prefs: 'ds-bot:prefs',
   surface: 'ds-bot:surface',
   agentSessions: 'ds-bot:agent-sessions',

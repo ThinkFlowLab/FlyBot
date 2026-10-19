@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -200,4 +200,15 @@ test('#275: a typed line from a friend has one short header: the person, then "v
   const via = known.find(n => n.props?.className === 'bt-remote-handle')
   assert.ok(via)
   assert.doesNotMatch(header(known), /typed via|Bot Social|'s Bot/)
+})
+
+test("#420: a sender's first line in a Bot's own chat gets one quiet line naming who talks to which Bot", () => {
+  const roster = { bots: [], remoteBots: [], byId: { s: { id: 'a', name: 'Chief' } } }
+  const text = node => flat(node).flatMap(n => (Array.isArray(n.props?.children) ? n.props.children : [])).filter(c => typeof c === 'string').join('')
+  const typed = FirstContact({ roster, sessionId: 's', source: { remote: { handle: '@chief.selfb1238.home', typedBy: 'SelfB1238', firstContact: true }, senderName: 'SelfB1238 (typed via @chief.selfb1238.home, Bot Social)' } })
+  assert.equal(typed.props.className, 'bt-event')
+  assert.equal(text(typed), 'SelfB1238 is talking to Chief through Bot Social')
+  const known = { ...roster, remoteBots: [{ handle: '@helper.selfb1238.home', name: 'Helper', owner: 'SelfB1238' }] }
+  const bot = FirstContact({ roster: known, sessionId: 's', source: { remote: { handle: '@helper.selfb1238.home', firstContact: true }, senderName: 'Helper' } })
+  assert.equal(text(bot), 'Helper (SelfB1238) is talking to Chief through Bot Social')
 })

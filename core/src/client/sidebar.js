@@ -80,6 +80,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     },
     h(BotAvatar, { bot, size: 60, state, main: true }),
     h('span', { className: 'bt-tile-name' }, shown),
+    // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
+    unread && !waiting && !active ? h('span', { className: 'bt-unread bt-tile-unread', 'aria-hidden': true }) : null,
     bot.role ? h('span', { className: 'bt-chip' }, bot.role) : null))
   }
   const unreadMark = wide && waiting && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })

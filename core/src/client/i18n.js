@@ -536,6 +536,8 @@ const ZH = {
   'Reply from': '收到回复：',
   'Message from': '收到消息：',
   'via {name}': '经由 {name}',
+  '{name} is talking to {bot} through Bot Social': '{name} 正通过 Bot Social 和 {bot} 对话',
+  'your Bot': '你的 Bot',
   'Stopped by': '叫停者：',
   '{count} messages with': '{count} 条消息，来自',
   'Routine started': '例行任务开始',

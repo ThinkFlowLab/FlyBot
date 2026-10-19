@@ -96,6 +96,26 @@ export function install(rt) {
     return said === OWNER || said === SCHEDULED ? OWNER : OTHER
   }
 
+  // A friend's line in a Bot's own chat (#420): `friendLineAt` on the Bot tells every window that a
+  // line it has not shown yet arrived (its row turns unread), and the senders seen so far, kept apart
+  // from the roster, tell the first line from a sender. A group line is the group's, not the Bot's.
+  const CONTACTS_KEPT = 200
+  const noteFriendLine = (to, sessionId, roomId, handle) => {
+    if (to === undefined || roomId || (sessionId !== undefined && sessionId !== rt.chatOf(to.id))) return false
+    const key = String(handle)
+    const contacts = (state.remoteContacts ??= {})[to.id] ??= {}
+    const first = contacts[key] === undefined
+    const now = Date.now()
+    if (first) {
+      contacts[key] = now
+      const keys = Object.keys(contacts)
+      if (keys.length > CONTACTS_KEPT) for (const old of keys.slice(0, keys.length - CONTACTS_KEPT)) delete contacts[old]
+    }
+    to.friendLineAt = now
+    void rt.save().catch(() => {})
+    return first
+  }
+
   // Roles recorded as team exchanges.
   const EXCHANGE_ROLES = new Set(['request', 'reply', 'stopped'])
 
@@ -116,6 +136,7 @@ export function install(rt) {
     const fromName = from?.name ?? (givenName === undefined ? 'You' : untrusted ? cleanName(givenName) : givenName)
     const room = rt.roomOf(roomId)
     const origin = originOf({ from, to, fromId, remote, given: givenOrigin })
+    const firstContact = remote?.handle && !deferred && !resumed && !retried && !resent ? noteFriendLine(to, sessionId, roomId, remote.handle) : false
     // Session events reject `undefined` members, so optional fields are omitted instead.
     const source = {
       kind: SOURCE_KIND,
@@ -137,7 +158,8 @@ export function install(rt) {
       ...(fromRoomId ? { senderRoomId: fromRoomId } : {}),
       // A remote member's message (FlyBot): the chat draws it as that member's bubble.
       // `typedBy`: the plugin has the server's attestation that this friend typed the line themselves.
-      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}), ...(remote.typedBy ? { typedBy: cleanName(remote.typedBy) } : {}) } } : {}),
+      // `firstContact`: this sender's first line in the Bot's own chat; the chat names who is talking (#420).
+      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}), ...(remote.typedBy ? { typedBy: cleanName(remote.typedBy) } : {}), ...(firstContact ? { firstContact: true } : {}) } } : {}),
       // A remote member's files, as references the chat shows as chips (fetched on demand).
       ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
     }

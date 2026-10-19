@@ -281,6 +281,15 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
     files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 }
 
+// A sender's first line in a Bot's own chat (#420): one quiet line says who is talking to the Bot
+// and how, so the line is not read as one of my own messages.
+export function FirstContact({ source, roster, sessionId }) {
+  const person = typeof source.remote.typedBy === 'string' ? source.remote.typedBy : ''
+  const who = person || remoteSpeaker(source, roster).name
+  const bot = roster.byId[sessionId]?.name ?? t('your Bot')
+  return h('div', { className: 'bt-event', 'data-first-contact': source.remote.handle }, h('span', null, t('{name} is talking to {bot} through Bot Social', { name: who, bot })))
+}
+
 function GlobeMark() {
   return h('svg', { width: 10, height: 10, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
     h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18' }))
@@ -468,7 +477,8 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     // A friend's message in its remote chat: the reply below shows it (remote-chat.js).
     if (source.form === 'remote-chat') return null
     if (source.remote?.handle) {
-      return h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
+      const message = h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
+      return source.remote.firstContact === true ? h(Fragment, null, h(FirstContact, { source, roster, sessionId }), message) : message
     }
     if (source.kind === 'bot') {
       // A part opens with its handoff package, so the earlier parts go right above it.

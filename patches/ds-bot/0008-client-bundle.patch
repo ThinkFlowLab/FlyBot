@@ -294,11 +294,13 @@ diff --git a/client.js b/client.js
    "Open updates": "打开更新",
    // Command palette
    Messages: "消息",
-@@ -459,6 +459,7 @@ var ZH = {
+@@ -459,6 +459,9 @@ var ZH = {
    "Replies from": "群聊回复：",
    "Reply from": "收到回复：",
    "Message from": "收到消息：",
 +  "via {name}": "经由 {name}",
++  "{name} is talking to {bot} through Bot Social": "{name} 正通过 Bot Social 和 {bot} 对话",
++  "your Bot": "你的 Bot",
    "Stopped by": "叫停者：",
    "{count} messages with": "{count} 条消息，来自",
    "Routine started": "例行任务开始",
@@ -962,14 +964,6 @@ diff --git a/client.js b/client.js
 -  const byId = {};
 -  for (const bot of value.bots) {
 -    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
--  }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1003,29 +997,23 @@ diff --git a/client.js b/client.js
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
    }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
--  }
--  return { ...state, [sessionId]: own };
++}
 +function PersonMark({ size = 22 }) {
 +  return (0, import_react.createElement)(
 +    "span",
@@ -1037,109 +1025,17 @@ diff --git a/client.js b/client.js
 +      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
 +    )
 +  );
- }
--
--// src/client/themes.js
--var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
--var THEMES = {
--  deepseek: {
--    label: "DeepSeek",
--    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
--    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
--  },
--  mono: {
--    label: "Mono",
--    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
--    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
--  },
--  paper: {
--    label: "Paper",
--    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
--    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
--  },
--  moonlight: {
--    label: "Moonlight",
--    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
--    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
--};
--var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
--function themeVars(mode, dark, accent = mode.accent) {
--  return {
--    "--bt-ink": mode.text,
--    "--bt-ink-2": rgba(mode.text, 0.6),
--    "--bt-ink-3": rgba(mode.text, 0.36),
--    "--bt-bubble": mode.bubble,
--    "--bt-sidebar": mode.sidebar,
--    "--bt-main": mode.bg,
--    "--bt-card": mode.card,
--    "--bt-line": rgba(mode.text, 0.08),
--    "--bt-line-2": rgba(mode.text, 0.15),
--    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
--    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
--    "--bt-accent": accent,
--    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
--    "--bt-user": mode.user,
--    "--bt-user-ink": mode.userText,
--    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
--    "--bt-tag-ink": rgba(mode.text, 0.58)
--  };
++}
 +function AdminStar() {
 +  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
- }
--var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
--var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
--html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
--${theme.css ?? ""}`;
--var shellTokens = ({ light, dark }) => ({
--  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
--  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
--  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
--  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
--  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
--  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
--});
--var customThemes = {};
--var registry = createSource(0);
--var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
--function registerShape(id, shape) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
--  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
--  const at = shape.eyes?.at;
--  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
--  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
--  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
--  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
--  const previous = SHAPES[id];
--  SHAPES[id] = {
--    label: String(shape.label ?? id),
--    size,
--    body: shape.body,
--    eyes,
--    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
--  };
--  const refresh = () => {
--    markupCache.clear();
--    maskCache.delete(id);
--    registry.set((value) => value + 1);
--  };
--  refresh();
--  return () => {
--    if (previous) SHAPES[id] = previous;
--    else delete SHAPES[id];
--    refresh();
--  };
++}
 +function MainStar() {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { viewBox: "0 0 20 20", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
 +  );
- }
--function registerTheme(id, theme) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
--  for (const mode of ["light", "dark"]) {
--    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
++}
 +function useSettled(state) {
 +  const prev = (0, import_react.useRef)(state);
 +  const [settled, setSettled] = (0, import_react.useState)(false);
@@ -1179,16 +1075,14 @@ diff --git a/client.js b/client.js
 +    const rest = frame - size;
 +    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
    }
--  const previous = customThemes[id];
--  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
--  registry.set((value) => value + 1);
--  return () => {
--    if (previous) customThemes[id] = previous;
--    else delete customThemes[id];
--    registry.set((value) => value + 1);
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 +  const half = frame / 2;
 +  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+}
+ }
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
 +function roomAvatarPeople(room2, roster) {
 +  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
 +  const seen = new Set(members.map((bot) => bot.id));
@@ -1221,7 +1115,13 @@ diff --git a/client.js b/client.js
 +  }
 +  if (members.length === 1 && remotes.length === 0) return [members[0], null];
 +  return [...members, ...remotes];
-+}
+ }
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people = roomAvatarPeople(room2, roster);
 +  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
@@ -1233,7 +1133,8 @@ diff --git a/client.js b/client.js
 +      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 +      people.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 +    );
-+  }
+   }
+-  return { ...state, [sessionId]: own };
 +  const seats = clusterSeats(Math.min(people.length, 4), size);
 +  const overflow = people.length > 4 ? people.length - 3 : 0;
 +  const gap = size / 14;
@@ -1252,8 +1153,30 @@ diff --git a/client.js b/client.js
 +      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 +    })
 +  );
-+}
-+
+ }
+ 
+-// src/client/themes.js
+-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+-var THEMES = {
+-  deepseek: {
+-    label: "DeepSeek",
+-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+-  },
+-  mono: {
+-    label: "Mono",
+-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+-  },
+-  paper: {
+-    label: "Paper",
+-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+-  },
+-  moonlight: {
+-    label: "Moonlight",
+-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
 +// src/client/flybot-slots.js
 +var import_react2 = require("react");
 +var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -1285,8 +1208,29 @@ diff --git a/client.js b/client.js
 +  }
 +  render() {
 +    return this.state.failed ? this.props.fallback ?? null : this.props.children;
-+  }
-+};
+   }
+ };
+-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+-function themeVars(mode, dark, accent = mode.accent) {
+-  return {
+-    "--bt-ink": mode.text,
+-    "--bt-ink-2": rgba(mode.text, 0.6),
+-    "--bt-ink-3": rgba(mode.text, 0.36),
+-    "--bt-bubble": mode.bubble,
+-    "--bt-sidebar": mode.sidebar,
+-    "--bt-main": mode.bg,
+-    "--bt-card": mode.card,
+-    "--bt-line": rgba(mode.text, 0.08),
+-    "--bt-line-2": rgba(mode.text, 0.15),
+-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+-    "--bt-accent": accent,
+-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+-    "--bt-user": mode.user,
+-    "--bt-user-ink": mode.userText,
+-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+-    "--bt-tag-ink": rgba(mode.text, 0.58)
+-  };
 +function SlotIcon({ id, icon: icon2, fallback }) {
 +  return (0, import_react2.createElement)(SlotBoundary, { id, fallback }, (0, import_react2.createElement)(icon2));
 +}
@@ -1338,7 +1282,42 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
 +  return claimed;
-+}
+ }
+-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+-${theme.css ?? ""}`;
+-var shellTokens = ({ light, dark }) => ({
+-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+-});
+-var customThemes = {};
+-var registry = createSource(0);
+-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+-function registerShape(id, shape) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+-  const at = shape.eyes?.at;
+-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+-  const previous = SHAPES[id];
+-  SHAPES[id] = {
+-    label: String(shape.label ?? id),
+-    size,
+-    body: shape.body,
+-    eyes,
+-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+-  };
+-  const refresh = () => {
+-    markupCache.clear();
+-    maskCache.delete(id);
+-    registry.set((value) => value + 1);
 +function FlyBotSessionDock({ sessionId, useRoster, actions }) {
 +  const entries2 = useSlot("flybot.session.dock");
 +  (0, import_react2.useEffect)(() => {
@@ -1424,6 +1403,11 @@ diff --git a/client.js b/client.js
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
    };
+-  refresh();
+-  return () => {
+-    if (previous) SHAPES[id] = previous;
+-    else delete SHAPES[id];
+-    refresh();
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1447,12 +1431,25 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-+  };
+   };
+-}
+-function registerTheme(id, theme) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
+-  for (const mode of ["light", "dark"]) {
+-    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
 +    byChat.set(key, [...byChat.get(key) ?? [], approval]);
-+  }
+   }
+-  const previous = customThemes[id];
+-  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
+-  registry.set((value) => value + 1);
+-  return () => {
+-    if (previous) customThemes[id] = previous;
+-    else delete customThemes[id];
+-    registry.set((value) => value + 1);
+-  };
 +  return (0, import_react2.createElement)(
 +    import_react2.Fragment,
 +    null,
@@ -1631,7 +1628,7 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1604,29 +1604,188 @@ function previewOf(list, id, hiddenTurns = []) {
+@@ -1604,7 +1604,7 @@ function previewOf(list, id, hiddenTurns = []) {
      const entry = outline[index];
      if (hiddenTurns.includes(entry.turn)) continue;
      const text = entry.response || entry.prompt || "";
@@ -1640,29 +1637,13 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
--var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
--function usageOf(list, ids) {
--  let input = 0;
--  let cacheRead = 0;
--  let output = 0;
--  for (const id of ids) {
--    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
--    if (!usage) continue;
--    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
--    cacheRead += usage.cacheReadTokens ?? 0;
--    output += usage.outputTokens ?? 0;
-+var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
-+function usageOf(list, ids) {
-+  let input = 0;
-+  let cacheRead = 0;
-+  let output = 0;
-+  for (const id of ids) {
-+    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
-+    if (!usage) continue;
-+    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
-+    cacheRead += usage.cacheReadTokens ?? 0;
-+    output += usage.outputTokens ?? 0;
-+  }
+@@ -1620,13 +1620,172 @@ function usageOf(list, ids) {
+     cacheRead += usage.cacheReadTokens ?? 0;
+     output += usage.outputTokens ?? 0;
+   }
+-  if (input + output === 0) return "";
+-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 +  if (input + output === 0) return "";
 +  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
 +  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
@@ -1815,10 +1796,7 @@ diff --git a/client.js b/client.js
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
 +    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-   }
--  if (input + output === 0) return "";
--  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
--  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
++  }
 +  const previous = customThemes[id];
 +  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
 +  registry3.set((value) => value + 1);
@@ -1950,7 +1928,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
  /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
     size wide), a resting mark leans into the pointer and keeps nuzzling it, its eyes
-@@ -1933,7 +1933,14 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -1933,15 +1933,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-side{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;gap:2px;padding:0 12px 8px 0;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-side-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 5px 0 0}
  .bt-brand{display:inline-flex;align-items:center;gap:6px;margin-right:auto;padding:4px 8px 4px 4px;border:0;border-radius:8px;background:none;cursor:pointer;font-family:inherit;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:var(--bt-ink);white-space:nowrap}
@@ -1966,6 +1944,16 @@ diff --git a/client.js b/client.js
  .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
  .bt-round:hover{background:var(--bt-hover)}
  .bt-round:active{transform:scale(.94)}
+ .bt-list{display:flex;flex-direction:column;gap:3px;overflow-y:auto;min-height:0;flex:1 1 auto}
+ .bt-tile-wrap{display:flex;justify-content:center;padding:20px 0 15px}
+-.bt-tile{display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
++.bt-tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
+ .bt-tile:hover{background:var(--bt-hover)}
+ .bt-tile[aria-current=page]{background:var(--bt-active)}
++.bt-tile-unread{position:absolute;top:8px;right:12px}
+ .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
+ .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
 @@ -1950,21 +1950,24 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
@@ -3353,7 +3341,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,198 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,204 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -3522,6 +3510,12 @@ diff --git a/client.js b/client.js
 +    (0, import_react7.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
++}
++function FirstContact({ source, roster, sessionId }) {
++  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
++  const who = person || remoteSpeaker(source, roster).name;
++  const bot = roster.byId[sessionId]?.name ?? t("your Bot");
++  return (0, import_react7.createElement)("div", { className: "bt-event", "data-first-contact": source.remote.handle }, (0, import_react7.createElement)("span", null, t("{name} is talking to {bot} through Bot Social", { name: who, bot })));
 +}
 +function GlobeMark() {
 +  return (0, import_react7.createElement)(
@@ -3697,7 +3691,7 @@ diff --git a/client.js b/client.js
      if (relayed) actions.noteTurnPeer(sessionId, turn, source.senderSessionId);
    }, [relayed, sessionId, turn, source.senderSessionId]);
    const order = useSessions((list) => {
-@@ -4135,23 +4135,29 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
+@@ -4135,23 +4135,30 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
      return first?.turn === turn && unseenSince(visit, first.start) ? clockLabel(first.start) : "";
    });
    const body = triggerBody();
@@ -3706,7 +3700,8 @@ diff --git a/client.js b/client.js
    function triggerBody() {
 +    if (source.form === "remote-chat") return null;
 +    if (source.remote?.handle) {
-+      return (0, import_react7.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
++      const message = (0, import_react7.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
++      return source.remote.firstContact === true ? (0, import_react7.createElement)(import_react7.Fragment, null, (0, import_react7.createElement)(FirstContact, { source, roster, sessionId }), message) : message;
 +    }
      if (source.kind === "bot") {
 -      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react6.createElement)(EarlierParts, { sessionId, roster, actions });
@@ -3937,8 +3932,7 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -3951,7 +3945,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -4297,7 +4292,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4785,12 +4785,13 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4785,12 +4785,15 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
          onClick: () => actions.openSession(id),
          onContextMenu
        },
@@ -4306,6 +4301,8 @@ diff --git a/client.js b/client.js
 -      bot.role ? (0, import_react8.createElement)("span", { className: "bt-chip" }, bot.role) : null
 +      (0, import_react9.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
 +      (0, import_react9.createElement)("span", { className: "bt-tile-name" }, shown),
++      // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
++      unread && !waiting && !active ? (0, import_react9.createElement)("span", { className: "bt-unread bt-tile-unread", "aria-hidden": true }) : null,
 +      bot.role ? (0, import_react9.createElement)("span", { className: "bt-chip" }, bot.role) : null
      ));
    }
@@ -5241,14 +5238,12 @@ diff --git a/client.js b/client.js
    );
    const toLatest = () => {
      const scroller = document.querySelector("[data-conversation-scroll]");
-@@ -5703,9 +5703,9 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
-     else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+@@ -5704,8 +5704,8 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
    };
    const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
--  return (0, import_react_dom4.createPortal)(
+   return (0, import_react_dom4.createPortal)(
 -    (0, import_react9.createElement)(
 -      import_react9.Fragment,
-+  return (0, import_react_dom4.createPortal)(
 +    (0, import_react10.createElement)(
 +      import_react10.Fragment,
        null,
@@ -8478,8 +8473,7 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react25.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: seats.length }) },
 +      seats.map((seat) => (0, import_react25.createElement)(
 +        "div",
@@ -8493,7 +8487,8 @@ diff --git a/client.js b/client.js
 +      ))
 +    ) : null,
 +    face ? null : (0, import_react25.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react25.createElement)(
 +        "div",
@@ -10447,6 +10442,14 @@ diff --git a/client.js b/client.js
      ))
    );
  }
+@@ -10978,6 +10978,7 @@ var STORAGE = {
+   unread: "ds-bot:unread",
+   reactions: "ds-bot:reactions",
+   seen: "ds-bot:seen",
++  friendLines: "ds-bot:friend-lines",
+   prefs: "ds-bot:prefs",
+   surface: "ds-bot:surface",
+   agentSessions: "ds-bot:agent-sessions",
 @@ -11039,7 +11039,7 @@ function migrateStorage(storage = globalThis.localStorage) {
  }
  
@@ -10752,8 +10755,11 @@ diff --git a/client.js b/client.js
    useMorph(body, open);
 -  return (0, import_react31.createElement)(
 +  return (0, import_react33.createElement)(
-+    "div",
-+    null,
+     "div",
+     null,
+-    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
+-    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
+-    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
 +    (0, import_react33.createElement)("div", { className: "bt-section-title" }, t(title)),
 +    (0, import_react33.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
 +    long ? (0, import_react33.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
@@ -10805,11 +10811,8 @@ diff --git a/client.js b/client.js
 +function FaceMembers({ room: room2, roster, actions }) {
 +  const seats = faceSeats(room2, roster);
 +  return (0, import_react33.createElement)(
-     "div",
-     null,
--    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
--    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
--    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
++    "div",
++    null,
 +    (0, import_react33.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: seats.length })),
 +    (0, import_react33.createElement)("div", { className: "bt-members", role: "list" }, seats.map((seat) => {
 +      const label = faceSeatLabel(seat);
@@ -11595,6 +11598,29 @@ diff --git a/client.js b/client.js
    );
  }
  
+@@ -13052,6 +13052,22 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
+   };
+ }
+ 
++// src/client/friend-lines.js
++function friendLineNews(bots, known, isOpen, selfId) {
++  const next = { ...known ?? {} };
++  const unread = [];
++  for (const bot of bots ?? []) {
++    const at = bot?.friendLineAt;
++    if (bot?.remote || !Number.isFinite(at)) continue;
++    if (selfId && bot.ownerId && bot.ownerId !== selfId) continue;
++    const shown = known?.[bot.id];
++    if (shown === at) continue;
++    next[bot.id] = at;
++    if (known && (shown === void 0 || at > shown) && !isOpen(bot)) unread.push(bot.id);
++  }
++  return { known: next, unread };
++}
++
+ // src/client/surface.js
+ function groupsFor({ mode, plain = false }) {
+   return { shell: mode === "bot", conversation: mode === "bot" && !plain };
 @@ -13105,7 +13105,7 @@ function writeMode(mode, storage = globalThis.localStorage) {
  }
  
@@ -11783,16 +11809,41 @@ diff --git a/client.js b/client.js
    migrateStorage();
    const UNREAD_KEY = STORAGE.unread;
    let savedUnread = {};
-@@ -13274,7 +13274,7 @@ function apply(ctx) {
+@@ -13274,7 +13274,13 @@ function apply(ctx) {
    } catch {
      seenAt = {};
    }
 -  const ui2 = createSource({ details: null, view: "details", renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} });
++  let friendLines = null;
++  try {
++    friendLines = JSON.parse(localStorage.getItem(STORAGE.friendLines) ?? "null");
++  } catch {
++    friendLines = null;
++  }
 +  const ui2 = createSource({ details: null, view: "details", renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} });
    const surface = createSource({ mode: readMode(), plain: false });
    let agentSessionCache = /* @__PURE__ */ new Set();
    try {
-@@ -13368,6 +13368,10 @@ function apply(ctx) {
+@@ -13344,6 +13344,18 @@ function apply(ctx) {
+     }
+     return { ...state, unread };
+   });
++  const noteFriendLines = (value) => {
++    const visited = new Set(Object.keys(ui2.getSnapshot().visits ?? {}).map(seenKey));
++    const news = friendLineNews(value.bots, friendLines, (bot) => visited.has(bot.id), value.self?.memberId);
++    if (JSON.stringify(news.known) !== JSON.stringify(friendLines ?? null)) {
++      friendLines = news.known;
++      try {
++        localStorage.setItem(STORAGE.friendLines, JSON.stringify(friendLines));
++      } catch {
++      }
++    }
++    for (const id of news.unread) setUnread(id, true);
++  };
+   const refreshed = /* @__PURE__ */ new Set();
+   let pulls = 0;
+   let applied = 0;
+@@ -13368,10 +13368,15 @@ function apply(ctx) {
      const live2 = {};
      if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;
      if (value.capabilityStatuses !== void 0 && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live2.capabilityStatuses = value.capabilityStatuses;
@@ -11803,6 +11854,11 @@ diff --git a/client.js b/client.js
      if (Object.keys(live2).length > 0 && current.ready) roster.set({ ...current, ...live2 });
      if (value.unchanged || value.revision === current.revision && value.modelsKey === current.modelsKey) return;
      if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
+     roster.set(indexRoster(value));
++    noteFriendLines(value);
+     try {
+       const ids = (value.agents ?? []).flatMap((agent) => agent.sessions ?? []);
+       localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids));
 @@ -13501,7 +13501,7 @@ function apply(ctx) {
      };
      render();
