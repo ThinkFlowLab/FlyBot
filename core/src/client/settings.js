@@ -192,10 +192,13 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
         pages.map(([key, text]) => h('button', {
           key, type: 'button', className: 'bt-settings-item', 'aria-current': shown === key ? 'page' : undefined, onClick: () => actions.openSettings(key),
         }, h(extra.find(item => item.key === key)?.entry.icon ?? PAGE_ICONS[key] ?? ConnectorIcon), t(text))),
+        // DeepSeek Harness's own settings are a separate window with its own title and look; FlyBot
+        // does not embed or retitle it (never patch DSH), so the entry says it leaves (#421).
         h('button', {
-          type: 'button', className: 'bt-settings-item bt-settings-shell', title: t('Models, providers, and the rest of DeepSeek Harness'),
+          type: 'button', className: 'bt-settings-item bt-settings-shell', title: t("Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window"),
+          'aria-label': t("Harness settings, opens DeepSeek Harness's own settings window"),
           onClick: () => { close(); openHarnessSettings() },
-        }, h(SlidersIcon), t('Harness settings'))),
+        }, h(SlidersIcon), t('Harness settings'), h('span', { className: 'bt-settings-out', 'aria-hidden': true }, '↗'))),
       h('div', { className: 'bt-settings-main' },
         h('div', { className: 'bt-settings-head' },
           back ? h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': back, title: back, onClick: () => actions.openSettings(shown) }, h(ChevronLeftIcon)) : null,

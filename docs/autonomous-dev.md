@@ -12,6 +12,8 @@ Decisions by the maintainer, and what follows from them:
    `GITHUB_TOKEN` with the least permissions per job. It has no LLM and no secrets.
 2. **No Cursor GitHub App on ThinkFlowLab**, so no Cursor cloud agent on this repo. LLM agents
    (triage, implement, review) run **outside Actions**, as Grok Bot routines or agents on the Grok Bot box.
+   The review is done by the owner's own reviewer Bot (acting as `Birfy`, self-review); Codex is not used for review
+   (owner decision 2026-10-19 15:31), and no workflow, routine or gate requests or waits for it.
 3. **Agents act only on issues labeled `agent-ready`**. That label is set by a maintainer, or by the owner's
    maintenance routine after triage (the routine runs as the maintainer account `Birfy`, so the controller sees a
    maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
