@@ -753,7 +753,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,33 +1,38 @@
+@@ -1,44 +1,60 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -798,7 +798,10 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
  import { ABOUT_CSS } from './about.js'
  import { MEMBER_CSS, MemberDock } from './member-status.js'
-@@ -37,8 +37,18 @@ import { noticeApprovals } from './approval-notices.js'
+ import { USER_MESSAGE_CSS, UserMessageCell, canDrawUserMessages } from './user-message.js'
+ import { noticeApprovals } from './approval-notices.js'
++import { STATS_DOCK, STATS_ID, statsDock } from './stats-dock.js'
+ 
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
  export function apply(ctx) {
@@ -957,7 +960,13 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
-@@ -719,6 +719,17 @@ export function apply(ctx) {
+@@ -715,10 +715,23 @@ export function apply(ctx) {
+   }
+ 
+   const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component))
++  // The shell's run-stats footer, drawn by the shell's own entry with FlyBot's plurals (#419).
++  const runStats = statsDock(name => ctx.slots.entries?.(name) ?? [])
+ 
    // The "@" menu's Bot group and the chats "+" references. The composer's controller
    // for a Session is the shell's own, so the chats open at its caret.
    let atMenu = null
@@ -1036,7 +1045,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ]
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, 'conversation'),
-@@ -790,6 +790,11 @@ export function apply(ctx) {
+@@ -790,15 +790,23 @@ export function apply(ctx) {
      // every message.
      shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
      shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
@@ -1048,9 +1057,15 @@ diff --git a/src/client/index.js b/src/client/index.js
      ...(canDrawUserMessages() ? ['user', 'steering'].map(key => shadow('conversation.chat.node', { key, priority: -10, locale: 'chat', inject: face }, UserMessageCell)) : []),
      shadow('conversation.input.permission', { priority: -10 }, Nothing),
      shadow('conversation.input.plan', { priority: -10 }, Nothing),
-@@ -799,6 +799,7 @@ export function apply(ctx) {
+-    // The composer carries no model picker or run statistics; a Bot's model lives
+-    // in its details panel.
++    // The composer carries no model picker; a Bot's model lives in its details panel.
+     shadow('conversation.input.model', { priority: -10 }, Nothing),
      shadow('conversation.composer.dock', { id: 'activity', order: 0, priority: -10 }, Nothing),
      shadow('conversation.composer.dock', { id: 'usage', order: 1, priority: -10 }, Nothing),
++    // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
++    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
++    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: 'chat', inject: runStats.inject }, runStats.component),
      shadow('conversation.input.left', { id: 'bot-plus', order: -100, inject: face }, ComposerPlus),
 +    shadow('conversation.input.left', { id: 'bot-as', order: -90, inject: face }, ComposerIdentity),
      shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),

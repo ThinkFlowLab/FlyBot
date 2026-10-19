@@ -1768,8 +1768,8 @@ function bodyOf(def, paint, flat = false) {
     return "";
   }
 }
-var eyeMarkup = ([cx, cy, w, h38, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h38 / 2}" width="${w}" height="${h38}" rx="${w / 2}"/></g>`;
-var happyEyeMarkup = ([cx, cy, w, h38, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h38 * 0.14}Q0 ${-h38 * 0.42} ${w * 0.62} ${h38 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
+var eyeMarkup = ([cx, cy, w, h39, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h39 / 2}" width="${w}" height="${h39}" rx="${w / 2}"/></g>`;
+var happyEyeMarkup = ([cx, cy, w, h39, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h39 * 0.14}Q0 ${-h39 * 0.42} ${w * 0.62} ${h39 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
 var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
 var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
 var MASK_ID = "%MASK%";
@@ -2791,12 +2791,12 @@ function liveSprings(apply2) {
     const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
     last = now;
     const steps = Math.ceil(dt * 240);
-    const h38 = dt / steps;
+    const h39 = dt / steps;
     let moving = false;
     for (const value of values.values()) {
       for (let index = 0; index < steps; index += 1) {
-        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h38;
-        value.x += value.v * h38;
+        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h39;
+        value.x += value.v * h39;
       }
       if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
         value.x = value.to;
@@ -15757,6 +15757,30 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
   return work.subscribe(notify);
 }
 
+// src/client/stats-dock.js
+var import_react39 = require("react");
+var STATS_DOCK = "conversation.composer.dock";
+var STATS_ID = "stats";
+var noun = (count, one, many) => `${count} ${Number(count) === 1 ? one : many}`;
+function pluralStats(t2) {
+  return (key, params) => {
+    const text = t2(key, params);
+    if (key !== "stats.counts" || !params) return text;
+    const { turns, steps } = params;
+    return text === `${turns} turns ${steps} steps` ? `${noun(turns, "turn", "turns")} ${noun(steps, "step", "steps")}` : text;
+  };
+}
+function statsDock(entriesOf) {
+  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === STATS_ID);
+  function StatsDock(props) {
+    const t2 = (0, import_react39.useMemo)(() => typeof props.t === "function" ? pluralStats(props.t) : props.t, [props.t]);
+    const entry = shell();
+    if (!entry || typeof props.usePerformanceUsage !== "function") return null;
+    return (0, import_react39.createElement)(entry.component, { ...props, t: t2 });
+  }
+  return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
+}
+
 // src/client/index.js
 var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
 function apply(ctx) {
@@ -16543,6 +16567,7 @@ function apply(ctx) {
     } };
   };
   const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
+  const runStats = statsDock((name) => ctx.slots.entries?.(name) ?? []);
   let atMenu = null;
   const faceMenus = /* @__PURE__ */ new Map();
   const watchFace = (sessionId) => {
@@ -16645,11 +16670,13 @@ function apply(ctx) {
     ...canDrawUserMessages() ? ["user", "steering"].map((key) => shadow("conversation.chat.node", { key, priority: -10, locale: "chat", inject: face }, UserMessageCell)) : [],
     shadow("conversation.input.permission", { priority: -10 }, Nothing),
     shadow("conversation.input.plan", { priority: -10 }, Nothing),
-    // The composer carries no model picker or run statistics; a Bot's model lives
-    // in its details panel.
+    // The composer carries no model picker; a Bot's model lives in its details panel.
     shadow("conversation.input.model", { priority: -10 }, Nothing),
     shadow("conversation.composer.dock", { id: "activity", order: 0, priority: -10 }, Nothing),
     shadow("conversation.composer.dock", { id: "usage", order: 1, priority: -10 }, Nothing),
+    // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
+    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
+    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: "chat", inject: runStats.inject }, runStats.component),
     shadow("conversation.input.left", { id: "bot-plus", order: -100, inject: face }, ComposerPlus),
     shadow("conversation.input.left", { id: "bot-as", order: -90, inject: face }, ComposerIdentity),
     shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),

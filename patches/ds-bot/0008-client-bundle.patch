@@ -905,8 +905,8 @@ diff --git a/client.js b/client.js
  }
 -var eyeMarkup = ([cx, cy, w, h34, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h34 / 2}" width="${w}" height="${h34}" rx="${w / 2}"/></g>`;
 -var happyEyeMarkup = ([cx, cy, w, h34, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h34 * 0.14}Q0 ${-h34 * 0.42} ${w * 0.62} ${h34 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
-+var eyeMarkup = ([cx, cy, w, h38, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h38 / 2}" width="${w}" height="${h38}" rx="${w / 2}"/></g>`;
-+var happyEyeMarkup = ([cx, cy, w, h38, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h38 * 0.14}Q0 ${-h38 * 0.42} ${w * 0.62} ${h38 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
++var eyeMarkup = ([cx, cy, w, h39, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h39 / 2}" width="${w}" height="${h39}" rx="${w / 2}"/></g>`;
++var happyEyeMarkup = ([cx, cy, w, h39, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h39 * 0.14}Q0 ${-h39 * 0.42} ${w * 0.62} ${h39 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
@@ -1857,14 +1857,14 @@ diff --git a/client.js b/client.js
      last = now;
      const steps = Math.ceil(dt * 240);
 -    const h34 = dt / steps;
-+    const h38 = dt / steps;
++    const h39 = dt / steps;
      let moving = false;
      for (const value of values.values()) {
        for (let index = 0; index < steps; index += 1) {
 -        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
 -        value.x += value.v * h34;
-+        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h38;
-+        value.x += value.v * h38;
++        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h39;
++        value.x += value.v * h39;
        }
        if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
          value.x = value.to;
@@ -2145,11 +2145,10 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
-@@ -2854,227 +2854,209 @@ function installCompiledStyles(text, tag) {
-     style.remove();
+@@ -2855,226 +2855,208 @@ function installCompiledStyles(text, tag) {
    };
  }
--
+ 
 -// src/client/mark.js
 -var import_react2 = require("react");
 -var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -2264,15 +2263,6 @@ diff --git a/client.js b/client.js
 -    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
 -    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
 -  );
--}
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-+
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -2300,24 +2290,17 @@ diff --git a/client.js b/client.js
 +    seen.add(key);
 +    const handle = String(member?.handle ?? member?.id ?? "").trim().toLowerCase();
 +    rows.push({ owner, sort: handle || key });
-   }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
++  }
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2328,24 +2311,8 @@ diff --git a/client.js b/client.js
 +    seen.add(key);
 +    out.push(owner);
    }
--  const seats = clusterSeats(Math.min(people.length, 4), size);
--  const overflow = people.length > 4 ? people.length - 3 : 0;
--  const gap = size / 14;
--  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-cluster", style: { width: size, height: size } },
--    seats.map(([x, y, s], index) => {
--      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
--      const style = { left: x, top: y, width: s, height: s };
--      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
--      if (overflow > 0 && index === 3) {
--        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
--      }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
--    })
--  );
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 +  return out.slice(0, 3);
 +}
@@ -2369,7 +2336,19 @@ diff --git a/client.js b/client.js
 +  if (people.length) bits.push(people.join(", "));
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
-+}
+ }
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2396,7 +2375,25 @@ diff --git a/client.js b/client.js
 +      handle: bot.remote.handle,
 +      isChief: bot.remote.isChief
 +    });
-+  }
+   }
+-  const seats = clusterSeats(Math.min(people.length, 4), size);
+-  const overflow = people.length > 4 ? people.length - 3 : 0;
+-  const gap = size / 14;
+-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-cluster", style: { width: size, height: size } },
+-    seats.map(([x, y, s], index) => {
+-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+-      const style = { left: x, top: y, width: s, height: s };
+-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+-      if (overflow > 0 && index === 3) {
+-        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+-      }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+-    })
+-  );
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
@@ -4089,7 +4086,8 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -4106,8 +4104,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -8755,7 +8752,8 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react26.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: seats.length }) },
 +      seats.map((seat) => (0, import_react26.createElement)(
 +        "div",
@@ -8769,8 +8767,7 @@ diff --git a/client.js b/client.js
 +      ))
 +    ) : null,
 +    face ? null : (0, import_react26.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react26.createElement)(
 +        "div",
@@ -12073,7 +12070,34 @@ diff --git a/client.js b/client.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
-@@ -13250,8 +13250,18 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
+@@ -13247,11 +13247,45 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
+   return work.subscribe(notify);
+ }
+ 
++// src/client/stats-dock.js
++var import_react39 = require("react");
++var STATS_DOCK = "conversation.composer.dock";
++var STATS_ID = "stats";
++var noun = (count, one, many) => `${count} ${Number(count) === 1 ? one : many}`;
++function pluralStats(t2) {
++  return (key, params) => {
++    const text = t2(key, params);
++    if (key !== "stats.counts" || !params) return text;
++    const { turns, steps } = params;
++    return text === `${turns} turns ${steps} steps` ? `${noun(turns, "turn", "turns")} ${noun(steps, "step", "steps")}` : text;
++  };
++}
++function statsDock(entriesOf) {
++  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === STATS_ID);
++  function StatsDock(props) {
++    const t2 = (0, import_react39.useMemo)(() => typeof props.t === "function" ? pluralStats(props.t) : props.t, [props.t]);
++    const entry = shell();
++    if (!entry || typeof props.usePerformanceUsage !== "function") return null;
++    return (0, import_react39.createElement)(entry.component, { ...props, t: t2 });
++  }
++  return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
++}
++
  // src/client/index.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
  function apply(ctx) {
@@ -12262,9 +12286,11 @@ diff --git a/client.js b/client.js
    ctx.effect(() => noticeApprovals({
      work,
      roster,
-@@ -13990,6 +13990,15 @@ function apply(ctx) {
+@@ -13989,7 +13989,17 @@ function apply(ctx) {
+     } };
    };
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
++  const runStats = statsDock((name) => ctx.slots.entries?.(name) ?? []);
    let atMenu = null;
 +  const faceMenus = /* @__PURE__ */ new Map();
 +  const watchFace = (sessionId) => {
@@ -12340,7 +12366,7 @@ diff --git a/client.js b/client.js
    ];
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, "conversation"),
-@@ -14057,6 +14057,11 @@ function apply(ctx) {
+@@ -14057,15 +14057,23 @@ function apply(ctx) {
      // every message.
      shadow("conversation.chat.node", { key: "question-reply", priority: -10, locale: "chat" }, AnsweredCell),
      shadow("conversation.chat.node", { key: "compaction", priority: -10, locale: "chat" }, Nothing),
@@ -12352,9 +12378,15 @@ diff --git a/client.js b/client.js
      ...canDrawUserMessages() ? ["user", "steering"].map((key) => shadow("conversation.chat.node", { key, priority: -10, locale: "chat", inject: face }, UserMessageCell)) : [],
      shadow("conversation.input.permission", { priority: -10 }, Nothing),
      shadow("conversation.input.plan", { priority: -10 }, Nothing),
-@@ -14066,6 +14066,7 @@ function apply(ctx) {
+-    // The composer carries no model picker or run statistics; a Bot's model lives
+-    // in its details panel.
++    // The composer carries no model picker; a Bot's model lives in its details panel.
+     shadow("conversation.input.model", { priority: -10 }, Nothing),
      shadow("conversation.composer.dock", { id: "activity", order: 0, priority: -10 }, Nothing),
      shadow("conversation.composer.dock", { id: "usage", order: 1, priority: -10 }, Nothing),
++    // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
++    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
++    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: "chat", inject: runStats.inject }, runStats.component),
      shadow("conversation.input.left", { id: "bot-plus", order: -100, inject: face }, ComposerPlus),
 +    shadow("conversation.input.left", { id: "bot-as", order: -90, inject: face }, ComposerIdentity),
      shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),
