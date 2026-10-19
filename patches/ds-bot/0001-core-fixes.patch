@@ -349,7 +349,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
    'No connectors': '暂无连接器',
-@@ -93,6 +93,42 @@ const ZH = {
+@@ -93,6 +93,49 @@ const ZH = {
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -372,6 +372,13 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Change server': '更换服务器',
 +  'Features': '功能',
 +  'No optional features listed.': '服务器没有列出可选功能。',
++  'Supports: {list}': '支持：{list}',
++  'typing as you': '以你的身份输入',
++  '@mentions': '@提及',
++  'online status': '在线状态',
++  '(+{count} more)': '（另有 {count} 项）',
++  'Supports 1 optional feature': '支持 1 项可选功能',
++  'Supports {count} optional features': '支持 {count} 项可选功能',
 +  'Reachability': '连通性',
 +  'Read-only': '只读',
 +  'Another FlyBot window holds this team. Change the server there.': '另一个 FlyBot 窗口正在使用这个团队，请在那里更换服务器。',
@@ -470,15 +477,19 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -312,7 +312,7 @@ const ZH = {
+@@ -312,9 +312,10 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
    'Back to group chats': '返回群聊列表',
 -  'DS Bot settings': 'DS Bot 设置',
 +  'FlyBot settings': 'FlyBot 设置',
    'Settings pages': '设置页面',
-   'Models, providers, and the rest of DeepSeek Harness': '模型、服务商和 DeepSeek Harness 的其他设置',
+-  'Models, providers, and the rest of DeepSeek Harness': '模型、服务商和 DeepSeek Harness 的其他设置',
++  "Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window": '在单独的窗口中打开 DeepSeek Harness 自己的设置（模型、服务商、权限）',
++  "Harness settings, opens DeepSeek Harness's own settings window": 'Harness 设置，打开 DeepSeek Harness 自己的设置窗口',
    'Harness settings': 'Harness 设置',
+   'Back to Bots': '返回 Bot 列表',
+   'Close settings': '关闭设置',
 @@ -324,7 +324,6 @@ const ZH = {
    Pin: '置顶',
    Pinned: '已置顶',

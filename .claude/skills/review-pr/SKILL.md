@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Review a FlyBot change or PR with Magpie-style Verifier honesty. Report PASS, FAIL, or INC at a tip SHA; check OpenCode↔Codex agreement and security fence / display-name rules.
+description: Review a FlyBot change or PR with Magpie-style Verifier honesty. Report PASS, FAIL, or INC at a tip SHA; check implementer↔reviewer agreement and security fence / display-name rules.
 ---
 
 # FlyBot review-pr
@@ -25,9 +25,9 @@ Use for local or PR tip reviews on `ThinkFlowLab/FlyBot`. Produce a Verifier rep
 
 | Verdict | Meaning |
 |---|---|
-| **PASS** | No actionable findings for the scoped risk; required checks you claim were **run at this tip** and green; OpenCode and Codex **agree** on this tip when both participated. |
+| **PASS** | No actionable findings for the scoped risk; required checks you claim were **run at this tip** and green; the reviewer's own re-run evidence agrees with the implementer's claims on this tip. |
 | **FAIL** | Actionable defect (correctness, security, DSH hard-rule break, missing fail-without-change test for a claimed fix, dishonest claim). |
-| **INC** | Incomplete evidence: material checks **not run**, tip moved, only one side of OpenCode↔Codex finished, or scope unclear. INC is not PASS. |
+| **INC** | Incomplete evidence: material checks **not run**, tip moved, the review did not finish, or scope unclear. INC is not PASS. |
 
 ## Magpie-style Verifier lines (required in the report)
 
@@ -40,7 +40,6 @@ Ran:
   - …
 Not run:
   - <check> — reason
-OpenCode↔Codex: agree PASS | disagree | only OpenCode | only Codex | n/a
 Verdict: PASS | FAIL | INC
 ```
 
@@ -60,12 +59,15 @@ For any change that touches delivery, social, fencing, or model-visible remote t
 4. **Tests:** fail-without-change negative tests for reconstitution and forged headers. Absence of tests for a claimed security fix → **FAIL** or **INC**, never PASS.
 5. Cross-check open LESSONS entries dated for fences / claim honesty.
 
-## OpenCode ↔ Codex agreement
+## Who reviews
 
-When the iteration loop is in use:
+The reviewer is the **owner's own reviewer Bot/agent** (it may act as `Birfy`; self-review counts per `selfReview` in
+`.github/agent/review-policy.json`), run in a separate session with fresh context. Codex is **not** used for review
+(owner decision 2026-10-19 15:31): do not comment `@codex review`, and do not wait for or require a Codex review. A
+comment that an outside bot posts on its own is input to read, not a PASS and not a gate.
 
-- **PASS** only if both sides report PASS on the **same tip SHA**, or a human waived one side in writing.
-- If OpenCode says fixed and Codex finds a defect (or the reverse) → **FAIL** or continue the loop; do not average into PASS.
+- **PASS** only from the reviewer's own evidence on the **same tip SHA**; the implementer's "fixed" is narrative.
+- If the implementer says fixed and the reviewer finds a defect → **FAIL** or continue the loop; do not average into PASS.
 - Tip advanced after a PASS → previous PASS is void; mark **INC** until re-review.
 
 ## DSH and repo hard rules (instant FAIL)
@@ -90,7 +92,7 @@ Host / delivery changes: note smoke as **Ran** or **Not run**. Record skipped su
 ## Report shape
 
 1. Verdict line (PASS / FAIL / INC) + tip SHA  
-2. Verifier block (Ran / Not run / OpenCode↔Codex)  
+2. Verifier block (Ran / Not run)  
 3. Findings (severity, path, trigger, consequence) or “no actionable findings”  
 4. Security fence / display-name subsection when in scope  
 5. Explicit statement that this is not merge authority  

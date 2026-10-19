@@ -15,7 +15,7 @@ Security reports: use the repository **Security** tab, not a public PR descripti
 For agent-driven work on this repository (Grok Bot as the human’s unified entry):
 
 1. Read [LESSONS.md](LESSONS.md) and [docs/code-standards.md](docs/code-standards.md) before coding.
-2. **OpenCode** implements (default model `opencode/step-5-preview-free`); **Codex** reviews the tip. T2/T3 need a PASS at the tip (self-PASS counts) and the maintainer's approval; T0/T1 merge on green CI without a PASS (see AGENTS.md step 6).
+2. **OpenCode** implements (default model `opencode/step-5-preview-free`); the **owner's reviewer Bot** (acting as `Birfy`, self-review) reviews the tip with [`review-pr`](.claude/skills/review-pr/SKILL.md); Codex is not used for review (owner decision 2026-10-19 15:31), so nothing requests or waits for it. T2/T3 need a PASS at the tip (self-PASS counts) and the maintainer's approval; T0/T1 merge on green CI without a PASS (see AGENTS.md step 6).
 3. Security follow-ups from PR #2 first when open: issues #9 → #10 → #8, then other review bugs.
 4. One worktree / session per issue. Promote LESSONS into code-standards after ≥3 days when the rule stays true.
 5. Reviewers use [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md).

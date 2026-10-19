@@ -6606,6 +6606,27 @@ const serverView = (extra = {}) => ({ server: 'https://a.test', source: 'config'
 const pageProps = { Section: 'section', Row: 'row', t: (text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')) }
 const nodeBy = (nodes, id) => nodes.find(node => node.props?.['data-flybot'] === id)
 
+test('Settings → Bot Social page: features in words, unknown ids only in the tooltip (#421)', () => {
+  {
+    const { plugin, all, text } = clientPlugin([serverView(), null, { ok: true, features: ['typed_by_owner', 'mentions', 'presence', 'future_x'] }])
+    const hint = all(plugin.SocialServerSettings(pageProps)).find(node => node.type === 'row' && node.props.label === 'Features').props.hint
+    assert.equal(text(hint), 'Supports: typing as you, @mentions, online status (+1 more)')
+    assert.equal(hint.props.title, 'typed_by_owner, mentions, presence, future_x')
+    assert.doesNotMatch(text(hint), /typed_by_owner|future_x/)
+  }
+  {
+    const { plugin, all, text } = clientPlugin([serverView(), null, { ok: true, features: ['future_x'] }])
+    const hint = all(plugin.SocialServerSettings(pageProps)).find(node => node.type === 'row' && node.props.label === 'Features').props.hint
+    assert.equal(text(hint), 'Supports 1 optional feature')
+  }
+  {
+    // Remote ids that name Object.prototype members are unknown features, not words.
+    const { plugin, all, text } = clientPlugin([serverView(), null, { ok: true, features: ['constructor', '__proto__', 'toString'] }])
+    const hint = all(plugin.SocialServerSettings(pageProps)).find(node => node.type === 'row' && node.props.label === 'Features').props.hint
+    assert.equal(text(hint), 'Supports 3 optional features')
+  }
+})
+
 test('Settings → Bot Social page: shows server, source and status; the switch form opens from Change server', () => {
   {
     const { plugin, all, text } = clientPlugin([serverView(), null, { ok: true, features: ['presence'] }])
@@ -6614,7 +6635,10 @@ test('Settings → Bot Social page: shows server, source and status; the switch 
     assert.equal(rows[0].props.label, 'https://a.test')
     assert.equal(rows[0].props.hint, 'Connected as @me.home')
     assert.match(text(rows[0]), /Profile default/)
-    assert.equal(rows.find(row => row.props.label === 'Features').props.hint, 'presence')
+    // Capability ids in words, raw ids only in the tooltip (#421).
+    const features = rows.find(row => row.props.label === 'Features').props.hint
+    assert.equal(text(features), 'Supports: online status')
+    assert.equal(features.props.title, 'presence')
     assert.ok(nodeBy(nodes, 'server-change'))
     assert.equal(nodeBy(nodes, 'server-address'), undefined)
   }
@@ -6651,7 +6675,7 @@ test('Settings → Bot Social page: a checked server shows the identity warning 
     assert.match(text(warning), /new identity/)
     assert.match(text(warning), /backup on this computer and is never deleted/)
     assert.match(text(nodeBy(nodes, 'server-checked')), /Bot Social 0\.2\.0 · b\.test/)
-    assert.match(text(nodeBy(nodes, 'server-checked')), /presence, mentions/)
+    assert.match(text(nodeBy(nodes, 'server-checked')), /Supports: online status, @mentions/)
     assert.equal(text(nodeBy(nodes, 'server-confirm')), 'Switch to this server')
     assert.equal(nodeBy(nodes, 'server-check'), undefined)
   }

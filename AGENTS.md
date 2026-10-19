@@ -12,7 +12,7 @@ Instructions for AI coding agents that work on this repository. Human contributo
 
 One issue → one branch → one PR → CI `tests-ok` → auto-merge (squash).
 
-Grok Bot is the single entry point for humans; it schedules OpenCode (implements) and Codex (reviews).
+Grok Bot is the single entry point for humans; it schedules OpenCode (implements) and the owner's own reviewer Bot (reviews, acting as `Birfy`; owner decision 2026-10-19 15:31). Codex is not used for review: do not request `@codex review` and do not wait for a Codex review.
 
 1. **Issue.** Work one issue per session and per git worktree. Skim LESSONS and code-standards first. Security debt first: [#9](https://github.com/ThinkFlowLab/FlyBot/issues/9) → [#10](https://github.com/ThinkFlowLab/FlyBot/issues/10) → [#8](https://github.com/ThinkFlowLab/FlyBot/issues/8).
 2. **Branch** from latest `origin/main`. Write a test that fails without the change, then fix the class of bug.

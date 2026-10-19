@@ -1769,6 +1769,19 @@ window.__ModuleLoader__.load({
       error: (t, view) => t('Could not connect: {error}', { error: view.error ?? '' }),
     }
     const serverHost = (address) => { try { return new URL(address).host } catch { return String(address ?? '') } }
+    // Bot Social capability ids in words (#421). An id FlyBot does not know stays out of the line and
+    // only shows in the tooltip, with the raw ids, for diagnostics.
+    const FEATURE_WORDS = { typed_by_owner: 'typing as you', mentions: '@mentions', presence: 'online status' }
+    const featureLine = (features, t) => {
+      const ids = Array.isArray(features) ? features.map(String) : []
+      if (!ids.length) return t('No optional features listed.')
+      const words = ids.filter(id => Object.hasOwn(FEATURE_WORDS, id)).map(id => t(FEATURE_WORDS[id]))
+      const others = ids.length - words.length
+      const text = words.length
+        ? t('Supports: {list}', { list: words.join(', ') }) + (others ? ` ${t('(+{count} more)', { count: others })}` : '')
+        : others === 1 ? t('Supports 1 optional feature') : t('Supports {count} optional features', { count: others })
+      return h('span', { title: ids.join(', '), 'data-flybot': 'server-features' }, text)
+    }
     function SocialServerSettings({ t: given, Section, Row } = {}) {
       useStyles()
       const t = given ?? ((text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
@@ -1822,7 +1835,7 @@ window.__ModuleLoader__.load({
           h(Row, { label: view.server ?? t('No server'), hint: status },
             h('span', { className: 'fs-tag' }, source),
             view.canChange && !form ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-flybot': 'server-change', onClick: () => open() }, t('Change server')) : null),
-          platform ? h(Row, { label: t('Features'), hint: platform.features?.length ? platform.features.join(', ') : t('No optional features listed.') }, null) : null,
+          platform ? h(Row, { label: t('Features'), hint: featureLine(platform.features, t) }, null) : null,
           live && !live.ok ? h(Row, { label: t('Reachability'), hint: live.error }, null) : null,
           !view.canChange ? h(Row, { label: t('Read-only'), hint: t('Another FlyBot window holds this team. Change the server there.') }, null) : null),
         form ? h(Section, { title: t('Switch server') },
@@ -1832,7 +1845,7 @@ window.__ModuleLoader__.load({
             h('input', { className: 'bt-input', value: name, spellCheck: false, 'aria-label': t('Name for your home (optional)'), placeholder: t('Name for your home (optional)'), maxLength: 40, onChange: e => setName(e.target.value) }),
             checked ? h('div', { className: 'fs-srv-checked', 'data-flybot': 'server-checked' },
               h('div', { className: 'fs-status' }, `${checked.name}${checked.version ? ` ${checked.version}` : ''} · ${serverHost(checked.server)}`),
-              h('div', { className: 'fs-status' }, checked.features?.length ? `${t('Features')}: ${checked.features.join(', ')}` : t('No optional features listed.'))) : null,
+              h('div', { className: 'fs-status' }, featureLine(checked.features, t))) : null,
             checked && !checked.same ? h('div', { className: 'fs-srv-warn', role: 'alert', 'data-flybot': 'server-warning' },
               h('strong', null, t('Switching servers changes who you are')),
               h('span', null, checked.known ? t('You used this server before. Your saved identity, friends and settings for it come back.') : t('You get a new identity on this server. The friends and sharing you have now stay on the current server; they do not move.')),
