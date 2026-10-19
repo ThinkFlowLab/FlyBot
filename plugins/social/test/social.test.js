@@ -905,7 +905,7 @@ test('#230: removing a friend\'s Bot asks inline, not with the browser confirm b
   {
     const { plugin, all, text } = clientPlugin()
     const nodes = all(plugin.FriendChatSettings({ bot }))
-    assert.equal(text(byId(nodes, 'friend-auto-send')).trim(), 'Auto-send to SelfA')
+    assert.equal(text(byId(nodes, 'friend-auto-send')).trim(), "Auto-send my Bots' replies to SelfA")
     const remove = byId(nodes, 'remove-friend-bot')
     assert.ok(remove)
     assert.equal(byId(nodes, 'remove-friend-bot-confirm'), undefined)
@@ -1346,7 +1346,7 @@ test('decide-approval (#69): owner click approves or rejects via Bot Social', as
   assert.equal(server.calls.some(c => c.name === 'set_auto_approve'), false)
 })
 
-test('Always approve turns on Auto-send for that pair only', async (t) => {
+test('#417: Auto-send from now on turns on Auto-send for that pair only: my Bot → that person', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
   const server = mockServer()
@@ -1371,11 +1371,12 @@ test('Always approve turns on Auto-send for that pair only', async (t) => {
     queue = queue.filter(item => item.approval_id !== a.approval_id)
     return { approval_id: a.approval_id, decision: a.decision }
   }
-  server.tools.list_friends = () => ({
-    friends: [
+  // Chief (m1) is friends with Bob and Carol on its own; Writer (m2) with Bob on its own.
+  server.tools.list_friends = a => ({
+    friends: a?.bot_id === 'm1' ? [
       { relationship_id: 'r1', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } },
       { relationship_id: 'r-carol', status: 'active', peer: { handle: '@carol.home', display_name: 'Carol' } },
-    ],
+    ] : a?.bot_id === 'm2' ? [{ relationship_id: 'r-writer', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } }] : [],
   })
   server.tools.list_remote_bots = () => ({
     homes: [
@@ -1389,19 +1390,103 @@ test('Always approve turns on Auto-send for that pair only', async (t) => {
   await social.registerAll()
   await social.remoteBots({ fresh: true })
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 2)
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const writer = ctx.flybot.bot.list().find(bot => bot.name === 'Writer')
+  assert.equal(ctx.flybot.scope('social').fields.get(chief.id, 'member').bot_id, 'm1')
   const decided = (await call('flybot/social/decide-approval', { approvalId: 'apr-bob', decision: 'approve', always: true })).value
   assert.equal(decided.status, 'approved')
   assert.equal(decided.autoSend?.home, '@bob.home')
+  assert.equal(decided.autoSend?.scope, 'pair')
+  assert.equal(decided.autoSend?.botName, 'Chief')
+  assert.equal(decided.autoSend?.person, 'Bob', 'the person, not their Bot')
   const auto = server.calls.filter(c => c.name === 'set_auto_approve')
   assert.ok(auto.some(c => c.args.relationship_id === 'r1' && c.args.auto_approve_chat === true && c.args.confirm_code === 'C0DE03'))
   assert.equal(auto.some(c => c.args.relationship_id === 'r-carol'), false)
+  assert.equal(auto.some(c => c.args.relationship_id === 'r-writer'), false, "Writer's friendship with Bob is not touched")
   assert.equal(auto.some(c => c.args.auto_approve_face_rooms === true), false)
   assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval' && c.args.confirm_code).map(c => c.args.approval_id), ['apr-bob'])
   assert.ok(queue.some(item => item.approval_id === 'apr-carol'))
   assert.equal(queue.some(item => item.approval_id === 'apr-bob'), false)
+  // Stored per pair: Chief → Bob only, not Writer → Bob and not Chief → Carol.
+  assert.equal(social.approvalFor(chief.id, '@bob.home'), 'auto')
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'hold')
+  assert.equal(social.approvalFor(chief.id, '@carol.home'), 'hold')
   const settings = (await call('flybot/social/settings', {})).value
-  assert.equal(settings.autoAccept['@bob.home'], true)
+  assert.equal(settings.autoAccept['@bob.home'], false, 'not every Bot of mine auto-sends to Bob')
   assert.equal(settings.autoAccept['@carol.home'] === true, false)
+})
+
+test('#417: People with access shows Auto-send per person and the toggle round-trips', async (t) => {
+  const { ctx, call, tool, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_friends = a => ({
+    friends: a?.bot_id === 'm1' ? [{ relationship_id: 'r-chief', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } }]
+      : a?.bot_id === 'h1' ? [{ relationship_id: 'r1', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } }] : [],
+  })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const writer = ctx.flybot.bot.list().find(bot => bot.name === 'Writer')
+  await social.remoteBots({ fresh: true })
+  const row = async botId => (await call('flybot/social/access', { botId })).value.grants.find(grant => grant.home === '@bob.home')
+  assert.equal((await row(chief.id)).autoSend, false, 'default off')
+  assert.equal((await row(chief.id)).person, 'Bob')
+  const on = (await call('flybot/social/auto-send', { botId: chief.id, home: '@bob.home', on: true })).value
+  assert.deepEqual([on.botName, on.person, on.home, on.autoSend], ['Chief', 'Bob', '@bob.home', true])
+  assert.equal((await row(chief.id)).autoSend, true)
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'hold', 'Writer → Bob stays off')
+  assert.match(await tool('message_friend_bot', { to: '@coder.bob.home', message: 'goes now' }, chief.id), /^Sent to @coder\.bob\.home/)
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'hold')
+  const serverSet = () => server.calls.filter(c => c.name === 'set_auto_approve' && c.args.confirm_code === undefined).map(c => [c.args.relationship_id, c.args.auto_approve_chat])
+  assert.deepEqual(serverSet(), [['r-chief', true]], "only Chief's own friendship with Bob")
+  // Off brings back the card on the next reply.
+  const off = (await call('flybot/social/auto-send', { botId: chief.id, home: '@bob.home', on: false })).value
+  assert.equal(off.autoSend, false)
+  assert.equal((await row(chief.id)).autoSend, false)
+  const before = ctx.flybot.approvals.list().length
+  assert.match(await tool('message_friend_bot', { to: '@coder.bob.home', message: 'held again' }, chief.id), /Waiting/)
+  assert.equal(ctx.flybot.approvals.list().length, before + 1)
+  assert.deepEqual(serverSet(), [['r-chief', true], ['r-chief', false]])
+  assert.equal((await call('flybot/social/auto-send', { botId: 'nope', home: '@bob.home', on: true })).ok, false)
+  // From the held card: the pair comes from the hold itself, not from the page.
+  const held = ctx.flybot.approvals.list().at(-1)
+  const fromCard = (await call('flybot/social/auto-send', { approvalId: held.id })).value
+  assert.deepEqual([fromCard.botId, fromCard.home, fromCard.person, fromCard.autoSend], [chief.id, '@bob.home', 'Bob', true])
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'hold')
+  assert.equal((await call('flybot/social/auto-send', { approvalId: 'no-such-hold' })).ok, false)
+})
+
+test('#417: an older home-wide Auto-send still reads as on for every Bot until one is changed; the friend sheet sets all', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  const [chief, writer] = ['Chief', 'Writer'].map(name => ctx.flybot.bot.list().find(bot => bot.name === name))
+  await call('flybot/social/auto-accept', { home: '@bob.home', on: true })
+  assert.equal(social.approvalFor(chief.id, '@bob.home'), 'auto')
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'auto')
+  assert.equal((await call('flybot/social/settings', {})).value.autoAccept['@bob.home'], true)
+  // One Bot turned off in its Sharing: the others keep it; the friend sheet no longer reads all on.
+  await call('flybot/social/auto-send', { botId: writer.id, home: '@bob.home', on: false })
+  assert.equal(social.approvalFor(chief.id, '@bob.home'), 'auto')
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'hold')
+  assert.equal((await call('flybot/social/settings', {})).value.autoAccept['@bob.home'], false)
+  // The home's friendship covers Chief too, so Bot Social's auto-approve stays on for it.
+  assert.equal(server.calls.some(c => c.name === 'set_auto_approve' && c.args.auto_approve_chat === false), false)
+  // The friend sheet sets every Bot again.
+  await call('flybot/social/auto-accept', { home: '@bob.home', on: true })
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'auto')
+  assert.equal((await call('flybot/social/settings', {})).value.autoAccept['@bob.home'], true)
+  await call('flybot/social/auto-accept', { home: '@bob.home', on: false })
+  assert.equal(social.approvalFor(chief.id, '@bob.home'), 'hold')
+  assert.equal(social.approvalFor(writer.id, '@bob.home'), 'hold')
 })
 
 test('Always approve on a face-room hold uses face Auto-send', async (t) => {
@@ -2320,7 +2405,8 @@ test('a friend\'s Bot settings uses Auto-send, not a second Auto-accept label', 
   const tree = walk(pluginOf([false, false, false, '']).FriendChatSettings({
     bot: { name: 'Coder', remote: { handle: '@coder.bob.home', home: '@bob.home', homeName: 'Bob' } },
   }))
-  assert.ok(tree.some(n => n.type === 'label' && n.children.includes('Auto-send to Bob')))
+  assert.ok(tree.some(n => n.type === 'label' && n.children.includes("Auto-send my Bots' replies to Bob")))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'friend-auto-hint' && n.children.includes("Your Bots' replies to Bob go out without asking you first. What you type is not affected.")), 'says what it covers (#417)')
   assert.equal(tree.some(n => n.type === 'label' && n.children.some(c => /Auto-accept/.test(String(c)))), false)
   assert.ok(tree.some(n => n.props.className === 'fs fs-friend-settings'))
   assert.ok(tree.some(n => n.props.className === 'fs-card fs-friend-auto'), 'Auto-send has its own box (#274)')
@@ -3087,7 +3173,7 @@ test('in-chat hold card is a compact bubble with names, clamp, and Approve/Rejec
   assert.ok(approve && /fs-btn-primary/.test(approve.props.className))
   assert.ok(reject && !/fs-btn-primary/.test(reject.props.className))
   const always = named.find(n => n.props['data-flybot'] === 'hold-always')
-  assert.ok(always && always.children.includes('Always approve'))
+  assert.ok(always && always.children.includes('Auto-send from now on'))
   assert.equal(/fs-btn-primary/.test(always.props.className), false)
   assert.equal(named.some(n => n.props['data-flybot'] === 'hold-expand'), false)
   assert.equal(named.filter(n => n.type === 'button').length, 3)
@@ -3149,7 +3235,7 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes('Helper → Chief (UiA1415)')))
   // Two buttons decide; the standing choice is a quiet link, and there is no third button.
   const buttons = own.filter(n => n.type === 'button')
-  assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Always approve'])
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Auto-send from now on'])
   assert.equal(buttons.filter(n => /fs-btn/.test(n.props.className ?? '')).length, 2)
   assert.match(buttons.at(-1).props.className, /fs-link/)
   // One layout on every card: the two decisions together on the right, the standing choice at the left
@@ -3178,13 +3264,13 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   assert.deepEqual([...claims[0]], ['apr-reply'])
 })
 
-test('Always approve is owner-only and toasts Auto-send for that pair', async () => {
+test('#417: Auto-send from now on is owner-only; the toast names my Bot, the person, and where to turn it off', async () => {
   const calls = []
   const notes = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
     calls.push([endpoint, payload])
-    if (endpoint === 'social/decide-approval') return { approvalId: payload.approvalId, status: 'approved', autoSend: { from: 'Chief', to: 'Helper', home: '@bob.home' } }
-    if (endpoint === 'social/auto-accept') return { home: payload.home, autoAccept: true }
+    if (endpoint === 'social/decide-approval') return { approvalId: payload.approvalId, status: 'approved', autoSend: { from: 'Chief', to: 'Bob', botName: 'Chief', person: 'Bob', home: '@bob.home', scope: 'pair' } }
+    if (endpoint === 'social/auto-send') return { botId: 'chief', botName: 'Chief', home: '@selfb1238.home', person: 'SelfB1238', autoSend: true }
     return {}
   })
   const plugin = pluginOf([
@@ -3198,17 +3284,29 @@ test('Always approve is owner-only and toasts Auto-send for that pair', async ()
   }))
   const always = tree.find(n => n.props['data-flybot'] === 'hold-always')
   assert.ok(always)
-  assert.equal(always.children.includes('Always approve'), true)
+  assert.equal(always.children.includes('Auto-send from now on'), true)
   await always.props.onClick()
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/decide-approval' && payload.approvalId === 'apr-1' && payload.decision === 'approve' && payload.always === true))
-  assert.deepEqual(notes, ['Auto-send on for Chief → Helper. Change it anytime in settings.'])
+  assert.deepEqual(notes, ['Auto-send is on for Chief → Bob. Turn it off in Chief → Sharing → People with access.'])
+  // A local hold of my Bot's reply: that pair only (social/auto-send with the Bot), never the home-wide switch.
+  const local = { id: 'loc-1', status: 'pending', by: 'social', senderName: 'Chief', targetName: '@chief.selfb1238.home', request: { from: 'chief', to: { kind: 'remote', handle: '@chief.selfb1238.home', home: '@selfb1238.home' }, text: '8.', role: 'reply', via: 'auto-reply' } }
+  const view = pluginOf([[], []]).localHoldView(local, { bots: [] })
+  const localTree = walk(pluginOf([[], [view], '']).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, actions: { notify: text => notes.push(text) } }))
+  await localTree.find(n => n.props['data-flybot'] === 'hold-always').props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide' || endpoint === 'social/auto-send' || endpoint === 'social/auto-accept').map(([endpoint, payload]) => [endpoint, JSON.stringify(payload)]), [
+    ['decide', JSON.stringify({ id: 'loc-1', decision: 'approve' })],
+    ['social/auto-send', JSON.stringify({ approvalId: 'loc-1' })],
+  ])
+  assert.equal(notes.at(-1), 'Auto-send is on for Chief → SelfB1238. Turn it off in Chief → Sharing → People with access.')
+  assert.equal(plugin.autoSendToast(undefined), 'Sent. Auto-send was not turned on: no Bot of yours wrote this.')
+  assert.equal(plugin.autoSendToast({ scope: 'face', from: 'Chief', to: 'the room' }), 'Auto-send is on for Chief → the room. Turn it off in the room overview.')
 
   const other = walk(plugin.ChatApproval({
     item: { id: 'apr-1', from: 'Chief', to: '@coder.bob.home', toName: 'Helper', text: 'hi' },
     canDecide: false,
   }))
   assert.equal(other.some(n => n.props['data-flybot'] === 'hold-always'), false)
-  assert.equal(other.some(n => n.children?.includes?.('Always approve')), false)
+  assert.equal(other.some(n => n.children?.includes?.('Auto-send from now on')), false)
 })
 
 test('Bot settings: Manage access lists grants and revokes one', async () => {
@@ -3225,11 +3323,12 @@ test('Bot settings: Manage access lists grants and revokes one', async () => {
           botId: payload.botId,
           botName: 'Writer',
           granted: true,
-          grants: [{ id: 'g1', grantee: '@bob.home', name: 'Bob', rooms: [{ id: 'war', name: 'War' }] }],
+          grants: [{ id: 'g1', grantee: '@bob.home', name: 'Bob', home: '@bob.home', person: 'Bob', autoSend: false, rooms: [{ id: 'war', name: 'War' }] }],
           rooms: [{ id: 'war', name: 'War', origin: 'group' }],
         }
       }
       if (endpoint === 'social/revoke-grant') return { botId: payload.botId, revoked: payload.grantId, grants: [] }
+      if (endpoint === 'social/auto-send') return { botId: payload.botId, home: payload.home, autoSend: payload.on }
       return {}
     },
   }
@@ -3244,7 +3343,7 @@ test('Bot settings: Manage access lists grants and revokes one', async () => {
   }
   const store = [{
     botId: 'b', botName: 'Writer', granted: true,
-    grants: [{ id: 'g1', grantee: '@bob.home', name: 'Bob', rooms: [{ id: 'war', name: 'War' }] }],
+    grants: [{ id: 'g1', grantee: '@bob.home', name: 'Bob', home: '@bob.home', person: 'Bob', autoSend: false, rooms: [{ id: 'war', name: 'War' }] }],
     rooms: [{ id: 'war', name: 'War', origin: 'group' }],
   }]
   let cursor = 0
@@ -3264,6 +3363,19 @@ test('Bot settings: Manage access lists grants and revokes one', async () => {
   assert.ok(tree.some(n => n.props['data-flybot'] === 'manage-access'))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'access-grant'))
   assert.ok(tree.some(n => typeof n.children?.[0] === 'string' && /People with access/.test(n.children[0])))
+  // Auto-send for this pair sits on the person's row next to Revoke, off by default (#417).
+  const auto = tree.find(n => n.props['data-flybot'] === 'access-auto-send')
+  assert.ok(auto)
+  assert.ok(auto.children.includes('Auto-send'))
+  const box = auto.children.find(n => n?.type === 'input')
+  assert.equal(box.props.checked, false)
+  assert.equal(box.props['aria-label'], 'Auto-send Writer → Bob')
+  const row = tree.find(n => n.props['data-flybot'] === 'access-grant')
+  const order = row.children.map(n => n?.props?.['data-flybot']).filter(Boolean)
+  assert.deepEqual(order, ['access-auto-send', 'revoke-grant'])
+  box.props.onChange({ target: { checked: true } })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/auto-send' && payload.botId === 'b' && payload.home === '@bob.home' && payload.on === true))
   const revoke = tree.find(n => n.props['data-flybot'] === 'revoke-grant')
   assert.ok(revoke)
   await revoke.props.onClick()
@@ -4044,7 +4156,7 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   assert.ok(remove.props.title)
   assert.ok(remove.children.includes('Remove this Bot'))
   assert.ok(all.some(n => n.props['data-flybot'] === 'friend-chat-settings'))
-  assert.ok(all.some(n => n.type === 'label' && n.children.includes('Auto-send to hsliu')))
+  assert.ok(all.some(n => n.type === 'label' && n.children.includes("Auto-send my Bots' replies to hsliu")))
   // #274: the Auto-send box holds the setting only; Remove this Bot sits in its own row below it.
   const box = all.find(n => n.props['data-flybot'] === 'friend-auto-box')
   assert.ok(box, 'the Auto-send setting has its own box')
@@ -4068,12 +4180,12 @@ test('#90: a friend\'s Bot settings has Remove this Bot; ChatApproval is owner-o
   collect(other, otherNodes)
   assert.ok(ownerNodes.some(n => n.children?.includes?.(WAITING_OWNER) || (Array.isArray(n.children) && n.children.includes(WAITING_OWNER))))
   assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Approve')))
-  assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Always approve')))
+  assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Auto-send from now on')))
   assert.ok(ownerNodes.some(n => n.type === 'button' && n.children.includes('Reject')))
   assert.equal(ownerNodes.some(n => n.props['data-flybot'] === 'chat-auto-send'), false)
   assert.ok(otherNodes.some(n => n.children?.includes?.(WAITING_OTHERS) || (Array.isArray(n.children) && n.children.includes(WAITING_OTHERS))))
   assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Approve')), false)
-  assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Always approve')), false)
+  assert.equal(otherNodes.some(n => n.type === 'button' && n.children.includes('Auto-send from now on')), false)
   ownerNodes.find(n => n.type === 'button' && n.children.includes('Reject')).props.onClick()
   assert.deepEqual(decided.at(-1), ['apr-hold-1', 'reject'])
   const done = plugin.ChatApproval({ item: { ...pending[0], status: 'approved' } })
