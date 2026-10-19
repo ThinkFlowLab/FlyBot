@@ -5502,7 +5502,8 @@ function isHiddenToolRemoval(node) {
   if (!Array.isArray(content) || content.length === 0) return false;
   return content.every(isHiddenNotice);
 }
-function ContextCell({ node }) {
+function ContextCell({ node, useRoster }) {
+  useRoster?.((roster) => (roster.pluginTools ?? []).join("\n"));
   if (isHiddenToolRemoval(node)) return null;
   const content = Array.isArray(node?.data?.content) ? node.data.content : [];
   const parts = [];
@@ -15603,6 +15604,10 @@ function apply(ctx) {
     const live2 = {};
     if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;
     if (value.capabilityStatuses !== void 0 && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live2.capabilityStatuses = value.capabilityStatuses;
+    if (value.pluginTools !== void 0 && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) {
+      setPluginTools(value.pluginTools);
+      live2.pluginTools = value.pluginTools;
+    }
     if (Object.keys(live2).length > 0 && current.ready) roster.set({ ...current, ...live2 });
     if (value.unchanged || value.revision === current.revision && value.modelsKey === current.modelsKey) return;
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
@@ -16309,7 +16314,7 @@ function apply(ctx) {
     shadow("conversation.chat.node", { key: "turn-error", priority: -10, locale: "chat", inject: face }, TurnErrorCell),
     // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
     // restrict that tool; hide it, keep other tool-change notices (#140).
-    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat" }, ContextCell),
+    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat", inject: face }, ContextCell),
     ...canDrawUserMessages() ? ["user", "steering"].map((key) => shadow("conversation.chat.node", { key, priority: -10, locale: "chat", inject: face }, UserMessageCell)) : [],
     shadow("conversation.input.permission", { priority: -10 }, Nothing),
     shadow("conversation.input.plan", { priority: -10 }, Nothing),

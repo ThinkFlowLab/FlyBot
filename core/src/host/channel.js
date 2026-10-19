@@ -79,8 +79,6 @@ export function install(rt) {
     questions: state.questions,
     // FlyBot: friends' remote Bots, chat members with a remote badge (not team Bots).
     remoteBots: rt.flybotRemoteMembers?.() ?? [],
-    // Plugin tools that come and go with a Bot's place (masked per Bot): their context rows stay hidden (#419).
-    pluginTools: rt.pluginToolNames?.() ?? [],
     // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
     agents: Object.values(state.agents),
     // Key names and who may use them; values never leave the host.
@@ -118,7 +116,9 @@ export function install(rt) {
       connectors: rt.connectorsView(),
       capabilityStatuses: rt.capabilityStatusesView(),
     }
-    return rt.ownedLive(full, actor)
+    // Plugin tool names change with a plugin reload, not with the team revision, so they ride every
+    // answer, unchanged or not, and the client re-reads its hidden-row set (#419).
+    return { ...rt.ownedLive(full, actor), pluginTools: rt.pluginToolNames?.() ?? [] }
   }
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.

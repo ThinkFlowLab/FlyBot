@@ -572,7 +572,9 @@ export function isHiddenToolRemoval(node) {
   return content.every(isHiddenNotice)
 }
 
-export function ContextCell({ node }) {
+export function ContextCell({ node, useRoster }) {
+  // Plugin tool names can arrive after this row has drawn (a plugin reload): follow them (#419).
+  useRoster?.(roster => (roster.pluginTools ?? []).join('\n'))
   if (isHiddenToolRemoval(node)) return null
   const content = Array.isArray(node?.data?.content) ? node.data.content : []
   const parts = []

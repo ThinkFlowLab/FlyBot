@@ -122,6 +122,13 @@ test('#419: plugin tools a per-Bot mask takes away (tree) leave no Tool removed 
   assert.equal(ContextCell({ node: block('tool-addition', 'list_children') }), null)
   // Other tools still show.
   assert.match(text(expand(ContextCell({ node: block('tool-removal', 'bash') }))), /Tool removed: bash/)
+  // The row follows the roster's plugin tool names, so names that arrive after it drew still hide it.
+  const selected = []
+  ContextCell({ node: block('tool-removal', 'bash'), useRoster: select => { selected.push(select({ pluginTools: ['a', 'b'] })); return selected.at(-1) } })
+  assert.deepEqual(selected, ['a\nb'])
+  const index = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
+  assert.match(index, /key: 'context', priority: -10, locale: 'chat', inject: face \}, ContextCell/)
+  assert.match(index, /setPluginTools\(value\.pluginTools\); live\.pluginTools = value\.pluginTools/)
   indexRoster({ bots: [], rooms: [] })
   assert.match(text(expand(ContextCell({ node: block('tool-removal', 'create_child_bot') }))), /Tool removed: create_child_bot/)
 })

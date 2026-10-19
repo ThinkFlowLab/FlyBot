@@ -1412,7 +1412,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-+  };
+   };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1436,7 +1436,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-   };
++  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -3753,7 +3753,7 @@ diff --git a/client.js b/client.js
      actions.noteTurnTime(sessionId, turn, "first", start);
    }, [sessionId, turn, start]);
    const visit = useUi((state) => state.visits?.[sessionId]);
-@@ -4199,11 +4199,31 @@ function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTu
+@@ -4199,11 +4199,32 @@ function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTu
      const own = state[sessionId]?.[turn];
      return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
    });
@@ -3771,7 +3771,8 @@ diff --git a/client.js b/client.js
 +  if (!Array.isArray(content) || content.length === 0) return false;
 +  return content.every(isHiddenNotice);
 +}
-+function ContextCell({ node }) {
++function ContextCell({ node, useRoster }) {
++  useRoster?.((roster) => (roster.pluginTools ?? []).join("\n"));
 +  if (isHiddenToolRemoval(node)) return null;
 +  const content = Array.isArray(node?.data?.content) ? node.data.content : [];
 +  const parts = [];
@@ -5210,12 +5211,14 @@ diff --git a/client.js b/client.js
    );
    const toLatest = () => {
      const scroller = document.querySelector("[data-conversation-scroll]");
-@@ -5704,8 +5704,8 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+@@ -5703,9 +5703,9 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+     else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
    };
    const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
-   return (0, import_react_dom4.createPortal)(
+-  return (0, import_react_dom4.createPortal)(
 -    (0, import_react9.createElement)(
 -      import_react9.Fragment,
++  return (0, import_react_dom4.createPortal)(
 +    (0, import_react10.createElement)(
 +      import_react10.Fragment,
        null,
@@ -8433,7 +8436,8 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react25.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: seats.length }) },
 +      seats.map((seat) => (0, import_react25.createElement)(
 +        "div",
@@ -8447,8 +8451,7 @@ diff --git a/client.js b/client.js
 +      ))
 +    ) : null,
 +    face ? null : (0, import_react25.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react25.createElement)(
 +        "div",
@@ -11743,6 +11746,17 @@ diff --git a/client.js b/client.js
    const surface = createSource({ mode: readMode(), plain: false });
    let agentSessionCache = /* @__PURE__ */ new Set();
    try {
+@@ -13368,6 +13368,10 @@ function apply(ctx) {
+     const live2 = {};
+     if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;
+     if (value.capabilityStatuses !== void 0 && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live2.capabilityStatuses = value.capabilityStatuses;
++    if (value.pluginTools !== void 0 && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) {
++      setPluginTools(value.pluginTools);
++      live2.pluginTools = value.pluginTools;
++    }
+     if (Object.keys(live2).length > 0 && current.ready) roster.set({ ...current, ...live2 });
+     if (value.unchanged || value.revision === current.revision && value.modelsKey === current.modelsKey) return;
+     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
 @@ -13501,7 +13501,7 @@ function apply(ctx) {
      };
      render();
@@ -11903,7 +11917,7 @@ diff --git a/client.js b/client.js
 +    shadow("conversation.chat.node", { key: "turn-error", priority: -10, locale: "chat", inject: face }, TurnErrorCell),
 +    // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
 +    // restrict that tool; hide it, keep other tool-change notices (#140).
-+    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat" }, ContextCell),
++    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat", inject: face }, ContextCell),
      ...canDrawUserMessages() ? ["user", "steering"].map((key) => shadow("conversation.chat.node", { key, priority: -10, locale: "chat", inject: face }, UserMessageCell)) : [],
      shadow("conversation.input.permission", { priority: -10 }, Nothing),
      shadow("conversation.input.plan", { priority: -10 }, Nothing),
