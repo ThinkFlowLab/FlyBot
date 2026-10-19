@@ -1471,7 +1471,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-+  };
+   };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1495,7 +1495,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-   };
++  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1687,33 +1687,11 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1583,50 +1583,216 @@ function commRunOf(order, peers, turn, hiddenTurns = []) {
-     if (hidden && peer === void 0) continue;
-     turns.push({ turn: entry, peer, hidden });
+@@ -1595,38 +1595,204 @@ function commRunOf(order, peers, turn, hiddenTurns = []) {
+     count += entry.hidden ? 2 : 1;
+     if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
    }
--  const at = turns.findIndex((entry) => entry.turn === turn);
--  if (at === -1 || turns[at].peer === void 0) return null;
--  const previous = turns[at - 1];
--  if (previous?.peer !== void 0 && previous.hidden) return "folded";
--  let count = 0;
--  const peerIds = [];
--  for (let index = at; index < turns.length; index += 1) {
--    const entry = turns[index];
--    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
--    count += entry.hidden ? 2 : 1;
--    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
-+  const at = turns.findIndex((entry) => entry.turn === turn);
-+  if (at === -1 || turns[at].peer === void 0) return null;
-+  const previous = turns[at - 1];
-+  if (previous?.peer !== void 0 && previous.hidden) return "folded";
-+  let count = 0;
-+  const peerIds = [];
-+  for (let index = at; index < turns.length; index += 1) {
-+    const entry = turns[index];
-+    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
-+    count += entry.hidden ? 2 : 1;
-+    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
-+  }
+-  return { count, peerIds };
 +  return { count, peerIds };
 +}
 +function heldReplyOf(bot, sessionId, turn) {
@@ -1801,8 +1779,7 @@ diff --git a/client.js b/client.js
 +    const count = (own[callId] ?? 0) + delta;
 +    if (count > 0) own[callId] = count;
 +    else delete own[callId];
-   }
--  return { count, peerIds };
++  }
 +  return { ...state, [sessionId]: own };
  }
 -function previewOf(list, id, hiddenTurns = []) {
@@ -4396,7 +4373,7 @@ diff --git a/client.js b/client.js
  var import_react_dom2 = require("react-dom");
  var PHRASE_HOLD_MS = 800;
  var drawPhrase = (pool) => t(pool[Math.min(pool.length - 1, Math.floor(Math.random() * pool.length))]);
-@@ -4559,9 +4559,32 @@ function elapsedLabel(ms) {
+@@ -4559,9 +4559,71 @@ function elapsedLabel(ms) {
    const hours = Math.floor(minutes / 60);
    return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
  }
@@ -4425,6 +4402,45 @@ diff --git a/client.js b/client.js
 +  if (running) return running;
 +  const tails = flow.querySelectorAll(":scope > * [data-turn-tail], :scope > [data-turn-tail]");
 +  return tails.length ? tails[tails.length - 1] : null;
++}
++var lastTurnOnScreen = (kind) => {
++  let top = -1;
++  for (const node of document.querySelectorAll(`[data-chat-flow-kind${kind ? `="${kind}"` : ""}][data-chat-turn]`)) top = Math.max(top, Number(node.dataset.chatTurn));
++  return top;
++};
++function useReplyAfterSend(remote, sending) {
++  const sendTurn = (0, import_react9.useRef)(-1);
++  const wasSending = (0, import_react9.useRef)(false);
++  const [replied, setReplied] = (0, import_react9.useState)(false);
++  (0, import_react9.useEffect)(() => {
++    if (!remote) return void 0;
++    if (sending) {
++      wasSending.current = true;
++      sendTurn.current = -1;
++      setReplied(false);
++      return void 0;
++    }
++    if (wasSending.current) {
++      wasSending.current = false;
++      sendTurn.current = lastTurnOnScreen();
++    }
++    if (sendTurn.current < 0) return void 0;
++    let frame = 0;
++    const check = () => {
++      frame = 0;
++      if (lastTurnOnScreen("assistant-step") > sendTurn.current) setReplied(true);
++    };
++    const observer = new MutationObserver(() => {
++      if (!frame) frame = requestAnimationFrame(check);
++    });
++    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
++    check();
++    return () => {
++      cancelAnimationFrame(frame);
++      observer.disconnect();
++    };
++  }, [remote, sending]);
++  return replied;
 +}
 +function useRunningHost(active, where = RUNNING_HOST) {
 +  const [host, setHost] = (0, import_react9.useState)(null);
@@ -4458,7 +4474,7 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4638,21 +4638,29 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
+@@ -4638,21 +4638,30 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
    const pendingInput = useSession((snapshot) => Math.max(0, ...(snapshot?.pendingSubmissions ?? []).filter((sub) => sub.placement !== "queued").map((sub) => sub.time)));
    const bot = roster.byId[sessionId];
    const room2 = roster.roomsById[sessionId];
@@ -4472,7 +4488,8 @@ diff --git a/client.js b/client.js
 +  const sendRun = (0, import_react9.useRef)(false);
 +  if (!running) sendRun.current = false;
 +  else if (pendingInput > 0) sendRun.current = true;
-+  const visible = bot?.remote !== void 0 ? !streaming && (running ? sendRun.current : awaiting) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
++  const replied = useReplyAfterSend(bot?.remote !== void 0, running && sendRun.current);
++  const visible = bot?.remote !== void 0 ? !streaming && (running ? sendRun.current : awaiting && !replied) : running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
 +  const lastRun = (0, import_react9.useRef)({ running, send: false });
 +  const bridging = bot?.remote !== void 0 && !streaming && lastRun.current.running && lastRun.current.send && !running;
 +  lastRun.current = { running, send: sendRun.current };
