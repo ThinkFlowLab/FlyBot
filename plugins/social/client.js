@@ -1421,7 +1421,7 @@ window.__ModuleLoader__.load({
         faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null)
     }
 
-    // Add friend: join a friend's link and answer requests (invites are made from a Bot's right-click menu).
+    // Add friend: accept a friend's invite, invite a friend to one of my Bots, and answer requests.
     function AddFriend({ onChange, onDone } = {}) {
       const [overview, setOverview] = useState(null)
       const [code, setCode] = useState('')
@@ -1511,33 +1511,36 @@ window.__ModuleLoader__.load({
       })
       const incoming = overview?.incoming ?? []
       const outgoing = overview?.outgoing ?? []
+      const shareName = (mine.find(bot => bot.id === sharing) ?? mine.find(bot => bot.isMain) ?? mine[0])?.name || 'your Bot'
+      // Accepting and inviting are two separate groups, each with its own heading; each Bot picker is
+      // labelled with what it does, and Done closes the panel from the bottom (#343).
       return h('div', { className: 'bt-social-add', 'data-flybot': 'add-friend' },
         h('div', { className: 'fs-face-head' },
-          h('div', { className: 'fs-label fs-label-plain' }, 'Add friend'),
-          onDone ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, 'Done') : null),
+          h('div', { className: 'fs-label fs-label-plain' }, 'Add friend')),
         me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, `You are ${me}`) : null,
-        h('form', { onSubmit: join, className: 'fs-card bt-social-join' },
+        h('div', { className: 'fs-label', 'data-flybot': 'accept-heading' }, 'Accept an invite'),
+        h('form', { onSubmit: join, className: 'fs-card bt-social-join', 'data-flybot': 'accept-group' },
           // The paste box takes the full width on its own row, so the start of a link stays readable (#343).
           h('input', { className: 'fs-input', style: { flex: '0 0 auto', width: '100%', boxSizing: 'border-box' }, value: code, placeholder: 'Paste invite link or code', 'aria-label': 'Invite link or code', onChange: e => setCode(e.target.value) }),
-          h('div', { className: 'fs-line' },
-            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite')),
           // Accepting grants only the invited Bot to you. The Bot you talk through is not shared, so
           // there is nothing to pick with one Bot (#228).
           mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: "Talks for you. Not shared: your friend can't use it unless you invite them to it." },
             h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
-              mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null),
-        // Inviting is its own named line: which Bot the link shares is always said, and the link is shown once made.
-        h('div', { className: 'fs-line', style: { padding: '4px 10px 0' }, 'data-flybot': 'invite-line' },
-          mine.length > 1 ? h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
-            mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))) : null,
-          (() => {
-            const label = `Invite a friend to ${(mine.find(bot => bot.id === sharing) ?? mine.find(bot => bot.isMain) ?? mine[0])?.name || 'your Bot'}`
-            // A long Bot name shrinks the button with an ellipsis instead of being clipped by the sidebar, so the picker stays usable.
-            return h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', title: label, style: { flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }, disabled: busy, onClick: mint }, label)
-          })()),
-        made ? h('div', { className: 'fs-line', style: { padding: '2px 10px 0' } },
-          h('input', { className: 'fs-input', readOnly: true, value: made.link, 'aria-label': `Invite link for ${made.botName}`, 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() })) : null,
+              mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
+          h('div', { className: 'fs-line' },
+            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite'))),
+        h('div', { className: 'fs-label', 'data-flybot': 'invite-heading' }, 'Invite a friend'),
+        h('div', { className: 'fs-card', 'data-flybot': 'invite-group' },
+          // Which Bot the link shares is a labelled picker that shows the whole name, not a bare `C…` (#343).
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'share-as', title: 'Your friend gets this Bot only.' },
+            h('span', { className: 'fs-join-as-label' }, 'Share '),
+            h('select', { className: 'fs-input', value: sharing, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
+              mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
+          // The button names the Bot the link shares; a long name ends in an ellipsis instead of being clipped.
+          h('div', { className: 'fs-line', 'data-flybot': 'invite-line' },
+            h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', title: `Copy invite link for ${shareName}`, style: { flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }, disabled: busy, onClick: mint }, `Copy invite link for ${shareName}`)),
+          made ? h('input', { className: 'fs-input', readOnly: true, value: made.link, style: { flex: '0 0 auto', width: '100%', boxSizing: 'border-box' }, 'aria-label': `Invite link for ${made.botName}`, 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() }) : null),
         status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone, style: { padding: '2px 10px' } }, status.text) : null,
         incoming.length ? h('div', { className: 'bt-social-requests' },
           h('div', { className: 'fs-label' }, 'Friend requests', h('span', { className: 'fs-count' }, String(incoming.length))),
@@ -1557,7 +1560,9 @@ window.__ModuleLoader__.load({
             h('span', { className: 'fs-text' },
               h('span', { className: 'fs-name' }, item.name ?? item.handle),
               item.name ? h('span', { className: 'fs-sub' }, item.handle) : null),
-            h('span', { className: 'fs-tag' }, 'pending')))) : null)
+            h('span', { className: 'fs-tag' }, 'pending')))) : null,
+        onDone ? h('div', { className: 'fs-line', 'data-flybot': 'add-friend-done', style: { padding: '6px 10px 2px', justifyContent: 'flex-end' } },
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, 'Done')) : null)
     }
 
     // Which local Bots can be invited to (social/status), cached for the synchronous canInvite.

@@ -2867,7 +2867,7 @@ test('Add friend mints and copies an invite link in one click', async () => {
   const tree = walk(pluginOf([null, '', null, false, mine, 'a']).AddFriend({}))
   const mint = tree.find(n => n.props['data-flybot'] === 'mint-invite')
   assert.ok(mint)
-  assert.ok(mint.children.includes('Invite a friend to Chief'), 'the button names the Bot it shares, even with one Bot (#343)')
+  assert.ok(mint.children.includes('Copy invite link for Chief'), 'the button names the Bot it shares, even with one Bot (#343)')
   assert.equal(tree.some(n => n.props['data-flybot'] === 'invite-hint'), false, 'one paste field, one hint (#181)')
   await mint.props.onClick()
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/create-invite' && payload.botId === 'a'))
@@ -5271,7 +5271,7 @@ test('#343: a failed friend-list refresh does not replace the accepted-invite re
   assert.deepEqual(shown.map(value => value.text), ['Alice shared Helper with you.'], 'only the join result was ever shown')
   const long = 'A'.repeat(40)
   const mint = all(clientPlugin([null, '', null, false, [{ id: 'a', name: long, isMain: true }], 'a', 'a', ''].slice(0)).plugin.AddFriend({})).find(n => n.props?.['data-flybot'] === 'mint-invite')
-  assert.equal(mint.props.title, `Invite a friend to ${long}`)
+  assert.equal(mint.props.title, `Copy invite link for ${long}`)
   assert.equal(mint.props.style.overflow, 'hidden')
   assert.equal(mint.props.style.textOverflow, 'ellipsis')
 })
@@ -5285,7 +5285,7 @@ test('#343: Add friend puts accepting first, on a full-width paste box, and name
   const paste = nodes.find(n => n.type === 'input' && n.props['aria-label'] === 'Invite link or code')
   assert.equal(paste.props.placeholder, 'Paste invite link or code')
   assert.equal(paste.props.style.width, '100%', 'the paste box has its own full-width row')
-  assert.equal(text(nodes.find(n => n.props?.['data-flybot'] === 'mint-invite')), 'Invite a friend to Chief')
+  assert.equal(text(nodes.find(n => n.props?.['data-flybot'] === 'mint-invite')), 'Copy invite link for Chief')
   assert.equal(nodes.some(n => n.props?.['data-flybot'] === 'invite-link'), false, 'no link before one is made')
 })
 
@@ -6677,4 +6677,24 @@ test('Settings → Bot Social page: every English line it passes to t() has a Ch
   assert.ok(keys.length > 20)
   assert.deepEqual(keys.filter(key => !Object.hasOwn(DICTIONARY.zh, key)), [])
   assert.ok(Object.hasOwn(DICTIONARY.zh, 'Bot Social'))
+})
+
+test('#343: Add friend shows accepting and inviting as two labelled groups, each picker labelled, Done at the bottom', () => {
+  const mine = [{ id: 'a', name: 'Chief', isMain: true }, { id: 'b', name: 'Scratchpad Helper', isMain: false }]
+  const { plugin, all, text } = clientPlugin([null, '', null, false, mine, 'a', 'b', ''])
+  const nodes = all(plugin.AddFriend({ onDone() {} }))
+  const at = id => nodes.findIndex(n => n.props?.['data-flybot'] === id)
+  assert.equal(text(nodes[at('accept-heading')]), 'Accept an invite')
+  assert.equal(text(nodes[at('invite-heading')]), 'Invite a friend')
+  assert.ok(at('accept-heading') < at('accept-group') && at('accept-group') < at('invite-heading') && at('invite-heading') < at('invite-group'), 'accept first, then invite, each under its heading')
+  // Both pickers say what they pick; the invite picker is not a bare, unlabelled select.
+  assert.ok(text(nodes[at('join-as')]).startsWith('Talk through'))
+  assert.ok(text(nodes[at('share-as')]).startsWith('Share'))
+  assert.ok(at('share-bot') > at('share-as'), 'the invite picker sits inside its labelled line')
+  assert.equal(text(nodes[at('mint-invite')]), 'Copy invite link for Scratchpad Helper', 'the button names the picked Bot')
+  // Done closes the panel from the bottom, after everything else.
+  const done = nodes.findIndex(n => n.type === 'button' && text(n) === 'Done')
+  assert.ok(done > at('mint-invite'), 'Done comes after the invite group')
+  assert.ok(done > at('add-friend-done'))
+  assert.equal(nodes.slice(0, at('accept-heading')).some(n => n.type === 'button'), false, 'no button above the content')
 })
