@@ -403,7 +403,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +105,36 @@ const ZH = {
+@@ -105,17 +105,37 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -437,6 +437,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 -  'Mode': '模式',
    'Sign in to DeepSeek': '登录 DeepSeek 账号',
    'Enter a DeepSeek API key': '填入 DeepSeek API key',
++  'How to set a DeepSeek API key': '如何设置 DeepSeek API key',
    'Open settings to set up a custom model': '打开设置配置自定义模型',
 -  'DS Bot': 'DS Bot',
 +  'FlyBot': 'FlyBot',
@@ -773,6 +774,15 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    const models = roster.models ?? []
    const lost = bot.model ? !models.some(model => model.ref === bot.model) : false
    // An unknown catalog (none listed) cannot tell a lost model from a slow provider.
+@@ -215,7 +215,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
+       ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name })
+       : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name })
+   const choices = models.length === 0
+-    ? setupChoices(actions).map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))
++    ? [...setupChoices(actions).map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label)), h(KeyHelpLink, { key: 'key-help' })]
+     : [
+         ...groupModels(models).map(([provider, list]) => h('div', { key: list[0].provider ?? provider, className: 'bt-model-choice-group', role: 'group', 'aria-label': provider },
+           h('div', { className: 'bt-model-choice-provider', 'aria-hidden': true }, provider),
 @@ -225,7 +225,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
              title: model.ref === roster.defaultModel ? `${model.ref} · ${t('Harness default')}` : model.ref,
              onClick: () => pick(model.ref),
@@ -798,7 +808,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  // Ways to get a first model. The DeepSeek sign-in exists only where the shell carries
  // its account plugin (the Desktop); the API key and custom models use the shell's
  // own editors.
-@@ -244,10 +244,57 @@ function setupChoices(actions) {
+@@ -244,10 +244,67 @@ function setupChoices(actions) {
    return [
      actions.canSignIn?.() ? [t('Sign in to DeepSeek'), () => actions.signIn()] : null,
      [t('Enter a DeepSeek API key'), () => openHarnessOnboarding('deepseek-official')],
@@ -807,6 +817,14 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    ].filter(Boolean)
  }
  
++// How to set the key without the shell's dialog (#451): the dialog keeps only a typed or
++// pasted value, so the hint under the DeepSeek choices links FlyBot's own guide.
++export const KEY_HELP_URL = 'https://github.com/ThinkFlowLab/FlyBot/blob/main/docs/deepseek-api-key.md'
++
++export function KeyHelpLink() {
++  return h('a', { className: 'bt-model-help', href: KEY_HELP_URL, target: '_blank', rel: 'noopener noreferrer' }, t('How to set a DeepSeek API key'))
++}
++
 +// A run that failed because its model has no credential names the route DSH could
 +// not reach (llm-deepseek: `no API key for provider route "deepseek-official"`).
 +// `undefined` for any other failure; `{ route }` (route may be '') for a missing key.
@@ -844,6 +862,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 +        : code === 'QUOTA' || code === 'ACCOUNT_QUOTA' ? shell('message.failure.quota', raw)
 +          : code === 'AUTH' ? shell('message.failure.auth', raw) : raw
 +  const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : []
++  const deepseek = missing ? /^deepseek/i.test(missing.route) : false
 +  return h('div', { className: 'bt-turn-error', role: 'status', 'data-missing-key': missing ? '' : undefined },
 +    h('span', { className: 'bt-turn-error-dot', 'aria-hidden': true }),
 +    h('div', { className: 'bt-turn-error-copy' },
@@ -851,13 +870,14 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 +      h('span', { className: 'bt-turn-error-message' }, message),
 +      code ? h('code', { className: 'bt-turn-error-code' }, code) : null),
 +    choices.length > 0 ? h('div', { className: 'bt-turn-error-actions' },
-+      choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))) : null)
++      choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label)),
++      deepseek ? h(KeyHelpLink, { key: 'key-help' }) : null) : null)
 +}
 +
  // The shell's own DeepSeek sign-in dialog, borrowed from its account plugin: the
  // plugin's model sign-in entry renders here with the plugin's own operations.
  export function DeepSeekSignIn({ useUi, actions }) {
-@@ -272,6 +272,13 @@ function SignInHost({ entry, actions }) {
+@@ -272,6 +272,16 @@ function SignInHost({ entry, actions }) {
  }
  
  export const MODEL_CSS = `
@@ -867,7 +887,10 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 +.bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
 +.bt-turn-error-message{color:var(--bt-ink-2)}
 +.bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
-+.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
++.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
++.bt-model-help{display:inline-flex;align-items:center;min-height:28px;padding:0 4px;font-size:12px;line-height:16px;color:var(--bt-ink-2);text-decoration:underline;text-underline-offset:2px}
++.bt-model-help:hover{color:var(--bt-ink)}
++.bt-model-help:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px;border-radius:4px}
  .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
  .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
  .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
@@ -3200,11 +3223,20 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
    },
  })
 -const { groupModels, ModelChoiceDock, effortRows } = module.exports
-+const { groupModels, ModelChoiceDock, effortRows, TurnErrorCell, missingModelKey } = module.exports
++const { groupModels, ModelChoiceDock, effortRows, TurnErrorCell, missingModelKey, KeyHelpLink, KEY_HELP_URL } = module.exports
  
  function nodes(tree, match) {
    if (!tree || typeof tree !== 'object') return []
-@@ -99,3 +99,46 @@ test('the Thinking section always offers Default, so a picked level can be clear
+@@ -89,6 +89,8 @@ test('an empty catalog offers setup choices, and a ready model needs no choice d
+   assert.deepEqual(nodes(tree, node => node.type === 'button').map(button => button.children[0]), [
+     'Enter a DeepSeek API key', 'Open settings to set up a custom model',
+   ])
++  // The shell's key dialog keeps only a typed or pasted key, so the guide is linked too (#451).
++  assert.equal(nodes(tree, node => node.type === KeyHelpLink).length, 1)
+   assert.equal(dock(models, { model: models[0].ref }).tree, null)
+   assert.equal(dock(models, { ready: false }).tree, null)
+ })
+@@ -99,3 +99,58 @@ test('the Thinking section always offers Default, so a picked level can be clear
    assert.deepEqual([...effortRows({ efforts }).map(row => row.effort)], [undefined, 'low', 'high'])
    assert.equal(effortRows({ efforts: [] }).length, 0)
  })
@@ -3234,6 +3266,7 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY|launching environment/)
 +  const labels = nodes(tree, node => node.type === 'button').map(button => button.children[0])
 +  assert.deepEqual([...labels], ['Enter a DeepSeek API key', 'Open settings to set up a custom model'])
++  assert.equal(nodes(tree, node => node.type === KeyHelpLink).length, 1)
 +  // The raw provider text is never drawn, not even on hover (a provider may echo a key).
 +  assert.equal(nodes(tree, node => node.props.className === 'bt-turn-error-message')[0].props.title, undefined)
 +  const echoed = TurnErrorCell({ node: { data: { message: 'No API key found for sk-abc123', code: 'AUTH' } }, t: chatT, actions: {} })
@@ -3241,6 +3274,7 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  // Another route opens the model settings; any other failure reads as DSH writes it, no buttons.
 +  const other = TurnErrorCell({ node: { data: { message: 'no API key for provider route "openrouter"' } }, t: chatT, actions: {} })
 +  assert.deepEqual([...nodes(other, node => node.type === 'button').map(button => button.children[0])], ['Manage models'])
++  assert.equal(nodes(other, node => node.type === KeyHelpLink).length, 0)
 +  // A provider that does not name its route is not assumed to be DeepSeek.
 +  const unnamed = TurnErrorCell({ node: { data: { message: 'API key not configured' } }, t: chatT, actions: {} })
 +  assert.deepEqual([...nodes(unnamed, node => node.type === 'button').map(button => button.children[0])], ['Manage models'])
@@ -3250,6 +3284,16 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  assert.equal(nodes(quota, node => node.type === 'button').length, 0)
 +  const plain = TurnErrorCell({ node: { data: { message: 'socket hang up' } }, t: chatT, actions: {} })
 +  assert.match(text(plain), /socket hang up/)
++})
++
++test('the DeepSeek key guide opens FlyBot\'s doc in a new tab (#451)', () => {
++  const link = KeyHelpLink()
++  assert.equal(link.type, 'a')
++  assert.equal(link.props.href, KEY_HELP_URL)
++  assert.match(KEY_HELP_URL, /^https:\/\/github\.com\/ThinkFlowLab\/FlyBot\/blob\/main\/docs\/deepseek-api-key\.md$/)
++  assert.equal(link.props.target, '_blank')
++  assert.equal(link.props.rel, 'noopener noreferrer')
++  assert.deepEqual([...link.children], ['How to set a DeepSeek API key'])
 +})
 diff --git a/test/models.test.js b/test/models.test.js
 --- a/test/models.test.js

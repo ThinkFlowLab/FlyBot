@@ -109,7 +109,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 - **Node.js 22.19+** 与 **pnpm**
 - **Git**（从 GitHub 安装）
-- 至少一个模型提供商的 API Key（例如 DeepSeek）
+- 至少一个模型提供商的 API Key（例如 DeepSeek，设置方法见 [Set a DeepSeek API key](docs/deepseek-api-key.md)，英文）
 
 ### 2. 安装 FlyBot（核心 + 插件）
 

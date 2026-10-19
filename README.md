@@ -114,7 +114,7 @@ Without `enabled: true` it records nothing and keeps no files; without `sidebarS
 
 - **Node.js 22.19+** and **pnpm** (`npm install -g pnpm`, or `corepack enable`).
 - **Git**, to install from GitHub.
-- An API key for at least one model provider (for example DeepSeek).
+- An API key for at least one model provider (for example DeepSeek: see [Set a DeepSeek API key](docs/deepseek-api-key.md)).
 
 ### 2. Install FlyBot (core + plugins)
 

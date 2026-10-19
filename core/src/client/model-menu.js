@@ -221,7 +221,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
       ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name })
       : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name })
   const choices = models.length === 0
-    ? setupChoices(actions).map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))
+    ? [...setupChoices(actions).map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label)), h(KeyHelpLink, { key: 'key-help' })]
     : [
         ...groupModels(models).map(([provider, list]) => h('div', { key: list[0].provider ?? provider, className: 'bt-model-choice-group', role: 'group', 'aria-label': provider },
           h('div', { className: 'bt-model-choice-provider', 'aria-hidden': true }, provider),
@@ -263,6 +263,14 @@ function setupChoices(actions) {
   ].filter(Boolean)
 }
 
+// How to set the key without the shell's dialog (#451): the dialog keeps only a typed or
+// pasted value, so the hint under the DeepSeek choices links FlyBot's own guide.
+export const KEY_HELP_URL = 'https://github.com/ThinkFlowLab/FlyBot/blob/main/docs/deepseek-api-key.md'
+
+export function KeyHelpLink() {
+  return h('a', { className: 'bt-model-help', href: KEY_HELP_URL, target: '_blank', rel: 'noopener noreferrer' }, t('How to set a DeepSeek API key'))
+}
+
 // A run that failed because its model has no credential names the route DSH could
 // not reach (llm-deepseek: `no API key for provider route "deepseek-official"`).
 // `undefined` for any other failure; `{ route }` (route may be '') for a missing key.
@@ -300,6 +308,7 @@ export function TurnErrorCell({ node, t: chatT, actions }) {
         : code === 'QUOTA' || code === 'ACCOUNT_QUOTA' ? shell('message.failure.quota', raw)
           : code === 'AUTH' ? shell('message.failure.auth', raw) : raw
   const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : []
+  const deepseek = missing ? /^deepseek/i.test(missing.route) : false
   return h('div', { className: 'bt-turn-error', role: 'status', 'data-missing-key': missing ? '' : undefined },
     h('span', { className: 'bt-turn-error-dot', 'aria-hidden': true }),
     h('div', { className: 'bt-turn-error-copy' },
@@ -307,7 +316,8 @@ export function TurnErrorCell({ node, t: chatT, actions }) {
       h('span', { className: 'bt-turn-error-message' }, message),
       code ? h('code', { className: 'bt-turn-error-code' }, code) : null),
     choices.length > 0 ? h('div', { className: 'bt-turn-error-actions' },
-      choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))) : null)
+      choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label)),
+      deepseek ? h(KeyHelpLink, { key: 'key-help' }) : null) : null)
 }
 
 // The shell's own DeepSeek sign-in dialog, borrowed from its account plugin: the
@@ -340,7 +350,10 @@ export const MODEL_CSS = `
 .bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
 .bt-turn-error-message{color:var(--bt-ink-2)}
 .bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
-.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
+.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.bt-model-help{display:inline-flex;align-items:center;min-height:28px;padding:0 4px;font-size:12px;line-height:16px;color:var(--bt-ink-2);text-decoration:underline;text-underline-offset:2px}
+.bt-model-help:hover{color:var(--bt-ink)}
+.bt-model-help:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px;border-radius:4px}
 .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
 .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
 .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}

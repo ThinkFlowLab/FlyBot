@@ -243,6 +243,7 @@ const ZH = {
   "Hi, I'm {name}. Pick a model for me first. You can change it later in my details.": '你好，我是 {name}。先给我选一个模型吧，以后可以在我的详情里换。',
   'Sign in to DeepSeek': '登录 DeepSeek 账号',
   'Enter a DeepSeek API key': '填入 DeepSeek API key',
+  'How to set a DeepSeek API key': '如何设置 DeepSeek API key',
   'Open settings to set up a custom model': '打开设置配置自定义模型',
   'FlyBot': 'FlyBot',
   'FlyBot core': 'FlyBot 核心',

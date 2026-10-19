@@ -160,7 +160,7 @@ diff --git a/client.js b/client.js
    Connected: "已连接",
    Disconnect: "断开",
    Connect: "连接",
-@@ -141,17 +141,36 @@ var ZH = {
+@@ -141,17 +141,37 @@ var ZH = {
    "GitHub addresses must start with https://": "GitHub 地址必须以 https:// 开头",
    "This DSH cannot load connectors": "这个 DSH 不能加载连接器",
    "No such connector": "没有这个连接器",
@@ -194,6 +194,7 @@ diff --git a/client.js b/client.js
 -  "Mode": "模式",
    "Sign in to DeepSeek": "登录 DeepSeek 账号",
    "Enter a DeepSeek API key": "填入 DeepSeek API key",
++  "How to set a DeepSeek API key": "如何设置 DeepSeek API key",
    "Open settings to set up a custom model": "打开设置配置自定义模型",
 -  "DS Bot": "DS Bot",
 +  "FlyBot": "FlyBot",
@@ -6374,7 +6375,7 @@ diff --git a/client.js b/client.js
    const text = lost ? t("{model} is not available anymore. Pick another model for me.", { model: bot.model.split("/").slice(1).join("/") }) : models.length === 0 ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name }) : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name });
 -  const choices = models.length === 0 ? setupChoices(actions).map(([label, run]) => (0, import_react13.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)) : [
 -    ...groupModels(models).map(([provider, list]) => (0, import_react13.createElement)(
-+  const choices = models.length === 0 ? setupChoices(actions).map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)) : [
++  const choices = models.length === 0 ? [...setupChoices(actions).map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)), (0, import_react15.createElement)(KeyHelpLink, { key: "key-help" })] : [
 +    ...groupModels(models).map(([provider, list]) => (0, import_react15.createElement)(
        "div",
        { key: list[0].provider ?? provider, className: "bt-model-choice-group", role: "group", "aria-label": provider },
@@ -6385,7 +6386,7 @@ diff --git a/client.js b/client.js
          key: model.ref,
          type: "button",
          className: "bt-model-chip",
-@@ -6584,50 +6584,109 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
+@@ -6584,50 +6584,115 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
          "aria-label": `${model.name} · ${provider}`,
          title: model.ref === roster.defaultModel ? `${model.ref} · ${t("Harness default")}` : model.ref,
          onClick: () => pick2(model.ref)
@@ -6452,6 +6453,10 @@ diff --git a/client.js b/client.js
 +    [t("Open settings to set up a custom model"), openHarnessModels]
    ].filter(Boolean);
  }
++var KEY_HELP_URL = "https://github.com/ThinkFlowLab/FlyBot/blob/main/docs/deepseek-api-key.md";
++function KeyHelpLink() {
++  return (0, import_react15.createElement)("a", { className: "bt-model-help", href: KEY_HELP_URL, target: "_blank", rel: "noopener noreferrer" }, t("How to set a DeepSeek API key"));
++}
 +function missingModelKey(message) {
 +  const text = String(message ?? "");
 +  if (!/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(text)) return void 0;
@@ -6473,6 +6478,7 @@ diff --git a/client.js b/client.js
 +  const title = code === "ACCOUNT_SIGNED_OUT" ? shell("message.accountStopped", t("This turn failed")) : shell("message.turnError", t("This turn failed"));
 +  const message = missing ? t("This Bot's model has no API key yet. Set one up, then send your message again.") : code === "ACCOUNT_SIGNED_OUT" ? shell("message.failure.accountSignedOut", raw) : code === "ACCOUNT_SIGN_IN_REQUIRED" ? shell("message.failure.accountSignInRequired", raw) : code === "QUOTA" || code === "ACCOUNT_QUOTA" ? shell("message.failure.quota", raw) : code === "AUTH" ? shell("message.failure.auth", raw) : raw;
 +  const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : [];
++  const deepseek = missing ? /^deepseek/i.test(missing.route) : false;
 +  return (0, import_react15.createElement)(
 +    "div",
 +    { className: "bt-turn-error", role: "status", "data-missing-key": missing ? "" : void 0 },
@@ -6487,7 +6493,8 @@ diff --git a/client.js b/client.js
 +    choices.length > 0 ? (0, import_react15.createElement)(
 +      "div",
 +      { className: "bt-turn-error-actions" },
-+      choices.map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label))
++      choices.map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)),
++      deepseek ? (0, import_react15.createElement)(KeyHelpLink, { key: "key-help" }) : null
 +    ) : null
 +  );
 +}
@@ -6511,7 +6518,7 @@ diff --git a/client.js b/client.js
      ...ops,
      ...hooks,
      t: actions.accountT(),
-@@ -6639,6 +6639,13 @@ function SignInHost({ entry, actions }) {
+@@ -6639,6 +6639,16 @@ function SignInHost({ entry, actions }) {
    });
  }
  var MODEL_CSS = `
@@ -6521,7 +6528,10 @@ diff --git a/client.js b/client.js
 +.bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
 +.bt-turn-error-message{color:var(--bt-ink-2)}
 +.bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
-+.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
++.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
++.bt-model-help{display:inline-flex;align-items:center;min-height:28px;padding:0 4px;font-size:12px;line-height:16px;color:var(--bt-ink-2);text-decoration:underline;text-underline-offset:2px}
++.bt-model-help:hover{color:var(--bt-ink)}
++.bt-model-help:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px;border-radius:4px}
  .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
  .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
  .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}

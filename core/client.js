@@ -279,6 +279,7 @@ var ZH = {
   "Hi, I'm {name}. Pick a model for me first. You can change it later in my details.": "你好，我是 {name}。先给我选一个模型吧，以后可以在我的详情里换。",
   "Sign in to DeepSeek": "登录 DeepSeek 账号",
   "Enter a DeepSeek API key": "填入 DeepSeek API key",
+  "How to set a DeepSeek API key": "如何设置 DeepSeek API key",
   "Open settings to set up a custom model": "打开设置配置自定义模型",
   "FlyBot": "FlyBot",
   "FlyBot core": "FlyBot 核心",
@@ -8500,7 +8501,7 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
     }).finally(() => setBusy(""));
   };
   const text = lost ? t("{model} is not available anymore. Pick another model for me.", { model: bot.model.split("/").slice(1).join("/") }) : models.length === 0 ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name }) : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name });
-  const choices = models.length === 0 ? setupChoices(actions).map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)) : [
+  const choices = models.length === 0 ? [...setupChoices(actions).map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)), (0, import_react15.createElement)(KeyHelpLink, { key: "key-help" })] : [
     ...groupModels(models).map(([provider, list]) => (0, import_react15.createElement)(
       "div",
       { key: list[0].provider ?? provider, className: "bt-model-choice-group", role: "group", "aria-label": provider },
@@ -8566,6 +8567,10 @@ function setupChoices(actions) {
     [t("Open settings to set up a custom model"), openHarnessModels]
   ].filter(Boolean);
 }
+var KEY_HELP_URL = "https://github.com/ThinkFlowLab/FlyBot/blob/main/docs/deepseek-api-key.md";
+function KeyHelpLink() {
+  return (0, import_react15.createElement)("a", { className: "bt-model-help", href: KEY_HELP_URL, target: "_blank", rel: "noopener noreferrer" }, t("How to set a DeepSeek API key"));
+}
 function missingModelKey(message) {
   const text = String(message ?? "");
   if (!/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(text)) return void 0;
@@ -8587,6 +8592,7 @@ function TurnErrorCell({ node, t: chatT, actions }) {
   const title = code === "ACCOUNT_SIGNED_OUT" ? shell("message.accountStopped", t("This turn failed")) : shell("message.turnError", t("This turn failed"));
   const message = missing ? t("This Bot's model has no API key yet. Set one up, then send your message again.") : code === "ACCOUNT_SIGNED_OUT" ? shell("message.failure.accountSignedOut", raw) : code === "ACCOUNT_SIGN_IN_REQUIRED" ? shell("message.failure.accountSignInRequired", raw) : code === "QUOTA" || code === "ACCOUNT_QUOTA" ? shell("message.failure.quota", raw) : code === "AUTH" ? shell("message.failure.auth", raw) : raw;
   const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : [];
+  const deepseek = missing ? /^deepseek/i.test(missing.route) : false;
   return (0, import_react15.createElement)(
     "div",
     { className: "bt-turn-error", role: "status", "data-missing-key": missing ? "" : void 0 },
@@ -8601,7 +8607,8 @@ function TurnErrorCell({ node, t: chatT, actions }) {
     choices.length > 0 ? (0, import_react15.createElement)(
       "div",
       { className: "bt-turn-error-actions" },
-      choices.map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label))
+      choices.map(([label, run]) => (0, import_react15.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)),
+      deepseek ? (0, import_react15.createElement)(KeyHelpLink, { key: "key-help" }) : null
     ) : null
   );
 }
@@ -8634,7 +8641,10 @@ var MODEL_CSS = `
 .bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
 .bt-turn-error-message{color:var(--bt-ink-2)}
 .bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
-.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
+.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.bt-model-help{display:inline-flex;align-items:center;min-height:28px;padding:0 4px;font-size:12px;line-height:16px;color:var(--bt-ink-2);text-decoration:underline;text-underline-offset:2px}
+.bt-model-help:hover{color:var(--bt-ink)}
+.bt-model-help:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px;border-radius:4px}
 .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
 .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
 .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
