@@ -1,1 +1,0 @@
-A Bot that the Main Bot (or a tree parent) creates without naming a model now starts on its creator's model and thinking level before its first request, so it no longer fails first on an unconfigured default model ([#410](https://github.com/ThinkFlowLab/FlyBot/issues/410)).

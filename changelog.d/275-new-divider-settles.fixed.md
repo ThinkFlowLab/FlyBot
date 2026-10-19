@@ -1,1 +1,0 @@
-The **NEW** divider no longer sits in a chat for the whole visit. Once you have seen it and the chat moves on (a friend's next line, or your own message), it goes, the same as when you leave the chat and come back. This also covers a friend's typed line in one of your Bots' own chats ([#275](https://github.com/ThinkFlowLab/FlyBot/issues/275)).

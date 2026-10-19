@@ -1,1 +1,0 @@
-A friend's Bot chat is quieter ([#419](https://github.com/ThinkFlowLab/FlyBot/issues/419)): no `Tool removed: create_child_bot · …` line from plugin tool masks (in any chat), no local turns/steps/tok/s footer (the friend's Bot runs on its owner's home), and the composer keeps `Message <Bot>` after a send instead of switching to the coding label.

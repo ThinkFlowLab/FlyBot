@@ -1,1 +1,0 @@
-README and README.zh now claim the friend-DM `Name is thinking…` line (fixed in [#360](https://github.com/ThinkFlowLab/FlyBot/pull/360) / [#332](https://github.com/ThinkFlowLab/FlyBot/issues/332)), matching face rooms.

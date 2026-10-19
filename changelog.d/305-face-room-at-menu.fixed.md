@@ -1,1 +1,0 @@
-A face-to-face room's `@` menu lists only the room's people and Bots: DSH's own Sessions rows and their section title no longer show there, arrow keys skip them and Enter never picks one; elsewhere a group's **Everyone** row counts the Bots it reaches, seated friends' Bots too, as `1 member` / `2 members` ([#305](https://github.com/ThinkFlowLab/FlyBot/issues/305)).

@@ -1,1 +1,0 @@
-Add friend shows **Accept an invite** and **Invite a friend** as two labelled groups: the invite Bot picker is labelled **Share** and shows the whole name, the button reads **Copy invite link for {Bot}**, and **Done** sits at the bottom ([#343](https://github.com/ThinkFlowLab/FlyBot/issues/343)).

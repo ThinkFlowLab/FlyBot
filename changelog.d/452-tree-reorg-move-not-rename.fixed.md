@@ -1,1 +1,0 @@
-Tree reorganization moves / reparents existing Bots; it never renames them to `归档-` and recreates. Archived Bots are hidden from the default Bot list. A one-shot repair restores leftover `归档-*` / `Archive-*` names.
