@@ -296,7 +296,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,47 @@ export function install(rt) {
+@@ -65,22 +65,49 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -327,7 +327,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      connectors: rt.connectorsView(),
 +      capabilityStatuses: rt.capabilityStatusesView(),
 +    }
-+    return rt.ownedLive(full, actor)
++    // Plugin tool names change with a plugin reload, not with the team revision, so they ride every
++    // answer, unchanged or not, and the client re-reads its hidden-row set (#419).
++    return { ...rt.ownedLive(full, actor), pluginTools: rt.pluginToolNames?.() ?? [] }
 +  }
    // What a host that only reads the team may still answer.
    // Updates change the dsh profile, not the team, so a reading host may run them too.

@@ -273,6 +273,16 @@ test('the state reports a changed model list without a new revision', async (t) 
   assert.equal((await call('state', { since: first.revision, models: 'stale' })).value.unchanged, undefined)
 })
 
+test('#419: plugin tool names ride every state answer, an unchanged one too (a plugin reload makes no revision)', async (t) => {
+  const { call, stop } = start()
+  t.after(stop)
+  const first = (await call('state', {})).value
+  assert.ok(Array.isArray(first.pluginTools))
+  const again = (await call('state', { since: first.revision, models: first.modelsKey })).value
+  assert.equal(again.unchanged, true)
+  assert.deepEqual(again.pluginTools, first.pluginTools)
+})
+
 test('a new team starts with a DeepSeek-blue whale as its Main Bot', async (t) => {
   const { call, stop } = start()
   t.after(stop)

@@ -4,7 +4,7 @@ import { isHex, inkText, paintCss } from './inks.js'
 import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
 import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
 import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
-import { MENTION_ORIGIN, currentPart, landingPart } from './text.js'
+import { MENTION_ORIGIN, currentPart, landingPart, setPluginTools } from './text.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 import { installBrandChrome, installTabTitle } from './brand.js'
 import { lookOf } from './mark.js'
@@ -158,6 +158,8 @@ export function apply(ctx) {
     const live = {}
     if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
     if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
+    // Plugin tool names come with a plugin reload, not a revision; context rows re-read them (#419).
+    if (value.pluginTools !== undefined && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) { setPluginTools(value.pluginTools); live.pluginTools = value.pluginTools }
     if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
     if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
     // On a browser with no visit record yet, everything already there counts as seen.
@@ -822,7 +824,7 @@ export function apply(ctx) {
     shadow('conversation.chat.node', { key: 'turn-error', priority: -10, locale: 'chat', inject: face }, TurnErrorCell),
     // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
     // restrict that tool; hide it, keep other tool-change notices (#140).
-    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat' }, ContextCell),
+    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat', inject: face }, ContextCell),
     ...(canDrawUserMessages() ? ['user', 'steering'].map(key => shadow('conversation.chat.node', { key, priority: -10, locale: 'chat', inject: face }, UserMessageCell)) : []),
     shadow('conversation.input.permission', { priority: -10 }, Nothing),
     shadow('conversation.input.plan', { priority: -10 }, Nothing),

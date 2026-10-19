@@ -62,6 +62,11 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
   assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
   assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
   assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
+  // #419: the composer keeps "Message <name>" after the shell re-renders it; a friend's Bot chat hides the stats footer.
+  assert.match(text('header.js'), /new MutationObserver\(/)
+  assert.match(text('header.js'), /attributeFilter: \['aria-label'\]/)
+  assert.match(text('header.js'), /document\.body\.dataset\.btFriendChat = ''/)
+  assert.match(text('styles.js'), /body\[data-bt-friend-chat\] \[data-composer-stats\]\{display:none!important\}/)
   assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
   // #276: only the user's own Bots are offered as a Main Bot, in both selects.
   assert.match(text('settings.js'), /const own = roster\.bots\.filter\(bot => !bot\.remote\)/)

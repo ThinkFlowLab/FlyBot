@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 // "Tool removed: ask_user_question" hide can be checked without a browser.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { ContextCell, isHiddenToolRemoval, HIDDEN_REMOVED_TOOLS, ToolCell } from './src/client/cells.js'",
+    contents: "export { ContextCell, isHiddenToolRemoval, HIDDEN_REMOVED_TOOLS, ToolCell } from './src/client/cells.js'; export { indexRoster } from './src/client/sources.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -35,7 +35,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { ContextCell, isHiddenToolRemoval, HIDDEN_REMOVED_TOOLS, ToolCell } = module.exports
+const { ContextCell, isHiddenToolRemoval, HIDDEN_REMOVED_TOOLS, ToolCell, indexRoster } = module.exports
 
 const expand = (node) => {
   if (node === null || node === undefined || typeof node === 'boolean') return null
@@ -109,4 +109,26 @@ test('#335: connector tools coming and going with a Bot\'s connector switch leav
   assert.match(text(expand(ContextCell({ node: node('tool-removal')('mcp__notes__search') }))), /Tool removed: mcp__notes__search/)
   const mixed = { data: { content: [{ type: 'tool-addition', toolName: 'mcp__composio__COMPOSIO_SEARCH_TOOLS' }, { type: 'tool-addition', toolName: 'web_search' }] } }
   assert.equal(text(expand(ContextCell({ node: mixed }))), 'Tool added: web_search')
+})
+
+test('#419: plugin tools a per-Bot mask takes away (tree) leave no Tool removed / Tool added line in any chat', () => {
+  const block = (type, toolName) => ({ data: { content: [{ type, toolName }] } })
+  indexRoster({ bots: [], rooms: [], pluginTools: [] })
+  assert.match(text(expand(ContextCell({ node: block('tool-removal', 'create_child_bot') }))), /Tool removed: create_child_bot/)
+  indexRoster({ bots: [], rooms: [], pluginTools: ['create_child_bot', 'list_children'] })
+  const both = { data: { content: [{ type: 'tool-removal', toolName: 'create_child_bot' }, { type: 'tool-removal', toolName: 'list_children' }] } }
+  assert.equal(isHiddenToolRemoval(both), true)
+  assert.equal(ContextCell({ node: both }), null)
+  assert.equal(ContextCell({ node: block('tool-addition', 'list_children') }), null)
+  // Other tools still show.
+  assert.match(text(expand(ContextCell({ node: block('tool-removal', 'bash') }))), /Tool removed: bash/)
+  // The row follows the roster's plugin tool names, so names that arrive after it drew still hide it.
+  const selected = []
+  ContextCell({ node: block('tool-removal', 'bash'), useRoster: select => { selected.push(select({ pluginTools: ['a', 'b'] })); return selected.at(-1) } })
+  assert.deepEqual(selected, ['a\nb'])
+  const index = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
+  assert.match(index, /key: 'context', priority: -10, locale: 'chat', inject: face \}, ContextCell/)
+  assert.match(index, /setPluginTools\(value\.pluginTools\); live\.pluginTools = value\.pluginTools/)
+  indexRoster({ bots: [], rooms: [] })
+  assert.match(text(expand(ContextCell({ node: block('tool-removal', 'create_child_bot') }))), /Tool removed: create_child_bot/)
 })

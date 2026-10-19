@@ -423,7 +423,7 @@ diff --git a/src/client/header.js b/src/client/header.js
  
  // -------------------------------------------------------------------------
  // Conversation header
-@@ -68,16 +68,49 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+@@ -68,16 +68,65 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
    const bot = roster.byId[sessionId]
    const room = roster.roomsById[sessionId]
    const detailsOpen = useUi(state => state.details === sessionId)
@@ -455,18 +455,34 @@ diff --git a/src/client/header.js b/src/client/header.js
 +      document.body.style.removeProperty('--bt-remote-empty')
 +    }
 +  }, [bot?.remote, blank, remoteEmptyHint])
++  // A friend's Bot runs on its owner's home: the local run stats (turns, steps, tok/s, cache)
++  // are relay turns and always 0 here, so CSS hides the shell's stats footer in that chat (#419).
++  useEffect(() => {
++    if (!bot?.remote) return undefined
++    document.body.dataset.btFriendChat = ''
++    return () => { delete document.body.dataset.btFriendChat }
++  }, [bot?.remote])
 +  useEffect(() => {
 +    document.body.style.setProperty('--bt-placeholder', JSON.stringify(composerLabel))
 +    const input = document.querySelector('[data-composer-input]')
 +    const priorLabel = input?.getAttribute('aria-label') ?? null
 +    const apply = () => {
 +      const el = document.querySelector('[data-composer-input]')
-+      if (el) el.setAttribute('aria-label', composerLabel)
++      if (el && el.getAttribute('aria-label') !== composerLabel) el.setAttribute('aria-label', composerLabel)
 +    }
 +    apply()
 +    const timer = setTimeout(apply, 0)
++    // The shell re-renders its composer after a send and puts its own coding label back
++    // ("Message or run a task, / commands, …"); keep "Message <name>" on it (#419).
++    let frame = 0
++    const watcher = typeof MutationObserver === 'function'
++      ? new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; apply() }) })
++      : null
++    watcher?.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-label'] })
 +    return () => {
 +      clearTimeout(timer)
++      watcher?.disconnect()
++      if (frame) cancelAnimationFrame(frame)
 +      const el = document.querySelector('[data-composer-input]')
 +      if (!el) return
 +      if (priorLabel == null) el.removeAttribute('aria-label')
@@ -488,8 +504,9 @@ diff --git a/src/client/header.js b/src/client/header.js
 diff --git a/src/client/sources.js b/src/client/sources.js
 --- a/src/client/sources.js
 +++ b/src/client/sources.js
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
 +import { setLocalBots } from './characters.js'
++import { setPluginTools } from './text.js'
 +
  // -------------------------------------------------------------------------
  // Small observable sources for the inject `hooks` compartment.
@@ -503,11 +520,12 @@ diff --git a/src/client/sources.js b/src/client/sources.js
  // Any Main Bot holds the Main Bot powers; `mainBotId`, the first one, is the sidebar tile.
  export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?? []).includes(id)
  
-@@ -24,6 +24,7 @@ export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?
+@@ -24,6 +24,8 @@ export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?
  // and `sessionId` its current one. Every part id finds the Bot; Session state
  // (running, unread, turns) is read from the current part, team state from the Bot id.
  export function indexRoster(value) {
 +  setLocalBots(value.bots)
++  setPluginTools(value.pluginTools)
    const byId = {}
    for (const bot of value.bots) {
      for (const id of [...(bot.parts ?? []), bot.sessionId ?? bot.id, bot.id]) byId[id] = bot

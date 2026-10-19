@@ -36,6 +36,23 @@ diff --git a/test/roster.test.js b/test/roster.test.js
  test('a new name must be one "@" can call; a name saved before the rule still saves', async (t) => {
    const { call, stop } = start(undefined, { models: ['deepseek-v4-flash'] })
    t.after(stop)
+@@ -247,6 +247,16 @@ test('the state reports a changed model list without a new revision', async (t)
+   assert.equal((await call('state', { since: first.revision, models: 'stale' })).value.unchanged, undefined)
+ })
+ 
++test('#419: plugin tool names ride every state answer, an unchanged one too (a plugin reload makes no revision)', async (t) => {
++  const { call, stop } = start()
++  t.after(stop)
++  const first = (await call('state', {})).value
++  assert.ok(Array.isArray(first.pluginTools))
++  const again = (await call('state', { since: first.revision, models: first.modelsKey })).value
++  assert.equal(again.unchanged, true)
++  assert.deepEqual(again.pluginTools, first.pluginTools)
++})
++
+ test('a new team starts with a DeepSeek-blue whale as its Main Bot', async (t) => {
+   const { call, stop } = start()
+   t.after(stop)
 @@ -526,3 +526,34 @@ test('a write that fails at save time archives the Session it made', async (t) =
    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
    assert.equal(Object.values(saved.bots).some(bot => bot.name === 'Phantom'), false)

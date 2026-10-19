@@ -649,6 +649,9 @@ export function install(rt) {
   // Bot that joins (or leaves) a plugin's scope gets (or loses) the tool next turn.
   const gatedTools = new Map()
   const masks = new WeakMap()
+  // The names of plugin tools a mask may take away (tree's create_child_bot, …): the client hides
+  // their "Tool added" / "Tool removed" context rows, which say nothing a person needs (#419).
+  rt.pluginToolNames = () => [...gatedTools.keys()].sort()
   function hidePluginTools(agent) {
     if (agent === undefined || typeof agent.ctx?.tools?.restrict !== 'function') return
     const bot = rt.botOf(rt.selfOf(agent.session?.id ?? agent.id))

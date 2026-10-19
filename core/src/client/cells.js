@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
-import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
+import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
@@ -561,8 +561,10 @@ export function Nothing() { return null }
 export const HIDDEN_REMOVED_TOOLS = new Set(['ask_user_question'])
 // Connector tools come and go with a Bot's connector switch (#335), not with anything the Bot did.
 const isConnectorTool = name => typeof name === 'string' && /^mcp__(github|composio)__/.test(name)
-const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName)))
-  || (block?.type === 'tool-addition' && isConnectorTool(block.toolName))
+// Plugin tools a per-Bot mask hides (tree's create_child_bot, list_children, …) come and go with the
+// Bot's place, never with anything a person did, so their rows stay out of every chat (#419).
+const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName)))
+  || (block?.type === 'tool-addition' && (isConnectorTool(block.toolName) || isPluginTool(block.toolName)))
 
 export function isHiddenToolRemoval(node) {
   const content = node?.data?.content
@@ -570,7 +572,9 @@ export function isHiddenToolRemoval(node) {
   return content.every(isHiddenNotice)
 }
 
-export function ContextCell({ node }) {
+export function ContextCell({ node, useRoster }) {
+  // Plugin tool names can arrive after this row has drawn (a plugin reload): follow them (#419).
+  useRoster?.(roster => (roster.pluginTools ?? []).join('\n'))
   if (isHiddenToolRemoval(node)) return null
   const content = Array.isArray(node?.data?.content) ? node.data.content : []
   const parts = []

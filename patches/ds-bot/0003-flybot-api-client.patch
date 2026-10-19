@@ -226,7 +226,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
 -import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
-+import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
++import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
  import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
 +import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
@@ -454,7 +454,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
          const room = roster.roomsById[sessionId]
          const poster = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t('a Bot'), color: 'gray' }
          return h(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi })
-@@ -411,6 +411,34 @@ export function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi
+@@ -411,6 +411,38 @@ export function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi
  
  export function Nothing() { return null }
  
@@ -464,8 +464,10 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +export const HIDDEN_REMOVED_TOOLS = new Set(['ask_user_question'])
 +// Connector tools come and go with a Bot's connector switch (#335), not with anything the Bot did.
 +const isConnectorTool = name => typeof name === 'string' && /^mcp__(github|composio)__/.test(name)
-+const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName)))
-+  || (block?.type === 'tool-addition' && isConnectorTool(block.toolName))
++// Plugin tools a per-Bot mask hides (tree's create_child_bot, list_children, …) come and go with the
++// Bot's place, never with anything a person did, so their rows stay out of every chat (#419).
++const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName)))
++  || (block?.type === 'tool-addition' && (isConnectorTool(block.toolName) || isPluginTool(block.toolName)))
 +
 +export function isHiddenToolRemoval(node) {
 +  const content = node?.data?.content
@@ -473,7 +475,9 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  return content.every(isHiddenNotice)
 +}
 +
-+export function ContextCell({ node }) {
++export function ContextCell({ node, useRoster }) {
++  // Plugin tool names can arrive after this row has drawn (a plugin reload): follow them (#419).
++  useRoster?.(roster => (roster.pluginTools ?? []).join('\n'))
 +  if (isHiddenToolRemoval(node)) return null
 +  const content = Array.isArray(node?.data?.content) ? node.data.content : []
 +  const parts = []
@@ -699,7 +703,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
 -import { MENTION_ORIGIN, currentPart } from './text.js'
-+import { MENTION_ORIGIN, currentPart, landingPart } from './text.js'
++import { MENTION_ORIGIN, currentPart, landingPart, setPluginTools } from './text.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 +import { installBrandChrome, installTabTitle } from './brand.js'
  import { lookOf } from './mark.js'
@@ -762,6 +766,15 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
+@@ -145,6 +145,8 @@ export function apply(ctx) {
+     const live = {}
+     if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
+     if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
++    // Plugin tool names come with a plugin reload, not a revision; context rows re-read them (#419).
++    if (value.pluginTools !== undefined && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) { setPluginTools(value.pluginTools); live.pluginTools = value.pluginTools }
+     if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
+     if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
+     // On a browser with no visit record yet, everything already there counts as seen.
 @@ -325,7 +325,7 @@ export function apply(ctx) {
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
@@ -894,7 +907,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    shadow('conversation.chat.node', { key: 'turn-error', priority: -10, locale: 'chat', inject: face }, TurnErrorCell),
 +    // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
 +    // restrict that tool; hide it, keep other tool-change notices (#140).
-+    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat' }, ContextCell),
++    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat', inject: face }, ContextCell),
      ...(canDrawUserMessages() ? ['user', 'steering'].map(key => shadow('conversation.chat.node', { key, priority: -10, locale: 'chat', inject: face }, UserMessageCell)) : []),
      shadow('conversation.input.permission', { priority: -10 }, Nothing),
      shadow('conversation.input.plan', { priority: -10 }, Nothing),
@@ -1805,6 +1818,15 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
+@@ -874,6 +874,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
+ [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
+ [data-composer-placeholder]{font-size:0!important;line-height:0!important}
++/* A friend's Bot chat: no local run stats (they are relay turns, always 0; #419). */
++body[data-bt-friend-chat] [data-composer-stats]{display:none!important}
+ [data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
+ /* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
+ [data-composer-card] button[class*="_add"]{display:none!important}
 @@ -905,6 +905,7 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  .bt-mic:active,.bt-voice:active{scale:.9}
  [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
@@ -1993,7 +2015,7 @@ diff --git a/test/looks.test.js b/test/looks.test.js
  import { indexRoster } from '../src/client/sources.js'
  
  const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
-@@ -29,19 +29,98 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
+@@ -29,19 +29,103 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
    assert.equal(photo.shape, defaultShape('chief'))
  })
  
@@ -2034,6 +2056,11 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 +  assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
 +  assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
 +  assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
++  // #419: the composer keeps "Message <name>" after the shell re-renders it; a friend's Bot chat hides the stats footer.
++  assert.match(text('header.js'), /new MutationObserver\(/)
++  assert.match(text('header.js'), /attributeFilter: \['aria-label'\]/)
++  assert.match(text('header.js'), /document\.body\.dataset\.btFriendChat = ''/)
++  assert.match(text('styles.js'), /body\[data-bt-friend-chat\] \[data-composer-stats\]\{display:none!important\}/)
 +  assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
 +  // #276: only the user's own Bots are offered as a Main Bot, in both selects.
 +  assert.match(text('settings.js'), /const own = roster\.bots\.filter\(bot => !bot\.remote\)/)

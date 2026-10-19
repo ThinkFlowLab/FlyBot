@@ -2282,164 +2282,6 @@ var FLYBOT_CSS = `
 .bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 `;
 
-// src/client/sources.js
-function createSource(initial) {
-  let value = initial;
-  const listeners2 = /* @__PURE__ */ new Set();
-  return {
-    getSnapshot: () => value,
-    subscribe: (listener) => {
-      listeners2.add(listener);
-      return () => {
-        listeners2.delete(listener);
-      };
-    },
-    set(next) {
-      const resolved = typeof next === "function" ? next(value) : next;
-      if (resolved === value) return;
-      value = resolved;
-      for (const listener of [...listeners2]) listener();
-    }
-  };
-}
-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
-var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
-function indexRoster(value) {
-  setLocalBots(value.bots);
-  const byId = {};
-  for (const bot of value.bots) {
-    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
-  }
-  const roomsById = {};
-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
-  const agentsById = {};
-  const agentOf = {};
-  for (const agent of value.agents ?? []) {
-    agentsById[agent.id] = agent;
-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
-  }
-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
-}
-function isAgentSession(roster, cache, sessionId) {
-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
-  return cache.has(sessionId);
-}
-function countCards(state, sessionId, callIds, delta) {
-  const own = { ...state[sessionId] };
-  for (const callId of callIds) {
-    const count = (own[callId] ?? 0) + delta;
-    if (count > 0) own[callId] = count;
-    else delete own[callId];
-  }
-  return { ...state, [sessionId]: own };
-}
-
-// src/client/themes.js
-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
-var THEMES = {
-  deepseek: {
-    label: "DeepSeek",
-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
-  },
-  mono: {
-    label: "Mono",
-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
-  },
-  paper: {
-    label: "Paper",
-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
-  },
-  moonlight: {
-    label: "Moonlight",
-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
-  }
-};
-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
-function themeVars(mode, dark, accent = mode.accent) {
-  return {
-    "--bt-ink": mode.text,
-    "--bt-ink-2": rgba(mode.text, 0.6),
-    "--bt-ink-3": rgba(mode.text, 0.36),
-    "--bt-bubble": mode.bubble,
-    "--bt-sidebar": mode.sidebar,
-    "--bt-main": mode.bg,
-    "--bt-card": mode.card,
-    "--bt-line": rgba(mode.text, 0.08),
-    "--bt-line-2": rgba(mode.text, 0.15),
-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
-    "--bt-accent": accent,
-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
-    "--bt-user": mode.user,
-    "--bt-user-ink": mode.userText,
-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
-    "--bt-tag-ink": rgba(mode.text, 0.58)
-  };
-}
-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
-${theme.css ?? ""}`;
-var shellTokens = ({ light, dark }) => ({
-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
-});
-var customThemes = {};
-var registry3 = createSource(0);
-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
-function registerShape(id, shape) {
-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
-  const at = shape.eyes?.at;
-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
-  const previous = SHAPES[id];
-  SHAPES[id] = {
-    label: String(shape.label ?? id),
-    size,
-    body: shape.body,
-    eyes,
-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
-  };
-  const refresh = () => {
-    markupCache.clear();
-    maskCache.delete(id);
-    registry3.set((value) => value + 1);
-  };
-  refresh();
-  return () => {
-    if (previous) SHAPES[id] = previous;
-    else delete SHAPES[id];
-    refresh();
-  };
-}
-function registerTheme(id, theme) {
-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
-  for (const mode of ["light", "dark"]) {
-    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-  }
-  const previous = customThemes[id];
-  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
-  registry3.set((value) => value + 1);
-  return () => {
-    if (previous) customThemes[id] = previous;
-    else delete customThemes[id];
-    registry3.set((value) => value + 1);
-  };
-}
-var allThemes = () => ({ ...THEMES, ...customThemes });
-
 // src/shared/mentions.js
 var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
 var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
@@ -2619,6 +2461,11 @@ function isHiddenTurn(roster, sessionId, turn) {
   return (roster.exchangeTurns[sessionId] ?? []).includes(turn);
 }
 var toolName = (root) => root.name || root.call?.name;
+var pluginTools = /* @__PURE__ */ new Set();
+function setPluginTools(names) {
+  pluginTools = new Set((Array.isArray(names) ? names : []).filter((name) => typeof name === "string"));
+}
+var isPluginTool = (name) => typeof name === "string" && pluginTools.has(name);
 var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
 function toolArgs(root) {
   if (typeof root.args?.text === "function") {
@@ -2718,6 +2565,165 @@ function usageOf(list, ids) {
   const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
   return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 }
+
+// src/client/sources.js
+function createSource(initial) {
+  let value = initial;
+  const listeners2 = /* @__PURE__ */ new Set();
+  return {
+    getSnapshot: () => value,
+    subscribe: (listener) => {
+      listeners2.add(listener);
+      return () => {
+        listeners2.delete(listener);
+      };
+    },
+    set(next) {
+      const resolved = typeof next === "function" ? next(value) : next;
+      if (resolved === value) return;
+      value = resolved;
+      for (const listener of [...listeners2]) listener();
+    }
+  };
+}
+var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
+function indexRoster(value) {
+  setLocalBots(value.bots);
+  setPluginTools(value.pluginTools);
+  const byId = {};
+  for (const bot of value.bots) {
+    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+  }
+  const roomsById = {};
+  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+  const agentsById = {};
+  const agentOf = {};
+  for (const agent of value.agents ?? []) {
+    agentsById[agent.id] = agent;
+    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
+  }
+  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
+}
+function isAgentSession(roster, cache, sessionId) {
+  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+  return cache.has(sessionId);
+}
+function countCards(state, sessionId, callIds, delta) {
+  const own = { ...state[sessionId] };
+  for (const callId of callIds) {
+    const count = (own[callId] ?? 0) + delta;
+    if (count > 0) own[callId] = count;
+    else delete own[callId];
+  }
+  return { ...state, [sessionId]: own };
+}
+
+// src/client/themes.js
+var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+var THEMES = {
+  deepseek: {
+    label: "DeepSeek",
+    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+  },
+  mono: {
+    label: "Mono",
+    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+  },
+  paper: {
+    label: "Paper",
+    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+  },
+  moonlight: {
+    label: "Moonlight",
+    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
+  }
+};
+var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+function themeVars(mode, dark, accent = mode.accent) {
+  return {
+    "--bt-ink": mode.text,
+    "--bt-ink-2": rgba(mode.text, 0.6),
+    "--bt-ink-3": rgba(mode.text, 0.36),
+    "--bt-bubble": mode.bubble,
+    "--bt-sidebar": mode.sidebar,
+    "--bt-main": mode.bg,
+    "--bt-card": mode.card,
+    "--bt-line": rgba(mode.text, 0.08),
+    "--bt-line-2": rgba(mode.text, 0.15),
+    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+    "--bt-accent": accent,
+    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+    "--bt-user": mode.user,
+    "--bt-user-ink": mode.userText,
+    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+    "--bt-tag-ink": rgba(mode.text, 0.58)
+  };
+}
+var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+${theme.css ?? ""}`;
+var shellTokens = ({ light, dark }) => ({
+  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+});
+var customThemes = {};
+var registry3 = createSource(0);
+var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+function registerShape(id, shape) {
+  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+  const at = shape.eyes?.at;
+  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+  const previous = SHAPES[id];
+  SHAPES[id] = {
+    label: String(shape.label ?? id),
+    size,
+    body: shape.body,
+    eyes,
+    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+  };
+  const refresh = () => {
+    markupCache.clear();
+    maskCache.delete(id);
+    registry3.set((value) => value + 1);
+  };
+  refresh();
+  return () => {
+    if (previous) SHAPES[id] = previous;
+    else delete SHAPES[id];
+    refresh();
+  };
+}
+function registerTheme(id, theme) {
+  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
+  for (const mode of ["light", "dark"]) {
+    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
+  }
+  const previous = customThemes[id];
+  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
+  registry3.set((value) => value + 1);
+  return () => {
+    if (previous) customThemes[id] = previous;
+    else delete customThemes[id];
+    registry3.set((value) => value + 1);
+  };
+}
+var allThemes = () => ({ ...THEMES, ...customThemes });
 
 // src/client/motion.js
 var import_react3 = require("react");
@@ -3826,6 +3832,8 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
 [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
 [data-composer-placeholder]{font-size:0!important;line-height:0!important}
+/* A friend's Bot chat: no local run stats (they are relay turns, always 0; #419). */
+body[data-bt-friend-chat] [data-composer-stats]{display:none!important}
 [data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
 /* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
 [data-composer-card] button[class*="_add"]{display:none!important}
@@ -5497,13 +5505,14 @@ function Nothing() {
 }
 var HIDDEN_REMOVED_TOOLS = /* @__PURE__ */ new Set(["ask_user_question"]);
 var isConnectorTool = (name) => typeof name === "string" && /^mcp__(github|composio)__/.test(name);
-var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName)) || block?.type === "tool-addition" && isConnectorTool(block.toolName);
+var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName));
 function isHiddenToolRemoval(node) {
   const content = node?.data?.content;
   if (!Array.isArray(content) || content.length === 0) return false;
   return content.every(isHiddenNotice);
 }
-function ContextCell({ node }) {
+function ContextCell({ node, useRoster }) {
+  useRoster?.((roster) => (roster.pluginTools ?? []).join("\n"));
   if (isHiddenToolRemoval(node)) return null;
   const content = Array.isArray(node?.data?.content) ? node.data.content : [];
   const parts = [];
@@ -7002,17 +7011,34 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
     };
   }, [bot?.remote, blank3, remoteEmptyHint]);
   (0, import_react10.useEffect)(() => {
+    if (!bot?.remote) return void 0;
+    document.body.dataset.btFriendChat = "";
+    return () => {
+      delete document.body.dataset.btFriendChat;
+    };
+  }, [bot?.remote]);
+  (0, import_react10.useEffect)(() => {
     document.body.style.setProperty("--bt-placeholder", JSON.stringify(composerLabel));
     const input = document.querySelector("[data-composer-input]");
     const priorLabel = input?.getAttribute("aria-label") ?? null;
     const apply2 = () => {
       const el = document.querySelector("[data-composer-input]");
-      if (el) el.setAttribute("aria-label", composerLabel);
+      if (el && el.getAttribute("aria-label") !== composerLabel) el.setAttribute("aria-label", composerLabel);
     };
     apply2();
     const timer = setTimeout(apply2, 0);
+    let frame = 0;
+    const watcher = typeof MutationObserver === "function" ? new MutationObserver(() => {
+      if (!frame) frame = requestAnimationFrame(() => {
+        frame = 0;
+        apply2();
+      });
+    }) : null;
+    watcher?.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-label"] });
     return () => {
       clearTimeout(timer);
+      watcher?.disconnect();
+      if (frame) cancelAnimationFrame(frame);
       const el = document.querySelector("[data-composer-input]");
       if (!el) return;
       if (priorLabel == null) el.removeAttribute("aria-label");
@@ -15612,6 +15638,10 @@ function apply(ctx) {
     const live2 = {};
     if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;
     if (value.capabilityStatuses !== void 0 && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live2.capabilityStatuses = value.capabilityStatuses;
+    if (value.pluginTools !== void 0 && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) {
+      setPluginTools(value.pluginTools);
+      live2.pluginTools = value.pluginTools;
+    }
     if (Object.keys(live2).length > 0 && current.ready) roster.set({ ...current, ...live2 });
     if (value.unchanged || value.revision === current.revision && value.modelsKey === current.modelsKey) return;
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
@@ -16318,7 +16348,7 @@ function apply(ctx) {
     shadow("conversation.chat.node", { key: "turn-error", priority: -10, locale: "chat", inject: face }, TurnErrorCell),
     // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
     // restrict that tool; hide it, keep other tool-change notices (#140).
-    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat" }, ContextCell),
+    shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat", inject: face }, ContextCell),
     ...canDrawUserMessages() ? ["user", "steering"].map((key) => shadow("conversation.chat.node", { key, priority: -10, locale: "chat", inject: face }, UserMessageCell)) : [],
     shadow("conversation.input.permission", { priority: -10 }, Nothing),
     shadow("conversation.input.plan", { priority: -10 }, Nothing),
