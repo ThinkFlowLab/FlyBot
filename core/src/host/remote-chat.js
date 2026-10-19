@@ -30,6 +30,8 @@ export function notSentLine(error) {
   const body = raw.replace(/^Bot Social\s+[A-Za-z0-9_.-]+:\s*/i, '').trim()
   const blob = `${raw} ${error?.code ?? ''}`
   if (/paused|turn budget|loop detected|emergency stop/i.test(blob)) {
+    // The plugin offers Extend on the paused notice below the chat (social #404).
+    if (error?.extendable === true) return 'Not sent: this chat is paused. Use Extend below to add turns, or remove and re-add this friend to start a new chat.'
     return 'Not sent: this chat is paused. Approve any message waiting here, or remove and re-add this friend to start a new chat.'
   }
   if (/has no grant|has not been granted|cannot message friends|cannot message their Bots/i.test(blob)) {
