@@ -522,6 +522,7 @@ export function install(rt) {
     // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
     const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
     delete state.bots[id]
+    delete state.remoteContacts?.[id]
     for (const part of parts) {
       delete state.questions[part]
       delete state.exchangeTurns[part]

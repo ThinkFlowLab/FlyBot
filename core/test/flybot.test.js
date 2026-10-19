@@ -268,6 +268,27 @@ test('a remote sender the plugin says typed the line is marked on the message so
   assert.equal('typedBy' in sources[1].remote, false)
 })
 
+test("#420: a friend's line stamps the receiving Bot for its unread mark, and only a sender's first line is first contact", async (t) => {
+  const { fb, agents, call, stop, grantTo } = await start()
+  t.after(stop)
+  await grantTo('a', '@bob.bot')
+  await grantTo('a', '@carol.bot')
+  const before = (await call('state', {})).value
+  assert.equal(before.bots.find(bot => bot.id === 'a').friendLineAt, undefined)
+  await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Bob (typed via @bob.bot, Bot Social)', typedBy: 'Bob' }, to: 'a', text: 'hi' })
+  const first = (await call('state', {})).value
+  const stamp = first.bots.find(bot => bot.id === 'a').friendLineAt
+  assert.ok(Number.isFinite(stamp), 'the Bot carries the stamp')
+  assert.ok(first.revision > before.revision, 'the stamp moves the revision, so an open window reads it')
+  assert.equal(first.bots.find(bot => bot.id === 'b').friendLineAt, undefined, 'other Bots are untouched')
+  assert.equal('remoteContacts' in first, false, 'the senders seen stay on the host')
+  await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Bob' }, to: 'a', text: 'again' })
+  await fb.bot.send({ from: { kind: 'remote', handle: '@carol.bot', name: 'Carol' }, to: 'a', text: 'me too' })
+  const sources = agents.get('a').calls.map(([, m]) => m.source)
+  assert.deepEqual(sources.map(source => [source.remote.handle, source.remote.firstContact === true]), [['@bob.bot', true], ['@bob.bot', false], ['@carol.bot', true]])
+  assert.ok((await call('state', {})).value.bots.find(bot => bot.id === 'a').friendLineAt >= stamp)
+})
+
 test('#226: chatApprovals.changed moves the team revision so a friend chat badge refreshes', async (t) => {
   const { fb, call, stop } = await start()
   t.after(stop)

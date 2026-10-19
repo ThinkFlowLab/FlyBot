@@ -29,6 +29,7 @@ import { FOLDER_CSS } from './folder-menu.js'
 import { USAGE_CSS } from './usage-page.js'
 import { SCHEDULE_CSS } from './schedules.js'
 import { STORAGE, migrateStorage } from './storage.js'
+import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
 import { installLocale, language } from './i18n.js'
 import { noteClientError, noteNavigation, quietly } from './diagnostics.js'
@@ -64,6 +65,9 @@ export function apply(ctx) {
   const SEEN_KEY = STORAGE.seen
   let seenAt = {}
   try { seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') ?? {} } catch { seenAt = {} }
+  // Per Bot, the last friend's-line stamp this browser has shown (friend-lines.js); null: no record yet.
+  let friendLines = null
+  try { friendLines = JSON.parse(localStorage.getItem(STORAGE.friendLines) ?? 'null') } catch { friendLines = null }
   // `details` is the panel's subject (a Session id); `view` picks details or the
   // subject Bot's browser inside it.
   const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
@@ -139,6 +143,17 @@ export function apply(ctx) {
     try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
     return { ...state, unread }
   })
+  // A friend's line in a Bot's chat that is not on screen marks the Bot unread, like Mark as Unread,
+  // and opening the chat clears it (#420).
+  const noteFriendLines = (value) => {
+    const visited = new Set(Object.keys(ui.getSnapshot().visits ?? {}).map(seenKey))
+    const news = friendLineNews(value.bots, friendLines, bot => visited.has(bot.id), value.self?.memberId)
+    if (JSON.stringify(news.known) !== JSON.stringify(friendLines ?? null)) {
+      friendLines = news.known
+      try { localStorage.setItem(STORAGE.friendLines, JSON.stringify(friendLines)) } catch { /* storage unavailable */ }
+    }
+    for (const id of news.unread) setUnread(id, true)
+  }
   const refreshed = new Set()
   // Pulls can overlap (the poll and a navigation); an older answer never wins.
   let pulls = 0
@@ -166,6 +181,7 @@ export function apply(ctx) {
     // On a browser with no visit record yet, everything already there counts as seen.
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map(entry => entry.id))
     roster.set(indexRoster(value))
+    noteFriendLines(value)
     try {
       const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
       localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))

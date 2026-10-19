@@ -339,7 +339,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  }
  
  function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
-@@ -170,16 +170,128 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+@@ -170,16 +170,137 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
    return h('div', { className: 'bt-event' }, parts)
  }
  
@@ -435,6 +435,15 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +    files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 +}
 +
++// A sender's first line in a Bot's own chat (#420): one quiet line says who is talking to the Bot
++// and how, so the line is not read as one of my own messages.
++export function FirstContact({ source, roster, sessionId }) {
++  const person = typeof source.remote.typedBy === 'string' ? source.remote.typedBy : ''
++  const who = person || remoteSpeaker(source, roster).name
++  const bot = roster.byId[sessionId]?.name ?? t('your Bot')
++  return h('div', { className: 'bt-event', 'data-first-contact': source.remote.handle }, h('span', null, t('{name} is talking to {bot} through Bot Social', { name: who, bot })))
++}
++
 +function GlobeMark() {
 +  return h('svg', { width: 10, height: 10, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', 'aria-hidden': true },
 +    h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18' }))
@@ -471,14 +480,15 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // A centered event line that names a group chat and opens it.
  function GroupEvent({ prefix, room, name, roster, actions }) {
    return h('div', { className: 'bt-event' },
-@@ -331,17 +331,27 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
+@@ -331,17 +331,28 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
      : body
  
    function triggerBody() {
 +    // A friend's message in its remote chat: the reply below shows it (remote-chat.js).
 +    if (source.form === 'remote-chat') return null
 +    if (source.remote?.handle) {
-+      return h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
++      const message = h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
++      return source.remote.firstContact === true ? h(Fragment, null, h(FirstContact, { source, roster, sessionId }), message) : message
 +    }
      if (source.kind === 'bot') {
        // A part opens with its handoff package, so the earlier parts go right above it.
@@ -741,7 +751,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,25 +1,29 @@
+@@ -1,33 +1,38 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -776,8 +786,9 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { GROUP_SETTINGS_CSS } from './group-settings.js'
  import { FOLDER_CSS } from './folder-menu.js'
  import { USAGE_CSS } from './usage-page.js'
-@@ -27,7 +27,7 @@ import { SCHEDULE_CSS } from './schedules.js'
+ import { SCHEDULE_CSS } from './schedules.js'
  import { STORAGE, migrateStorage } from './storage.js'
++import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
  import { installLocale, language } from './i18n.js'
 -import { noteClientError, quietly } from './diagnostics.js'
@@ -804,8 +815,13 @@ diff --git a/src/client/index.js b/src/client/index.js
    migrateStorage()
    const UNREAD_KEY = STORAGE.unread
    let savedUnread = {}
-@@ -52,7 +52,7 @@ export function apply(ctx) {
+@@ -50,9 +50,12 @@ export function apply(ctx) {
+   const SEEN_KEY = STORAGE.seen
+   let seenAt = {}
    try { seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') ?? {} } catch { seenAt = {} }
++  // Per Bot, the last friend's-line stamp this browser has shown (friend-lines.js); null: no record yet.
++  let friendLines = null
++  try { friendLines = JSON.parse(localStorage.getItem(STORAGE.friendLines) ?? 'null') } catch { friendLines = null }
    // `details` is the panel's subject (a Session id); `view` picks details or the
    // subject Bot's browser inside it.
 -  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
@@ -813,7 +829,25 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
-@@ -145,6 +145,8 @@ export function apply(ctx) {
+@@ -125,6 +125,17 @@ export function apply(ctx) {
+     try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
+     return { ...state, unread }
+   })
++  // A friend's line in a Bot's chat that is not on screen marks the Bot unread, like Mark as Unread,
++  // and opening the chat clears it (#420).
++  const noteFriendLines = (value) => {
++    const visited = new Set(Object.keys(ui.getSnapshot().visits ?? {}).map(seenKey))
++    const news = friendLineNews(value.bots, friendLines, bot => visited.has(bot.id), value.self?.memberId)
++    if (JSON.stringify(news.known) !== JSON.stringify(friendLines ?? null)) {
++      friendLines = news.known
++      try { localStorage.setItem(STORAGE.friendLines, JSON.stringify(friendLines)) } catch { /* storage unavailable */ }
++    }
++    for (const id of news.unread) setUnread(id, true)
++  }
+   const refreshed = new Set()
+   // Pulls can overlap (the poll and a navigation); an older answer never wins.
+   let pulls = 0
+@@ -145,11 +145,14 @@ export function apply(ctx) {
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
      if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
@@ -822,6 +856,12 @@ diff --git a/src/client/index.js b/src/client/index.js
      if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
      if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
      // On a browser with no visit record yet, everything already there counts as seen.
+     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map(entry => entry.id))
+     roster.set(indexRoster(value))
++    noteFriendLines(value)
+     try {
+       const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
+       localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))
 @@ -325,7 +325,7 @@ export function apply(ctx) {
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
@@ -1333,7 +1373,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { showsDshRow } from './dsh-offer.js'
  
  // -------------------------------------------------------------------------
-@@ -37,56 +37,115 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,56 +37,117 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -1385,6 +1425,8 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      h(BotAvatar, { bot, size: 60, state, main: true }),
 -    h('span', { className: 'bt-tile-name' }, bot.name),
 +    h('span', { className: 'bt-tile-name' }, shown),
++    // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
++    unread && !waiting && !active ? h('span', { className: 'bt-unread bt-tile-unread', 'aria-hidden': true }) : null,
      bot.role ? h('span', { className: 'bt-chip' }, bot.role) : null))
    }
 -  return h('button', {
@@ -1749,6 +1791,17 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +.bt-row-settings:hover{opacity:1;color:var(--bt-ink-2);background:var(--bt-hover)}
 +.bt-row-settings svg{width:15px;height:15px}
  `
+diff --git a/src/client/storage.js b/src/client/storage.js
+--- a/src/client/storage.js
++++ b/src/client/storage.js
+@@ -5,6 +5,7 @@ export const STORAGE = {
+   unread: 'ds-bot:unread',
+   reactions: 'ds-bot:reactions',
+   seen: 'ds-bot:seen',
++  friendLines: 'ds-bot:friend-lines',
+   prefs: 'ds-bot:prefs',
+   surface: 'ds-bot:surface',
+   agentSessions: 'ds-bot:agent-sessions',
 diff --git a/src/client/styles.js b/src/client/styles.js
 --- a/src/client/styles.js
 +++ b/src/client/styles.js
@@ -1775,7 +1828,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
  /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
     size wide), a resting mark leans into the pointer and keeps nuzzling it, its eyes
-@@ -115,7 +115,14 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -115,15 +115,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-side{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;gap:2px;padding:0 12px 8px 0;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-side-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 5px 0 0}
  .bt-brand{display:inline-flex;align-items:center;gap:6px;margin-right:auto;padding:4px 8px 4px 4px;border:0;border-radius:8px;background:none;cursor:pointer;font-family:inherit;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:var(--bt-ink);white-space:nowrap}
@@ -1791,6 +1844,16 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-round{width:36px;height:36px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-main);color:var(--bt-ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background-color .12s ease,transform .12s ease}
  .bt-round:hover{background:var(--bt-hover)}
  .bt-round:active{transform:scale(.94)}
+ .bt-list{display:flex;flex-direction:column;gap:3px;overflow-y:auto;min-height:0;flex:1 1 auto}
+ .bt-tile-wrap{display:flex;justify-content:center;padding:20px 0 15px}
+-.bt-tile{display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
++.bt-tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
+ .bt-tile:hover{background:var(--bt-hover)}
+ .bt-tile[aria-current=page]{background:var(--bt-active)}
++.bt-tile-unread{position:absolute;top:8px;right:12px}
+ .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
+ .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
 @@ -132,21 +132,24 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}

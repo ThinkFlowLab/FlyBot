@@ -346,7 +346,11 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      await rt.save()
    }
  
-@@ -438,6 +438,7 @@ export function install(rt) {
+@@ -435,9 +435,11 @@ export function install(rt) {
+     // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
+     const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
+     delete state.bots[id]
++    delete state.remoteContacts?.[id]
      for (const part of parts) {
        delete state.questions[part]
        delete state.exchangeTurns[part]

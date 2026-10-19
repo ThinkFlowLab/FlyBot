@@ -436,6 +436,38 @@ test('files: incoming attachments are chips for the user and untrusted, hash-che
   await assert.rejects(tool('get_friend_file', { id: 'att_1' }, 'b'), /integrity check/)
 })
 
+test('#420: social/overview lists per-Bot friendships and requests, asking the home and every member once per relationship', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@selfa.home' } })
+  t.after(() => social.dispose())
+  // A per-Bot invite registers Chief's member identity; the friendship hangs on it, not on the home.
+  assert.equal((await call('flybot/social/create-invite', { botId: 'a' })).ok, true)
+  const chief = server.calls.find(c => c.name === 'add_home_member' && c.args.name === 'chief')
+  assert.ok(chief)
+  server.tools.list_friends = a => (a?.bot_id === 'h1'
+    ? { bot: { handle: '@selfa.home' }, friends: [{ relationship_id: 'r-home', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } }], pending_incoming: [], pending_outgoing: [] }
+    : { friends: [
+      { relationship_id: 'r-home', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } },
+      { relationship_id: 'r-bot', status: 'active', peer: { handle: '@chief.selfb.home', display_name: 'Chief', owner_display_name: 'SelfB' } },
+    ], pending_incoming: [{ relationship_id: 'r-req', status: 'pending_target', peer: { handle: '@helper.carol.home', display_name: 'Helper' } }], pending_outgoing: [] })
+  server.calls.length = 0
+  const overview = (await call('flybot/social/overview', {})).value
+  assert.equal(overview.home, '@selfa.home')
+  assert.deepEqual(overview.friends.map(f => [f.relationshipId, f.handle, f.botName ?? null]), [['r-home', '@bob.home', null], ['r-bot', '@chief.selfb.home', 'Chief']])
+  assert.deepEqual(overview.incoming.map(f => [f.relationshipId, f.handle, f.botId]), [['r-req', '@helper.carol.home', 'a']])
+  const asked = server.calls.filter(c => c.name === 'list_friends').map(c => c.args.bot_id)
+  assert.equal(asked.length, 2, 'the home and the one member identity, once each')
+  assert.ok(asked.includes('h1') && asked.some(id => /^m\d+$/.test(id)))
+  // A member that cannot be read costs only its own rows.
+  server.tools.list_friends = a => {
+    if (a?.bot_id !== 'h1') throw new Error('member read failed')
+    return { bot: { handle: '@selfa.home' }, friends: [{ relationship_id: 'r-home', status: 'active', peer: { handle: '@bob.home', display_name: 'Bob' } }] }
+  }
+  assert.deepEqual((await call('flybot/social/overview', {})).value.friends.map(f => f.relationshipId), ['r-home'])
+})
+
 test('add friend from the UI: invite link, join by link, and answer requests (owner click = confirmation)', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
