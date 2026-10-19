@@ -703,7 +703,8 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
  import { BROWSER_CSS } from './browser-pane.js'
  import { SECRET_CSS, SecretDock } from './secret-card.js'
- import { MODEL_CSS, ModelChoiceDock, DeepSeekSignIn } from './model-menu.js'
+-import { MODEL_CSS, ModelChoiceDock, DeepSeekSignIn } from './model-menu.js'
++import { MODEL_CSS, ModelChoiceDock, DeepSeekSignIn, TurnErrorCell } from './model-menu.js'
  import { BOT_SETTINGS_CSS } from './bot-settings.js'
 +import { REMOTE_BOT_SETTINGS_CSS } from './remote-bot-settings.js'
  import { GROUP_SETTINGS_CSS } from './group-settings.js'
@@ -870,10 +871,12 @@ diff --git a/src/client/index.js b/src/client/index.js
    ]
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, 'conversation'),
-@@ -790,6 +790,9 @@ export function apply(ctx) {
+@@ -790,6 +790,11 @@ export function apply(ctx) {
      // every message.
      shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
      shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
++    // A run that failed for a missing model credential offers the way to set one up (#405).
++    shadow('conversation.chat.node', { key: 'turn-error', priority: -10, locale: 'chat', inject: face }, TurnErrorCell),
 +    // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
 +    // restrict that tool; hide it, keep other tool-change notices (#140).
 +    shadow('conversation.chat.node', { key: 'context', priority: -10, locale: 'chat' }, ContextCell),

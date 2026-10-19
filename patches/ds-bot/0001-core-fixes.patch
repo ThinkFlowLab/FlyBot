@@ -461,6 +461,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Group chat settings
    'Leave it empty to name the group after its members.': '留空就按成员命名。',
+@@ -274,6 +274,8 @@ const ZH = {
+   'Harness default': 'Harness 默认',
+   Saving: '保存中',
+   'Manage models': '管理模型',
++  'This turn failed': '本轮运行失败',
++  'This Bot\'s model has no API key yet. Set one up, then send your message again.': '这个 Bot 的模型还没有 API key。设置好后再发一次消息。',
+ 
+   // Shapes
+   Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
 @@ -312,7 +312,7 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
@@ -710,6 +719,72 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  // Ways to get a first model. The DeepSeek sign-in exists only where the shell carries
  // its account plugin (the Desktop); the API key and custom models use the shell's
  // own editors.
+@@ -248,6 +248,51 @@ function setupChoices(actions) {
+   ].filter(Boolean)
+ }
+ 
++// A run that failed because its model has no credential names the route DSH could
++// not reach (llm-deepseek: `no API key for provider route "deepseek-official"`).
++// `undefined` for any other failure; `{ route }` (route may be '') for a missing key.
++export function missingModelKey(message) {
++  const text = String(message ?? '')
++  if (!/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(text)) return undefined
++  return { route: /provider route "([^"]+)"/i.exec(text)?.[1] ?? '' }
++}
++
++// The ways out under a missing-credential failure: the DeepSeek routes get the same
++// choices as a Bot with no model yet; any other route opens the model settings.
++export function modelKeyChoices(actions, route) {
++  if (route === '' || /^deepseek/i.test(route)) return setupChoices(actions)
++  return [[t('Manage models'), openHarnessSettings]]
++}
++
++// DSH's terminal turn error, redrawn so a missing model credential has its fix right
++// under it (#405) instead of an environment variable name. Every other failure reads as
++// DSH writes it: the copy comes from the shell's own chat strings (`locale: 'chat'`).
++export function TurnErrorCell({ node, t: chatT, actions }) {
++  const data = node?.data ?? {}
++  const code = typeof data.code === 'string' && data.code ? data.code : undefined
++  const raw = String(data.message ?? '')
++  const shell = (key, fallback) => {
++    const text = typeof chatT === 'function' ? chatT(key) : undefined
++    return typeof text === 'string' && text !== '' && text !== key ? text : fallback
++  }
++  const missing = missingModelKey(raw)
++  const title = code === 'ACCOUNT_SIGNED_OUT' ? shell('message.accountStopped', t('This turn failed')) : shell('message.turnError', t('This turn failed'))
++  const message = missing ? t('This Bot\'s model has no API key yet. Set one up, then send your message again.')
++    : code === 'ACCOUNT_SIGNED_OUT' ? shell('message.failure.accountSignedOut', raw)
++      : code === 'ACCOUNT_SIGN_IN_REQUIRED' ? shell('message.failure.accountSignInRequired', raw)
++        : code === 'QUOTA' || code === 'ACCOUNT_QUOTA' ? shell('message.failure.quota', raw)
++          : code === 'AUTH' ? shell('message.failure.auth', raw) : raw
++  const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : []
++  return h('div', { className: 'bt-turn-error', role: 'status', 'data-missing-key': missing ? '' : undefined },
++    h('span', { className: 'bt-turn-error-dot', 'aria-hidden': true }),
++    h('div', { className: 'bt-turn-error-copy' },
++      h('span', { className: 'bt-turn-error-title' }, title),
++      h('span', { className: 'bt-turn-error-message', title: missing ? raw : undefined }, message),
++      code ? h('code', { className: 'bt-turn-error-code' }, code) : null),
++    choices.length > 0 ? h('div', { className: 'bt-turn-error-actions' },
++      choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))) : null)
++}
++
+ // The shell's own DeepSeek sign-in dialog, borrowed from its account plugin: the
+ // plugin's model sign-in entry renders here with the plugin's own operations.
+ export function DeepSeekSignIn({ useUi, actions }) {
+@@ -272,6 +272,13 @@ function SignInHost({ entry, actions }) {
+ }
+ 
+ export const MODEL_CSS = `
++.bt-turn-error{display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:8px;row-gap:8px;padding:2px 0;font-size:13px;line-height:20px}
++.bt-turn-error-dot{width:6px;height:6px;margin-top:7px;border-radius:50%;background:#e02135}
++.bt-turn-error-copy{min-width:0;overflow-wrap:anywhere}
++.bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
++.bt-turn-error-message{color:var(--bt-ink-2)}
++.bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
++.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
+ .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
+ .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
+ .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js
@@ -2909,7 +2984,16 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
 +++ b/test/model-menu.test.js
-@@ -99,3 +99,17 @@ test('the Thinking section always offers Default, so a picked level can be clear
+@@ -26,7 +26,7 @@ runInNewContext(bundle.outputFiles[0].text, {
+     return platform[name]
+   },
+ })
+-const { groupModels, ModelChoiceDock, effortRows } = module.exports
++const { groupModels, ModelChoiceDock, effortRows, TurnErrorCell, missingModelKey } = module.exports
+ 
+ function nodes(tree, match) {
+   if (!tree || typeof tree !== 'object') return []
+@@ -99,3 +99,41 @@ test('the Thinking section always offers Default, so a picked level can be clear
    assert.deepEqual([...effortRows({ efforts }).map(row => row.effort)], [undefined, 'low', 'high'])
    assert.equal(effortRows({ efforts: [] }).length, 0)
  })
@@ -2926,6 +3010,30 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  const flat = JSON.stringify(gone, (key, value) => typeof value === 'function' ? value.name : value)
 +  assert.doesNotMatch(flat, /bt-model-chip|Pick another model/)
 +  assert.match(flat, /RemoteGoneDock/)
++})
++
++test('a run that failed for a missing API key offers the model setup right under it (#405)', () => {
++  const raw = 'llm-deepseek: no API key for provider route "deepseek-official"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export DEEPSEEK_API_KEY in the launching environment'
++  assert.equal(missingModelKey(raw).route, 'deepseek-official')
++  assert.equal(missingModelKey('The model service failed'), undefined)
++  const chatT = key => ({ 'message.turnError': '本轮运行失败', 'message.failure.quota': 'quota gone' })[key] ?? key
++  const tree = TurnErrorCell({ node: { data: { message: raw } }, t: chatT, actions: { canSignIn: () => false } })
++  const text = node => nodes(node, () => true).flatMap(item => item.children.filter(child => typeof child === 'string')).join(' ')
++  assert.match(text(tree), /本轮运行失败/)
++  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY|launching environment/)
++  const labels = nodes(tree, node => node.type === 'button').map(button => button.children[0])
++  assert.deepEqual([...labels], ['Enter a DeepSeek API key', 'Open settings to set up a custom model'])
++  // The raw error stays on hover for a report.
++  assert.equal(nodes(tree, node => node.props.className === 'bt-turn-error-message')[0].props.title, raw)
++  // Another route opens the model settings; any other failure reads as DSH writes it, no buttons.
++  const other = TurnErrorCell({ node: { data: { message: 'no API key for provider route "openrouter"' } }, t: chatT, actions: {} })
++  assert.deepEqual([...nodes(other, node => node.type === 'button').map(button => button.children[0])], ['Manage models'])
++  const quota = TurnErrorCell({ node: { data: { message: 'raw quota text', code: 'QUOTA' } }, t: chatT, actions: {} })
++  assert.match(text(quota), /quota gone/)
++  assert.match(text(quota), /QUOTA/)
++  assert.equal(nodes(quota, node => node.type === 'button').length, 0)
++  const plain = TurnErrorCell({ node: { data: { message: 'socket hang up' } }, t: chatT, actions: {} })
++  assert.match(text(plain), /socket hang up/)
 +})
 diff --git a/test/models.test.js b/test/models.test.js
 --- a/test/models.test.js

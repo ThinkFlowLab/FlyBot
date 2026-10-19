@@ -26,7 +26,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { groupModels, ModelChoiceDock, effortRows } = module.exports
+const { groupModels, ModelChoiceDock, effortRows, TurnErrorCell, missingModelKey } = module.exports
 
 function nodes(tree, match) {
   if (!tree || typeof tree !== 'object') return []
@@ -112,4 +112,28 @@ test("a friend's Bot never gets the lost-model picker; an ended share says why i
   const flat = JSON.stringify(gone, (key, value) => typeof value === 'function' ? value.name : value)
   assert.doesNotMatch(flat, /bt-model-chip|Pick another model/)
   assert.match(flat, /RemoteGoneDock/)
+})
+
+test('a run that failed for a missing API key offers the model setup right under it (#405)', () => {
+  const raw = 'llm-deepseek: no API key for provider route "deepseek-official"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export DEEPSEEK_API_KEY in the launching environment'
+  assert.equal(missingModelKey(raw).route, 'deepseek-official')
+  assert.equal(missingModelKey('The model service failed'), undefined)
+  const chatT = key => ({ 'message.turnError': '本轮运行失败', 'message.failure.quota': 'quota gone' })[key] ?? key
+  const tree = TurnErrorCell({ node: { data: { message: raw } }, t: chatT, actions: { canSignIn: () => false } })
+  const text = node => nodes(node, () => true).flatMap(item => item.children.filter(child => typeof child === 'string')).join(' ')
+  assert.match(text(tree), /本轮运行失败/)
+  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY|launching environment/)
+  const labels = nodes(tree, node => node.type === 'button').map(button => button.children[0])
+  assert.deepEqual([...labels], ['Enter a DeepSeek API key', 'Open settings to set up a custom model'])
+  // The raw error stays on hover for a report.
+  assert.equal(nodes(tree, node => node.props.className === 'bt-turn-error-message')[0].props.title, raw)
+  // Another route opens the model settings; any other failure reads as DSH writes it, no buttons.
+  const other = TurnErrorCell({ node: { data: { message: 'no API key for provider route "openrouter"' } }, t: chatT, actions: {} })
+  assert.deepEqual([...nodes(other, node => node.type === 'button').map(button => button.children[0])], ['Manage models'])
+  const quota = TurnErrorCell({ node: { data: { message: 'raw quota text', code: 'QUOTA' } }, t: chatT, actions: {} })
+  assert.match(text(quota), /quota gone/)
+  assert.match(text(quota), /QUOTA/)
+  assert.equal(nodes(quota, node => node.type === 'button').length, 0)
+  const plain = TurnErrorCell({ node: { data: { message: 'socket hang up' } }, t: chatT, actions: {} })
+  assert.match(text(plain), /socket hang up/)
 })

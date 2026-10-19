@@ -394,6 +394,8 @@ const ZH = {
   'Harness default': 'Harness 默认',
   Saving: '保存中',
   'Manage models': '管理模型',
+  'This turn failed': '本轮运行失败',
+  'This Bot\'s model has no API key yet. Set one up, then send your message again.': '这个 Bot 的模型还没有 API key。设置好后再发一次消息。',
 
   // Shapes
   Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',

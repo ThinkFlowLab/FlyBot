@@ -263,6 +263,51 @@ function setupChoices(actions) {
   ].filter(Boolean)
 }
 
+// A run that failed because its model has no credential names the route DSH could
+// not reach (llm-deepseek: `no API key for provider route "deepseek-official"`).
+// `undefined` for any other failure; `{ route }` (route may be '') for a missing key.
+export function missingModelKey(message) {
+  const text = String(message ?? '')
+  if (!/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(text)) return undefined
+  return { route: /provider route "([^"]+)"/i.exec(text)?.[1] ?? '' }
+}
+
+// The ways out under a missing-credential failure: the DeepSeek routes get the same
+// choices as a Bot with no model yet; any other route opens the model settings.
+export function modelKeyChoices(actions, route) {
+  if (route === '' || /^deepseek/i.test(route)) return setupChoices(actions)
+  return [[t('Manage models'), openHarnessSettings]]
+}
+
+// DSH's terminal turn error, redrawn so a missing model credential has its fix right
+// under it (#405) instead of an environment variable name. Every other failure reads as
+// DSH writes it: the copy comes from the shell's own chat strings (`locale: 'chat'`).
+export function TurnErrorCell({ node, t: chatT, actions }) {
+  const data = node?.data ?? {}
+  const code = typeof data.code === 'string' && data.code ? data.code : undefined
+  const raw = String(data.message ?? '')
+  const shell = (key, fallback) => {
+    const text = typeof chatT === 'function' ? chatT(key) : undefined
+    return typeof text === 'string' && text !== '' && text !== key ? text : fallback
+  }
+  const missing = missingModelKey(raw)
+  const title = code === 'ACCOUNT_SIGNED_OUT' ? shell('message.accountStopped', t('This turn failed')) : shell('message.turnError', t('This turn failed'))
+  const message = missing ? t('This Bot\'s model has no API key yet. Set one up, then send your message again.')
+    : code === 'ACCOUNT_SIGNED_OUT' ? shell('message.failure.accountSignedOut', raw)
+      : code === 'ACCOUNT_SIGN_IN_REQUIRED' ? shell('message.failure.accountSignInRequired', raw)
+        : code === 'QUOTA' || code === 'ACCOUNT_QUOTA' ? shell('message.failure.quota', raw)
+          : code === 'AUTH' ? shell('message.failure.auth', raw) : raw
+  const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : []
+  return h('div', { className: 'bt-turn-error', role: 'status', 'data-missing-key': missing ? '' : undefined },
+    h('span', { className: 'bt-turn-error-dot', 'aria-hidden': true }),
+    h('div', { className: 'bt-turn-error-copy' },
+      h('span', { className: 'bt-turn-error-title' }, title),
+      h('span', { className: 'bt-turn-error-message', title: missing ? raw : undefined }, message),
+      code ? h('code', { className: 'bt-turn-error-code' }, code) : null),
+    choices.length > 0 ? h('div', { className: 'bt-turn-error-actions' },
+      choices.map(([label, run]) => h('button', { key: label, type: 'button', className: 'bt-model-chip', onClick: run }, label))) : null)
+}
+
 // The shell's own DeepSeek sign-in dialog, borrowed from its account plugin: the
 // plugin's model sign-in entry renders here with the plugin's own operations.
 export function DeepSeekSignIn({ useUi, actions }) {
@@ -287,6 +332,13 @@ function SignInHost({ entry, actions }) {
 }
 
 export const MODEL_CSS = `
+.bt-turn-error{display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:8px;row-gap:8px;padding:2px 0;font-size:13px;line-height:20px}
+.bt-turn-error-dot{width:6px;height:6px;margin-top:7px;border-radius:50%;background:#e02135}
+.bt-turn-error-copy{min-width:0;overflow-wrap:anywhere}
+.bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
+.bt-turn-error-message{color:var(--bt-ink-2)}
+.bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
+.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
 .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
 .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
 .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}

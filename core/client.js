@@ -423,6 +423,8 @@ var ZH = {
   "Harness default": "Harness 默认",
   Saving: "保存中",
   "Manage models": "管理模型",
+  "This turn failed": "本轮运行失败",
+  "This Bot's model has no API key yet. Set one up, then send your message again.": "这个 Bot 的模型还没有 API key。设置好后再发一次消息。",
   // Shapes
   Whale: "鲸鱼",
   Star: "星星",
@@ -8107,6 +8109,45 @@ function setupChoices(actions) {
     [t("Open settings to set up a custom model"), openHarnessSettings]
   ].filter(Boolean);
 }
+function missingModelKey(message) {
+  const text = String(message ?? "");
+  if (!/\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i.test(text)) return void 0;
+  return { route: /provider route "([^"]+)"/i.exec(text)?.[1] ?? "" };
+}
+function modelKeyChoices(actions, route) {
+  if (route === "" || /^deepseek/i.test(route)) return setupChoices(actions);
+  return [[t("Manage models"), openHarnessSettings]];
+}
+function TurnErrorCell({ node, t: chatT, actions }) {
+  const data = node?.data ?? {};
+  const code = typeof data.code === "string" && data.code ? data.code : void 0;
+  const raw = String(data.message ?? "");
+  const shell = (key, fallback) => {
+    const text = typeof chatT === "function" ? chatT(key) : void 0;
+    return typeof text === "string" && text !== "" && text !== key ? text : fallback;
+  };
+  const missing = missingModelKey(raw);
+  const title = code === "ACCOUNT_SIGNED_OUT" ? shell("message.accountStopped", t("This turn failed")) : shell("message.turnError", t("This turn failed"));
+  const message = missing ? t("This Bot's model has no API key yet. Set one up, then send your message again.") : code === "ACCOUNT_SIGNED_OUT" ? shell("message.failure.accountSignedOut", raw) : code === "ACCOUNT_SIGN_IN_REQUIRED" ? shell("message.failure.accountSignInRequired", raw) : code === "QUOTA" || code === "ACCOUNT_QUOTA" ? shell("message.failure.quota", raw) : code === "AUTH" ? shell("message.failure.auth", raw) : raw;
+  const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : [];
+  return (0, import_react14.createElement)(
+    "div",
+    { className: "bt-turn-error", role: "status", "data-missing-key": missing ? "" : void 0 },
+    (0, import_react14.createElement)("span", { className: "bt-turn-error-dot", "aria-hidden": true }),
+    (0, import_react14.createElement)(
+      "div",
+      { className: "bt-turn-error-copy" },
+      (0, import_react14.createElement)("span", { className: "bt-turn-error-title" }, title),
+      (0, import_react14.createElement)("span", { className: "bt-turn-error-message", title: missing ? raw : void 0 }, message),
+      code ? (0, import_react14.createElement)("code", { className: "bt-turn-error-code" }, code) : null
+    ),
+    choices.length > 0 ? (0, import_react14.createElement)(
+      "div",
+      { className: "bt-turn-error-actions" },
+      choices.map(([label, run]) => (0, import_react14.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label))
+    ) : null
+  );
+}
 function DeepSeekSignIn({ useUi, actions }) {
   const open = useUi((state) => state.signIn);
   const entry = open ? actions.signInEntry?.() : null;
@@ -8130,6 +8171,13 @@ function SignInHost({ entry, actions }) {
   });
 }
 var MODEL_CSS = `
+.bt-turn-error{display:grid;grid-template-columns:10px minmax(0,1fr);column-gap:8px;row-gap:8px;padding:2px 0;font-size:13px;line-height:20px}
+.bt-turn-error-dot{width:6px;height:6px;margin-top:7px;border-radius:50%;background:#e02135}
+.bt-turn-error-copy{min-width:0;overflow-wrap:anywhere}
+.bt-turn-error-title{margin-right:6px;font-weight:600;color:#e02135}
+.bt-turn-error-message{color:var(--bt-ink-2)}
+.bt-turn-error-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
+.bt-turn-error-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
 .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
 .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
 .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
@@ -16194,6 +16242,8 @@ function apply(ctx) {
     // every message.
     shadow("conversation.chat.node", { key: "question-reply", priority: -10, locale: "chat" }, AnsweredCell),
     shadow("conversation.chat.node", { key: "compaction", priority: -10, locale: "chat" }, Nothing),
+    // A run that failed for a missing model credential offers the way to set one up (#405).
+    shadow("conversation.chat.node", { key: "turn-error", priority: -10, locale: "chat", inject: face }, TurnErrorCell),
     // DSH's context row is "Tool removed: ask_user_question" after Bot sessions
     // restrict that tool; hide it, keep other tool-change notices (#140).
     shadow("conversation.chat.node", { key: "context", priority: -10, locale: "chat" }, ContextCell),

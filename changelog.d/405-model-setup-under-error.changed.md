@@ -1,0 +1,1 @@
+A run that fails because the Bot's model has no API key now says so in plain words and offers the setup right under the error (Enter a DeepSeek API key, sign in where available, or open the model settings), instead of naming an environment variable ([#405](https://github.com/ThinkFlowLab/FlyBot/issues/405)).
