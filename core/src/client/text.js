@@ -148,6 +148,13 @@ export function isHiddenTurn(roster, sessionId, turn) {
 
 export const toolName = root => root.name || root.call?.name
 
+// Plugin tools a per-Bot mask adds or removes (the roster's `pluginTools`, #419).
+let pluginTools = new Set()
+export function setPluginTools(names) {
+  pluginTools = new Set((Array.isArray(names) ? names : []).filter(name => typeof name === 'string'))
+}
+export const isPluginTool = name => typeof name === 'string' && pluginTools.has(name)
+
 // While a Session's history loads, a card asked in it may yet be drawn at its call,
 // so the docks hold it back until then.
 export const historyLoading = snapshot => snapshot?.openState === 'cold' || snapshot?.openState === 'loading'

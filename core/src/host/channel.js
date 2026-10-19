@@ -79,6 +79,8 @@ export function install(rt) {
     questions: state.questions,
     // FlyBot: friends' remote Bots, chat members with a remote badge (not team Bots).
     remoteBots: rt.flybotRemoteMembers?.() ?? [],
+    // Plugin tools that come and go with a Bot's place (masked per Bot): their context rows stay hidden (#419).
+    pluginTools: rt.pluginToolNames?.() ?? [],
     // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
     agents: Object.values(state.agents),
     // Key names and who may use them; values never leave the host.
