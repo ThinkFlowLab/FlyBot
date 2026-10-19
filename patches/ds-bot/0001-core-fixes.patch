@@ -283,10 +283,11 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,62 @@ const ZH = {
+@@ -41,22 +41,63 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
++  '{count} member': '{count} 位成员',
 +  '1 person': '1 人',
 +  '{count} people': '{count} 人',
 +  '1 Bot': '1 个 Bot',

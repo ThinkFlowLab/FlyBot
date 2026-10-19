@@ -12,6 +12,7 @@ import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, FooterAccount, Br
 import { HeaderPill } from './header.js'
 import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 import { CHATS_SOURCE, atSources } from './at-menu.js'
+import { watchFaceMenu } from './face-at-filter.js'
 import { VOICE_BUNDLE } from './speech.js'
 import { sameVersion } from './dsh-offer.js'
 import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
@@ -747,6 +748,17 @@ export function apply(ctx) {
   // The "@" menu's Bot group and the chats "+" references. The composer's controller
   // for a Session is the shell's own, so the chats open at its caret.
   let atMenu = null
+  // Face rooms whose "@" menu leaves out the shell's Session rows (#305): Session id → stop,
+  // or null until the trigger service is up.
+  const faceMenus = new Map()
+  const watchFace = (sessionId) => {
+    try {
+      const controller = atMenu?.controllerOf(sessionId)
+      return controller ? watchFaceMenu(controller) : null
+    } catch {
+      return null
+    }
+  }
   const installAtMenu = () => {
     const fiber = ctx.inject(['inputTriggers'], (scope) => {
       scope.effect(() => {
@@ -758,7 +770,12 @@ export function apply(ctx) {
         const launched = sessionId => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE
         const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map(source => triggers.registerSource(source))
         atMenu = { controllerOf }
+        for (const [sessionId, stop] of faceMenus) faceMenus.set(sessionId, stop ?? watchFace(sessionId))
         return () => {
+          for (const [sessionId, stop] of faceMenus) {
+            stop?.()
+            faceMenus.set(sessionId, null)
+          }
           atMenu = null
           for (const off of offs) off()
         }
@@ -767,6 +784,14 @@ export function apply(ctx) {
     return () => fiber.dispose()
   }
   actions.canReferenceChat = () => atMenu !== null
+  actions.filterFaceAtMenu = (sessionId) => {
+    faceMenus.get(sessionId)?.()
+    faceMenus.set(sessionId, watchFace(sessionId))
+    return () => {
+      faceMenus.get(sessionId)?.()
+      faceMenus.delete(sessionId)
+    }
+  }
   actions.referenceChat = (sessionId, span) => {
     const controller = atMenu?.controllerOf(sessionId)
     if (controller === undefined || span === undefined) return

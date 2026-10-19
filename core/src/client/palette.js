@@ -56,7 +56,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
       run: async () => { if (bot.hidden) await actions.setFlags(bot.id, { hidden: false }); actions.openSession(bot.id) },
     })),
     ...roster.rooms.filter(room => matchesName(room.name)).map(room => ({
-      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t('{count} members', { count: room.members.length }),
+      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t(room.members.length === 1 ? '{count} member' : '{count} members', { count: room.members.length }),
       badge: room.hidden ? t('Hidden') : undefined,
       run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
     })),

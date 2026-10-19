@@ -102,6 +102,7 @@ var ZH = {
   " and ": "、",
   and: "和",
   "{count} members": "{count} 位成员",
+  "{count} member": "{count} 位成员",
   "1 person": "1 人",
   "{count} people": "{count} 人",
   "1 Bot": "1 个 Bot",
@@ -4690,7 +4691,7 @@ function ScopeEditor({ secret, roster, onSave }) {
   const [mode, setMode] = (0, import_react6.useState)(secret.scope === "all" ? "all" : "some");
   const [picked, setPicked] = (0, import_react6.useState)(secret.scope === "all" ? [] : secret.scope);
   const toggle = (id) => setPicked((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
-  const same = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
+  const same2 = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
   return (0, import_react6.createElement)(
     "div",
     { className: "bt-secret-edit-block" },
@@ -4715,7 +4716,7 @@ function ScopeEditor({ secret, roster, onSave }) {
     (0, import_react6.createElement)(
       "div",
       { className: "bt-secret-row-actions" },
-      (0, import_react6.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
+      (0, import_react6.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same2, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
     )
   );
 }
@@ -7049,6 +7050,8 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
     actions.beginVisit(sessionId);
     return () => actions.endVisit(sessionId);
   }, [sessionId]);
+  const face = room2?.origin === "face-to-face";
+  (0, import_react10.useEffect)(() => face ? actions.filterFaceAtMenu?.(sessionId) : void 0, [sessionId, face]);
   (0, import_react10.useEffect)(() => {
     if (room2) document.body.dataset.btRoom = "";
     else delete document.body.dataset.btRoom;
@@ -7449,7 +7452,7 @@ function mentionRows(roster, sessionId, query = "") {
   const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle) || String(bot.label ?? "").toLowerCase().includes(needle) || bot.remote && normHandle(remoteRecord(bot)?.handle || bot.handle).includes(normHandle(needle))).map((bot) => ({ bot, text: `@${bot.name} ` }));
   const everyone = t("Everyone");
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
-    rows.push({ room: here.room, text: `@${everyone} ` });
+    rows.push({ room: here.room, count: bots.filter((bot) => bot.kind !== "human").length, text: `@${everyone} ` });
   }
   if (face) return rows;
   const seatHandles = new Set(bots.filter((bot) => bot.remote).map((bot) => normHandle(remoteRecord(bot)?.handle)).filter(Boolean));
@@ -7461,6 +7464,7 @@ function mentionRows(roster, sessionId, query = "") {
   ];
 }
 var isFaceRoom = (room2) => room2?.origin === "face-to-face";
+var memberCount = (count) => t(count === 1 ? "{count} member" : "{count} members", { count });
 var normHandle = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
 var remoteRecord = (bot) => bot?.remote ? bot.remote === true ? bot : bot.remote : null;
 var myOwnerName = (roster, live, bot) => {
@@ -7518,7 +7522,7 @@ function atSources({ roster, sessions, launched, iconFor }) {
         ...row.remote ? { description: row.remote.handle } : {},
         ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
         // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-        ...row.room ? { description: face ? t("Every Bot in this room") : t("{count} members", { count: row.room.members.length }) } : {},
+        ...row.room ? { description: face ? t("Every Bot in this room") : memberCount(row.count) } : {},
         icon: iconFor(row),
         section: t("Bots"),
         value: row.text
@@ -7558,6 +7562,83 @@ function atSources({ roster, sessions, launched, iconFor }) {
     codec: { clipboardText: (ref) => ref, serialize: (ref) => Promise.resolve(ref) }
   };
   return [bots, chats];
+}
+
+// src/client/face-at-filter.js
+var REFERENCE_SOURCE = "reference";
+var optionId = (source, index) => `dsh-slash-option-${source}-${index}`;
+var isSessionRow = (group, item) => group.source === REFERENCE_SOURCE && item?.icon === "session";
+var same = (a, b) => a != null && b != null && a.source === b.source && a.index === b.index;
+function planFaceMenu(state, previous = null) {
+  const hidden = [];
+  const ready = [];
+  let shown = 0;
+  let loading = false;
+  for (const group of state?.groups ?? []) {
+    const items = group.items ?? [];
+    if (group.status !== "ready" && items.length === 0) loading = true;
+    items.forEach((item, index) => {
+      const hide = isSessionRow(group, item);
+      if (hide) hidden.push({ source: group.source, index, title: item.section !== void 0 && item.section !== items[index - 1]?.section });
+      else shown += 1;
+      if (group.status === "ready") ready.push({ source: group.source, index, hide });
+    });
+  }
+  const open = state?.open === true;
+  const blank3 = open && hidden.length > 0 && shown === 0 && !loading;
+  const dismiss = blank3 && (state.groups ?? []).every((group) => group.status === "ready");
+  return { hidden, blank: blank3, dismiss, target: dismiss ? null : steer(ready, state?.highlight ?? null, previous) };
+}
+function steer(ready, highlight, previous) {
+  const at = ready.findIndex((row) => same(row, highlight));
+  if (at < 0 || !ready[at].hide) return null;
+  const from = ready.findIndex((row) => same(row, previous));
+  const n = ready.length;
+  const dir = from >= 0 && from !== at && (from - at + n) % n === 1 ? -1 : 1;
+  for (let step = 1; step < n; step += 1) {
+    const row = ready[((at + dir * step) % n + n) % n];
+    if (!row.hide) return { source: row.source, index: row.index };
+  }
+  return null;
+}
+function faceMenuCss({ hidden, blank: blank3 }) {
+  if (hidden.length === 0) return "";
+  const rows = hidden.map((row) => `[data-trigger-menu] [id="${optionId(row.source, row.index)}"]`);
+  const titles = hidden.filter((row) => row.title).map((row) => `[data-trigger-menu] [role="presentation"]:has(+ [id="${optionId(row.source, row.index)}"])`);
+  const css = [`${[...rows, ...titles].join(",")}{display:none!important}`];
+  if (blank3) css.push("[data-trigger-menu]{display:none!important}");
+  return css.join("\n");
+}
+function watchFaceMenu(controller, doc = globalThis.document) {
+  if (typeof controller?.menu?.subscribe !== "function" || !doc?.head) return () => {
+  };
+  const style = doc.createElement("style");
+  style.setAttribute("data-bt-face-at", "");
+  doc.head.appendChild(style);
+  let previous = null;
+  let stopped = false;
+  const later = typeof queueMicrotask === "function" ? queueMicrotask : (fn) => Promise.resolve().then(fn);
+  const apply2 = () => {
+    if (stopped) return;
+    const state = controller.menu.getSnapshot();
+    const plan = planFaceMenu(state, previous);
+    const css = faceMenuCss(plan);
+    if (style.textContent !== css) style.textContent = css;
+    if (plan.dismiss) later(() => {
+      if (!stopped && planFaceMenu(controller.menu.getSnapshot(), previous).dismiss) controller.dismiss();
+    });
+    else if (plan.target) later(() => {
+      if (!stopped) controller.hover(plan.target.source, plan.target.index);
+    });
+    else previous = state.open ? state.highlight : null;
+  };
+  const unsubscribe = controller.menu.subscribe(apply2);
+  apply2();
+  return () => {
+    stopped = true;
+    unsubscribe?.();
+    style.remove();
+  };
 }
 
 // src/client/speech.js
@@ -7769,7 +7850,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
       key: room2.id,
       avatar: (0, import_react13.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
       title: room2.name,
-      subtitle: t("{count} members", { count: room2.members.length }),
+      subtitle: t(room2.members.length === 1 ? "{count} member" : "{count} members", { count: room2.members.length }),
       badge: room2.hidden ? t("Hidden") : void 0,
       run: async () => {
         if (room2.hidden) await actions.setFlags(room2.id, { hidden: false });
@@ -16275,6 +16356,15 @@ function apply(ctx) {
   };
   const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
   let atMenu = null;
+  const faceMenus = /* @__PURE__ */ new Map();
+  const watchFace = (sessionId) => {
+    try {
+      const controller = atMenu?.controllerOf(sessionId);
+      return controller ? watchFaceMenu(controller) : null;
+    } catch {
+      return null;
+    }
+  };
   const installAtMenu = () => {
     const fiber = ctx.inject(["inputTriggers"], (scope) => {
       scope.effect(() => {
@@ -16286,7 +16376,12 @@ function apply(ctx) {
         const launched = (sessionId) => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE;
         const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map((source) => triggers.registerSource(source));
         atMenu = { controllerOf };
+        for (const [sessionId, stop] of faceMenus) faceMenus.set(sessionId, stop ?? watchFace(sessionId));
         return () => {
+          for (const [sessionId, stop] of faceMenus) {
+            stop?.();
+            faceMenus.set(sessionId, null);
+          }
           atMenu = null;
           for (const off of offs) off();
         };
@@ -16295,6 +16390,14 @@ function apply(ctx) {
     return () => fiber.dispose();
   };
   actions.canReferenceChat = () => atMenu !== null;
+  actions.filterFaceAtMenu = (sessionId) => {
+    faceMenus.get(sessionId)?.();
+    faceMenus.set(sessionId, watchFace(sessionId));
+    return () => {
+      faceMenus.get(sessionId)?.();
+      faceMenus.delete(sessionId);
+    };
+  };
   actions.referenceChat = (sessionId, span) => {
     const controller = atMenu?.controllerOf(sessionId);
     if (controller === void 0 || span === void 0) return;

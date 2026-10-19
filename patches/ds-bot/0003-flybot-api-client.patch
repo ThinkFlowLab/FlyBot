@@ -3,16 +3,19 @@ FlyBot patch 0003-flybot-api-client on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). G
 diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 --- a/src/client/at-menu.js
 +++ b/src/client/at-menu.js
-@@ -3,6 +3,8 @@
+@@ -2,7 +2,10 @@
+ // The composer's "@" in a Bot's chat or a group chat: a Bot group that inserts
  // "@Name", and the chats that "+ → Reference a chat" opens in the same menu.
  // Both are sources of the shell's trigger menu; the shell's own file and session
- // rows stay beside them, because a source cannot be hidden for one Session.
+-// rows stay beside them, because a source cannot be hidden for one Session.
++// rows stay beside them, because a source cannot be hidden for one Session (a face
++// room filters the session rows out of view: face-at-filter.js).
 +import { mentionCandidates, remoteMentionRows } from './flybot-registry.js'
 +import { cleanPeerName, ownerNameOf, remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
  import { t } from './i18n.js'
  import { currentPart, relativeShort } from './text.js'
  
-@@ -25,16 +25,72 @@ const conversationOf = (roster, sessionId) => {
+@@ -25,16 +25,73 @@ const conversationOf = (roster, sessionId) => {
  export function mentionRows(roster, sessionId, query = '') {
    const here = conversationOf(roster, sessionId)
    if (here === null) return null
@@ -43,7 +46,8 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +    .map(bot => ({ bot, text: `@${bot.name} ` }))
    const everyone = t('Everyone')
    if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {
-     rows.push({ room: here.room, text: `@${everyone} ` })
+-    rows.push({ room: here.room, text: `@${everyone} ` })
++    rows.push({ room: here.room, count: bots.filter(bot => bot.kind !== 'human').length, text: `@${everyone} ` })
    }
 -  return rows
 +  // Friends' remote Bots are members of every chat, marked remote. Not of a face-to-face
@@ -62,6 +66,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +}
 +
 +const isFaceRoom = room => room?.origin === 'face-to-face'
++const memberCount = count => t(count === 1 ? '{count} member' : '{count} members', { count })
 +const normHandle = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
 +// A friend's Bot chat in the roster: its remote record (the Bot itself in older rosters).
 +export const remoteRecord = bot => (bot?.remote ? (bot.remote === true ? bot : bot.remote) : null)
@@ -106,7 +111,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +        ...(row.remote ? { description: row.remote.handle } : {}),
 +        ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),
 +        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-+        ...(row.room ? { description: face ? t('Every Bot in this room') : t('{count} members', { count: row.room.members.length }) } : {}),
++        ...(row.room ? { description: face ? t('Every Bot in this room') : memberCount(row.count) } : {}),
          icon: iconFor(row),
          section: t('Bots'),
          value: row.text,
@@ -695,7 +700,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,25 +1,28 @@
+@@ -1,25 +1,29 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -713,6 +718,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 -import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 +import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
  import { CHATS_SOURCE, atSources } from './at-menu.js'
++import { watchFaceMenu } from './face-at-filter.js'
  import { VOICE_BUNDLE } from './speech.js'
  import { sameVersion } from './dsh-offer.js'
  import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
@@ -868,6 +874,52 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
+@@ -719,6 +719,17 @@ export function apply(ctx) {
+   // The "@" menu's Bot group and the chats "+" references. The composer's controller
+   // for a Session is the shell's own, so the chats open at its caret.
+   let atMenu = null
++  // Face rooms whose "@" menu leaves out the shell's Session rows (#305): Session id → stop,
++  // or null until the trigger service is up.
++  const faceMenus = new Map()
++  const watchFace = (sessionId) => {
++    try {
++      const controller = atMenu?.controllerOf(sessionId)
++      return controller ? watchFaceMenu(controller) : null
++    } catch {
++      return null
++    }
++  }
+   const installAtMenu = () => {
+     const fiber = ctx.inject(['inputTriggers'], (scope) => {
+       scope.effect(() => {
+@@ -730,7 +730,12 @@ export function apply(ctx) {
+         const launched = sessionId => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE
+         const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map(source => triggers.registerSource(source))
+         atMenu = { controllerOf }
++        for (const [sessionId, stop] of faceMenus) faceMenus.set(sessionId, stop ?? watchFace(sessionId))
+         return () => {
++          for (const [sessionId, stop] of faceMenus) {
++            stop?.()
++            faceMenus.set(sessionId, null)
++          }
+           atMenu = null
+           for (const off of offs) off()
+         }
+@@ -739,6 +739,14 @@ export function apply(ctx) {
+     return () => fiber.dispose()
+   }
+   actions.canReferenceChat = () => atMenu !== null
++  actions.filterFaceAtMenu = (sessionId) => {
++    faceMenus.get(sessionId)?.()
++    faceMenus.set(sessionId, watchFace(sessionId))
++    return () => {
++      faceMenus.get(sessionId)?.()
++      faceMenus.delete(sessionId)
++    }
++  }
+   actions.referenceChat = (sessionId, span) => {
+     const controller = atMenu?.controllerOf(sessionId)
+     if (controller === undefined || span === undefined) return
 @@ -752,11 +752,12 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
@@ -1190,7 +1242,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
  
  // Search is a command palette: a 560px dialog, a search header, and 49px
  // rows (24px avatar, title, subtitle). Bots and groups match on name and role; past
-@@ -49,8 +49,8 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -49,13 +49,13 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
    const matchesName = (...fields) => wanted === '' || fields.some(field => (field ?? '').toLowerCase().includes(wanted))
    const sections = []
    const people = [
@@ -1200,6 +1252,12 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 +      key: bot.id, avatar: h(BotAvatar, { bot, size: 24, badge: false, live: false }), title: pickerBotLabel(bot),
        subtitle: [bot.role, isMainOf(roster, bot.id) ? t('Main Bot') : ''].filter(Boolean).join(' · '), badge: bot.hidden ? t('Hidden') : undefined,
        run: async () => { if (bot.hidden) await actions.setFlags(bot.id, { hidden: false }); actions.openSession(bot.id) },
+     })),
+     ...roster.rooms.filter(room => matchesName(room.name)).map(room => ({
+-      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t('{count} members', { count: room.members.length }),
++      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t(room.members.length === 1 ? '{count} member' : '{count} members', { count: room.members.length }),
+       badge: room.hidden ? t('Hidden') : undefined,
+       run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),
 @@ -81,7 +81,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
      { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
