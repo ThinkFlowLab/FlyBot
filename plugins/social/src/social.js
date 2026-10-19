@@ -1919,7 +1919,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }
   }
-  disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots), { read: true }))
+  // Each Bot carries its owner, so a picker can name it "Coder (Bob)" (#384).
+  disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots.map(bot => ({ ...bot, ...(entry.owner ? { owner: entry.owner } : {}), ...(entry.name ? { homeName: entry.name } : {}) }))), { read: true }))
   disposers.push(flybot.api.handle('social/auto-approve', async ({ botId, home: friendHome, on }) => {
     flybot.fields.set(botId, 'autoApprove', { ...(flybot.fields.get(botId, 'autoApprove') ?? {}), [norm(friendHome)]: on === null ? undefined : Boolean(on) })
     return flybot.fields.get(botId, 'autoApprove')

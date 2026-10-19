@@ -90,7 +90,7 @@ test("a friend's Bot answers its handle too, and the chip reads its display name
   // like a name mention, under the display name from the roster.
   const parts = userTextParts('@bot-2a758c0f.danyang.home 你是?', members)
   assert.deepEqual(plain(parts.filter(part => part.bot).map(part => part.bot.id)), ['f'])
-  assert.equal(parts[0].bot.mentionLabel, "代码审查官 · danyang's Bot")
+  assert.equal(parts[0].bot.mentionLabel, '代码审查官 (danyang)')
   assert.deepEqual(plain(parts[1]), { text: ' 你是?' })
   // The display-name form still matches the Bot itself, and an address before @ stays text.
   const named = userTextParts('@代码审查官 你是谁', members)
@@ -114,7 +114,7 @@ test('#305: a face-room mention chips on both homes under one name, and a typed 
   const sent = "@SelfA's Chief  what is 2+2?"
   const partsB = userTextParts(sent, mentionableBots(onB, 'r'))
   assert.equal(partsB[0].bot.id, '@chief.selfa.home')
-  assert.equal(partsB[0].bot.mentionLabel, 'SelfA · Chief')
+  assert.equal(partsB[0].bot.mentionLabel, 'Chief (SelfA)')
   assert.deepEqual(plain(partsB[1]), { text: ' what is 2+2?' })
   // A bare "@Chief" typed on B is B's own Chief, even when the room lists the friend's seat first.
   assert.equal(userTextParts('@Chief hi', mentionableBots(onB, 'r'))[0].bot.id, 'b1')
@@ -129,7 +129,7 @@ test('#305: a face-room mention chips on both homes under one name, and a typed 
   const partsA = userTextParts(sent, mentionableBots(onA, 'r', { fromFriend: true }))
   assert.equal(partsA[0].bot.id, 'a1')
   assert.equal(partsA[0].label, "SelfA's Chief")
-  assert.match(partsA[0].bot.mentionLabel, /^SelfA .* · Chief$/)
+  assert.equal(partsA[0].bot.mentionLabel, 'Chief (you)')
   // A friend's bare "@Chief" is the friend's own Chief, not mine.
   assert.equal(userTextParts('@Chief hi', mentionableBots(onA, 'r', { fromFriend: true }))[0].bot.id, '@chief.selfb.home')
   // A friend's Bot that is not in this room is not offered here.

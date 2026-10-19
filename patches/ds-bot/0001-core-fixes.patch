@@ -449,7 +449,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -152,8 +152,10 @@ const ZH = {
+@@ -152,8 +152,11 @@ const ZH = {
    'Admin leads': '管理员主持',
    'Plain messages go to the admin, who calls others with @Name.': '普通消息先给管理员，由管理员用 @名字 点名其他成员。',
    Everyone: '所有人',
@@ -457,6 +457,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
 +  '{name} (you)': '{name}（你）',
++  '{bot} (you)': '{bot}（你的）',
    'Leave the group without an admin': '让群聊不设管理员',
    Unset: '取消',
    'Make admin': '设为管理员',

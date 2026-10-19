@@ -130,8 +130,8 @@ async function grantToFriend(rt, botId, grantee = '@bob.home') {
 }
 
 test('remote-label: owner badge and shared-room title', () => {
-  assert.equal(remoteBotTitle({ displayName: 'Coder', ownerName: 'Bob', handle: '@coder.bob.home' }), "Coder · Bob's Bot")
-  assert.equal(remoteBotTitle({ displayName: 'Chief', ownerName: 'Bob', isChief: true }), "Bob's Chief")
+  assert.equal(remoteBotTitle({ displayName: 'Coder', ownerName: 'Bob', handle: '@coder.bob.home' }), 'Coder (Bob)')
+  assert.equal(remoteBotTitle({ displayName: 'Chief', ownerName: 'Bob', isChief: true }), 'Chief (Bob)')
   assert.equal(sharedRoomTitle('Alice'), 'Shared room from Alice')
 })
 
@@ -173,8 +173,8 @@ test('inviter view: remotes are labeled with the owner; other humans see the sam
   assert.equal(forAlice.viewerRole, 'member')
   assert.equal(forBob.viewerRole, 'member')
   const coder = forAlice.presentedParticipants.find(p => p.remote)
-  assert.equal(coder.label, "Coder · Bob's Bot")
-  assert.equal(forBob.presentedParticipants.find(p => p.remote).label, "Coder · Bob's Bot")
+  assert.equal(coder.label, 'Coder (Bob)')
+  assert.equal(forBob.presentedParticipants.find(p => p.remote).label, 'Coder (Bob)')
 })
 
 test('remote owner view: Shared room from inviter; membership window; leave withdraws', async (t) => {
@@ -473,7 +473,8 @@ test('@ menu in a room lists humans, Chiefs and published remotes', () => {
   assert.ok(names.includes('Chief A'))
   assert.ok(names.includes('Alice'))
   assert.ok(names.some(name => String(name).includes('Coder')))
-  assert.ok(rows.some(row => row.remote?.handle === '@coder.bob.home'))
+  // Seated and published: offered once, by its seat (#384).
+  assert.equal(rows.filter(row => (row.remote ?? row.bot?.remote)?.handle === '@coder.bob.home').length, 1)
 })
 
 function startChannel(t, team) {

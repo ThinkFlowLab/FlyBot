@@ -77,7 +77,7 @@ export function pickerBotLabel(bot) {
 
 export function ownerNameOf(record) {
   if (!record) return ''
-  return cleanPeerName(record.ownerName || record.homeName || record.owner || record.ownerHome || record.home || ownerFromHandle(record.handle), '')
+  return cleanPeerName(record.ownerName || record.owner || record.homeName || record.ownerHome || record.home || ownerFromHandle(record.handle), '')
 }
 
 export function isChiefRecord(record) {
@@ -86,17 +86,17 @@ export function isChiefRecord(record) {
   return /^chief$/i.test(String(record.displayName || record.name || ''))
 }
 
-// Inviter and every other human in the room: "Coder · Bob's Bot", or "Bob's Chief".
+// A friend's Bot, named one way everywhere (owner decision on #384/#305): the Bot's name, then
+// its owner in parentheses: "Helper (Bob)", and a friend's Chief the same way: "Chief (Bob)".
 export function remoteBotTitle(record) {
   const owner = ownerNameOf(record) || cleanPeerName(record?.handle, 'Friend')
-  const name = cleanPeerName(record?.displayName || record?.name, cleanPeerName(record?.handle, 'Bot'))
-  if (isChiefRecord(record)) return `${owner}'s Chief`
-  return `${name} · ${owner}'s Bot`
+  const name = cleanPeerName(record?.displayName || record?.name, isChiefRecord(record) ? 'Chief' : cleanPeerName(record?.handle, 'Bot'))
+  return `${name} (${owner})`
 }
 
+// The owner part of that name, for a badge next to the Bot's own name.
 export function remoteOwnerBadge(record) {
-  const owner = ownerNameOf(record) || cleanPeerName(record?.handle, 'Friend')
-  return isChiefRecord(record) ? `${owner}'s Chief` : `${owner}'s Bot`
+  return ownerNameOf(record) || cleanPeerName(record?.handle, 'Friend')
 }
 
 export function sharedRoomTitle(inviterName) {
@@ -148,6 +148,9 @@ export function faceAliases(participant, name) {
   const owner = trimmed(participant.ownerName)
   const handle = trimmed(participant.handle).replace(/^@+/, '')
   const title = remoteBotTitle({ displayName: name, name, ownerName: owner, handle: participant.handle })
-  const names = [name, participant.label, title, owner ? `${name} · ${owner}` : '', owner ? `${name} · ${owner}'s Bot` : '', handle]
+  // The older labels ("Bob · Chief", "Chief · Bob's Bot", "Bob's Chief") stay aliases, so a line typed
+  // before the one-name rule (#384) still calls the same Bot.
+  const legacy = owner ? [`${name} · ${owner}`, `${owner} · ${name}`, `${name} · ${owner}'s Bot`, ...(/^chief$/i.test(trimmed(name)) ? [`${owner}'s Chief`] : [])] : []
+  const names = [name, participant.label, title, ...legacy, handle]
   return [...new Set(names.map(trimmed).filter(Boolean))]
 }

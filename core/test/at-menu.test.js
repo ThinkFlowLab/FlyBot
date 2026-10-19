@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { formatSessionReferenceMention, parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
 import { BOTS_SOURCE, CHATS_SOURCE, atSources, chatRows, mentionRows, sessionMention } from '../src/client/at-menu.js'
 import { indexRoster } from '../src/client/sources.js'
+import { remoteBotTitle } from '../src/shared/remote-label.js'
 
 const roster = indexRoster({
   bots: [
@@ -96,7 +97,7 @@ test('the chats join only the menu that "+" opened, and a pick inserts a session
   assert.deepEqual(await bots.candidates({ sessionId: 'plain' }, { query: '' }), [])
 })
 
-test('#305: a face room offers each of its Bots once, named Person · Bot, and no friend\'s Bot from outside', async () => {
+test('#305: a face room offers each of its Bots once, named Bot (Person), and no friend\'s Bot from outside', async () => {
   const face = indexRoster({
     self: { memberId: 'm1', displayName: 'SelfB' },
     bots: [{ id: 'chief', name: 'Chief', role: 'Chief of Staff', sessionId: 'chief' }],
@@ -114,11 +115,11 @@ test('#305: a face room offers each of its Bots once, named Person · Bot, and n
   })
   const rows = mentionRows(face, 'face')
   assert.equal(rows.filter(row => row.remote).length, 0, 'no published-friend rows in a face room')
-  assert.deepEqual(rows.map(row => row.bot?.label ?? 'everyone'), ['SelfB (you) · Chief', 'SelfA · Chief', 'everyone'])
+  assert.deepEqual(rows.map(row => row.bot?.label ?? 'everyone'), ['Chief (you)', 'Chief (SelfA)', 'everyone'])
   // What is inserted is still the name the room routes on, never a handle.
-  assert.deepEqual(rows.map(row => row.text), ['@Chief ', "@SelfA's Chief ", '@Everyone '])
+  assert.deepEqual(rows.map(row => row.text), ['@Chief ', '@Chief (SelfA) ', '@Everyone '])
   assert.ok(rows.every(row => !/@[\w-]+\.[\w-]+\.home/.test(row.text)))
-  assert.deepEqual(mentionRows(face, 'face', 'selfa').map(row => row.text), ["@SelfA's Chief "])
+  assert.deepEqual(mentionRows(face, 'face', 'selfa').map(row => row.text), ['@Chief (SelfA) '])
 
   const [bots] = atSources({
     roster: { getSnapshot: () => face },
@@ -128,14 +129,47 @@ test('#305: a face room offers each of its Bots once, named Person · Bot, and n
   })
   const listed = await bots.candidates({ sessionId: 'face' }, { query: '' })
   assert.deepEqual(listed.map(row => [row.name, row.description]), [
-    ['SelfB (you) · Chief', undefined],
-    ['SelfA · Chief', undefined],
+    ['Chief (you)', undefined],
+    ['Chief (SelfA)', undefined],
     ['Everyone', 'Every Bot in this room'],
   ])
   // Without a member-session actor (roster.self is null) the seat's own owner name is used, as Members does.
   const legacy = indexRoster({ ...face, self: null, rooms: [{ ...face.rooms[0], participants: [{ ...face.rooms[0].participants[0], ownerName: 'SelfB' }, ...face.rooms[0].participants.slice(1)] }] })
-  assert.equal(mentionRows(legacy, 'face')[0].bot.label, 'SelfB (you) · Chief')
+  assert.equal(mentionRows(legacy, 'face')[0].bot.label, 'Chief (you)')
   // Outside a face room the published friends' Bots still join the menu.
   const group = indexRoster({ ...face, rooms: [{ ...face.rooms[0], origin: undefined }] })
-  assert.equal(mentionRows(group, 'face').filter(row => row.remote).length, 2)
+  // A friend's Bot already seated in the group is offered once, by its seat (#384).
+  assert.deepEqual(mentionRows(group, 'face').filter(row => row.remote).map(row => row.remote.handle), ['@helper.other.home'])
+  // That seat is still found by its handle, the second line of its row (#384).
+  assert.deepEqual(mentionRows(group, 'face', 'chief.selfa').map(row => row.text), ['@Chief (SelfA) '])
+})
+
+test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, by its handle, named Bot (owner)', async () => {
+  const remote = { handle: '@coder.bob.home', name: 'Coder', home: '@bob.home', owner: 'Bob', homeName: 'Family Workspace' }
+  const chat = indexRoster({
+    bots: [
+      { id: 'chief', name: 'Chief', sessionId: 'chief' },
+      { id: 'coder-chat', name: 'Coder', sessionId: 'coder-chat', remote: { ...remote, displayName: 'Coder' } },
+      { id: 'helper-chat', name: 'Helper', sessionId: 'helper-chat', remote: { handle: '@helper.ann.home', displayName: 'Helper', owner: 'Ann' } },
+    ],
+    rooms: [],
+    remoteBots: [remote],
+  })
+  const rows = mentionRows(chat, 'chief')
+  assert.equal(rows.filter(row => (row.remote ?? row.bot?.remote)?.handle === '@coder.bob.home').length, 1)
+  assert.deepEqual(rows.map(row => row.text), ['@Helper ', '@coder.bob.home '])
+  const [bots] = atSources({
+    roster: { getSnapshot: () => chat },
+    sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
+    launched: () => false,
+    iconFor: () => 'bot',
+  })
+  const listed = await bots.candidates({ sessionId: 'chief' }, { query: '' })
+  // The human owner names the Bot, not the home's label; the handle is the second line.
+  assert.deepEqual(listed.slice(0, 2).map(row => [row.name, row.description]), [
+    ['Helper (Ann)', '@helper.ann.home'],
+    ['Coder (Bob)', '@coder.bob.home'],
+  ])
+  assert.equal(remoteBotTitle({ displayName: 'Coder', owner: 'Bob', homeName: 'Family Workspace' }), 'Coder (Bob)')
+  assert.equal(remoteBotTitle({ displayName: 'Coder', homeName: 'Family Workspace' }), 'Coder (Family Workspace)')
 })

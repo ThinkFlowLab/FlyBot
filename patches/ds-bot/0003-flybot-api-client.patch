@@ -12,7 +12,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  import { t } from './i18n.js'
  import { currentPart, relativeShort } from './text.js'
  
-@@ -25,18 +25,59 @@ const conversationOf = (roster, sessionId) => {
+@@ -25,16 +25,72 @@ const conversationOf = (roster, sessionId) => {
  export function mentionRows(roster, sessionId, query = '') {
    const here = conversationOf(roster, sessionId)
    if (here === null) return null
@@ -37,19 +37,34 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
    const needle = query.trim().toLowerCase()
 -  const rows = bots.filter(bot => bot.name.toLowerCase().includes(needle)).map(bot => ({ bot, text: `@${bot.name} ` }))
 +  const rows = bots
-+    .filter(bot => bot.name.toLowerCase().includes(needle) || String(bot.label ?? '').toLowerCase().includes(needle))
++    // A seated friend's Bot is also found by its handle, the second line of its row (#384).
++    .filter(bot => bot.name.toLowerCase().includes(needle) || String(bot.label ?? '').toLowerCase().includes(needle)
++      || (bot.remote && normHandle(remoteRecord(bot)?.handle || bot.handle).includes(normHandle(needle))))
 +    .map(bot => ({ bot, text: `@${bot.name} ` }))
    const everyone = t('Everyone')
    if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {
      rows.push({ room: here.room, text: `@${everyone} ` })
    }
+-  return rows
 +  // Friends' remote Bots are members of every chat, marked remote. Not of a face-to-face
 +  // room: only the Bots in that room can be reached there, each listed once above (#305).
-+  if (!face) rows.push(...remoteMentionRows(roster, query))
-   return rows
- }
- 
++  if (face) return rows
++  // A friend's Bot is offered once (#384). In a group its seat stays (the name the room routes on)
++  // and the remote member row goes; in a Bot's chat, its chat row gives way to the remote member
++  // row, which inserts its handle.
++  const seatHandles = new Set(bots.filter(bot => bot.remote).map(bot => normHandle(remoteRecord(bot)?.handle)).filter(Boolean))
++  if (here.room) return [...rows, ...remoteMentionRows(roster, query).filter(row => !seatHandles.has(normHandle(row.remote.handle)))]
++  const remoteHandles = new Set(remoteMentionRows(roster, '').map(row => normHandle(row.remote.handle)))
++  return [
++    ...rows.filter(row => !(row.bot && remoteHandles.has(normHandle(remoteRecord(row.bot)?.handle)))),
++    ...remoteMentionRows(roster, query),
++  ]
++}
++
 +const isFaceRoom = room => room?.origin === 'face-to-face'
++const normHandle = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
++// A friend's Bot chat in the roster: its remote record (the Bot itself in older rosters).
++export const remoteRecord = bot => (bot?.remote ? (bot.remote === true ? bot : bot.remote) : null)
 +// As `faceSeats` names it: the owner name Bot Social stamped on my Bot's seat, else my own name.
 +const myOwnerName = (roster, live, bot) => {
 +  const seat = live.find(p => !p.remote && p.kind !== 'human' && (p.id === bot.id || (bot.handle && p.handle === bot.handle)))
@@ -64,18 +79,17 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +    return true
 +  })
 +}
-+// In a face-to-face room a Bot is named as the Members panel names it: "Ann · Chief",
-+// "Me (you) · Chief" (#229, #305). Only the label changes; the inserted "@Name" stays the
++// In a face-to-face room a Bot is named as the Members panel names it: "Chief (Ann)",
++// "Chief (you)" (#229, #305, #384). Only the label changes; the inserted "@Name" stays the
 +// one the room routes on.
 +const faceLabel = (person, bot, mine) => {
++  if (mine) return t('{bot} (you)', { bot })
 +  if (!person) return bot
-+  return `${mine ? t('{name} (you)', { name: person }) : person} · ${bot}`
-+}
-+
++  return `${bot} (${person})`
+ }
+ 
  // The chats a message here can reference: every other Bot's chat, then the latest
- // conversations outside the team. Group chats stay out: a group's Session holds only
- // the user's messages, so a snapshot of it would miss every Bot's reply.
-@@ -78,14 +78,30 @@ export function atSources({ roster, sessions, launched, iconFor }) {
+@@ -78,14 +78,31 @@ export function atSources({ roster, sessions, launched, iconFor }) {
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -86,10 +100,11 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +      const snapshot = roster.getSnapshot()
 +      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
 +      const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-+        name: row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? `${row.remote.name} (${row.remote.handle})` : t('Everyone'),
++        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
++        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
 +        ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
-+        ...(row.remote ? { description: remoteBotTitle(row.remote) } : {}),
-+        ...(row.bot?.remote && !face ? { description: remoteBotTitle(row.bot.remote === true ? row.bot : row.bot.remote) } : {}),
++        ...(row.remote ? { description: row.remote.handle } : {}),
++        ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),
 +        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
 +        ...(row.room ? { description: face ? t('Every Bot in this room') : t('{count} members', { count: row.room.members.length }) } : {}),
          icon: iconFor(row),
@@ -2122,7 +2137,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  // like a name mention, under the display name from the roster.
 +  const parts = userTextParts('@bot-2a758c0f.danyang.home 你是?', members)
 +  assert.deepEqual(plain(parts.filter(part => part.bot).map(part => part.bot.id)), ['f'])
-+  assert.equal(parts[0].bot.mentionLabel, "代码审查官 · danyang's Bot")
++  assert.equal(parts[0].bot.mentionLabel, '代码审查官 (danyang)')
 +  assert.deepEqual(plain(parts[1]), { text: ' 你是?' })
 +  // The display-name form still matches the Bot itself, and an address before @ stays text.
 +  const named = userTextParts('@代码审查官 你是谁', members)
@@ -2146,7 +2161,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  const sent = "@SelfA's Chief  what is 2+2?"
 +  const partsB = userTextParts(sent, mentionableBots(onB, 'r'))
 +  assert.equal(partsB[0].bot.id, '@chief.selfa.home')
-+  assert.equal(partsB[0].bot.mentionLabel, 'SelfA · Chief')
++  assert.equal(partsB[0].bot.mentionLabel, 'Chief (SelfA)')
 +  assert.deepEqual(plain(partsB[1]), { text: ' what is 2+2?' })
 +  // A bare "@Chief" typed on B is B's own Chief, even when the room lists the friend's seat first.
 +  assert.equal(userTextParts('@Chief hi', mentionableBots(onB, 'r'))[0].bot.id, 'b1')
@@ -2161,7 +2176,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  const partsA = userTextParts(sent, mentionableBots(onA, 'r', { fromFriend: true }))
 +  assert.equal(partsA[0].bot.id, 'a1')
 +  assert.equal(partsA[0].label, "SelfA's Chief")
-+  assert.match(partsA[0].bot.mentionLabel, /^SelfA .* · Chief$/)
++  assert.equal(partsA[0].bot.mentionLabel, 'Chief (you)')
 +  // A friend's bare "@Chief" is the friend's own Chief, not mine.
 +  assert.equal(userTextParts('@Chief hi', mentionableBots(onA, 'r', { fromFriend: true }))[0].bot.id, '@chief.selfb.home')
 +  // A friend's Bot that is not in this room is not offered here.

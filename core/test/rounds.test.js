@@ -768,7 +768,7 @@ test('#299: a follow-up goes to the Bot that spoke last, who is asked first; one
   await emit(hosted.id, userMessage('那你说说群里都聊了啥'))
   const three = relay(hosted.id, 'follow-4')
   const e = await turnFor(sent)
-  assert.match(promptOf(e), /Chief spoke last before this line/)
+  assert.match(promptOf(e), /Chief \(Bob\) spoke last before this line/)
   await answer(e.sessionId, e.message.source.exchangeId, '[PASS]', 5)
   const f = await turnFor(sent, e)
   await answer(f.sessionId, f.message.source.exchangeId, '[PASS]', 6)

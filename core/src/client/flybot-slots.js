@@ -195,7 +195,7 @@ function recipientName(approval, roster) {
   const bot = friendChatOf(approval, roster)
   if (bot) {
     const owner = bot.remote.owner || bot.remote.homeName
-    if (owner) return /^chief$/i.test(bot.name) ? `${owner}'s Chief` : `${bot.name} · ${owner}'s Bot`
+    if (owner) return `${bot.name} (${owner})`
     return bot.name
   }
   return approval.targetName ?? handle ?? String(approval.request?.to ?? '')

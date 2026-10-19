@@ -322,7 +322,8 @@ window.__ModuleLoader__.load({
       const raw = String(member?.displayName || member?.name || '').trim()
       let name = raw
       if (!name || /^bot$/i.test(name) || (owner && name.toLowerCase() === owner.toLowerCase())) {
-        const fromLabel = String(member?.label ?? '').split('·')[0].replace(/'s Chief$/i, 'Chief').trim()
+        // A label in the one-name form "Chief (Ann)", or an older "Chief · Ann" / "Ann's Chief".
+        const fromLabel = String(member?.label ?? '').split('·')[0].replace(/\s*\([^()]*\)\s*$/, '').replace(/'s Chief$/i, 'Chief').trim()
         if (fromLabel && !/^bot$/i.test(fromLabel) && (!owner || fromLabel.toLowerCase() !== owner.toLowerCase())) name = fromLabel
         else {
           const handleText = typeof member?.handle === 'object' && member.handle
@@ -340,7 +341,10 @@ window.__ModuleLoader__.load({
 
     function FaceTile({ bot, name, owner, member, handle, mine, pick, selected, onToggle } = {}) {
       const parts = member ? faceTileParts(member) : { name: name || 'Bot', owner: owner || '' }
-      const title = (member ? [parts.owner, parts.name] : [parts.name, parts.owner]).filter(Boolean).join(' · ')
+      // My own seat reads "Chief (you)", as Members and the @ menu say it (#384).
+      const title = mine && member
+        ? `${parts.name} (you)`
+        : parts.owner && parts.owner.toLowerCase() !== parts.name.toLowerCase() ? `${parts.name} (${parts.owner})` : parts.name
       const mark = h('span', { className: 'fs-tile-mark' },
         h(FaceAvatar, { bot, size: 48 }),
         mine
@@ -972,14 +976,14 @@ window.__ModuleLoader__.load({
       const parts = String(bot.remote.handle).replace(/^@/, '').toLowerCase().split('.')
       return parts.length === 2 && parts[1] === 'home' ? undefined : bot
     }
-    // A friend's Bot as the chat list names it: "UiA1415's Chief", "Helper · UiB1415's Bot" (#260).
+    // A friend's Bot by its one name: "Chief (UiA1415)", "Helper (UiB1415)" (#384).
     function friendLabel(roster, handle) {
       const bot = friendChatOf(roster, handle)
       if (!bot) return ''
       const owner = String(bot.remote.owner || bot.remote.homeName || '').trim()
       const name = String(bot.name ?? '').trim()
       if (!owner) return name
-      return /^chief$/i.test(name) ? `${owner}'s Chief` : `${name} · ${owner}'s Bot`
+      return `${name} (${owner})`
     }
     function localHoldView(approval, roster) {
       if (!approval?.id) return undefined
@@ -1064,12 +1068,18 @@ window.__ModuleLoader__.load({
           : handle !== '' && item.scope === 'direct' && String(item.handle).toLowerCase() === handle
         if (!mine || seen.has(item.handle)) continue
         seen.add(item.handle)
-        if (!faceId) { out.push(String(bot.name || item.name || '').trim()); continue }
+        if (!faceId) {
+          // One name everywhere (#384): "Coder (Bob)", as the header and the sidebar say it.
+          const name = String(bot.name || item.name || '').trim()
+          const owner = String(bot.remote?.ownerName || bot.remote?.owner || bot.remote?.homeName || '').trim()
+          out.push(owner && !name.endsWith(`(${owner})`) ? `${name} (${owner})` : name)
+          continue
+        }
         const people = (room.participants ?? []).filter(p => p.remote)
         const own = people.find(p => String(p.handle ?? '').toLowerCase() === String(item.handle).toLowerCase())
         const name = String(own?.displayName || own?.name || item.name || '').trim()
-        const clash = own && people.filter(p => String(p.displayName || p.name || '').trim() === name).length > 1
-        out.push(clash && own.ownerName ? `${name} · ${own.ownerName}` : name)
+        // One name everywhere (#384): "Coder (Bob)", as Members and the @ menu say it.
+        out.push(own?.ownerName ? `${name} (${own.ownerName})` : name)
       }
       return out
     }
@@ -1862,13 +1872,20 @@ window.__ModuleLoader__.load({
     }
 
     let cache = { at: 0, list: [] }
-    const friendRows = async (query) => {
+    // Friends' Bots the core's "@" rows do not list yet, in the same Bots section (no separate
+    // Friends' Bots section) and by the same name, "Coder (Bob)" (#305, #384).
+    const friendRows = async (query, context = {}) => {
       if (Date.now() - cache.at > 30_000) cache = { at: Date.now(), list: await call('social/friends', {}) }
       const needle = query.trim().toLowerCase().replace(/^@/, '')
+      const listed = new Set((Array.isArray(context?.roster?.remoteBots) ? context.roster.remoteBots : []).map(bot => String(bot?.handle ?? '').toLowerCase()))
       return cache.list
+        .filter(friend => !listed.has(String(friend.handle).toLowerCase()))
         .filter(friend => friend.handle.includes(needle) || String(friend.name).toLowerCase().includes(needle))
         // The inserted text asks the Bot to use message_friend_bot; the send is held for approval.
-        .map(friend => ({ name: `${friend.name} · remote`, description: `${friend.handle} · ${friend.home}`, section: 'Friends\' Bots', value: `${friend.handle} ` }))
+        .map((friend) => {
+          const owner = String(friend.owner || friend.homeName || '').trim()
+          return { name: owner ? `${friend.name} (${owner})` : friend.name, description: friend.handle, section: 'Bots', value: `${friend.handle} ` }
+        })
     }
 
     return {

@@ -536,7 +536,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   assert.equal(sandbox.__flybot__.social.canInvite('a'), false)
   assert.equal(typeof sandbox.__flybot__.social.onChange, 'function') // status-change event, so callers need not poll
   const rows = await entries.find(([slot]) => slot === 'flybot.composer.mention')[1].candidates('cod')
-  assert.deepEqual(JSON.parse(JSON.stringify(rows)), [{ name: 'Coder · remote', description: '@coder.bob.home · @bob.home', section: 'Friends\' Bots', value: '@coder.bob.home ' }])
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)), [{ name: 'Coder', description: '@coder.bob.home', section: 'Bots', value: '@coder.bob.home ' }])
 })
 
 test('remote strings: names one-line, file fence cannot be escaped (#9)', async () => {
@@ -1887,7 +1887,7 @@ test('face-to-face: a member already in the snapshot gets a join line when the e
   })
   await call('flybot/social/face-rooms', { poll: true })
   const hosted = ctx.flybot.rooms.ofFace('frm_123456')
-  assert.ok((hosted.log ?? []).some(line => /Coder · Bob joined/.test(line.text)))
+  assert.ok((hosted.log ?? []).some(line => /Coder \(Bob\) joined/.test(line.text)))
   const live = (hosted.participants ?? []).filter(p => p.leftSeq === undefined && p.handle === '@coder.bob.home')
   assert.equal(live.length, 1)
 })
@@ -2748,6 +2748,9 @@ test('Face-to-face waiting overview is a tile grid with Leave and Enter chat', (
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Chief')))
   assert.ok(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Bob')))
   assert.equal(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief')), false)
+  // One name everywhere (#384): my own tile's tooltip is "Chief (you)", a friend's "Coder (Bob)".
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.props.title === 'Chief (you)'))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.props.title === 'Coder (Bob)'))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-enter' && n.children.includes('Enter chat')))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-leave' && n.children.includes('Leave')))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-wait-code'))
@@ -3103,14 +3106,14 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   }
   const roster = { bots: [{ id: 'f1', name: 'Chief', remote: { handle: '@chief.uia.home', owner: 'UiA1415' } }] }
   const view = pluginOf([[], []]).localHoldView(approval, roster)
-  assert.equal(view.toName, "UiA1415's Chief", 'the friend by name and owner, as the chat list shows it')
+  assert.equal(view.toName, 'Chief (UiA1415)', 'the friend by name and owner, as the chat list shows it')
   const dock = (props, claim) => walk(pluginOf([[], [view], ''], Boolean(claim)).ChatApprovalDock({ ...props, ...(claim ? { claim } : {}) }))
   // The sender Bot's own chat: the card names both sides the way the overlay does.
   // One place per approval: the friend's chat is in the roster, so only that chat draws it (#278).
   assert.equal(dock({ bot: { id: 'session-helper', name: 'Helper' }, roster }).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
   // Before that chat exists, the Bot that wrote it shows it.
   const own = dock({ bot: { id: 'session-helper', name: 'Helper' }, roster: { bots: [] } })
-  assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes("Helper → UiA1415's Chief")))
+  assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes('Helper → Chief (UiA1415)')))
   // Two buttons decide; the standing choice is a quiet link, and there is no third button.
   const buttons = own.filter(n => n.type === 'button')
   assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Always approve'])
@@ -3363,7 +3366,7 @@ test('Face-to-face room (#92): pick Bots, join each once, live roster, Enter cha
   assert.ok(wait.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Chief')))
   assert.ok(wait.some(n => n.props.className === 'fs-tile-name' && n.props['data-flybot'] === 'face-owner' && n.children.includes('Bob')))
   assert.ok(wait.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Coder')))
-  assert.equal(peer.props.title, 'Bob · Coder')
+  assert.equal(peer.props.title, 'Coder (Bob)')
   assert.equal(mine.children.some(n => n.props?.className === 'fs-sub' || (typeof n.props?.className === 'string' && n.props.className.includes('fs-tag'))), false)
   assert.equal(peer.children.some(n => n.props?.className === 'fs-sub'), false)
   assert.equal(wait.some(n => n.props.className === 'fs-wait-hint' || n.props.className === 'fs-wait-name'), false)
@@ -5170,6 +5173,9 @@ test('#297: a friend\'s Bot thinking shows as one quiet line above the composer;
   assert.equal(shown.children.flat().map(n => n.children?.join?.('') ?? n).join(''), "Bob's Coder is thinking…")
   assert.equal(shown.props.role, 'status')
   assert.equal(walk(shown).find(n => n.props?.className === 'bt-shimmer')?.type, 'span')
+  // A friend's 1:1 chat names the Bot as the header does (#384): "Coder (Bob)".
+  const owned = { bot: { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home', owner: 'Bob', homeName: 'Family Workspace' } } }
+  assert.equal(line(items, owned).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Coder (Bob) is thinking…')
   assert.equal(line([], dm), undefined)
   assert.equal(line(items, { bot: { id: 'r2', name: 'Other chat', remote: { handle: '@nobody.home' } } }), undefined)
   assert.equal(line(items, { bot: { id: 'a', name: 'Chief' } }), undefined, 'a local Bot chat has its own activity row')
@@ -5178,7 +5184,10 @@ test('#297: a friend\'s Bot thinking shows as one quiet line above the composer;
     { remote: true, handle: '@chief.carol.home', displayName: 'Chief', ownerName: 'Carol' },
     { remote: true, handle: '@chief.bob.home', displayName: 'Chief', ownerName: 'Bob' },
   ] })
-  assert.equal(line(items, { room: room('open') }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief · Carol is thinking…', 'two Bots with one name keep their owner')
+  assert.equal(line(items, { room: room('open') }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief (Carol) is thinking…', 'two Bots with one name keep their owner')
+  // A unique name still carries its owner: the one name Members and the @ menu use (#384).
+  const solo = { ...room('open'), participants: [{ remote: false, displayName: 'Chief' }, { remote: true, handle: '@chief.carol.home', displayName: 'Chief', ownerName: 'Carol' }] }
+  assert.equal(line(items, { room: solo }).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Chief (Carol) is thinking…')
   assert.equal(line(items, { room: room('left') }), undefined)
   assert.equal(line(items, { room: room('candidate') }), undefined)
   assert.equal(line(items, { room: { ...room('open'), face: { roomId: 'frm_2', status: 'open' } } }), undefined, 'another room\'s Bots never show here')

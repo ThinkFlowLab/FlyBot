@@ -227,8 +227,7 @@ export function presentRoom(room, actor, state) {
     const labeled = live.map(p => {
       const shown = presentParticipant(p, live)
       if (p.kind !== 'bot') return shown
-      // Every face-to-face member is `<Bot> · <owner>'s Bot` (Chief: `<owner>'s Chief`),
-      // including the viewer's own Bot, matching the server label.
+      // Every face-to-face Bot is `<Bot> (<owner>)` (#384), including the viewer's own Bot.
       if (!p.ownerName && !isRemoteParticipant(p)) return shown
       const label = disambiguatedRemoteTitle(p, live)
       return { ...shown, label, ownerBadge: label, ownerName: ownerNameSafe(p) }

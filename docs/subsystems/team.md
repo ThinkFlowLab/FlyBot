@@ -83,7 +83,7 @@ Typed participants on a native room, in `core/src/host/room-membership.js`, inst
 
 | Viewer | How the room appears | What they see | What they may do |
 | --- | --- | --- | --- |
-| Inviter (human participant who added the Bot) | Their own room, usual name | Humans, local Bots, remotes as `<Bot> · <owner>'s Bot` (Chief: `<owner>'s Chief`), owner badge, attributed lines from their join seq | Manage participants they are allowed to; post; history in their window |
+| Inviter (human participant who added the Bot) | Their own room, usual name | Humans, local Bots, remotes as `<Bot> (<owner>)` (a friend's Chief too, #384), owner badge, attributed lines from their join seq | Manage participants they are allowed to; post; history in their window |
 | Other human in the room | Same room | Same labels and badges; attributed lines from *their* join seq | Speak; leave; no extra private context |
 | Remote owner (owns an invited Bot, not a human member) / inbound share | Sidebar **Shared room from \<inviter\>** | Current participants with owner badges; who invited their Bot and when; lines from the Bot's `joinedSeq`; pending social approvals in this view | Remove their Bot (leave closes the interval); approve/reject held replies; cannot inject as themselves |
 | Remote Bot | Only the room lines fenced as untrusted data, from its join seq | No inviter private rooms, no ungranted specialists | Reply through Bot Social (held unless the owner auto-approves) |

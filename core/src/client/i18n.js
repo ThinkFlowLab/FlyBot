@@ -280,6 +280,7 @@ const ZH = {
   'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
   'Members · {count}': '成员 · {count}',
   '{name} (you)': '{name}（你）',
+  '{bot} (you)': '{bot}（你的）',
   'Leave the group without an admin': '让群聊不设管理员',
   Unset: '取消',
   'Make admin': '设为管理员',
