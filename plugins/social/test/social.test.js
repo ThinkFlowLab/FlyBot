@@ -7178,3 +7178,115 @@ test('#417: a reply that left through Auto-send for that pair is marked Auto-sen
   assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'ping' })).action, 'allow')
   assert.equal((await call('state', {})).value.bots.find(bot => bot.id === 'a').heldReplies.length, 1)
 })
+
+// #442: friend.home joined an invite for Writer and typed "Hi" seconds later; this home refused it (no grant
+// recorded yet) and the sender saw nothing. Bot Social #30 writes the grants before it confirms the join and
+// queues relationship.changed (with the grants) before the first message; a home that still refuses tells
+// the sender through report_not_delivered, and the sender's chat shows a Not sent line.
+function joinedInviteServer() {
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = log.filter(e => e.bot === a.bot_id && e.cursor > since); return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  // The grants Bot Social lists for this home: someone else's at first; the friend's once the join wrote it.
+  const state = { joined: false }
+  server.tools.list_bot_grants = () => ({ grants: [
+    { id: 'g-carol', grantee: '@carol.home', relationship_id: 'r-carol' },
+    ...(state.joined ? [{ id: 'g-friend', grantee: '@friend.bob.home', relationship_id: 'r-join' }] : []),
+  ] })
+  const hi = (cursor, bot = 'm2') => ({ bot, cursor, event_id: `evt_${cursor}`, event_type: 'message.received', message_id: `msg_${cursor}`, conversation_id: 'c-join', from: { handle: '@friend.bob.home', home_handle: '@bob.home', display_name: 'Friend Bot', owner_display_name: 'Bob' }, typed_by_owner: true, untrusted_content: wireText('Hi') })
+  const joinedEvent = (cursor, bot = 'm2') => ({ bot, cursor, event_id: `evt_${cursor}`, event_type: 'relationship.changed', relationship_id: 'r-join', status: 'active', grants_ready: true, grants: [{ grant_id: 'g-friend', granted_bot: { bot_id: bot, handle: '@writer.danyang.home' }, grantee_bot: { bot_id: 'x9', handle: '@friend.bob.home' }, capabilities: ['chat.public', 'profile.read'], reply_only: false }] })
+  return { server, log, state, hi, joinedEvent }
+}
+async function invitedWriter(t, server) {
+  const { ctx, received, stop } = await team()
+  t.after(stop)
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot, '@carol.home')
+  await social.registerAll()
+  assert.equal(ctx.flybot.grants.has('b', '@friend.bob.home'), false, 'no grant for the new friend yet')
+  return { ctx, received, social }
+}
+const reports = server => server.calls.filter(c => c.name === 'report_not_delivered')
+
+test('#442: the join event records the grant before the first message, so "Hi" right after a join is delivered', async (t) => {
+  const { server, log, state, hi, joinedEvent } = joinedInviteServer()
+  const { ctx, received, social } = await invitedWriter(t, server)
+  state.joined = true
+  const listed = () => server.calls.filter(c => c.name === 'list_bot_grants').length
+  // The join event alone records the grant.
+  log.push(joinedEvent(1))
+  const before = listed()
+  assert.equal(await social.pollInbox(), 0)
+  assert.equal(listed() - before, 1, 'one sync, at the join event')
+  assert.equal(ctx.flybot.grants.has('b', '@friend.bob.home'), true)
+  // The first message is then delivered at once: no refusal, no second sync, nothing reported.
+  log.push(hi(2))
+  assert.equal(await social.pollInbox(), 1)
+  assert.match(received.get('b').at(-1), /\nHi\n/)
+  assert.equal(listed() - before, 1)
+  assert.deepEqual(reports(server), [])
+  // Join and message in one poll: the same order holds.
+  log.push(joinedEvent(3), hi(4))
+  assert.equal(await social.pollInbox(), 1)
+  // Seen once: polling again neither syncs nor delivers again.
+  assert.equal(await social.pollInbox(), 0)
+  assert.equal(received.get('b').length, 2)
+})
+
+test('#442: without the join event (an older Bot Social), a refused first message syncs grants once and is delivered', async (t) => {
+  const { server, log, state, hi } = joinedInviteServer()
+  const { received, social } = await invitedWriter(t, server)
+  state.joined = true
+  log.push(hi(1))
+  assert.equal(await social.pollInbox(), 1)
+  assert.equal(received.get('b').length, 1, 'delivered once, not twice')
+  assert.deepEqual(reports(server), [])
+})
+
+test('#442: a message still refused for a missing grant is reported to the sender; an older server only logs it', async (t) => {
+  const { server, log, hi } = joinedInviteServer()
+  const { received, social } = await invitedWriter(t, server)
+  // An older Bot Social has no report_not_delivered: the refusal is only logged and the poll goes on.
+  log.push(hi(1))
+  assert.equal(await social.pollInbox(), 0)
+  assert.equal(received.get('b'), undefined, 'nothing reaches the Bot')
+  assert.deepEqual(reports(server).map(c => c.args), [{ message_id: 'msg_1', reason: 'not_shared_yet' }])
+  server.tools.report_not_delivered = a => ({ message_id: a.message_id, status: 'not_delivered', reason: a.reason })
+  log.push(hi(2))
+  assert.equal(await social.pollInbox(), 0)
+  assert.deepEqual(reports(server).map(c => c.args), [{ message_id: 'msg_1', reason: 'not_shared_yet' }, { message_id: 'msg_2', reason: 'not_shared_yet' }])
+  assert.equal(received.get('b'), undefined)
+  // Each message is reported once: the cursor moved past both.
+  assert.equal(await social.pollInbox(), 0)
+  assert.equal(reports(server).length, 2)
+})
+
+test('#442: message.not_delivered shows a Not sent line in the owner\'s chat with that Bot, once; a Bot\'s own send is only logged', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = log.filter(e => e.bot === a.bot_id && e.cursor > since); return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const delivered = captureChatDeliveries(ctx)
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'Hi' }), '')
+  const via = server.calls.filter(c => c.name === 'send_as_member').at(-1).args.from_bot_id
+  const notDelivered = (cursor, bot, handle = '@coder.bob.home') => ({ bot, cursor, event_id: `evt_nd_${cursor}`, event_type: 'message.not_delivered', message_id: `msg_${cursor}`, conversation_id: 'c1', to: { bot_id: 'x1', handle, home_handle: '@bob.home', display_name: 'Coder' }, reason: 'not_shared_yet', trust: 'platform' })
+  log.push(notDelivered(1, via))
+  assert.equal(await social.pollInbox(), 0, 'a notice is not a delivered message')
+  assert.equal(delivered.length, 1)
+  assert.equal(delivered[0].handle, '@coder.bob.home')
+  assert.equal(delivered[0].text, 'Not sent: Coder (Bob) was not ready to talk with you yet, so it did not get your message. Send it again.')
+  assert.equal(delivered[0].human, undefined, 'not shown as the friend typing it')
+  await social.pollInbox()
+  assert.equal(delivered.length, 1, 'once')
+  // A Bot that no chat of the owner's goes through: nothing is written into a chat.
+  log.push(notDelivered(2, via, '@writer.bob.home'))
+  await social.pollInbox()
+  assert.equal(delivered.length, 1)
+})
