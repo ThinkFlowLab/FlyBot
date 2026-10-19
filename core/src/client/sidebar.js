@@ -523,6 +523,26 @@ export function openHarnessOnboarding(id) {
   })
 }
 
+// The launcher seat's openSettings() takes no section, but a settings.onboarding step
+// is handed openSection (#407). This step exists only to be opened on purpose: it then
+// opens Settings on the Models page and hands back. In first-run onboarding it skips
+// itself; its order puts it after the shell's own steps.
+export const MODELS_STEP_ID = 'flybot-models'
+export const MODELS_STEP_ORDER = 1000
+
+export function ModelsSettingsStep({ explicit, complete, openSection }) {
+  useLayoutEffect(() => {
+    if (explicit) openSection('models')
+    complete()
+  }, [])
+  return null
+}
+
+// Opens the shell's settings on its Models page (models and providers).
+export function openHarnessModels() {
+  openHarnessOnboarding(MODELS_STEP_ID)
+}
+
 function openThroughMenu(trigger) {
   const before = new Set(document.querySelectorAll('[role="menu"]'))
   trigger.click()

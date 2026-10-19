@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { currentPart } from './text.js'
 import { CheckIcon, SlidersIcon } from './icons.js'
 import { BotMark } from './mark.js'
-import { openHarnessOnboarding, openHarnessSettings } from './sidebar.js'
+import { openHarnessModels, openHarnessOnboarding } from './sidebar.js'
 import { SPRING_POP, SPRING_SHAPE, spring, useLinger } from './motion.js'
 import { t } from './i18n.js'
 
@@ -186,7 +186,7 @@ export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onP
         : h('div', { className: 'bt-model-none' }, t('No models are set up in DeepSeek Harness yet.')),
       effortRows(reasoning).length > 0 ? h(EffortRows, { reasoning, current: picked, onPick: pickEffort }) : null,
       h('div', { className: 'bt-menu-sep', role: 'separator' }),
-      h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); openHarnessSettings() } }, h(SlidersIcon), h('span', { className: 'bt-menu-label' }, t('Models and providers…')))), document.body) : null)
+      h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); openHarnessModels() } }, h(SlidersIcon), h('span', { className: 'bt-menu-label' }, t('Models and providers…')))), document.body) : null)
 }
 
 // The card a Bot's chat opens on while the Bot has no model, or has one that is no
@@ -231,7 +231,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
             title: model.ref === roster.defaultModel ? `${model.ref} · ${t('Harness default')}` : model.ref,
             onClick: () => pick(model.ref),
           }, model.name, busy === model.ref ? h('span', { className: 'bt-model-spin', 'aria-label': t('Saving…') }) : null))))),
-        h('button', { key: 'manage', type: 'button', className: 'bt-model-chip bt-model-chip-quiet', onClick: openHarnessSettings }, h(SlidersIcon), t('Manage models')),
+        h('button', { key: 'manage', type: 'button', className: 'bt-model-chip bt-model-chip-quiet', onClick: openHarnessModels }, h(SlidersIcon), t('Manage models')),
       ]
   return h('div', { className: 'bt-model-dock' },
     h('div', { className: 'bt-astack', 'data-lead': '' },
@@ -259,7 +259,7 @@ function setupChoices(actions) {
   return [
     actions.canSignIn?.() ? [t('Sign in to DeepSeek'), () => actions.signIn()] : null,
     [t('Enter a DeepSeek API key'), () => openHarnessOnboarding('deepseek-official')],
-    [t('Open settings to set up a custom model'), openHarnessSettings],
+    [t('Open settings to set up a custom model'), openHarnessModels],
   ].filter(Boolean)
 }
 
@@ -276,7 +276,7 @@ export function missingModelKey(message) {
 // choices as a Bot with no model yet; any other or unnamed route opens the model settings.
 export function modelKeyChoices(actions, route) {
   if (/^deepseek/i.test(route)) return setupChoices(actions)
-  return [[t('Manage models'), openHarnessSettings]]
+  return [[t('Manage models'), openHarnessModels]]
 }
 
 // DSH's terminal turn error, redrawn so a missing model credential has its fix right

@@ -723,7 +723,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +import { installBrandChrome, installTabTitle } from './brand.js'
  import { lookOf } from './mark.js'
 -import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
-+import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
++import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
  import { HeaderPill } from './header.js'
 -import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 +import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
@@ -974,7 +974,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      installCompiledStyles(MEMBER_CSS, 'members'),
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
-@@ -765,7 +765,7 @@ export function apply(ctx) {
+@@ -765,14 +765,17 @@ export function apply(ctx) {
      shadow('sidebar.brand.mark', { priority: -10 }, BrandMark),
      shadow('sidebar.brand.name', { priority: -10 }, BrandName),
      shadow('sidebar.footer.action', { id: 'bot-account', order: -200, inject: face }, FooterAccount),
@@ -983,7 +983,9 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('settings.trigger', { priority: -10 }, YouAvatar),
      // At priority -10 the whale wins the seat over a shell account plugin's own
      // launcher (the Desktop's "··· More"), which comes back in Agent mode.
-@@ -773,6 +773,7 @@ export function apply(ctx) {
+     shadow('settings.launcher', { priority: -10, inject: face }, AccountLauncher),
++    // Opened on purpose, it lands Settings on the Models page (#407).
++    shadow('settings.onboarding', { id: MODELS_STEP_ID, order: MODELS_STEP_ORDER }, ModelsSettingsStep),
      shadow('shell.overlay', { id: 'bot', order: 50, inject: face }, Overlays),
      shadow('shell.overlay', { id: 'bot-signin', order: 55, inject: face }, DeepSeekSignIn),
      shadow('shell.overlay', { id: 'bot-toast', order: 60, inject: face }, ErrorToast),
@@ -1647,6 +1649,33 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
+@@ -442,6 +442,26 @@ export function openHarnessOnboarding(id) {
+   })
+ }
+ 
++// The launcher seat's openSettings() takes no section, but a settings.onboarding step
++// is handed openSection (#407). This step exists only to be opened on purpose: it then
++// opens Settings on the Models page and hands back. In first-run onboarding it skips
++// itself; its order puts it after the shell's own steps.
++export const MODELS_STEP_ID = 'flybot-models'
++export const MODELS_STEP_ORDER = 1000
++
++export function ModelsSettingsStep({ explicit, complete, openSection }) {
++  useLayoutEffect(() => {
++    if (explicit) openSection('models')
++    complete()
++  }, [])
++  return null
++}
++
++// Opens the shell's settings on its Models page (models and providers).
++export function openHarnessModels() {
++  openHarnessOnboarding(MODELS_STEP_ID)
++}
++
+ function openThroughMenu(trigger) {
+   const before = new Set(document.querySelectorAll('[role="menu"]'))
+   trigger.click()
 @@ -466,8 +466,12 @@ function pressSettingsShortcut() {
    }))
  }

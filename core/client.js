@@ -6701,6 +6701,18 @@ function openHarnessOnboarding(id) {
     else openHarnessSettings();
   });
 }
+var MODELS_STEP_ID = "flybot-models";
+var MODELS_STEP_ORDER = 1e3;
+function ModelsSettingsStep({ explicit, complete, openSection }) {
+  (0, import_react9.useLayoutEffect)(() => {
+    if (explicit) openSection("models");
+    complete();
+  }, []);
+  return null;
+}
+function openHarnessModels() {
+  openHarnessOnboarding(MODELS_STEP_ID);
+}
 function openThroughMenu(trigger) {
   const before = new Set(document.querySelectorAll('[role="menu"]'));
   trigger.click();
@@ -8202,7 +8214,7 @@ function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onPickEffo
       (0, import_react14.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
       (0, import_react14.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
         close();
-        openHarnessSettings();
+        openHarnessModels();
       } }, (0, import_react14.createElement)(SlidersIcon), (0, import_react14.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
     ), document.body) : null
   );
@@ -8246,7 +8258,7 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
         onClick: () => pick2(model.ref)
       }, model.name, busy === model.ref ? (0, import_react14.createElement)("span", { className: "bt-model-spin", "aria-label": t("Saving…") }) : null)))
     )),
-    (0, import_react14.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessSettings }, (0, import_react14.createElement)(SlidersIcon), t("Manage models"))
+    (0, import_react14.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessModels }, (0, import_react14.createElement)(SlidersIcon), t("Manage models"))
   ];
   return (0, import_react14.createElement)(
     "div",
@@ -8293,7 +8305,7 @@ function setupChoices(actions) {
   return [
     actions.canSignIn?.() ? [t("Sign in to DeepSeek"), () => actions.signIn()] : null,
     [t("Enter a DeepSeek API key"), () => openHarnessOnboarding("deepseek-official")],
-    [t("Open settings to set up a custom model"), openHarnessSettings]
+    [t("Open settings to set up a custom model"), openHarnessModels]
   ].filter(Boolean);
 }
 function missingModelKey(message) {
@@ -8303,7 +8315,7 @@ function missingModelKey(message) {
 }
 function modelKeyChoices(actions, route) {
   if (/^deepseek/i.test(route)) return setupChoices(actions);
-  return [[t("Manage models"), openHarnessSettings]];
+  return [[t("Manage models"), openHarnessModels]];
 }
 function TurnErrorCell({ node, t: chatT, actions }) {
   const data = node?.data ?? {};
@@ -16474,6 +16486,8 @@ function apply(ctx) {
     // At priority -10 the whale wins the seat over a shell account plugin's own
     // launcher (the Desktop's "··· More"), which comes back in Agent mode.
     shadow("settings.launcher", { priority: -10, inject: face }, AccountLauncher),
+    // Opened on purpose, it lands Settings on the Models page (#407).
+    shadow("settings.onboarding", { id: MODELS_STEP_ID, order: MODELS_STEP_ORDER }, ModelsSettingsStep),
     shadow("shell.overlay", { id: "bot", order: 50, inject: face }, Overlays),
     shadow("shell.overlay", { id: "bot-signin", order: 55, inject: face }, DeepSeekSignIn),
     shadow("shell.overlay", { id: "bot-toast", order: 60, inject: face }, ErrorToast),

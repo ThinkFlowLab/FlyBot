@@ -965,14 +965,6 @@ diff --git a/client.js b/client.js
 -  const byId = {};
 -  for (const bot of value.bots) {
 -    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
--  }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1006,29 +998,23 @@ diff --git a/client.js b/client.js
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
    }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
--  }
--  return { ...state, [sessionId]: own };
++}
 +function PersonMark({ size = 22 }) {
 +  return (0, import_react.createElement)(
 +    "span",
@@ -1040,8 +1026,136 @@ diff --git a/client.js b/client.js
 +      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
 +    )
 +  );
++}
++function AdminStar() {
++  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
++}
++function MainStar() {
++  return (0, import_react.createElement)(
++    "svg",
++    { viewBox: "0 0 20 20", "aria-hidden": true },
++    (0, import_react.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
++  );
++}
++function useSettled(state) {
++  const prev = (0, import_react.useRef)(state);
++  const [settled, setSettled] = (0, import_react.useState)(false);
++  (0, import_react.useEffect)(() => {
++    const was = prev.current;
++    prev.current = state;
++    if (state !== "idle") {
++      setSettled(false);
++      return void 0;
++    }
++    if (was === "idle" || was === "alert") return void 0;
++    setSettled(true);
++    const timer = setTimeout(() => setSettled(false), 1800);
++    return () => clearTimeout(timer);
++  }, [state]);
++  return settled;
++}
++function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
++  const settled = useSettled(state);
++  if (bot === void 0) return (0, import_react.createElement)(BotMark, { size });
++  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
++  return (0, import_react.createElement)(
++    "span",
++    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
++    (0, import_react.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
++    badgeKind === "working" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
++    badgeKind === "alert" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
++    badgeKind === "admin" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react.createElement)(StarIcon)) : null,
++    badgeKind === "main" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react.createElement)(MainStar)) : null
++  );
++}
++function clusterSeats(count, frame) {
++  if (count === 1) return [[0, 0, frame]];
++  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
++  if (count === 3) {
++    const size = frame * 5 / 9;
++    const rest = frame - size;
++    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+   }
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
++  const half = frame / 2;
++  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
  }
--
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
++function roomAvatarPeople(room2, roster) {
++  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
++  const seen = new Set(members.map((bot) => bot.id));
++  const remotes = [];
++  for (const p of room2?.participants ?? []) {
++    if (p.leftSeq !== void 0) continue;
++    if (p.kind === "human") continue;
++    if (!p.remote && p.id && seen.has(p.id)) continue;
++    if (!p.remote && p.id && roster?.byId?.[p.id]) {
++      if (!seen.has(p.id)) {
++        members.push(roster.byId[p.id]);
++        seen.add(p.id);
++      }
++      continue;
++    }
++    const handle = p.handle || (p.remote ? p.id : "");
++    if (!handle) continue;
++    if (members.some((bot) => bot.remote?.handle === handle || bot.handle === handle)) continue;
++    const key = `h:${handle}`;
++    if (seen.has(key)) continue;
++    seen.add(key);
++    remotes.push(lookBotForRemote({
++      handle,
++      displayName: p.displayName,
++      name: p.displayName,
++      label: p.label,
++      color: p.color,
++      avatar: p.avatar
++    }, roster));
++  }
++  if (members.length === 1 && remotes.length === 0) return [members[0], null];
++  return [...members, ...remotes];
+ }
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
++function RoomAvatar({ room: room2, roster, size = 36 }) {
++  const people = roomAvatarPeople(room2, roster);
++  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
++  if (people.length === 0) return (0, import_react.createElement)(BotMark, { size });
++  if (size <= 20 && people.length > 1) {
++    return (0, import_react.createElement)(
++      "span",
++      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
++      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
++      people.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
++    );
+   }
+-  return { ...state, [sessionId]: own };
++  const seats = clusterSeats(Math.min(people.length, 4), size);
++  const overflow = people.length > 4 ? people.length - 3 : 0;
++  const gap = size / 14;
++  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
++  return (0, import_react.createElement)(
++    "span",
++    { className: "bt-cluster", style: { width: size, height: size } },
++    seats.map(([x, y, s], index) => {
++      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
++      const style = { left: x, top: y, width: s, height: s };
++      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
++      if (overflow > 0 && index === 3) {
++        return (0, import_react.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
++      }
++      const bot = people[index];
++      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
++    })
++  );
+ }
+ 
 -// src/client/themes.js
 -var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
 -var THEMES = {
@@ -1064,8 +1178,39 @@ diff --git a/client.js b/client.js
 -    label: "Moonlight",
 -    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 -    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
--};
++// src/client/flybot-slots.js
++var import_react2 = require("react");
++var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
++function registry2() {
++  const slots = registry();
++  globalThis.__flybot__.call ??= call2;
++  globalThis.__flybot__.BotMark ??= BotMark;
++  globalThis.__flybot__.BotAvatar ??= BotAvatar;
++  globalThis.__flybot__.lookOf ??= lookOf;
++  return slots;
++}
++var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
++function useSlot(name) {
++  const slots = registry2();
++  const [, setVersion] = (0, import_react2.useState)(0);
++  (0, import_react2.useEffect)(() => slots.subscribe(() => setVersion(slots.version())), [slots]);
++  return slots.entries(name);
++}
++var SlotBoundary = class extends import_react2.Component {
++  constructor(props) {
++    super(props);
++    this.state = { failed: false };
++  }
++  static getDerivedStateFromError() {
++    return { failed: true };
++  }
++  componentDidCatch(error) {
++    console.error(`flybot: ${this.props.id} failed`, error);
++  }
++  render() {
++    return this.state.failed ? this.props.fallback ?? null : this.props.children;
+   }
+ };
 -var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 -function themeVars(mode, dark, accent = mode.accent) {
 -  return {
@@ -1087,8 +1232,8 @@ diff --git a/client.js b/client.js
 -    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
 -    "--bt-tag-ink": rgba(mode.text, 0.58)
 -  };
-+function AdminStar() {
-+  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
++function SlotIcon({ id, icon: icon2, fallback }) {
++  return (0, import_react2.createElement)(SlotBoundary, { id, fallback }, (0, import_react2.createElement)(icon2));
  }
 -var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 -var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
@@ -1132,170 +1277,13 @@ diff --git a/client.js b/client.js
 -    else delete SHAPES[id];
 -    refresh();
 -  };
-+function MainStar() {
-+  return (0, import_react.createElement)(
-+    "svg",
-+    { viewBox: "0 0 20 20", "aria-hidden": true },
-+    (0, import_react.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
-+  );
++function Safe({ entry, props }) {
++  return (0, import_react2.createElement)(SlotBoundary, { id: entry.id }, (0, import_react2.createElement)(entry.component, props));
  }
 -function registerTheme(id, theme) {
 -  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 -  for (const mode of ["light", "dark"]) {
 -    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-+function useSettled(state) {
-+  const prev = (0, import_react.useRef)(state);
-+  const [settled, setSettled] = (0, import_react.useState)(false);
-+  (0, import_react.useEffect)(() => {
-+    const was = prev.current;
-+    prev.current = state;
-+    if (state !== "idle") {
-+      setSettled(false);
-+      return void 0;
-+    }
-+    if (was === "idle" || was === "alert") return void 0;
-+    setSettled(true);
-+    const timer = setTimeout(() => setSettled(false), 1800);
-+    return () => clearTimeout(timer);
-+  }, [state]);
-+  return settled;
-+}
-+function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
-+  const settled = useSettled(state);
-+  if (bot === void 0) return (0, import_react.createElement)(BotMark, { size });
-+  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
-+  return (0, import_react.createElement)(
-+    "span",
-+    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
-+    (0, import_react.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
-+    badgeKind === "working" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
-+    badgeKind === "alert" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
-+    badgeKind === "admin" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react.createElement)(StarIcon)) : null,
-+    badgeKind === "main" ? (0, import_react.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react.createElement)(MainStar)) : null
-+  );
-+}
-+function clusterSeats(count, frame) {
-+  if (count === 1) return [[0, 0, frame]];
-+  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
-+  if (count === 3) {
-+    const size = frame * 5 / 9;
-+    const rest = frame - size;
-+    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-   }
--  const previous = customThemes[id];
--  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
--  registry.set((value) => value + 1);
--  return () => {
--    if (previous) customThemes[id] = previous;
--    else delete customThemes[id];
--    registry.set((value) => value + 1);
-+  const half = frame / 2;
-+  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+}
-+function roomAvatarPeople(room2, roster) {
-+  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
-+  const seen = new Set(members.map((bot) => bot.id));
-+  const remotes = [];
-+  for (const p of room2?.participants ?? []) {
-+    if (p.leftSeq !== void 0) continue;
-+    if (p.kind === "human") continue;
-+    if (!p.remote && p.id && seen.has(p.id)) continue;
-+    if (!p.remote && p.id && roster?.byId?.[p.id]) {
-+      if (!seen.has(p.id)) {
-+        members.push(roster.byId[p.id]);
-+        seen.add(p.id);
-+      }
-+      continue;
-+    }
-+    const handle = p.handle || (p.remote ? p.id : "");
-+    if (!handle) continue;
-+    if (members.some((bot) => bot.remote?.handle === handle || bot.handle === handle)) continue;
-+    const key = `h:${handle}`;
-+    if (seen.has(key)) continue;
-+    seen.add(key);
-+    remotes.push(lookBotForRemote({
-+      handle,
-+      displayName: p.displayName,
-+      name: p.displayName,
-+      label: p.label,
-+      color: p.color,
-+      avatar: p.avatar
-+    }, roster));
-+  }
-+  if (members.length === 1 && remotes.length === 0) return [members[0], null];
-+  return [...members, ...remotes];
-+}
-+function RoomAvatar({ room: room2, roster, size = 36 }) {
-+  const people = roomAvatarPeople(room2, roster);
-+  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
-+  if (people.length === 0) return (0, import_react.createElement)(BotMark, { size });
-+  if (size <= 20 && people.length > 1) {
-+    return (0, import_react.createElement)(
-+      "span",
-+      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
-+      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
-+      people.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
-+    );
-+  }
-+  const seats = clusterSeats(Math.min(people.length, 4), size);
-+  const overflow = people.length > 4 ? people.length - 3 : 0;
-+  const gap = size / 14;
-+  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
-+  return (0, import_react.createElement)(
-+    "span",
-+    { className: "bt-cluster", style: { width: size, height: size } },
-+    seats.map(([x, y, s], index) => {
-+      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
-+      const style = { left: x, top: y, width: s, height: s };
-+      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
-+      if (overflow > 0 && index === 3) {
-+        return (0, import_react.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
-+      }
-+      const bot = people[index];
-+      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
-+    })
-+  );
-+}
-+
-+// src/client/flybot-slots.js
-+var import_react2 = require("react");
-+var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
-+function registry2() {
-+  const slots = registry();
-+  globalThis.__flybot__.call ??= call2;
-+  globalThis.__flybot__.BotMark ??= BotMark;
-+  globalThis.__flybot__.BotAvatar ??= BotAvatar;
-+  globalThis.__flybot__.lookOf ??= lookOf;
-+  return slots;
-+}
-+var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
-+function useSlot(name) {
-+  const slots = registry2();
-+  const [, setVersion] = (0, import_react2.useState)(0);
-+  (0, import_react2.useEffect)(() => slots.subscribe(() => setVersion(slots.version())), [slots]);
-+  return slots.entries(name);
-+}
-+var SlotBoundary = class extends import_react2.Component {
-+  constructor(props) {
-+    super(props);
-+    this.state = { failed: false };
-+  }
-+  static getDerivedStateFromError() {
-+    return { failed: true };
-+  }
-+  componentDidCatch(error) {
-+    console.error(`flybot: ${this.props.id} failed`, error);
-+  }
-+  render() {
-+    return this.state.failed ? this.props.fallback ?? null : this.props.children;
-+  }
-+};
-+function SlotIcon({ id, icon: icon2, fallback }) {
-+  return (0, import_react2.createElement)(SlotBoundary, { id, fallback }, (0, import_react2.createElement)(icon2));
-+}
-+function Safe({ entry, props }) {
-+  return (0, import_react2.createElement)(SlotBoundary, { id: entry.id }, (0, import_react2.createElement)(entry.component, props));
-+}
 +function useSettingsPages() {
 +  return useSlot("flybot.settings.page");
 +}
@@ -1401,7 +1389,14 @@ diff --git a/client.js b/client.js
 +    const owner = bot.remote.owner || bot.remote.homeName;
 +    if (owner) return `${bot.name} (${owner})`;
 +    return bot.name;
-+  }
+   }
+-  const previous = customThemes[id];
+-  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
+-  registry.set((value) => value + 1);
+-  return () => {
+-    if (previous) customThemes[id] = previous;
+-    else delete customThemes[id];
+-    registry.set((value) => value + 1);
 +  return approval.targetName ?? handle ?? String(approval.request?.to ?? "");
 +}
 +function FlyBotApprovals({ useRoster, actions } = {}) {
@@ -2140,17 +2135,10 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
-@@ -2796,285 +2796,267 @@ var CLASS_TOKEN = /\.((?:\\.|[\w-])+)/g;
- function sheetClassNames(sheet) {
-   const names = [];
-   const visit = (rules) => {
--    for (const rule of rules) {
--      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
--      if (rule.cssRules) visit(rule.cssRules);
--    }
--  };
--  try {
--    visit(sheet.cssRules);
+@@ -2803,278 +2803,260 @@ function sheetClassNames(sheet) {
+   };
+   try {
+     visit(sheet.cssRules);
 -  } catch {
 -  }
 -  return names;
@@ -2279,33 +2267,16 @@ diff --git a/client.js b/client.js
 -}
 -function AdminStar() {
 -  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
-+    for (const rule of rules) {
-+      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
-+      if (rule.cssRules) visit(rule.cssRules);
-+    }
-+  };
-+  try {
-+    visit(sheet.cssRules);
-+  } catch {
-+  }
-+  return names;
- }
+-}
 -function MainStar() {
 -  return (0, import_react2.createElement)(
 -    "svg",
 -    { viewBox: "0 0 20 20", "aria-hidden": true },
 -    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
 -  );
-+function compileFragmentSelectors(text, names) {
-+  const compiled = /* @__PURE__ */ new Map();
-+  return text.replace(FRAGMENT_SELECTOR, (whole, fragment) => {
-+    if (!compiled.has(fragment)) {
-+      const exact = [];
-+      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
-+      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
-+    }
-+    return compiled.get(fragment);
-+  });
++  } catch {
++  }
++  return names;
  }
 -function useSettled(state) {
 -  const prev = (0, import_react2.useRef)(state);
@@ -2316,6 +2287,36 @@ diff --git a/client.js b/client.js
 -    if (state !== "idle") {
 -      setSettled(false);
 -      return void 0;
++function compileFragmentSelectors(text, names) {
++  const compiled = /* @__PURE__ */ new Map();
++  return text.replace(FRAGMENT_SELECTOR, (whole, fragment) => {
++    if (!compiled.has(fragment)) {
++      const exact = [];
++      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
++      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
+     }
+-    if (was === "idle" || was === "alert") return void 0;
+-    setSettled(true);
+-    const timer = setTimeout(() => setSettled(false), 1800);
+-    return () => clearTimeout(timer);
+-  }, [state]);
+-  return settled;
++    return compiled.get(fragment);
++  });
+ }
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
+-  );
 +function installCompiledStyles(text, tag) {
 +  const style = installStyles("", tag);
 +  const cache = /* @__PURE__ */ new WeakMap();
@@ -2329,13 +2330,7 @@ diff --git a/client.js b/client.js
 +        cache.set(sheet, list);
 +      }
 +      for (const name of list) names.add(name);
-     }
--    if (was === "idle" || was === "alert") return void 0;
--    setSettled(true);
--    const timer = setTimeout(() => setSettled(false), 1800);
--    return () => clearTimeout(timer);
--  }, [state]);
--  return settled;
++    }
 +    const next = compileFragmentSelectors(text, names);
 +    if (style.textContent !== next) style.textContent = next;
 +  };
@@ -2358,19 +2353,13 @@ diff --git a/client.js b/client.js
 +    style.remove();
 +  };
  }
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
 +
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -2399,17 +2388,24 @@ diff --git a/client.js b/client.js
 +    seen.add(key);
 +    const handle = String(member?.handle ?? member?.id ?? "").trim().toLowerCase();
 +    rows.push({ owner, sort: handle || key });
-+  }
+   }
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2420,8 +2416,24 @@ diff --git a/client.js b/client.js
 +    seen.add(key);
 +    out.push(owner);
    }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
+-  const seats = clusterSeats(Math.min(people.length, 4), size);
+-  const overflow = people.length > 4 ? people.length - 3 : 0;
+-  const gap = size / 14;
+-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-cluster", style: { width: size, height: size } },
+-    seats.map(([x, y, s], index) => {
+-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+-      const style = { left: x, top: y, width: s, height: s };
+-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+-      if (overflow > 0 && index === 3) {
+-        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+-      }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+-    })
+-  );
 +  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 +  return out.slice(0, 3);
 +}
@@ -2445,19 +2457,7 @@ diff --git a/client.js b/client.js
 +  if (people.length) bits.push(people.join(", "));
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
- }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
++}
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2484,25 +2484,7 @@ diff --git a/client.js b/client.js
 +      handle: bot.remote.handle,
 +      isChief: bot.remote.isChief
 +    });
-   }
--  const seats = clusterSeats(Math.min(people.length, 4), size);
--  const overflow = people.length > 4 ? people.length - 3 : 0;
--  const gap = size / 14;
--  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-cluster", style: { width: size, height: size } },
--    seats.map(([x, y, s], index) => {
--      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
--      const style = { left: x, top: y, width: s, height: s };
--      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
--      if (overflow > 0 && index === 3) {
--        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
--      }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
--    })
--  );
++  }
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
@@ -3576,8 +3558,7 @@ diff --git a/client.js b/client.js
      { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
 -    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
 +    (0, import_react7.createElement)(BotMark, { bot, size: 22 })
-   );
--  return (0, import_react6.createElement)(
++  );
 +  const name = (0, import_react7.createElement)(
 +    "span",
 +    { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
@@ -3654,19 +3635,14 @@ diff --git a/client.js b/client.js
 +  const mark = (0, import_react7.createElement)(BotMark, { bot, size: 22 });
 +  const lead = chatId ? (0, import_react7.createElement)("button", { type: "button", className: "bt-lead", title: handle, "aria-label": t("Open {name}'s chat", { name }), onClick: () => actions.openSession(chatId) }, mark) : (0, import_react7.createElement)("span", { className: "bt-lead", title: handle }, mark);
 +  return (0, import_react7.createElement)(
-     "div",
--    { className: "bt-group-msg" },
--    (0, import_react6.createElement)(
++    "div",
 +    { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
 +    (0, import_react7.createElement)(
-       "span",
-       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
--      bot.name,
--      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
++      "span",
++      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
 +      name,
 +      (0, import_react7.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react7.createElement)(GlobeMark), handle)
-     ),
--    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
++    ),
 +    (0, import_react7.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react7.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
@@ -3683,7 +3659,8 @@ diff --git a/client.js b/client.js
 +    { width: 10, height: 10, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react7.createElement)("circle", { cx: 12, cy: 12, r: 9 }),
 +    (0, import_react7.createElement)("path", { d: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" })
-+  );
+   );
+-  return (0, import_react6.createElement)(
 +}
 +function RemoteFiles({ files, plugin, botId }) {
 +  const [busy, setBusy] = (0, import_react7.useState)("");
@@ -3706,7 +3683,15 @@ diff --git a/client.js b/client.js
 +    }
 +  };
 +  return (0, import_react7.createElement)(
-+    "div",
+     "div",
+-    { className: "bt-group-msg" },
+-    (0, import_react6.createElement)(
+-      "span",
+-      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+-      bot.name,
+-      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
+-    ),
+-    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    { className: "bt-file-chips" },
 +    files.map((file) => (0, import_react7.createElement)(
 +      "button",
@@ -4092,8 +4077,7 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -4106,7 +4090,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -5007,6 +4992,25 @@ diff --git a/client.js b/client.js
    );
  }
  var openShellSettings = null;
+@@ -5259,6 +5259,18 @@ function openHarnessOnboarding(id) {
+     else openHarnessSettings();
+   });
+ }
++var MODELS_STEP_ID = "flybot-models";
++var MODELS_STEP_ORDER = 1e3;
++function ModelsSettingsStep({ explicit, complete, openSection }) {
++  (0, import_react9.useLayoutEffect)(() => {
++    if (explicit) openSection("models");
++    complete();
++  }, []);
++  return null;
++}
++function openHarnessModels() {
++  openHarnessOnboarding(MODELS_STEP_ID);
++}
+ function openThroughMenu(trigger) {
+   const before = new Set(document.querySelectorAll('[role="menu"]'));
+   trigger.click();
 @@ -5288,32 +5288,32 @@ function pressSettingsShortcut() {
    }));
  }
@@ -6092,8 +6096,9 @@ diff --git a/client.js b/client.js
 +      (0, import_react14.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
 +      (0, import_react14.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
          close();
-         openHarnessSettings();
+-        openHarnessSettings();
 -      } }, (0, import_react13.createElement)(SlidersIcon), (0, import_react13.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
++        openHarnessModels();
 +      } }, (0, import_react14.createElement)(SlidersIcon), (0, import_react14.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
      ), document.body) : null
    );
@@ -6132,7 +6137,7 @@ diff --git a/client.js b/client.js
          key: model.ref,
          type: "button",
          className: "bt-model-chip",
-@@ -6584,29 +6584,49 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
+@@ -6584,50 +6584,109 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
          "aria-label": `${model.name} · ${provider}`,
          title: model.ref === roster.defaultModel ? `${model.ref} · ${t("Harness default")}` : model.ref,
          onClick: () => pick2(model.ref)
@@ -6140,7 +6145,7 @@ diff --git a/client.js b/client.js
 +      }, model.name, busy === model.ref ? (0, import_react14.createElement)("span", { className: "bt-model-spin", "aria-label": t("Saving…") }) : null)))
      )),
 -    (0, import_react13.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessSettings }, (0, import_react13.createElement)(SlidersIcon), t("Manage models"))
-+    (0, import_react14.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessSettings }, (0, import_react14.createElement)(SlidersIcon), t("Manage models"))
++    (0, import_react14.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessModels }, (0, import_react14.createElement)(SlidersIcon), t("Manage models"))
    ];
 -  return (0, import_react13.createElement)(
 +  return (0, import_react14.createElement)(
@@ -6192,8 +6197,11 @@ diff --git a/client.js b/client.js
    );
  }
  function setupChoices(actions) {
-@@ -6616,18 +6616,57 @@ function setupChoices(actions) {
-     [t("Open settings to set up a custom model"), openHarnessSettings]
+   return [
+     actions.canSignIn?.() ? [t("Sign in to DeepSeek"), () => actions.signIn()] : null,
+     [t("Enter a DeepSeek API key"), () => openHarnessOnboarding("deepseek-official")],
+-    [t("Open settings to set up a custom model"), openHarnessSettings]
++    [t("Open settings to set up a custom model"), openHarnessModels]
    ].filter(Boolean);
  }
 +function missingModelKey(message) {
@@ -6203,7 +6211,7 @@ diff --git a/client.js b/client.js
 +}
 +function modelKeyChoices(actions, route) {
 +  if (/^deepseek/i.test(route)) return setupChoices(actions);
-+  return [[t("Manage models"), openHarnessSettings]];
++  return [[t("Manage models"), openHarnessModels]];
 +}
 +function TurnErrorCell({ node, t: chatT, actions }) {
 +  const data = node?.data ?? {};
@@ -12293,7 +12301,7 @@ diff --git a/client.js b/client.js
      installCompiledStyles(MEMBER_CSS, "members"),
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
-@@ -14032,14 +14032,15 @@ function apply(ctx) {
+@@ -14032,14 +14032,17 @@ function apply(ctx) {
      shadow("sidebar.brand.mark", { priority: -10 }, BrandMark),
      shadow("sidebar.brand.name", { priority: -10 }, BrandName),
      shadow("sidebar.footer.action", { id: "bot-account", order: -200, inject: face }, FooterAccount),
@@ -12303,6 +12311,8 @@ diff --git a/client.js b/client.js
      // At priority -10 the whale wins the seat over a shell account plugin's own
      // launcher (the Desktop's "··· More"), which comes back in Agent mode.
      shadow("settings.launcher", { priority: -10, inject: face }, AccountLauncher),
++    // Opened on purpose, it lands Settings on the Models page (#407).
++    shadow("settings.onboarding", { id: MODELS_STEP_ID, order: MODELS_STEP_ORDER }, ModelsSettingsStep),
      shadow("shell.overlay", { id: "bot", order: 50, inject: face }, Overlays),
      shadow("shell.overlay", { id: "bot-signin", order: 55, inject: face }, DeepSeekSignIn),
 -    shadow("shell.overlay", { id: "bot-toast", order: 60, inject: face }, ErrorToast)
