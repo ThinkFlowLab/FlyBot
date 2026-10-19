@@ -140,6 +140,8 @@ test('#305: a face room offers each of its Bots once, named Bot (Person), and no
   const group = indexRoster({ ...face, rooms: [{ ...face.rooms[0], origin: undefined }] })
   // A friend's Bot already seated in the group is offered once, by its seat (#384).
   assert.deepEqual(mentionRows(group, 'face').filter(row => row.remote).map(row => row.remote.handle), ['@helper.other.home'])
+  // That seat is still found by its handle, the second line of its row (#384).
+  assert.deepEqual(mentionRows(group, 'face', 'chief.selfa').map(row => row.text), ['@Chief (SelfA) '])
 })
 
 test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, by its handle, named Bot (owner)', async () => {

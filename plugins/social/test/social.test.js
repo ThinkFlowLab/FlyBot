@@ -2748,6 +2748,9 @@ test('Face-to-face waiting overview is a tile grid with Leave and Enter chat', (
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.children.includes('Chief')))
   assert.ok(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Bob')))
   assert.equal(tree.some(n => n.props.className === 'fs-tile-name' && n.children.includes('Chief')), false)
+  // One name everywhere (#384): my own tile's tooltip is "Chief (you)", a friend's "Coder (Bob)".
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.props.title === 'Chief (you)'))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-bot' && n.props.title === 'Coder (Bob)'))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-enter' && n.children.includes('Enter chat')))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-leave' && n.children.includes('Leave')))
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-wait-code'))
@@ -5170,6 +5173,9 @@ test('#297: a friend\'s Bot thinking shows as one quiet line above the composer;
   assert.equal(shown.children.flat().map(n => n.children?.join?.('') ?? n).join(''), "Bob's Coder is thinking…")
   assert.equal(shown.props.role, 'status')
   assert.equal(walk(shown).find(n => n.props?.className === 'bt-shimmer')?.type, 'span')
+  // A friend's 1:1 chat names the Bot as the header does (#384): "Coder (Bob)".
+  const owned = { bot: { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home', owner: 'Bob', homeName: 'Family Workspace' } } }
+  assert.equal(line(items, owned).children.flat().map(n => n.children?.join?.('') ?? n).join(''), 'Coder (Bob) is thinking…')
   assert.equal(line([], dm), undefined)
   assert.equal(line(items, { bot: { id: 'r2', name: 'Other chat', remote: { handle: '@nobody.home' } } }), undefined)
   assert.equal(line(items, { bot: { id: 'a', name: 'Chief' } }), undefined, 'a local Bot chat has its own activity row')

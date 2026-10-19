@@ -45,7 +45,9 @@ export function mentionRows(roster, sessionId, query = '') {
     : listedChatBots(roster).filter(bot => bot.id !== here.self.id)
   const needle = query.trim().toLowerCase()
   const rows = bots
-    .filter(bot => bot.name.toLowerCase().includes(needle) || String(bot.label ?? '').toLowerCase().includes(needle))
+    // A seated friend's Bot is also found by its handle, the second line of its row (#384).
+    .filter(bot => bot.name.toLowerCase().includes(needle) || String(bot.label ?? '').toLowerCase().includes(needle)
+      || (bot.remote && normHandle(remoteRecord(bot)?.handle || bot.handle).includes(normHandle(needle))))
     .map(bot => ({ bot, text: `@${bot.name} ` }))
   const everyone = t('Everyone')
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {

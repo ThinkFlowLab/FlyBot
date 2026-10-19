@@ -7400,7 +7400,7 @@ function mentionRows(roster, sessionId, query = "") {
     }))
   ] : listedChatBots(roster).filter((bot) => bot.id !== here.self.id);
   const needle = query.trim().toLowerCase();
-  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle) || String(bot.label ?? "").toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
+  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle) || String(bot.label ?? "").toLowerCase().includes(needle) || bot.remote && normHandle(remoteRecord(bot)?.handle || bot.handle).includes(normHandle(needle))).map((bot) => ({ bot, text: `@${bot.name} ` }));
   const everyone = t("Everyone");
   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
     rows.push({ room: here.room, text: `@${everyone} ` });

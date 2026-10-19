@@ -341,7 +341,10 @@ window.__ModuleLoader__.load({
 
     function FaceTile({ bot, name, owner, member, handle, mine, pick, selected, onToggle } = {}) {
       const parts = member ? faceTileParts(member) : { name: name || 'Bot', owner: owner || '' }
-      const title = parts.owner && parts.owner.toLowerCase() !== parts.name.toLowerCase() ? `${parts.name} (${parts.owner})` : parts.name
+      // My own seat reads "Chief (you)", as Members and the @ menu say it (#384).
+      const title = mine && member
+        ? `${parts.name} (you)`
+        : parts.owner && parts.owner.toLowerCase() !== parts.name.toLowerCase() ? `${parts.name} (${parts.owner})` : parts.name
       const mark = h('span', { className: 'fs-tile-mark' },
         h(FaceAvatar, { bot, size: 48 }),
         mine
@@ -1065,7 +1068,13 @@ window.__ModuleLoader__.load({
           : handle !== '' && item.scope === 'direct' && String(item.handle).toLowerCase() === handle
         if (!mine || seen.has(item.handle)) continue
         seen.add(item.handle)
-        if (!faceId) { out.push(String(bot.name || item.name || '').trim()); continue }
+        if (!faceId) {
+          // One name everywhere (#384): "Coder (Bob)", as the header and the sidebar say it.
+          const name = String(bot.name || item.name || '').trim()
+          const owner = String(bot.remote?.ownerName || bot.remote?.owner || bot.remote?.homeName || '').trim()
+          out.push(owner && !name.endsWith(`(${owner})`) ? `${name} (${owner})` : name)
+          continue
+        }
         const people = (room.participants ?? []).filter(p => p.remote)
         const own = people.find(p => String(p.handle ?? '').toLowerCase() === String(item.handle).toLowerCase())
         const name = String(own?.displayName || own?.name || item.name || '').trim()
