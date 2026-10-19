@@ -43,6 +43,10 @@ export function install(rt) {
     bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
       // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
       const pending = rt.listChatApprovals?.(bot, actor) ?? []
+      // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,
+      // and a waiting one counts toward the row's wait badge.
+      const held = bot.remote || (rt.authzEnforced?.() && actor && bot.ownerId !== actor.memberId) ? [] : rt.heldRepliesOf?.(bot.id) ?? []
+      const waitingReplies = held.filter(reply => reply.status === 'pending').length
       return {
         ...bot,
         granted: rt.hasAnyGrant?.(bot.id) === true,
@@ -50,7 +54,8 @@ export function install(rt) {
         ...(bot.remote ? {} : { sharedWith: rt.sharedWith?.(bot.id).slice(0, 3) ?? [] }),
         sessionId: rt.chatOf(bot.id),
         parts: (segments ?? []).map(segment => segment.sessionId),
-        pendingCount: pending.length,
+        pendingCount: pending.length + waitingReplies,
+        ...(held.length ? { heldReplies: held } : {}),
         ...(kickoff ? { waiting: true } : {}),
       }
     }),

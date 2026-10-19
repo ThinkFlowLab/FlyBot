@@ -2,15 +2,16 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
-import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
+import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
 import { remoteMessageText } from './flybot-registry.js'
-import { remoteBotTitle } from '../shared/remote-label.js'
+import { isListedRemoteChat, remoteBotTitle } from '../shared/remote-label.js'
 import { fileSize } from './flybot-slots.js'
+import { HeldReplyActions } from './held-reply.js'
 import { call } from './api.js'
 import { failureLabel } from './diagnostics.js'
 import { turnReasoning } from './turn-reasoning.js'
@@ -128,12 +129,22 @@ function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
   }, [fileMentions, openFile, seq, tail, turn])
 }
 
+// Whether this text is the one that closes its turn (no turn data: assume it is).
+function useClosingText(node, useTurnData) {
+  const tail = useTurnData?.('turn-tail')
+  const seq = node.data.finalNode?.seq
+  if (!tail?.closing || seq === undefined) return true
+  return tail.closing.finalNode?.seq === seq
+}
+
 export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
   const roster = useRoster(value => value)
   const data = node.data
   const steps = useTurnSteps(String(data.turn))
   const contexts = useTurnContext(String(data.turn))
   const mentions = useFileMentions({ node, openFile, fileMentions, useTurnData })
+  const held = groupPart === 'reasoning' ? undefined : heldReplyOf(roster.byId[sessionId], sessionId, data.turn)
+  const closing = useClosingText(node, useTurnData)
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
   const person = typedBy(roster, sessionId, data.turn)
   const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter(text => text.trim() !== '')
@@ -148,6 +159,9 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : []
   if (texts.length === 0 && !reasoning && relays.length === 0) return null
   const selfId = roster.byId[sessionId]?.id ?? sessionId
+  const bubbles = texts.length ? (person
+    ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
+    : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions })) : null
   return h(Fragment, null,
     relays.map(relay => {
       const source = relay.source
@@ -161,9 +175,22 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
       })
     }),
     reasoning ? h(ThinkingRow, { text: reasoning }) : null,
-    texts.length ? (person
-      ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
-      : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions })) : null)
+    held && bubbles ? h(HeldReply, { held, roster, sessionId, actions, closing }, bubbles) : bubbles)
+}
+
+// A reply to a friend held for the owner (#418): its bubble reads as not sent (dashed) and carries
+// the decision where it stands; once decided it says Sent or Not sent in the same place. The
+// turn's closing text carries the buttons; an earlier text of the same turn is only marked.
+function HeldReply({ held, roster, sessionId, actions, closing, children }) {
+  const bot = roster.byId[sessionId]
+  // The friend's Bot by name and owner when its chat is listed (#384), else the person (#418).
+  const chat = (roster.bots ?? []).find(item => item.remote?.handle === held.to && isListedRemoteChat(item))
+  const toName = chat
+    ? remoteBotTitle({ displayName: chat.name, ownerName: chat.remote.homeName || chat.remote.owner, handle: chat.remote.handle, isChief: chat.remote.isChief })
+    : held.toOwner || held.to || t('a friend')
+  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': held.status === 'pending' ? '' : undefined },
+    children,
+    closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null)
 }
 
 // A friend's line that Bot Social attests the friend typed themselves, or another person's own

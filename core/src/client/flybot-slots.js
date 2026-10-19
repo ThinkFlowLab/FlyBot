@@ -11,6 +11,8 @@
 //   flybot.composer.mention { id, order, candidates(query, { sessionId, roster, call }) → rows }   rows in the "@" menu
 //   flybot.bot.details      { id, order, component({ bot, roster, call }) }        in a Bot's settings
 //   flybot.approvals        { id, order, component({ approval, decide, call }) }   custom card for a held send
+//                            `inline: true` with `policy`: instead, the buttons drawn on a held reply's own bubble in the
+//                            chat (#418), component({ held, decide, call, actions }); held = { id, by, status, to, toName, from }
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
 //   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim, t }) }  above the composer;
 //                            a dock that draws the cards of one approval policy sets `policy` and calls claim(ids) with the
@@ -31,9 +33,11 @@ import { isListedRemoteChat } from '../shared/remote-label.js'
 import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { t } from './i18n.js'
+import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
 
+export { chatOpened, claimApprovals } from './approval-claims.js'
 export { SLOTS, createRegistry, mentionCandidates, newChatActionRows, botTree } from './flybot-registry.js'
 
 // Calls a FlyBot endpoint on the host: "approvals", "decide", or a plugin's "social/...".
@@ -110,29 +114,14 @@ export function FlyBotSections({ roster, actions, renderBot }) {
 
 // Approval ids a dock draws in its chat. The overlay skips them, so one approval has one card, in the
 // chat it belongs to; an approval no open chat shows becomes a small pointer to that chat instead (#260).
-const claims = new Map()
-const claimListeners = new Set()
-// Chats open right now (a session dock is mounted for them): the pointer never points at the chat you are in (#271).
-const openChats = new Map()
-export function chatOpened(sessionId, delta) {
-  const count = (openChats.get(sessionId) ?? 0) + delta
-  if (count > 0) openChats.set(sessionId, count)
-  else openChats.delete(sessionId)
-  for (const fn of [...claimListeners]) fn()
-}
-const claimedIds = () => Object.assign(new Set([...claims.values()].flatMap(ids => [...ids])), { chats: new Set(openChats.keys()) })
-export function claimApprovals(owner, ids) {
-  if (!Array.isArray(ids) || ids.length === 0) claims.delete(owner)
-  else claims.set(owner, new Set(ids.map(String)))
-  for (const fn of [...claimListeners]) fn()
-}
+// The claims live in approval-claims.js, which a chat cell can import without the slot components (#418).
 function useClaimed() {
   const [claimed, setClaimed] = useState(claimedIds)
   useEffect(() => {
     const fn = () => setClaimed(claimedIds())
-    claimListeners.add(fn)
+    const off = onClaims(fn)
     fn()
-    return () => { claimListeners.delete(fn) }
+    return off
   }, [])
   return claimed
 }
@@ -188,7 +177,8 @@ const friendChatOf = (approval, roster) => {
 }
 // The one chat an approval belongs to: its room, else the friend's chat it is addressed to, else the
 // Bot that wrote it (#278). The chat's dock draws its card; the pointer opens that chat.
-const chatOf = (approval, roster) => approval.request?.meta?.roomId ?? friendChatOf(approval, roster)?.id ?? (typeof approval.request?.from === 'string' ? approval.request.from : undefined)
+// A Bot's held reply to a friend is decided on its bubble in the chat it answers (#418).
+const chatOf = (approval, roster) => approval.request?.meta?.roomId ?? approval.request?.meta?.replyIn?.sessionId ?? friendChatOf(approval, roster)?.id ?? (typeof approval.request?.from === 'string' ? approval.request.from : undefined)
 // A friend's Bot by name and owner when the roster knows its chat; otherwise what the host called it.
 function recipientName(approval, roster) {
   const handle = handleOf(approval.request?.to)
@@ -198,7 +188,7 @@ function recipientName(approval, roster) {
     if (owner) return `${bot.name} (${owner})`
     return bot.name
   }
-  return approval.targetName ?? handle ?? String(approval.request?.to ?? '')
+  return approval.recipientName ?? approval.targetName ?? handle ?? String(approval.request?.to ?? '')
 }
 
 export function FlyBotApprovals({ useRoster, actions } = {}) {
@@ -263,7 +253,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
         typeof actions?.openSession === 'function' && chatOf(list[0], roster) ? h('button', { type: 'button', onClick: () => actions.openSession(chatOf(list[0], roster)) }, t('Review')) : null))) : null,
     cards.length > 0 ? h('div', { className: 'bt-flybot-approvals', role: 'region', 'aria-label': t('Messages waiting for your approval') },
       cards.map((approval) => {
-        const custom = entries.find(entry => entry.policy === undefined || entry.policy === approval.by)
+        const custom = entries.find(entry => entry.inline !== true && (entry.policy === undefined || entry.policy === approval.by))
         if (custom) return h('div', { key: approval.id }, h(Safe, { entry: custom, props: { approval, decide: decision => decide(approval.id, decision), call } }))
         const failed = approval.status === 'failed'
         return h('div', { key: approval.id, className: 'bt-flybot-approval', title: approval.reason ?? undefined },
@@ -304,6 +294,14 @@ export const FLYBOT_CSS = `
 .bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 .bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .bt-flybot-approve { font-weight: 600; }
+.bt-held-reply[data-state=pending] .bt-bubble { background: transparent; border: 1px dashed var(--bt-line-2); color: var(--bt-ink-2); }
+.bt-held-reply[data-state=rejected] .bt-bubble, .bt-held-reply[data-state=failed] .bt-bubble { background: transparent; border: 1px dashed var(--bt-line-2); color: var(--bt-ink-3); }
+.bt-held-actions { margin: 6px 0 2px; max-width: 420px; }
+.bt-held-card { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+.bt-held-head { font-weight: 600; margin-bottom: 2px; }
+.bt-held-note { margin: 2px 0 0; font-size: 12px; color: var(--bt-ink-3); display: flex; gap: 8px; align-items: center; }
+.bt-held-note[data-state=failed] { color: var(--bt-danger, #d33); }
+.bt-held-retry { border: 0; background: transparent; color: var(--bt-accent, #2563eb); font-size: 12px; cursor: pointer; padding: 0; }
 .bt-flybot-pointers { position: fixed; top: 12px; right: 16px; z-index: 50; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; max-width: 360px; }
 .bt-flybot-pointer { display: flex; align-items: center; gap: 8px; background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 999px; padding: 5px 6px 5px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.1); font-size: 12px; }
 .bt-flybot-pointer-text { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }

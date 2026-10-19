@@ -253,13 +253,24 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
 }
 
 // Latest visible line for a sidebar row; Bot-to-Bot exchange turns stay out of it.
-export function previewOf(list, id, hiddenTurns = []) {
+// A local Bot's replies to friends that were held and not (yet) sent (#418), by turn of that chat.
+export function heldReplyOf(bot, sessionId, turn) {
+  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : []
+  let found
+  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply
+  return found
+}
+export const unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : [])
+  .filter(reply => reply.sessionId === sessionId && reply.status !== 'approved').map(reply => reply.turn)
+
+// `unsentTurns`: turns whose reply is held or was not sent; the preview shows their prompt instead.
+export function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
   const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
   if (!Array.isArray(outline)) return ''
   for (let index = outline.length - 1; index >= 0; index -= 1) {
     const entry = outline[index]
     if (hiddenTurns.includes(entry.turn)) continue
-    const text = entry.response || entry.prompt || ''
+    const text = (unsentTurns.includes(entry.turn) ? '' : entry.response) || entry.prompt || ''
     // The outline flattens a reply to one line, so its trace ends at a space there.
     if (text !== '') return stripTrace(stripHeader(text)).replace(/\s+/g, ' ').trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, '')
   }

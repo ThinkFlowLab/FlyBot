@@ -1001,8 +1001,11 @@ window.__ModuleLoader__.load({
         // The local Bot that wrote it (not a line you typed): its own chat shows the card (#254).
         ...(!composer && typeof approval.request?.from === 'string' ? { fromId: approval.request.from } : {}),
         to,
-        toName: friendLabel(roster, to) || approval.targetName || to,
+        // A listed friend chat names the Bot (#384); otherwise the person who gets it (#418).
+        toName: friendLabel(roster, to) || approval.recipientName || approval.targetName || to,
         text: approval.request?.text || approval.reason,
+        // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418), not in a dock.
+        ...(approval.request?.via === 'auto-reply' && typeof approval.request?.meta?.replyIn?.sessionId === 'string' ? { inline: approval.request.meta.replyIn.sessionId } : {}),
         // A friend's handle is an object, never a room: only a room id may sit here.
         roomId: approval.request?.meta?.roomId || (typeof approval.request?.to === 'string' ? approval.request.to : undefined),
         sessionId: approval.request?.meta?.sessionId,
@@ -1132,9 +1135,10 @@ window.__ModuleLoader__.load({
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
       // The friend's Bot by name and owner, as the chat list shows it.
       const named = list => list.map((item) => { const label = friendLabel(roster, item.to); return label ? { ...item, toName: label } : item })
+      // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418): no dock draws it.
       const mine = [
         ...approvalsForOpenChat(named(items), session),
-        ...approvalsForOpenChat(named(local), session),
+        ...approvalsForOpenChat(named(local.filter(item => !item.inline)), session),
       ]
       // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
       const shownIds = mine.map(item => item.id).join(',')
@@ -1185,6 +1189,32 @@ window.__ModuleLoader__.load({
         mine.map(item => h(ChatApproval, {
           key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide, t,
         })))
+    }
+
+    // The decision on a Bot's held reply to a friend, drawn on that reply's bubble (#418): who gets
+    // it (the person, or the friend's Bot by #384 naming), Approve / Reject, and Auto-send from now on. The
+    // bubble above is the text, so the card does not repeat it.
+    function HeldReplyCard({ held, decide, call: callHost = call, actions } = {}) {
+      useStyles()
+      const [busy, setBusy] = useState(false)
+      if (!held?.id) return null
+      const { from, to } = holdParties({ from: held.from, to: held.to, toName: held.toName })
+      const onDecide = async (decision) => {
+        setBusy(true)
+        try {
+          await decide?.(decision === 'always' ? 'approve' : decision)
+          // Auto-send for this pair only, my Bot → that person (#417), never the home-wide switch.
+          if (decision === 'always') actions?.notify?.(autoSendToast(await autoSendPair(callHost, held.id)))
+        } finally { setBusy(false) }
+      }
+      return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'region', 'aria-label': WAITING_OWNER },
+        h('div', { className: 'fs-label' }, WAITING_OWNER),
+        h('div', { className: 'fs-sub' }, `${from} → ${to}`),
+        h('div', { className: 'fs-actions fs-chat-actions' },
+          h('span', { className: 'fs-hold-decide' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: busy, onClick: () => onDecide('approve') }, 'Approve'),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => onDecide('reject') }, 'Reject')),
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, AUTO_SEND_LINK)))
     }
 
     function FriendBotRow({ bot, chat, renderBot, busy, onRemove }) {
@@ -2012,6 +2042,7 @@ window.__ModuleLoader__.load({
       holdReasonLine,
       listedFriendChat,
       ChatApprovalDock,
+      HeldReplyCard,
       approvalsForOpenChat,
       localHoldView,
       friendLabel,
@@ -2063,6 +2094,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),
             (() => { try { return slots().register('flybot.account.header', { id: 'social-handle', order: 10, component: MyHandle }) } catch { return () => {} } })(),
             slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
+            slots().register('flybot.approvals', { id: 'social-held-reply', order: 50, policy: 'social', inline: true, component: HeldReplyCard }),
             slots().register('flybot.settings.page', { id: 'social', order: 100, label: 'Bot Social', icon: SocialPageIcon, component: SocialServerSettings }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),

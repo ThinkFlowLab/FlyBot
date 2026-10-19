@@ -550,7 +550,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking', 'flybot.session.dock#social-paused'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.approvals#social-held-reply', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking', 'flybot.session.dock#social-paused'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -1117,6 +1117,7 @@ test('#272: a reply to the Bot that carried a request is held and leaves on appr
   assert.equal(server.calls.some(c => c.name === 'send_as_member'), false, 'nothing leaves before the owner decides')
   const [pending] = ctx.flybot.approvals.list()
   assert.ok(pending, 'the owner gets a card')
+  assert.equal(pending.recipientName, 'Bob', 'the card names the person, not the talk-through Bot (#418)')
   await ctx.flybot.approvals.decide(pending.id, 'approve')
   const sent = server.calls.filter(c => c.name === 'send_as_member')
   assert.equal(sent.length, 1)
@@ -6875,6 +6876,73 @@ test('#343: Add friend shows accepting and inviting as two labelled groups, each
   assert.ok(done > at('mint-invite'), 'Done comes after the invite group')
   assert.ok(done > at('add-friend-done'))
   assert.equal(nodes.slice(0, at('accept-heading')).some(n => n.type === 'button'), false, 'no button above the content')
+})
+
+test('#418: a Bot\'s held reply to a friend is listed on its turn for the owner, counts on its row, and says what became of it', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  // What turns.js sends when a friend's line made Chief answer in its own chat (turn 3).
+  const reply = (text, turn) => ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text, role: 'reply', via: 'auto-reply', meta: { replyTo: `x${turn}`, replyIn: { sessionId: 'a', turn } } })
+  assert.equal((await reply('4.', 3)).action, 'hold')
+  const [held] = ctx.flybot.approvals.list()
+  assert.equal(held.recipientName, 'Bob', 'the card names the person who gets it')
+  const chiefOf = async () => (await call('state', {})).value.bots.find(bot => bot.id === 'a')
+  let chief = await chiefOf()
+  assert.deepEqual(chief.heldReplies.map(r => [r.id, r.status, r.sessionId, r.turn, r.to, r.toOwner]), [[held.id, 'pending', 'a', 3, '@coder.bob.home', 'Bob']])
+  assert.equal(chief.heldReplies[0].text, undefined, 'no text: the turn shows it already')
+  assert.equal(chief.pendingCount, 1, 'the Bot row carries the wait badge')
+  await ctx.flybot.approvals.decide(held.id, 'reject')
+  chief = await chiefOf()
+  assert.equal(chief.heldReplies[0].status, 'rejected')
+  assert.equal(chief.pendingCount, 0, 'the badge clears on decide')
+  assert.equal(server.calls.some(c => c.name === 'send_as_member'), false)
+  assert.equal((await reply('6.', 4)).action, 'hold')
+  const second = ctx.flybot.approvals.list().find(a => a.status === 'pending')
+  await ctx.flybot.approvals.decide(second.id, 'approve')
+  chief = await chiefOf()
+  assert.deepEqual(chief.heldReplies.map(r => [r.turn, r.status]), [[3, 'rejected'], [4, 'approved']], 'sent and not sent stay distinguishable')
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1)
+  assert.equal(ctx.flybot.bot.list().find(bot => bot.name === 'Writer') !== undefined, true)
+  assert.equal((await call('state', {})).value.bots.find(bot => bot.name === 'Writer').heldReplies, undefined)
+})
+
+test('#418: the held reply is decided on its bubble, not in a dock, and names the person', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const approval = {
+    id: 'apr-418', status: 'pending', by: 'social', senderName: 'Chief', targetName: '@chief.selfb1238.home', recipientName: 'SelfB1238',
+    request: { from: 'chief', to: { kind: 'remote', handle: '@chief.selfb1238.home', home: '@selfb1238.home' }, text: '4.', role: 'reply', via: 'auto-reply', meta: { replyTo: 'x1', replyIn: { sessionId: 'chief', turn: 3 } } },
+  }
+  const view = pluginOf([[], []]).localHoldView(approval, { bots: [] })
+  assert.equal(view.toName, 'SelfB1238', 'the person, not the talk-through Bot')
+  assert.equal(view.inline, 'chief')
+  const cards = props => walk(pluginOf([[], [view], '']).ChatApprovalDock(props)).filter(n => n.props['data-flybot'] === 'chat-approval')
+  assert.equal(cards({ bot: { id: 'chief', name: 'Chief' }, sessionId: 'chief' }).length, 0, 'no floating copy in the Bot\'s chat')
+  assert.equal(cards({ bot: { id: 'f1', remote: { handle: '@chief.selfb1238.home' } }, sessionId: 'f1' }).length, 0, 'nor in the friend\'s chat')
+  // An older hold without the turn keeps its dock card (#254).
+  const old = pluginOf([[], []]).localHoldView({ ...approval, request: { ...approval.request, meta: { replyTo: 'x1' } } }, { bots: [] })
+  assert.equal(walk(pluginOf([[], [old], '']).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' } })).filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
+  const decided = []
+  const held = { id: 'apr-418', by: 'social', status: 'pending', from: 'Chief', to: '@chief.selfb1238.home', toName: 'SelfB1238' }
+  const notes = []
+  const hostCall = async (e, p) => { calls.push([e, p]); return e === 'social/auto-send' ? { autoSend: true, botName: 'Chief', person: 'SelfB1238' } : {} }
+  const card = walk(pluginOf([false]).HeldReplyCard({ held, decide: async d => { decided.push(d) }, call: hostCall, actions: { notify: n => notes.push(n) } }))
+  assert.ok(card.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → SelfB1238')))
+  assert.equal(card.some(n => n.props.className === 'fs-draft'), false, 'the bubble is the text; the card does not repeat it')
+  const buttons = card.filter(n => n.type === 'button')
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Auto-send from now on'])
+  await buttons[1].props.onClick()
+  await buttons[2].props.onClick()
+  assert.deepEqual(decided, ['reject', 'approve'])
+  // Auto-send for this pair only (#417): the host reads the pair from the hold; the home-wide switch is not touched.
+  assert.equal(JSON.stringify(calls.at(-1)), JSON.stringify(['social/auto-send', { approvalId: 'apr-418' }]))
+  assert.equal(calls.some(([e]) => e === 'social/auto-accept'), false)
+  assert.equal(notes[0], 'Auto-send is on for Chief → SelfB1238. Turn it off in Chief → Sharing → People with access.')
 })
 
 // #336: the answers Bot Social sends since Birfy/bot-social faa7cb5 (#27, src/platform.ts refuseUnshared):
