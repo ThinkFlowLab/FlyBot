@@ -92,8 +92,9 @@ test('a failed 1:1 send is one short English line with a next step', () => {
     assert.equal(notSentLine(new Error('Not sent: already friendly.')), 'Not sent: already friendly.')
     // #404: a paused chat and an unknown failure name only steps a FlyBot owner can take.
     assert.equal(notSentLine(new Error('Bot Social paused this conversation (turn budget exhausted)')), 'Not sent: this chat is paused. Approve any message waiting here, or remove and re-add this friend to start a new chat.')
-    // A pause the plugin can extend points to its Extend button, still with no console (#404).
-    assert.equal(notSentLine(Object.assign(new Error('Bot Social paused this conversation (turn budget exhausted)'), { code: 'conversation_paused', extendable: true })), 'Not sent: this chat is paused. Use Extend below to add turns, or remove and re-add this friend to start a new chat.')
+    // The plugin's pause says to send again: the next send opens a fresh chat; nothing names Extend or turns.
+    assert.equal(notSentLine(Object.assign(new Error('Bot Social paused that chat (loop detected). Send your message again: it starts a new chat.'), { code: 'conversation_paused', resend: true })), 'Not sent: Bot Social paused that chat. Send your message again: it starts a new chat.')
+    assert.doesNotMatch(notSentLine(Object.assign(new Error('paused'), { resend: true })), /Extend|turns/)
     assert.equal(notSentLine(new Error('Bot Social send_as_member: weird_code')), 'Not sent: the message could not leave. Try again.')
     assert.doesNotMatch(notSentLine(new Error('something odd happened')), /console/)
 });
