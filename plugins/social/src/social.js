@@ -1203,12 +1203,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
       // A Bot's files are always shown to the user first, whatever auto-accept says;
       // files the user picked in the composer are the user's own send.
-      if (msg.attachments?.length && msg.via !== 'composer') return { action: 'hold', reason: 'a Bot attaches files: check them before they leave' }
+      // The card names who gets it by person (#418): the friend, not a Bot handle.
+      const friend = serverRoster.find(entry => entry.home === norm(bot.home))
+      const recipient = cleanText(friend?.owner || friend?.name || '')
+      const named = recipient ? { recipient } : {}
+      if (msg.attachments?.length && msg.via !== 'composer') return { action: 'hold', reason: 'a Bot attaches files: check them before they leave', ...named }
       // Adding a friend's Bot to a group (or a line in that group) is the owner's consent
       // to share that room. The invited owner's Bot replies still go through the hold.
       if (msg.via === 'room' || msg.via === 'room-share') return undefined
       if (approvalFor(msg.from, bot.home) === 'auto') return undefined
-      return { action: 'hold', reason: `messages to ${bot.home}'s Bots need your approval` }
+      return { action: 'hold', reason: `messages to ${bot.home}'s Bots need your approval`, ...named }
     },
   }))
 

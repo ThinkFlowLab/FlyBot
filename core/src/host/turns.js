@@ -433,6 +433,8 @@ export function install(rt) {
         const { lastText, lastCalled } = entry
         // A turn stopped for a switch goes on in the next part, which answers instead.
         const switched = entry.switched === true
+        // The turn whose text answers a friend's line: a held reply is drawn on it, in place (#418).
+        const answeredTurn = entry.turn
         entry.turn = undefined
         entry.info = undefined
         entry.texts = []
@@ -465,7 +467,7 @@ export function install(rt) {
         const answer = (source, reply) => {
           if (fromRemote(source)) {
             if (failure === undefined && reply !== '') {
-              void rt.flybotReplyRemote?.({ from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home, text: reply, replyTo: source.exchangeId })
+              void rt.flybotReplyRemote?.({ from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home, text: reply, replyTo: source.exchangeId, replyIn: { sessionId: id, turn: answeredTurn } })
                 // A refused reply resolves, it does not throw: say so, or it is lost without a trace (#272).
                 .then(result => { if (result?.action === 'deny') rt.warn('ds-bot: reply to %s not sent: %s', source.remote.handle, result.reason) })
                 .catch(error => rt.warn('ds-bot: reply to %s failed: %s', source.remote.handle, error))

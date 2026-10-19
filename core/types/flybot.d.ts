@@ -233,7 +233,9 @@ export interface SendRequest {
  */
 export type SendVerdict = undefined | null
   | { action: 'allow'; bypass?: string[] }
-  | { action: 'deny' | 'hold'; reason?: string }
+  | { action: 'deny'; reason?: string }
+  /** `recipient`: who receives it, as the owner knows them (a person's name); the card names it (#418). */
+  | { action: 'hold'; reason?: string; recipient?: string }
 
 export interface SendMiddleware {
   /** e.g. 'social', 'tree'. */
@@ -263,6 +265,8 @@ export interface Approval {
   reason: string
   /** Middleware that held it. */
   by: string
+  /** Who receives it, as the holding middleware named them (#418). */
+  recipientName?: string
   createdAt: number
   decidedAt?: number
   note?: string
