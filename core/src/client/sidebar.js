@@ -101,10 +101,24 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const settingsLabel = bot.remote ? t('Bot settings') : t('Edit Bot')
   const settings = wide ? h('button', {
     type: 'button', className: 'bt-row-settings', 'aria-label': settingsLabel, title: settingsLabel,
-    onClick: (event) => { event.stopPropagation(); actions.openSettings('bots', id) },
+    onFocus: event => keepSidebarStill(event.currentTarget),
+    onClick: (event) => { event.stopPropagation(); keepSidebarStill(event.currentTarget); actions.openSettings('bots', id) },
   }, h(GearIcon)) : null
   if (settings) return h('div', { className: 'bt-row-wrap', 'data-bot-id': id }, row, settings)
   return row
+}
+
+// Focusing the row gear (a click focuses it) must never scroll the sidebar or the page sideways
+// (#274, #421): no ancestor of a sidebar row scrolls horizontally on purpose, so any sideways
+// offset a focus left behind is put back, now and once more after the settings dialog opened.
+export function keepSidebarStill(node) {
+  const reset = () => {
+    for (let at = node?.parentElement; at; at = at.parentElement) if (at.scrollLeft > 0) at.scrollLeft = 0
+    const page = typeof document === 'undefined' ? null : document.scrollingElement
+    if (page && page.scrollLeft > 0) page.scrollLeft = 0
+  }
+  reset()
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(reset))
 }
 
 // A friend's Bot: a globe after its owner's name, its handle on hover.

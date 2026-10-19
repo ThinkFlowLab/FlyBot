@@ -261,7 +261,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
    const nav = useGlide(shown, { axis: 'y' })
    // A page enters from the right when it is one level in, from the left when it comes
-@@ -181,12 +181,12 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -181,16 +181,19 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
    const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null
    return h('div', { className: 'bt-settings-layer', 'data-leaving': leaving || undefined },
      h('div', { className: 'bt-scrim', onMouseDown: close }),
@@ -274,9 +274,18 @@ diff --git a/src/client/settings.js b/src/client/settings.js
            key, type: 'button', className: 'bt-settings-item', 'aria-current': shown === key ? 'page' : undefined, onClick: () => actions.openSettings(key),
 -        }, h(PAGE_ICONS[key]), t(text))),
 +        }, h(extra.find(item => item.key === key)?.entry.icon ?? PAGE_ICONS[key] ?? ConnectorIcon), t(text))),
++        // DeepSeek Harness's own settings are a separate window with its own title and look; FlyBot
++        // does not embed or retitle it (never patch DSH), so the entry says it leaves (#421).
          h('button', {
-           type: 'button', className: 'bt-settings-item bt-settings-shell', title: t('Models, providers, and the rest of DeepSeek Harness'),
+-          type: 'button', className: 'bt-settings-item bt-settings-shell', title: t('Models, providers, and the rest of DeepSeek Harness'),
++          type: 'button', className: 'bt-settings-item bt-settings-shell', title: t("Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window"),
++          'aria-label': t("Harness settings, opens DeepSeek Harness's own settings window"),
            onClick: () => { close(); openHarnessSettings() },
+-        }, h(SlidersIcon), t('Harness settings'))),
++        }, h(SlidersIcon), t('Harness settings'), h('span', { className: 'bt-settings-out', 'aria-hidden': true }, '↗'))),
+       h('div', { className: 'bt-settings-main' },
+         h('div', { className: 'bt-settings-head' },
+           back ? h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': back, title: back, onClick: () => actions.openSettings(shown) }, h(ChevronLeftIcon)) : null,
 @@ -203,6 +203,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
            room ? h('div', { className: 'bt-settings-form' }, h(GroupSettingsForm, { key: room.id, room, roster, actions, run })) : null,
            shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,

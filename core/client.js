@@ -212,6 +212,13 @@ var ZH = {
   "Change server": "更换服务器",
   "Features": "功能",
   "No optional features listed.": "服务器没有列出可选功能。",
+  "Supports: {list}": "支持：{list}",
+  "typing as you": "以你的身份输入",
+  "@mentions": "@提及",
+  "online status": "在线状态",
+  "(+{count} more)": "（另有 {count} 项）",
+  "Supports 1 optional feature": "支持 1 项可选功能",
+  "Supports {count} optional features": "支持 {count} 项可选功能",
   "Reachability": "连通性",
   "Read-only": "只读",
   "Another FlyBot window holds this team. Change the server there.": "另一个 FlyBot 窗口正在使用这个团队，请在那里更换服务器。",
@@ -498,7 +505,8 @@ var ZH = {
   "Back to group chats": "返回群聊列表",
   "FlyBot settings": "FlyBot 设置",
   "Settings pages": "设置页面",
-  "Models, providers, and the rest of DeepSeek Harness": "模型、服务商和 DeepSeek Harness 的其他设置",
+  "Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window": "在单独的窗口中打开 DeepSeek Harness 自己的设置（模型、服务商、权限）",
+  "Harness settings, opens DeepSeek Harness's own settings window": "Harness 设置，打开 DeepSeek Harness 自己的设置窗口",
   "Harness settings": "Harness 设置",
   "Back to Bots": "返回 Bot 列表",
   "Close settings": "关闭设置",
@@ -3370,6 +3378,7 @@ body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
 .bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
 .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
 .bt-settings-shell{margin-top:auto}
+.bt-settings-out{margin-left:auto;opacity:.6;font-size:12px}
 /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
    its layout, and not rendered. */
 .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
@@ -6160,13 +6169,24 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     className: "bt-row-settings",
     "aria-label": settingsLabel,
     title: settingsLabel,
+    onFocus: (event) => keepSidebarStill(event.currentTarget),
     onClick: (event) => {
       event.stopPropagation();
+      keepSidebarStill(event.currentTarget);
       actions.openSettings("bots", id);
     }
   }, (0, import_react9.createElement)(GearIcon)) : null;
   if (settings) return (0, import_react9.createElement)("div", { className: "bt-row-wrap", "data-bot-id": id }, row, settings);
   return row;
+}
+function keepSidebarStill(node) {
+  const reset = () => {
+    for (let at = node?.parentElement; at; at = at.parentElement) if (at.scrollLeft > 0) at.scrollLeft = 0;
+    const page = typeof document === "undefined" ? null : document.scrollingElement;
+    if (page && page.scrollLeft > 0) page.scrollLeft = 0;
+  };
+  reset();
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(reset));
 }
 function RemoteMark({ remote }) {
   return (0, import_react9.createElement)(
@@ -12754,15 +12774,18 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           "aria-current": shown === key ? "page" : void 0,
           onClick: () => actions.openSettings(key)
         }, (0, import_react30.createElement)(extra.find((item) => item.key === key)?.entry.icon ?? PAGE_ICONS[key] ?? ConnectorIcon), t(text))),
+        // DeepSeek Harness's own settings are a separate window with its own title and look; FlyBot
+        // does not embed or retitle it (never patch DSH), so the entry says it leaves (#421).
         (0, import_react30.createElement)("button", {
           type: "button",
           className: "bt-settings-item bt-settings-shell",
-          title: t("Models, providers, and the rest of DeepSeek Harness"),
+          title: t("Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window"),
+          "aria-label": t("Harness settings, opens DeepSeek Harness's own settings window"),
           onClick: () => {
             close();
             openHarnessSettings();
           }
-        }, (0, import_react30.createElement)(SlidersIcon), t("Harness settings"))
+        }, (0, import_react30.createElement)(SlidersIcon), t("Harness settings"), (0, import_react30.createElement)("span", { className: "bt-settings-out", "aria-hidden": true }, "↗"))
       ),
       (0, import_react30.createElement)(
         "div",

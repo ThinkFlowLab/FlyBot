@@ -55,6 +55,9 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
   assert.match(text('remote-bot-settings.js'), /focus\?\.\(\{ preventScroll: true \}\)/)
   assert.match(text('sidebar.js'), /\.bt-tree-item>\.bt-row-wrap\{flex:1 1 auto;width:auto;min-width:0\}/)
   assert.match(text('sidebar.js'), /bt-row-settings/)
+  // #421: an own Bot row's gear never leaves the sidebar or the page scrolled sideways.
+  assert.match(text('sidebar.js'), /onFocus: event => keepSidebarStill\(event\.currentTarget\)/)
+  assert.match(text('sidebar.js'), /keepSidebarStill\(event\.currentTarget\); actions\.openSettings\('bots', id\)/)
   // #276: gear is on every wide Bot row (own and friends'), not only remotes.
   assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
   assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)

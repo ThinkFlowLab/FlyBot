@@ -1206,7 +1206,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { showsDshRow } from './dsh-offer.js'
  
  // -------------------------------------------------------------------------
-@@ -37,56 +37,101 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,56 +37,115 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -1284,10 +1284,24 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  const settingsLabel = bot.remote ? t('Bot settings') : t('Edit Bot')
 +  const settings = wide ? h('button', {
 +    type: 'button', className: 'bt-row-settings', 'aria-label': settingsLabel, title: settingsLabel,
-+    onClick: (event) => { event.stopPropagation(); actions.openSettings('bots', id) },
++    onFocus: event => keepSidebarStill(event.currentTarget),
++    onClick: (event) => { event.stopPropagation(); keepSidebarStill(event.currentTarget); actions.openSettings('bots', id) },
 +  }, h(GearIcon)) : null
 +  if (settings) return h('div', { className: 'bt-row-wrap', 'data-bot-id': id }, row, settings)
 +  return row
++}
++
++// Focusing the row gear (a click focuses it) must never scroll the sidebar or the page sideways
++// (#274, #421): no ancestor of a sidebar row scrolls horizontally on purpose, so any sideways
++// offset a focus left behind is put back, now and once more after the settings dialog opened.
++export function keepSidebarStill(node) {
++  const reset = () => {
++    for (let at = node?.parentElement; at; at = at.parentElement) if (at.scrollLeft > 0) at.scrollLeft = 0
++    const page = typeof document === 'undefined' ? null : document.scrollingElement
++    if (page && page.scrollLeft > 0) page.scrollLeft = 0
++  }
++  reset()
++  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(reset))
 +}
 +
 +// A friend's Bot: a globe after its owner's name, its handle on hover.
@@ -1726,6 +1740,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
+@@ -437,6 +437,7 @@ body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
+ .bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
+ .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
+ .bt-settings-shell{margin-top:auto}
++.bt-settings-out{margin-left:auto;opacity:.6;font-size:12px}
+ /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
+    its layout, and not rendered. */
+ .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
 @@ -490,7 +490,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
@@ -1956,7 +1978,7 @@ diff --git a/test/looks.test.js b/test/looks.test.js
  import { indexRoster } from '../src/client/sources.js'
  
  const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
-@@ -29,19 +29,95 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
+@@ -29,19 +29,98 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
    assert.equal(photo.shape, defaultShape('chief'))
  })
  
@@ -1990,6 +2012,9 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 +  assert.match(text('remote-bot-settings.js'), /focus\?\.\(\{ preventScroll: true \}\)/)
 +  assert.match(text('sidebar.js'), /\.bt-tree-item>\.bt-row-wrap\{flex:1 1 auto;width:auto;min-width:0\}/)
 +  assert.match(text('sidebar.js'), /bt-row-settings/)
++  // #421: an own Bot row's gear never leaves the sidebar or the page scrolled sideways.
++  assert.match(text('sidebar.js'), /onFocus: event => keepSidebarStill\(event\.currentTarget\)/)
++  assert.match(text('sidebar.js'), /keepSidebarStill\(event\.currentTarget\); actions\.openSettings\('bots', id\)/)
 +  // #276: gear is on every wide Bot row (own and friends'), not only remotes.
 +  assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
 +  assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)

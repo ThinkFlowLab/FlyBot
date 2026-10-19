@@ -106,7 +106,7 @@ diff --git a/client.js b/client.js
    Connectors: "连接器",
    "Search connectors": "搜索连接器",
    "No connectors": "暂无连接器",
-@@ -129,6 +129,42 @@ var ZH = {
+@@ -129,6 +129,49 @@ var ZH = {
    "Connecting…": "正在连接…",
    "Could not connect: {error}": "连接失败：{error}",
    "Connected as {account}": "已连接：{account}",
@@ -129,6 +129,13 @@ diff --git a/client.js b/client.js
 +  "Change server": "更换服务器",
 +  "Features": "功能",
 +  "No optional features listed.": "服务器没有列出可选功能。",
++  "Supports: {list}": "支持：{list}",
++  "typing as you": "以你的身份输入",
++  "@mentions": "@提及",
++  "online status": "在线状态",
++  "(+{count} more)": "（另有 {count} 项）",
++  "Supports 1 optional feature": "支持 1 项可选功能",
++  "Supports {count} optional features": "支持 {count} 项可选功能",
 +  "Reachability": "连通性",
 +  "Read-only": "只读",
 +  "Another FlyBot window holds this team. Change the server there.": "另一个 FlyBot 窗口正在使用这个团队，请在那里更换服务器。",
@@ -227,15 +234,19 @@ diff --git a/client.js b/client.js
    // Shapes
    Whale: "鲸鱼",
    Star: "星星",
-@@ -374,7 +374,7 @@ var ZH = {
+@@ -374,9 +374,10 @@ var ZH = {
    "No group chats yet.": "还没有群聊。",
    "A group chat lets several Bots work on one thing with you.": "在群聊里，几个 Bot 和你一起做一件事。",
    "Back to group chats": "返回群聊列表",
 -  "DS Bot settings": "DS Bot 设置",
 +  "FlyBot settings": "FlyBot 设置",
    "Settings pages": "设置页面",
-   "Models, providers, and the rest of DeepSeek Harness": "模型、服务商和 DeepSeek Harness 的其他设置",
+-  "Models, providers, and the rest of DeepSeek Harness": "模型、服务商和 DeepSeek Harness 的其他设置",
++  "Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window": "在单独的窗口中打开 DeepSeek Harness 自己的设置（模型、服务商、权限）",
++  "Harness settings, opens DeepSeek Harness's own settings window": "Harness 设置，打开 DeepSeek Harness 自己的设置窗口",
    "Harness settings": "Harness 设置",
+   "Back to Bots": "返回 Bot 列表",
+   "Close settings": "关闭设置",
 @@ -385,7 +385,6 @@ var ZH = {
    Pin: "置顶",
    Pinned: "已置顶",
@@ -885,13 +896,11 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1238,9 +1238,494 @@ function maskOf(shape) {
-     mask = svgUrl(`<mask id="e" ${maskBox(def.size)}>${holes(def, def.eyes.map(eyeMarkup).join("").replaceAll('class="bt-eye"', 'fill="#000"'))}</mask>${def.wrap ? `<g transform="${def.wrap}">${body}</g>` : body}`, def.size);
-     maskCache.set(shape, mask);
+@@ -1240,7 +1240,492 @@ function maskOf(shape) {
    }
--  return mask;
-+  return mask;
-+}
+   return mask;
+ }
+-var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 +var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 +
 +// src/client/mark.js
@@ -1352,8 +1361,7 @@ diff --git a/client.js b/client.js
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
 +    ) : null
 +  );
- }
--var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
++}
 +var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 +var FLYBOT_CSS = `
 +.bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
@@ -1738,6 +1746,14 @@ diff --git a/client.js b/client.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
+@@ -2255,6 +2255,7 @@ body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
+ .bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
+ .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
+ .bt-settings-shell{margin-top:auto}
++.bt-settings-out{margin-left:auto;opacity:.6;font-size:12px}
+ /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
+    its layout, and not rendered. */
+ .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
 @@ -2308,7 +2308,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
@@ -2009,7 +2025,19 @@ diff --git a/client.js b/client.js
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
-+}
+ }
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2027,19 +2055,7 @@ diff --git a/client.js b/client.js
 +    offSessions?.();
 +    offRoster?.();
 +  };
- }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
++}
 +function installBrandChrome() {
 +  if (typeof document === "undefined") return () => {
 +  };
@@ -3615,8 +3631,7 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react7.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react7.createElement)(RemoteMessage, {
@@ -3629,7 +3644,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react7.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
      }),
      pending.map((id) => {
@@ -3993,7 +4009,7 @@ diff --git a/client.js b/client.js
      "button",
      {
        type: "button",
-@@ -4798,25 +4798,77 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4798,25 +4798,88 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
        "aria-label": label,
        "aria-current": active ? "page" : void 0,
        "data-bot-id": id,
@@ -4031,13 +4047,24 @@ diff --git a/client.js b/client.js
 +    className: "bt-row-settings",
 +    "aria-label": settingsLabel,
 +    title: settingsLabel,
++    onFocus: (event) => keepSidebarStill(event.currentTarget),
 +    onClick: (event) => {
 +      event.stopPropagation();
++      keepSidebarStill(event.currentTarget);
 +      actions.openSettings("bots", id);
 +    }
 +  }, (0, import_react9.createElement)(GearIcon)) : null;
 +  if (settings) return (0, import_react9.createElement)("div", { className: "bt-row-wrap", "data-bot-id": id }, row, settings);
 +  return row;
++}
++function keepSidebarStill(node) {
++  const reset = () => {
++    for (let at = node?.parentElement; at; at = at.parentElement) if (at.scrollLeft > 0) at.scrollLeft = 0;
++    const page = typeof document === "undefined" ? null : document.scrollingElement;
++    if (page && page.scrollLeft > 0) page.scrollLeft = 0;
++  };
++  reset();
++  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(reset));
 +}
 +function RemoteMark({ remote }) {
 +  return (0, import_react9.createElement)(
@@ -9827,7 +9854,7 @@ diff --git a/client.js b/client.js
    useEscape(close);
    const run = (promise) => Promise.resolve(promise).then(() => {
      setError("");
-@@ -10779,39 +10779,42 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false
+@@ -10779,104 +10779,112 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false
    });
    const bot = page === "bots" && id ? roster.byId[id] : void 0;
    const room2 = page === "groups" && id ? roster.roomsById[id] : void 0;
@@ -9880,16 +9907,20 @@ diff --git a/client.js b/client.js
 -        }, (0, import_react28.createElement)(PAGE_ICONS[key]), t(text))),
 -        (0, import_react28.createElement)("button", {
 +        }, (0, import_react30.createElement)(extra.find((item) => item.key === key)?.entry.icon ?? PAGE_ICONS[key] ?? ConnectorIcon), t(text))),
++        // DeepSeek Harness's own settings are a separate window with its own title and look; FlyBot
++        // does not embed or retitle it (never patch DSH), so the entry says it leaves (#421).
 +        (0, import_react30.createElement)("button", {
            type: "button",
            className: "bt-settings-item bt-settings-shell",
-           title: t("Models, providers, and the rest of DeepSeek Harness"),
-@@ -10819,64 +10819,66 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false
+-          title: t("Models, providers, and the rest of DeepSeek Harness"),
++          title: t("Opens DeepSeek Harness's own settings (models, providers, permissions) in a separate window"),
++          "aria-label": t("Harness settings, opens DeepSeek Harness's own settings window"),
+           onClick: () => {
              close();
              openHarnessSettings();
            }
 -        }, (0, import_react28.createElement)(SlidersIcon), t("Harness settings"))
-+        }, (0, import_react30.createElement)(SlidersIcon), t("Harness settings"))
++        }, (0, import_react30.createElement)(SlidersIcon), t("Harness settings"), (0, import_react30.createElement)("span", { className: "bt-settings-out", "aria-hidden": true }, "↗"))
        ),
 -      (0, import_react28.createElement)(
 +      (0, import_react30.createElement)(
