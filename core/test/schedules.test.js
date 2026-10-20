@@ -290,3 +290,106 @@ test('a recurring task missed while the app was closed runs once, for its latest
   assert.ok(Date.parse(hourly.nextScheduledAt) > created + 50 * 3600_000 + 60_000)
   assert.ok(Date.parse(hourly.occurrenceAt) > created + 49 * 3600_000, 'fifty missed hours give one run')
 })
+
+// Last run and Retry (#473): FlyBot records how each run's turn went; DSH only says it delivered.
+function withAgents(ctx) {
+  const sent = []
+  Object.assign(ctx, {
+    sessionController: { resolveAgent: async sessionId => ({ agent: { id: sessionId, session: { id: sessionId }, followup: message => sent.push([sessionId, message]), steer() {}, inbox: { nextStep: [], nextTurn: [], remove() {} } } }) },
+    sessions: { flush: async () => true },
+  })
+  return sent
+}
+const reminder = (id, prompt) => ['[SCHEDULE REMINDER]', 'This is a scheduled message from the user', `schedule_id_json: ${JSON.stringify(id)}`, 'occurrence_at: 2030-01-01T09:00:00.000Z', `reminder_prompt_json: ${JSON.stringify(prompt)}`].join('\n')
+function runTurn(ctx, sessionId, turn, message, reason) {
+  let seq = 0
+  const emit = (type, data) => ctx.emitArgs('session/event', { id: sessionId }, { type, seq: ++seq, data })
+  emit('turn/start', { turn })
+  emit('user/message', message)
+  emit('turn/end', { turn, reason })
+}
+const lastRuns = async call => (await call('schedules', {})).value.tasks.map(task => task.lastRun && [task.lastRun.result, task.lastRun.reason])
+
+test('a run fails only when its turn errors; a turn without an answer has run, a stopped one says so', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  const [id] = schedule.tasks.keys()
+  assert.deepEqual(await lastRuns(call), [undefined], 'no run yet')
+
+  const message = { id: 'msg-1', content: [{ type: 'text', text: reminder(id, 'Sum up') }], source: { kind: 'schedule' } }
+  runTurn(ctx, 'm1', 1, message, { kind: 'error', error: { code: 'SERVER', status: 503, message: 'upstream busy' } })
+  assert.deepEqual(await lastRuns(call), [['failed', 'SERVER 503: upstream busy']])
+  runTurn(ctx, 'm1', 2, { ...message, id: 'msg-2' }, { kind: 'completed' })
+  assert.deepEqual(await lastRuns(call), [['ran', undefined]], 'a finished turn is a run, answer or not')
+  runTurn(ctx, 'm1', 3, { ...message, id: 'msg-3' }, { kind: 'aborted', reason: { kind: 'user' } })
+  assert.deepEqual(await lastRuns(call), [['stopped', undefined]])
+  // A turn that took in no reminder leaves the record alone.
+  runTurn(ctx, 'm1', 4, { id: 'msg-4', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }, { kind: 'error', error: { code: 'SERVER' } })
+  assert.deepEqual(await lastRuns(call), [['stopped', undefined]])
+  // DSH delivered a newer reminder the Bot has not taken up yet.
+  const [task] = schedule.tasks.values()
+  task.record = { ...task.record, lastDelivery: { scheduledAt: '2030-01-01T09:00:00.000Z', deliveredAt: new Date(Date.now() + 5000).toISOString(), messageId: 'msg-5' } }
+  assert.deepEqual(await lastRuns(call), [['delivered', undefined]])
+  // The record is saved with the team, so it survives a restart.
+  const saved = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).scheduleRuns?.[id]?.result
+  for (let tries = 0; tries < 50 && saved() !== 'stopped'; tries++) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(saved(), 'stopped')
+})
+
+test('Retry runs the same prompt once now in the Bot’s current part, and its turn is the task’s run', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  const sent = withAgents(ctx)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up the day', when: DAILY })
+  const [id] = schedule.tasks.keys()
+  const retried = await call('schedule-retry', { sessionId: 'w2', id })
+  assert.equal(retried.ok, true, JSON.stringify(retried))
+  assert.deepEqual(retried.value.tasks.map(task => task.lastRun.result), ['running'])
+  const [[sessionId, message]] = sent
+  assert.equal(sessionId, 'w2')
+  assert.equal(message.source.kind, 'schedule', 'it reads like the task’s own run')
+  const text = message.content[0].text
+  assert.equal(reminderText(text), '[Scheduled task] Sum up the day')
+  assert.equal([...schedule.tasks.values()][0].record.scheduledAt, '2030-01-01T01:00:00.000Z', 'DSH’s next time is untouched')
+  runTurn(ctx, 'w2', 1, message, { kind: 'completed' })
+  assert.deepEqual(await lastRuns(call), [['ran', undefined]])
+
+  // A group task is retried in the group's Session.
+  await call('schedule-create', { target: 'g1', title: 'Standup', prompt: 'Where are we?', when: DAILY })
+  const groupId = [...schedule.tasks.keys()].at(-1)
+  assert.equal((await call('schedule-retry', { sessionId: 'g1', id: groupId })).ok, true)
+  assert.equal(sent.at(-1)[0], 'g1')
+  // Unknown, foreign and paused tasks are refused.
+  assert.match((await call('schedule-retry', { sessionId: 'w2', id: 'nope' })).error.message, /No such task/)
+  assert.match((await call('schedule-retry', { sessionId: 'outside', id })).error.message, /No such task/)
+  await call('schedule-pause', { sessionId: 'w2', id })
+  assert.match((await call('schedule-retry', { sessionId: 'w2', id })).error.message, /Resume the task first/)
+  assert.equal(sent.length, 2)
+})
+
+test('a due task DSH does not deliver while the app runs is a failed run, told once like a failed turn', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { t.mock.restoreAll(); await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  const [task] = schedule.tasks.values()
+  const due = Date.now() - 60_000
+  task.record = { ...task.record, scheduledAt: new Date(due).toISOString() }
+  // First seen due: DSH may be delivering it right now (a time missed while the app was closed).
+  assert.deepEqual(await lastRuns(call), [undefined])
+  const start = Date.now()
+  t.mock.method(Date, 'now', () => start + 150_000)
+  assert.deepEqual(await lastRuns(call), [['failed', 'DSH could not deliver it']])
+  assert.equal((await call('schedules', {})).value.tasks[0].lastRun.at, due)
+  const ended = (await call('state', {})).value.work.ended
+  assert.deepEqual(ended.map(entry => [entry.botId, entry.sessionId, entry.failed]), [['m1', 'm1', 'Scheduled task "Briefing" was not delivered']])
+  await call('schedules', {})
+  const again = (await call('state', {})).value.work.ended
+  assert.equal(again.length, 1, 'told once per missed time')
+  // Delivered after all: the next time is in the future again and the failure stays the last run.
+  task.record = { ...task.record, scheduledAt: '2030-01-02T01:00:00.000Z' }
+  assert.deepEqual(await lastRuns(call), [['failed', 'DSH could not deliver it']])
+})

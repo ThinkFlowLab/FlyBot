@@ -135,3 +135,22 @@ test('the form starts from the edited task: repeat interval, one time, cron kept
   assert.equal(formStart({ kind: 'cron', expression: '0 9 * * 1', timeZone: 'UTC' }).kind, 'cron')
   assert.deepEqual([formStart(undefined).kind, formStart(undefined).title, formStart(undefined).time], ['daily', '', '09:00'])
 })
+
+test('a row says how its last run went; only a failed run offers Retry, which runs the task now (#473)', async () => {
+  const calls = []
+  const actions = { ...spy(), scheduleRetry: async (...args) => { calls.push(['retry', ...args]); return OFF } }
+  const at = new Date(2030, 0, 2, 9, 0).getTime()
+  const failed = { ...ACTIVE, lastRun: { at, result: 'failed', reason: 'SERVER 503: upstream busy' } }
+  const ran = { ...ACTIVE, id: 's3', lastRun: { at, result: 'ran' } }
+  const missed = { ...PAUSED, lastRun: { at, result: 'failed', reason: 'DSH could not deliver it' } }
+  seeded.push({ available: true, tasks: [failed, ran, missed] }, null)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  const lines = text(card)
+  assert.ok(lines.some(line => /^Last run .+ · Failed: SERVER 503: upstream busy$/.test(line)), lines.join('|'))
+  assert.ok(lines.some(line => /^Last run [^·]+$/.test(line)))
+  const retries = buttonsOf(card).filter(button => text(button).includes('Retry'))
+  assert.equal(retries.length, 1, 'a ran task and a paused one have no Retry')
+  retries[0].props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['retry', 'chat-b1', 's1']])
+})

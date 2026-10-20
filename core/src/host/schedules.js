@@ -14,8 +14,23 @@
 // creates it again on the Bot's current part. A missed run is DSH's: after the app was
 // closed a recurring task runs once, for its latest missed time, never once per missed
 // time (docs/subsystems/core-host.md).
+//
+// Last run and Retry (#473). DSH's `lastDelivery` says a reminder reached the Session's
+// inbox, not how the Bot's turn went, so FlyBot keeps each task's last run in
+// `state.scheduleRuns[<id>]`: running, ran, stopped, or failed with a reason. A run fails
+// only when DSH could not deliver it (the task stays due past MISSED_MS while the app runs)
+// or the Bot's turn errored; a turn that ends without an answer has run. Retry sends the
+// task's prompt once now, framed as DSH frames a reminder; it never backfills missed times.
+// A failure also joins the ended turns the notifications and the Agent inbox read (#353).
+
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { textOf } from './text.js'
 
 const MAX_TITLE = 120
+// How long a due task may stay undelivered while the app runs before it counts as failed.
+const MISSED_MS = 120_000
+const CHECK_MS = 60_000
+const RUNS_KEPT = 200
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
@@ -36,6 +51,28 @@ export function reminderText(text) {
   const lines = prompts.filter(prompt => typeof prompt === 'string' && prompt.trim() !== '')
   return lines.length === 0 ? text : lines.map(prompt => `[Scheduled task] ${prompt}`).join('\n')
 }
+
+// The task ids a reminder's framing names (one, or each of a batch).
+export function reminderIds(text) {
+  const one = /^schedule_id_json: (.*)$/m.exec(text)
+  const batch = /^reminders_json: (.*)$/m.exec(text)
+  try {
+    const ids = one ? [JSON.parse(one[1])] : batch ? JSON.parse(batch[1]).map(entry => entry?.schedule_id) : []
+    return ids.filter(id => typeof id === 'string' && id !== '')
+  } catch {
+    return []
+  }
+}
+
+// A run again of one task, in DSH's reminder framing, so the turn reads it like the task's
+// own run and a group gets its prompt (reminderText).
+export const retryText = (record, at) => [
+  '[SCHEDULE REMINDER]',
+  'This is a scheduled message from the user',
+  `schedule_id_json: ${JSON.stringify(record.id)}`,
+  `occurrence_at: ${new Date(at).toISOString()}`,
+  `reminder_prompt_json: ${JSON.stringify(record.prompt)}`,
+].join('\n')
 
 // The create request that gives a stored record its timing again, for a move.
 function requestOf(record) {
@@ -134,6 +171,98 @@ export function install(rt) {
   const sessionFor = owner => (owner.botId !== undefined ? rt.chatOf(owner.botId) : owner.roomId)
   const ensureService = () => { if (service === null) throw invalid('Automation tasks are off in DSH') }
 
+  // Each task's last run, by its DSH id: { at, result, reason?, messageId?, missed? }.
+  const runs = () => {
+    if (state.scheduleRuns === null || typeof state.scheduleRuns !== 'object' || Array.isArray(state.scheduleRuns)) state.scheduleRuns = {}
+    return state.scheduleRuns
+  }
+  const noteRun = (id, run) => {
+    const all = runs()
+    delete all[id]
+    all[id] = run
+    const ids = Object.keys(all)
+    if (ids.length > RUNS_KEPT) for (const old of ids.slice(0, ids.length - RUNS_KEPT)) delete all[old]
+    void rt.save().catch(() => {})
+  }
+  // What a row shows: FlyBot's record, or DSH's newer delivery the Bot has not taken up yet.
+  // A run still marked running from before this start has no known end: it shows as a run.
+  const startedAt = Date.now()
+  const lastRunOf = (entry) => {
+    const run = Object.hasOwn(runs(), entry.id) ? runs()[entry.id] : undefined
+    const delivered = entry.lastDelivery
+    if (delivered !== undefined && run?.messageId !== delivered.messageId && Date.parse(delivered.deliveredAt) > (run?.at ?? 0)) {
+      return { at: Date.parse(delivered.deliveredAt), result: 'delivered' }
+    }
+    if (run === undefined) return undefined
+    const result = run.result === 'running' && run.at < startedAt ? 'delivered' : run.result
+    return { at: run.at, result, ...(run.reason ? { reason: run.reason } : {}) }
+  }
+
+  // The turns that run a task, by Session: the task ids and a group round's failure.
+  /** @type {Map<string, {ids:string[], failed?:string}>} */
+  const runningRuns = new Map()
+  const runStarted = (sessionId, message) => {
+    const ids = reminderIds(textOf(message?.content))
+    if (ids.length === 0) return
+    const at = Date.now()
+    const current = runningRuns.get(sessionId)
+    runningRuns.set(sessionId, { ...current, ids: [...new Set([...(current?.ids ?? []), ...ids])] })
+    for (const id of ids) noteRun(id, { at, result: 'running', ...(typeof message?.id === 'string' ? { messageId: message.id } : {}) })
+  }
+  // `failed`: the turn's error line (turns.js failureLine); `aborted`: the user stopped it.
+  const runEnded = (sessionId, { failed, aborted = false } = {}) => {
+    const entry = runningRuns.get(sessionId)
+    if (entry === undefined) return
+    runningRuns.delete(sessionId)
+    const reason = failed ?? entry.failed
+    for (const id of entry.ids) {
+      const run = runs()[id]
+      if (run === undefined) continue
+      noteRun(id, { ...run, result: reason !== undefined ? 'failed' : aborted ? 'stopped' : 'ran', ...(reason !== undefined ? { reason: reason.slice(0, 200) } : {}) })
+    }
+  }
+  // A group round whose members' turns failed: the task's run in that group failed.
+  const roundFailed = (sessionId, names) => {
+    const entry = runningRuns.get(sessionId)
+    if (entry !== undefined && names.length > 0) entry.failed = `${names.join(', ')} could not answer: the model call failed`
+  }
+
+  // A due task DSH has not delivered: seen due at one check and still due MISSED_MS later
+  // (DSH delivers a time missed while the app was closed as soon as it starts).
+  /** @type {Map<string, {scheduledAt:string, since:number}>} */
+  const due = new Map()
+  async function checkMissed(now = Date.now()) {
+    if (service === null) return
+    const seen = new Set()
+    for (const entry of await service.catalog()) {
+      if (entry.status !== 'active' || !(Date.parse(entry.scheduledAt) <= now) || entry.lastDelivery?.scheduledAt === entry.scheduledAt) continue
+      const owner = ownerOf(entry.sessionId)
+      if (!known(owner)) continue
+      seen.add(entry.id)
+      const first = due.get(entry.id)
+      if (first?.scheduledAt !== entry.scheduledAt) { due.set(entry.id, { scheduledAt: entry.scheduledAt, since: now }); continue }
+      if (now - first.since < MISSED_MS || runs()[entry.id]?.missed === entry.scheduledAt) continue
+      noteRun(entry.id, { at: Date.parse(entry.scheduledAt), result: 'failed', reason: 'DSH could not deliver it', missed: entry.scheduledAt })
+      // The same event the finished and failed turns use (#353), for my own Bots only.
+      const room = owner.roomId === undefined ? undefined : state.rooms[owner.roomId]
+      const bot = state.bots[owner.botId ?? room?.admin ?? room?.members?.[0]]
+      if (bot === undefined || bot.remote !== undefined || room?.origin !== undefined) continue
+      rt.noteRunFailure?.({
+        id: `schedule:${entry.id}:${entry.scheduledAt}`,
+        botId: bot.id,
+        ...(room ? { roomId: room.id } : { sessionId: entry.sessionId }),
+        at: now,
+        failed: `Scheduled task "${entry.title}" was not delivered`.slice(0, 160),
+      })
+    }
+    for (const id of due.keys()) if (!seen.has(id)) due.delete(id)
+  }
+  ctx.effect(() => {
+    const timer = setInterval(() => { void checkMissed().catch(error => rt.warn('ds-bot: checking scheduled tasks failed: %s', error?.message ?? error)) }, CHECK_MS)
+    timer.unref?.()
+    return () => clearInterval(timer)
+  }, 'ds-bot: missed scheduled runs')
+
   // The form's name, instruction and target, checked as creation checks them.
   function contentOf(body) {
     const bot = state.bots[body.target]
@@ -152,16 +281,20 @@ export function install(rt) {
 
   async function schedulesView() {
     if (service === null) return { available: false, tasks: [] }
+    // The page asks every 30 seconds, so a missed run shows without waiting for the timer.
+    await checkMissed().catch(error => rt.warn('ds-bot: checking scheduled tasks failed: %s', error?.message ?? error))
     const tasks = []
     for (const entry of await service.catalog()) {
       const owner = ownerOf(entry.sessionId)
       if (!known(owner)) continue
-      tasks.push({ ...entry, ...owner })
+      const lastRun = lastRunOf(entry)
+      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
     for (const entry of Object.values(paused())) {
       const owner = ownerOf(entry.sessionId)
       if (!known(owner)) continue
-      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner })
+      const lastRun = lastRunOf({ id: entry.id })
+      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
     return { available: true, tasks }
   }
@@ -245,6 +378,37 @@ export function install(rt) {
     return schedulesView()
   }
 
+  // Retry: the task's prompt once now, to the Bot's current part or the group, as a run of
+  // that task. DSH's own times are untouched: no missed time is delivered again.
+  async function retrySchedule(body) {
+    ensureService()
+    const sessionId = String(body.sessionId ?? '')
+    const owner = ownerOf(sessionId)
+    if (!known(owner)) throw invalid('No such task')
+    if (pausedEntry(sessionId, String(body.id ?? '')) !== undefined) throw invalid('Resume the task first')
+    const record = await findRecord(sessionId, String(body.id ?? ''))
+    if (record === undefined) throw invalid('No such task')
+    const target = sessionFor(owner)
+    const at = Date.now()
+    await rt.ensureCapabilities?.(target)
+    const agent = await rt.resolveAgent(target)
+    // Noted first: the turn that takes the message up may start (and end) before the flush.
+    const before = Object.hasOwn(runs(), record.id) ? runs()[record.id] : undefined
+    noteRun(record.id, { at, result: 'running' })
+    try {
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: retryText(record, at) }], source: { kind: 'schedule' } }))
+      await ctx.sessions.flush(agent.session)
+    } catch (error) {
+      if (before !== undefined) noteRun(record.id, before)
+      else {
+        delete runs()[record.id]
+        void rt.save().catch(() => {})
+      }
+      throw error
+    }
+    return schedulesView()
+  }
+
   const endpoints = {
     schedules: () => schedulesView(),
     async 'schedule-create'(body) {
@@ -256,6 +420,7 @@ export function install(rt) {
     'schedule-update': body => updateSchedule(body),
     'schedule-pause': body => pauseSchedule(body),
     'schedule-resume': body => resumeSchedule(body),
+    'schedule-retry': body => retrySchedule(body),
     async 'schedule-delete'(body) {
       ensureService()
       if (ownerOf(body.sessionId) === undefined) throw invalid('No such task')
@@ -292,5 +457,12 @@ export function install(rt) {
     }
   }
 
-  Object.assign(rt, { scheduleEndpoint: (endpoint, body) => endpoints[endpoint](body ?? {}), moveSchedules })
+  Object.assign(rt, {
+    scheduleEndpoint: (endpoint, body) => endpoints[endpoint](body ?? {}),
+    moveSchedules,
+    scheduleRunStarted: runStarted,
+    scheduleRunEnded: runEnded,
+    scheduleRoundFailed: roundFailed,
+    checkMissedSchedules: checkMissed,
+  })
 }

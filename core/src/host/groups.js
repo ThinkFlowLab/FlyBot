@@ -614,6 +614,8 @@ export function install(rt) {
       rt.roomProgress.set(exec.callId, round)
       try {
         await runRound(room, round, exec.signal, exec.agent)
+        // A scheduled task's run in this group fails with its members' failed turns (#473).
+        if (round.failed.length > 0) rt.scheduleRoundFailed?.(room.id, round.failed)
       } catch (error) {
         rt.warn('ds-bot: group round in %s stopped: %s', room.name, error)
       } finally {
