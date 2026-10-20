@@ -666,6 +666,10 @@ var ZH = {
   "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
   "A Bot": "一个 Bot",
   "{name} is waiting for your approval": "{name} 等你批准",
+  "{name} finished": "{name} 已完成",
+  "{name} failed: {reason}": "{name} 失败：{reason}",
+  Notifications: "通知",
+  "When your Bots finish, fail, or wait for your approval while you are in another chat or app.": "你的 Bot 完成、失败或等你批准时提醒你（你在别的对话或应用里时）。",
   "{first} and {second} are waiting for your approval": "{first}、{second} 等你批准",
   "{first}, {second} and {count} more are waiting for your approval": "{first}、{second} 等 {total} 个等你批准",
   "Waiting for your approval": "等你批准",
@@ -13166,6 +13170,18 @@ function GeneralPage({ roster, actions, run }) {
           )
         )
       )
+    ),
+    // One switch for every system notification: approvals waiting, Bots finished or failed (#353).
+    (0, import_react32.createElement)(
+      SetSection,
+      { key: "notify", title: t("Notifications") },
+      (0, import_react32.createElement)(SwitchRow, {
+        label: t("Notifications"),
+        showLabel: false,
+        hint: t("When your Bots finish, fail, or wait for your approval while you are in another chat or app."),
+        on: prefs.notifications !== false,
+        onChange: (on) => run(actions.setPrefs({ notifications: on }))
+      })
     )
   ];
 }
@@ -16024,22 +16040,33 @@ var USER_MESSAGE_CSS = `
 function noticeApprovals({ work, roster, shownSession, openSession, since: since2 = Date.now() }) {
   const told = /* @__PURE__ */ new Set();
   const notify = () => {
-    const approvals = work.getSnapshot().approvals ?? [];
+    const { approvals = [], ended = [] } = work.getSnapshot();
+    const events = [
+      ...approvals.map((entry) => ({ entry, kind: "approval" })),
+      ...ended.map((entry) => ({ entry, kind: entry.failed === void 0 ? "finished" : "failed" }))
+    ];
+    const key = ({ entry, kind }) => `${kind === "approval" ? "approval" : "turn"}-${entry.id}`;
+    const current = new Set(events.map(key));
     for (const id of told) {
-      if (!approvals.some((entry) => entry.id === id)) told.delete(id);
+      if (!current.has(id)) told.delete(id);
     }
     if (typeof Notification !== "function" || Notification.permission !== "granted") return;
-    for (const entry of approvals) {
-      if (told.has(entry.id)) continue;
-      told.add(entry.id);
-      if ((entry.at ?? 0) < since2) continue;
+    const { byId, roomsById, prefs } = roster.getSnapshot();
+    const on = prefs?.notifications !== false;
+    for (const event of events) {
+      const id = key(event);
+      if (told.has(id)) continue;
+      told.add(id);
+      const { entry, kind } = event;
+      if (!on || (entry.at ?? 0) < since2) continue;
       const place = entry.roomId ?? entry.sessionId;
       if (document.visibilityState === "visible" && shownSession() === place) continue;
-      const { byId, roomsById } = roster.getSnapshot();
       const room2 = entry.roomId ? roomsById[entry.roomId] : void 0;
-      const note = new Notification(t("{name} is waiting for your approval", { name: byId[entry.botId]?.name ?? t("A Bot") }), {
-        body: [room2?.name, entry.tool].filter(Boolean).join(" · "),
-        tag: `ds-bot-approval-${entry.id}`
+      const name = byId[entry.botId]?.name ?? t("A Bot");
+      const title = kind === "approval" ? t("{name} is waiting for your approval", { name }) : kind === "finished" ? t("{name} finished", { name }) : t("{name} failed: {reason}", { name, reason: entry.failed });
+      const note = new Notification(title, {
+        body: [room2?.name, kind === "approval" ? entry.tool : void 0].filter(Boolean).join(" · "),
+        tag: `ds-bot-${id}`
       });
       note.onclick = () => {
         window.focus();

@@ -113,11 +113,11 @@ export function install(rt) {
   // What changes without a new revision, sent with every state answer. `memoryNews`:
   // per Bot, its latest memory change; `memoryReviews`: memory reviews waiting or
   // running; `work`: per Bot, the turn it runs and its tool; per group, the members whose
-  // turn there runs; and the approvals waiting.
+  // turn there runs; the approvals waiting; and the turns that just finished or failed.
   const live = actor => {
     const full = {
       activity: rt.activityView(),
-      work: { bots: rt.workView(), rooms: rt.roomWorkView(), approvals: rt.approvalsView() },
+      work: { bots: rt.workView(), rooms: rt.roomWorkView(), approvals: rt.approvalsView(), ended: rt.endedView?.() ?? [] },
       memoryNews: rt.memoryNews(),
       memoryReviews: rt.memoryReviews(),
       connectors: rt.connectorsView(),
@@ -163,6 +163,12 @@ export function install(rt) {
       if (body.motion === null || body.motion === 'normal') delete state.prefs.motion
       else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
       else throw invalid('Motion must be quiet, normal or lively')
+    }
+    // Notifications are on unless switched off (#353).
+    if (body.notifications !== undefined) {
+      if (body.notifications === null || body.notifications === true) delete state.prefs.notifications
+      else if (body.notifications === false) state.prefs.notifications = false
+      else throw invalid('Notifications must be on or off')
     }
     return rt.save()
   }

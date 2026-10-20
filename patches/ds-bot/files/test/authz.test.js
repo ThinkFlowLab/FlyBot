@@ -309,7 +309,7 @@ test('views keep the sole owner whole and narrow per owner with two members', as
   }
   const fullLive = {
     activity: { a1: 'busy', b1: 'idle' },
-    work: { bots: { a1: {}, b1: {} }, rooms: {}, approvals: [{ botId: 'a1' }, { botId: 'b1' }] },
+    work: { bots: { a1: {}, b1: {} }, rooms: {}, approvals: [{ botId: 'a1' }, { botId: 'b1' }], ended: [{ botId: 'a1' }, { botId: 'b1' }] },
     memoryNews: { a1: 1, b1: 2 },
     memoryReviews: 3,
     connectors: [{ id: 'c' }],
@@ -339,6 +339,7 @@ test('views keep the sole owner whole and narrow per owner with two members', as
   const live2 = rt.ownedLive(fullLive, solo)
   assert.deepEqual(Object.keys(live2.activity), ['a1'])
   assert.deepEqual(live2.work.approvals.map(entry => entry.botId), ['a1'])
+  assert.deepEqual(live2.work.ended.map(entry => entry.botId), ['a1'])
   assert.deepEqual(live2.connectors, [])
   assert.equal(live2.memoryReviews, 0)
 })

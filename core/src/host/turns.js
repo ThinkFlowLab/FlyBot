@@ -253,6 +253,31 @@ export function install(rt) {
     return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
   }
 
+  // The latest turns of the user's own Bots that finished or failed, for a system notification
+  // (#353). Process-local and bounded; a window skips the ones from before it opened. Left out:
+  // a friend's Bots, turns a friend started, turns another Bot asked for (hidden in the chat),
+  // rooms shared with other people, and turns the user stopped.
+  const ENDED_KEPT = 20
+  let ended = []
+  const noteEnded = (id, turn, info, reason, failure) => {
+    if (failure === undefined && reason?.kind !== 'completed') return
+    const owner = rt.groupOwners.get(id)
+    const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
+    if (bot === undefined || bot.remote !== undefined) return
+    if (info !== undefined && (fromRemote(info) || info.role === 'remote' || info.form === 'remote-chat')) return
+    if (owner === undefined && state.exchangeTurns?.[id]?.includes(turn)) return
+    if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
+    const at = Date.now()
+    ended = [...ended, {
+      id: `${id}:${turn}:${at}`,
+      botId: bot.id,
+      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
+      at,
+      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
+    }].slice(-ENDED_KEPT)
+  }
+  const endedView = () => ended
+
   // Where a Session speaks, for the diagnostics log.
   const placeOf = (id) => {
     const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
@@ -460,6 +485,7 @@ export function install(rt) {
         const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
         const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
         if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure)
         const replyText = () => {
           const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
           return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
@@ -566,5 +592,5 @@ export function install(rt) {
     return found
   }
 
-  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, callDetail, stopRoomTurn })
+  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, callDetail, stopRoomTurn })
 }

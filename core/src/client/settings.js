@@ -7,7 +7,7 @@ import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
 import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
 import { useEscape } from './overlay-hooks.js'
-import { BotSettingsForm } from './bot-settings.js'
+import { BotSettingsForm, SwitchRow } from './bot-settings.js'
 import { Segmented, useGlide } from './motion.js'
 import { GroupSettingsForm, NewGroupForm } from './group-settings.js'
 import { CreateBot } from './create-bot.js'
@@ -36,7 +36,7 @@ function SetRow({ label, hint, children }) {
     children ? h('div', { className: 'bt-set-control' }, children) : null)
 }
 
-// General is Appearance only; the switch to classic Agent mode is the account menu's (#393).
+// General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {}
   const themes = allThemes()
@@ -63,6 +63,13 @@ function GeneralPage({ roster, actions, run }) {
           })),
           h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
             h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
+    // One switch for every system notification: approvals waiting, Bots finished or failed (#353).
+    h(SetSection, { key: 'notify', title: t('Notifications') },
+      h(SwitchRow, {
+        label: t('Notifications'), showLabel: false,
+        hint: t('When your Bots finish, fail, or wait for your approval while you are in another chat or app.'),
+        on: prefs.notifications !== false, onChange: on => run(actions.setPrefs({ notifications: on })),
+      })),
   ]
 }
 

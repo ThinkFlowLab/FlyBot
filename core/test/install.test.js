@@ -144,6 +144,10 @@ test('the client channel answers from the saved state', async (t) => {
   assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
   assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
   assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })
+  // Notifications are on unless switched off; only off is kept (#353).
+  assert.equal((await call('set-prefs', { notifications: false })).value.notifications, false)
+  assert.equal('notifications' in (await call('set-prefs', { notifications: true })).value, false)
+  assert.deepEqual((await call('set-prefs', { notifications: 'loud' })).error, { code: 'bot/invalid', message: 'Notifications must be on or off', details: {} })
   // A refusal from the team code keeps its message for the user.
   assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
   // Off the Desktop profile there are no Bot browsers.

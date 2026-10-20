@@ -31,6 +31,68 @@ diff --git a/README.md b/README.md
  
  - Give every model a `contextWindow`. DS Bot takes its lines from it: the usable window is the window minus the reply reserve (`maxTokens`), the hard line is 95% of that, and the check line is `checkRatio` of it. A model without `contextWindow` gets the adapter's default (262,144 tokens for `llm-pi-ai`), which may be wrong for that model; a model that reports no window at all counts as 500,000.
  - To send images, the provider needs `defaultInput: [ text, image ]`.
+diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
+--- a/src/client/approval-notices.js
++++ b/src/client/approval-notices.js
+@@ -1,28 +1,44 @@
+ import { t } from './i18n.js'
+ 
+-// A system notification for each approval that starts waiting while this window is in
+-// the background or shows another conversation. Only where the platform already allows
+-// notifications: DS Bot never asks for the permission.
++// A system notification for each approval that starts waiting, and each turn of the user's
++// own Bots that finishes or fails (#353), while this window is in the background or shows
++// another conversation. Only where the platform already allows notifications: DS Bot never
++// asks for the permission. Settings → General → Notifications turns them all off. A
++// notification only opens its chat: it never approves, rejects or sends anything.
+ export function noticeApprovals({ work, roster, shownSession, openSession, since = Date.now() }) {
+   const told = new Set()
+   const notify = () => {
+-    const approvals = work.getSnapshot().approvals ?? []
++    const { approvals = [], ended = [] } = work.getSnapshot()
++    const events = [
++      ...approvals.map(entry => ({ entry, kind: 'approval' })),
++      ...ended.map(entry => ({ entry, kind: entry.failed === undefined ? 'finished' : 'failed' })),
++    ]
++    const key = ({ entry, kind }) => `${kind === 'approval' ? 'approval' : 'turn'}-${entry.id}`
++    const current = new Set(events.map(key))
+     for (const id of told) {
+-      if (!approvals.some(entry => entry.id === id)) told.delete(id)
++      if (!current.has(id)) told.delete(id)
+     }
+     if (typeof Notification !== 'function' || Notification.permission !== 'granted') return
+-    for (const entry of approvals) {
+-      if (told.has(entry.id)) continue
+-      told.add(entry.id)
+-      // Waiting before this window opened is no news: the sidebar shows it.
+-      if ((entry.at ?? 0) < since) continue
++    const { byId, roomsById, prefs } = roster.getSnapshot()
++    const on = prefs?.notifications !== false
++    for (const event of events) {
++      const id = key(event)
++      if (told.has(id)) continue
++      told.add(id)
++      const { entry, kind } = event
++      // Waiting or ending before this window opened is no news: the sidebar shows it.
++      // Switched off, it stays told, so switching back on brings no old ones.
++      if (!on || (entry.at ?? 0) < since) continue
+       const place = entry.roomId ?? entry.sessionId
+       if (document.visibilityState === 'visible' && shownSession() === place) continue
+-      const { byId, roomsById } = roster.getSnapshot()
+       const room = entry.roomId ? roomsById[entry.roomId] : undefined
+-      const note = new Notification(t('{name} is waiting for your approval', { name: byId[entry.botId]?.name ?? t('A Bot') }), {
+-        body: [room?.name, entry.tool].filter(Boolean).join(' · '),
+-        tag: `ds-bot-approval-${entry.id}`,
++      const name = byId[entry.botId]?.name ?? t('A Bot')
++      const title = kind === 'approval' ? t('{name} is waiting for your approval', { name })
++        : kind === 'finished' ? t('{name} finished', { name })
++          : t('{name} failed: {reason}', { name, reason: entry.failed })
++      const note = new Notification(title, {
++        body: [room?.name, kind === 'approval' ? entry.tool : undefined].filter(Boolean).join(' · '),
++        tag: `ds-bot-${id}`,
+       })
+       note.onclick = () => {
+         window.focus()
 diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 --- a/src/client/bot-browsers.js
 +++ b/src/client/bot-browsers.js
@@ -584,7 +646,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -453,6 +453,9 @@ const ZH = {
+@@ -450,9 +450,16 @@ const ZH = {
+   'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
+   'A Bot': '一个 Bot',
+   '{name} is waiting for your approval': '{name} 等你批准',
++  '{name} finished': '{name} 已完成',
++  '{name} failed: {reason}': '{name} 失败：{reason}',
++  Notifications: '通知',
++  'When your Bots finish, fail, or wait for your approval while you are in another chat or app.': '你的 Bot 完成、失败或等你批准时提醒你（你在别的对话或应用里时）。',
    '{first} and {second} are waiting for your approval': '{first}、{second} 等你批准',
    '{first}, {second} and {count} more are waiting for your approval': '{first}、{second} 等 {total} 个等你批准',
    'Waiting for your approval': '等你批准',
@@ -2187,6 +2256,38 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
+@@ -238,6 +238,31 @@ export function install(rt) {
+     return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
+   }
+ 
++  // The latest turns of the user's own Bots that finished or failed, for a system notification
++  // (#353). Process-local and bounded; a window skips the ones from before it opened. Left out:
++  // a friend's Bots, turns a friend started, turns another Bot asked for (hidden in the chat),
++  // rooms shared with other people, and turns the user stopped.
++  const ENDED_KEPT = 20
++  let ended = []
++  const noteEnded = (id, turn, info, reason, failure) => {
++    if (failure === undefined && reason?.kind !== 'completed') return
++    const owner = rt.groupOwners.get(id)
++    const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
++    if (bot === undefined || bot.remote !== undefined) return
++    if (info !== undefined && (fromRemote(info) || info.role === 'remote' || info.form === 'remote-chat')) return
++    if (owner === undefined && state.exchangeTurns?.[id]?.includes(turn)) return
++    if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
++    const at = Date.now()
++    ended = [...ended, {
++      id: `${id}:${turn}:${at}`,
++      botId: bot.id,
++      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
++      at,
++      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
++    }].slice(-ENDED_KEPT)
++  }
++  const endedView = () => ended
++
+   // Where a Session speaks, for the diagnostics log.
+   const placeOf = (id) => {
+     const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
 @@ -293,6 +293,10 @@ export function install(rt) {
          entry.answers = false
          entry.opened = false
@@ -2274,12 +2375,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const reason = event.data?.reason
          const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
          if (failure !== undefined) noteTurnFailure(id, failure)
-@@ -411,7 +411,7 @@ export function install(rt) {
+@@ -411,7 +411,8 @@ export function install(rt) {
          // the call.
          const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
          const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
 -        if (retry) void retryWrittenCall(id, info).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
 +        if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
++        if (!retry) noteEnded(id, answeredTurn, info, reason, failure)
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
@@ -2355,7 +2457,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    return found
 +  }
 +
-+  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, callDetail, stopRoomTurn })
++  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, callDetail, stopRoomTurn })
  }
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
@@ -2397,6 +2499,146 @@ diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 +  }
 +  return missing
 +}
+diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
+--- a/test/approval-notices.test.js
++++ b/test/approval-notices.test.js
+@@ -3,6 +3,8 @@ import { test } from 'node:test'
+ import { fileURLToPath } from 'node:url'
+ import { runInNewContext } from 'node:vm'
+ import { build } from 'esbuild'
++import { SOURCE_KIND } from '../src/host/constants.js'
++import { install as installTurns } from '../src/host/turns.js'
+ 
+ const bundle = await build({
+   entryPoints: [fileURLToPath(new URL('../src/client/approval-notices.js', import.meta.url))],
+@@ -10,7 +10,7 @@ const bundle = await build({
+ })
+ 
+ // One window: the platform's Notification, whether the page shows, and the work source.
+-function windowWith({ permission = 'granted', visibility = 'visible' } = {}) {
++function windowWith({ permission = 'granted', visibility = 'visible', prefs = {} } = {}) {
+   const shown = []
+   const opened = []
+   function Notification(title, options) {
+@@ -26,7 +26,7 @@ function windowWith({ permission = 'granted', visibility = 'visible' } = {}) {
+     subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
+     set: (next) => { snapshot = next; for (const listener of listeners) listener() },
+   }
+-  const roster = { getSnapshot: () => ({ byId: { b: { id: 'b', name: 'Writer' } }, roomsById: { r1: { id: 'r1', name: 'Ops' } } }) }
++  const roster = { prefs, getSnapshot: () => ({ byId: { b: { id: 'b', name: 'Writer' } }, roomsById: { r1: { id: 'r1', name: 'Ops' } }, prefs: roster.prefs }) }
+   const module = { exports: {} }
+   runInNewContext(bundle.outputFiles[0].text, {
+     module, exports: module.exports, Notification,
+@@ -62,3 +62,109 @@ test('no notification for the conversation on screen, for approvals older than t
+   denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
+   assert.equal(denied.shown.length, 0)
+ })
++
++const ended = (entries) => ({ bots: {}, approvals: [], ended: entries })
++
++test('a turn of my own Bot that finishes or fails elsewhere gets one notification that says why and opens its chat (#353)', () => {
++  const page = windowWith()
++  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100 })
++  const done = { id: 'chat-b:1:200', botId: 'b', sessionId: 'chat-b', at: 200 }
++  const broke = { id: 'g:2:300', botId: 'b', roomId: 'r1', at: 300, failed: 'upstream busy' }
++  page.work.set(ended([done]))
++  page.work.set(ended([done, broke]))
++  page.work.set(ended([done, broke]))
++  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [
++    ['Writer finished', '', 'ds-bot-turn-chat-b:1:200'],
++    ['Writer failed: upstream busy', 'Ops', 'ds-bot-turn-g:2:300'],
++  ])
++  page.shown[0].onclick()
++  page.shown[1].onclick()
++  assert.deepEqual([page.opened, page.shown.map(note => note.closed)], [['b', 'r1'], [true, true]])
++  // A notification carries nothing to act on: no buttons, no reply.
++  assert.equal(page.shown.some(note => 'actions' in note), false)
++})
++
++test('no turn notification for the chat on screen, for turns that ended before the window opened, or without permission', () => {
++  const onScreen = windowWith()
++  onScreen.noticeApprovals({ work: onScreen.work, roster: onScreen.roster, shownSession: () => 'chat-b', openSession: onScreen.openSession, since: 100 })
++  onScreen.work.set(ended([{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }, { id: 'e2', botId: 'b', sessionId: 'other', at: 50 }]))
++  assert.equal(onScreen.shown.length, 0)
++
++  const hidden = windowWith({ visibility: 'hidden' })
++  hidden.noticeApprovals({ work: hidden.work, roster: hidden.roster, shownSession: () => 'chat-b', openSession: hidden.openSession, since: 100 })
++  hidden.work.set(ended([{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }]))
++  assert.equal(hidden.shown.length, 1)
++
++  const denied = windowWith({ permission: 'denied' })
++  denied.noticeApprovals({ work: denied.work, roster: denied.roster, shownSession: () => 'a', openSession: denied.openSession, since: 100 })
++  denied.work.set(ended([{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }]))
++  assert.equal(denied.shown.length, 0)
++})
++
++test('the Notifications switch turns off every kind, and switching it back on brings no old ones', () => {
++  const page = windowWith({ prefs: { notifications: false } })
++  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100 })
++  const approval = { id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }
++  page.work.set({ bots: {}, approvals: [approval], ended: [{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }] })
++  assert.equal(page.shown.length, 0)
++  page.roster.prefs = {}
++  page.work.set({ bots: {}, approvals: [approval], ended: [{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }, { id: 'e2', botId: 'b', sessionId: 'chat-b', at: 300 }] })
++  assert.deepEqual(page.shown.map(note => note.tag), ['ds-bot-turn-e2'])
++})
++
++// The host side: which ended turns the window hears of.
++function turnsHost({ bots, rooms = {}, groupOwners = new Map() } = {}) {
++  let listener
++  const rt = {
++    ctx: { on: (name, fn) => { if (name === 'session/event') listener = fn } },
++    state: { exchangeTurns: {}, questions: {} },
++    isBotSession: () => true,
++    roomOf: id => rooms[id],
++    groupOwners,
++    chatOwners: new Map(),
++    botOf: id => bots[id],
++    selfOf: id => groupOwners.get(id)?.botId ?? id,
++    save: async () => {},
++    deliver: async () => {},
++    noteFailure() {},
++    warn() {},
++    switchJobs: () => [],
++    dropKickoff() {},
++    flybotReplyRemote: async () => ({}),
++  }
++  installTurns(rt)
++  let seq = 0
++  const emit = (id, type, data) => listener({ id }, { type, seq: ++seq, data })
++  const turn = (id, n, reason, source) => {
++    emit(id, 'turn/start', { turn: n })
++    if (source) emit(id, 'user/message', { content: [{ type: 'text', text: 'hi' }], source })
++    emit(id, 'turn/end', { turn: n, reason })
++  }
++  return { rt, turn }
++}
++
++const completed = { kind: 'completed' }
++const failed = { kind: 'error', error: { code: 'SERVER', message: 'upstream busy', status: 503 } }
++
++test('the host lists finished and failed turns of my own Bots, not stopped, asked-by-a-Bot, friend or shared-room turns', () => {
++  const { rt, turn } = turnsHost({
++    bots: { a: { id: 'a', name: 'Chief' }, b: { id: 'b', name: 'Coder' }, f: { id: 'f', name: 'Pal', remote: { handle: '@pal' } } },
++    rooms: { r1: { id: 'r1' }, face: { id: 'face', origin: 'face-to-face' } },
++    groupOwners: new Map([['g1', { botId: 'b', roomId: 'r1' }], ['g2', { botId: 'b', roomId: 'face' }]]),
++  })
++  turn('b', 1, completed)
++  turn('b', 2, failed)
++  turn('b', 3, { kind: 'aborted', reason: { kind: 'user' } })
++  turn('b', 4, completed, { kind: SOURCE_KIND, role: 'request', senderSessionId: 'a', exchangeId: 'x1', hop: 1 })
++  turn('b', 5, completed, { kind: SOURCE_KIND, role: 'request', remote: { handle: '@pal' }, exchangeId: 'x2', hop: 1 })
++  turn('f', 1, completed)
++  turn('g1', 1, failed, { kind: SOURCE_KIND, role: 'room', exchangeId: 'r1x' })
++  turn('g2', 1, completed, { kind: SOURCE_KIND, role: 'room', exchangeId: 'r2x' })
++  assert.deepEqual(rt.endedView().map(({ id, at, ...entry }) => [id.split(':').slice(0, 2).join(':'), entry]), [
++    ['b:1', { botId: 'b', sessionId: 'b' }],
++    ['b:2', { botId: 'b', sessionId: 'b', failed: 'upstream busy' }],
++    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy' }],
++  ])
++  for (let n = 10; n < 40; n++) turn('b', n, completed)
++  assert.equal(rt.endedView().length, 20)
++})
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
 +++ b/test/client-bundle.test.js
@@ -3017,6 +3259,17 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: api route',
      'route POST /api/bot',
      'effect ds-bot: load state',
+@@ -137,6 +137,10 @@ test('the client channel answers from the saved state', async (t) => {
+   assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
+   assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
+   assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })
++  // Notifications are on unless switched off; only off is kept (#353).
++  assert.equal((await call('set-prefs', { notifications: false })).value.notifications, false)
++  assert.equal('notifications' in (await call('set-prefs', { notifications: true })).value, false)
++  assert.deepEqual((await call('set-prefs', { notifications: 'loud' })).error, { code: 'bot/invalid', message: 'Notifications must be on or off', details: {} })
+   // A refusal from the team code keeps its message for the user.
+   assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
+   // Off the Desktop profile there are no Bot browsers.
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
 +++ b/test/memory.test.js

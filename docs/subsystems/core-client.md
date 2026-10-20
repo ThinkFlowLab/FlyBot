@@ -98,6 +98,10 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 - A Bot row uses the same gold wait dot as a room row when `bot.pendingCount > 0` (Bot Social holds on that friend's chat) or a local hold is open. Shared-room overview pending lines stay one line with ellipsis (`bt-shared-wait`).
 
+### System notifications (#353)
+
+- `approval-notices.js` `noticeApprovals` raises one system notification per event while the window is in the background or shows another chat: an approval that starts waiting (`{name} is waiting for your approval`), and a turn of one of the user's own Bots that finished (`{name} finished`) or failed (`{name} failed: <reason>`), from `work.ended` (`turns.js` `endedView`: the last 20, process-local; no friend's Bot, no turn a friend started, no hidden turn another Bot asked for, no face-to-face or inbound-share room, no turn the user stopped). Only when the platform already allows notifications (never asks), one per event (`tag` `ds-bot-approval-<id>` / `ds-bot-turn-<id>`), nothing from before the window opened; a click focuses the window and opens the chat or group, and a notification never approves, rejects or sends. Settings → General → **Notifications** (`prefs.notifications`, on unless `false`) switches every kind off; events seen while off stay told. Quiet hours, mute and *waiting too long* are later slices. Covered by `core/test/approval-notices.test.js`.
+
 ### Bot tree chevron
 
 - The sidebar Bot-list tree (`sidebar.js` `TreeNode`, from slot `flybot.sidebar.structure`; optional `include(botId)` filters the default list, #452) draws collapse/expand as `.bt-tree-toggle`: a 28×28 hit target with a 16px `.bt-tree-chev` glyph, hover background, and a `:focus-visible` accent ring. The glyph rotates when `aria-expanded` is false; the button stays upright so hover and focus stay square. Expand/Collapse `{name}` labels and `aria-expanded` are unchanged. Leaf rows use the same 28px width as a spacer (`.bt-tree-leaf`) so names stay aligned; indent is still `depth * 16px` and the Bot row keeps its height.

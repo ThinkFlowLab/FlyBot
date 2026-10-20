@@ -179,14 +179,17 @@ diff --git a/src/client/diagnostics.js b/src/client/diagnostics.js
 diff --git a/src/client/settings.js b/src/client/settings.js
 --- a/src/client/settings.js
 +++ b/src/client/settings.js
-@@ -5,6 +5,7 @@ import { allThemes } from './themes.js'
+@@ -5,8 +5,9 @@ import { allThemes } from './themes.js'
  import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
  import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
  import { openHarnessSettings } from './sidebar.js'
 +import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
  import { useEscape } from './overlay-hooks.js'
- import { BotSettingsForm } from './bot-settings.js'
+-import { BotSettingsForm } from './bot-settings.js'
++import { BotSettingsForm, SwitchRow } from './bot-settings.js'
  import { Segmented, useGlide } from './motion.js'
+ import { GroupSettingsForm, NewGroupForm } from './group-settings.js'
+ import { CreateBot } from './create-bot.js'
 @@ -23,7 +23,7 @@ const capitalize = word => word[0].toUpperCase() + word.slice(1)
  
  // Settings dialog: a 198px page list beside the page. Bots and group chats each list
@@ -200,17 +203,24 @@ diff --git a/src/client/settings.js b/src/client/settings.js
      children ? h('div', { className: 'bt-set-control' }, children) : null)
  }
  
-+// General is Appearance only; the switch to classic Agent mode is the account menu's (#393).
++// General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
  function GeneralPage({ roster, actions, run }) {
    const prefs = roster.prefs ?? {}
    const themes = allThemes()
-@@ -61,9 +61,6 @@ function GeneralPage({ roster, actions, run }) {
+@@ -61,9 +61,13 @@ function GeneralPage({ roster, actions, run }) {
            })),
            h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
              h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
 -    h(SetSection, { key: 'mode', title: t('Mode') },
 -      h(SetRow, { label: t('Classic Agent mode') },
 -        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => actions.setSurface('agent') }, t('Switch')))),
++    // One switch for every system notification: approvals waiting, Bots finished or failed (#353).
++    h(SetSection, { key: 'notify', title: t('Notifications') },
++      h(SwitchRow, {
++        label: t('Notifications'), showLabel: false,
++        hint: t('When your Bots finish, fail, or wait for your approval while you are in another chat or app.'),
++        on: prefs.notifications !== false, onChange: on => run(actions.setPrefs({ notifications: on })),
++      })),
    ]
  }
  

@@ -181,6 +181,7 @@ export function install(rt) {
         bots: pick(full.work.bots),
         rooms: Object.fromEntries(Object.entries(full.work.rooms ?? {}).filter(([id]) => roomMemberOf(actor, id) || roomOwnedBy(actor, id))),
         approvals: full.work.approvals.filter(entry => mine(entry.botId)),
+        ended: (full.work.ended ?? []).filter(entry => mine(entry.botId)),
       },
       memoryNews: pick(full.memoryNews),
       memoryReviews: alone() ? full.memoryReviews : 0,
