@@ -227,7 +227,7 @@ test('editing, pausing and resuming a task need its Session, and an edit its new
   assert.equal(rt.authorize(actorA, 'schedule-update', { sessionId: 'chat-a1', id: 's1', target: 'a1' }).ok, true)
   assert.equal(rt.authorize(actorA, 'schedule-update', { sessionId: 'chat-a1', id: 's1', target: 'b1' }).code, 'bot/forbidden')
   assert.equal(rt.authorize(actorA, 'schedule-update', { sessionId: 'chat-b1', id: 's1', target: 'a1' }).code, 'bot/forbidden')
-  for (const ep of ['schedule-pause', 'schedule-resume']) {
+  for (const ep of ['schedule-pause', 'schedule-resume', 'schedule-retry']) {
     assert.equal(rt.authorize(actorA, ep, { sessionId: 'chat-a1', id: 's1' }).ok, true)
     assert.equal(rt.authorize(actorA, ep, { sessionId: 'chat-b1', id: 's1' }).code, 'bot/forbidden')
   }

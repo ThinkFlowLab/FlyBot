@@ -38,7 +38,7 @@ const SHARED_BLOCKED = new Set([
 const BOT_TARGETED = new Set([
   'update-bot', 'delete-bot', 'duplicate-bot', 'set-flags', 'bot-capability',
   'memory-view', 'memory-ask', 'memory-forget',
-  'schedules', 'schedule-create', 'schedule-update', 'schedule-pause', 'schedule-resume', 'schedule-delete',
+  'schedules', 'schedule-create', 'schedule-update', 'schedule-pause', 'schedule-resume', 'schedule-retry', 'schedule-delete',
   'agent-session', 'agent-adopt', 'agent-archive', 'agent-rename', 'remove-agent',
   'stop-member-work', 'set-main', 'test-model',
 ])
