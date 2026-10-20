@@ -22,7 +22,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { busyMembers, summaryText, splitBusy, MemberDock } = module.exports
+const { busyMembers, summaryText, splitBusy, MemberDock, MemberWork } = module.exports
 // Values from the bundle's realm compare by content only.
 const plain = value => JSON.parse(JSON.stringify(value))
 // Renders the dock's own parts of an element tree, and lists its rows' labels.
@@ -81,6 +81,22 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
   assert.deepEqual(rowLabels(dock('a', away)), ['in Ops · Running shell commands…', 'in Docs · Thinking about it…'])
   assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
   assert.equal(dock('b', away), null)
+})
+
+// #540: the approval card offers a standing grant next to Reject / Allow once.
+const cardButtons = (approval, bot) => {
+  const tree = MemberWork({ entry: { state: 'ask', approvals: [approval] }, bot, room: { id: 'r1' }, roster: team, actions: {}, now: 0 })
+  const card = tree.children.find(node => node?.type?.name === 'ApprovalCard')
+  const walk = node => (node === null || typeof node !== 'object' ? [] : [...(node.type === 'button' ? [[node.props['data-choice'] ?? '', node.children.join('')]] : []), ...node.children.flatMap(walk)])
+  return plain(walk(card.type(card.props)))
+}
+
+test('the approval card offers Always allow for this Bot, and for this group when the ask came from one', () => {
+  const ask = { id: 'p1', tool: 'bash', reason: 'escalate sandbox to danger-full-access: grep', answerable: true }
+  assert.deepEqual(cardButtons({ ...ask, roomId: 'r1' }, { id: 'a', name: 'Anvil' }), [['', 'Reject'], ['', 'Allow once'], ['always-bot', 'Always allow for this Bot'], ['always-room', 'Always allow for this group']])
+  assert.deepEqual(cardButtons(ask, { id: 'a', name: 'Anvil' }).map(([choice]) => choice), ['', '', 'always-bot'])
+  // A friend's Bot is not the viewer's to give a standing grant to.
+  assert.deepEqual(cardButtons({ ...ask, roomId: 'r1' }, { id: 'x', name: 'X', remote: { handle: '@x' } }).map(([choice]) => choice), ['', ''])
 })
 
 // Owner report 2026-10-20: one member's row sat left with its time, another's centered or

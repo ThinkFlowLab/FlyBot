@@ -160,6 +160,13 @@ function useNow(active) {
 
 const since = (now, at) => (typeof at === 'number' && now - at >= 60000 ? ` · ${elapsedLabel(now - at)}` : '')
 
+// "Always allow" is the owner's standing grant (#540): only on their own Bot's card,
+// and the group option only when the request comes from a group.
+export const alwaysChoices = (approval, bot) => (bot?.remote ? [] : [
+  ['always-bot', 'Always allow for this Bot'],
+  ...(approval.roomId ? [['always-room', 'Always allow for this group']] : []),
+])
+
 function ApprovalCard({ approval, bot, actions }) {
   const [busy, setBusy] = useState(false)
   const answer = (choice) => {
@@ -176,7 +183,8 @@ function ApprovalCard({ approval, bot, actions }) {
     approval.answerable
       ? h('div', { className: 'bt-mw-actions' },
         h('button', { type: 'button', className: 'bt-q-btn', disabled: busy, onClick: () => answer('reject') }, t('Reject')),
-        h('button', { type: 'button', className: 'bt-q-submit', disabled: busy, onClick: () => answer('allow') }, t('Allow once')))
+        h('button', { type: 'button', className: 'bt-q-submit', disabled: busy, onClick: () => answer('allow') }, t('Allow once')),
+        ...alwaysChoices(approval, bot).map(([choice, label]) => h('button', { key: choice, type: 'button', className: 'bt-q-btn', 'data-choice': choice, disabled: busy, onClick: () => answer(choice) }, t(label))))
       : h('div', { className: 'bt-mw-actions' },
         h('button', { type: 'button', className: 'bt-q-btn', onClick: () => actions.openSession(bot.id) }, t("Open {name}'s chat", { name: bot.name }))))
 }

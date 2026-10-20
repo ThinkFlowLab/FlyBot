@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -73,7 +73,7 @@ async function start() {
   const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
   const stop = async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) }
   await tool('list_bots', {}, 'a')
-  return { agentOf, emit, tool, call, askApproval, stop, archived }
+  return { agentOf, emit, tool, call, askApproval, stop, archived, home }
 }
 
 // Waits on real I/O (state writes) without timers, which some tests mock.
@@ -293,6 +293,93 @@ test('an approval asked inside a PTC program shows what that call does', async (
   const [approval] = value.work.approvals
   assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
   assert.equal(value.work.bots.b.tool, 'pwsh')
+})
+
+// #540: "Always allow" on the card is a standing grant, per Bot or per group, kept on
+// the record and revocable; DSH only knows one-shot outcomes. It answers only a turn the
+// owner started (turn-origin.js).
+const ESCALATE = 'escalate sandbox to danger-full-access: read AGENTS.md'
+const KIND = 'bash:escalate:danger-full-access'
+// Opens a turn in a Bot's own chat whose message came from `source`.
+const chatTurn = (host, sessionId, source = { kind: 'user' }) => {
+  host.emit(sessionId, 'turn/start', { turn: 1 })
+  host.emit(sessionId, 'user/message', { content: [{ type: 'text', text: 'go' }], source })
+}
+const grantFromGroup = async (host, choice) => {
+  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice })).ok, true)
+  assert.equal(await first, 'allowed-once')
+}
+
+test('Always allow for this Bot answers later matching asks itself, survives in the store, and Remove asks again', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-bot')
+
+  const bot = (await host.call('state', {})).value.bots.find(entry => entry.id === 'b')
+  assert.deepEqual(bot.standingApprovals.map(grant => [grant.kind, grant.label]), [[KIND, 'bash · danger-full-access']])
+  assert.deepEqual(JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).bots.b.standingApprovals.map(grant => grant.kind), [KIND])
+  // The same kind again, and from the Bot's own chat, is answered without a card; another kind still asks.
+  assert.equal(await host.askApproval('gb', { toolName: 'bash', reason: 'escalate sandbox to danger-full-access: again' }), 'allowed-once')
+  chatTurn(host, 'b')
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: 'escalate sandbox to workspace-write: x' }, () => 'from-dsh'), 'from-dsh')
+  assert.deepEqual((await host.call('state', {})).value.work.approvals, [])
+
+  assert.equal((await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })).value, true)
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+})
+
+test('a standing grant never answers a turn someone other than the owner started', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-bot')
+  // A friend's message (remote chat) and another member's line both still ask.
+  chatTurn(host, 'b', { kind: 'bot', remote: { handle: '@friend' }, form: 'remote-chat' })
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+  const host2 = await start()
+  t.after(host2.stop)
+  await openTurn(t, host2)
+  await grantFromGroup(host2, 'always-bot')
+  chatTurn(host2, 'b', { kind: 'user', authorId: 'someone-else' })
+  assert.equal(await host2.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+  // No turn at all: fail closed.
+  assert.equal(await host2.askApproval('a', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+})
+
+test('Always allow for this group covers that group only', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-room')
+  const room = (await host.call('state', {})).value.rooms.find(entry => entry.id === 'r1')
+  assert.deepEqual(room.standingApprovals.map(grant => grant.kind), [KIND])
+  assert.equal(await host.askApproval('gb', { toolName: 'bash', reason: ESCALATE }), 'allowed-once')
+  // Not the Bot's own chat: the grant was for work in the group.
+  chatTurn(host, 'b')
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+  assert.equal((await host.call('standing-approval-remove', { scope: 'room', id: 'r1', kind: KIND })).value, true)
+  const again = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
+  const [open] = (await host.call('state', {})).value.work.approvals
+  assert.equal(open.answerable, true)
+  assert.equal((await host.call('approval-answer', { id: open.id, choice: 'reject' })).ok, true)
+  assert.equal(await again, 'rejected')
+})
+
+test('Always allow for this group is refused for an ask that did not come from a group', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  // An own chat's ask is DSH's to answer, so it has no card to give a group grant from.
+  let release
+  const outcome = host.askApproval('a', { toolName: 'bash' }, () => new Promise((resolve) => { release = resolve }))
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-room' })).ok, false)
+  release('rejected')
+  assert.equal(await outcome, 'rejected')
+  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'a').standingApprovals, undefined)
 })
 
 test('a running Bot\'s work names its current step, in one short line, until the turn ends', async (t) => {

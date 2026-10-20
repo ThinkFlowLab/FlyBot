@@ -339,8 +339,10 @@ export function install(rt) {
           await rt.deleteRoom(body.id)
           return ok(view())
         case 'approval-answer':
-          rt.answerApproval(body.id, body.choice)
+          await rt.answerApproval(body.id, body.choice)
           return ok(true)
+        case 'standing-approval-remove':
+          return ok(await rt.removeStandingApproval(body.scope === 'room' ? 'room' : 'bot', body.id, body.kind, rt.authzEnforced() && actor ? actor.memberId : undefined))
         case 'stop-member-work':
           return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
         case 'dismiss-question':
