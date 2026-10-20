@@ -23,7 +23,7 @@ Config for the browser entry: `sidebarSection: true` shows the sidebar row, the 
 
 ## What it records
 
-Bot turns, tool calls (name and duration only), and Bot-to-Bot / user-to-Bot deliveries (who, to whom, role, message length). Group rooms appear as the room's own round with the members' turns inside. Never message text, tool arguments or tool output.
+Bot turns (with the model each one ran on, shown in the turn's tooltip), tool calls (name and duration only), and Bot-to-Bot / user-to-Bot deliveries (who, to whom, role, message length). Group rooms appear as the room's own round with the members' turns inside. Never message text, tool arguments or tool output.
 
 The trace lives in `$DSH_HOME/bot/flybot-timeline/` as capped segment files: about 3000 spans or 24 hours, whichever comes first, then the oldest segment rotates out. One writer at a time (`writer.lock`); each file is replaced whole with write-tmp, fsync, rename. A second dsh on the same directory records in memory only.
 

@@ -47,6 +47,23 @@ export function installFeed(rt, fire) {
     if (entry === undefined) sessions.set(id, entry = { calls: new Map() })
     return entry
   }
+  // The model each Session's latest request header named (`provider/model`). DSH logs a header
+  // only when it changes, so the last one seen is the one every later step runs on.
+  /** @type {Map<string, string>} */
+  const models = new Map()
+  const refOf = config => (typeof config?.provider === 'string' && typeof config?.model === 'string' && config.provider && config.model
+    ? cleanLabel(`${config.provider}/${config.model}`, 120) : undefined)
+  // The model a turn ran on: only a turn that made a model call has one. A friend's Bot chat runs
+  // no model of yours. Before this process saw a header, the Session's own latest header answers.
+  const turnModel = (session, id, entry, where) => {
+    if (!entry.stepped || where.place === 'remote') return undefined
+    if (!models.has(id)) {
+      let ref
+      try { ref = refOf(session?.requestHeader?.()?.config) } catch { /* no header yet */ }
+      if (ref !== undefined) models.set(id, ref)
+    }
+    return models.get(id)
+  }
 
   // What the user calls a friend's Bot ("Chief (UiA1415)", "Helper (UiB1415)", #384), as the sidebar
   // does, from the published roster or the friend's chat. Untrusted (a peer chose it): cleaned, capped.
@@ -170,12 +187,21 @@ export function installFeed(rt, fire) {
         // A turn that never ended (a crash) is closed by the next one.
         if (entry.turn !== undefined) {
           closeCalls(id, entry, where, turnId, timeOf(event), true)
-          fire('turn.end', omitUndefined({ ...base, turnId, turn: entry.turn, time: timeOf(event), outcome: 'aborted', interrupted: true }))
+          fire('turn.end', omitUndefined({ ...base, turnId, turn: entry.turn, time: timeOf(event), outcome: 'aborted', interrupted: true, model: turnModel(session, id, entry, where) }))
         }
         entry.turn = turn
+        entry.stepped = false
         const trigger = triggerOf(entry.pending)
         entry.pending = undefined
         fire('turn.start', omitUndefined({ ...base, turnId: `${id}#${turn}`, turn, time: timeOf(event), seq: seqOf(event), trigger }))
+        return
+      }
+      case 'step/start':
+        if (entry.turn !== undefined) entry.stepped = true
+        return
+      case 'request/header': {
+        const ref = refOf(event.data?.header?.config)
+        if (ref !== undefined) models.set(id, ref)
         return
       }
       case 'tool/call': {
@@ -203,8 +229,9 @@ export function installFeed(rt, fire) {
         const kind = event.data?.reason?.kind
         const outcome = OUTCOMES.has(kind) ? kind : 'completed'
         const errorCode = outcome === 'error' ? cleanCode(event.data?.reason?.error?.code) : undefined
-        fire('turn.end', omitUndefined({ ...base, turnId, turn: entry.turn, time, seq: seqOf(event), outcome, errorCode }))
+        fire('turn.end', omitUndefined({ ...base, turnId, turn: entry.turn, time, seq: seqOf(event), outcome, errorCode, model: turnModel(session, id, entry, where) }))
         entry.turn = undefined
+        entry.stepped = false
         if (entry.pending === undefined) sessions.delete(id)
         return
       }

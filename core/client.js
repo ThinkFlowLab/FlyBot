@@ -2670,6 +2670,17 @@ function faceRowTitle(title) {
   if (named) return `${named[2]} · ${named[1]}`;
   return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
 }
+function modelOf(bot, roster) {
+  const ref = bot.model ?? bot.appliedModel;
+  if (!ref) return void 0;
+  const served = (roster.models ?? []).find((model) => model.ref === ref);
+  const [provider, ...rest] = ref.split("/");
+  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
+}
+function botRowTitle(name, model, wide) {
+  if (model) return `${name} · ${model}`;
+  return wide ? void 0 : name;
+}
 function awayGroups(groups, roomsById) {
   return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
 }
@@ -6938,8 +6949,9 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       className: "bt-row",
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
+      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
       "data-bot-id": id,
-      title: remoteRecord2 ? shown : wide ? void 0 : bot.name,
+      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
       onClick: () => actions.openSession(id),
       onContextMenu
     },
@@ -8788,13 +8800,6 @@ function groupModels(models) {
   });
 }
 var servedOf = (roster, ref) => (roster.models ?? []).find((model) => model.ref === ref);
-function modelOf(bot, roster) {
-  const ref = bot.model ?? bot.appliedModel;
-  if (!ref) return void 0;
-  const served = servedOf(roster, ref);
-  const [provider, ...rest] = ref.split("/");
-  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
-}
 var effortCache = /* @__PURE__ */ new Map();
 function useEfforts(served, ref, actions) {
   const [fetched, setFetched] = (0, import_react16.useState)(void 0);

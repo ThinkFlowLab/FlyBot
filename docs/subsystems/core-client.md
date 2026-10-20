@@ -114,7 +114,7 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 ### Bot tree chevron
 
-- The sidebar Bot-list tree (`sidebar.js` `TreeNode`, from slot `flybot.sidebar.structure`; optional `include(botId)` filters the default list, #452) draws collapse/expand as `.bt-tree-toggle`: a 28×28 hit target with a 16px `.bt-tree-chev` glyph, hover background, and a `:focus-visible` accent ring. The glyph rotates when `aria-expanded` is false; the button stays upright so hover and focus stay square. Expand/Collapse `{name}` labels and `aria-expanded` are unchanged. Leaf rows use the same 28px width as a spacer (`.bt-tree-leaf`) so names stay aligned; indent is still `depth * 16px` and the Bot row keeps its height.
+- The sidebar Bot-list tree (`sidebar.js` `TreeNode`, from slot `flybot.sidebar.structure`; optional `include(botId)` filters the default list, #452) draws collapse/expand as `.bt-tree-toggle`: a 28×28 hit target with a 16px `.bt-tree-chev` glyph, hover background, and a `:focus-visible` accent ring. The glyph rotates when `aria-expanded` is false; the button stays upright so hover and focus stay square. Expand/Collapse `{name}` labels and `aria-expanded` are unchanged. Leaf rows use the same 28px width as a spacer (`.bt-tree-leaf`) so names stay aligned; indent is still `depth * 16px` and the Bot row keeps its height. An own Bot's row, in the tree and in the flat list, names the model the Bot runs on in its hover text (`botRowTitle` in `text.js`: `Coder · DeepSeek V4 Pro`, the model's served name from `modelOf`, also in `text.js` so the sidebar does not import the model menu, #366); a friend's Bot row keeps its `remoteBotTitle`, since it runs on its owner's model.
 
 ### New-chat menu
 

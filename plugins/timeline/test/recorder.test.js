@@ -153,3 +153,13 @@ test('a friend\'s name from the feed party names its lane, and a later name repl
   feed('turn.start', { ...base, turnId: 's1#1', turn: 1, time: 4_110, trigger: { exchangeId: 'q1', from: { kind: 'remote', handle: '@chief.uia.home', name: "UiA's Chief" }, role: 'request', hop: 0 } })
   assert.equal(trace.names().friends['f:chief.uia.home'], "UiA's Chief")
 })
+
+test('a turn end keeps the model it ran on, cleaned; a turn with none stores no field (#366)', () => {
+  const { feed, records } = setup()
+  feed('turn.end', { ...base, turnId: 's1#1', turn: 1, time: 4_900, outcome: 'completed', model: 'deepseek/deepseek-v4-pro' })
+  feed('turn.end', { ...base, turnId: 's1#2', turn: 2, time: 5_000, outcome: 'aborted' })
+  feed('turn.end', { ...base, turnId: 's1#3', turn: 3, time: 5_100, outcome: 'completed', model: 'evil/<script>\n"x"' })
+  feed('turn.end', { ...base, turnId: 's1#4', turn: 4, time: 5_200, outcome: 'completed', model: { provider: 'x' } })
+  assert.deepEqual(records().slice(1).map(record => record.md), ['deepseek/deepseek-v4-pro', undefined, 'evil/script x', undefined])
+  assert.equal('md' in records()[2], false)
+})

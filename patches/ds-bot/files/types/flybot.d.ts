@@ -112,6 +112,11 @@ export interface TurnEnded extends FeedPlace {
   errorCode?: string
   /** True when the turn never reported its end and a newer turn closed it. */
   interrupted?: boolean
+  /**
+   * `provider/model` of the turn's latest request header: the model it ran on. Absent for a
+   * turn that made no model call, for place 'remote', and when DSH logged no header.
+   */
+  model?: string
 }
 
 export interface ToolStarted extends FeedPlace {
