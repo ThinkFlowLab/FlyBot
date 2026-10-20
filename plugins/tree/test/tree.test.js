@@ -1428,3 +1428,17 @@ test('#447: without parent, a new Bot goes only down leads of groups it belongs 
   // Asked from inside FlyBot Lead, its dev group takes a dev Bot.
   assert.equal(f(m, (await child(m, team.team.lead.id, 'Style Checker', 'checks code style')).created.id, 'parent'), quality)
 })
+
+test('#507: a child\'s running turns show as load in the coordinator\'s stored prompt and list_children', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't2', turn: 2, time: 2 })
+  // The coordinator's prompt is rewritten at the child's turn boundary, not only read live.
+  assert.match(sp(m, m.root), /Child load right now — Work: busy \(2 running\)/)
+  assert.deepEqual((await m.call(m.root, 'list_children')).children.map(c => [c.name, c.load]), [['Work', 2]])
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 3 })
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't2', turn: 2, time: 4 })
+  assert.equal(m.tree.loadOf(work), 0)
+  assert.match(sp(m, m.root), /Child load right now — Work: idle/)
+})

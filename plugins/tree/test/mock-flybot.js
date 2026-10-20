@@ -21,7 +21,7 @@ export function toParameterMap(p) {
 
 export function createMockFlybot() {
   const bots = new Map() // id -> { id, name, systemPrompt, fields: { [plugin]: {...} } }
-  const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set(), 'turn.start': new Set(), 'tool.start': new Set() }
+  const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set(), 'turn.start': new Set(), 'turn.end': new Set(), 'tool.start': new Set() }
   const apis = new Map()
   const middlewares = []
   const tools = new Map()

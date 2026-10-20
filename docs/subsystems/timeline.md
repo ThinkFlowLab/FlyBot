@@ -35,6 +35,7 @@ Everything in `plugins/timeline/`: the recorder, the trace file, the read model 
 
 - `plugins/timeline/index.js` — loaded as `@flybot/timeline`.
 - Endpoint `timeline/window` (wire name `flybot/timeline/window`), registered `{ read: true }` so a read-only host still answers. Body `{ windowMs?, to? }`; window 30 s to 24 h, default 15 min.
+- Endpoint `timeline/export` (#357, read-only): the current trace mapped to one OTLP/HTTP JSON payload (`resourceSpans`), the same mapping the timer exporter uses. Ids only unless the body sets `names: true` (#483); `serviceName` overrides the default. The panel or an automation can pull it on demand instead of waiting for the next flush.
 
 ## Invariants
 

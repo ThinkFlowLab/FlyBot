@@ -376,6 +376,7 @@ export function install(rt) {
         case 'schedules':
         case 'schedule-pause':
         case 'schedule-resume':
+        case 'schedule-retry':
         case 'schedule-delete':
           await rt.load()
           return ok(await rt.scheduleEndpoint(endpoint, body))

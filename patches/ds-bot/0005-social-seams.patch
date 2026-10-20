@@ -512,7 +512,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -241,11 +241,21 @@ export function install(rt) {
+@@ -241,11 +241,22 @@ export function install(rt) {
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -522,6 +522,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 -        case 'schedule-create':
 +        case 'schedule-pause':
 +        case 'schedule-resume':
++        case 'schedule-retry':
          case 'schedule-delete':
            await rt.load()
            return ok(await rt.scheduleEndpoint(endpoint, body))

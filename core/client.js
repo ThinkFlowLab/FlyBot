@@ -1070,6 +1070,13 @@ var ZH = {
   "Every weekend at {time}": "每个周末 {time}",
   "On the schedule {expression}": "按计划 {expression}",
   "Next: {time}": "下次 {time}",
+  "Running since {time}": "运行中，{time} 开始",
+  "Last run {time}": "上次运行 {time}",
+  "Last run {time} · Stopped": "上次运行 {time} · 已停止",
+  "Last run {time} · Failed: {reason}": "上次运行 {time} · 失败：{reason}",
+  "Run the task once now": "现在运行一次这个任务",
+  "DSH could not deliver it": "DSH 没能送达",
+  "Resume the task first": "请先继续这个任务",
   Finished: "已结束",
   Resume: "继续",
   "in {name}": "在 {name}",
@@ -9541,6 +9548,20 @@ function timingText(task) {
   }
 }
 var nextText = (task) => task.status === "paused" ? t("Paused") : task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
+function lastRunText(run) {
+  if (run === void 0 || !Number.isFinite(run.at)) return "";
+  const time = dayAndTime(run.at);
+  switch (run.result) {
+    case "running":
+      return t("Running since {time}", { time });
+    case "stopped":
+      return t("Last run {time} · Stopped", { time });
+    case "failed":
+      return t("Last run {time} · Failed: {reason}", { time, reason: hostText(run.reason || "Unknown error") });
+    default:
+      return t("Last run {time}", { time });
+  }
+}
 function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
   const [confirming, setConfirming] = (0, import_react19.useState)(false);
   const [busy, setBusy] = (0, import_react19.useState)(false);
@@ -9565,8 +9586,22 @@ function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
       onView(next);
     }, () => setBusy(false));
   };
+  const [retryError, setRetryError] = (0, import_react19.useState)("");
+  const retry = () => {
+    setBusy(true);
+    setRetryError("");
+    void actions.scheduleRetry(task.sessionId, task.id).then((next) => {
+      setBusy(false);
+      onView(next);
+    }, (error) => {
+      setBusy(false);
+      setRetryError(hostText(error?.message ?? String(error)));
+    });
+  };
   const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
   const stoppable = task.status === "active" || task.status === "paused";
+  const failed = task.lastRun?.result === "failed";
+  const last = lastRunText(task.lastRun);
   return (0, import_react19.createElement)(
     "div",
     { className: "bt-set-row bt-task", "data-done": stoppable ? void 0 : "", "data-paused": task.status === "paused" || void 0, "data-busy": busy || void 0 },
@@ -9576,9 +9611,12 @@ function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
       { className: "bt-set-copy" },
       (0, import_react19.createElement)("span", { className: "bt-task-title" }, task.title),
       (0, import_react19.createElement)("span", { className: "bt-set-hint" }, [timingText(task), room2 ? t("in {name}", { name: room2.name }) : ""].filter(Boolean).join(" · ")),
-      task.prompt && task.prompt !== task.title ? (0, import_react19.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null
+      task.prompt && task.prompt !== task.title ? (0, import_react19.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null,
+      last ? (0, import_react19.createElement)("span", { className: "bt-task-last", "data-failed": failed || void 0 }, last) : null,
+      retryError ? (0, import_react19.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, retryError) : null
     ),
     (0, import_react19.createElement)("span", { className: "bt-task-next" }, nextText(task)),
+    failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react19.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
     onEdit ? (0, import_react19.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react19.createElement)(PencilIcon)) : null,
     stoppable ? (0, import_react19.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
     (0, import_react19.createElement)("button", {
@@ -9846,6 +9884,8 @@ var SCHEDULE_CSS = `
 .bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
 .bt-task-tool svg{width:14px;height:14px}
 .bt-task-pause{height:26px;color:var(--bt-ink-2)}
+.bt-task-last{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-task-last[data-failed]{color:#c21d2e}
 .bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
 .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
 .bt-task-head{display:flex;align-items:center;gap:6px}
@@ -17466,6 +17506,7 @@ function apply(ctx) {
     scheduleUpdate: (task) => call("schedule-update", task),
     schedulePause: (sessionId, id) => call("schedule-pause", { sessionId, id }),
     scheduleResume: (sessionId, id) => call("schedule-resume", { sessionId, id }),
+    scheduleRetry: (sessionId, id) => call("schedule-retry", { sessionId, id }),
     scheduleDelete: (sessionId, id) => call("schedule-delete", { sessionId, id }),
     exchange: (a, b) => call("exchange", { a, b }).catch(() => []),
     roomProgress: (roomId) => call("room-progress", { roomId }).catch(() => []),
