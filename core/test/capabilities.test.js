@@ -425,3 +425,24 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
   assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
   assert.equal(rt.capabilityStatusesView().chief.team, undefined)
 })
+
+// A key for all Bots is the owner's own (#359, #545). A capability mounts for the Bot's whole Agent,
+// whoever's turn it is, so on a Bot shared with a friend it gets only a key that names that Bot.
+test('a key for all Bots does not reach a shared Bot\'s capability; one that names the Bot does', async t => {
+  const state = team()
+  state.grants = { worker: [{ grantee: '@bob.home', name: 'Bob' }] }
+  const env = await setup({ state, secret: { name: 'TOKEN', value: 'fake-secret-value', purpose: '', scope: 'all', requestedBy: null, createdAt: 1, updatedAt: 1 } })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.capabilitySave({ ...mcp('echo'), transport: 'streamable-http', url: 'https://example.test/mcp', headers: { Authorization: 'Bearer $DSH_SECRET_TOKEN' } }, { ui: true })
+  await rt.changeCapabilityAttachment('attach', { name: 'echo' }, 'chief')
+  await rt.changeCapabilityAttachment('attach', { name: 'echo', bot: 'Worker' }, 'chief')
+  for (const id of ['chief', 'worker']) ctx.emit('agent/created', { agent: testAgent(id, mounts, skills) })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.equal(rt.capabilityStatusesView().chief.echo.state, 'ready')
+  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'error')
+  assert.equal(mounts.some(mount => mount.sessionId === 'worker' && mount.config?.headers?.Authorization?.includes('fake-secret-value')), false)
+  await rt.secretEndpoint('secret-update', { name: 'TOKEN', scope: ['chief', 'worker'] })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'ready')
+})

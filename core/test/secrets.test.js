@@ -73,9 +73,10 @@ const TEAM = {
   questions: {},
 }
 
-function start() {
+function start({ secrets, team = TEAM } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-secrets-'))
-  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(team))
+  if (secrets !== undefined) writeFileSync(join(home, 'secrets.json'), JSON.stringify({ version: 1, secrets }))
   const contributors = []
   const shellEnv = {
     register(contributor) {
@@ -265,6 +266,54 @@ test('a deleted Bot leaves every scope list and takes its cards along', async (t
   assert.deepEqual(team.secrets[0].scope, ['b2'])
   assert.equal(team.secretRequests.c3, undefined)
   assert.deepEqual(JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0].scope, ['b2'])
+})
+
+// A connector used to save its key for no Bot, and the Secrets page could not tell that from a
+// choice the owner made. Such a key now belongs to all of the owner's Bots; one the owner
+// narrowed on purpose (marked scopeSet) stays as it was.
+test('a key saved for no Bot by the old default is moved to all Bots once; an explicit choice stays', async (t) => {
+  const github = fresh()
+  const kept = fresh()
+  const picked = fresh()
+  const at = { createdAt: 1, updatedAt: 1, requestedBy: null, purpose: '' }
+  const bench = start({ secrets: [
+    { name: 'GITHUB_TOKEN', value: github, scope: [], ...at, purpose: 'GitHub connector' },
+    { name: 'NOBODY_KEY', value: kept, scope: [], scopeSet: true, ...at },
+    { name: 'WRITER_KEY', value: picked, scope: ['b2'], ...at },
+  ] })
+  t.after(bench.stop)
+  const team = await bench.view()
+  assert.deepEqual(team.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all'], ['NOBODY_KEY', []], ['WRITER_KEY', ['b2']]])
+  assert.ok(!JSON.stringify(team).includes(github))
+  assert.deepEqual(bench.env('c3'), { DSH_SECRET_GITHUB_TOKEN: github })
+  assert.deepEqual(bench.env('g-b2'), { DSH_SECRET_GITHUB_TOKEN: github, DSH_SECRET_WRITER_KEY: picked })
+  const stored = JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets
+  assert.deepEqual(stored.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all'], ['NOBODY_KEY', []], ['WRITER_KEY', ['b2']]])
+})
+
+test('choosing no Bot on the Secrets page is kept as a choice, and a new key is for all Bots', async (t) => {
+  const bench = start()
+  t.after(bench.stop)
+  const added = await bench.call('secret-set', { name: 'NEW_KEY', value: fresh() })
+  assert.equal(added.value.scope, 'all')
+  const none = await bench.call('secret-update', { name: 'NEW_KEY', scope: [] })
+  assert.deepEqual(none.value.scope, [])
+  assert.deepEqual(bench.env('b2'), {})
+  const stored = JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0]
+  assert.equal(stored.scopeSet, true)
+  const back = await bench.call('secret-update', { name: 'NEW_KEY', scope: 'all' })
+  assert.equal(back.value.scope, 'all')
+})
+
+// "All my Bots" is the owner's own use (#359, #545): a Bot shared with a friend gets no key in a
+// shell unless the turn is known to be the owner's, the same fail-closed rule as connector tools.
+test('a key for all Bots stays out of a shared Bot\'s shell when the turn is not known to be the owner\'s', async (t) => {
+  const value = fresh()
+  const bench = start({ team: { ...TEAM, grants: { c3: [{ grantee: '@bob.home', name: 'Bob' }] } } })
+  t.after(bench.stop)
+  await bench.call('secret-set', { name: 'GITHUB_TOKEN', value })
+  assert.deepEqual(bench.env('b2'), { DSH_SECRET_GITHUB_TOKEN: value })
+  assert.deepEqual(bench.env('c3'), {})
 })
 
 test('tool results and model requests lose the values', async (t) => {

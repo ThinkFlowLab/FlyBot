@@ -27,7 +27,7 @@ const insecure = () => typeof location !== 'undefined' && location.protocol === 
   && !/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/.test(location.hostname)
 
 const scopeLabel = (scope, roster) => {
-  if (scope === 'all') return t('All Bots')
+  if (scope === 'all') return t('All my Bots')
   const names = (scope ?? []).map(id => roster.byId[id]?.name).filter(Boolean)
   return names.length === 0 ? t('No Bot') : names.join(t(' and '))
 }
@@ -60,7 +60,7 @@ export function MaskedInput({ value, onChange, onEnter, label, autoFocus = false
 }
 
 function ScopeSwitch({ value, onChange, bot }) {
-  const options = [['all', t('All Bots')], ['bot', t('Only {name}', { name: bot.name })]]
+  const options = [['all', t('All my Bots')], ['bot', t('Only {name}', { name: bot.name })]]
   return h('div', { className: 'bt-secret-scope', role: 'radiogroup', 'aria-label': t('Who may use it') },
     h('span', { className: 'bt-secret-glide', 'data-at': value === 'all' ? 0 : 1, 'aria-hidden': true }),
     options.map(([id, text]) => h('button', {
@@ -170,21 +170,25 @@ export function SecretDock({ sessionId, useRoster, useCards, useSession, actions
 // -------------------------------------------------------------------------
 // Settings page
 
-function ScopeEditor({ secret, roster, onSave }) {
-  const [mode, setMode] = useState(secret.scope === 'all' ? 'all' : 'some')
+// All my Bots (the default for every key the owner saves, #545), chosen Bots, or none.
+const scopeMode = scope => (scope === 'all' ? 'all' : scope.length === 0 ? 'none' : 'some')
+
+export function ScopeEditor({ secret, roster, onSave }) {
+  const [mode, setMode] = useState(scopeMode(secret.scope))
   const [picked, setPicked] = useState(secret.scope === 'all' ? [] : secret.scope)
   const toggle = id => setPicked(list => (list.includes(id) ? list.filter(item => item !== id) : [...list, id]))
-  const same = mode === 'all' ? secret.scope === 'all' : secret.scope !== 'all' && [...picked].sort().join() === [...secret.scope].sort().join()
+  const next = mode === 'all' ? 'all' : mode === 'none' ? [] : picked
+  const same = next === 'all' ? secret.scope === 'all' : secret.scope !== 'all' && [...next].sort().join() === [...secret.scope].sort().join()
   return h('div', { className: 'bt-secret-edit-block' },
     h('div', { className: 'bt-secret-edit-label' }, t('Who may use it')),
     h('div', { className: 'bt-secret-radios', role: 'radiogroup', 'aria-label': t('Who may use {name}', { name: secret.name }) },
-      [['all', t('All Bots')], ['some', t('Chosen Bots')]].map(([id, text]) => h('label', { key: id, className: 'bt-secret-radio' },
+      [['all', t('All my Bots')], ['some', t('Chosen Bots')], ['none', t('No Bot')]].map(([id, text]) => h('label', { key: id, className: 'bt-secret-radio' },
         h('input', { type: 'radio', name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }), text))),
     mode === 'some' ? h('div', { className: 'bt-secret-bots' }, roster.bots.map(bot => h('button', {
       key: bot.id, type: 'button', className: 'bt-secret-bot', 'aria-pressed': picked.includes(bot.id), onClick: () => toggle(bot.id),
     }, h(BotAvatar, { bot, size: 20, badge: false, live: false }), bot.name, picked.includes(bot.id) ? h(CheckIcon) : null))) : null,
     h('div', { className: 'bt-secret-row-actions' },
-      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: same, onClick: () => onSave(mode === 'all' ? 'all' : picked) }, t('Save access'))))
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: same, onClick: () => onSave(next) }, t('Save access'))))
 }
 
 function ValueEditor({ secret, onSave }) {
@@ -217,7 +221,7 @@ function SecretRow({ secret, roster, actions, run, open, onToggle }) {
         h('span', { className: 'bt-secret-title' }, h(KeyIcon), h('code', { className: 'bt-secret-name' }, secret.name), secret.purpose ? h('span', { className: 'bt-secret-purpose' }, secret.purpose) : null),
         h('span', { className: 'bt-set-hint' }, meta)),
       h('span', { className: 'bt-set-control' },
-        secret.scope === 'all' ? h('span', { className: 'bt-tag' }, t('All Bots'))
+        secret.scope === 'all' ? h('span', { className: 'bt-tag' }, t('All my Bots'))
           : allowed.length === 0 ? h('span', { className: 'bt-tag' }, t('No Bot'))
             : h('span', { className: 'bt-secret-faces', title: allowed.map(bot => bot.name).join(', ') }, allowed.slice(0, 5).map(bot => h(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false }))))),
     open ? h('div', { className: 'bt-secret-edit' },
@@ -247,7 +251,7 @@ function AddSecret({ actions, run, onDone }) {
     h('input', { className: 'bt-input', 'aria-label': t('What it is for'), placeholder: t('What it is for'), value: purpose, autoComplete: 'off', onChange: event => setPurpose(event.target.value) }),
     h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value, onChange: setValue, onEnter: save, label: t('Value') })),
     h('div', { className: 'bt-secret-row-actions' },
-      h('span', { className: 'bt-set-hint' }, t('New keys are for all Bots; narrow it down afterwards.')),
+      h('span', { className: 'bt-set-hint' }, t('New keys are for all your Bots; change who may use it afterwards.')),
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onDone }, t('Cancel')),
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: !ready, onClick: save }, t('Save key'))))
 }

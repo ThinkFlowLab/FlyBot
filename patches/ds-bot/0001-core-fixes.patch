@@ -839,6 +839,24 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
+@@ -485,7 +485,7 @@ const ZH = {
+   'Your answer': '你的回答',
+ 
+   // Secrets
+-  'All Bots': '所有 Bot',
++  'All my Bots': '我的所有 Bot',
+   'No Bot': '没有 Bot',
+   'Paste or type the key': '粘贴或输入密钥',
+   'Only {name}': '只给 {name}',
+@@ -528,7 +528,7 @@ const ZH = {
+   'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
+   'What it is for': '用途',
+   Value: '值',
+-  'New keys are for all Bots; narrow it down afterwards.': '新密钥默认所有 Bot 可用，之后可以收窄。',
++  'New keys are for all your Bots; change who may use it afterwards.': '新密钥默认你的所有 Bot 可用，之后可以更改谁能用。',
+   'Save key': '保存密钥',
+   'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
+   ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
 @@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
@@ -1984,7 +2002,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -1,27 +1,43 @@
+@@ -1,27 +1,44 @@
 -// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
 -// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
 -// so every Bot and Session gets them as mcp__github__<tool>.
@@ -1998,6 +2016,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 -// never written to the DSH profile. A new token is shared with no Bot's shell: the tools
 -// do not need it there, and a Bot that reads a planted instruction in an issue could
 -// send it anywhere. The Secrets page can still share it. Signing in is `signIn` alone, so a browser login can
+-// take its place later without touching the mount.
 +// GitHub is the first one: GitHub's own MCP server. Composio is the second: one API key
 +// opens a gateway to many apps (Gmail, Slack, Calendar, Notion, ...). The user picks the
 +// apps here; Composio asks for each app's sign-in the first time a Bot needs it, so its
@@ -2005,13 +2024,14 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +//
 +// A secret (GITHUB_TOKEN, COMPOSIO_API_KEY) is kept and redacted by secrets.js. It reaches
 +// the service only in the MCP request headers, built here in memory, never written to the
-+// DSH profile. A new secret is shared with no Bot's shell: the tools do not need it there,
-+// and a Bot that reads a planted instruction in an issue or a mail could send it anywhere.
-+// The Secrets page can still share it. Signing in is `check` alone, so a browser login can
- // take its place later without touching the mount.
- 
-+import { randomUUID } from 'node:crypto'
++// DSH profile. A new secret is for all of the owner's Bots, like any key the owner saves
++// (owner decision 2026-10-20, #359, #545): their shells get it as $DSH_SECRET_<NAME> too.
++// The Secrets page narrows it to chosen Bots or to none. Reconnecting keeps the scope the
++// key already has. Signing in is `check` alone, so a browser login can take its place later
++// without touching the mount.
 +
++import { randomUUID } from 'node:crypto'
+ 
  export const GITHUB = 'github'
  export const GITHUB_SECRET = 'GITHUB_TOKEN'
 +export const COMPOSIO = 'composio'
@@ -2039,7 +2059,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +38,492 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,491 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -2469,12 +2489,11 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 -      await rt.save()
 -      await sync()
 +      const oldToken = rt.secretValue(c.def.secret)
-+      const kept = oldToken !== undefined
 +      const previous = saved(c)
 +      const record = await c.def.check({ token, options: c.options, saved: previous, body })
 +      c.saving += 1
 +      try {
-+        await rt.secretEndpoint('secret-set', { name: c.def.secret, value: token, purpose: c.def.purpose, ...(kept ? {} : { scope: [] }) })
++        await rt.secretEndpoint('secret-set', { name: c.def.secret, value: token, purpose: c.def.purpose })
 +        state.connectors = { ...state.connectors, [c.def.id]: { ...record, connectedAt: Date.now() } }
 +        await rt.save()
 +      } catch (error) {
@@ -4189,6 +4208,15 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    return { ctx, home, mounts }
  }
  
+@@ -75,7 +75,7 @@ async function call(ctx, endpoint, payload) {
+   return response.json()
+ }
+ 
+-test('connecting saves the token, kept out of every Bot shell, and mounts GitHub MCP; disconnecting undoes both', async (t) => {
++test('connecting saves the token for all of the owner\'s Bots (#545) and mounts GitHub MCP; disconnecting undoes both', async (t) => {
+   const realFetch = globalThis.fetch
+   t.after(() => { globalThis.fetch = realFetch })
+   globalThis.fetch = async () => answer(200, { login: 'octo' })
 @@ -84,11 +84,11 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
    const token = fresh()
  
@@ -4203,7 +4231,13 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts.length, 1)
    assert.deepEqual(mounts[0].config, {
      transport: 'streamable-http',
-@@ -103,7 +103,7 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
+@@ -98,12 +98,12 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
+     failOnStartupError: true,
+   })
+   const state = await call(ctx, 'state', {})
+-  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', []]])
++  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all']])
+   assert.ok(!JSON.stringify(state).includes(token))
    assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(token))
  
    const off = await call(ctx, 'connector-disconnect', { id: 'github' })
@@ -4317,7 +4351,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  await assert.rejects(composioSession(key, { ...options, fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
 +})
 +
-+test('connecting Composio keeps the key out of every Bot shell and the profile, mounts mcp__composio__ tools, and disconnecting undoes it', async (t) => {
++test('connecting Composio saves the key for all of the owner\'s Bots (#545), keeps it out of the profile, mounts mcp__composio__ tools, and disconnecting undoes it', async (t) => {
 +  const realFetch = globalThis.fetch
 +  t.after(() => { globalThis.fetch = realFetch })
 +  const sent = fakeComposio()
@@ -4353,7 +4387,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  assert.match([...userIds][0], /^flybot-[0-9a-f-]{36}$/)
 +
 +  const state = await call(ctx, 'state', {})
-+  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['COMPOSIO_API_KEY', []]])
++  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['COMPOSIO_API_KEY', 'all']])
 +  assert.ok(!JSON.stringify(state).includes(key))
 +  assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(key))
 +  assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.apps, ['gmail', 'slack'])
@@ -5950,6 +5984,24 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js
+@@ -11,7 +11,7 @@ const { outputFiles } = await build({
+     contents: [
+       "export { ToolCell, callTree } from './src/client/cells.js'",
+       "export { QuestionDock } from './src/client/questions.js'",
+-      "export { SecretDock } from './src/client/secret-card.js'",
++      "export { SecretDock, ScopeEditor } from './src/client/secret-card.js'",
+       "export { countCards } from './src/client/sources.js'",
+     ].join('\n'),
+     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
+@@ -44,7 +44,7 @@ runInNewContext(outputFiles[0].text, {
+     throw new Error(`Unexpected platform module ${name}`)
+   },
+ })
+-const { ToolCell, callTree, QuestionDock, SecretDock, countCards } = module.exports
++const { ToolCell, callTree, QuestionDock, SecretDock, ScopeEditor, countCards } = module.exports
+ 
+ // Runs the effects collected since the last render; returns the cleanups.
+ const mount = () => {
 @@ -329,7 +329,7 @@ test('a PTC group relay shows its replies from the sub-call, live and after relo
    stop()
    timers.clear()
@@ -5959,7 +6011,7 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
  })
  
  // #105: the secret and question cards of a PTC program showed nowhere.
-@@ -355,3 +355,17 @@ test('PTC secret and question cards show at their sub-calls and act on their own
+@@ -355,3 +355,30 @@ test('PTC secret and question cards show at their sub-calls and act on their own
    assert.doesNotMatch(shown(program([call('ask_user', 'call-0-1:ptc:1')]), { roster }), /Which draft\?/)
    assert.equal(shown(program([call('ask_user', 'call-1-2:ptc:1')]), { roster: team() }), '')
  })
@@ -5976,6 +6028,19 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 +  assert.match(inFace, /Bob joined the room/)
 +  // Another kind of room keeps whatever notice it was given.
 +  assert.match(shown(root, { sessionId: 'room' }), /Waiting for the owner/)
++})
++
++// The Secrets page says who may use a key with three explicit choices (#545): all my Bots,
++// chosen Bots, or none; a key for no Bot shows that choice, not a list with nobody in it.
++test('the scope editor offers all my Bots, chosen Bots, or none, and shows the current one', () => {
++  const radios = (scope) => {
++    const out = expand(ScopeEditor({ secret: { name: 'GITHUB_TOKEN', scope }, roster: team(), onSave: () => {} }))
++    const group = find(out, node => node.props?.role === 'radiogroup')
++    return group.props.children.flat().map(label => [text(label), find(label, node => node.type === 'input').props.checked])
++  }
++  assert.deepEqual(radios('all'), [['All my Bots', true], ['Chosen Bots', false], ['No Bot', false]])
++  assert.deepEqual(radios([]), [['All my Bots', false], ['Chosen Bots', false], ['No Bot', true]])
++  assert.deepEqual(radios(['writer']), [['All my Bots', false], ['Chosen Bots', true], ['No Bot', false]])
 +})
 diff --git a/test/work-dir.test.js b/test/work-dir.test.js
 --- a/test/work-dir.test.js

@@ -115,6 +115,7 @@
     "src/host/parts.js",
     "src/host/browser.js",
     "src/host/secrets.js",
+    "src/client/secret-card.js",
     "test/update.test.js",
     "test/dsh-update.test.js",
     "test/store.test.js",

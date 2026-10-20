@@ -707,7 +707,7 @@ const ZH = {
   'Your answer': '你的回答',
 
   // Secrets
-  'All Bots': '所有 Bot',
+  'All my Bots': '我的所有 Bot',
   'No Bot': '没有 Bot',
   'Paste or type the key': '粘贴或输入密钥',
   'Only {name}': '只给 {name}',
@@ -750,7 +750,7 @@ const ZH = {
   'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
   'What it is for': '用途',
   Value: '值',
-  'New keys are for all Bots; narrow it down afterwards.': '新密钥默认所有 Bot 可用，之后可以收窄。',
+  'New keys are for all your Bots; change who may use it afterwards.': '新密钥默认你的所有 Bot 可用，之后可以更改谁能用。',
   'Save key': '保存密钥',
   'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
   ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',

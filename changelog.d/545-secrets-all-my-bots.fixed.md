@@ -1,0 +1,1 @@
+A key you save, including the GitHub token and the Composio key a connector saves, is now for all of your Bots unless you narrow it; keys that were "No Bot" only because of the old connector default move to all of your Bots once. Settings → Secrets offers All my Bots, Chosen Bots or No Bot for each key ([#545](https://github.com/ThinkFlowLab/FlyBot/issues/545)).

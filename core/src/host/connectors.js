@@ -10,10 +10,11 @@
 //
 // A secret (GITHUB_TOKEN, COMPOSIO_API_KEY) is kept and redacted by secrets.js. It reaches
 // the service only in the MCP request headers, built here in memory, never written to the
-// DSH profile. A new secret is shared with no Bot's shell: the tools do not need it there,
-// and a Bot that reads a planted instruction in an issue or a mail could send it anywhere.
-// The Secrets page can still share it. Signing in is `check` alone, so a browser login can
-// take its place later without touching the mount.
+// DSH profile. A new secret is for all of the owner's Bots, like any key the owner saves
+// (owner decision 2026-10-20, #359, #545): their shells get it as $DSH_SECRET_<NAME> too.
+// The Secrets page narrows it to chosen Bots or to none. Reconnecting keeps the scope the
+// key already has. Signing in is `check` alone, so a browser login can take its place later
+// without touching the mount.
 
 import { randomUUID } from 'node:crypto'
 
@@ -426,12 +427,11 @@ export function install(rt) {
       if (c.insecure) throw new Error(INSECURE(c.def.name))
       await rt.loadSecrets()
       const oldToken = rt.secretValue(c.def.secret)
-      const kept = oldToken !== undefined
       const previous = saved(c)
       const record = await c.def.check({ token, options: c.options, saved: previous, body })
       c.saving += 1
       try {
-        await rt.secretEndpoint('secret-set', { name: c.def.secret, value: token, purpose: c.def.purpose, ...(kept ? {} : { scope: [] }) })
+        await rt.secretEndpoint('secret-set', { name: c.def.secret, value: token, purpose: c.def.purpose })
         state.connectors = { ...state.connectors, [c.def.id]: { ...record, connectedAt: Date.now() } }
         await rt.save()
       } catch (error) {

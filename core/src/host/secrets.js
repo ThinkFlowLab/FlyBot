@@ -7,6 +7,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { output } from './tools.js'
+import { OTHER, settled } from './turn-origin.js'
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
 export const ENV_PREFIX = 'DSH_SECRET_'
@@ -81,7 +82,9 @@ export function install(rt) {
   const { ctx, home, state } = rt
   const path = join(home, 'secrets.json')
 
-  /** @type {Map<string, {name:string, value:string, purpose:string, scope:'all'|string[], requestedBy:string|null, createdAt:number, updatedAt:number, lastUsedAt?:number}>} */
+  // `scopeSet` marks a scope the owner chose (Secrets page, a card's "only this Bot", a Bot
+  // removed from the list); without it an empty list is the old connector default (#545).
+  /** @type {Map<string, {name:string, value:string, purpose:string, scope:'all'|string[], scopeSet?:true, requestedBy:string|null, createdAt:number, updatedAt:number, lastUsedAt?:number}>} */
   const secrets = new Map()
   let loaded = null
   let writing = Promise.resolve()
@@ -110,13 +113,23 @@ export function install(rt) {
     try {
       const parsed = JSON.parse(await readFile(path, 'utf8'))
       secrets.clear()
+      let widened = false
       for (const entry of Array.isArray(parsed?.secrets) ? parsed.secrets : []) {
         if (!SECRET_NAME.test(entry?.name ?? '') || typeof entry.value !== 'string') continue
+        const scopeSet = entry.scopeSet === true
+        let scope = entry.scope === 'all' ? 'all' : Array.isArray(entry.scope) ? entry.scope.filter(id => typeof id === 'string') : 'all'
+        // The owner's keys are for all the owner's Bots by default (#359, #545): an empty list
+        // nobody chose is what a connector used to save, so it becomes "all" once.
+        if (Array.isArray(scope) && scope.length === 0 && !scopeSet) {
+          scope = 'all'
+          widened = true
+        }
         secrets.set(entry.name, {
           name: entry.name,
           value: entry.value,
           purpose: typeof entry.purpose === 'string' ? entry.purpose : '',
-          scope: entry.scope === 'all' ? 'all' : Array.isArray(entry.scope) ? entry.scope.filter(id => typeof id === 'string') : 'all',
+          scope,
+          ...(scopeSet ? { scopeSet: true } : {}),
           requestedBy: typeof entry.requestedBy === 'string' ? entry.requestedBy : null,
           createdAt: Number(entry.createdAt) || Date.now(),
           updatedAt: Number(entry.updatedAt) || Date.now(),
@@ -124,6 +137,7 @@ export function install(rt) {
         })
       }
       if (!loadedReadOnly) await chmod(path, 0o600).catch(() => { /* best effort: some file systems have no modes */ })
+      if (widened && !loadedReadOnly) await persist().catch(() => { /* the moved scope stays in memory and the next save writes it */ })
     } catch (error) {
       if (error?.code === 'ENOENT') secrets.clear()
       else rt.warn('ds-bot: unreadable secrets file %s (%s)', path, reason(error))
@@ -265,13 +279,17 @@ export function install(rt) {
         const { botId, request } = pendingRequest(body.requestId)
         const existing = secrets.get(request.name)
         let scope
-        if (existing === undefined || request.kind === 'fill') scope = body.scope === 'bot' ? [botId] : 'all'
-        else scope = existing.scope === 'all' ? 'all' : [...new Set([...existing.scope, botId])]
+        let scopeSet = existing?.scopeSet === true
+        if (existing === undefined || request.kind === 'fill') {
+          scope = body.scope === 'bot' ? [botId] : 'all'
+          scopeSet = body.scope === 'bot'
+        } else scope = existing.scope === 'all' ? 'all' : [...new Set([...existing.scope, botId])]
         secrets.set(request.name, {
           name: request.name,
           value,
           purpose: existing?.purpose || request.purpose,
           scope,
+          ...(scopeSet ? { scopeSet: true } : {}),
           requestedBy: existing?.requestedBy ?? botId,
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
@@ -291,6 +309,7 @@ export function install(rt) {
         value,
         purpose: typeof body.purpose === 'string' && body.purpose.trim() !== '' ? body.purpose.trim().slice(0, 300) : existing?.purpose ?? '',
         scope: body.scope !== undefined ? cleanScope(body.scope) : existing?.scope ?? 'all',
+        ...(body.scope !== undefined || existing?.scopeSet === true ? { scopeSet: true } : {}),
         requestedBy: existing?.requestedBy ?? null,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -323,6 +342,7 @@ export function install(rt) {
       const secret = secrets.get(normalizeName(body.name))
       if (secret === undefined) throw new Error('No such key')
       secret.scope = cleanScope(body.scope)
+      secret.scopeSet = true
       secret.updatedAt = Date.now()
       const notes = []
       reconcile(secret.name, notes)
@@ -352,6 +372,8 @@ export function install(rt) {
     for (const secret of secrets.values()) {
       if (Array.isArray(secret.scope) && secret.scope.includes(botId)) {
         secret.scope = secret.scope.filter(id => id !== botId)
+        // The owner picked this list; emptying it must not read as the old default later.
+        secret.scopeSet = true
         touched = true
       }
     }
@@ -465,9 +487,21 @@ export function install(rt) {
     return ctx.llm.stream({ ...options, messages: fresh, ...(system !== undefined ? { system } : {}) })
   })
 
+  // Keys are the owner's (#359, #545): a shell gets them only on the owner's own turn. A turn
+  // someone else started (a friend, another room member, another owner's Bot) gets none, and a
+  // shell outside a known turn gets them only while the Bot is shared with nobody, the same
+  // fail-closed rule as the connector tools (connector-access.js).
+  const ownersTurn = (sessionId, bot) => {
+    const verdict = settled(rt, sessionId)
+    if (verdict !== undefined) return verdict !== OTHER
+    return rt.sharedWith(bot.id).length === 0
+  }
+
   function resolveEnv(execution) {
-    const botId = rt.selfOf(execution?.agent?.session?.header?.id ?? execution?.agent?.id)
-    if (rt.botOf(botId) === undefined) return {}
+    const sessionId = execution?.agent?.session?.header?.id ?? execution?.agent?.id
+    const botId = rt.selfOf(sessionId)
+    const bot = rt.botOf(botId)
+    if (bot === undefined || bot.remote !== undefined || !ownersTurn(sessionId, bot)) return {}
     const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
     const values = {}
     let used = false
@@ -529,7 +563,14 @@ export function install(rt) {
   Object.assign(rt, {
     secretsView,
     secretValue: name => secrets.get(name)?.value,
-    canUseSecret: (name, botId) => canUse(secrets.get(name), botId),
+    // For a capability, which mounts for the Bot's whole Agent whatever the turn: a key for all
+    // Bots stays out of a Bot that is shared with anyone; a key whose list names the Bot is the
+    // owner's explicit choice (#545).
+    canUseSecret: (name, botId) => {
+      const secret = secrets.get(name)
+      if (!canUse(secret, botId) || rt.botOf(botId)?.remote !== undefined) return false
+      return secret.scope !== 'all' || rt.sharedWith(botId).length === 0
+    },
     secretEndpoint,
     forgetBotSecrets,
     loadSecrets,

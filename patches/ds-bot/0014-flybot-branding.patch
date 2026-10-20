@@ -176,6 +176,76 @@ diff --git a/src/client/diagnostics.js b/src/client/diagnostics.js
  
  export function issueUrl(base, { what = '', diagnostics }) {
    const text = what.trim().slice(0, WHAT_MAX)
+diff --git a/src/client/secret-card.js b/src/client/secret-card.js
+--- a/src/client/secret-card.js
++++ b/src/client/secret-card.js
+@@ -27,7 +27,7 @@ const insecure = () => typeof location !== 'undefined' && location.protocol ===
+   && !/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/.test(location.hostname)
+ 
+ const scopeLabel = (scope, roster) => {
+-  if (scope === 'all') return t('All Bots')
++  if (scope === 'all') return t('All my Bots')
+   const names = (scope ?? []).map(id => roster.byId[id]?.name).filter(Boolean)
+   return names.length === 0 ? t('No Bot') : names.join(t(' and '))
+ }
+@@ -60,7 +60,7 @@ export function MaskedInput({ value, onChange, onEnter, label, autoFocus = false
+ }
+ 
+ function ScopeSwitch({ value, onChange, bot }) {
+-  const options = [['all', t('All Bots')], ['bot', t('Only {name}', { name: bot.name })]]
++  const options = [['all', t('All my Bots')], ['bot', t('Only {name}', { name: bot.name })]]
+   return h('div', { className: 'bt-secret-scope', role: 'radiogroup', 'aria-label': t('Who may use it') },
+     h('span', { className: 'bt-secret-glide', 'data-at': value === 'all' ? 0 : 1, 'aria-hidden': true }),
+     options.map(([id, text]) => h('button', {
+@@ -170,21 +170,25 @@ export function SecretDock({ sessionId, useRoster, useCards, useSession, actions
+ // -------------------------------------------------------------------------
+ // Settings page
+ 
+-function ScopeEditor({ secret, roster, onSave }) {
+-  const [mode, setMode] = useState(secret.scope === 'all' ? 'all' : 'some')
++// All my Bots (the default for every key the owner saves, #545), chosen Bots, or none.
++const scopeMode = scope => (scope === 'all' ? 'all' : scope.length === 0 ? 'none' : 'some')
++
++export function ScopeEditor({ secret, roster, onSave }) {
++  const [mode, setMode] = useState(scopeMode(secret.scope))
+   const [picked, setPicked] = useState(secret.scope === 'all' ? [] : secret.scope)
+   const toggle = id => setPicked(list => (list.includes(id) ? list.filter(item => item !== id) : [...list, id]))
+-  const same = mode === 'all' ? secret.scope === 'all' : secret.scope !== 'all' && [...picked].sort().join() === [...secret.scope].sort().join()
++  const next = mode === 'all' ? 'all' : mode === 'none' ? [] : picked
++  const same = next === 'all' ? secret.scope === 'all' : secret.scope !== 'all' && [...next].sort().join() === [...secret.scope].sort().join()
+   return h('div', { className: 'bt-secret-edit-block' },
+     h('div', { className: 'bt-secret-edit-label' }, t('Who may use it')),
+     h('div', { className: 'bt-secret-radios', role: 'radiogroup', 'aria-label': t('Who may use {name}', { name: secret.name }) },
+-      [['all', t('All Bots')], ['some', t('Chosen Bots')]].map(([id, text]) => h('label', { key: id, className: 'bt-secret-radio' },
++      [['all', t('All my Bots')], ['some', t('Chosen Bots')], ['none', t('No Bot')]].map(([id, text]) => h('label', { key: id, className: 'bt-secret-radio' },
+         h('input', { type: 'radio', name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }), text))),
+     mode === 'some' ? h('div', { className: 'bt-secret-bots' }, roster.bots.map(bot => h('button', {
+       key: bot.id, type: 'button', className: 'bt-secret-bot', 'aria-pressed': picked.includes(bot.id), onClick: () => toggle(bot.id),
+     }, h(BotAvatar, { bot, size: 20, badge: false, live: false }), bot.name, picked.includes(bot.id) ? h(CheckIcon) : null))) : null,
+     h('div', { className: 'bt-secret-row-actions' },
+-      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: same, onClick: () => onSave(mode === 'all' ? 'all' : picked) }, t('Save access'))))
++      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: same, onClick: () => onSave(next) }, t('Save access'))))
+ }
+ 
+ function ValueEditor({ secret, onSave }) {
+@@ -217,7 +217,7 @@ function SecretRow({ secret, roster, actions, run, open, onToggle }) {
+         h('span', { className: 'bt-secret-title' }, h(KeyIcon), h('code', { className: 'bt-secret-name' }, secret.name), secret.purpose ? h('span', { className: 'bt-secret-purpose' }, secret.purpose) : null),
+         h('span', { className: 'bt-set-hint' }, meta)),
+       h('span', { className: 'bt-set-control' },
+-        secret.scope === 'all' ? h('span', { className: 'bt-tag' }, t('All Bots'))
++        secret.scope === 'all' ? h('span', { className: 'bt-tag' }, t('All my Bots'))
+           : allowed.length === 0 ? h('span', { className: 'bt-tag' }, t('No Bot'))
+             : h('span', { className: 'bt-secret-faces', title: allowed.map(bot => bot.name).join(', ') }, allowed.slice(0, 5).map(bot => h(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false }))))),
+     open ? h('div', { className: 'bt-secret-edit' },
+@@ -247,7 +247,7 @@ function AddSecret({ actions, run, onDone }) {
+     h('input', { className: 'bt-input', 'aria-label': t('What it is for'), placeholder: t('What it is for'), value: purpose, autoComplete: 'off', onChange: event => setPurpose(event.target.value) }),
+     h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value, onChange: setValue, onEnter: save, label: t('Value') })),
+     h('div', { className: 'bt-secret-row-actions' },
+-      h('span', { className: 'bt-set-hint' }, t('New keys are for all Bots; narrow it down afterwards.')),
++      h('span', { className: 'bt-set-hint' }, t('New keys are for all your Bots; change who may use it afterwards.')),
+       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onDone }, t('Cancel')),
+       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: !ready, onClick: save }, t('Save key'))))
+ }
 diff --git a/src/client/settings.js b/src/client/settings.js
 --- a/src/client/settings.js
 +++ b/src/client/settings.js
@@ -417,12 +487,56 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 diff --git a/src/host/secrets.js b/src/host/secrets.js
 --- a/src/host/secrets.js
 +++ b/src/host/secrets.js
-@@ -123,7 +123,7 @@ export function install(rt) {
+@@ -7,6 +7,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promi
+ import { join } from 'node:path'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
+ import { output } from './tools.js'
++import { OTHER, settled } from './turn-origin.js'
+ 
+ export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
+ export const ENV_PREFIX = 'DSH_SECRET_'
+@@ -81,7 +81,9 @@ export function install(rt) {
+   const { ctx, home, state } = rt
+   const path = join(home, 'secrets.json')
+ 
+-  /** @type {Map<string, {name:string, value:string, purpose:string, scope:'all'|string[], requestedBy:string|null, createdAt:number, updatedAt:number, lastUsedAt?:number}>} */
++  // `scopeSet` marks a scope the owner chose (Secrets page, a card's "only this Bot", a Bot
++  // removed from the list); without it an empty list is the old connector default (#545).
++  /** @type {Map<string, {name:string, value:string, purpose:string, scope:'all'|string[], scopeSet?:true, requestedBy:string|null, createdAt:number, updatedAt:number, lastUsedAt?:number}>} */
+   const secrets = new Map()
+   let loaded = null
+   let writing = Promise.resolve()
+@@ -110,20 +110,31 @@ export function install(rt) {
+     try {
+       const parsed = JSON.parse(await readFile(path, 'utf8'))
+       secrets.clear()
++      let widened = false
+       for (const entry of Array.isArray(parsed?.secrets) ? parsed.secrets : []) {
+         if (!SECRET_NAME.test(entry?.name ?? '') || typeof entry.value !== 'string') continue
++        const scopeSet = entry.scopeSet === true
++        let scope = entry.scope === 'all' ? 'all' : Array.isArray(entry.scope) ? entry.scope.filter(id => typeof id === 'string') : 'all'
++        // The owner's keys are for all the owner's Bots by default (#359, #545): an empty list
++        // nobody chose is what a connector used to save, so it becomes "all" once.
++        if (Array.isArray(scope) && scope.length === 0 && !scopeSet) {
++          scope = 'all'
++          widened = true
++        }
+         secrets.set(entry.name, {
+           name: entry.name,
+           value: entry.value,
+           purpose: typeof entry.purpose === 'string' ? entry.purpose : '',
+-          scope: entry.scope === 'all' ? 'all' : Array.isArray(entry.scope) ? entry.scope.filter(id => typeof id === 'string') : 'all',
++          scope,
++          ...(scopeSet ? { scopeSet: true } : {}),
+           requestedBy: typeof entry.requestedBy === 'string' ? entry.requestedBy : null,
+           createdAt: Number(entry.createdAt) || Date.now(),
+           updatedAt: Number(entry.updatedAt) || Date.now(),
            ...(Number.isFinite(entry.lastUsedAt) ? { lastUsedAt: entry.lastUsedAt } : {}),
          })
        }
 -      if (!loadedReadOnly) await chmod(path, 0o600).catch(() => {})
 +      if (!loadedReadOnly) await chmod(path, 0o600).catch(() => { /* best effort: some file systems have no modes */ })
++      if (widened && !loadedReadOnly) await persist().catch(() => { /* the moved scope stays in memory and the next save writes it */ })
      } catch (error) {
        if (error?.code === 'ENOENT') secrets.clear()
        else rt.warn('ds-bot: unreadable secrets file %s (%s)', path, reason(error))
@@ -435,7 +549,50 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
          throw error
        }
      })
-@@ -357,7 +357,7 @@ export function install(rt) {
+@@ -265,13 +265,17 @@ export function install(rt) {
+         const { botId, request } = pendingRequest(body.requestId)
+         const existing = secrets.get(request.name)
+         let scope
+-        if (existing === undefined || request.kind === 'fill') scope = body.scope === 'bot' ? [botId] : 'all'
+-        else scope = existing.scope === 'all' ? 'all' : [...new Set([...existing.scope, botId])]
++        let scopeSet = existing?.scopeSet === true
++        if (existing === undefined || request.kind === 'fill') {
++          scope = body.scope === 'bot' ? [botId] : 'all'
++          scopeSet = body.scope === 'bot'
++        } else scope = existing.scope === 'all' ? 'all' : [...new Set([...existing.scope, botId])]
+         secrets.set(request.name, {
+           name: request.name,
+           value,
+           purpose: existing?.purpose || request.purpose,
+           scope,
++          ...(scopeSet ? { scopeSet: true } : {}),
+           requestedBy: existing?.requestedBy ?? botId,
+           createdAt: existing?.createdAt ?? now,
+           updatedAt: now,
+@@ -291,6 +291,7 @@ export function install(rt) {
+         value,
+         purpose: typeof body.purpose === 'string' && body.purpose.trim() !== '' ? body.purpose.trim().slice(0, 300) : existing?.purpose ?? '',
+         scope: body.scope !== undefined ? cleanScope(body.scope) : existing?.scope ?? 'all',
++        ...(body.scope !== undefined || existing?.scopeSet === true ? { scopeSet: true } : {}),
+         requestedBy: existing?.requestedBy ?? null,
+         createdAt: existing?.createdAt ?? now,
+         updatedAt: now,
+@@ -323,6 +323,7 @@ export function install(rt) {
+       const secret = secrets.get(normalizeName(body.name))
+       if (secret === undefined) throw new Error('No such key')
+       secret.scope = cleanScope(body.scope)
++      secret.scopeSet = true
+       secret.updatedAt = Date.now()
+       const notes = []
+       reconcile(secret.name, notes)
+@@ -352,12 +352,14 @@ export function install(rt) {
+     for (const secret of secrets.values()) {
+       if (Array.isArray(secret.scope) && secret.scope.includes(botId)) {
+         secret.scope = secret.scope.filter(id => id !== botId)
++        // The owner picked this list; emptying it must not read as the old default later.
++        secret.scopeSet = true
+         touched = true
+       }
      }
      if (touched) {
        changed()
@@ -444,6 +601,30 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
      }
    }
  
+@@ -465,9 +465,21 @@ export function install(rt) {
+     return ctx.llm.stream({ ...options, messages: fresh, ...(system !== undefined ? { system } : {}) })
+   })
+ 
++  // Keys are the owner's (#359, #545): a shell gets them only on the owner's own turn. A turn
++  // someone else started (a friend, another room member, another owner's Bot) gets none, and a
++  // shell outside a known turn gets them only while the Bot is shared with nobody, the same
++  // fail-closed rule as the connector tools (connector-access.js).
++  const ownersTurn = (sessionId, bot) => {
++    const verdict = settled(rt, sessionId)
++    if (verdict !== undefined) return verdict !== OTHER
++    return rt.sharedWith(bot.id).length === 0
++  }
++
+   function resolveEnv(execution) {
+-    const botId = rt.selfOf(execution?.agent?.session?.header?.id ?? execution?.agent?.id)
+-    if (rt.botOf(botId) === undefined) return {}
++    const sessionId = execution?.agent?.session?.header?.id ?? execution?.agent?.id
++    const botId = rt.selfOf(sessionId)
++    const bot = rt.botOf(botId)
++    if (bot === undefined || bot.remote !== undefined || !ownersTurn(sessionId, bot)) return {}
+     const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
+     const values = {}
+     let used = false
 @@ -499,7 +499,7 @@ export function install(rt) {
        try {
          unregister = sub.shellEnv.register({
@@ -453,6 +634,22 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
            resolve: resolveEnv,
          })
        } catch (error) {
+@@ -529,7 +529,14 @@ export function install(rt) {
+   Object.assign(rt, {
+     secretsView,
+     secretValue: name => secrets.get(name)?.value,
+-    canUseSecret: (name, botId) => canUse(secrets.get(name), botId),
++    // For a capability, which mounts for the Bot's whole Agent whatever the turn: a key for all
++    // Bots stays out of a Bot that is shared with anyone; a key whose list names the Bot is the
++    // owner's explicit choice (#545).
++    canUseSecret: (name, botId) => {
++      const secret = secrets.get(name)
++      if (!canUse(secret, botId) || rt.botOf(botId)?.remote !== undefined) return false
++      return secret.scope !== 'all' || rt.sharedWith(botId).length === 0
++    },
+     secretEndpoint,
+     forgetBotSecrets,
+     loadSecrets,
 diff --git a/src/host/update.js b/src/host/update.js
 --- a/src/host/update.js
 +++ b/src/host/update.js
@@ -638,6 +835,31 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
  })
  
  test('read-only secret reload does not requeue capability reconciliation', async t => {
+@@ -425,3 +425,24 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
+   assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
+   assert.equal(rt.capabilityStatusesView().chief.team, undefined)
+ })
++
++// A key for all Bots is the owner's own (#359, #545). A capability mounts for the Bot's whole Agent,
++// whoever's turn it is, so on a Bot shared with a friend it gets only a key that names that Bot.
++test('a key for all Bots does not reach a shared Bot\'s capability; one that names the Bot does', async t => {
++  const state = team()
++  state.grants = { worker: [{ grantee: '@bob.home', name: 'Bob' }] }
++  const env = await setup({ state, secret: { name: 'TOKEN', value: 'fake-secret-value', purpose: '', scope: 'all', requestedBy: null, createdAt: 1, updatedAt: 1 } })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.capabilitySave({ ...mcp('echo'), transport: 'streamable-http', url: 'https://example.test/mcp', headers: { Authorization: 'Bearer $DSH_SECRET_TOKEN' } }, { ui: true })
++  await rt.changeCapabilityAttachment('attach', { name: 'echo' }, 'chief')
++  await rt.changeCapabilityAttachment('attach', { name: 'echo', bot: 'Worker' }, 'chief')
++  for (const id of ['chief', 'worker']) ctx.emit('agent/created', { agent: testAgent(id, mounts, skills) })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.equal(rt.capabilityStatusesView().chief.echo.state, 'ready')
++  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'error')
++  assert.equal(mounts.some(mount => mount.sessionId === 'worker' && mount.config?.headers?.Authorization?.includes('fake-secret-value')), false)
++  await rt.secretEndpoint('secret-update', { name: 'TOKEN', scope: ['chief', 'worker'] })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'ready')
++})
 diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 --- a/test/dsh-update.test.js
 +++ b/test/dsh-update.test.js
@@ -672,6 +894,19 @@ diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 diff --git a/test/secrets.test.js b/test/secrets.test.js
 --- a/test/secrets.test.js
 +++ b/test/secrets.test.js
+@@ -73,9 +73,10 @@ const TEAM = {
+   questions: {},
+ }
+ 
+-function start() {
++function start({ secrets, team = TEAM } = {}) {
+   const home = mkdtempSync(join(tmpdir(), 'ds-bot-secrets-'))
+-  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
++  writeFileSync(join(home, 'state.json'), JSON.stringify(team))
++  if (secrets !== undefined) writeFileSync(join(home, 'secrets.json'), JSON.stringify({ version: 1, secrets }))
+   const contributors = []
+   const shellEnv = {
+     register(contributor) {
 @@ -173,7 +173,7 @@ test('a card saves a key the Bot never sees, and the shell gets it', async (t) =
    const live = bench.contributors.filter(entry => entry.live)
    assert.equal(live.length, 1)
@@ -681,6 +916,61 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
  
    // Asking again only names the variable.
    const again = await bench.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'x' }, 'b2')
+@@ -267,6 +267,54 @@ test('a deleted Bot leaves every scope list and takes its cards along', async (t
+   assert.deepEqual(JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0].scope, ['b2'])
+ })
+ 
++// A connector used to save its key for no Bot, and the Secrets page could not tell that from a
++// choice the owner made. Such a key now belongs to all of the owner's Bots; one the owner
++// narrowed on purpose (marked scopeSet) stays as it was.
++test('a key saved for no Bot by the old default is moved to all Bots once; an explicit choice stays', async (t) => {
++  const github = fresh()
++  const kept = fresh()
++  const picked = fresh()
++  const at = { createdAt: 1, updatedAt: 1, requestedBy: null, purpose: '' }
++  const bench = start({ secrets: [
++    { name: 'GITHUB_TOKEN', value: github, scope: [], ...at, purpose: 'GitHub connector' },
++    { name: 'NOBODY_KEY', value: kept, scope: [], scopeSet: true, ...at },
++    { name: 'WRITER_KEY', value: picked, scope: ['b2'], ...at },
++  ] })
++  t.after(bench.stop)
++  const team = await bench.view()
++  assert.deepEqual(team.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all'], ['NOBODY_KEY', []], ['WRITER_KEY', ['b2']]])
++  assert.ok(!JSON.stringify(team).includes(github))
++  assert.deepEqual(bench.env('c3'), { DSH_SECRET_GITHUB_TOKEN: github })
++  assert.deepEqual(bench.env('g-b2'), { DSH_SECRET_GITHUB_TOKEN: github, DSH_SECRET_WRITER_KEY: picked })
++  const stored = JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets
++  assert.deepEqual(stored.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all'], ['NOBODY_KEY', []], ['WRITER_KEY', ['b2']]])
++})
++
++test('choosing no Bot on the Secrets page is kept as a choice, and a new key is for all Bots', async (t) => {
++  const bench = start()
++  t.after(bench.stop)
++  const added = await bench.call('secret-set', { name: 'NEW_KEY', value: fresh() })
++  assert.equal(added.value.scope, 'all')
++  const none = await bench.call('secret-update', { name: 'NEW_KEY', scope: [] })
++  assert.deepEqual(none.value.scope, [])
++  assert.deepEqual(bench.env('b2'), {})
++  const stored = JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0]
++  assert.equal(stored.scopeSet, true)
++  const back = await bench.call('secret-update', { name: 'NEW_KEY', scope: 'all' })
++  assert.equal(back.value.scope, 'all')
++})
++
++// "All my Bots" is the owner's own use (#359, #545): a Bot shared with a friend gets no key in a
++// shell unless the turn is known to be the owner's, the same fail-closed rule as connector tools.
++test('a key for all Bots stays out of a shared Bot\'s shell when the turn is not known to be the owner\'s', async (t) => {
++  const value = fresh()
++  const bench = start({ team: { ...TEAM, grants: { c3: [{ grantee: '@bob.home', name: 'Bob' }] } } })
++  t.after(bench.stop)
++  await bench.call('secret-set', { name: 'GITHUB_TOKEN', value })
++  assert.deepEqual(bench.env('b2'), { DSH_SECRET_GITHUB_TOKEN: value })
++  assert.deepEqual(bench.env('c3'), {})
++})
++
+ test('tool results and model requests lose the values', async (t) => {
+   const bench = start()
+   t.after(bench.stop)
 diff --git a/test/store.test.js b/test/store.test.js
 --- a/test/store.test.js
 +++ b/test/store.test.js

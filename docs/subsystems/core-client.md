@@ -54,6 +54,10 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 
 `useLandOnMainBot` (`sidebar.js`) puts an emptied main view back on a Bot. `landingPart` (`text.js`) picks where: a part archived for a fresh one goes on in the fresh part; a view that emptied while its chat is still the Bot's current part (a session list reload, not the user leaving) returns to that same chat; a blank New Session the user opened, or a removed Bot, goes to the Main Bot. Every `openSession` and `landOn` with no user activation behind it (`navigator.userActivation.isActive === false`) is written to the client diagnostics and the console (`navigation: landOn to … from … with no click (caller stack)`), so a jump a user cannot explain names its caller.
 
+### Secrets page scope control (#545)
+
+- Settings → Secrets: each key's row shows **All my Bots**, the chosen Bots' faces, or **No Bot**; opening it shows `ScopeEditor` (`secret-card.js`) with three radios, *All my Bots* / *Chosen Bots* / *No Bot*, and **Save access** sends `secret-update` with `'all'`, the picked ids or `[]`. A new key and a connector key start as All my Bots (host rule in [core-host](core-host.md#secret-scope-defaults-545)).
+
 ### Held-send approval card
 
 A `flybot.session.dock` component also gets the host translator `t`, so a plugin's card can read in the interface language (the social hold card's *Held for your approval: contains …* line, #371; its words are in `i18n.js`).
