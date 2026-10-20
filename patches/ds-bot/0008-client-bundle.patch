@@ -333,7 +333,7 @@ diff --git a/client.js b/client.js
    "You have {version}.": "当前版本 {version}。",
    "The update did not finish: {reason}": "更新没有完成：{reason}",
    "What's new": "更新说明",
-@@ -420,8 +420,33 @@ var ZH = {
+@@ -420,8 +420,35 @@ var ZH = {
    "DSH update": "DSH 更新",
    "DSH {version}": "DSH {version}",
    "Restart DSH to start using DSH {version}.": "重启 DSH 后开始使用 DSH {version}。",
@@ -359,6 +359,8 @@ diff --git a/client.js b/client.js
 +  "1 message waits for your approval": "1 条消息等你批准",
 +  "{count} messages wait for your approval": "{count} 条消息等你批准",
 +  "Approve it in the chat": "请在对话里批准",
++  "The last turn did not finish": "上一轮没有完成",
++  "Latest: {text}": "最新：{text}",
 +  "Untitled task": "未命名任务",
 +  "for {time}": "已 {time}",
 +  "just started": "刚开始",
@@ -1562,7 +1564,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-+  };
+   };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1586,7 +1588,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-   };
++  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1796,21 +1798,21 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1583,50 +1583,236 @@ function commRunOf(order, peers, turn, hiddenTurns = []) {
-     if (hidden && peer === void 0) continue;
-     turns.push({ turn: entry, peer, hidden });
+@@ -1573,60 +1573,246 @@ function relaysBefore(contexts, steps, step) {
+       break;
+     }
    }
--  const at = turns.findIndex((entry) => entry.turn === turn);
--  if (at === -1 || turns[at].peer === void 0) return null;
--  const previous = turns[at - 1];
--  if (previous?.peer !== void 0 && previous.hidden) return "folded";
--  let count = 0;
--  const peerIds = [];
--  for (let index = at; index < turns.length; index += 1) {
--    const entry = turns[index];
--    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
--    count += entry.hidden ? 2 : 1;
--    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
+-  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
++  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
++}
++function commRunOf(order, peers, turn, hiddenTurns = []) {
++  const turns = [];
++  for (const entry of order) {
++    const peer = peers[entry];
++    const hidden = hiddenTurns.includes(entry);
++    if (hidden && peer === void 0) continue;
++    turns.push({ turn: entry, peer, hidden });
++  }
 +  const at = turns.findIndex((entry) => entry.turn === turn);
 +  if (at === -1 || turns[at].peer === void 0) return null;
 +  const previous = turns[at - 1];
@@ -1918,7 +1920,26 @@ diff --git a/client.js b/client.js
 +    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  }
 +  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
-+}
+ }
+-function commRunOf(order, peers, turn, hiddenTurns = []) {
+-  const turns = [];
+-  for (const entry of order) {
+-    const peer = peers[entry];
+-    const hidden = hiddenTurns.includes(entry);
+-    if (hidden && peer === void 0) continue;
+-    turns.push({ turn: entry, peer, hidden });
+-  }
+-  const at = turns.findIndex((entry) => entry.turn === turn);
+-  if (at === -1 || turns[at].peer === void 0) return null;
+-  const previous = turns[at - 1];
+-  if (previous?.peer !== void 0 && previous.hidden) return "folded";
+-  let count = 0;
+-  const peerIds = [];
+-  for (let index = at; index < turns.length; index += 1) {
+-    const entry = turns[index];
+-    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
+-    count += entry.hidden ? 2 : 1;
+-    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
@@ -2396,16 +2417,10 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2841,240 +2841,217 @@ function installCompiledStyles(text, tag) {
-     clearTimeout(timer);
-     timer = setTimeout(render, 120);
-   };
--  const onLoad = (event) => {
--    if (event.target instanceof HTMLLinkElement) schedule();
--  };
--  const observer = new MutationObserver(schedule);
--  observer.observe(document.head, { childList: true });
--  document.addEventListener("load", onLoad, true);
+@@ -2847,234 +2847,211 @@ function installCompiledStyles(text, tag) {
+   const observer = new MutationObserver(schedule);
+   observer.observe(document.head, { childList: true });
+   document.addEventListener("load", onLoad, true);
 -  return () => {
 -    observer.disconnect();
 -    document.removeEventListener("load", onLoad, true);
@@ -2514,12 +2529,6 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
-+  const onLoad = (event) => {
-+    if (event.target instanceof HTMLLinkElement) schedule();
-+  };
-+  const observer = new MutationObserver(schedule);
-+  observer.observe(document.head, { childList: true });
-+  document.addEventListener("load", onLoad, true);
 +  return () => {
 +    observer.disconnect();
 +    document.removeEventListener("load", onLoad, true);
@@ -4461,7 +4470,8 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react8.createElement)(RemoteMessage, {
@@ -4474,8 +4484,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
      }),
      pending.map((id) => {
@@ -4873,7 +4882,7 @@ diff --git a/client.js b/client.js
        )
      )
    ), host);
-@@ -4731,49 +4731,438 @@ function showsDshRow(dsh, app) {
+@@ -4731,49 +4731,478 @@ function showsDshRow(dsh, app) {
    return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
  }
  
@@ -4978,6 +4987,19 @@ diff --git a/client.js b/client.js
 +var placeOf = (roster, roomId) => roomId && roomName(roster, roomId) ? t("in {name}", { name: roomName(roster, roomId) }) : "";
 +var lastWhy = (task) => [...task.actors ?? []].reverse().find((entry) => typeof entry.why === "string" && entry.why !== "")?.why ?? "";
 +var chatOfTask = (task) => task.origin?.roomId ?? task.origin?.sessionId ?? task.ownerBotId;
++var placeKey = (botId, roomId) => `${botId}|${roomId ?? ""}`;
++var partOf = (roster, chat) => roster.roomsById?.[chat] || !roster.byId?.[chat] ? chat : currentPart(roster.byId[chat]);
++var runningIn = (work, botId, roomId) => roomId === void 0 ? work.bots?.[botId]?.roomId === void 0 ? work.bots?.[botId] : void 0 : (work.rooms?.[roomId] ?? []).find((entry) => entry.botId === botId) ?? (work.bots?.[botId]?.roomId === roomId ? work.bots[botId] : void 0);
++function latestActivity(card, { roster, work, sessions }) {
++  const options = [];
++  if (card.kind === "task") options.push(lastWhy(card.task));
++  if (card.kind === "run" || card.kind === "task") {
++    const entry = card.executingBot ? runningIn(work, card.executingBot, roster.roomsById?.[card.chat] ? card.chat : void 0) : void 0;
++    if (entry) options.push(`${workPhrase(entry.tool)}…`);
++  }
++  if (sessions?.byId && card.chat) options.push(previewOf(sessions, partOf(roster, card.chat)));
++  return options.find((text) => typeof text === "string" && text !== "" && text !== card.title && text !== card.reason) ?? "";
++}
 +function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() }) {
 +  const needs = [];
 +  const progress = [];
@@ -5043,6 +5065,29 @@ diff --git a/client.js b/client.js
 +  };
 +  for (const [botId, entry] of Object.entries(work.bots ?? {})) running(botId, entry, entry.roomId);
 +  for (const [roomId, entries2] of Object.entries(work.rooms ?? {})) for (const entry of entries2) running(entry.botId, entry, roomId);
++  const lastEnded = /* @__PURE__ */ new Map();
++  for (const entry of work.ended ?? []) {
++    const key = placeKey(entry.botId, entry.roomId);
++    if ((entry.at ?? 0) >= (lastEnded.get(key)?.at ?? -Infinity)) lastEnded.set(key, entry);
++  }
++  for (const [key, entry] of lastEnded) {
++    const bot = ownBot(roster, entry.botId);
++    if (bot === void 0 || entry.failed === void 0 || !fresh(entry.at) || seen.has(key) || waitingAt.has(key)) continue;
++    const chat = entry.roomId ?? bot.id;
++    const asked = sessions?.byId ? previewOf(sessions, partOf(roster, chat)) : "";
++    needs.push({
++      id: `turn:${entry.id}`,
++      kind: "turn",
++      status: "failed",
++      bot,
++      at: entry.at,
++      title: asked || t("The last turn did not finish"),
++      reason: entry.failed,
++      place: placeOf(roster, entry.roomId),
++      chat,
++      ...people(roster, bot.id)
++    });
++  }
 +  for (const task of tasks) {
 +    const bot = ownBot(roster, task.ownerBotId);
 +    if (bot === void 0) continue;
@@ -5067,6 +5112,7 @@ diff --git a/client.js b/client.js
 +  if (sessions?.byId) {
 +    for (const bot of roster.bots ?? []) {
 +      if (ownBot(roster, bot.id) === void 0 || work.bots?.[bot.id] !== void 0 || waitingAt.has(`${bot.id}|`)) continue;
++      if (lastEnded.get(placeKey(bot.id))?.failed !== void 0) continue;
 +      const part = currentPart(bot);
 +      const at = sessions.byId[part]?.updatedAt;
 +      if (!fresh(at)) continue;
@@ -5076,6 +5122,7 @@ diff --git a/client.js b/client.js
 +    }
 +  }
 +  const newest = (a, b) => (b.at ?? Infinity) - (a.at ?? Infinity);
++  for (const card of [...needs, ...progress, ...done]) card.activity = latestActivity(card, { roster, work, sessions });
 +  return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 +}
 +var needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length;
@@ -5131,6 +5178,7 @@ diff --git a/client.js b/client.js
 +      ),
 +      (0, import_react11.createElement)("span", { className: "bt-inbox-title", title: card.title }, card.title),
 +      card.reason ? (0, import_react11.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
++      card.activity ? (0, import_react11.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
 +      card.hint ? (0, import_react11.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
 +      error ? (0, import_react11.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
 +    ),
@@ -5255,7 +5303,8 @@ diff --git a/client.js b/client.js
 +.bt-inbox-status[data-tone=muted]{background:var(--bt-hover);color:var(--bt-ink-2)}
 +.bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 +.bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-+.bt-inbox-reason,.bt-inbox-hint{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-inbox-activity{color:var(--bt-ink-3)}
 +.bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 +.bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 +.bt-inbox-actions .bt-send{height:28px;font-size:12px}

@@ -2,7 +2,8 @@
 // done across my own Bots, opened from the Inbox row at the top of the sidebar. Built
 // only from data the client already has: the work snapshot's approvals and running
 // turns, the held-message counts on chats, the Bot chats' last activity and the task
-// records (src/host/tasks.js). No new host state. A tool approval is answered with the
+// records (src/host/tasks.js), and the ended turns the finish/fail notifications use
+// (work.ended, #353) for failed turns (#471). A tool approval is answered with the
 // same answer the group chat's card gives (actions.answerApproval); everything else,
 // and every Bot-sent message, is approved in its chat, so its card only has Open.
 import { createElement as h, useCallback, useEffect, useState } from 'react'
@@ -94,6 +95,27 @@ const roomName = (roster, id) => roster.roomsById?.[id]?.name
 const placeOf = (roster, roomId) => (roomId && roomName(roster, roomId) ? t('in {name}', { name: roomName(roster, roomId) }) : '')
 const lastWhy = task => [...(task.actors ?? [])].reverse().find(entry => typeof entry.why === 'string' && entry.why !== '')?.why ?? ''
 const chatOfTask = task => task.origin?.roomId ?? task.origin?.sessionId ?? task.ownerBotId
+const placeKey = (botId, roomId) => `${botId}|${roomId ?? ''}`
+// The Session a card's chat reads from: a group's own, a Bot's current part, else the id itself.
+const partOf = (roster, chat) => (roster.roomsById?.[chat] || !roster.byId?.[chat] ? chat : currentPart(roster.byId[chat]))
+// What a Bot runs in a place right now: its own chat's turn or its turn in that group.
+const runningIn = (work, botId, roomId) => (roomId === undefined
+  ? (work.bots?.[botId]?.roomId === undefined ? work.bots?.[botId] : undefined)
+  : (work.rooms?.[roomId] ?? []).find(entry => entry.botId === botId) ?? (work.bots?.[botId]?.roomId === roomId ? work.bots[botId] : undefined))
+
+// The card's one-line latest activity (#471): a task's newest note, else what its Bot runs
+// there now (not for a card that waits for me), else that chat's last line. Left out when it
+// only repeats the title or the reason.
+function latestActivity(card, { roster, work, sessions }) {
+  const options = []
+  if (card.kind === 'task') options.push(lastWhy(card.task))
+  if (card.kind === 'run' || card.kind === 'task') {
+    const entry = card.executingBot ? runningIn(work, card.executingBot, roster.roomsById?.[card.chat] ? card.chat : undefined) : undefined
+    if (entry) options.push(`${workPhrase(entry.tool)}…`)
+  }
+  if (sessions?.byId && card.chat) options.push(previewOf(sessions, partOf(roster, card.chat)))
+  return options.find(text => typeof text === 'string' && text !== '' && text !== card.title && text !== card.reason) ?? ''
+}
 
 /**
  * The three groups of cards, newest first in each.
@@ -146,6 +168,25 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
   }
   for (const [botId, entry] of Object.entries(work.bots ?? {})) running(botId, entry, entry.roomId)
   for (const [roomId, entries] of Object.entries(work.rooms ?? {})) for (const entry of entries) running(entry.botId, entry, roomId)
+  // Failed turns (#471), from the ended turns the finish/fail notifications read (#353): a
+  // failure needs me while it is the latest ended turn in its place (a Bot's own chat or one
+  // group) and the Bot is not working or waiting there again. A later finished turn clears it.
+  const lastEnded = new Map()
+  for (const entry of work.ended ?? []) {
+    const key = placeKey(entry.botId, entry.roomId)
+    if ((entry.at ?? 0) >= (lastEnded.get(key)?.at ?? -Infinity)) lastEnded.set(key, entry)
+  }
+  for (const [key, entry] of lastEnded) {
+    const bot = ownBot(roster, entry.botId)
+    if (bot === undefined || entry.failed === undefined || !fresh(entry.at) || seen.has(key) || waitingAt.has(key)) continue
+    const chat = entry.roomId ?? bot.id
+    const asked = sessions?.byId ? previewOf(sessions, partOf(roster, chat)) : ''
+    needs.push({
+      id: `turn:${entry.id}`, kind: 'turn', status: 'failed', bot, at: entry.at,
+      title: asked || t('The last turn did not finish'), reason: entry.failed,
+      place: placeOf(roster, entry.roomId), chat, ...people(roster, bot.id),
+    })
+  }
   // Task records (#54).
   for (const task of tasks) {
     const bot = ownBot(roster, task.ownerBotId)
@@ -164,6 +205,8 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
   if (sessions?.byId) {
     for (const bot of roster.bots ?? []) {
       if (ownBot(roster, bot.id) === undefined || work.bots?.[bot.id] !== undefined || waitingAt.has(`${bot.id}|`)) continue
+      // Its last turn failed: that card is in Needs you.
+      if (lastEnded.get(placeKey(bot.id))?.failed !== undefined) continue
       const part = currentPart(bot)
       const at = sessions.byId[part]?.updatedAt
       if (!fresh(at)) continue
@@ -173,6 +216,7 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
     }
   }
   const newest = (a, b) => (b.at ?? Infinity) - (a.at ?? Infinity)
+  for (const card of [...needs, ...progress, ...done]) card.activity = latestActivity(card, { roster, work, sessions })
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) }
 }
 
@@ -220,6 +264,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
         h('span', { className: 'bt-inbox-meta', title: meta }, meta)),
       h('span', { className: 'bt-inbox-title', title: card.title }, card.title),
       card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, card.reason) : null,
+      card.activity ? h('span', { className: 'bt-inbox-activity', title: card.activity }, t('Latest: {text}', { text: card.activity })) : null,
       card.hint ? h('span', { className: 'bt-inbox-hint' }, card.hint) : null,
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),
     h('span', { className: 'bt-inbox-actions' },
@@ -322,7 +367,8 @@ export const INBOX_CSS = `
 .bt-inbox-status[data-tone=muted]{background:var(--bt-hover);color:var(--bt-ink-2)}
 .bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-inbox-reason,.bt-inbox-hint{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 .bt-inbox-actions .bt-send{height:28px;font-size:12px}

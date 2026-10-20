@@ -410,6 +410,44 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     }
   }
 
+  // Owner grants one of THEIR bots to an existing friend (Birfy/bot-social#34 / FlyBot #500).
+  // Same per-Bot grant an accepted invite creates; no invite code. Idempotent when a live grant
+  // already exists. Prefer MCP grant_bot_to_friend; REST POST …/grants/to-friend is the fallback.
+  // friend_owner_id is the companion's preferred key; friend_home is what FlyBot always has.
+  async function grantBotToFriend({ botId, friendOwnerId, friendHome } = {}) {
+    if (!botId) throw new BotSocialError('Bot Social grant_bot_to_friend: which Bot?', 'invalid')
+    if (!friendOwnerId && !friendHome) {
+      throw new BotSocialError('Bot Social grant_bot_to_friend: which friend?', 'invalid')
+    }
+    const args = {
+      bot_id: botId,
+      ...(friendOwnerId ? { friend_owner_id: friendOwnerId } : {}),
+      ...(friendHome ? { friend_home: friendHome } : {}),
+    }
+    const body = {
+      ...(friendOwnerId ? { friend_owner_id: friendOwnerId } : {}),
+      ...(friendHome ? { friend_home: friendHome } : {}),
+    }
+    const viaRest = async (error) => {
+      if (!base) {
+        if (isUnknownTool(error) || isMissingEndpoint(error)) return { unavailable: true }
+        throw error ?? new BotSocialError('Bot Social grant_bot_to_friend: no server URL', 'no_server')
+      }
+      try {
+        return await rest('POST', `/v1/bots/${encodeURIComponent(botId)}/grants/to-friend`, body)
+      } catch (restErr) {
+        if (isUnknownTool(restErr) || isMissingEndpoint(restErr)) return { unavailable: true }
+        throw restErr
+      }
+    }
+    try {
+      return await tryTool('grant_bot_to_friend', args, viaRest)
+    } catch (error) {
+      if (isUnknownTool(error) || isMissingEndpoint(error)) return { unavailable: true }
+      throw error
+    }
+  }
+
   async function declineGrant({ grantId, botId } = {}) {
     if (!grantId) throw new BotSocialError('Bot Social decline_bot_grant: which grant?', 'invalid')
     const args = {
@@ -460,6 +498,7 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     sendAsMember: args => mcp.callTool('send_as_member', args),
     listGrants,
     revokeGrant,
+    grantBotToFriend,
     updateBotProfile,
     declineGrant,
   }
