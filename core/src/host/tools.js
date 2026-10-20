@@ -6,6 +6,9 @@ import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_BOT_ROUNDS, R
 import { unquote } from './text.js'
 import { isListedRemoteChat } from '../shared/remote-label.js'
 import { currentParticipants } from './room-membership.js'
+import { questionReply, replyText } from './parts.js'
+import { OTHER, settled } from './turn-origin.js'
+import { cleanName } from './delivery.js'
 
 export const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] }
 export const GROUP_REF = { type: 'string', required: true, description: 'Exact group chat name from list_bots' }
@@ -524,6 +527,8 @@ export function install(rt) {
         .filter(option => option.label !== '')
         .slice(0, 6)
       if (options.length === 0) return 'Give at least one option.'
+      const handed = handedFromGroup(id)
+      if (handed !== undefined) return askInGroup(handed, args, options, exec)
       // A hidden Bot-to-Bot turn shows none of its calls, so its card goes to the
       // composer dock, which takes questions without a call.
       const turn = rt.live.get(id)?.turn
@@ -543,6 +548,89 @@ export function install(rt) {
       return 'The card is on screen; the user\'s answer arrives as their next message.'
     },
   }))
+
+  // Work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own chat,
+  // and its reply goes back to that member's Session in the group (turns.js). The user handed the
+  // work out there, so a question about it is asked there too, never in the Bot's own chat (#550).
+  const handedFromGroup = (sessionId) => {
+    if (!rt.chatOwners.has(sessionId)) return undefined
+    const info = rt.live.get(sessionId)?.info
+    if (info?.role !== 'request' || info.audience === 'user' || info.remote !== undefined) return undefined
+    const room = rt.roomOf(info.senderRoomId)
+    if (room?.sessions?.[info.senderSessionId] === undefined) return undefined
+    return { room, info }
+  }
+
+  // The card sits in the group's composer dock, named for the Bot that asks. One card per group:
+  // while another Bot's waits there, this one asks in its reply, which goes back to the group.
+  async function askInGroup({ room, info }, args, options, exec) {
+    const id = exec.agent?.id
+    const bot = rt.botOf(rt.selfOf(id))
+    const open = state.questions[room.id]
+    if (open !== undefined && open.botId !== bot?.id) {
+      return `Another question is waiting in the group "${room.name}". Ask in your reply instead; it goes back to the group.`
+    }
+    state.questions[room.id] = {
+      id: randomUUID(),
+      header: bot?.name ?? 'Bot',
+      question: String(args.question ?? '').trim(),
+      ...(args.detail ? { detail: String(args.detail).trim() } : {}),
+      options,
+      multiSelect: args.multiSelect === true,
+      // The group's card always takes an answer in the user's own words: a line typed in the
+      // group goes to the group's round, not to this Bot.
+      allowCustom: true,
+      askedAt: Date.now(),
+      botId: bot?.id,
+      replyTo: { botId: info.senderSessionId, hop: info.hop ?? 0 },
+      // The answer carries on this work with the authority it had (turn-origin.js).
+      origin: settled(rt, id) ?? OTHER,
+    }
+    await rt.save()
+    exec.concludeTurn?.()
+    return `The card is on screen in the group "${room.name}", where this work came from; the user's answer arrives as your next message.`
+  }
+
+  // The answer to such a card reaches the Bot the way the work did: a hidden request from the
+  // member that handed it over, so the Bot's reply goes back to that member's Session in the group
+  // and nothing new shows in the Bot's own chat. The group sees the answer as a quiet notice.
+  async function answerGroupQuestion(roomId, question, answer, actor) {
+    const reply = questionReply(question, answer)
+    if (reply === undefined) return { error: 'Nothing to send', code: 'bot/invalid' }
+    const room = rt.roomOf(roomId)
+    const bot = rt.botOf(question.botId)
+    delete state.questions[roomId]
+    if (room === undefined || bot === undefined) {
+      await rt.save()
+      return { error: 'This question is no longer open', code: 'bot/stale' }
+    }
+    // Someone other than the Bot's owner answering (a room owner) does not lend the owner's authority.
+    const byOwner = actor === undefined || actor === null || !rt.authzEnforced?.() || actor.memberId === bot.ownerId
+    const text = replyText(reply.text)
+    try {
+      await rt.deliver({
+        fromId: question.replyTo?.botId,
+        toId: bot.id,
+        role: 'request',
+        hop: question.replyTo?.hop ?? 0,
+        fromRoomId: room.id,
+        answeredIn: room.name,
+        origin: byOwner ? question.origin : OTHER,
+        text,
+      })
+    } catch (error) {
+      state.questions[roomId] ??= question
+      throw error
+    }
+    await rt.save()
+    const who = cleanName(actor?.displayName, 'You')
+    const given = JSON.parse(reply.text).answers[0]
+    const values = [...given.selected, ...(given.custom ? [given.custom] : [])].join(', ').replace(/\s+/g, ' ').slice(0, 300)
+    void rt.postToRoom?.(room, { id: 'face-notice', name: 'Room' }, `${who} answered ${bot.name}: ${question.question} → ${values}`, { quiet: true, notice: true })
+      .catch(error => rt.warn('ds-bot: the answer notice in %s was not shown: %s', room.name, error))
+    return { ok: true }
+  }
+  rt.answerGroupQuestion = answerGroupQuestion
 
   // dsh's own question tool holds the turn open until the user answers, and every
   // message from another Bot or a group round queues behind it. Bot Sessions ask

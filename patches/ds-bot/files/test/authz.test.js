@@ -266,6 +266,27 @@ test('approval-answer resolves the approval, not caller-chosen fields', async (t
   assert.equal(rt.authorize(actorA, 'approval-answer', { id: 'ap-other', sessionId: 'a1', choice: 'approve' }).ok, false)
 })
 
+test('only the Bot\'s owner gives a standing approval, and only its giver removes a group\'s (#540)', async (t) => {
+  const { rt } = runtime(t, TEAM)
+  await rt.load()
+  const sessionA = await redeemOwner(rt)
+  await redeemOwner(rt)
+  const actorA = await rt.authenticate(sessionA.sessionToken)
+  rt.state.bots.a1 = { id: 'a1', sessionId: 'a1', name: 'A', instructions: '', createdAt: 2, ownerId: actorA.memberId }
+  rt.state.bots.b1 = { id: 'b1', sessionId: 'b1', name: 'B', instructions: '', createdAt: 3, ownerId: 'owner-2' }
+  rt.state.rooms.r1 = { id: 'r1', name: 'R', members: ['a1', 'b1'], sessions: {}, log: [], seq: 0, seen: {}, standingApprovals: [{ kind: 'bash', ownerId: 'owner-2' }, { kind: 'pwsh', ownerId: actorA.memberId }] }
+  rt.state.rooms.r2 = { id: 'r2', name: 'Mine', members: ['a1'], sessions: {}, log: [], seq: 0, seen: {} }
+  rt.approvalsView = () => [{ id: 'ap-own', sessionId: 'a1', botId: 'a1', roomId: 'r2' }, { id: 'ap-other', sessionId: 'gb', botId: 'b1', roomId: 'r2' }]
+  assert.equal(rt.authorize(actorA, 'approval-answer', { id: 'ap-own', choice: 'always-room' }).ok, true)
+  // Owning the room is enough for Allow once, never for a standing grant on another owner's Bot.
+  assert.equal(rt.authorize(actorA, 'approval-answer', { id: 'ap-other', choice: 'always-bot' }).ok, false)
+  assert.equal(rt.authorize(actorA, 'approval-answer', { id: 'ap-other', choice: 'always-room' }).ok, false)
+  assert.equal(rt.authorize(actorA, 'standing-approval-remove', { scope: 'bot', id: 'a1', kind: 'bash' }).ok, true)
+  assert.equal(rt.authorize(actorA, 'standing-approval-remove', { scope: 'bot', id: 'b1', kind: 'bash' }).ok, false)
+  assert.equal(rt.authorize(actorA, 'standing-approval-remove', { scope: 'room', id: 'r1', kind: 'pwsh' }).ok, true)
+  assert.equal(rt.authorize(actorA, 'standing-approval-remove', { scope: 'room', id: 'r1', kind: 'bash' }).ok, false)
+})
+
 test('flybot plugin endpoints follow the read/shared rules', async (t) => {
   const { rt } = runtime(t, TEAM)
   await rt.load()
@@ -360,4 +381,31 @@ test('views keep the sole owner whole and narrow per owner with two members', as
   assert.deepEqual(live2.work.ended.map(entry => entry.botId), ['a1'])
   assert.deepEqual(live2.connectors, [])
   assert.equal(live2.memoryReviews, 0)
+})
+
+test('a group\'s question card is its Bot owner\'s to see and answer, not every member\'s (#550)', async (t) => {
+  const { rt } = runtime(t, TEAM)
+  await rt.load()
+  const sessionA = await redeemOwner(rt)
+  const sessionB = await redeemOwner(rt)
+  rt.state.bots.a1 = { id: 'a1', sessionId: 'a1', name: 'A', instructions: '', createdAt: 2, ownerId: 'owner-1' }
+  rt.state.bots.b1 = { id: 'b1', sessionId: 'b1', name: 'B', instructions: '', createdAt: 3, ownerId: 'owner-2' }
+  rt.state.rooms.rx = {
+    id: 'rx', name: 'Shared', members: ['a1', 'b1'], admin: 'a1', sessions: { a1: 'gs-a1', b1: 'gs-b1' },
+    participants: [
+      { kind: 'human', id: 'owner-1', role: 'admin', joinedSeq: 0 },
+      { kind: 'human', id: 'owner-2', role: 'member', joinedSeq: 0 },
+    ],
+  }
+  rt.state.questions.rx = { id: 'q1', question: 'Which branch?', options: [{ label: 'dev' }], botId: 'a1' }
+  await rt.save()
+  const actorA = await rt.authenticate(sessionA.sessionToken)
+  const actorB = await rt.authenticate(sessionB.sessionToken)
+  assert.equal(rt.authorize(actorB, 'send', { sessionId: 'rx' }).ok, true)
+  assert.equal(rt.authorize(actorA, 'answer-question', { sessionId: 'rx' }).ok, true)
+  assert.equal(rt.authorize(actorB, 'answer-question', { sessionId: 'rx' }).ok, false)
+  assert.equal(rt.authorize(actorB, 'dismiss-question', { sessionId: 'rx' }).ok, false)
+  const full = { bots: Object.values(rt.state.bots), rooms: [], questions: { rx: rt.state.questions.rx } }
+  assert.deepEqual(Object.keys(rt.ownedView(full, actorA).questions), ['rx'])
+  assert.deepEqual(Object.keys(rt.ownedView(full, actorB).questions), [])
 })

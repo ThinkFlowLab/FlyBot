@@ -339,8 +339,10 @@ export function install(rt) {
           await rt.deleteRoom(body.id)
           return ok(view())
         case 'approval-answer':
-          rt.answerApproval(body.id, body.choice)
+          await rt.answerApproval(body.id, body.choice)
           return ok(true)
+        case 'standing-approval-remove':
+          return ok(await rt.removeStandingApproval(body.scope === 'room' ? 'room' : 'bot', body.id, body.kind, rt.authzEnforced() && actor ? actor.memberId : undefined))
         case 'stop-member-work':
           return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
         case 'dismiss-question':
@@ -399,6 +401,13 @@ export function install(rt) {
           const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
           const question = state.questions[sessionId]
           if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
+          // A card in a group about work handed over from there (#550) answers the Bot that asked.
+          if (question.botId !== undefined && rt.roomOf(sessionId) !== undefined) {
+            const leaked = unshareableReference(actor, String(body.answer?.custom ?? ''))
+            if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
+            const answered = await rt.answerGroupQuestion(sessionId, question, body.answer, actor)
+            return answered.ok ? ok(true) : fail(answered.error, answered.code)
+          }
           const reply = questionReply(question, body.answer)
           if (reply === undefined) return fail('Nothing to send', 'bot/invalid')
           const leaked = unshareableReference(actor, reply.text)
