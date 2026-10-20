@@ -185,6 +185,7 @@ window.__ModuleLoader__.load({
 .fs-hold .fs-hold-decide{display:flex;gap:8px;flex:none}
 .fs-hold .fs-actions .fs-hold-always{order:-1;margin-right:auto;white-space:nowrap;flex:0 0 auto}
 .fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+@media (max-width:640px){.fs-hold .fs-btn{height:40px;padding:0 16px;font-size:14px}.fs-hold .fs-hold-decide{flex:1 1 auto;justify-content:flex-end}}
 .fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
 .fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
 .fs-remove{flex:none;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0}
