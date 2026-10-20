@@ -262,6 +262,10 @@ export function normalizeGrant(item) {
     ...(view.member ? { member: view.member } : {}),
     ...(item.relationship_id || item.relationshipId ? { relationshipId: String(item.relationship_id ?? item.relationshipId) } : {}),
     ...(item.room_id || item.roomId ? { roomId: String(item.room_id ?? item.roomId) } : {}),
+    // Bot Social says which grants only let the grantee answer (the join's talk-through grant, bot-social
+    // #23) and which side of the relationship we are; FlyBot no longer has to guess (#495).
+    ...(typeof (item.reply_only ?? item.replyOnly) === 'boolean' ? { replyOnly: item.reply_only ?? item.replyOnly } : {}),
+    ...(item.side === 'joiner' || item.side === 'inviter' ? { side: item.side } : {}),
   }
 }
 
