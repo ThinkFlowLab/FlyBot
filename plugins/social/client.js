@@ -3,7 +3,7 @@
 window.__ModuleLoader__.load({
   id: '@flybot/social',
   factory(require) {
-    const { createElement: h, useEffect, useState, useRef } = require('react')
+    const { createElement: h, Fragment, useEffect, useState, useRef } = require('react')
     const slots = () => {
       // Same bootstrap as ds-bot's flybot-registry.js: whichever bundle loads first creates it.
       if (globalThis.__flybot__ === undefined) throw new Error('flybot-social needs ds-bot with FlyBot slots')
@@ -101,7 +101,8 @@ window.__ModuleLoader__.load({
 .fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
 .fs-thinking{margin:0 12px 6px;padding-inline-start:8px;font-size:13px;line-height:20px;min-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fs-room-end{margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
+.fs-room-end{display:flex;align-items:center;gap:8px;margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
+.fs-room-end-close{margin-left:auto;flex:none}
 /* A left or closed face room is read-only (#197): its end line replaces the composer. */
 [class*="_composerStack"]:has([data-flybot="face-room-end"]) [class*="_root"]:has(> [data-composer-card]){display:none!important}
 .fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;justify-content:space-between;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
@@ -416,9 +417,14 @@ window.__ModuleLoader__.load({
     }
 
     // Leave asks once (#182): leaving ends my part in the room for good.
-    function ConfirmLeave({ busy, onLeave, flybot = 'face-leave', size = 'fs-btn fs-btn-sm' } = {}) {
+    // `beside`: what sits next to Leave (Enter chat in a waiting room). It steps aside while
+    // "Leave this room?" asks, so the question never crowds a live button (#458).
+    function ConfirmLeave({ busy, onLeave, flybot = 'face-leave', size = 'fs-btn fs-btn-sm', beside = null } = {}) {
       const [ask, setAsk] = useState(false)
-      if (!ask) return h('button', { type: 'button', className: size, 'data-flybot': flybot, disabled: !!busy, onClick: () => setAsk(true) }, 'Leave')
+      if (!ask) {
+        const leave = h('button', { type: 'button', className: size, 'data-flybot': flybot, disabled: !!busy, onClick: () => setAsk(true) }, 'Leave')
+        return beside ? h(Fragment, null, leave, beside) : leave
+      }
       return h('span', { className: 'fs-leave-ask', 'data-flybot': 'face-leave-confirm' },
         h('span', { className: 'fs-hint' }, 'Leave this room?'),
         h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-yes', disabled: !!busy, onClick: () => { setAsk(false); onLeave?.() } }, 'Leave'),
@@ -562,6 +568,21 @@ window.__ModuleLoader__.load({
         || roster?.bots?.[0]?.id
       if (id && typeof actions?.openSession === 'function') actions.openSession(id)
     }
+    // The last chat open that was not a face room (every chat's dock tells it): Leave goes back
+    // there (#458), with the details panel closed so no Bot settings open on the way.
+    const faceNav = { last: '' }
+    function noteChat(sessionId, room) {
+      if (sessionId && room?.origin !== 'face-to-face') faceNav.last = String(sessionId)
+    }
+    function returnFromFace(roster, actions, roomId) {
+      actions?.closeOverlay?.()
+      const back = faceNav.last
+      const known = back && back !== roomId && (roster?.byId?.[back] || roster?.roomsById?.[back])
+      if (known && typeof actions?.openSession === 'function') actions.openSession(back)
+      else openMainBot(roster, actions)
+    }
+    // Some member from another home: until then the room is you alone.
+    const othersIn = (members, mine) => (members ?? []).some(member => !mine(member))
 
     // Separate Face-to-face room screen (#92): pick Bots, join by number, live waiting room.
     function FaceToFaceGroup({ actions, onClose, roster, remoteChats } = {}) {
@@ -590,14 +611,20 @@ window.__ModuleLoader__.load({
           })
         }, () => {})
       }, [])
+      // Closing on a number nobody uses lets that number go (#458); Escape, an outside click and
+      // Close all close the same way.
+      const dismiss = () => {
+        if (step === 'nobody' && room?.faceRoomId) void call('social/face-leave', { faceRoomId: room.faceRoomId }).catch(() => {})
+        onClose?.()
+      }
       useEffect(() => {
         if (!onClose || typeof document?.addEventListener !== 'function') return undefined
         const onKey = (event) => {
-          if (event.key === 'Escape') { event.preventDefault(); onClose() }
+          if (event.key === 'Escape') { event.preventDefault(); dismiss() }
         }
         document.addEventListener('keydown', onKey)
         return () => document.removeEventListener('keydown', onKey)
-      }, [onClose])
+      }, [onClose, step, room?.faceRoomId])
       useEffect(() => {
         if (step !== 'waiting' || !(room?.faceRoomId || room?.roomId)) return undefined
         const faceId = room.faceRoomId
@@ -615,10 +642,7 @@ window.__ModuleLoader__.load({
       }, [step, room?.faceRoomId, room?.roomId])
       useEffect(() => {
         if (step !== 'waiting' || room?.status !== 'candidate' || !room?.expiresAt) return undefined
-        if (typeof setInterval !== 'function') return undefined
-        const timer = setInterval(() => setTick(n => n + 1), 1000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
+        return everySecond(() => setTick(n => n + 1))
       }, [step, room?.status, room?.expiresAt])
       useEffect(() => {
         if (step !== 'waiting' || room?.status !== 'open' || opened.current) return undefined
@@ -629,7 +653,8 @@ window.__ModuleLoader__.load({
         onClose?.()
         return undefined
       }, [step, room?.status, room?.roomId])
-      const join = async (event) => {
+      // `start`: the owner chose to start a room with a number nobody uses yet (#458).
+      const join = async (event, { start = false } = {}) => {
         event?.preventDefault?.()
         const digits = String(code).replace(/\D/g, '').slice(0, 6)
         if (digits.length !== 6) {
@@ -650,7 +675,14 @@ window.__ModuleLoader__.load({
         for (const botId of selected) {
           const bot = bots.find(item => item.id === botId)
           try {
-            const result = await call('social/face-join', { code: digits, botId })
+            const result = await call('social/face-join', { code: digits, botId, ...(start ? { start: true } : {}) })
+            if (result?.nobody) {
+              // Nobody is in a room with this number: no room opens; the owner checks it or starts one.
+              setRoom({ nobody: true, faceRoomId: result.faceRoomId, joinCode: digits })
+              setStep('nobody')
+              setBusy(false)
+              return
+            }
             last = result
             if (result?.joinedAs?.handle) {
               mine.push(result.joinedAs.handle)
@@ -697,6 +729,12 @@ window.__ModuleLoader__.load({
           setStatus({ tone: 'error', text: errorText(e) })
         } finally { setBusy(false) }
       }
+      const cancelNobody = async () => {
+        const id = room?.faceRoomId
+        setRoom(null)
+        setStep('setup')
+        if (id) await call('social/face-leave', { faceRoomId: id }).catch(() => { /* the host lets a stale hold go on its next poll */ })
+      }
       const leave = async () => {
         setBusy(true)
         setStatus(null)
@@ -704,7 +742,7 @@ window.__ModuleLoader__.load({
           if (room?.faceRoomId || room?.roomId) {
             await call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })
           }
-          openMainBot(roster, actions)
+          returnFromFace(roster, actions, room?.roomId)
           onClose?.()
         } catch (e) {
           setStatus({ tone: 'error', text: errorText(e) })
@@ -716,15 +754,26 @@ window.__ModuleLoader__.load({
       const members = room?.members ?? []
       const candidate = room?.status === 'candidate'
       const waiting = step === 'waiting' && room
-      return h('div', { className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': 'Face-to-face room' },
+      const digitsTyped = String(code).replace(/\D/g, '').length === 6
+      const nobody = step === 'nobody' ? faceWaitCode(room, code) : ''
+      return h('div', {
+        className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': 'Face-to-face room',
+        onClick: event => { if (event?.target === event?.currentTarget) dismiss() },
+      },
         h('div', { className: 'fs-dialog' },
           h('div', { className: 'fs-dialog-head' },
             h('div', { className: 'fs-name' }, 'Face-to-face room'),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: () => onClose?.() }, 'Close')),
-          waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: dismiss }, 'Close')),
+          step === 'nobody' ? h('div', { className: 'fs-wait', 'data-flybot': 'face-nobody', role: 'status' },
+            h('div', { className: 'fs-name' }, `Nobody is using ${nobody} yet.`),
+            h('div', { className: 'fs-hint' }, 'Check the number with the people you are meeting, or start a room with it and wait for them.'),
+            status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null,
+            h('div', { className: 'fs-wait-foot' },
+              h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-nobody-cancel', disabled: busy, onClick: cancelNobody }, 'Cancel'),
+              h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-nobody-start', disabled: busy, onClick: () => join(null, { start: true }) }, 'Start a room'))) : waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
             h(FaceWaitCode, { code: faceWaitCode(room, code) }),
             h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
-              ? (room.expiresAt ? countdown(room.expiresAt) : 'Anyone with the number can still join.')
+              ? (room.expiresAt ? countdown(room.expiresAt, room.clockOffsetMs) : 'Anyone with the number can still join.')
               : 'The room is open. The number is no longer valid.'),
             h('div', { className: 'fs-wait-body' },
               h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
@@ -735,16 +784,18 @@ window.__ModuleLoader__.load({
                   handle: member.handle,
                   mine: memberIsMine(member, bots, room),
                 }))),
-              members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
+              othersIn(members, member => memberIsMine(member, bots, room)) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
               failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
                 failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
               status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null),
             h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
-              h(ConfirmLeave, { busy, onLeave: leave, size: 'fs-btn' }),
-              h('button', {
-                type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter',
-                disabled: !!busy || !room.roomId, onClick: enter,
-              }, 'Enter chat'))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
+              h(ConfirmLeave, {
+                busy, onLeave: leave, size: 'fs-btn',
+                beside: h('button', {
+                  type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter',
+                  disabled: !!busy || !room.roomId, onClick: enter,
+                }, 'Enter chat'),
+              }))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
             h('div', { className: 'fs-hint' }, 'Pick your Bots and enter the same 6-digit number as everyone nearby.'),
             h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
               bots.map(bot => h(FaceTile, {
@@ -766,9 +817,9 @@ window.__ModuleLoader__.load({
               }),
               h('button', {
                 type: 'submit', className: 'fs-btn',
-                // Enabled once a Bot is picked: a short number answers with the inline hint, never a silent grey button (#306).
-                disabled: busy || !selected.length,
-                title: selected.length ? undefined : 'Pick a Bot first.',
+                // Enabled once a Bot is picked and all 6 digits are in (#458); the tooltip says what is missing.
+                disabled: busy || !selected.length || !digitsTyped,
+                title: !selected.length ? 'Pick a Bot first.' : digitsTyped ? undefined : 'Enter all 6 digits.',
               }, 'Join')),
             !selected.length && bots.length ? h('div', { className: 'fs-hint', 'data-flybot': 'face-join-pick' }, 'Pick a Bot first.') : null,
             failures.length ? h('div', { className: 'fs-status fs-fail', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
@@ -1095,12 +1146,17 @@ window.__ModuleLoader__.load({
       const names = [...new Set(gone)]
       // The one who left reads that they left; the others read who left (#304).
       if (status === 'left') return 'You left this room.'
-      if (names.length > 0) return `${names.join(', ')} left the room. This room is closed.`
-      return 'This room is closed.'
+      if (names.length > 0) return `${names.join(', ')} left the room. Room closed.`
+      return 'Room closed.'
     }
-    function FaceRoomStatus({ room } = {}) {
+    // A room that closed around you is no dead end (#458): one Close goes back to where you were.
+    function FaceRoomStatus({ room, sessionId, roster, actions } = {}) {
+      noteChat(sessionId, room)
       const text = faceEndLine(room)
-      return text ? h('div', { className: 'fs-room-end', 'data-flybot': 'face-room-end', role: 'status' }, text) : null
+      if (!text) return null
+      const closed = room?.face?.status === 'closed'
+      return h('div', { className: 'fs-room-end', 'data-flybot': 'face-room-end', role: 'status' }, text,
+        closed ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-room-end-close', 'data-flybot': 'face-room-close', onClick: () => returnFromFace(roster, actions, room.id) }, 'Close') : null)
     }
 
 
@@ -1303,14 +1359,27 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', role: 'menuitem', onClick: () => { setMenu(false); onRemove?.(bot) } }, 'Remove this Bot')) : null)
     }
 
-    function countdown(expiresAt) {
-      const at = Date.parse(expiresAt)
+    // Every home counts down to Bot Social's one deadline (#458): `offsetMs` is how far the server's
+    // clock runs ahead of this one (0 unless the skew is real).
+    function countdown(expiresAt, offsetMs = 0) {
+      const at = Date.parse(expiresAt) - (Number(offsetMs) || 0)
       if (!Number.isFinite(at)) return 'Anyone with the number can still join'
       const left = Math.max(0, at - Date.now())
       if (left <= 0) return 'Joining has ended'
       // m:ss, so the line visibly ticks every second (#306); minutes alone looked frozen.
       const total = Math.max(1, Math.ceil(left / 1000))
       return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} left to join`
+    }
+    // A one-second tick that also catches up the moment the page is shown again, so a tab that
+    // sat in the background never shows a stale countdown (#458).
+    function everySecond(fn) {
+      if (typeof setInterval !== 'function') return undefined
+      const timer = setInterval(fn, 1000)
+      timer?.unref?.()
+      const onShow = () => { if (typeof document === 'undefined' || !document.hidden) fn() }
+      const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+      doc?.addEventListener('visibilitychange', onShow)
+      return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
     }
 
     const isPastFace = (room) => {
@@ -1404,10 +1473,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         const expiresAt = snapshot?.expiresAt || face?.expiresAt
         if (!candidate || !expiresAt) return undefined
-        if (typeof setInterval !== 'function') return undefined
-        const timer = setInterval(() => setTick(n => n + 1), 1000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
+        return everySecond(() => setTick(n => n + 1))
       }, [candidate, snapshot?.expiresAt, face?.expiresAt])
       const run = async (label, fn) => {
         setBusy(label)
@@ -1425,7 +1491,7 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'fs-wait-overview', 'data-flybot': 'face-overview', 'data-wait': true },
           h(FaceWaitCode, { code: faceWaitCode(snapshot || face || room) }),
           h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
-            expiresAt ? countdown(expiresAt) : 'Anyone with the number can still join.'),
+            expiresAt ? countdown(expiresAt, snapshot?.clockOffsetMs) : 'Anyone with the number can still join.'),
           h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
             members.map(member => h(FaceTile, {
               key: member.handle || member.id,
@@ -1437,23 +1503,23 @@ window.__ModuleLoader__.load({
               handle: member.handle,
               mine: mineMember(member),
             }))),
-          members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
+          othersIn(members, mineMember) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
           h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
             h(ConfirmLeave, {
               busy,
               size: 'fs-btn',
               onLeave: () => run('leave', async () => {
                 await call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })
-                openMainBot(roster, actions)
+                returnFromFace(roster, actions, room.id)
               }),
-            }),
-            h('button', {
-              type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter', disabled: !!busy,
-              onClick: () => run('start', async () => {
-                await call('social/face-start', { roomId: room.id, faceRoomId: face?.roomId })
-                if (room.id && typeof actions?.openSession === 'function') actions.openSession(room.id)
-              }),
-            }, 'Enter chat')),
+              beside: h('button', {
+                type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter', disabled: !!busy,
+                onClick: () => run('start', async () => {
+                  await call('social/face-start', { roomId: room.id, faceRoomId: face?.roomId })
+                  if (room.id && typeof actions?.openSession === 'function') actions.openSession(room.id)
+                }),
+              }, 'Enter chat'),
+            })),
           note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
       }
       const mineNames = members.filter(mineMember).map(member => member.displayName || member.name).filter(Boolean)
@@ -1473,8 +1539,8 @@ window.__ModuleLoader__.load({
               busy,
               onLeave: () => run('leave', async () => {
                 await call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })
-                // Straight to the main Bot, not a blank pane while the room closes.
-                openMainBot(roster, actions)
+                // Back to where you were, not a blank pane while the room closes.
+                returnFromFace(roster, actions, room.id)
               }),
             }))),
         h(FaceAutoSendControl, { bot: mineNames[0] }),

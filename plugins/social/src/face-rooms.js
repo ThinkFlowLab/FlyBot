@@ -79,8 +79,19 @@ export function formatRetryAfter(seconds) {
   return `${m} minute${m === 1 ? '' : 's'}`
 }
 
-export function countdownLabel(expiresAt, now = Date.now()) {
-  const at = Date.parse(expiresAt)
+// How far Bot Social's clock runs ahead of ours, from a response's `Date` header (#458). The
+// header has whole seconds, so a small gap is noise: only a real skew (3 s or more) counts, and
+// then every home counts down to the same server deadline whatever its own clock says.
+export const CLOCK_SKEW_MIN_MS = 3000
+export function serverClockOffset(dateHeader, sentAt, receivedAt) {
+  const server = Date.parse(String(dateHeader ?? ''))
+  if (!Number.isFinite(server) || !Number.isFinite(sentAt) || !Number.isFinite(receivedAt)) return undefined
+  const offset = server + 500 - (sentAt + receivedAt) / 2
+  return Math.abs(offset) >= CLOCK_SKEW_MIN_MS ? Math.round(offset) : 0
+}
+
+export function countdownLabel(expiresAt, now = Date.now(), offsetMs = 0) {
+  const at = Date.parse(expiresAt) - (Number(offsetMs) || 0)
   if (!Number.isFinite(at)) return ''
   const left = Math.max(0, at - now)
   if (left <= 0) return 'Joining has ended'
@@ -534,11 +545,13 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
   if (!token) throw new Error('flybot-social: owner connector token is required')
   const origin = String(server).replace(/\/+$/, '')
   const base = `${origin}/v1/face-rooms`
+  let clockOffsetMs = 0
 
   async function callHttp(method, url, body) {
     const signal = AbortSignal.timeout(timeoutMs)
     let response
     let data
+    const sentAt = Date.now()
     try {
       response = await fetchImpl(url, {
         method,
@@ -550,6 +563,8 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal,
       })
+      const offset = serverClockOffset(response.headers?.get?.('date'), sentAt, Date.now())
+      if (offset !== undefined) clockOffsetMs = offset
       const text = await response.text()
       try { data = text ? JSON.parse(text) : {} } catch { data = {} }
     } catch (error) {
@@ -568,6 +583,8 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
   }
 
   return {
+    // Bot Social's clock minus ours, as last seen (0 unless the skew is real).
+    clockOffsetMs: () => clockOffsetMs,
     async join({ code, bots } = {}) {
       const digits = String(code ?? '').trim()
       if (!isJoinCode(digits)) throw mapFaceError({ error: { code: 'invalid_code' } }, 400)

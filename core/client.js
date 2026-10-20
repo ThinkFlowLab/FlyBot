@@ -2629,6 +2629,15 @@ function usageOf(list, ids) {
   const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
   return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 }
+function faceRowTitle(title) {
+  const text = String(title ?? "");
+  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
+  if (named) return `${named[2]} · ${named[1]}`;
+  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
+}
+function awayGroups(groups, roomsById) {
+  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
+}
 
 // src/client/sources.js
 function createSource(initial) {
@@ -6399,7 +6408,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const groups = workKeys(useGroupWork(useWork, (rooms) => Object.entries(rooms).flatMap(([roomId, entries2]) => entries2.filter((entry) => entry.botId === id).map((entry) => `${roomId}|${entry.tool ?? ""}`))));
   const away = !running && groups.length > 0;
   const state = botState(running || away, doing, alert);
-  const awayLine = away ? workLine(roster.roomsById[groups[0].id]?.name ?? t("a group chat"), groups[0].tool, groups.length - 1) : null;
+  const shownAway = away ? awayGroups(groups, roster.roomsById) : [];
+  const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t("a group chat"), shownAway[0].tool, shownAway.length - 1) : null;
   if (!isListedRemoteChat(bot) && !active && !main) return null;
   const onContextMenu = (event) => {
     event.preventDefault();
@@ -6557,7 +6567,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
     wide ? (0, import_react10.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react10.createElement)("span", { className: "bt-row-name" }, (0, import_react10.createElement)("span", { className: "bt-row-title" }, title), face ? (0, import_react10.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react10.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react10.createElement)(PinMark) : null),
+      (0, import_react10.createElement)("span", { className: "bt-row-name" }, (0, import_react10.createElement)("span", { className: "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react10.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react10.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react10.createElement)(PinMark) : null),
       workingLine ? (0, import_react10.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react10.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && waiting && !active ? (0, import_react10.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react10.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null

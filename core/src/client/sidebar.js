@@ -3,7 +3,7 @@ import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, us
 import { createPortal } from 'react-dom'
 import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { isMainOf } from './sources.js'
-import { currentPart, nameMentions, previewOf, relativeShort, unsentReplyTurns } from './text.js'
+import { awayGroups, currentPart, faceRowTitle, nameMentions, previewOf, relativeShort, unsentReplyTurns } from './text.js'
 import { PlusIcon, SearchIcon, GaugeIcon, PlugIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, FlyBotMark } from './icons.js'
 import { MAIN_LOOK } from './characters.js'
 import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
@@ -57,7 +57,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const groups = workKeys(useGroupWork(useWork, rooms => Object.entries(rooms).flatMap(([roomId, entries]) => entries.filter(entry => entry.botId === id).map(entry => `${roomId}|${entry.tool ?? ''}`))))
   const away = !running && groups.length > 0
   const state = botState(running || away, doing, alert)
-  const awayLine = away ? workLine(roster.roomsById[groups[0].id]?.name ?? t('a group chat'), groups[0].tool, groups.length - 1) : null
+  const shownAway = away ? awayGroups(groups, roster.roomsById) : []
+  const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t('a group chat'), shownAway[0].tool, shownAway.length - 1) : null
   if (!isListedRemoteChat(bot) && !active && !main) return null
   const onContextMenu = (event) => {
     event.preventDefault()
@@ -173,7 +174,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   h(RoomAvatar, { room, roster, size: 36 }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag' }, t('Shared')) : null, pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag' }, t('Shared')) : null, pinned ? h(PinMark) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   wide && waiting && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)

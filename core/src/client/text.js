@@ -295,3 +295,19 @@ export function usageOf(list, ids) {
   const hit = input > 0 ? Math.round((cacheRead / input) * 100) : 0
   return t('{tokens} tok · Cache hit {hit}%', { tokens: formatTokens(input + output), hit })
 }
+
+// A face room's sidebar row leads with its number, so a title cut to one line never hides it
+// (#458): "Face-to-face · Alice, Bob · 482915" reads "482915 · Alice, Bob". The face mark says
+// what the row is; the full title stays on hover. Any other title is kept as it is.
+export function faceRowTitle(title) {
+  const text = String(title ?? '')
+  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/)
+  if (named) return `${named[2]} · ${named[1]}`
+  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text
+}
+
+// The group chats whose work shows on a Bot's row as "<group> · Thinking…". A face room has its
+// own row, so its turns never take over the Bot's preview (#458).
+export function awayGroups(groups, roomsById) {
+  return (groups ?? []).filter(entry => roomsById?.[entry.id]?.origin !== 'face-to-face')
+}

@@ -1719,7 +1719,15 @@ function withFaceRooms(server) {
   const rooms = new Map()
   const codes = new Map()
   const base = server.fetch
-  server.face = { rooms, codes }
+  // `peer(code)`: Bob is already waiting with that number, so a join meets someone (#458).
+  const peer = (code) => {
+    const bob = { bot_id: 'bot_coder', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' }
+    const room = { room_id: `frm_${code}`, status: 'candidate', expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), members: [bob], events: [{ event_id: 'fev_bob', event_cursor: 1, type: 'member.joined', member: bob, trust: 'platform' }], event_cursor: 1 }
+    rooms.set(room.room_id, room)
+    codes.set(code, room)
+    return room
+  }
+  server.face = { rooms, codes, peer }
   server.fetch = async (url, init) => {
     if (String(url).includes('/v1/face-rooms')) {
       const auth = init.headers.authorization
@@ -1814,17 +1822,18 @@ test('face-to-face join hosts a native room, maps errors, starts and leaves', as
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  const joined = (await call('flybot/social/face-join', { code: '123456' })).value
+  server.face.peer('123456')
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456' })).value
   assert.equal(joined.faceRoomId, 'frm_123456')
   assert.ok(joined.roomId)
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456').origin, 'face-to-face')
   assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, /Danyang|123456/)
   assert.ok((joined.members ?? []).some(m => /Chief/.test(m.label || m.displayName) && /Danyang/.test(m.label || '')))
-  assert.equal((await call('flybot/social/face-join', { code: '12ab56' })).ok, false)
-  assert.match((await call('flybot/social/face-join', { code: '12ab56' })).error.message, /6-digit/)
-  assert.match((await call('flybot/social/face-join', { code: '999999' })).error.message, /8 Bots/)
-  assert.match((await call('flybot/social/face-join', { code: '000000' })).error.message, /no longer valid/)
-  assert.match((await call('flybot/social/face-join', { code: '111111' })).error.message, /30 seconds/)
+  assert.equal((await call('flybot/social/face-join', { start: true, code: '12ab56' })).ok, false)
+  assert.match((await call('flybot/social/face-join', { start: true, code: '12ab56' })).error.message, /6-digit/)
+  assert.match((await call('flybot/social/face-join', { start: true, code: '999999' })).error.message, /8 Bots/)
+  assert.match((await call('flybot/social/face-join', { start: true, code: '000000' })).error.message, /no longer valid/)
+  assert.match((await call('flybot/social/face-join', { start: true, code: '111111' })).error.message, /30 seconds/)
   const started = (await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })).value
   assert.equal(started.status, 'open')
   const listed = (await call('flybot/social/face-rooms', {})).value
@@ -1846,7 +1855,8 @@ test('an expired matching window moves to Past rooms without Leave', async (t) =
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  server.face.peer('123456')
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   server.face.rooms.get('frm_123456').expires_at = '2000-01-01T00:00:00.000Z'
   const listed = (await call('flybot/social/face-rooms', { poll: true })).value
   const room = listed.rooms.find(item => item.faceRoomId === 'frm_123456')
@@ -1865,7 +1875,7 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
   const room = server.face.rooms.get('frm_123456')
   room.members.push({
@@ -1917,7 +1927,7 @@ test('#304: a failed automatic leave is tried again on the next poll', async (t)
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
   const room = server.face.rooms.get('frm_123456')
   room.members.push({ bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' })
@@ -1950,7 +1960,7 @@ test('face and inbox polls speed up while a live face room is open', async (t) =
   await grantTeam(ctx.flybot)
   await social.registerAll()
   assert.ok(delays.includes(15_000), `idle poll ${delays.join(',')}`)
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   assert.ok(delays.includes(4_000), `live poll ${delays.join(',')}`)
 })
 
@@ -1965,7 +1975,8 @@ test('when a face room drops off Bot Social, the local transcript stays openable
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  server.face.peer('123456')
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
   server.face.rooms.delete('frm_123456')
   await call('flybot/social/face-rooms', { poll: true })
@@ -1985,7 +1996,8 @@ test('face-to-face leave after matching ends still moves the room to Past rooms'
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  server.face.peer('123456')
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   // Matching already ended: Bot Social no longer has the room (same class as bot_not_found).
   server.face.rooms.delete('frm_123456')
   const left = await call('flybot/social/face-leave', { faceRoomId: 'frm_123456' })
@@ -2009,7 +2021,7 @@ test('face-to-face: a member already in the snapshot gets a join line when the e
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   server.face.rooms.get('frm_123456').members.push({
     bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob',
   })
@@ -2031,7 +2043,7 @@ test('#182: a peer leaving closes the room here and a later poll does not reopen
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const body = server.face.rooms.get('frm_123456')
   body.members.push({ bot_id: 'bot_peer', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" })
   body.status = 'open'
@@ -2069,7 +2081,7 @@ test('#166: an open face room does not post two identical join lines', async (t)
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const chiefJoins = notices.filter(text => /Chief/.test(text) && /joined/.test(text))
   assert.equal(chiefJoins.length, 1)
   assert.equal(new Set(chiefJoins).size, 1)
@@ -2119,7 +2131,7 @@ test('#166: a face-room hold badges that room, not a friend chat', async (t) => 
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   await call('flybot/social/status', {})
   const view = (await call('state', {})).value
   const face = view.rooms.find(room => room.face?.roomId === 'frm_123456')
@@ -2151,7 +2163,7 @@ test('face-to-face: an owner-typed line is fanned out and shown as a human on th
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const room = ctx.flybot.rooms.ofFace('frm_123456')
   assert.equal(typeof fanout, 'function')
   await fanout(room, { authorKind: 'human', who: 'Danyang', text: 'hello from the owner', authorId: 'owner-1' })
@@ -2184,7 +2196,7 @@ test('a spoofed FLYBOT-FACE-HUMAN who is ignored; the room shows the authenticat
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const body = server.face.rooms.get('frm_123456')
   body.event_cursor += 1
   body.events.push({
@@ -2223,7 +2235,7 @@ test('#180: a received person line is a bubble from that person, not a Bot-named
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const body = server.face.rooms.get('frm_123456')
   body.event_cursor += 1
   body.events.push({
@@ -2279,7 +2291,7 @@ test('#179: a person’s own face line is approved at once and never shown as a 
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const room = ctx.flybot.rooms.ofFace('frm_123456')
   assert.equal(typeof fanout, 'function')
   // Auto-send is off: typing the line is still the approval.
@@ -2330,7 +2342,7 @@ test('face-to-face send pending_approval uses decide_approval', async (t) => {
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const sent = (await call('flybot/social/face-send', { faceRoomId: 'frm_123456', text: 'hold me' })).value
   assert.equal(sent.status, 'pending_approval')
   assert.equal(sent.approvalId, 'apr-face-1')
@@ -2385,7 +2397,7 @@ test('#456: a Bot line Bot Social holds is answered as held, follows the Approve
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const room = ctx.flybot.rooms.ofFace('frm_123456')
   const chief = 'a'
   // The local Bot's line comes back held: the room keeps it off its bubbles until the owner clicks.
@@ -2427,7 +2439,7 @@ test('#456: a face-room event read twice (two polls at once) reaches the room on
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   const body = server.face.rooms.get('frm_123456')
   body.event_cursor += 1
   body.events.push({
@@ -2996,14 +3008,17 @@ test('Face-to-face waiting overview is a tile grid with Leave and Enter chat', (
   assert.equal(tree.some(n => n.props['data-flybot'] === 'face-auto-send'), false)
 })
 
-test('#306: Join is enabled once a Bot is picked; a short number gets the inline hint, not a grey button', async () => {
+test('#306/#458: Join is enabled once a Bot is picked and all 6 digits are in; the tooltip says what is missing', async () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const bots = [{ id: 'a', name: 'Chief', isMain: true }]
   // state order: step, bots, selected, code, busy, status, failures, room, tick
   const picked = walk(pluginOf(['setup', bots, ['a'], '12']).FaceToFaceGroup({}))
   const join = picked.find(n => n.type === 'button' && n.props.type === 'submit')
-  assert.equal(join.props.disabled, false)
+  assert.equal(join.props.disabled, true)
+  assert.equal(join.props.title, 'Enter all 6 digits.')
   assert.equal(picked.some(n => n.props['data-flybot'] === 'face-join-pick'), false)
+  const full = walk(pluginOf(['setup', bots, ['a'], '482913']).FaceToFaceGroup({}))
+  assert.equal(full.find(n => n.type === 'button' && n.props.type === 'submit').props.disabled, false)
   const none = walk(pluginOf(['setup', bots, [], '482913']).FaceToFaceGroup({}))
   assert.equal(none.find(n => n.type === 'button' && n.props.type === 'submit').props.disabled, true)
   assert.ok(none.some(n => n.props['data-flybot'] === 'face-join-pick' && n.children.includes('Pick a Bot first.')))
@@ -3662,8 +3677,9 @@ test('Face-to-face room (#92): pick Bots, join each once, live roster, Enter cha
   // Leave asks first (#306), so the footer's first control is the confirming Leave.
   assert.equal(footBtns[0].type.name, 'ConfirmLeave')
   assert.equal(footBtns[0].props.size, 'fs-btn')
-  assert.equal(footBtns[1].props['data-flybot'], 'face-enter')
-  assert.match(footBtns[1].props.className, /fs-btn-primary/)
+  // Enter chat sits beside Leave and steps aside while "Leave this room?" asks (#458).
+  assert.equal(footBtns[0].props.beside.props['data-flybot'], 'face-enter')
+  assert.match(footBtns[0].props.beside.props.className, /fs-btn-primary/)
   assert.match(wait.find(n => n.props['data-flybot'] === 'face-join-fail').children.join(''), /Writer:/)
   assert.equal(wait.some(n => /published/i.test(String(n.children ?? ''))), false)
   const enter = wait.find(n => n.props['data-flybot'] === 'face-enter')
@@ -3744,8 +3760,8 @@ test('face-to-face: several local Bots join the same number and leave together',
   })
   t.after(() => social.dispose())
   await social.registerAll()
-  const first = (await call('flybot/social/face-join', { code: '123456', botId: 'a' })).value
-  const second = (await call('flybot/social/face-join', { code: '123456', botId: 'b' })).value
+  const first = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
+  const second = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })).value
   assert.equal(first.faceRoomId, second.faceRoomId)
   assert.equal(first.roomId, second.roomId)
   const listed = (await call('flybot/social/face-rooms', {})).value
@@ -3782,7 +3798,7 @@ test('face-to-face join of an ungranted Bot is room-only', async (t) => {
   const status = (await call('flybot/social/status', {})).value
   assert.equal(status.bots.find(b => b.id === 'a').granted, false)
   assert.equal(status.bots.find(b => b.id === 'b').granted, false)
-  const listed = (await call('flybot/social/face-join', { code: '123456', botId: 'a' })).value
+  const listed = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
   assert.equal(listed.joinedAs.botId, 'a')
   assert.deepEqual(ctx.flybot.scope('social').fields.get('a', 'member'), { bot_id: 'm1', handle: '@chief.danyang.home', roomOnly: true })
 })
@@ -3804,7 +3820,7 @@ test('face-to-face join registers an ungranted Bot for that room only', async (t
   assert.equal(scope.fields.get('b', 'member'), undefined)
   assert.equal(ctx.flybot.bot.get('b').granted, false)
 
-  const joined = (await call('flybot/social/face-join', { code: '123456', botId: 'b' })).value
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })).value
   assert.equal(joined.joinedAs.botId, 'b')
   assert.equal(joined.joinedAs.handle, '@writer.danyang.home')
   assert.equal(ctx.flybot.bot.get('b').granted, false, 'join does not grant the Bot to friends')
@@ -3823,7 +3839,7 @@ test('face-to-face join registers an ungranted Bot for that room only', async (t
   assert.equal(polled.includes('m1'), false, 'room-only identity is not polled')
   await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
 
-  const again = (await call('flybot/social/face-join', { code: '123456', botId: 'b' })).value
+  const again = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })).value
   assert.equal(again.joinedAs.botId, 'b')
   assert.equal(server.calls.filter(c => c.name === 'add_home_member' && c.args.name === 'writer').length, 1, 'join is idempotent')
 
@@ -3850,7 +3866,7 @@ test('face-to-face join registration failures are friendly and leave no leftover
   t.after(() => social.dispose())
   await social.registerAll()
   const scope = ctx.flybot.scope('social')
-  const taken = await call('flybot/social/face-join', { code: '123456', botId: 'b' })
+  const taken = await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })
   assert.equal(taken.ok, false)
   assert.match(taken.error.message, /already taken/)
   assert.doesNotMatch(taken.error.message, /handle_taken/)
@@ -3860,7 +3876,7 @@ test('face-to-face join registration failures are friendly and leave no leftover
     if (String(a.name).startsWith('writer')) throw Object.assign(new Error('Bot Social add_home_member: HTTP 429'), { code: 'http_429', retryAfter: 20 })
     return add(a)
   }
-  const limited = await call('flybot/social/face-join', { code: '123456', botId: 'b' })
+  const limited = await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })
   assert.equal(limited.ok, false)
   assert.match(limited.error.message, /20 seconds/)
   assert.equal(scope.fields.get('b', 'member'), undefined)
@@ -3869,24 +3885,24 @@ test('face-to-face join registration failures are friendly and leave no leftover
     if (String(a.name).startsWith('writer')) throw new Error('Bot Social add_home_member: upstream_boom')
     return add(a)
   }
-  const failed = await call('flybot/social/face-join', { code: '123456', botId: 'b' })
+  const failed = await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })
   assert.equal(failed.ok, false)
   assert.match(failed.error.message, /Could not register Writer/)
   assert.doesNotMatch(failed.error.message, /upstream_boom/)
   assert.equal(scope.fields.get('b', 'member'), undefined)
 
   server.tools.add_home_member = add
-  const full = await call('flybot/social/face-join', { code: '999999', botId: 'b' })
+  const full = await call('flybot/social/face-join', { start: true, code: '999999', botId: 'b' })
   assert.equal(full.ok, false)
   assert.match(full.error.message, /8 Bots/)
   assert.equal(scope.fields.get('b', 'member'), undefined, 'a brand-new room-only identity is revoked when join fails')
   assert.equal(server.calls.some(c => c.name === 'remove_home_member'), true)
 
-  const joined = (await call('flybot/social/face-join', { code: '123456', botId: 'b' })).value
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })).value
   assert.equal(joined.joinedAs.botId, 'b')
   assert.equal(scope.fields.get('b', 'member').handle, '@writer.danyang.home')
 
-  const refused = await call('flybot/social/face-join', { code: '999999', botId: 'b' })
+  const refused = await call('flybot/social/face-join', { start: true, code: '999999', botId: 'b' })
   assert.equal(refused.ok, false)
   assert.match(refused.error.message, /8 Bots/)
   assert.equal(scope.fields.get('b', 'member').handle, '@writer.danyang.home', 'an identity already in a room is kept when another join fails')
@@ -4571,7 +4587,7 @@ test('#122: face-room poll omits as=@, heals stored "@", and seeds asBot from my
   server.face.rooms.set('frm_555555', {
     room_id: 'frm_555555',
     status: 'candidate',
-    expires_at: '2026-10-15T10:10:00.000Z',
+    expires_at: '2099-10-15T10:10:00.000Z',
     members: [
       { bot_id: 'bot_chief', handle: '@chief.danyang.home', display_name: 'Chief', owner_name: 'Danyang', published: false },
     ],
@@ -4990,7 +5006,7 @@ test('#138: leaving a face room drops room-only remotes from Friends\' Bots', as
   })
   t.after(() => social.dispose())
   await social.registerAll()
-  const joined = (await call('flybot/social/face-join', { code: '123456', botId: 'a' })).value
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
   const room = server.face.rooms.get(joined.faceRoomId)
   room.members.push({ bot_id: 'bot_bob', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false })
   await call('flybot/social/face-rooms', { poll: true })
@@ -5522,11 +5538,15 @@ test('#191: an ended face room says so in plain view and names the person who le
   ] })
   // The home that stayed reads who left; the one who left reads that they left (#304).
   const closed = walk(plugin.FaceRoomStatus({ room: room('closed') }))
-  assert.match(closed.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), /^UiB1415 left the room\. This room is closed\.$/)
+  const endText = node => node.children.filter(child => typeof child === 'string').join('')
+  assert.equal(endText(closed.find(n => n.props['data-flybot'] === 'face-room-end')), 'UiB1415 left the room. Room closed.')
+  // #458: a room that closed around you keeps one Close action, not a dead end.
+  assert.ok(closed.some(n => n.props['data-flybot'] === 'face-room-close' && n.children.includes('Close')))
   const left = walk(plugin.FaceRoomStatus({ room: room('left') }))
-  assert.equal(left.find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
+  assert.equal(endText(left.find(n => n.props['data-flybot'] === 'face-room-end')), 'You left this room.')
+  assert.equal(left.some(n => n.props['data-flybot'] === 'face-room-close'), false)
   assert.equal(walk(plugin.FaceRoomStatus({ room: room('open') })).some(n => n.props?.['data-flybot'] === 'face-room-end'), false)
-  assert.equal(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end').children.join(''), 'You left this room.')
+  assert.equal(endText(walk(plugin.FaceRoomStatus({ room: { origin: 'face-to-face', face: { status: 'left' }, participants: [{ remote: true, ownerName: 'Bob' }] } })).find(n => n.props['data-flybot'] === 'face-room-end')), 'You left this room.')
 })
 
 test('#297/#443: a face room\'s Bots thinking show as one quiet line above the composer; nothing for 1:1 friend chats, other chats, rooms or no signal', () => {
@@ -6002,7 +6022,8 @@ test('#192: Open on a room the user left shows that room with its transcript, re
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  server.face.peer('123456')
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
   const hosted = ctx.flybot.rooms.ofFace('frm_123456')
   ctx.flybot.rooms.applyFaceLine(hosted.id, { kind: 'joined', system: true, who: 'Room', text: 'earlier line', authorKind: 'system' })
@@ -6172,7 +6193,7 @@ async function faceFixture(t, server, tweak, opts = {}) {
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
   await social.registerAll()
-  await call('flybot/social/face-join', { code: '123456' })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
   return { ctx, call, sources, room: ctx.flybot.rooms.ofFace('frm_123456'), fanout: (line, extra) => fanout(ctx.flybot.rooms.ofFace('frm_123456'), line, extra) }
 }
 const pushRoomEvent = (server, extra, text, roomId = 'frm_123456') => {
@@ -6364,7 +6385,7 @@ test('typed_by_owner (face room): concurrent polls await the in-flight feature p
     const remote = scoped.rooms.postRemote?.bind(scoped.rooms)
     scoped.rooms.postRemote = (id, line) => { bots.push([id, line]); return remote?.(id, line) }
   }, { now: () => clock })
-  await call('flybot/social/face-join', { code: '654321' })
+  await call('flybot/social/face-join', { start: true, code: '654321' })
   for (const id of ['frm_123456', 'frm_654321']) {
     server.face.rooms.get(id).expires_at = new Date(Date.now() + 60 * 60_000).toISOString()
     pushRoomEvent(server, { typed_by_owner: true }, 'typed by Bob', id)
@@ -7549,7 +7570,7 @@ test('#182: a Bot with no stored look gets its generated look on Bot Social, bef
   t.after(() => social.dispose())
   // Writer (`b`) has no identity yet and no stored look: the join registers it room-only.
   assert.equal(ctx.flybot.bot.get('b').avatar, undefined)
-  const joined = await call('flybot/social/face-join', { code: '123456', botId: 'b' })
+  const joined = await call('flybot/social/face-join', { start: true, code: '123456', botId: 'b' })
   assert.equal(joined.ok, true, joined.error?.message)
   const member = ctx.flybot.scope('social').fields.get('b', 'member')
   assert.ok(member?.bot_id)
@@ -7591,4 +7612,173 @@ test('#182: the waiting dialog draws my own Bot with its roster look, also right
   assert.equal(polled[0].props['data-shape'], 'acorn')
   assert.equal(polled[0].props['data-bot-id'], 'chief')
   assert.equal(polled[1].props['data-shape'], 'whale')
+})
+
+async function faceSocial(t) {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  return { ctx, call, server }
+}
+
+test('#458: a number nobody uses opens no room; Start a room makes it the one room, Cancel lets it go', async (t) => {
+  const { ctx, call, server } = await faceSocial(t)
+  const probe = (await call('flybot/social/face-join', { code: '123456' })).value
+  assert.deepEqual(probe, { nobody: true, faceRoomId: 'frm_123456', joinCode: '123456' })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456'), undefined, 'no room in the sidebar')
+  let listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  assert.equal(listed.rooms.length, 0, 'not live, not in Past rooms')
+  const joins = () => server.calls.filter(c => c.name === 'REST POST /join').length
+  const before = joins()
+  const started = (await call('flybot/social/face-join', { code: '123456', start: true })).value
+  assert.equal(started.nobody, undefined)
+  assert.equal(started.faceRoomId, 'frm_123456')
+  assert.equal(joins(), before, 'Start uses the room the number already holds, no second room')
+  assert.ok(ctx.flybot.rooms.ofFace('frm_123456'))
+  assert.equal(started.clockOffsetMs, 0)
+
+  const other = (await call('flybot/social/face-join', { code: '222222' })).value
+  assert.equal(other.nobody, true)
+  const cancelled = (await call('flybot/social/face-leave', { faceRoomId: 'frm_222222' })).value
+  assert.equal(cancelled.status, 'cancelled')
+  assert.ok(server.calls.some(c => c.name === 'REST POST /frm_222222/leave'), 'the number is let go on Bot Social')
+  server.face.rooms.delete('frm_222222') // Bot Social no longer lists a room you left
+  listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  assert.equal(listed.rooms.some(room => room.faceRoomId === 'frm_222222'), false)
+  assert.equal(ctx.flybot.rooms.ofFace('frm_222222'), undefined)
+})
+
+test('#458: a number someone is waiting with joins their room at once', async (t) => {
+  const { ctx, call, server } = await faceSocial(t)
+  server.face.peer('333333')
+  const joined = (await call('flybot/social/face-join', { code: '333333' })).value
+  assert.equal(joined.nobody, undefined)
+  assert.equal(joined.faceRoomId, 'frm_333333')
+  assert.ok(ctx.flybot.rooms.ofFace('frm_333333'))
+})
+
+test('#458: a room nobody else ever joined leaves no Past rooms entry, whether left or run out', async (t) => {
+  const { ctx, call, server } = await faceSocial(t)
+  await call('flybot/social/face-join', { code: '123456', start: true })
+  assert.ok(ctx.flybot.rooms.ofFace('frm_123456'))
+  await call('flybot/social/face-leave', { faceRoomId: 'frm_123456' })
+  server.face.rooms.delete('frm_123456')
+  let listed = (await call('flybot/social/face-rooms', { poll: false })).value
+  assert.equal(listed.rooms.length, 0)
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456'), undefined, 'no kept transcript of a room with nobody')
+
+  // The joining window ran out with nobody else: Bot Social opens it anyway; here it ends and is let go.
+  await call('flybot/social/face-join', { code: '654321', start: true })
+  const room = server.face.rooms.get('frm_654321')
+  room.expires_at = new Date(Date.now() - 1000).toISOString()
+  room.started_at = new Date().toISOString()
+  room.status = 'open'
+  listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  assert.ok(server.calls.some(c => c.name === 'REST POST /frm_654321/leave'))
+  assert.equal(listed.rooms.some(item => item.faceRoomId === 'frm_654321'), false)
+  assert.equal(ctx.flybot.rooms.ofFace('frm_654321'), undefined)
+})
+
+test('#458: a room stays open while two or more people are in it; it closes when one is left', async (t) => {
+  const { ctx, call, server } = await faceSocial(t)
+  const room = server.face.peer('444444')
+  await call('flybot/social/face-join', { code: '444444' })
+  const carol = { bot_id: 'bot_carol', handle: '@chief.carol.home', display_name: 'Chief', owner_name: 'Carol', published: false, label: 'Chief · Carol' }
+  room.members.push(carol)
+  room.status = 'open'
+  room.started_at = new Date().toISOString()
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_444444').face.status, 'open')
+  room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_444444').face.status, 'open', 'Bob left; Carol and I are still here')
+  room.members = room.members.filter(member => member.handle !== carol.handle)
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_444444').face.status, 'closed', 'only I am left')
+  const past = (await call('flybot/social/face-rooms', { poll: false })).value.rooms.find(item => item.faceRoomId === 'frm_444444')
+  assert.equal(past?.status, 'closed', 'a real meeting stays in Past rooms')
+})
+
+test('#458: a number nobody uses shows "Nobody is using … yet." with Cancel and Start a room, never a waiting room', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const bots = [{ id: 'a', name: 'Chief', isMain: true }]
+  const held = { nobody: true, faceRoomId: 'frm_1', joinCode: '111111' }
+  // state order: step, bots, selected, code, busy, status, failures, room, tick
+  const closed = []
+  const tree = walk(pluginOf(['nobody', bots, ['a'], '111111', false, null, [], held, 0]).FaceToFaceGroup({ onClose: () => closed.push(true) }))
+  const box = tree.find(n => n.props['data-flybot'] === 'face-nobody')
+  assert.ok(box)
+  assert.ok(tree.some(n => n.children.includes('Nobody is using 111111 yet.')))
+  assert.equal(tree.some(n => n.props['data-flybot'] === 'face-wait' || n.props['data-flybot'] === 'face-wait-code'), false)
+  await tree.find(n => n.props['data-flybot'] === 'face-nobody-start').props.onClick()
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.filter(([endpoint]) => endpoint === 'social/face-join').map(([, payload]) => payload))), [{ code: '111111', botId: 'a', start: true }])
+  await tree.find(n => n.props['data-flybot'] === 'face-nobody-cancel').props.onClick()
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
+  // Closing the dialog there lets the number go too; Escape and an outside click close the same way.
+  calls.length = 0
+  const back = tree.find(n => n.props['data-flybot'] === 'face-group')
+  back.props.onClick({ target: 'inside', currentTarget: back })
+  assert.equal(closed.length, 0, 'a click inside the dialog does not close it')
+  back.props.onClick({ target: back, currentTarget: back })
+  assert.equal(closed.length, 1)
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
+})
+
+test('#458: Join answers a nobody result with the prompt and no room opens', async () => {
+  const steps = []
+  const rooms = []
+  const opened = []
+  const { registered } = loadSocialClient(async (endpoint) => (endpoint === 'social/face-join' ? { nobody: true, faceRoomId: 'frm_1', joinCode: '111111' } : {}))
+  let i = 0
+  const states = ['setup', [{ id: 'a', name: 'Chief', isMain: true }], ['a'], '111111']
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }), Fragment: 'F',
+    useEffect() {}, useState: v => { const index = i++; return [index < states.length ? states[index] : v, value => { if (index === 0) steps.push(value); if (index === 7) rooms.push(value) }] },
+    useRef: v => ({ current: v }), useMemo: f => f(),
+  }))
+  const form = plugin.FaceToFaceGroup({ actions: { openSession: id => opened.push(id) } })
+  const find = (node) => node?.props?.['data-flybot'] === 'face-join' ? node : (node?.children ?? []).map(find).find(Boolean)
+  await find(form).props.onSubmit({ preventDefault() {} })
+  assert.deepEqual(steps, ['nobody'])
+  assert.deepEqual(JSON.parse(JSON.stringify(rooms)), [{ nobody: true, faceRoomId: 'frm_1', joinCode: '111111' }])
+  assert.deepEqual(opened, [])
+})
+
+test('#458: waiting alone says so; Enter chat steps aside while Leave asks; Leave goes back to the last chat with the panel closed', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const roster = { bots: [{ id: 'main' }, { id: 'helper' }], mainBotId: 'main', byId: { main: { id: 'main' }, helper: { id: 'helper' }, a: { id: 'a', name: 'Chief' } }, roomsById: {} }
+  const room = {
+    id: 'g1', origin: 'face-to-face',
+    face: { roomId: 'frm_1', status: 'candidate', expiresAt: '2099-01-01T00:00:00.000Z', joinCode: '482913' },
+    participants: [{ handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', remote: false, id: 'a' }],
+  }
+  const nav = []
+  const actions = { openSession: id => nav.push(['open', id]), closeOverlay: () => nav.push(['closeOverlay']) }
+  const alone = walk(pluginOf([]).FaceRoomOverview({ room, roster, actions }))
+  assert.ok(alone.some(n => n.props['data-flybot'] === 'face-wait-alone' && n.children.includes('Waiting for others to join…')))
+  assert.ok(alone.some(n => n.props['data-flybot'] === 'face-enter'))
+  const withBob = { ...room, participants: [...room.participants, { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', remote: true }] }
+  assert.equal(walk(pluginOf([]).FaceRoomOverview({ room: withBob, roster, actions })).some(n => n.props['data-flybot'] === 'face-wait-alone'), false)
+  // state order in the overview: busy, note, tick, snapshot, dialog tick; then ConfirmLeave's ask.
+  const asking = walk(pluginOf(['', null, 0, null, 0, true]).FaceRoomOverview({ room, roster, actions }))
+  assert.ok(asking.some(n => n.props['data-flybot'] === 'face-leave-confirm'))
+  assert.equal(asking.some(n => n.props['data-flybot'] === 'face-enter'), false, 'Enter chat is hidden while Leave asks')
+  // The last chat open before the room was the helper Bot's: Leave goes back there.
+  const plugin = pluginOf(['', null, 0, null, 0, true])
+  walk(plugin.FaceRoomStatus({ sessionId: 'helper', room: undefined, roster, actions }))
+  walk(plugin.FaceRoomStatus({ sessionId: 'g1', room, roster, actions }))
+  const confirm = walk(plugin.FaceRoomOverview({ room, roster, actions }))
+  await confirm.find(n => n.props['data-flybot'] === 'face-leave-yes').props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
+  assert.deepEqual(nav, [['closeOverlay'], ['open', 'helper']])
 })

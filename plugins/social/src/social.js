@@ -2515,6 +2515,25 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!faceApi) throw new Error('Bot Social is not connected')
     return faceApi
   }
+  // A number nobody else is using opens no room here (#458). Bot Social answers a join of an unknown
+  // number with a fresh candidate, so it is held here, off the sidebar and Past rooms, until the owner
+  // starts a room with it (it becomes that room) or cancels (it is left at once). Abandoned holds go
+  // on the next poll.
+  const unclaimed = new Map()
+  const UNCLAIMED_MS = 2 * 60_000
+  const faceClockOffset = () => Number(faceApi?.clockOffsetMs?.()) || 0
+  async function dropUnclaimed(serverId) {
+    const held = unclaimed.get(serverId)
+    if (!held) return undefined
+    unclaimed.delete(serverId)
+    try {
+      await faceNeed().leave(serverId, { bots: [held.handle] })
+    } catch (error) {
+      if (!alreadyLeftFace(error)) warn('leaving an unused face-room number failed', error)
+    }
+    if (!held.hadIdentity) await releaseRoomOnlyIdentity(held.botId)
+    return { faceRoomId: serverId, status: 'cancelled' }
+  }
   const localFaceBots = () => flybot.bot.list().map(bot => {
     const member = memberOf(bot.id)
     return {
@@ -2662,7 +2681,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const currentRemotes = (snapshot?.members ?? []).filter(member => member.handle && !locals.has(norm(member.handle)))
     // Every other home left: the room has ended here, but this home did not leave it (#304).
     if (status === 'open' && previousRemotes.length > 0 && currentRemotes.length === 0) return { status: 'closed', peersGone: true }
+    // The joining window ran out and nobody else ever came (#458): the room ends, it is no open chat with yourself.
+    const started = Date.parse(snapshot?.startedAt || '')
+    const deadline = Date.parse(expiresAt || '')
+    if (status === 'open' && currentRemotes.length === 0 && neverShared(hosted) && Number.isFinite(started) && Number.isFinite(deadline) && started >= deadline) {
+      return { status: 'closed', peersGone: true }
+    }
     return undefined
+  }
+  // Nobody from another home was ever in this room (#458): it was no meeting, so it leaves no Past
+  // rooms entry and no kept transcript.
+  function neverShared(hosted) {
+    return !(hosted?.participants ?? []).some(p => p.remote === true)
   }
   async function applyFaceSnapshot(snapshot, { asBot } = {}) {
     if (!snapshot?.roomId || !flybot.rooms?.upsertFace) return undefined
@@ -2767,7 +2797,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       void flybot.rooms.postNotice?.(room.id, text)
     }
     settings.faceRooms[snapshot.roomId].seen = seen
-    if (past) {
+    const lone = Boolean(past) && neverShared(flybot.rooms.ofFace?.(snapshot.roomId) ?? room)
+    if (past && !lone) {
       rememberPastFace(viewHostedFace(flybot.rooms.ofFace?.(snapshot.roomId) ?? room, {
         faceRoomId: snapshot.roomId,
         localRoomId: room.id,
@@ -2779,7 +2810,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     armSocialPoll()
     // The room ended here because everyone else left: leave it on Bot Social too, so this
     // home stops polling it and a room-only identity is released (social.md invariant 4, #304).
-    if (past?.peersGone && settings.faceRooms[snapshot.roomId]) {
+    if ((past?.peersGone || lone) && settings.faceRooms[snapshot.roomId]) {
       await leaveFaceRoom({ faceRoomId: snapshot.roomId, status: 'closed' })
         .catch(error => warn('face-room leave after the last peer left failed', error))
     }
@@ -2798,7 +2829,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     facePolling = (async () => {
       let n = 0
       try {
-        const listed = await faceApi.list()
+        for (const [serverId, held] of [...unclaimed]) {
+          if (now() - held.at >= UNCLAIMED_MS) await dropUnclaimed(serverId)
+        }
+        const listed = (await faceApi.list()).filter(item => !unclaimed.has(item.roomId))
         const known = new Set(listed.map(item => item.roomId))
         const got = await mapPool(listed, GRANT_CONCURRENCY, async (snapshot) => {
           try {
@@ -2826,7 +2860,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         for (const [serverId, meta] of Object.entries(settings.faceRooms)) {
           if (known.has(serverId)) continue
           const hosted = flybot.rooms.ofFace?.(serverId)
-          rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed', joinCode: meta?.joinCode })
+          if (hosted?.id && neverShared(hosted)) void Promise.resolve(flybot.rooms.dropFace?.(hosted.id)).catch(() => {})
+          else rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed', joinCode: meta?.joinCode })
             || { faceRoomId: serverId, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'closed', members: [], joinCode: meta?.joinCode })
           delete settings.faceRooms[serverId]
           dropRoomRemotes(serverId)
@@ -2843,17 +2878,32 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     })().finally(() => { facePolling = undefined })
     return facePolling
   }
-  async function joinFaceRoom({ code, botId } = {}) {
+  // `start`: the owner chose to start a room with this number. Without it, a number nobody else is
+  // using answers `nobody` and opens no room (#458).
+  async function joinFaceRoom({ code, botId, start = false } = {}) {
     const digits = String(code ?? '').trim()
     if (!isJoinCode(digits)) throw mapFaceError({ error: { code: 'invalid_code' } }, 400)
     const bot = pickJoiner(botId, { needHandle: false })
     if (!bot) throw new Error('Choose which of your Bots joins')
     const local = flybot.bot.get(bot.id)
-    const hadIdentity = Boolean(memberOf(bot.id))
+    const held = [...unclaimed].find(([, item]) => item.code === digits && item.botId === bot.id)
+    const hadIdentity = held ? held[1].hadIdentity : Boolean(memberOf(bot.id))
     try {
       await registerForFace(local)
       const ready = pickJoiner(bot.id)
-      const snapshot = await faceNeed().join({ code: digits, bots: [ready.handle] })
+      let snapshot
+      if (held) {
+        // Starting the room this number already holds: no second room on Bot Social.
+        unclaimed.delete(held[0])
+        snapshot = await faceNeed().get(held[0], { as: ready.handle }).catch(() => undefined)
+      }
+      snapshot ??= await faceNeed().join({ code: digits, bots: [ready.handle] })
+      const locals = new Set(bringable().map(item => item.handle).filter(Boolean))
+      const others = (snapshot.members ?? []).some(member => member.handle && !locals.has(norm(member.handle)))
+      if (start !== true && !others && !settings.faceRooms[snapshot.roomId]) {
+        unclaimed.set(snapshot.roomId, { code: digits, botId: ready.id, handle: ready.handle, hadIdentity, at: now() })
+        return { nobody: true, faceRoomId: snapshot.roomId, joinCode: digits }
+      }
       const prev = settings.faceRooms[snapshot.roomId]
       settings.faceRooms[snapshot.roomId] = rememberAsBot({
         ...(prev ?? {}),
@@ -2862,8 +2912,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const room = await applyFaceSnapshot(snapshot, { asBot: ready.handle })
       saveSettings()
       if (room) await setRoomGrant(ready.id, room, { faceRoomId: snapshot.roomId, name: faceRoomTitle(snapshot, { code: digits, room }) })
-      return { ...viewHostedFace(room, { joinedAs: { botId: ready.id, botName: ready.name, handle: ready.handle }, joinCode: digits }), faceRoomId: snapshot.roomId, status: snapshot.status, expiresAt: snapshot.expiresAt, members: snapshot.members, joinCode: digits }
+      return { ...viewHostedFace(room, { joinedAs: { botId: ready.id, botName: ready.name, handle: ready.handle }, joinCode: digits }), faceRoomId: snapshot.roomId, status: snapshot.status, expiresAt: snapshot.expiresAt, members: snapshot.members, joinCode: digits, clockOffsetMs: faceClockOffset() }
     } catch (error) {
+      // A held number that could not become a room is let go on Bot Social too.
+      if (held && !settings.faceRooms[held[0]]) await faceNeed().leave(held[0], { bots: [held[1].handle] }).catch(() => { /* the join error below is what the owner sees */ })
       // A brand-new room-only identity that never made it into a room must not block retry
       // (and must not linger as a reachable home member).
       if (!hadIdentity) await releaseRoomOnlyIdentity(bot.id)
@@ -2890,14 +2942,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
   }
   async function leaveFaceRoom({ roomId, faceRoomId, bots, status: ended } = {}) {
+    if (faceRoomId && unclaimed.has(faceRoomId)) return dropUnclaimed(faceRoomId)
     const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
     if (!id) throw new Error('which room?')
     // `closed` when the room ended around us (every peer left), `left` when the owner left it.
     const status = ended === 'closed' ? 'closed' : 'left'
     const meta = settings.faceRooms[id]
     const hosted = flybot.rooms.ofFace?.(id)
-    rememberPastFace(viewHostedFace(hosted, { faceRoomId: id, localRoomId: meta?.localRoomId, status, joinCode: meta?.joinCode })
-      || { faceRoomId: id, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status, members: [], joinCode: meta?.joinCode })
+    const lone = Boolean(hosted?.id) && neverShared(hosted)
+    if (!lone) {
+      rememberPastFace(viewHostedFace(hosted, { faceRoomId: id, localRoomId: meta?.localRoomId, status, joinCode: meta?.joinCode })
+        || { faceRoomId: id, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status, members: [], joinCode: meta?.joinCode })
+    }
     const handles = (Array.isArray(bots) && bots.length ? bots : asBotsOf(meta)).map(norm).filter(Boolean)
     let result
     try {
@@ -2915,7 +2971,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
       // The room stays as a read-only past room with its transcript (#192): Open from Past rooms
       // finds it already hosted. It is only marked left; the sidebar lists past rooms elsewhere.
-      await flybot.rooms.upsertFace?.({ roomId: id, status, ...(meta?.joinCode ? { joinCode: meta.joinCode } : {}) }).catch(() => {})
+      // A room nobody else ever joined is dropped instead (#458).
+      if (lone) await Promise.resolve(flybot.rooms.dropFace?.(hosted.id)).catch(() => {})
+      else await flybot.rooms.upsertFace?.({ roomId: id, status, ...(meta?.joinCode ? { joinCode: meta.joinCode } : {}) }).catch(() => { /* the leave itself went through */ })
     }
     delete settings.faceRooms[id]
     dropRoomRemotes(id)
@@ -3016,15 +3074,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!room?.id) throw new Error('Could not open that room')
     return { roomId: room.id, faceRoomId: serverId }
   }
-  disposers.push(flybot.api.handle('social/face-join', async ({ code, botId } = {}) => joinFaceRoom({ code, botId })))
+  disposers.push(flybot.api.handle('social/face-join', async ({ code, botId, start } = {}) => joinFaceRoom({ code, botId, start: start === true })))
   disposers.push(flybot.api.handle('social/face-open', async (payload) => openFaceRoom(payload), { read: true }))
   disposers.push(flybot.api.handle('social/face-rooms', async (payload) => {
     if (payload?.poll !== false) await pollFaceRooms().catch(() => { /* a failed poll shows the rooms as last polled */ })
     const pastById = new Map((settings.pastFaceRooms ?? []).filter(item => item?.faceRoomId).map(item => [item.faceRoomId, item]))
+    const clockOffsetMs = faceClockOffset()
     const rooms = Object.entries(settings.faceRooms).map(([faceRoomId, meta]) => {
       const room = flybot.rooms.ofFace?.(faceRoomId)
       const endedAt = pastById.get(faceRoomId)?.endedAt
-      return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor, joinCode: meta.joinCode, ...(endedAt ? { endedAt } : {}) }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate', joinCode: meta.joinCode }
+      return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor, joinCode: meta.joinCode, clockOffsetMs, ...(endedAt ? { endedAt } : {}) }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate', joinCode: meta.joinCode, clockOffsetMs }
     }).filter(Boolean)
     const liveIds = new Set(rooms.map(room => room.faceRoomId).filter(Boolean))
     for (const past of settings.pastFaceRooms ?? []) {
