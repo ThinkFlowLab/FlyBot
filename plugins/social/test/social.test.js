@@ -5456,6 +5456,10 @@ test('#304: each Past room row shows its time: when it ended, else when it start
   // No time known: no empty slot. Live rows show no time.
   assert.equal(timeOf({ faceRoomId: 'f5', name: 'Hall', status: 'closed', members: [] }), undefined)
   assert.equal(walk(pluginOf([]).FaceRoomCard({ room: { faceRoomId: 'f6', name: 'Hall', status: 'open', members: [], startedAt: start.toISOString() } })).some(n => n.props['data-flybot'] === 'face-time'), false)
+  // The time is quiet and fixed-width; a past row reads as one clickable band.
+  const css = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(css, /\.fs-face-time\{flex:none;[^}]*white-space:nowrap/)
+  assert.match(css, /\.fs-face-item\[data-past\] \.fs-face-row\[data-open\]:hover\{background:/)
 })
 
 test('#304: a Past room title lists everyone who was in the room, including who left', () => {
