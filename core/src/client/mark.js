@@ -1,5 +1,6 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
-import { fnv1a, lookOf, lookAvoidingLocals, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
+import { fnv1a, lookOf, lookAvoidingLocals, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup, defaultColor } from './characters.js'
+import { inkFill } from './inks.js'
 import { t } from './i18n.js'
 
 export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
@@ -87,7 +88,20 @@ function StarIcon({ size = 8 }) {
 }
 // The small star in a disc that marks a group admin, beside a name.
 // A person, not a Bot: a friend's own attested line, or another person in a face-to-face room.
-export function PersonMark({ size = 22 }) {
+// With a name it is that person's initial on a color picked from the name, so each person looks
+// the same on every home and two people are told apart (#182); without one, a plain silhouette.
+export const personInitial = name => (Array.from(String(name ?? '').trim())[0] ?? '').toUpperCase()
+export const personColor = name => defaultColor(`person:${String(name ?? '').trim().toLowerCase()}`)
+export function PersonMark({ size = 22, name }) {
+  const initial = personInitial(name)
+  if (initial) {
+    return h('span', {
+      className: 'bt-person-mark bt-person-initial',
+      'data-initial': initial,
+      style: { width: size, height: size, background: inkFill(personColor(name)), fontSize: Math.max(9, Math.round(size * 0.46)) },
+      'aria-hidden': true,
+    }, initial)
+  }
   return h('span', { className: 'bt-person-mark', style: { width: size, height: size }, 'aria-hidden': true },
     h('svg', { width: size * 0.64, height: size * 0.64, viewBox: '0 0 24 24', fill: 'currentColor' },
       h('circle', { cx: 12, cy: 8.5, r: 4.2 }), h('path', { d: 'M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z' })))

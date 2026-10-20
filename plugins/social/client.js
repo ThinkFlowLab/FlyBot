@@ -265,13 +265,20 @@ window.__ModuleLoader__.load({
     // Local picker rows use the team roster record (configured image / shape / color).
     // Waiting-room "mine" matches the same local Bot; a friend's Bot uses its chat
     // record or a handle-seeded remote look, plus any avatar the member payload carries.
-    function faceLook({ roster, remoteChats, bots, local, member } = {}) {
+    // My own Bot is found by its room record (remote false, local id), by the handle the
+    // Bot list knows, or by the handle a join just returned (`mine`: { botId, handle }):
+    // a Bot that got its room-only identity at this join is not in the list yet, and must
+    // not be drawn with a look seeded from that new handle (#182).
+    function faceLook({ roster, remoteChats, bots, local, member, mine: joined } = {}) {
       if (local) {
         const full = rosterBot(roster, local.id)
         return full ? { ...local, ...full } : local
       }
       if (!member) return undefined
-      const mine = (bots ?? []).find(bot => bot.handle && bot.handle === member.handle)
+      const recorded = member.remote === false && member.id ? rosterBot(roster, member.id) : undefined
+      const listed = (bots ?? []).find(bot => bot.handle && bot.handle === member.handle)
+      const justJoined = member.handle ? (joined ?? []).find(item => item?.botId && item.handle === member.handle) : undefined
+      const mine = recorded || listed || (justJoined ? rosterBot(roster, justJoined.botId) || { id: justJoined.botId, name: justJoined.botName || member.displayName } : undefined)
       if (mine) return faceLook({ roster, bots, local: mine })
       const extra = {}
       if (member.color) extra.color = member.color
@@ -635,6 +642,7 @@ window.__ModuleLoader__.load({
         setStatus(null)
         setFailures([])
         const mine = []
+        const joined = []
         const failed = []
         let last
         for (const botId of selected) {
@@ -642,7 +650,10 @@ window.__ModuleLoader__.load({
           try {
             const result = await call('social/face-join', { code: digits, botId })
             last = result
-            if (result?.joinedAs?.handle) mine.push(result.joinedAs.handle)
+            if (result?.joinedAs?.handle) {
+              mine.push(result.joinedAs.handle)
+              joined.push(result.joinedAs)
+            }
           } catch (e) {
             failed.push({ botId, name: bot?.name || 'Bot', text: errorText(e) })
             if (shouldStopJoin(e) && !last) {
@@ -660,7 +671,7 @@ window.__ModuleLoader__.load({
           setBusy(false)
           return
         }
-        setRoom({ ...last, mineHandles: mine, joinCode: last.joinCode || digits })
+        setRoom({ ...last, mineHandles: mine, mineBots: joined, joinCode: last.joinCode || digits })
         setStep('waiting')
         setBusy(false)
         // The main pane (and its title) moves to the new room at once, not the room before it (#191).
@@ -717,7 +728,7 @@ window.__ModuleLoader__.load({
               h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
                 members.map(member => h(FaceTile, {
                   key: member.handle || member.id,
-                  bot: faceLook({ roster, remoteChats, bots, member }),
+                  bot: faceLook({ roster, remoteChats, bots, member, mine: room.mineBots }),
                   member,
                   handle: member.handle,
                   mine: memberIsMine(member, bots, room),

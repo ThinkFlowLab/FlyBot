@@ -59,6 +59,7 @@ export function lookFromServer(row = {}) {
   return out
 }
 
+// The order the owner's home draws a stored look in (core mark.js BotMark): image, emoji, shape.
 export function lookToServer(bot = {}) {
   const patch = {}
   const color = hexOfColor(bot.color)
@@ -66,12 +67,50 @@ export function lookToServer(bot = {}) {
   const avatar = bot.avatar && typeof bot.avatar === 'object' ? bot.avatar : {}
   if (typeof avatar.image === 'string' && DATA_IMAGE.test(avatar.image) && avatar.image.length <= AVATAR_MAX) {
     patch.avatar = avatar.image
-  } else if (typeof avatar.shape === 'string' && PRESET.test(avatar.shape)) {
-    patch.avatar = avatar.shape
   } else if (typeof avatar.emoji === 'string' && isEmojiAvatar(avatar.emoji)) {
     patch.avatar = avatar.emoji.trim()
+  } else if (typeof avatar.shape === 'string' && PRESET.test(avatar.shape)) {
+    patch.avatar = avatar.shape
   }
   return patch
+}
+
+// A Bot with no stored shape or color is drawn at home with a look picked from its id
+// (core/src/client/characters.js defaultShape / defaultColor). That generated look is the
+// owner's look too, so it is what Bot Social gets: without it the other home falls back to a
+// look seeded by the handle, and the Bot looks different on each home (#182). Same functions
+// and lists as core; plugins/social/test/social.test.js checks they agree.
+export const DEFAULT_SHAPES = ['star', 'moon', 'gumdrop', 'peanut', 'bunny', 'kitty', 'acorn']
+export const DEFAULT_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta']
+function fnv1a(text) {
+  let value = 2166136261
+  for (let index = 0; index < text.length; index += 1) value = Math.imul(value ^ text.charCodeAt(index), 16777619)
+  return value >>> 0
+}
+export function defaultColorOf(id) {
+  const t = (fnv1a(String(id)) + 1831565813) | 0
+  let n = Math.imul(t ^ (t >>> 15), 1 | t)
+  n = (n + Math.imul(n ^ (n >>> 7), 61 | n)) ^ n
+  return DEFAULT_COLORS[Math.floor((((n ^ (n >>> 14)) >>> 0) / 4294967296) * DEFAULT_COLORS.length)]
+}
+export function defaultShapeOf(id) {
+  let value = fnv1a(String(id)) | 0
+  value = Math.imul(value ^ (value >>> 16), 73244475)
+  value = Math.imul(value ^ (value >>> 13), 3266489909)
+  return DEFAULT_SHAPES[((value ^ (value >>> 16)) >>> 0) % DEFAULT_SHAPES.length]
+}
+
+// The look the owner's home draws for a local Bot: what it stores, with the id-picked shape
+// and color filling what it does not. A stored image or emoji is left alone.
+export function shownLook(bot = {}) {
+  if (bot?.id === undefined || bot?.id === null || bot.id === '') return bot
+  const avatar = bot.avatar && typeof bot.avatar === 'object' ? bot.avatar : {}
+  const own = lookToServer(bot)
+  return {
+    ...bot,
+    color: own.color ?? defaultColorOf(bot.id),
+    avatar: own.avatar !== undefined ? avatar : { ...avatar, shape: defaultShapeOf(bot.id) },
+  }
 }
 
 export function lookFingerprint(bot) {

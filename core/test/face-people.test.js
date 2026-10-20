@@ -57,7 +57,9 @@ test('another person\'s face-room line is their own received bubble with name an
   const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
   assert.ok(person, 'drawn as a person')
   assert.equal(person.props['data-person'], 'SelfA0333')
-  assert.equal(find(person, node => node.props?.className === 'bt-person-mark').length, 1, 'with an avatar')
+  assert.equal(find(person, node => /\bbt-person-mark\b/.test(node.props?.className ?? '')).length, 1, 'with an avatar')
+  // Their initial, not a grey silhouette (#182).
+  assert.equal(find(person, node => node.props?.['data-initial'] === 'S').length, 1)
   assert.equal(find(person, node => node.props?.className === 'bt-group-name' && node.children.includes('SelfA0333')).length, 1)
   assert.equal(find(person, node => node.props?.className === 'bt-bubble').length, 1, 'a received bubble')
   assert.equal(find(drawn, node => node.props?.className === 'bt-ubody').length, 0, 'not the sent-bubble style')
@@ -105,9 +107,9 @@ test('another home member\'s line shows their person mark and a received surface
   const cell = UserMessageCell({ node, sessionId: 'g1', useRoster: select => select(roster), actions: {} })
   const drawn = expand(cell, ['PersonMark'])
   assert.match(drawn.props.className, /bt-umsg-other/)
-  assert.equal(find(drawn, n => n.props?.className === 'bt-person-mark').length, 1)
+  assert.equal(find(drawn, n => /\bbt-person-mark\b/.test(n.props?.className ?? '')).length, 1)
   const mine = UserMessageCell({ node: { ...node, data: { ...node.data, source: { ...node.data.source, authorId: 'm1' } } }, sessionId: 'g1', useRoster: select => select(roster), actions: {} })
-  assert.equal(find(expand(mine, ['PersonMark']), n => n.props?.className === 'bt-person-mark').length, 0, 'my own line has no mark')
+  assert.equal(find(expand(mine, ['PersonMark']), n => /\bbt-person-mark\b/.test(n.props?.className ?? '')).length, 0, 'my own line has no mark')
   assert.match(USER_MESSAGE_CSS, /\.bt-umsg-other \.bt-ubody\{background:var\(--bt-bubble\);color:var\(--bt-ink\)\}/)
   // The bundle carries the same rule.
   assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.bt-umsg-other \.bt-ubody\{background:var\(--bt-bubble\)/)

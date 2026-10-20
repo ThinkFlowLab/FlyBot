@@ -32,7 +32,7 @@ import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf, personHomeOf } from './mcp-client.js'
-import { lookFromServer, lookToServer, lookFingerprint } from './look.js'
+import { lookFromServer, lookToServer, lookFingerprint, shownLook } from './look.js'
 import { createPresence } from './presence.js'
 import {
   createFaceRoomApi,
@@ -605,7 +605,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       handle: member.handle,
       ...(forFace ? { roomOnly: true } : {}),
     })
-    void syncBotLook(bot).catch(error => warn('look not synced', error))
+    // Before the identity joins anything, so the other home's first members[] already carries
+    // the owner's look and never paints a handle-seeded one first (#182).
+    await syncBotLook(bot).catch(error => warn('look not synced', error))
     return memberOf(bot.id)
   }
   // Existing identities and granted Bots at startup, once ds-bot's team is loaded.
@@ -652,11 +654,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   async function syncBotLook(bot) {
     const member = memberOf(bot?.id)
     if (!member?.bot_id || typeof api.updateBotProfile !== 'function') return
-    const patch = lookToServer(bot)
+    // The look as the owner's home draws it, a generated one included (#182).
+    const look = shownLook(bot)
+    const patch = lookToServer(look)
     // The record names the Bot Social identity it was sent to: a room-only identity is released after
     // its last face room and the next room registers a new one, which has no look until it is sent
     // again (#182). A record from before this (look only) sends once more.
-    const fingerprint = `${member.bot_id}|${lookFingerprint(bot)}`
+    const fingerprint = `${member.bot_id}|${lookFingerprint(look)}`
     const synced = settings.lookSynced?.[bot.id]
     if (synced === fingerprint) return
     const empty = !('avatar' in patch) && !('color' in patch)

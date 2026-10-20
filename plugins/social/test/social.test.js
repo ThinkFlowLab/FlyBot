@@ -10,7 +10,7 @@ import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
 import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
-import { lookFromServer, lookToServer, lookFingerprint, hexOfColor } from '../src/look.js'
+import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
 import { encodeFaceHuman } from '../src/face-rooms.js'
 import {
@@ -5734,8 +5734,10 @@ test('#137: owner look is sent with update_bot_profile; old servers are skipped'
   await new Promise(resolve => setTimeout(resolve, 40))
   const sent = server.calls.filter(c => c.name === 'update_bot_profile')
   assert.ok(sent.length > probed)
-  assert.equal(sent.at(-1).args.avatar, 'whale')
-  assert.equal(sent.at(-1).args.color, '#4d6bfe')
+  // Each Bot's own call: Writer (no stored look) gets its generated look too (#182).
+  const chief = sent.filter(c => c.args.bot_id === ctx.flybot.scope('social').fields.get('a', 'member')?.bot_id).at(-1)
+  assert.equal(chief.args.avatar, 'whale')
+  assert.equal(chief.args.color, '#4d6bfe')
   assert.ok(JSON.parse(readFileSync(settingsPath, 'utf8')).lookSynced?.a)
 })
 
@@ -7408,4 +7410,85 @@ test('#442: message.not_delivered shows a Not sent line in the owner\'s chat wit
   log.push(notDelivered(2, via, '@writer.bob.home'))
   await social.pollInbox()
   assert.equal(delivered.length, 1)
+})
+
+test('#182: the generated look matches core, so a Bot with no look of its own is sent as its home draws it', async () => {
+  const core = await import('../../../core/src/client/characters.js')
+  assert.deepEqual(LOOK_DEFAULT_SHAPES, core.DEFAULT_SHAPES)
+  assert.deepEqual(LOOK_DEFAULT_COLORS, core.DEFAULT_COLORS)
+  for (const id of ['a', 'b', 'chief', 'writer-2', 'bot_9f3a', '会议助手', ...Array.from({ length: 200 }, (_, n) => `s${n * 7919}`)]) {
+    assert.equal(defaultShapeOf(id), core.defaultShape(id), id)
+    assert.equal(defaultColorOf(id), core.defaultColor(id), id)
+    // What Bot Social gets is what core draws for that Bot.
+    const drawn = core.lookOf({ id })
+    const sent = lookToServer(shownLook({ id, name: 'X' }))
+    assert.equal(sent.avatar, drawn.shape, id)
+    assert.equal(sent.color, hexOfColor(drawn.color), id)
+  }
+  // A stored look wins; only what is missing is filled.
+  assert.deepEqual(lookToServer(shownLook({ id: 'a', color: 'deepseek', avatar: { shape: 'whale' } })), { color: '#4d6bfe', avatar: 'whale' })
+  assert.equal(lookToServer(shownLook({ id: 'a', color: 'green' })).avatar, defaultShapeOf('a'))
+  assert.equal(lookToServer(shownLook({ id: 'a', avatar: { shape: 'whale' } })).color, hexOfColor(defaultColorOf('a')))
+  // An emoji or image is kept as it is (no generated shape over it), and an emoji beats a stray shape,
+  // in the order the home draws them.
+  assert.equal(lookToServer(shownLook({ id: 'a', avatar: { emoji: '🦊' } })).avatar, '🦊')
+  assert.equal(lookToServer({ avatar: { emoji: '🦊', shape: 'star' } }).avatar, '🦊')
+  const data = 'data:image/png;base64,AAAA'
+  assert.equal(lookToServer(shownLook({ id: 'a', avatar: { image: data } })).avatar, data)
+})
+
+test('#182: a Bot with no stored look gets its generated look on Bot Social, before it joins a face room', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.tools.update_bot_profile = a => ({ bot_id: a.bot_id, avatar: a.avatar ?? null, avatar_kind: 'preset', color: a.color ?? null, avatar_updated_at: '2026-10-20T00:00:00.000Z' })
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  // Writer (`b`) has no identity yet and no stored look: the join registers it room-only.
+  assert.equal(ctx.flybot.bot.get('b').avatar, undefined)
+  const joined = await call('flybot/social/face-join', { code: '123456', botId: 'b' })
+  assert.equal(joined.ok, true, joined.error?.message)
+  const member = ctx.flybot.scope('social').fields.get('b', 'member')
+  assert.ok(member?.bot_id)
+  const names = server.calls.map(c => c.name)
+  const look = server.calls.findIndex(c => c.name === 'update_bot_profile' && c.args.bot_id === member.bot_id)
+  assert.ok(look >= 0, 'the look is sent to the new identity')
+  assert.ok(look < names.indexOf('REST POST /join'), 'and before the join, so the other home never sees a seeded look first')
+  assert.equal(server.calls[look].args.avatar, defaultShapeOf('b'))
+  assert.equal(server.calls[look].args.color, hexOfColor(defaultColorOf('b')))
+})
+
+test('#182: the waiting dialog draws my own Bot with its roster look, also right after a join gave it a new identity', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const roster = {
+    bots: [{ id: 'chief', name: 'Chief', color: 'violet', avatar: { shape: 'acorn' } }],
+    byId: { chief: { id: 'chief', name: 'Chief', color: 'violet', avatar: { shape: 'acorn' } } },
+  }
+  // The Bot list was read before the join: Chief had no handle then.
+  const bots = [{ id: 'chief', name: 'Chief' }]
+  const peer = { handle: '@chief-9a.bob.home', displayName: 'Chief', ownerName: 'Bob', color: '#2a92fe', avatar: { shape: 'whale' } }
+  const tiles = (room) => walk(pluginOf(['waiting', bots, ['chief'], '482913', false, null, [], room, 0]).FaceToFaceGroup({ roster, actions: {} }))
+    .filter(n => n.props['data-flybot'] === 'bot-avatar')
+  // The join's answer: Bot Social members[] only (no local id), my handle only in joinedAs.
+  const fresh = tiles({
+    roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z',
+    members: [{ handle: '@chief-x1.danyang.home', displayName: 'Chief', ownerName: 'Danyang', botId: 'bot_x1' }, peer],
+    mineHandles: ['@chief-x1.danyang.home'], mineBots: [{ botId: 'chief', botName: 'Chief', handle: '@chief-x1.danyang.home' }],
+  })
+  assert.equal(fresh[0].props['data-shape'], 'acorn')
+  assert.equal(fresh[0].props['data-color'], 'violet')
+  // The friend's Bot keeps the look its owner gave it.
+  assert.equal(fresh[1].props['data-shape'], 'whale')
+  assert.equal(fresh[1].props['data-color'], '#2a92fe')
+  // A later poll: the hosted room's record (remote false, local id) finds the same Bot.
+  const polled = tiles({
+    roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z',
+    members: [{ id: 'chief', handle: '@chief-x1.danyang.home', displayName: 'Chief', remote: false }, { ...peer, id: peer.handle, remote: true }],
+  })
+  assert.equal(polled[0].props['data-shape'], 'acorn')
+  assert.equal(polled[0].props['data-bot-id'], 'chief')
+  assert.equal(polled[1].props['data-shape'], 'whale')
 })

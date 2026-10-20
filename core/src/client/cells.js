@@ -206,7 +206,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
 // line in a face-to-face room: the person's name and a person mark, not the Bot's (the host marks
 // the turn, remote-chat.js / turns.js, or posts it as a person line, hooks.js postHuman).
 function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
-  const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark))
+  const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark, { name }))
   return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
     h('span', { className: 'bt-group-name' }, name),
     h(Bubbles, { texts, roster, selfId, actions, sessionId, msgKey, useUi, lead }))
@@ -288,10 +288,13 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq }) 
 // A friend's remote Bot speaking in this chat, laid out like any chat partner: its own
 // avatar (the one its sidebar row shows), its name, a small globe and its @handle. The
 // words are shown as data; the Bot reading them still gets them fenced as untrusted.
-export function remoteSpeaker(source, roster) {
+export function remoteSpeaker(source, roster, sessionId) {
   const handle = source.remote.handle
   const member = (roster.remoteBots ?? []).find(bot => bot.handle === handle)
   const chat = (roster.bots ?? []).find(bot => bot.remote?.handle === handle)
+  // In a face-to-face room the Bot's seat carries its owner's look (Bot Social members[]): the
+  // bubble draws that look, as the Members panel and the waiting tiles do (#182).
+  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle)
   const name = remoteBotTitle({
     displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
     ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
@@ -300,7 +303,7 @@ export function remoteSpeaker(source, roster) {
   })
   // The sidebar's Bot record when there is one; else a synthetic one whose id seeds the
   // same handle-derived look the record would get (characters.js remoteSeed).
-  const bot = chat ?? lookBotForRemote({
+  const bot = seat ? lookBotForRemote({ handle, displayName: name, ...seat }, roster) : chat ?? lookBotForRemote({
     handle, displayName: name, color: member?.color,
     avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : undefined),
   }, roster)
@@ -310,10 +313,21 @@ export function remoteSpeaker(source, roster) {
   return { bot, member, name, handle, carrier, chatId: chat ? currentPart(chat) : undefined }
 }
 
+// The look a face room's remote seat holds for this handle (the live seat first), or undefined.
+function faceSeatLook(room, handle) {
+  if (room?.origin !== 'face-to-face' || !handle) return undefined
+  const seats = (room.participants ?? []).filter(p => p?.remote && (p.handle === handle || p.id === handle))
+  const seat = seats.find(p => p.leftSeq === undefined) ?? seats.at(-1)
+  const look = {}
+  if (typeof seat?.color === 'string' && seat.color) look.color = seat.color
+  if (seat?.avatar && typeof seat.avatar === 'object') look.avatar = seat.avatar
+  return Object.keys(look).length ? look : undefined
+}
+
 const cleanCarrier = value => (typeof value === 'string' && value.trim() && !/[@()]/.test(value) ? value.trim() : '')
 
 export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
-  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster)
+  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId)
   const files = Array.isArray(source.attachments) ? source.attachments : []
   // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
   // person's, with their name and a person mark, and the Bot that carried it only named as the route.
@@ -323,7 +337,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       // One short header: the person, and the Bot that carried the line only when it is known (#275).
       h('span', { className: 'bt-group-name', title: handle }, person,
         carrier ? h('span', { className: 'bt-remote-handle' }, t('via {name}', { name: carrier })) : null),
-      h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark)) }),
+      h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })) }),
       files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
   }
   const mark = h(BotMark, { bot, size: 22 })

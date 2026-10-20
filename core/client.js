@@ -1905,7 +1905,18 @@ function StarIcon({ size = 8 }) {
     (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
   );
 }
-function PersonMark({ size = 22 }) {
+var personInitial = (name) => (Array.from(String(name ?? "").trim())[0] ?? "").toUpperCase();
+var personColor = (name) => defaultColor(`person:${String(name ?? "").trim().toLowerCase()}`);
+function PersonMark({ size = 22, name }) {
+  const initial = personInitial(name);
+  if (initial) {
+    return (0, import_react.createElement)("span", {
+      className: "bt-person-mark bt-person-initial",
+      "data-initial": initial,
+      style: { width: size, height: size, background: inkFill(personColor(name)), fontSize: Math.max(9, Math.round(size * 0.46)) },
+      "aria-hidden": true
+    }, initial);
+  }
   return (0, import_react.createElement)(
     "span",
     { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
@@ -3791,6 +3802,7 @@ var CONVERSATION_CSS = `
 .bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 .bt-think[open] .bt-think-caret{transform:rotate(90deg)}
 .bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
+.bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 .bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
 .bt-remote-handle{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
@@ -5261,7 +5273,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   );
 }
 function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
-  const lead = (0, import_react8.createElement)("span", { className: "bt-lead", title: name }, (0, import_react8.createElement)(PersonMark));
+  const lead = (0, import_react8.createElement)("span", { className: "bt-lead", title: name }, (0, import_react8.createElement)(PersonMark, { name }));
   return (0, import_react8.createElement)(
     "div",
     { className: "bt-group-msg bt-person-msg", "data-person": name },
@@ -5349,17 +5361,18 @@ function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi, 
     (0, import_react8.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
   );
 }
-function remoteSpeaker(source, roster) {
+function remoteSpeaker(source, roster, sessionId) {
   const handle = source.remote.handle;
   const member = (roster.remoteBots ?? []).find((bot2) => bot2.handle === handle);
   const chat = (roster.bots ?? []).find((bot2) => bot2.remote?.handle === handle);
+  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle);
   const name = remoteBotTitle({
     displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
     ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
     handle,
     isChief: member?.isChief ?? chat?.remote?.isChief
   });
-  const bot = chat ?? lookBotForRemote({
+  const bot = seat ? lookBotForRemote({ handle, displayName: name, ...seat }, roster) : chat ?? lookBotForRemote({
     handle,
     displayName: name,
     color: member?.color,
@@ -5368,9 +5381,18 @@ function remoteSpeaker(source, roster) {
   const carrier = cleanCarrier(chat?.name ?? member?.name);
   return { bot, member, name, handle, carrier, chatId: chat ? currentPart(chat) : void 0 };
 }
+function faceSeatLook(room2, handle) {
+  if (room2?.origin !== "face-to-face" || !handle) return void 0;
+  const seats = (room2.participants ?? []).filter((p) => p?.remote && (p.handle === handle || p.id === handle));
+  const seat = seats.find((p) => p.leftSeq === void 0) ?? seats.at(-1);
+  const look = {};
+  if (typeof seat?.color === "string" && seat.color) look.color = seat.color;
+  if (seat?.avatar && typeof seat.avatar === "object") look.avatar = seat.avatar;
+  return Object.keys(look).length ? look : void 0;
+}
 var cleanCarrier = (value) => typeof value === "string" && value.trim() && !/[@()]/.test(value) ? value.trim() : "";
 function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
-  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster);
+  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
   const files = Array.isArray(source.attachments) ? source.attachments : [];
   const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
   if (person) {
@@ -5384,7 +5406,7 @@ function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi
         person,
         carrier ? (0, import_react8.createElement)("span", { className: "bt-remote-handle" }, t("via {name}", { name: carrier })) : null
       ),
-      (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react8.createElement)("span", { className: "bt-lead", title: person }, (0, import_react8.createElement)(PersonMark)) }),
+      (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react8.createElement)("span", { className: "bt-lead", title: person }, (0, import_react8.createElement)(PersonMark, { name: person })) }),
       files.length ? (0, import_react8.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
     );
   }
@@ -15896,7 +15918,7 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
       "data-author-kind": author?.authorKind,
       "data-author-name": author?.name
     },
-    person ? (0, import_react39.createElement)("span", { className: "bt-lead", title: author.name }, (0, import_react39.createElement)(PersonMark)) : null,
+    person ? (0, import_react39.createElement)("span", { className: "bt-lead", title: author.name }, (0, import_react39.createElement)(PersonMark, { name: author.name })) : null,
     (0, import_react39.createElement)(
       "div",
       { className: "bt-ustack" },

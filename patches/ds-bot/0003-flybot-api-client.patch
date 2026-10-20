@@ -517,14 +517,14 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +// line in a face-to-face room: the person's name and a person mark, not the Bot's (the host marks
 +// the turn, remote-chat.js / turns.js, or posts it as a person line, hooks.js postHuman).
 +function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
-+  const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark))
++  const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark, { name }))
 +  return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
 +    h('span', { className: 'bt-group-name' }, name),
 +    h(Bubbles, { texts, roster, selfId, actions, sessionId, msgKey, useUi, lead }))
  }
  
  function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
-@@ -170,16 +170,157 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+@@ -170,16 +170,171 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
    return h('div', { className: 'bt-event' }, parts)
  }
  
@@ -592,10 +592,13 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +// A friend's remote Bot speaking in this chat, laid out like any chat partner: its own
 +// avatar (the one its sidebar row shows), its name, a small globe and its @handle. The
 +// words are shown as data; the Bot reading them still gets them fenced as untrusted.
-+export function remoteSpeaker(source, roster) {
++export function remoteSpeaker(source, roster, sessionId) {
 +  const handle = source.remote.handle
 +  const member = (roster.remoteBots ?? []).find(bot => bot.handle === handle)
 +  const chat = (roster.bots ?? []).find(bot => bot.remote?.handle === handle)
++  // In a face-to-face room the Bot's seat carries its owner's look (Bot Social members[]): the
++  // bubble draws that look, as the Members panel and the waiting tiles do (#182).
++  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle)
 +  const name = remoteBotTitle({
 +    displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
 +    ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
@@ -604,7 +607,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  })
 +  // The sidebar's Bot record when there is one; else a synthetic one whose id seeds the
 +  // same handle-derived look the record would get (characters.js remoteSeed).
-+  const bot = chat ?? lookBotForRemote({
++  const bot = seat ? lookBotForRemote({ handle, displayName: name, ...seat }, roster) : chat ?? lookBotForRemote({
 +    handle, displayName: name, color: member?.color,
 +    avatar: member?.avatar ?? (member?.shape ? { shape: member.shape } : undefined),
 +  }, roster)
@@ -614,10 +617,21 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  return { bot, member, name, handle, carrier, chatId: chat ? currentPart(chat) : undefined }
 +}
 +
++// The look a face room's remote seat holds for this handle (the live seat first), or undefined.
++function faceSeatLook(room, handle) {
++  if (room?.origin !== 'face-to-face' || !handle) return undefined
++  const seats = (room.participants ?? []).filter(p => p?.remote && (p.handle === handle || p.id === handle))
++  const seat = seats.find(p => p.leftSeq === undefined) ?? seats.at(-1)
++  const look = {}
++  if (typeof seat?.color === 'string' && seat.color) look.color = seat.color
++  if (seat?.avatar && typeof seat.avatar === 'object') look.avatar = seat.avatar
++  return Object.keys(look).length ? look : undefined
++}
++
 +const cleanCarrier = value => (typeof value === 'string' && value.trim() && !/[@()]/.test(value) ? value.trim() : '')
 +
 +export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
-+  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster)
++  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId)
 +  const files = Array.isArray(source.attachments) ? source.attachments : []
 +  // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
 +  // person's, with their name and a person mark, and the Bot that carried it only named as the route.
@@ -627,7 +641,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +      // One short header: the person, and the Bot that carried the line only when it is known (#275).
 +      h('span', { className: 'bt-group-name', title: handle }, person,
 +        carrier ? h('span', { className: 'bt-remote-handle' }, t('via {name}', { name: carrier })) : null),
-+      h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark)) }),
++      h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })) }),
 +      files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 +  }
 +  const mark = h(BotMark, { bot, size: 22 })
@@ -2247,13 +2261,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -782,6 +782,11 @@ export const CONVERSATION_CSS = `
+@@ -782,6 +782,12 @@ export const CONVERSATION_CSS = `
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
  .bt-think summary::-webkit-details-marker{display:none}
 +.bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 +.bt-think[open] .bt-think-caret{transform:rotate(90deg)}
 +.bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
++.bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 +.bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
 +.bt-remote-handle{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36))}
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
@@ -2427,7 +2442,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +    'data-author-kind': author?.authorKind,
 +    'data-author-name': author?.name,
 +  },
-+    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark)) : null,
++    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
      h('div', { className: 'bt-ustack' },
 +      author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
        attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
@@ -2692,7 +2707,7 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
 +  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles'])
 +  const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
 +  assert.equal(person.props['data-person'], 'Bob')
-+  assert.equal(find(drawn, node => node.props?.className === 'bt-person-mark').length, 1)
++  assert.equal(find(drawn, node => /\bbt-person-mark\b/.test(node.props?.className ?? '')).length, 1)
 +  assert.equal(find(drawn, node => node.props?.className === 'bt-group-name' && node.children.includes('Bob')).length, 1)
 +  assert.equal(find(drawn, node => node.type === MarkdownText).length, 1, 'the text is still rendered as markdown')
 +  // Another turn, or no mark at all: the Bot\'s own bubble.
