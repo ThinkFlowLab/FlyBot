@@ -7,6 +7,7 @@ import { ActivityIndicator } from './activity-row.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { t } from './i18n.js'
 import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { holdComposerLabel } from './composer-label.js'
 
 // -------------------------------------------------------------------------
 // Conversation header
@@ -101,33 +102,8 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     document.body.dataset.btFriendChat = ''
     return () => { delete document.body.dataset.btFriendChat }
   }, [bot?.remote])
-  useEffect(() => {
-    document.body.style.setProperty('--bt-placeholder', JSON.stringify(composerLabel))
-    const input = document.querySelector('[data-composer-input]')
-    const priorLabel = input?.getAttribute('aria-label') ?? null
-    const apply = () => {
-      const el = document.querySelector('[data-composer-input]')
-      if (el && el.getAttribute('aria-label') !== composerLabel) el.setAttribute('aria-label', composerLabel)
-    }
-    apply()
-    const timer = setTimeout(apply, 0)
-    // The shell re-renders its composer after a send and puts its own coding label back
-    // ("Message or run a task, / commands, …"); keep "Message <name>" on it (#419).
-    let frame = 0
-    const watcher = typeof MutationObserver === 'function'
-      ? new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; apply() }) })
-      : null
-    watcher?.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-label'] })
-    return () => {
-      clearTimeout(timer)
-      watcher?.disconnect()
-      if (frame) cancelAnimationFrame(frame)
-      const el = document.querySelector('[data-composer-input]')
-      if (!el) return
-      if (priorLabel == null) el.removeAttribute('aria-label')
-      else el.setAttribute('aria-label', priorLabel)
-    }
-  }, [composerLabel])
+  // Before the first paint, and again whenever the shell renders its own composer copy (#419, #499).
+  useLayoutEffect(() => holdComposerLabel(document, composerLabel), [composerLabel])
   useEffect(() => {
     actions.beginVisit(sessionId)
     return () => actions.endVisit(sessionId)

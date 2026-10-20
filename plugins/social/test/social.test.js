@@ -914,9 +914,9 @@ test('invite card: "Copy link" copies the bare URL; "Copy with instructions" the
 })
 
 // A client.js component tree with a scripted useState order.
-function clientPlugin(initial = [], { call = async () => ({}) } = {}) {
+function clientPlugin(initial = [], { call = async () => ({}), timers = { setTimeout, clearTimeout }, navigator = {} } = {}) {
   const registered = []
-  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, navigator: {}, URL }
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, console, navigator, URL }
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = { slots: { register: () => () => {} }, call }
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
@@ -5974,24 +5974,96 @@ test('#297: social/typing answers from Bot Social only when the server lists pre
   assert.equal(older.calls.some(c => c.name === 'list_presence'), false, 'an older server is never asked')
 })
 
-test('#343: accepting an invite keeps the panel open with the result; a join without a Bot says so', async () => {
+test('#343 / #499: an accepted invite shows its result, then the panel closes on the new friend\'s Bot; a join without a Bot stays open', async () => {
   const lastStatus = setters => setters.filter(([index, value]) => index === 2 && value !== null).at(-1)?.[1]
-  for (const [reply, expected] of [
-    [{ status: 'active', inviterName: 'Alice', inviterBotName: 'Helper' }, /^Alice shared Helper with you\.$/],
-    [{ status: 'active', inviterName: 'Alice' }, /^Joined Alice's invite, but their Bot hasn't loaded yet/],
-    [{ status: 'pending_target', inviterName: 'Alice' }, /^Request sent to Alice/],
+  for (const [reply, expected, closes] of [
+    [{ status: 'active', inviter: '@helper.alice.home', inviterName: 'Alice', inviterBotName: 'Helper' }, /^Alice shared Helper with you\.$/, true],
+    [{ status: 'active', inviterName: 'Alice' }, /^Joined Alice's invite, but their Bot hasn't loaded yet/, false],
+    [{ status: 'pending_target', inviterName: 'Alice' }, /^Request sent to Alice/, false],
   ]) {
+    const pending = []
+    const timers = { setTimeout: (fn, ms) => { pending.push([fn, ms]); return pending.length }, clearTimeout() {} }
     const { plugin, all, setters } = clientPlugin([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''], {
       call: async endpoint => (endpoint === 'social/join-invite' ? reply : {}),
+      timers,
     })
-    const notes = []
+    const opened = []
     let closed = 0
-    const nodes = all(plugin.AddFriend({ actions: { notify: text => notes.push(text) }, onDone: () => { closed += 1 } }))
+    const remoteChats = [{ id: 'chat-helper', name: 'Helper', remote: { handle: '@helper.alice.home' } }]
+    const nodes = all(plugin.AddFriend({ actions: { openSession: id => opened.push(id) }, remoteChats, onDone: () => { closed += 1 } }))
     await nodes.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
-    await new Promise(resolve => setTimeout(resolve, 10))
     assert.match(lastStatus(setters)?.text ?? '', expected)
-    assert.equal(closed, 0, 'the panel stays open until Done')
+    assert.equal(closed, 0, 'the result shows first')
+    const close = pending.filter(([, ms]) => ms === 1800)
+    assert.equal(close.length, closes ? 1 : 0, 'only an accept that shared a Bot closes on its own')
+    for (const [fn] of close) fn()
+    assert.equal(closed, closes ? 1 : 0, 'no second click on Done')
+    assert.deepEqual(opened, closes ? ['chat-helper'] : [], 'the new friend\'s Bot opens')
   }
+})
+
+test('#499: typing in the paste box clears a failed accept\'s error, not a result; Enter accepts', () => {
+  const failed = { tone: 'error', text: 'Accepting invite failed: This invite has expired' }
+  const { plugin, all, setters } = clientPlugin([null, 'https://s/i/OLD', failed, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''])
+  const paste = all(plugin.AddFriend({})).find(n => n.props?.['aria-label'] === 'Invite link or code')
+  paste.props.onChange({ target: { value: 'https://s/i/NEW' } })
+  assert.deepEqual(setters, [[1, 'https://s/i/NEW'], [2, null]])
+  const ok = clientPlugin([null, '', { tone: 'ok', text: 'Alice shared Helper with you.' }, false, [], '', '', ''])
+  ok.all(ok.plugin.AddFriend({})).find(n => n.props?.['aria-label'] === 'Invite link or code').props.onChange({ target: { value: 'x' } })
+  assert.deepEqual(ok.setters, [[1, 'x']], 'a result stays until the next action')
+  let submitted = 0
+  let prevented = 0
+  paste.props.onKeyDown({ key: 'Enter', shiftKey: false, preventDefault: () => { prevented += 1 }, currentTarget: { form: { requestSubmit: () => { submitted += 1 } } } })
+  assert.equal(submitted, 1)
+  assert.equal(prevented, 1, 'Enter accepts instead of adding a line')
+})
+
+test('#499: Add friend and Sharing use one invite control, and every copy note names the Bot', async () => {
+  const copied = []
+  const navigator = { clipboard: { writeText: async (text) => { copied.push(text) } } }
+  const invite = { link: 'https://s/i/INV7', text: 'Add my bot … Link: https://s/i/INV7 (single use)' }
+  const mine = [{ id: 'a', name: 'Chief', isMain: true }]
+  const added = clientPlugin([null, '', null, false, mine, 'a', 'a', '', { ...invite, botName: 'Chief' }], { navigator })
+  const friend = added.all(added.all(added.plugin.AddFriend({})).find(n => n.props?.['data-flybot'] === 'invite-group'))
+  const sharing = clientPlugin([invite, null, false], { navigator })
+  const settings = sharing.all(sharing.plugin.InviteToBot({ bot: { id: 'a', name: 'Chief' } }))
+  const control = (nodes, text) => nodes.filter(n => n.type === 'input' || n.type === 'button').map(n => (n.type === 'input' ? `link:${n.props['aria-label']}:${n.props.value}` : `${n.props['data-flybot']}:${text(n)}`))
+  const expected = ['link:Invite link for Chief:https://s/i/INV7', 'copy-link:Copy link', 'copy-invite-text:Copy with instructions', 'new-invite-link:New link']
+  assert.deepEqual(control(friend, added.text), expected)
+  assert.deepEqual(control(settings, sharing.text), expected)
+  friend.find(n => n.props?.['data-flybot'] === 'copy-link').props.onClick()
+  settings.find(n => n.props?.['data-flybot'] === 'copy-link').props.onClick()
+  settings.find(n => n.props?.['data-flybot'] === 'copy-invite-text').props.onClick()
+  assert.deepEqual(copied, [invite.link, invite.link, invite.text], 'written inside each click')
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(added.setters.filter(([index]) => index === 2).map(([, value]) => value.text), ['Invite link for Chief copied.'])
+  assert.deepEqual(sharing.setters.filter(([index]) => index === 1).map(([, value]) => value.text), ['Invite link for Chief copied.', 'Invite for Chief copied with instructions.'])
+  // Before a link exists, both offer the same one button that makes and copies it.
+  const fresh = clientPlugin([null, null, false], { navigator, call: async () => invite })
+  const first = fresh.all(fresh.plugin.InviteToBot({ bot: { id: 'a', name: 'Chief' } }))
+  const mint = first.find(n => n.props?.['data-flybot'] === 'mint-invite')
+  assert.equal(fresh.text(mint), 'Copy invite link for Chief')
+  await mint.props.onClick()
+  assert.deepEqual(fresh.setters.filter(([index]) => index === 1).map(([, value]) => value?.text ?? null), [null, 'Invite link for Chief copied.'])
+  const blank = clientPlugin([null, '', null, false, mine, 'a', 'a', ''])
+  assert.equal(blank.text(blank.all(blank.plugin.AddFriend({})).find(n => n.props?.['data-flybot'] === 'mint-invite')), 'Copy invite link for Chief')
+})
+
+test('#499: the Sharing hint mentions Revoke only once People with access has someone', () => {
+  const hint = (revocable) => {
+    const { plugin, all, text } = clientPlugin([null, null, false])
+    return text(all(plugin.InviteToBot({ bot: { id: 'a', name: 'Chief' }, revocable })).find(n => n.props?.['data-flybot'] === 'invite-hint-sharing'))
+  }
+  assert.equal(hint(false), 'Invite grants Chief only.')
+  assert.equal(hint(true), 'Invite grants Chief only. Revoke anytime in People with access.')
+  const { plugin } = clientPlugin()
+  const own = plugin.BotSocialDetails({ bot: { id: 'a', name: 'Chief' } })
+  const sharing = own.type(own.props)
+  // OwnBotSharing: InviteToBot, ShareWithFriend (#500 on main), ManageAccess (#499 onGrants).
+  const [invite, share, access] = sharing.props.children
+  assert.equal(invite.props.revocable, false, 'nobody has the Bot yet')
+  assert.ok(share, 'Share with a friend sits between invite and People with access')
+  assert.equal(typeof access.props.onGrants, 'function', 'People with access reports how many have it')
 })
 
 test('#343: a failed friend-list refresh does not replace the accepted-invite result; a long Bot name shrinks the button', async () => {
@@ -6020,9 +6092,10 @@ test('#343: Add friend puts accepting first, on a full-width paste box, and name
   const form = nodes.findIndex(n => n.type === 'form')
   const invite = nodes.findIndex(n => n.props?.['data-flybot'] === 'invite-line')
   assert.ok(form > 0 && invite > form, 'the paste form comes before the invite line')
-  const paste = nodes.find(n => n.type === 'input' && n.props['aria-label'] === 'Invite link or code')
+  const paste = nodes.find(n => n.type === 'textarea' && n.props['aria-label'] === 'Invite link or code')
   assert.equal(paste.props.placeholder, 'Paste invite link or code')
   assert.equal(paste.props.style.width, '100%', 'the paste box has its own full-width row')
+  assert.match(paste.props.className, /\bfs-paste\b/, 'and wraps, so a whole pasted link shows (#499)')
   assert.equal(text(nodes.find(n => n.props?.['data-flybot'] === 'mint-invite')), 'Copy invite link for Chief')
   assert.equal(nodes.some(n => n.props?.['data-flybot'] === 'invite-link'), false, 'no link before one is made')
 })

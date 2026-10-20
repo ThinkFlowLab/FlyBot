@@ -26,6 +26,7 @@ Everything in `plugins/tree/` (entry `plugins/tree/index.js` and any helpers).
 | `plugins/tree/src/organize.js` | Self-organization (#446): placement by role, role groups and leads, repair (over-full parents, orphans), daily tidy (merge, idle, archive), journal and undo. Exposes the shared primitives (`shared`) allocation uses. |
 | `plugins/tree/src/allocate.js` | Forward allocation (#447): `find_bots`, reuse before create, `create_child_bot(parent?)` placement, `create_team` (lead plus children), on `organize.js`'s shared primitives. |
 | `plugins/tree/src/roles.js` | Role profiles and similarity (name, role label, description, own prompt, recent tools; deterministic, `classify` hook). |
+| `plugins/tree/src/load.js` | Runtime load (#507): pure `createLoadTracker`/`loadWord`/`loadLine` for the open turns each Bot runs, fed from the activity feed. |
 
 ## Entry points
 
@@ -70,7 +71,13 @@ The tree organizes itself by role instead of leaving Bots outside it or a parent
 - **The owner is told afterwards**, no plan card first: the notice in the tree view, and the Main Bot's prompt names the last run (within 7 days, not undone) so Chief can say what moved.
 - **No silent pull-up**: freeing a slot moves nobody up; the next new Bot takes it. Activity is metadata only (when, which tool names), never message text.
 
-### Optional Tree section toggle
+### Runtime load (#507)
+
+A coordinator can see which of its children are busy right now, so it sends a new part to a free one instead of stacking work on a busy one.
+
+- `src/load.js` (pure) counts the open turns per Bot from the core activity feed (`turn.start` / `turn.end`, ids and times only). `index.js` subscribes both events; nothing is persisted (a restart starts from zero).
+- The coordinator's prompt gains one line — `Child load right now — Work: busy (2 running), Travel: idle.` — and `list_children` carries a `load` count per child. A child's turn boundary rewrites its parent's prompt through `refreshPrompt` (the marked block only, and `writeBlock` skips an unchanged block), so the line stays current; `list_children` reads the tracker live.
+
 
 - The Bot list itself uses the core `.bt-tree-toggle` (see [core-client](core-client.md)). When `sidebarSection: true` brings this plugin's separate Tree section back, `.flybot-tree-toggle` matches that control: 28×28 hit target, 16px inner `.flybot-tree-caret`, hover, focus ring, and rotation of the glyph only. Leaf spacers (`.flybot-tree-dot`) keep the same 28px width. `aria-expanded` and Expand/Collapse `{name}` labels stay on the button.
 - The right-click menu entry from `menuItems({ bot })` is a single **Copy invite link** (bare URL, shown when `social.canInvite(bot.id)`). The invite with instructions is offered only in the Bot's Sharing section, so the menu does not list the same invite twice (#173).
@@ -81,7 +88,7 @@ The plugin's discarded `.catch(() => {})` calls carry a one-line reason comment 
 
 ## Tests
 
-Covered by the plugin's own tests under `plugins/tree/` / core test suite as wired. The `#447` tests cover reuse of a same-role Bot at depth 3 and `find_bots` (scope, fields, ranking), `create_child_bot(parent)` refusing a non-descendant (sibling, ancestor, outsider, unknown) and checking limits at the target under its lock, `create_team` (Chief → FlyBot Lead → four members, one slot; reuse of the lead and members; a flat member's slot at a full level, journal and undo), later Bots joining their group's lead (only down leads of groups they belong to), and orphan reattachment; `test/host.test.js` runs `find_bots`, `create_team` and `create_child_bot(parent)` on the real host. The `#446` tests in `test/tree.test.js` cover role grouping (Life Lead, FlyBot Lead), existing leads, no unrelated fallback, the cap at every step, the daily tidy (merge, idle, archive), journal, undo and the client notice; `test/host.test.js` runs `create_bot` and the `tree/reorg` / `tree/undo` endpoints on the real host. `#16 Option B` in `test/tree.test.js` (and the matching host test) asserts a non-Main tree Bot can create a child under itself, that `maxChildren`/depth still refuse, and that the child is not auto-granted.
+Covered by the plugin's own tests under `plugins/tree/` / core test suite as wired. The `#447` tests cover reuse of a same-role Bot at depth 3 and `find_bots` (scope, fields, ranking), `create_child_bot(parent)` refusing a non-descendant (sibling, ancestor, outsider, unknown) and checking limits at the target under its lock, `create_team` (Chief → FlyBot Lead → four members, one slot; reuse of the lead and members; a flat member's slot at a full level, journal and undo), later Bots joining their group's lead (only down leads of groups they belong to), and orphan reattachment; `test/host.test.js` runs `find_bots`, `create_team` and `create_child_bot(parent)` on the real host. The `#446` tests in `test/tree.test.js` cover role grouping (Life Lead, FlyBot Lead), existing leads, no unrelated fallback, the cap at every step, the daily tidy (merge, idle, archive), journal, undo and the client notice; `test/host.test.js` runs `create_bot` and the `tree/reorg` / `tree/undo` endpoints on the real host. `#16 Option B` in `test/tree.test.js` (and the matching host test) asserts a non-Main tree Bot can create a child under itself, that `maxChildren`/depth still refuse, and that the child is not auto-granted. Runtime load (#507) is covered by `test/load.test.js` (pure) and a `test/tree.test.js` case: a child's running turns show in the coordinator's stored prompt and `list_children`, and drop to zero at `turn.end`.
 
 ## Common mistakes
 

@@ -66,7 +66,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 - **一键入驻。** 配置好 `server` 后首次启动会调用 `POST <server>/v1/onboard/flybot`，创建家（`@<name>.home`），凭证写在 `$DSH_HOME/bot/flybot-social.json`（权限 600）。
 - **成员。** 访问是按 Bot 的**授权**（默认拒绝，Chief 也一样）。本地 Bot 在你邀请别人使用它、它加入邀请、或你把它带进面对面房间时，才会在服务器上成为 `@<bot>.<home>`。侧栏只列出别人授权给你的 Bot。每个 Bot 的 **管理访问** 列出谁有它，并可 **撤销**。删除 Bot 会撤销其身份。未授权的 Bot 没有对外身份：朋友够不到它，它也不能给朋友发消息。
 - **连接器（GitHub、Composio）。** 设置 → **连接器** 里连接一次账号；**默认对你自己开启**，每个 Bot（新建的和已有的）都能用，共享出去的 Bot 你自己也照样能用。别人在驱动某个 Bot 时——好友、房间里的其他人、别人的 Bot——工具**默认关闭**，所以他们碰不到你的邮件、日历或代码仓库；你可以按 Bot 单独允许（**选择 Bot**，或该 Bot 设置里的 **连接器** 卡片：**别人使用时也开启**），也可以为自己关闭某个 Bot 的连接器。有其他人在的房间里也算别人使用。断开连接会重置所有 Bot 的选择。
-- **侧栏里的好友。** 好友的 Bot 和你自己的 Bot 在同一列表，名字后面有一个小地球标记。面对面房间也在这份列表里，带一个小人标记；已结束的折在 **过去的房间** 下。点开就是普通对话。侧栏 **+** → **添加好友**（可粘贴句柄、邀请链接或码）、**面对面房间**、**复制我的 handle**。本地 Bot：设置里 **Sharing（分享）** → **Invite to this Bot（邀请使用此 Bot）**（或 **复制邀请链接** / 带说明的邀请）；**People with access（访问权限）** 列出谁有它并可 **Revoke（撤销）**。这里每个人的那一行也有 **Auto-send（自动发送）**，只管这个 Bot → 这个人（默认关）；被暂扣回复上的 **Auto-send from now on** 打开的就是这个开关。
+- **侧栏里的好友。** 好友的 Bot 和你自己的 Bot 在同一列表，名字后面有一个小地球标记。面对面房间也在这份列表里，带一个小人标记；已结束的折在 **过去的房间** 下。点开就是普通对话。侧栏 **+** → **添加好友**（可粘贴句柄、邀请链接或码）、**面对面房间**、**复制我的 handle**。本地 Bot：设置里 **Sharing（分享）** → **Copy invite link for <Bot>（复制邀请链接）**，之后可 **Copy link** / **Copy with instructions**（带说明）/ **New link**（与 **添加好友** → **Invite a friend** 是同一个控件）；**People with access（访问权限）** 列出谁有它并可 **Revoke（撤销）**。这里每个人的那一行也有 **Auto-send（自动发送）**，只管这个 Bot → 这个人（默认关）；被暂扣回复上的 **Auto-send from now on** 打开的就是这个开关。
 - **面对面房间。** 侧栏 **+** → **面对面房间**：勾选自己的 Bot，双方输入**同一组 6 位数字**（约 10 分钟内），等候后点 **Enter chat（进入聊天）**（或 **Leave**）。不必先成为好友，也不会暴露对方家里的其他 Bot。你打的字在对方看来是你本人（服务器支持 `typed_by_owner` 时）；`@名字` / 选择器标签 / handle 点名该 Bot；`@all` 叫全员。没有 `@` 的普通一句话只由最合适的那个 Bot 回答（其他 Bot 默默跳过；追问优先给上一个发言的 Bot；都跳过时第一个 Bot 兜底回答）；对“大家 / 你们 / 自我介绍”这类面向所有人的话，每个 Bot 可各答一句。Bot 自己写的房间消息仍可能进审批，除非在该房间概览开了面对面 **Auto-send**（默认关）。
 - **主人手打 · 提及 · 正在输入。** 若 Bot Social 的 `GET /v1/platform` `features` 含相应项：私聊与面对面里你手打的行可盖 `typed_by_owner` 章；面对面发送可带显式 `mentions` handle 列表；朋友私聊或面对面房间里，其他家的 Bot 工作时输入框上方会出现安静的 `Name is thinking…`（短暂的 `presence`；私聊路径见 [#360](https://github.com/ThinkFlowLab/FlyBot/pull/360) / [#332](https://github.com/ThinkFlowLab/FlyBot/issues/332)）。旧服务器没有的能力会自动跳过。
 - **审批。** 好友发来的消息会立刻送达（按不可信内容处理）。你的 Bot 发出的回复可能停在当前聊天里等你批准（或拒绝），除非对这个 Bot 和这个人开了自动发送（该 Bot 的 **Sharing** → **People with access**），或该面对面房间开了自动发送。FlyBot 本地也会暂扣 Bot 自己发起的发送；文件一律先审批。
@@ -154,7 +154,7 @@ export PORT=8787
 
 **之后换服务器**不用改 YAML：设置 → **Bot Social** 显示当前服务器和连接状态，**更换服务器**会先检查新地址（`https://`；开发时可用 `http://localhost`；FlyBot 读取 `<server>/v1/platform` 并列出它的功能），经过明确的警告确认后无需重启即可切换。换服务器等于**换一个新身份**：好友和分享留在旧服务器上，旧的凭证文件作为备份保留、不会被删除，切换回去即可恢复。`cordis.patch.yml` 里的值仍是默认值。
 
-**分享某一个 Bot：** 该 Bot 设置 → **Sharing** → **Invite to this Bot**（或 **复制邀请链接**），把链接发给对方；对方侧栏 **+** → **添加好友** 粘贴链接或码并接受——**只授权这一个 Bot**。**People with access** 可查看并 **Revoke**。
+**分享某一个 Bot：** 该 Bot 设置 → **Sharing** → **Copy invite link for <Bot>**（或 **+** → **添加好友** → **Invite a friend**），把链接发给对方；对方侧栏 **+** → **添加好友** 粘贴链接或码并接受——**只授权这一个 Bot**。**People with access** 可查看并 **Revoke**。
 
 **私聊：** 点侧栏里对方的 Bot。对方来信立刻到。你这边发出去的内容停在该聊天等批准（除非对这个 Bot 和该好友开了 **Auto-send**：你的 Bot 的 **Sharing** → **People with access**；或在好友 Bot 设置里勾 **Auto-send my Bots' replies to …**，覆盖你所有 Bot；默认关）。对方看不到回复时，先看 **to approve / 待批准** 角标。
 

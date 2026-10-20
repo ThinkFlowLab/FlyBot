@@ -61,10 +61,11 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
   // #276: gear is on every wide Bot row (own and friends'), not only remotes.
   assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
   assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
-  assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
-  // #419: the composer keeps "Message <name>" after the shell re-renders it; a friend's Bot chat hides the stats footer.
-  assert.match(text('header.js'), /new MutationObserver\(/)
-  assert.match(text('header.js'), /attributeFilter: \['aria-label'\]/)
+  // #419 / #499: the composer keeps "Message <name>" from the first paint on and after the shell re-renders
+  // it (composer-label.test.js); a friend's Bot chat hides the stats footer.
+  assert.match(text('header.js'), /useLayoutEffect\(\(\) => holdComposerLabel\(document, composerLabel\), \[composerLabel\]\)/)
+  assert.match(text('composer-label.js'), /new Observer\(apply\)/)
+  assert.match(text('composer-label.js'), /const ATTRIBUTES = \['aria-label', 'data-placeholder'\]/)
   assert.match(text('header.js'), /document\.body\.dataset\.btFriendChat = ''/)
   assert.match(text('styles.js'), /body\[data-bt-friend-chat\] \[data-composer-stats\]\{display:none!important\}/)
   assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)

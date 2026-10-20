@@ -231,6 +231,16 @@ DSH's catalog carries `lastDelivery`, an inbox receipt (the reminder reached the
 - **Limits** (#56) are not part of this step.
 - Tests: `core/test/schedules.test.js` (`a run fails only when its turn errors…`, `Retry runs the same prompt once now…`, `a due task DSH does not deliver…`).
 
+### State journal (#511, opt-in)
+
+A local, replayable record of every change to the saved team, for multi-Bot bugs that reproduce only sometimes. Owner decision 2026-10-20 (option a): state mutations only (decisions stay in #396), off by default, 7 days or 20 MB, dev-only replay, local only.
+
+- **On.** `stateJournal: true` in the `bot` config. Off (the default) nothing is opened or written, so every other test runs as before.
+- **What.** `src/host/journal.js`. After each successful `state.json` write, `store.js` hands the exact snapshot text to the journal, which appends the difference from the last recorded snapshot to `<home>/journal/state.jsonl` (file mode 0600, folder 0700). Lines are `{ seq, t, op, key, prev, next, botId?, actor }`; `op` is `base` (the whole team: the first line, and any change only a key reorder explains), `set`, `delete`, or `append` (`prevLength`, `drop`, the new items: a group log or other list that grew or slid). Paths go at most three keys deep (`bots.<id>.<field>`); `botId` is set on a `bots.<id>` path; `actor` is `host` for a save and `retention` for a folded base (per-call attribution is not recorded). Only the host that holds the state lock writes, so a read-only window records nothing.
+- **Retention.** When a write would pass 20 MB, or the oldest change is older than 7 days, the oldest lines are dropped down to 90% of each cap and folded into the base line (atomic rewrite), so the kept lines still replay. A team that alone exceeds the cap stops recording.
+- **Fail closed.** Replay (`replayTo(text, seq)`) refuses the whole journal on an unreadable or incomplete line, an unknown op, a gap in `seq`, a first line that is not a base, or a `prev` that does not match what the earlier lines built; a `seq` outside the file is refused, not approximated. On start the writer replays the existing file the same way; a journal that does not replay, a path that is not a plain file, or a failed write stops recording for that run with a warning and leaves the file as it is. Saving the team never depends on the journal.
+- **Replay.** `core/scripts/replay.mjs` (dev-only, not in the package, see [install](install.md)) prints or writes (`--out`, new file only, 0600) the team after a given `--to <seq>`; it makes no network or process calls. Test: `core/test/state-journal.test.js` (a 3-Bot round replays byte-identical at every step).
+
 ### Discarded promise `.catch` (#213)
 
 A discarded `.catch(() => {})` in the host sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).

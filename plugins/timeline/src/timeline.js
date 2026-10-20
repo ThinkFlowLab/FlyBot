@@ -2,9 +2,10 @@
 import { createRecorder } from './recorder.js'
 import { openTrace, TraceLocked } from './store.js'
 import { buildWindow, clampWindow } from './window.js'
-import { createExporter } from './otel.js'
+import { createExporter, otlpPayload, spansFrom } from './otel.js'
 
 export const ENDPOINT = 'timeline/window'
+export const EXPORT_ENDPOINT = 'timeline/export'
 
 export function createTimeline(adapter, { dir, persist = true, now = Date.now, exporter, ...limits } = {}) {
   let trace
@@ -43,11 +44,17 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
     stats: { ...trace.stats(), persisting },
   })
   const offEndpoint = adapter.handle(ENDPOINT, window)
+  // On-demand OTLP export (#357): the same mapping the timer exporter uses, built from the trace
+  // as it stands. Ids only unless the caller asks for names (#483), so a one-off export never
+  // sends another home's names by accident.
+  const exportWindow = (body = {}) => otlpPayload(spansFrom(trace.records(), { names: body?.names === true ? trace.names() : {} }), { serviceName: body?.serviceName })
+  const offExport = adapter.handle(EXPORT_ENDPOINT, exportWindow)
   return {
-    trace, recorder, window, exportNow,
+    trace, recorder, window, exportNow, exportWindow,
     dispose() {
       if (exportTimer !== undefined) clearInterval(exportTimer)
       offEndpoint()
+      offExport()
       off()
       trace.close()
     },

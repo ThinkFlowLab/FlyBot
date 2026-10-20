@@ -110,3 +110,18 @@ test('the plugin timeline exports through the configured send and nothing else c
   assert.deepEqual(spans.map(span => span.name).sort(), ['execute_tool web_search', 'invoke_agent'])
   timeline.dispose()
 })
+
+test('the on-demand export (#357) builds spans from the current trace, ids only unless asked', () => {
+  const adapter = mockAdapter()
+  const timeline = createTimeline(adapter, { persist: false, now: () => 5_000 })
+  adapter.feed('turn.start', { botId: 'a', place: 'chat', sessionId: 's1', turnId: 's1#1', turn: 1, time: 4_100, trigger: { exchangeId: 'x1', from: { kind: 'user' }, role: 'user', hop: 0 } })
+  adapter.feed('turn.end', { botId: 'a', place: 'chat', sessionId: 's1', turnId: 's1#1', turn: 1, time: 4_900, outcome: 'completed' })
+  const spans = timeline.exportWindow().resourceSpans[0].scopeSpans[0].spans
+  assert.equal(spans.length, 1)
+  const attrs = Object.fromEntries(spans[0].attributes.map(a => [a.key, a.value]))
+  assert.equal(attrs['gen_ai.agent.id'].stringValue, 'a')
+  assert.equal(attrs['gen_ai.agent.name'], undefined, 'ids only by default')
+  const named = timeline.exportWindow({ names: true }).resourceSpans[0].scopeSpans[0].spans
+  assert.equal(Object.fromEntries(named[0].attributes.map(a => [a.key, a.value]))['gen_ai.agent.name'].stringValue, 'Chief')
+  timeline.dispose()
+})
