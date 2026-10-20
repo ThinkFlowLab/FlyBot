@@ -16450,6 +16450,31 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
   };
 }
 
+// src/client/mobile.js
+var MOBILE_MAX_WIDTH = 640;
+var MOBILE_CSS = `
+@media (max-width:${MOBILE_MAX_WIDTH}px){
+.bt-held-actions{max-width:100%}
+.bt-held-card{padding:10px 12px}
+:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions{gap:8px;margin-top:8px}
+:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions>button{flex:1 1 0;min-width:0;height:40px;padding:0 16px;border-radius:999px;border:0;background:var(--bt-hover);color:var(--bt-ink);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
+:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions>button.bt-flybot-approve{background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-weight:600}
+:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions>button:disabled{opacity:.5;cursor:default}
+.bt-held-retry{min-height:32px}
+.bt-flybot-approvals{left:64px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-width:none;max-height:min(60vh,calc(100vh - 16px))}
+.bt-flybot-pointers{top:8px;right:8px;max-width:calc(100vw - 72px)}
+.bt-flybot-pointer{max-width:100%;min-width:0}
+.bt-flybot-pointer-text{flex:0 1 auto;min-width:0;max-width:none}
+.bt-flybot-pointer-note{flex:0 100 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.bt-flybot-pointer button{flex:none;min-height:28px;padding:4px 12px}
+.bt-inbox-card{flex-wrap:wrap;row-gap:8px}
+.bt-inbox-copy{flex-basis:calc(100% - 38px)}
+.bt-inbox-title,.bt-inbox-reason{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
+.bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}
+}
+`;
+
 // src/client/friend-lines.js
 function friendLineNews(bots, known, isOpen, selfId) {
   const next = { ...known };
@@ -16883,7 +16908,7 @@ function apply(ctx) {
   const pull = async () => {
     const order = ++pulls;
     const known = roster.getSnapshot();
-    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language() });
+    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language(), watching: !document.hidden });
     if (order < applied) return;
     applied = order;
     const nextActivity = JSON.stringify(value.activity ?? {});
@@ -17620,6 +17645,7 @@ function apply(ctx) {
     installCompiledStyles(FLYBOT_CSS, "flybot"),
     installCompiledStyles(MEMBER_CSS, "members"),
     installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
+    installCompiledStyles(MOBILE_CSS, "mobile"),
     browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
     installTheme(),
     shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),

@@ -289,6 +289,44 @@ test("#420: a friend's line stamps the receiving Bot for its unread mark, and on
   assert.ok((await call('state', {})).value.bots.find(bot => bot.id === 'a').friendLineAt >= stamp)
 })
 
+test("#497: a friend's first line and its held reply reach a window that keeps polling, with no reload", async (t) => {
+  const { fb, call, stop, grantTo } = await start()
+  t.after(stop)
+  await grantTo('a', '@bob.bot')
+  // The window is open: it knows the team at this revision and polls with `since`, as the client does.
+  const open = (await call('state', {})).value
+  const poll = known => call('state', { since: known.revision, models: known.modelsKey })
+  assert.equal((await poll(open)).value.unchanged, true, 'nothing new yet')
+  await fb.bot.send({ from: { kind: 'remote', handle: '@bob.bot', name: 'Bob (typed via @bob.bot, Bot Social)', typedBy: 'Bob' }, to: 'a', text: 'hi from B' })
+  const line = (await poll(open)).value
+  assert.notEqual(line.unchanged, true, "the friend's line moves the team, so the open window reads it")
+  assert.ok(Number.isFinite(line.bots.find(bot => bot.id === 'a').friendLineAt), "the Chief row gets its friend's-line stamp (unread badge)")
+  // The Bot's answer is held for its owner (the social plugin's hold): the card and the count arrive the same way.
+  fb.bot.send.use({ name: 'hold-all', handle: () => ({ action: 'hold', reason: 'messages to friends need your approval' }) })
+  const held = await fb.bot.send({ from: 'a', to: { kind: 'remote', handle: '@bob.bot' }, text: 'Hey B!', role: 'reply', via: 'auto-reply', meta: { replyIn: { sessionId: 'a', turn: 2 } } })
+  assert.equal(held.action, 'hold')
+  const card = (await poll(line)).value
+  assert.notEqual(card.unchanged, true, 'the hold moves the team as well')
+  const chief = card.bots.find(bot => bot.id === 'a')
+  assert.equal(chief.pendingCount, 1, 'the Inbox and the row count the waiting reply')
+  assert.deepEqual(chief.heldReplies.map(reply => [reply.status, reply.sessionId, reply.turn, reply.to]), [['pending', 'a', 2, '@bob.bot']], 'the Waiting for approval card is drawn on the turn it answers')
+})
+
+test('#497: flybot.watched says whether a window on screen reads the team', async (t) => {
+  const { fb, call, stop } = await start()
+  t.after(stop)
+  assert.equal(fb.watched(), false, 'no window yet')
+  await call('state', { watching: false })
+  assert.equal(fb.watched(), false, 'a hidden window does not count')
+  await call('state', { watching: true })
+  assert.equal(fb.watched(), true)
+  const real = Date.now
+  Date.now = () => real() + 9_000
+  try { assert.equal(fb.watched(), false, 'a window that stopped asking is gone after a few seconds') } finally { Date.now = real }
+  await call('state', {})
+  assert.equal(fb.watched(), true, 'an older client that does not say counts as on screen')
+})
+
 test('#226: chatApprovals.changed moves the team revision so a friend chat badge refreshes', async (t) => {
   const { fb, call, stop } = await start()
   t.after(stop)

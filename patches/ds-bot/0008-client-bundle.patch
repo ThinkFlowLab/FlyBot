@@ -1561,7 +1561,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-   };
++  };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1585,7 +1585,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-+  };
+   };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -2415,10 +2415,13 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2848,233 +2848,215 @@ function installCompiledStyles(text, tag) {
-   observer.observe(document.head, { childList: true });
-   document.addEventListener("load", onLoad, true);
-   return () => {
+@@ -2845,236 +2845,218 @@ function installCompiledStyles(text, tag) {
+     if (event.target instanceof HTMLLinkElement) schedule();
+   };
+   const observer = new MutationObserver(schedule);
+-  observer.observe(document.head, { childList: true });
+-  document.addEventListener("load", onLoad, true);
+-  return () => {
 -    observer.disconnect();
 -    document.removeEventListener("load", onLoad, true);
 -    clearTimeout(timer);
@@ -2526,6 +2529,9 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
++  observer.observe(document.head, { childList: true });
++  document.addEventListener("load", onLoad, true);
++  return () => {
 +    observer.disconnect();
 +    document.removeEventListener("load", onLoad, true);
 +    clearTimeout(timer);
@@ -3953,8 +3959,9 @@ diff --git a/client.js b/client.js
 +    room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +  );
 +  return (0, import_react8.createElement)(
-+    "div",
-+    { className: "bt-group-msg" },
+     "div",
+     { className: "bt-group-msg" },
+-    (0, import_react6.createElement)(
 +    name,
 +    (0, import_react8.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +  );
@@ -4019,11 +4026,14 @@ diff --git a/client.js b/client.js
 +    { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
 +    // A face room's header is the one name alone; the handle is on hover only (#457).
 +    face ? (0, import_react8.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) }, title: handle }, name) : (0, import_react8.createElement)(
-+      "span",
-+      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+       "span",
+       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+-      bot.name,
+-      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +      name,
 +      (0, import_react8.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react8.createElement)(GlobeMark), handle)
-+    ),
+     ),
+-    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react8.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
@@ -4063,15 +4073,7 @@ diff --git a/client.js b/client.js
 +    }
 +  };
 +  return (0, import_react8.createElement)(
-     "div",
--    { className: "bt-group-msg" },
--    (0, import_react6.createElement)(
--      "span",
--      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
--      bot.name,
--      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
--    ),
--    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
++    "div",
 +    { className: "bt-file-chips" },
 +    files.map((file) => (0, import_react8.createElement)(
 +      "button",
@@ -4471,8 +4473,7 @@ diff --git a/client.js b/client.js
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react8.createElement)(RemoteMessage, {
@@ -4485,7 +4486,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
      }),
      pending.map((id) => {
@@ -5728,13 +5730,14 @@ diff --git a/client.js b/client.js
    );
  }
  function UpdateButton({ useUpdate, actions }) {
-   const update = useUpdate((value) => value);
+-  const update = useUpdate((value) => value);
 -  const [open, setOpen] = (0, import_react8.useState)(false);
 -  const [box, setBox] = (0, import_react8.useState)(null);
 -  const [error, setError] = (0, import_react8.useState)("");
 -  const [dshError, setDshError] = (0, import_react8.useState)("");
 -  const button = (0, import_react8.useRef)(null);
 -  (0, import_react8.useEffect)(() => {
++  const update = useUpdate((value) => value);
 +  const [open, setOpen] = (0, import_react12.useState)(false);
 +  const [box, setBox] = (0, import_react12.useState)(null);
 +  const [error, setError] = (0, import_react12.useState)("");
@@ -9946,13 +9949,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react28.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: people2.length }) },
 +      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react28.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react28.createElement)(
 +        "div",
@@ -13264,10 +13267,35 @@ diff --git a/client.js b/client.js
      }
      const end = body2.trimEnd().length;
      const marked = mark ? `${body2.slice(0, end)}${mark}${body2.slice(end)}` : body2;
-@@ -13052,11 +13052,27 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
+@@ -13052,11 +13052,52 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
    };
  }
  
++// src/client/mobile.js
++var MOBILE_MAX_WIDTH = 640;
++var MOBILE_CSS = `
++@media (max-width:${MOBILE_MAX_WIDTH}px){
++.bt-held-actions{max-width:100%}
++.bt-held-card{padding:10px 12px}
++:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions{gap:8px;margin-top:8px}
++:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions>button{flex:1 1 0;min-width:0;height:40px;padding:0 16px;border-radius:999px;border:0;background:var(--bt-hover);color:var(--bt-ink);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
++:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions>button.bt-flybot-approve{background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-weight:600}
++:is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions>button:disabled{opacity:.5;cursor:default}
++.bt-held-retry{min-height:32px}
++.bt-flybot-approvals{left:64px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-width:none;max-height:min(60vh,calc(100vh - 16px))}
++.bt-flybot-pointers{top:8px;right:8px;max-width:calc(100vw - 72px)}
++.bt-flybot-pointer{max-width:100%;min-width:0}
++.bt-flybot-pointer-text{flex:0 1 auto;min-width:0;max-width:none}
++.bt-flybot-pointer-note{flex:0 100 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
++.bt-flybot-pointer button{flex:none;min-height:28px;padding:4px 12px}
++.bt-inbox-card{flex-wrap:wrap;row-gap:8px}
++.bt-inbox-copy{flex-basis:calc(100% - 38px)}
++.bt-inbox-title,.bt-inbox-reason{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
++.bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
++.bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}
++}
++`;
++
 +// src/client/friend-lines.js
 +function friendLineNews(bots, known, isOpen, selfId) {
 +  const next = { ...known };
@@ -13590,7 +13618,7 @@ diff --git a/client.js b/client.js
    const surface = createSource({ mode: readMode(), plain: false });
    let agentSessionCache = /* @__PURE__ */ new Set();
    try {
-@@ -13344,6 +13344,18 @@ function apply(ctx) {
+@@ -13344,13 +13344,25 @@ function apply(ctx) {
      }
      return { ...state, unread };
    });
@@ -13609,6 +13637,14 @@ diff --git a/client.js b/client.js
    const refreshed = /* @__PURE__ */ new Set();
    let pulls = 0;
    let applied = 0;
+   const pull = async () => {
+     const order = ++pulls;
+     const known = roster.getSnapshot();
+-    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language() });
++    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language(), watching: !document.hidden });
+     if (order < applied) return;
+     applied = order;
+     const nextActivity = JSON.stringify(value.activity ?? {});
 @@ -13368,10 +13368,15 @@ function apply(ctx) {
      const live2 = {};
      if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;
@@ -13828,7 +13864,7 @@ diff --git a/client.js b/client.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId);
      if (controller === void 0 || span === void 0) return;
-@@ -14019,11 +14019,13 @@ function apply(ctx) {
+@@ -14019,27 +14019,33 @@ function apply(ctx) {
      installCompiledStyles(SHELL_CSS, "shell"),
      installCompiledStyles(SIDEBAR_CSS, "sidebar"),
      installCompiledStyles(SECRET_CSS, "secrets"),
@@ -13842,8 +13878,10 @@ diff --git a/client.js b/client.js
 +    installCompiledStyles(FLYBOT_CSS, "flybot"),
      installCompiledStyles(MEMBER_CSS, "members"),
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
++    installCompiledStyles(MOBILE_CSS, "mobile"),
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
-@@ -14032,14 +14032,17 @@ function apply(ctx) {
+     installTheme(),
+     shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),
      shadow("sidebar.brand.mark", { priority: -10 }, BrandMark),
      shadow("sidebar.brand.name", { priority: -10 }, BrandName),
      shadow("sidebar.footer.action", { id: "bot-account", order: -200, inject: face }, FooterAccount),
