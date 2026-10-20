@@ -10824,7 +10824,7 @@ function MemoryDialog({ bot, actions, leaving = false }) {
 var import_react24 = require("react");
 var standingOf = (target, roster) => {
   const me = roster?.self?.memberId;
-  return (target?.standingApprovals ?? []).filter((grant) => grant.ownerId === me);
+  return (target?.standingApprovals ?? []).filter((grant) => me === void 0 || grant.ownerId === me);
 };
 function StandingApprovalsCard({ scope, target, roster, actions, run, Card: Card2 }) {
   const grants = scope === "room" ? standingOf(target, roster) : target?.standingApprovals ?? [];

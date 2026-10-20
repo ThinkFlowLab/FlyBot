@@ -1,11 +1,13 @@
 // Standing approvals (#540): what the owner chose "Always allow" for, on a Bot or a
-// group, each with Remove. A group lists only the grants this person gave.
+// group, each with Remove. A group lists only the grants this person gave (all of them
+// on a host nobody signed in to).
 import { createElement as h } from 'react'
 import { t } from './i18n.js'
 
+// Without a sign-in the host has one person, who gave every grant.
 export const standingOf = (target, roster) => {
   const me = roster?.self?.memberId
-  return (target?.standingApprovals ?? []).filter(grant => grant.ownerId === me)
+  return (target?.standingApprovals ?? []).filter(grant => me === undefined || grant.ownerId === me)
 }
 
 export function StandingApprovalsCard({ scope, target, roster, actions, run, Card }) {

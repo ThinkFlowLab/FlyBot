@@ -3,6 +3,7 @@
 // the group chat. A Bot's own chat keeps DSH's card; its requests are only noted, so
 // the team view can say who is waiting.
 import { randomUUID } from 'node:crypto'
+import { OWNER, settled } from './turn-origin.js'
 
 const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
 
@@ -29,7 +30,7 @@ export function install(rt) {
     const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
     const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
     if (botId === undefined) return next()
-    if (standingGrant(botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
+    if (standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
     const id = randomUUID()
     const entry = {
       id,
@@ -61,14 +62,20 @@ export function install(rt) {
   }, { prepend: true })
 
   // A group grant covers the owner's Bots working in that group: the Bot it was granted
-  // from and any other Bot of the same owner (one owner on a single-human host).
+  // from and any other Bot of the same owner. Before anyone signs in there is one person,
+  // and a Bot made then carries no owner, so every local Bot is theirs.
   function standingGrant(botId, roomId, kind) {
     const bot = rt.botOf(botId)
     if (bot === undefined || bot.remote !== undefined) return false
     if ((bot.standingApprovals ?? []).some(grant => grant.kind === kind)) return true
     const room = roomId === undefined ? undefined : rt.roomOf(roomId)
-    return (room?.standingApprovals ?? []).some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)
+    const sameOwner = grant => !rt.authzEnforced?.() || grant.ownerId === bot.ownerId
+    return (room?.standingApprovals ?? []).some(grant => grant.kind === kind && sameOwner(grant))
   }
+
+  // The grant is the owner's: it answers only a turn the owner started (turn-origin.js). A
+  // friend's message, a room with other people in it, or a turn with no verdict still asks.
+  const standingCovers = (sessionId, botId, roomId, kind) => settled(rt, sessionId) === OWNER && standingGrant(botId, roomId, kind)
 
   async function grantStanding(entry, scope) {
     await rt.load()
@@ -85,17 +92,18 @@ export function install(rt) {
     }
     // Other cards the new grant already covers stop waiting too.
     for (const other of pending.values()) {
-      if (other.id !== entry.id && other.answer !== undefined && standingGrant(other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
+      if (other.id !== entry.id && other.answer !== undefined && standingCovers(other.sessionId, other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
     }
   }
   const approvalKindOf = entry => approvalKind(entry.tool, entry.reason)
 
-  async function removeStandingApproval(scope, id, kind) {
+  // A group's grants are per owner: a signed-in remover (`ownerId`) takes only their own.
+  async function removeStandingApproval(scope, id, kind, ownerId) {
     await rt.load()
     const target = scope === 'room' ? rt.roomOf(String(id ?? '')) : rt.botOf(String(id ?? ''))
     if (target === undefined) throw Object.assign(new Error('Not found'), { code: 'bot/not-found' })
     const before = target.standingApprovals ?? []
-    const after = before.filter(grant => grant.kind !== String(kind ?? ''))
+    const after = before.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
     if (after.length === before.length) return false
     if (after.length === 0) delete target.standingApprovals
     else target.standingApprovals = after
