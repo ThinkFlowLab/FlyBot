@@ -72,6 +72,19 @@ const lastPersonLine = (room) => {
   return undefined
 }
 const lastPersonSeq = room => lastPersonLine(room)?.seq ?? 0
+// Another home's Bots that posted while this round answers the person's line (#475): each home runs its own round
+// over its own Bots, so a friend's Bot that already answered or planned counts as this line's answer here too. A
+// Bot post queued before the round started is not counted: it may be older than the line it is logged after.
+const friendAnswers = (room, round) => {
+  if (round.faceLine === undefined) return []
+  const after = Math.max(round.faceLine, round.openedSeq ?? 0)
+  const names = []
+  for (const line of room.log ?? []) {
+    if ((line.seq ?? 0) <= after || line.kind || line.botId === undefined || line.botId === 'face-notice' || room.members.includes(line.botId)) continue
+    if (!names.includes(line.who)) names.push(line.who)
+  }
+  return names
+}
 const FACE_ASKED_KEPT = 24
 const currentFaceLine = (room, seq) => (room.faceLine !== undefined && room.faceLine.seq === seq && lastPersonSeq(room) === seq ? room.faceLine : undefined)
 // `authorId`: a friend's line is only tracked once it is in the log (applyFaceLine logs it first).
@@ -205,6 +218,7 @@ export function install(rt) {
     const everyone = room.members.map(rt.botOf).filter(Boolean)
     const roles = everyone.filter(bot => bot.role).map(bot => `${bot.name}${bot.id === member.id ? ' (you)' : ''}: ${String(bot.role).slice(0, 80)}`)
     const friends = currentParticipants(room).filter(p => p.kind === 'bot' && p.remote).map(p => p.label || p.displayName).filter(Boolean)
+    const answered = friendAnswers(room, round)
     return [
       'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
       broadcast
@@ -213,6 +227,7 @@ export function install(rt) {
       last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
       roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
       friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
+      answered.length > 0 ? `${answered.join(', ')} already answered this line or posted a plan; add only your role's part, and do not re-plan or repeat it.` : '',
       '[PASS] posts nothing and nobody sees it: never explain a pass.',
     ].filter(Boolean).join(' ')
   }
@@ -348,15 +363,19 @@ export function install(rt) {
     return speakers
   }
 
-  // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval.
-  const answeredAlready = round => round.route !== undefined && !round.route.broadcast && round.route.forced === undefined
-    && round.slots.some(slot => slot.status === 'posted' || slot.status === 'working' || slot.status === 'waiting-approval')
+  // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval,
+  // or where another home's Bot already answered the line (#475).
+  const answeredAlready = (room, round) => round.route !== undefined && !round.route.broadcast && round.route.forced === undefined
+    && (round.slots.some(slot => slot.status === 'posted' || slot.status === 'working' || slot.status === 'waiting-approval')
+      || friendAnswers(room, round).length > 0)
 
   // True once a routed round ended with every Bot silent on the owner's own line (a friend's line is not
-  // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer.
-  function fallbackDue(round) {
+  // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer, and
+  // a line a friend's Bot already answered is answered (#475).
+  function fallbackDue(room, round) {
     const route = round.route
     if (!route?.fallback || route.forced !== undefined || (route.last?.remote && !route.broadcast)) return false
+    if (friendAnswers(room, round).length > 0) return false
     const states = round.slots.map(slot => slot.status)
     return !states.some(status => status === 'posted' || status === 'working' || status === 'waiting-approval' || status === 'speaking' || status === 'waiting')
       && states.some(status => status === 'passed' || status === 'missed')
@@ -396,11 +415,11 @@ export function install(rt) {
     const turns = new Map()
     // The inbox check keeps a message sent during the last speaker's turn inside
     // this round: it drains at the loop's head even once the slots ran out.
-    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(round)) && round.turns < limit; index += 1) {
+    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(room, round)) && round.turns < limit; index += 1) {
       if (signal.aborted) break
       limit += drainRoomInbox(room, round, turns, index, agent)
       // Everyone passed on the owner's own plain line: the first Bot that passed answers, so the user is never ignored (#299).
-      if (index >= round.slots.length && fallbackDue(round)) {
+      if (index >= round.slots.length && fallbackDue(room, round)) {
         const first = round.slots.find(slot => slot.status === 'passed' || slot.status === 'missed')
         round.route.forced = first.id
         round.slots.push({ id: first.id, name: first.name, status: 'waiting', note: 'nobody answered yet' })
@@ -416,7 +435,7 @@ export function install(rt) {
       }
       // One answer for a line that is not for everyone (#299): once a Bot has answered, the Bots still waiting are not
       // asked at all (no model call, no line), so three Bots never post three similar answers.
-      if (answeredAlready(round) || currentFaceLine(room, round.faceLine)?.answered.includes(member.id)) {
+      if (answeredAlready(room, round) || currentFaceLine(room, round.faceLine)?.answered.includes(member.id)) {
         slot.status = 'passed'
         round.passed.push(member.name)
         continue
@@ -544,6 +563,7 @@ export function install(rt) {
         members: room.members,
         ...(route ? { route } : {}),
         startSeq,
+        openedSeq: room.seq,
         ...(opener.kickoff ? { kickoff: true } : {}),
         ...(references.length > 0 ? { references, shown: [] } : {}),
         slots: speakers.map(member => ({
@@ -736,8 +756,9 @@ export function install(rt) {
       }
     }
     if (found.length > 0 && !all) return found
-    // Face-to-face Bot posts: a plain one stays in the room; only @Name / @all calls a Bot (#167).
-    if (isFaceRoom(room) && !all) return []
+    // Face-to-face Bot posts: a plain one stays in the room; only @Name / @all calls a Bot (#167). Another
+    // home's Bot's @all wakes none of mine (#475): only the local Bots it names answer.
+    if (isFaceRoom(room) && (!all || (opener.botId !== undefined && !room.members.includes(opener.botId)))) return found
     if (!all && room.mode === 'admin' && admin) return [admin]
     return admin ? [admin, ...members.filter(bot => bot !== admin)] : members
   }

@@ -1248,7 +1248,7 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
  test('a message sent between rounds still opens a full round', async (t) => {
    const { call, emit, userMessage, relay, answer, stop, sent } = start()
    t.after(stop)
-@@ -347,3 +347,413 @@ test('a message sent between rounds still opens a full round', async (t) => {
+@@ -347,3 +347,488 @@ test('a message sent between rounds still opens a full round', async (t) => {
    const result = JSON.parse(await running)
    assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer'])
  })
@@ -1661,4 +1661,79 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
 +  const again = JSON.parse(await relay(hosted.id, 'r455-next'))
 +  assert.equal(again.replies.filter(reply => reply.kind === 'user' || reply.kind === 'remote').length, 0)
 +  assert.equal(hosted.log.filter(line => line.authorId === '@researcher.selfb.home').length, 1)
++})
++
++// The group's Session is in a turn while its round runs, so another home's Bot line shows and is logged at once (#455).
++function busyHost(t, ctx, hosted) {
++  let busy = true
++  let markIdle
++  const idle = new Promise(resolve => { markIdle = resolve })
++  t.after(() => {
++    busy = false
++    markIdle()
++  })
++  const resolve = ctx.sessionController.resolveAgent
++  ctx.sessionController.resolveAgent = async sessionId => sessionId !== hosted.id ? resolve(sessionId) : ({
++    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: () => {} },
++  })
++}
++const friendBotSays = (rt, hosted, text) => rt.postToRoom(hosted, { id: '@chief.bob.home', name: "Bob's Chief" }, text, { remote: { handle: '@chief.bob.home' }, senderName: "Bob's Chief" })
++const friendBotPost = text => ({ type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: '@chief.bob.home', senderName: "Bob's Chief", remote: { handle: '@chief.bob.home' } }, content: [{ type: 'text', text }] } })
++
++test('#475: a friend\'s Bot that answers my plain line counts: the other Bots are not asked and none is forced to answer', async (t) => {
++  const env = start()
++  const { emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
++  t.after(stop)
++  const { hosted } = await routedRoom(env, 'cross')
++  busyHost(t, ctx, hosted)
++  await emit(hosted.id, userMessage('帮我们订个周五的会议室'))
++  const running = relay(hosted.id, 'cross-1')
++  const first = await turnFor(sent)
++  await friendBotSays(rt, hosted, 'Plan: I book room 3 for Friday 10:00 and send the invite.')
++  await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
++  const done = JSON.parse(await running)
++  assert.equal(roomTurns(sent).length, 1, 'the next Bot is not asked and nobody is forced: the friend\'s Bot answered')
++  assert.deepEqual(done.replies.filter(reply => reply.kind === undefined), [], 'no local post')
++  assert.equal(hosted.log.filter(line => line.botId !== undefined && hosted.members.includes(line.botId)).length, 0)
++})
++
++test('#475: a Bot still asked after a friend\'s Bot posted a plan is told to add only its role\'s part', async (t) => {
++  const env = start()
++  const { emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
++  t.after(stop)
++  const { hosted } = await routedRoom(env, 'plan')
++  busyHost(t, ctx, hosted)
++  await emit(hosted.id, userMessage('大家说说这次活动各自负责什么'))
++  const running = relay(hosted.id, 'plan-1')
++  const first = await turnFor(sent)
++  assert.doesNotMatch(promptOf(first), /already answered this line/)
++  await friendBotSays(rt, hosted, 'Plan: I book the venue, Writer drafts the invite.')
++  await answer(first.sessionId, first.message.source.exchangeId, 'I will track the budget.', 1)
++  const second = await turnFor(sent, first)
++  assert.ok(second, 'a line to everyone still reaches the next Bot')
++  assert.match(promptOf(second), /Chief \(Bob\) already answered this line or posted a plan; add only your role's part, and do not re-plan or repeat it\./)
++  await answer(second.sessionId, second.message.source.exchangeId, 'I draft the invite.', 2)
++  await running
++})
++
++test('#475: a friend\'s Bot @all / @所有人 wakes none of my Bots; its @MyBot wakes only that Bot', async (t) => {
++  const env = start()
++  const { emit, relay, answer, stop, sent } = env
++  t.after(stop)
++  const { hosted, writer } = await routedRoom(env, 'botall')
++  for (const [at, text] of ['@all please each report your status', '@所有人 汇报一下进度'].entries()) {
++    sent.length = 0
++    await emit(hosted.id, friendBotPost(text))
++    const done = JSON.parse(await relay(hosted.id, `botall-${at}`))
++    assert.equal(roomTurns(sent).length, 0, `${text}: no local Bot turn`)
++    assert.deepEqual(done.replies.filter(reply => reply.kind === undefined), [])
++  }
++  sent.length = 0
++  await emit(hosted.id, friendBotPost('@Writer can you draft the invite?'))
++  const named = relay(hosted.id, 'botall-named')
++  const only = await turnFor(sent)
++  assert.equal(only.sessionId, hosted.sessions[writer])
++  await answer(only.sessionId, only.message.source.exchangeId, 'Drafting it now.', 1)
++  await named
++  assert.equal(roomTurns(sent).length, 1, 'only the named Bot')
 +})
