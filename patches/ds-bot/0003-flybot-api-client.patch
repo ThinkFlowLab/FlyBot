@@ -2577,7 +2577,7 @@ diff --git a/test/looks.test.js b/test/looks.test.js
  import { indexRoster } from '../src/client/sources.js'
  
  const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
-@@ -29,19 +29,103 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
+@@ -29,19 +29,104 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
    assert.equal(photo.shape, defaultShape('chief'))
  })
  
@@ -2617,10 +2617,11 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 +  // #276: gear is on every wide Bot row (own and friends'), not only remotes.
 +  assert.match(text('sidebar.js'), /const settings = wide \? h\('button'/)
 +  assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
-+  assert.match(text('header.js'), /setAttribute\('aria-label', composerLabel\)/)
-+  // #419: the composer keeps "Message <name>" after the shell re-renders it; a friend's Bot chat hides the stats footer.
-+  assert.match(text('header.js'), /new MutationObserver\(/)
-+  assert.match(text('header.js'), /attributeFilter: \['aria-label'\]/)
++  // #419 / #499: the composer keeps "Message <name>" from the first paint on and after the shell re-renders
++  // it (composer-label.test.js); a friend's Bot chat hides the stats footer.
++  assert.match(text('header.js'), /useLayoutEffect\(\(\) => holdComposerLabel\(document, composerLabel\), \[composerLabel\]\)/)
++  assert.match(text('composer-label.js'), /new Observer\(apply\)/)
++  assert.match(text('composer-label.js'), /const ATTRIBUTES = \['aria-label', 'data-placeholder'\]/)
 +  assert.match(text('header.js'), /document\.body\.dataset\.btFriendChat = ''/)
 +  assert.match(text('styles.js'), /body\[data-bt-friend-chat\] \[data-composer-stats\]\{display:none!important\}/)
 +  assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)

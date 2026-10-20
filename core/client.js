@@ -7769,6 +7769,38 @@ var SIDEBAR_CSS = `
 .bt-row-settings svg{width:15px;height:15px}
 `;
 
+// src/client/composer-label.js
+var ATTRIBUTES = ["aria-label", "data-placeholder"];
+function holdComposerLabel(doc, label) {
+  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
+  const shell = /* @__PURE__ */ new Map();
+  const apply2 = () => {
+    for (const el of doc.querySelectorAll("[data-composer-input]")) {
+      for (const name of ATTRIBUTES) {
+        const current = el.getAttribute(name);
+        if (current === label) continue;
+        if (!shell.has(el)) shell.set(el, {});
+        shell.get(el)[name] = current;
+        el.setAttribute(name, label);
+      }
+    }
+  };
+  apply2();
+  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
+  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
+  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
+  return () => {
+    watcher?.disconnect();
+    for (const [el, values] of shell) {
+      if (!el.isConnected) continue;
+      for (const [name, value] of Object.entries(values)) {
+        if (value == null) el.removeAttribute(name);
+        else el.setAttribute(name, value);
+      }
+    }
+  };
+}
+
 // src/client/header.js
 var import_react13 = require("react");
 var import_react_dom4 = require("react-dom");
@@ -7852,34 +7884,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
       delete document.body.dataset.btFriendChat;
     };
   }, [bot?.remote]);
-  (0, import_react13.useEffect)(() => {
-    document.body.style.setProperty("--bt-placeholder", JSON.stringify(composerLabel));
-    const input = document.querySelector("[data-composer-input]");
-    const priorLabel = input?.getAttribute("aria-label") ?? null;
-    const apply2 = () => {
-      const el = document.querySelector("[data-composer-input]");
-      if (el && el.getAttribute("aria-label") !== composerLabel) el.setAttribute("aria-label", composerLabel);
-    };
-    apply2();
-    const timer = setTimeout(apply2, 0);
-    let frame = 0;
-    const watcher = typeof MutationObserver === "function" ? new MutationObserver(() => {
-      if (!frame) frame = requestAnimationFrame(() => {
-        frame = 0;
-        apply2();
-      });
-    }) : null;
-    watcher?.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-label"] });
-    return () => {
-      clearTimeout(timer);
-      watcher?.disconnect();
-      if (frame) cancelAnimationFrame(frame);
-      const el = document.querySelector("[data-composer-input]");
-      if (!el) return;
-      if (priorLabel == null) el.removeAttribute("aria-label");
-      else el.setAttribute("aria-label", priorLabel);
-    };
-  }, [composerLabel]);
+  (0, import_react13.useLayoutEffect)(() => holdComposerLabel(document, composerLabel), [composerLabel]);
   (0, import_react13.useEffect)(() => {
     actions.beginVisit(sessionId);
     return () => actions.endVisit(sessionId);
