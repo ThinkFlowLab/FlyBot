@@ -562,6 +562,8 @@ declare global {
     /** Sidebar avatar (mark plus optional badges). Prefer this at 24px with badge: false. */
     BotAvatar?: FlyBotBotAvatar
     lookOf?: FlyBotLookOf
+    /** A friend's Bot chat (a roster Bot with `remote`): its one name, "Chief (Bob)", and its owner, "Bob" (#498). */
+    names?: { friendBotTitle(bot?: any): string; friendBotOwner(bot?: any): string }
   } | undefined
 }
 

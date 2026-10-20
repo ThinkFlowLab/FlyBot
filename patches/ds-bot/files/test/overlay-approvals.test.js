@@ -114,7 +114,9 @@ test('#260: an approval no open chat shows becomes a pointer to its chat, after 
     const tree = render(FlyBotApprovals, inst)
     const text = JSON.stringify(tree)
     assert.match(text, /bt-flybot-pointer/)
-    assert.match(text, /Helper → Chief \(UiA1415\)/)
+    // The person who gets it (#418, #498), not the friend's Bot by name.
+    assert.match(text, /Helper → UiA1415/)
+    assert.doesNotMatch(text, /Chief \(UiA1415\)/)
     assert.match(text, /\+1 more/)
     assert.doesNotMatch(text, /Approve/, 'a pointer has no decision buttons: the chat\'s card does')
     const find = (node, pred) => (node && typeof node === 'object' ? (pred(node) ? [node] : [...(node.children ?? []), ...(Array.isArray(node) ? node : [])].flatMap(child => find(child, pred))) : [])

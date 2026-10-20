@@ -5,7 +5,7 @@
 // rows stay beside them, because a source cannot be hidden for one Session (a face
 // room filters the session rows out of view: face-at-filter.js).
 import { mentionCandidates, remoteMentionRows } from './flybot-registry.js'
-import { cleanPeerName, ownerNameOf, remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
+import { cleanPeerName, friendBotTitle, ownerNameOf, remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
 import { t } from './i18n.js'
 import { currentPart, relativeShort } from './text.js'
 
@@ -138,8 +138,9 @@ export function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot()
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
-        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
+        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
+        name: row.bot?.remote && !face ? (row.bot.kind === 'bot' ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
         ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
         ...(row.remote ? { description: row.remote.handle } : {}),
         ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),

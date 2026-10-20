@@ -20,7 +20,7 @@ import {
   viewerRole,
 } from '../src/host/room-membership.js'
 import { install as installReach, reach } from '../src/host/reach.js'
-import { remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
+import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
 import { encodeRoomShare, parseRoomShare } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
 import { mentionRows } from '../src/client/at-menu.js'
@@ -133,6 +133,25 @@ test('remote-label: owner badge and shared-room title', () => {
   assert.equal(remoteBotTitle({ displayName: 'Coder', ownerName: 'Bob', handle: '@coder.bob.home' }), 'Coder (Bob)')
   assert.equal(remoteBotTitle({ displayName: 'Chief', ownerName: 'Bob', isChief: true }), 'Chief (Bob)')
   assert.equal(sharedRoomTitle('Alice'), 'Shared room from Alice')
+})
+
+test('#498: one formatter names a friend\'s Bot chat on both homes, and its owner for approval cards', () => {
+  // A friend's chat as remote-chat.js keeps it: the chat's name, the home's display name, the handle.
+  const onA = { id: 'r1', name: 'Chief', remote: { handle: '@chief.selfb1233.home', home: '@selfb1233.home', homeName: 'SelfB1233' } }
+  const onB = { id: 'r2', name: 'Chief', remote: { handle: '@chief.selfa1233.home', home: '@selfa1233.home', homeName: 'SelfA1233' } }
+  assert.equal(friendBotTitle(onA), 'Chief (SelfB1233)')
+  assert.equal(friendBotTitle(onB), 'Chief (SelfA1233)')
+  assert.equal(friendBotOwner(onA), 'SelfB1233')
+  // The same string remoteBotTitle gives the seat of that Bot in a room.
+  assert.equal(friendBotTitle(onA), remoteBotTitle({ displayName: 'Chief', ownerName: 'SelfB1233', handle: '@chief.selfb1233.home' }))
+  // The human owner before the home's label; no owner at all: the one in the handle.
+  assert.equal(friendBotTitle({ name: 'Coder', remote: { handle: '@coder.bob.home', owner: 'Bob', homeName: 'Family Workspace' } }), 'Coder (Bob)')
+  assert.equal(friendBotTitle({ name: 'Helper', remote: { handle: '@helper.ann.home' } }), 'Helper (ann)')
+  assert.equal(friendBotOwner({ name: 'Helper', remote: { handle: '@helper.ann.home' } }), 'ann')
+  // A seat row carries its own name, so a row already titled is not titled twice.
+  assert.equal(friendBotTitle({ name: 'Chief (Bob)', remote: { displayName: 'Chief', ownerName: 'Bob', handle: '@chief.bob.home' } }), 'Chief (Bob)')
+  // Peer strings stay cleaned.
+  assert.equal(friendBotTitle({ name: 'Ev<i>l', remote: { handle: '@x.bob.home', homeName: 'B`ob' } }), 'Evil (Bob)')
 })
 
 test('unpublished Bot is rejected; published remote joins with owner fields', async (t) => {

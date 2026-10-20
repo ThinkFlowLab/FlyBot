@@ -23,6 +23,6 @@ test('#366: the model a row names is the served name of the chosen model, else t
 test('#366: every own Bot row (the tree draws the same row) takes that title; a friend\'s Bot keeps its own', () => {
   const sidebar = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8')
   const row = sidebar.slice(sidebar.indexOf('function BotRow('), sidebar.indexOf('function RemoteMark('))
-  assert.match(row, /className: 'bt-row', [^\n]*\n[^\n]*\n\s*'data-bot-id': id, title: remoteRecord \? shown : botRowTitle\(shown, modelOf\(bot, roster\)\?\.name, wide\), onClick/)
+  assert.match(row, /className: 'bt-row', [^\n]*\n[^\n]*\n\s*'data-bot-id': id, title: remote \? shown : botRowTitle\(shown, modelOf\(bot, roster\)\?\.name, wide\), onClick/)
   assert.match(sidebar, /function TreeNode\([\s\S]*?h\(BotRow, \{ \.\.\.rowProps, bot, asRow: true/)
 })

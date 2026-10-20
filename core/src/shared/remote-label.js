@@ -99,6 +99,29 @@ export function remoteOwnerBadge(record) {
   return ownerNameOf(record) || cleanPeerName(record?.handle, 'Friend')
 }
 
+// The record those two read for a friend's Bot as the roster lists it: its chat (`bot.remote` from
+// remote-chat.js, named by the chat) or a seat that carries its own name and owner.
+function friendRecord(bot) {
+  const remote = bot?.remote && typeof bot.remote === 'object' ? bot.remote : {}
+  return {
+    displayName: remote.displayName || remote.name || bot?.name,
+    ownerName: remote.ownerName || remote.owner || remote.homeName,
+    handle: remote.handle ?? bot?.handle,
+    isChief: remote.isChief,
+  }
+}
+
+// A friend's Bot, one name on both homes (#498): the sidebar row, the chat header and tab, the
+// composer placeholder and the @ menu all say "Chief (SelfB1233)", from this one function.
+export function friendBotTitle(bot) {
+  return remoteBotTitle(friendRecord(bot))
+}
+
+// The person who owns a friend's Bot: who a held reply to that Bot goes to (#418, #498).
+export function friendBotOwner(bot) {
+  return remoteOwnerBadge(friendRecord(bot))
+}
+
 export function sharedRoomTitle(inviterName) {
   return `Shared room from ${cleanPeerName(inviterName, 'a friend')}`
 }
