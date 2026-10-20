@@ -13462,7 +13462,7 @@ diff --git a/client.js b/client.js
    const surface = createSource({ mode: readMode(), plain: false });
    let agentSessionCache = /* @__PURE__ */ new Set();
    try {
-@@ -13344,6 +13344,18 @@ function apply(ctx) {
+@@ -13344,13 +13344,25 @@ function apply(ctx) {
      }
      return { ...state, unread };
    });
@@ -13481,6 +13481,14 @@ diff --git a/client.js b/client.js
    const refreshed = /* @__PURE__ */ new Set();
    let pulls = 0;
    let applied = 0;
+   const pull = async () => {
+     const order = ++pulls;
+     const known = roster.getSnapshot();
+-    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language() });
++    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language(), watching: !document.hidden });
+     if (order < applied) return;
+     applied = order;
+     const nextActivity = JSON.stringify(value.activity ?? {});
 @@ -13368,10 +13368,15 @@ function apply(ctx) {
      const live2 = {};
      if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;

@@ -163,7 +163,8 @@ export function apply(ctx) {
   const pull = async () => {
     const order = ++pulls
     const known = roster.getSnapshot()
-    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language() })
+    // `watching`: this window is on screen, so the host reads friends' inboxes at the live cadence (#497).
+    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language(), watching: !document.hidden })
     if (order < applied) return
     applied = order
     const nextActivity = JSON.stringify(value.activity ?? {})

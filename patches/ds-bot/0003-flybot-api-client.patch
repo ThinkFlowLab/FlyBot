@@ -1109,6 +1109,16 @@ diff --git a/src/client/index.js b/src/client/index.js
    const refreshed = new Set()
    // Pulls can overlap (the poll and a navigation); an older answer never wins.
    let pulls = 0
+@@ -132,7 +132,8 @@ export function apply(ctx) {
+   const pull = async () => {
+     const order = ++pulls
+     const known = roster.getSnapshot()
+-    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language() })
++    // `watching`: this window is on screen, so the host reads friends' inboxes at the live cadence (#497).
++    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language(), watching: !document.hidden })
+     if (order < applied) return
+     applied = order
+     const nextActivity = JSON.stringify(value.activity ?? {})
 @@ -145,11 +145,14 @@ export function apply(ctx) {
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors

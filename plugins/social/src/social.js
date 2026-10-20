@@ -1737,6 +1737,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const live = config.facePollMs > 0 ? config.facePollMs : 4_000
     return hasLiveFace() ? Math.min(live, idle) : idle
   }
+  // When the inbox was last asked for, so the watched poll below does not double the shared timer's.
+  let inboxAt = 0
+  const pollInboxNow = () => { inboxAt = now(); return pollInbox() }
   let pollTimer
   let lastPollMs
   function armSocialPoll() {
@@ -1746,13 +1749,25 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     lastPollMs = ms
     if (!(ms > 0)) return
     pollTimer = every(() => {
-      void pollInbox().catch(() => {})
+      void pollInboxNow().catch(() => {})
       void pollFaceRooms().then(() => armSocialPoll()).catch(() => armSocialPoll())
       if (now() - fetchedAt >= REMOTE_TTL_MS) void remoteBots({ fresh: true }).catch(() => {})
     }, ms)
   }
   disposers.push(() => { if (pollTimer) clear(pollTimer) })
   armSocialPoll()
+  // While a FlyBot window is on screen (#497, `flybot.watched`), the inbox is also read at the live
+  // cadence: a friend's first line, the held reply's approval card and the Inbox count reach the open
+  // window within seconds, not up to one idle poll (15 s) later. With no window open only the idle poll
+  // runs, and a tick that the shared timer already covers (a live face room) is skipped.
+  const watchMs = config.facePollMs > 0 ? config.facePollMs : 4_000
+  if (config.inboxPollMs > watchMs) {
+    const watchTimer = every(() => {
+      if (flybot.watched?.() !== true || lastPollMs <= watchMs || now() - inboxAt < watchMs / 2) return
+      void pollInboxNow().catch(() => {})
+    }, watchMs)
+    disposers.push(() => clear(watchTimer))
+  }
 
   // ------------------------------------------------------------ model tools (every local Bot)
   disposers.push(flybot.tools.register({

@@ -339,6 +339,43 @@ test('inbound messages reach the addressed member Bot as untrusted text', async 
   assert.equal(received.get('a'), undefined)
 })
 
+test("#497: while a FlyBot window is on screen the inbox is read at the live cadence, so a friend's first line reaches it in seconds", async (t) => {
+  const { ctx, call, received, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const timers = []
+  let clock = 1_000_000
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 15_000, facePollMs: 4_000 }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' },
+    now: () => clock,
+    setInterval: (fn, ms) => { const timer = { fn, ms }; timers.push(timer); return timer },
+    clearInterval: (timer) => { const at = timers.indexOf(timer); if (at >= 0) timers.splice(at, 1) },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.ok(timers.some(timer => timer.ms === 15_000), 'the idle poll stays')
+  const live = timers.filter(timer => timer.ms === 4_000)
+  assert.equal(live.length, 1, 'one live-cadence inbox timer beside it')
+  const reads = () => server.calls.filter(entry => entry.name === 'list_inbox').length
+  const tick = async () => { clock += 4_000; live[0].fn(); await settle() }
+  const idle = reads()
+  await tick()
+  assert.equal(reads(), idle, 'no window on screen: the live timer reads nothing')
+  // A window on screen reads the team (the client's roster poll), and B's first line is waiting on Bot Social.
+  await call('state', { watching: true })
+  server.events.set('m1', [{ event_id: 'e497', event_type: 'message.received', conversation_id: 'c497', typed_by_owner: true, from: { handle: '@coder.bob.home', home_handle: '@bob.home', display_name: 'Coder', owner_display_name: 'Bob' }, untrusted_content: '<<<UNTRUSTED>>>\n{"text":"hi from B","structured":null}\n<<<END>>>' }])
+  await tick()
+  await waitUntil(() => received.get('a')?.length === 1)
+  assert.match(received.get('a')[0], /hi from B/, 'delivered on the first live tick, not up to 15 s later')
+  const watched = reads()
+  // The window went away (hidden, closed): the live timer stops reading.
+  const real = Date.now
+  Date.now = () => real() + 9_000
+  try { await tick() } finally { Date.now = real }
+  assert.equal(reads(), watched)
+})
+
 test('friends\' remote Bots are chat members: in the roster, @-mentioned through social approval, and shown as their own bubbles', async (t) => {
   const { ctx, call, received, stop } = await team()
   t.after(stop)
