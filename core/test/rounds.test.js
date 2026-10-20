@@ -516,11 +516,10 @@ test('#295: a plain face-to-face line lets every local Bot answer in one pass, e
   const friend = relay(hosted.id, 'friend-plain')
   const theirs = await turnFor(sent)
   assert.ok(theirs, 'a friend\'s attested plain line starts my Bots too')
+  assert.match(theirs.message.content[0].text, /names no Bot/, 'routed like my own plain line (#462)')
   await answer(theirs.sessionId, theirs.message.source.exchangeId, 'hi Bob', 4)
-  const other = await turnFor(sent, theirs)
-  assert.ok(other)
-  await answer(other.sessionId, other.message.source.exchangeId, 'hi from me too', 5)
   await friend
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room').length, 1, 'once one of my Bots answered, the other is not asked (#299, #462)')
 })
 
 test('#295: a plain line in a large face room is cut off at six speakers, the admin first', async (t) => {
@@ -954,6 +953,67 @@ test('#299: the first Bot that answers a routed line ends it; a line to everyone
   assert.ok(b, 'a line to everyone reaches the next Bot too')
   await answer(b.sessionId, b.message.source.exchangeId, 'mine too', 3)
   await all
+})
+
+test('#462: a friend\'s attested plain line is routed and single like my own line; a friend\'s @Bot line is unchanged', async (t) => {
+  const env = start()
+  const { emit, relay, answer, stop, sent, rt } = env
+  t.after(stop)
+  const { hosted, chief, writer } = await routedRoom(env, 'friend')
+  // As social.js delivers it: the line is logged first, then posted for the round.
+  const friendSays = async (eventId, text) => {
+    rt.applyFaceRoomLine(hosted, { eventId, who: 'Bob', text, authorId: '@bob.home', authorKind: 'human', remote: true })
+    await emit(hosted.id, friendPlain(text))
+  }
+  await friendSays('ev-f1', '文档怎么写')
+  const one = relay(hosted.id, 'friend-1')
+  const a = await turnFor(sent)
+  assert.match(promptOf(a), /names no Bot/, 'the friend\'s line is routed: each Bot decides whether it is theirs')
+  assert.match(promptOf(a), /Default to \[PASS\]/)
+  await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 1)
+  const b = await turnFor(sent, a)
+  assert.equal(b.sessionId, hosted.sessions[writer])
+  // Its @ calls nobody on: one pass, no follow-ups, so Bots in two homes cannot set each other off.
+  await answer(b.sessionId, b.message.source.exchangeId, 'Start with an outline. @Chief can you check it?', 2)
+  const first = JSON.parse(await one)
+  assert.deepEqual(first.replies.filter(reply => reply.kind === undefined).map(reply => reply.text), ['Start with an outline. @Chief can you check it?'])
+  assert.equal(roomTurns(sent).length, 2, 'the reply\'s @Chief starts no follow-up turn')
+
+  // A follow-up from the friend goes to the Bot that spoke last, and the first answer ends the round.
+  sent.length = 0
+  await friendSays('ev-f2', '那大纲具体怎么写')
+  const two = relay(hosted.id, 'friend-2')
+  const c = await turnFor(sent)
+  assert.equal(c.sessionId, hosted.sessions[writer], 'the last speaker is asked first')
+  assert.match(promptOf(c), /Writer spoke last before this line/)
+  await answer(c.sessionId, c.message.source.exchangeId, 'Three headings.', 3)
+  await two
+  assert.equal(roomTurns(sent).length, 1, 'the other Bot is not asked once one answered')
+
+  // The friend's line picks the speakers even when a friend's Bot post is queued with it.
+  sent.length = 0
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: '@chief.bob.home', senderName: "Bob's Chief", remote: { handle: '@chief.bob.home' } }, content: [{ type: 'text', text: 'I can see the whole room.' }] } })
+  await friendSays('ev-f3', '有人能帮我订个会议室吗')
+  const three = relay(hosted.id, 'friend-3')
+  const d = await turnFor(sent)
+  assert.ok(d, 'my Bots answer the friend\'s line queued after a Bot post')
+  assert.match(promptOf(d), /names no Bot/)
+  await answer(d.sessionId, d.message.source.exchangeId, 'I can book it.', 4)
+  await three
+  assert.equal(roomTurns(sent).length, 1)
+
+  // A friend's line that names my Writer (`callIds`) still starts only the Writer, unrouted.
+  sent.length = 0
+  rt.applyFaceRoomLine(hosted, { eventId: 'ev-f4', who: 'Bob', text: '@Writer 你好', authorId: '@bob.home', authorKind: 'human', remote: true })
+  await emit(hosted.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: 'face-notice', senderName: 'Bob', quiet: true, notice: true, callIds: [writer], human: { authorId: '@bob.home', name: 'Bob' } }, content: [{ type: 'text', text: '@Writer 你好' }] } })
+  const four = relay(hosted.id, 'friend-4')
+  const e = await turnFor(sent)
+  assert.equal(e.sessionId, hosted.sessions[writer])
+  assert.doesNotMatch(promptOf(e), /names no Bot/)
+  await answer(e.sessionId, e.message.source.exchangeId, 'Hi Bob', 5)
+  await four
+  assert.equal(roomTurns(sent).length, 1)
+  assert.ok(chief)
 })
 
 // How the owner's own line really reaches a face round: `send` logs it and posts the quiet "name: text" notice, and the
