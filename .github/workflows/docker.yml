@@ -1,0 +1,69 @@
+# Container image check (#352): builds the image from this checkout and runs a start check
+# (compose up until the health check passes, the page answers on the host's loopback, the
+# process is not root). Nothing is pushed to a registry and nothing is deployed.
+name: Docker
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - compose.yaml
+      - .dockerignore
+      - docker/**
+      - .github/scripts/check-pack.mjs
+      - .github/workflows/docker.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - compose.yaml
+      - .dockerignore
+      - docker/**
+      - .github/scripts/check-pack.mjs
+      - .github/workflows/docker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: build and start check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLYBOT_TAG: ci
+      FLYBOT_PORT: '3080'
+      COMPOSE_PROJECT_NAME: flybot-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: docker compose build
+      - name: Start and wait for the health check
+        run: docker compose up -d --wait --wait-timeout 180
+      - name: Start check
+        run: |
+          set -eu
+          # Unauthenticated, the web server answers 401 on the host's loopback port.
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FLYBOT_PORT/")
+          echo "GET / -> $code"
+          [ "$code" = 401 ]
+          # The sign-in link was printed (checked, never shown: it carries the token).
+          docker compose logs flybot | grep -q 'dsh web: http://127.0.0.1:3080/?token='
+          # Not root, and the FlyBot packages are linked from the image.
+          uid=$(docker compose exec -T flybot id -u)
+          echo "uid: $uid"
+          [ "$uid" != 0 ]
+          docker compose exec -T flybot node -e "const p=require('/data/profiles/web/package.json');const d=p.dependencies;for(const n of ['ds-bot','@flybot/social','@flybot/tree','@flybot/timeline'])if(!String(d[n]).startsWith('link:/opt/flybot/packages/'))throw new Error(n+' is not linked: '+d[n]);console.log('linked:',Object.keys(d).join(', '))"
+      - name: Logs (sign-in token removed)
+        if: always()
+        run: docker compose logs flybot 2>&1 | sed -E 's/token=[^ &)]*/token=REDACTED/g' | tail -n 60
+      - name: Stop
+        if: always()
+        run: docker compose down -v

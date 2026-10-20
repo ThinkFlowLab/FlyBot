@@ -126,8 +126,9 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
-@@ -1,26 +1,65 @@
- import { createElement as h, useRef, useState } from 'react'
+@@ -1,26 +1,107 @@
+-import { createElement as h, useRef, useState } from 'react'
++import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
  import { useMorph } from './motion.js'
  import { MaskedInput } from './secret-card.js'
 +import { ConnectorIcon } from './icons.js'
@@ -138,7 +139,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
  const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 +const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
 +
-+// Common apps; any other Composio app name can be typed under "More apps".
++// Common apps, searched when Composio cannot be asked; any other app is found by the search.
 +const APPS = [
 +  ['gmail', 'Gmail'], ['googlecalendar', 'Google Calendar'], ['googledrive', 'Google Drive'], ['googledocs', 'Google Docs'],
 +  ['googlesheets', 'Google Sheets'], ['outlook', 'Outlook'], ['slack', 'Slack'], ['microsoft_teams', 'Microsoft Teams'],
@@ -147,7 +148,6 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +  ['dropbox', 'Dropbox'], ['hubspot', 'HubSpot'], ['salesforce', 'Salesforce'], ['stripe', 'Stripe'],
 +  ['zoom', 'Zoom'], ['calendly', 'Calendly'], ['figma', 'Figma'], ['twitter', 'X (Twitter)'], ['youtube', 'YouTube'],
 +]
-+const KNOWN = new Set(APPS.map(([slug]) => slug))
 +const appName = slug => APPS.find(([id]) => id === slug)?.[1] ?? slug
  
  export const GitHubMark = () => h('svg', { width: 20, height: 20, viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': true },
@@ -170,20 +170,63 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
  }
  
 -function ConnectorRow({ connector, actions }) {
-+function AppPicker({ apps, onChange }) {
-+  const [more, setMore] = useState(() => apps.filter(app => !KNOWN.has(app)).join(', '))
++// What a picked app needs before a Bot can use it, as Composio last answered.
++const APP_STATUS = { ready: () => t('Ready'), 'sign-in': () => t('Needs sign-in') }
++
++function AppChip({ name, status, onRemove }) {
++  const label = APP_STATUS[status]?.()
++  return h('button', { type: 'button', className: 'bt-state bt-app-chip', 'aria-pressed': true, 'data-status': status ?? 'unknown', title: t('Remove {app}', { app: name }), onClick: onRemove },
++    name, label ? h('span', { className: 'bt-app-status' }, ` · ${label}`) : null)
++}
++
++// The picked apps (each with its status), and a search over Composio's app list to add more.
++// Without a key to search with, or when the search fails, the common apps are searched instead.
++export function AppPicker({ apps, onChange, search, statuses = {} }) {
++  const [query, setQuery] = useState('')
++  const [found, setFound] = useState(null)
++  const [failed, setFailed] = useState(null)
++  const names = useRef(new Map(APPS))
++  const asked = useRef(0)
++  useEffect(() => {
++    const text = query.trim()
++    if (text === '' || search === undefined) { setFound(null); setFailed(null); return undefined }
++    const ask = ++asked.current
++    const timer = setTimeout(() => {
++      search(text).then(list => {
++        if (ask !== asked.current) return
++        for (const app of list) names.current.set(app.slug, app.name)
++        setFound(list)
++        setFailed(null)
++      }, failure => {
++        if (ask !== asked.current) return
++        setFound(null)
++        setFailed(failure?.message ?? String(failure))
++      })
++    }, 250)
++    return () => clearTimeout(timer)
++  }, [query, search])
++  const nameOf = slug => names.current.get(slug) ?? appName(slug)
 +  const picked = new Set(apps)
-+  const toggle = slug => onChange(picked.has(slug) ? apps.filter(app => app !== slug) : [...apps, slug])
-+  // The typed names replace the earlier typed ones; the buttons above keep theirs.
-+  const typed = text => {
-+    setMore(text)
-+    const extra = text.split(/[\s,]+/).map(app => app.trim().toLowerCase()).filter(app => app !== '' && !KNOWN.has(app))
-+    onChange([...new Set([...apps.filter(app => KNOWN.has(app)), ...extra])])
-+  }
++  const needle = query.trim().toLowerCase()
++  const local = APPS.filter(([slug, name]) => needle === '' || slug.includes(needle) || name.toLowerCase().includes(needle)).map(([slug, name]) => ({ slug, name }))
++  const results = (found ?? local).filter(app => !picked.has(app.slug))
 +  return h('div', { className: 'bt-connector-apps' },
-+    h('div', { className: 'bt-states' }, APPS.map(([slug, name]) =>
-+      h('button', { key: slug, type: 'button', className: 'bt-state', 'aria-pressed': picked.has(slug), onClick: () => toggle(slug) }, name))),
-+    h('input', { className: 'bt-input', value: more, spellCheck: false, 'aria-label': t('More apps'), placeholder: t('More apps: type Composio app names, separated by commas'), onChange: event => typed(event.target.value) }))
++    apps.length > 0 ? h('div', { className: 'bt-states', 'aria-label': t('Picked apps') }, apps.map(slug =>
++      h(AppChip, { key: slug, name: nameOf(slug), status: statuses[slug], onRemove: () => onChange(apps.filter(app => app !== slug)) }))) : null,
++    h('input', { className: 'bt-input', type: 'search', value: query, spellCheck: false, 'aria-label': t('Search apps'), placeholder: t('Search Composio apps'), onChange: event => setQuery(event.target.value) }),
++    failed ? h('span', { className: 'bt-set-hint' }, t('Could not search Composio: {error}', { error: failed })) : null,
++    h('div', { className: 'bt-states', 'aria-label': t('Apps to add') }, results.length === 0
++      ? h('span', { className: 'bt-set-hint' }, t('No apps match'))
++      : results.map(app => h('button', { key: app.slug, type: 'button', className: 'bt-state', 'aria-pressed': false, onClick: () => { names.current.set(app.slug, app.name); onChange([...apps, app.slug]) } }, app.name))))
++}
++
++// One line per picked app with whether it is ready or still needs a sign-in.
++export function AppStatusList({ apps, statuses }) {
++  if (apps.length === 0 || Object.keys(statuses).length === 0) return null
++  return h('ul', { className: 'bt-connector-app-list', 'aria-label': t('App status') }, apps.map(slug =>
++    h('li', { key: slug, className: 'bt-connector-app', 'data-status': statuses[slug] ?? 'unknown' },
++      h('span', { className: 'bt-connector-app-name' }, appName(slug)),
++      h('span', { className: 'bt-app-status' }, APP_STATUS[statuses[slug]]?.() ?? ''))))
 +}
 +
 +function ConnectorRow({ connector, roster, actions }) {
@@ -195,11 +238,21 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    const [busy, setBusy] = useState(false)
    const [error, setError] = useState(null)
    const run = (task, after) => {
-@@ -28,14 +28,21 @@ function ConnectorRow({ connector, actions }) {
+@@ -28,14 +28,31 @@ function ConnectorRow({ connector, actions }) {
      setError(null)
      return task.then(() => { after?.() }, failure => setError(failure?.message ?? String(failure))).finally(() => setBusy(false))
    }
 +  const gateway = connector.id === 'composio'
++  const [statuses, setStatuses] = useState({})
++  const appsKey = (connector.apps ?? []).join(',')
++  // Asks Composio which picked apps are signed in, when the row is ready and again when the list changes.
++  useEffect(() => {
++    if (!gateway || connector.state !== 'ready' || appsKey === '' || actions.connectorAppStatus === undefined) { setStatuses({}); return undefined }
++    let live = true
++    actions.connectorAppStatus(connector.id).then(value => { if (live) setStatuses(value ?? {}) }, () => { if (live) setStatuses({}) })
++    return () => { live = false }
++  }, [gateway, connector.state, appsKey, picking])
++  const search = useCallback(query => actions.connectorAppSearch(connector.id, query, connector.state === 'off' ? token : undefined), [connector.id, connector.state, token])
    const connect = () => {
      if (busy || token.trim() === '') return
 -    void run(actions.connectorConnect(connector.id, token), () => { setToken(''); setForm(false) })
@@ -219,7 +272,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
      h('div', { className: 'bt-connector-head' },
        h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
-@@ -44,15 +44,27 @@ function ConnectorRow({ connector, actions }) {
+@@ -44,15 +44,28 @@ function ConnectorRow({ connector, actions }) {
          h('span', { className: 'bt-connector-status' }, statusText(connector))),
        h('span', { className: 'bt-connector-actions' },
          connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
@@ -228,19 +281,20 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
          on
            ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
            : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
++    on && gateway && !picking ? h(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
 +    on ? h('span', { className: 'bt-connector-uses' }, usageText(roster, connector.id)) : null,
 +    on && bots ? h(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
      !on && form ? h('div', { className: 'bt-connector-form' },
 -      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t('GitHub token'), autoFocus: true })),
 +      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t('Composio API key') : t('GitHub token'), autoFocus: true })),
-+      gateway ? h(AppPicker, { apps, onChange: setApps }) : null,
++      gateway ? h(AppPicker, { apps, onChange: setApps, search: token.trim() === '' ? undefined : search }) : null,
        h('div', { className: 'bt-connector-form-row' },
 -        h('a', { className: 'bt-connector-link', href: TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, t('Create a token on GitHub')),
 +        h('a', { className: 'bt-connector-link', href: gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, gateway ? t('Get a Composio API key') : t('Create a token on GitHub')),
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setError(null) } }, t('Cancel')),
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || token.trim() === '', onClick: connect }, busy ? t('Connecting…') : t('Connect')))) : null,
 +    on && gateway && picking ? h('div', { className: 'bt-connector-form' },
-+      h(AppPicker, { apps, onChange: setApps }),
++      h(AppPicker, { apps, onChange: setApps, search, statuses }),
 +      h('span', { className: 'bt-set-hint' }, t('The first time a Bot uses an app, it shows a sign-in link in the chat.')),
 +      h('div', { className: 'bt-connector-form-row' },
 +        h('span', { className: 'bt-connector-link' }),
@@ -466,7 +520,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +105,37 @@ const ZH = {
+@@ -105,17 +105,44 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -476,8 +530,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Connected: {apps}': '已连接：{apps}',
 +  'Composio API key': 'Composio API key',
 +  'Get a Composio API key': '去 Composio 获取 API key',
-+  'More apps': '更多应用',
-+  'More apps: type Composio app names, separated by commas': '更多应用：输入 Composio 应用名，用逗号隔开',
++  'Search apps': '搜索应用',
++  'Search Composio apps': '搜索 Composio 应用',
++  'Could not search Composio: {error}': '无法搜索 Composio：{error}',
++  'No apps match': '没有匹配的应用',
++  'Picked apps': '已选应用',
++  'Apps to add': '可添加的应用',
++  'Remove {app}': '移除 {app}',
++  'App status': '应用状态',
++  'Needs sign-in': '需要登录',
 +  'Choose apps': '选择应用',
 +  'Pick at least one app': '至少选一个应用',
 +  'An app name has only lowercase letters, digits, "_" and "-"': '应用名只能含小写字母、数字、“_”和“-”',
@@ -1528,7 +1589,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +38,398 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,492 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -1633,6 +1694,69 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +  } catch {
 +    return false
 +  }
++}
++
++const MAX_FOUND = 20
++const MAX_QUERY = 64
++
++// Searches Composio's app list (GET /toolkits?search=, `x-api-key`) and returns up to MAX_FOUND
++// { slug, name }, most used first. Only slugs a session can take are returned.
++export async function composioSearchApps(apiKey, { api = COMPOSIO_DEFAULTS.api, query = '', fetch: request = fetch } = {}) {
++  const base = api.replace(/\/$/, '')
++  const params = new URLSearchParams({ sort_by: 'usage', limit: String(MAX_FOUND) })
++  const search = String(query).trim().slice(0, MAX_QUERY)
++  if (search !== '') params.set('search', search)
++  let response
++  try {
++    response = await request(`${base}/toolkits?${params}`, {
++      method: 'GET',
++      headers: { 'x-api-key': apiKey, accept: 'application/json', 'user-agent': 'ds-bot' },
++      redirect: 'error',
++      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
++    })
++  } catch {
++    throw new Error('Could not reach Composio')
++  }
++  if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
++  if (!response.ok) throw new Error(`Composio answered ${response.status}`)
++  const body = await response.json().catch(() => ({}))
++  const items = Array.isArray(body?.items) ? body.items : []
++  const found = new Map()
++  for (const item of items) {
++    const slug = typeof item?.slug === 'string' ? item.slug.toLowerCase() : ''
++    if (!APP_SLUG.test(slug) || found.has(slug)) continue
++    const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 80) : slug
++    found.set(slug, { slug, name })
++  }
++  return [...found.values()].slice(0, MAX_FOUND)
++}
++
++// Asks Composio which of the session's apps are signed in (GET /tool_router/session/{id}/toolkits).
++// Returns { [slug]: 'ready' | 'sign-in' } for the given apps: ready when the app needs no sign-in or
++// has an active connected account, sign-in otherwise (also for an app Composio does not list).
++export async function composioAppStatus(apiKey, { api = COMPOSIO_DEFAULTS.api, id, apps, fetch: request = fetch } = {}) {
++  if (typeof id !== 'string' || !SESSION_ID.test(id)) throw new Error('Connect Composio first')
++  const params = new URLSearchParams({ toolkits: apps.join(','), limit: '50' })
++  let response
++  try {
++    response = await request(`${sessionAddress(api, id)}/toolkits?${params}`, {
++      method: 'GET',
++      headers: { 'x-api-key': apiKey, accept: 'application/json', 'user-agent': 'ds-bot' },
++      redirect: 'error',
++      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
++    })
++  } catch {
++    throw new Error('Could not reach Composio')
++  }
++  if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
++  if (!response.ok) throw new Error(`Composio answered ${response.status}`)
++  const body = await response.json().catch(() => ({}))
++  const ready = new Set()
++  for (const item of Array.isArray(body?.items) ? body.items : []) {
++    const slug = typeof item?.slug === 'string' ? item.slug.toLowerCase() : ''
++    if (item?.is_no_auth === true || String(item?.connected_account?.status ?? '').toUpperCase() === 'ACTIVE') ready.add(slug)
++  }
++  return Object.fromEntries(apps.map(app => [app, ready.has(app) ? 'ready' : 'sign-in']))
 +}
 +
 +// What state.json keeps of a session: its id and apps, never the address (see composioSessionFind).
@@ -1911,8 +2035,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [oldToken, token] })
 +      await sync(c)
-+      return connectorsView()
-+    },
+       return connectorsView()
+     },
 +    // Changes which apps a connected gateway offers, without asking for the key again.
 +    async 'connector-apps'(body) {
 +      const c = known(body.id)
@@ -1931,8 +2055,39 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [token] })
 +      await sync(c)
-       return connectorsView()
-     },
++      return connectorsView()
++    },
++    // Searches Composio's app list: with the saved key, or before connecting with the key being pasted
++    // (sent only to Composio, never saved by this call).
++    async 'connector-app-search'(body) {
++      const c = known(body.id)
++      if (c.def.id !== COMPOSIO) throw new Error('This connector has no apps to pick')
++      if (c.insecure) throw new Error(INSECURE(c.def.name))
++      await rt.loadSecrets()
++      const pasted = typeof body.token === 'string' ? body.token.trim() : ''
++      const token = pasted !== '' ? pasted : rt.secretValue(c.def.secret)
++      if (token === undefined) throw new Error('Paste a key first')
++      try {
++        return await composioSearchApps(token, { api: c.options.api, query: typeof body.query === 'string' ? body.query : '' })
++      } catch (error) {
++        throw new Error(reason(error))
++      }
++    },
++    // Whether each picked app is signed in on Composio yet.
++    async 'connector-app-status'(body) {
++      const c = known(body.id)
++      if (c.def.id !== COMPOSIO) throw new Error('This connector has no apps to pick')
++      if (c.insecure) throw new Error(INSECURE(c.def.name))
++      await rt.loadSecrets()
++      const token = rt.secretValue(c.def.secret)
++      const record = saved(c)
++      if (token === undefined || record?.session?.id === undefined) throw new Error('Connect Composio first')
++      try {
++        return await composioAppStatus(token, { api: c.options.api, id: record.session.id, apps: cleanApps(record.apps) })
++      } catch (error) {
++        throw new Error(reason(error))
++      }
++    },
      async 'connector-disconnect'(body) {
 -      known(body.id)
 +      const c = known(body.id)
@@ -3105,7 +3260,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  import { test } from 'node:test'
  import { apply } from '../index.js'
 -import { signIn } from '../src/host/connectors.js'
-+import { cleanApps, composioDeleteSession, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
++import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
  import { fakeContext } from './fake-ctx.js'
  
  const fresh = () => `ghp_${randomBytes(16).toString('hex')}`
@@ -3196,7 +3351,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -172,3 +172,457 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -172,3 +172,562 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    assert.equal(asked, false)
    assert.equal(mounts.length, 0)
  })
@@ -3653,6 +3808,111 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  const composio = result.value.find(entry => entry.id === 'composio')
 +  assert.equal(composio.state, 'error')
 +  assert.equal(composio.error, 'cannot reach [session address]')
++})
++
++// --- #359: search Composio's app list, and show whether each picked app is signed in ---
++
++test('composioSearchApps asks Composio\'s app list with the key only in the header, and keeps only slugs a session can take', async () => {
++  const key = composioKey()
++  const requests = []
++  const fetch = async (url, init) => {
++    requests.push({ url, init })
++    return answer(200, { items: [
++      { slug: 'gmail', name: 'Gmail' }, { slug: 'GMAIL', name: 'Gmail again' }, { slug: 'google sheets', name: 'Bad' },
++      { slug: 'googlesheets', name: '  ' }, { name: 'No slug' }, null,
++    ] })
++  }
++  const found = await composioSearchApps(key, { api: 'https://composio.test/api/v3.1/', query: '  g mail ', fetch })
++  assert.deepEqual(found, [{ slug: 'gmail', name: 'Gmail' }, { slug: 'googlesheets', name: 'googlesheets' }])
++  const url = new URL(requests[0].url)
++  assert.equal(url.origin + url.pathname, 'https://composio.test/api/v3.1/toolkits')
++  assert.equal(url.searchParams.get('search'), 'g mail')
++  assert.equal(url.searchParams.get('sort_by'), 'usage')
++  assert.equal(url.searchParams.get('limit'), '20')
++  assert.ok(!requests[0].url.includes(key))
++  assert.equal(requests[0].init.headers['x-api-key'], key)
++  assert.equal(requests[0].init.redirect, 'error')
++  await composioSearchApps(key, { api: 'https://composio.test/api/v3.1', query: 'x'.repeat(200), fetch })
++  assert.equal(new URL(requests[1].url).searchParams.get('search').length, 64)
++  await composioSearchApps(key, { api: 'https://composio.test/api/v3.1', fetch })
++  assert.equal(new URL(requests[2].url).searchParams.has('search'), false)
++  await assert.rejects(composioSearchApps(key, { fetch: async () => answer(401, {}) }), /did not accept/)
++  await assert.rejects(composioSearchApps(key, { fetch: async () => answer(500, {}) }), /answered 500/)
++  await assert.rejects(composioSearchApps(key, { fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
++  assert.deepEqual(await composioSearchApps(key, { fetch: async () => answer(200, {}) }), [])
++})
++
++test('composioAppStatus reads the session\'s apps: ready when signed in or no sign-in is needed, needs sign-in otherwise', async () => {
++  const key = composioKey()
++  const requests = []
++  const fetch = async (url, init) => {
++    requests.push({ url, init })
++    return answer(200, { items: [
++      { slug: 'gmail', is_no_auth: false, connected_account: { id: 'ca_1', status: 'ACTIVE' } },
++      { slug: 'slack', is_no_auth: false, connected_account: { id: 'ca_2', status: 'INITIATED' } },
++      { slug: 'hackernews', is_no_auth: true, connected_account: null },
++      { slug: 'notion', is_no_auth: false, connected_account: null },
++    ] })
++  }
++  const status = await composioAppStatus(key, { api: 'https://composio.test/api/v3.1', id: 'trs_1', apps: ['gmail', 'slack', 'hackernews', 'notion', 'linear'], fetch })
++  assert.deepEqual(status, { gmail: 'ready', slack: 'sign-in', hackernews: 'ready', notion: 'sign-in', linear: 'sign-in' })
++  const url = new URL(requests[0].url)
++  assert.equal(url.origin + url.pathname, 'https://composio.test/api/v3.1/tool_router/session/trs_1/toolkits')
++  assert.equal(url.searchParams.get('toolkits'), 'gmail,slack,hackernews,notion,linear')
++  assert.equal(requests[0].init.headers['x-api-key'], key)
++  assert.ok(!requests[0].url.includes(key))
++  await assert.rejects(composioAppStatus(key, { id: '../x', apps: ['gmail'], fetch }), /Connect Composio first/)
++  assert.equal(requests.length, 1)
++  await assert.rejects(composioAppStatus(key, { id: 'trs_1', apps: ['gmail'], fetch: async () => answer(403, {}) }), /did not accept/)
++})
++
++test('the Connectors page searches apps with the pasted key before connecting (never saving it) and with the saved key after, and shows each app\'s status', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  const sent = fakeComposio(numbered())
++  const searches = []
++  globalThis.fetch = async (url, init) => {
++    const path = new URL(url).pathname
++    if (path.endsWith('/toolkits') && path.includes('/tool_router/session/')) {
++      searches.push({ url, key: init.headers['x-api-key'] })
++      return answer(200, { items: [{ slug: 'gmail', connected_account: { status: 'ACTIVE' } }, { slug: 'notion', connected_account: null }] })
++    }
++    if (path.endsWith('/toolkits')) {
++      searches.push({ url, key: init.headers['x-api-key'] })
++      return answer(200, { items: [{ slug: 'notion', name: 'Notion' }] })
++    }
++    return sent.fetch(url, init)
++  }
++  const { ctx, home } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const key = composioKey()
++
++  const keyless = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not' })
++  assert.equal(keyless.ok, false)
++  assert.match(keyless.error.message, /Paste a key first/)
++  const early = await call(ctx, 'connector-app-status', { id: 'composio' })
++  assert.equal(early.ok, false)
++  assert.match(early.error.message, /Connect Composio first/)
++
++  const pasted = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not', token: ` ${key} ` })
++  assert.equal(pasted.ok, true, JSON.stringify(pasted))
++  assert.deepEqual(pasted.value, [{ slug: 'notion', name: 'Notion' }])
++  assert.equal(searches.at(-1).key, key)
++  assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [], 'a search never saves the key')
++
++  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail', 'notion'] })
++  const after = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not' })
++  assert.equal(after.ok, true)
++  assert.equal(searches.at(-1).key, key)
++  const status = await call(ctx, 'connector-app-status', { id: 'composio' })
++  assert.equal(status.ok, true, JSON.stringify(status))
++  assert.deepEqual(status.value, { gmail: 'ready', notion: 'sign-in' })
++  assert.match(searches.at(-1).url, /\/tool_router\/session\/trs_1\/toolkits\?/)
++  assert.ok(!JSON.stringify(status).includes(key))
++
++  const github = await call(ctx, 'connector-app-search', { id: 'github', query: 'x' })
++  assert.equal(github.ok, false)
++  assert.match(github.error.message, /no apps to pick/)
 +})
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js

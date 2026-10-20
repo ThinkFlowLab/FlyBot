@@ -527,6 +527,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 .bt-connector-others{padding-left:20px}
 .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
+.bt-connector-app-list{list-style:none;margin:0;padding:0 0 0 48px;display:flex;flex-direction:column;gap:2px}
+.bt-connector-app{display:flex;gap:8px;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
+.bt-connector-app-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-app-status{color:var(--bt-ink-3)}
+[data-status=sign-in]>.bt-app-status{color:#c46a00}
 
 /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
    shell offers them and CSS-module name suffixes elsewhere. */

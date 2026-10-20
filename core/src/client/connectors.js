@@ -1,4 +1,4 @@
-import { createElement as h, useRef, useState } from 'react'
+import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
 import { useMorph } from './motion.js'
 import { MaskedInput } from './secret-card.js'
 import { ConnectorIcon } from './icons.js'
@@ -9,7 +9,7 @@ import { t } from './i18n.js'
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
 
-// Common apps; any other Composio app name can be typed under "More apps".
+// Common apps, searched when Composio cannot be asked; any other app is found by the search.
 const APPS = [
   ['gmail', 'Gmail'], ['googlecalendar', 'Google Calendar'], ['googledrive', 'Google Drive'], ['googledocs', 'Google Docs'],
   ['googlesheets', 'Google Sheets'], ['outlook', 'Outlook'], ['slack', 'Slack'], ['microsoft_teams', 'Microsoft Teams'],
@@ -18,7 +18,6 @@ const APPS = [
   ['dropbox', 'Dropbox'], ['hubspot', 'HubSpot'], ['salesforce', 'Salesforce'], ['stripe', 'Stripe'],
   ['zoom', 'Zoom'], ['calendly', 'Calendly'], ['figma', 'Figma'], ['twitter', 'X (Twitter)'], ['youtube', 'YouTube'],
 ]
-const KNOWN = new Set(APPS.map(([slug]) => slug))
 const appName = slug => APPS.find(([id]) => id === slug)?.[1] ?? slug
 
 export const GitHubMark = () => h('svg', { width: 20, height: 20, viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': true },
@@ -38,20 +37,63 @@ function statusText(connector) {
   return ABOUT[connector.id]?.() ?? ''
 }
 
-function AppPicker({ apps, onChange }) {
-  const [more, setMore] = useState(() => apps.filter(app => !KNOWN.has(app)).join(', '))
+// What a picked app needs before a Bot can use it, as Composio last answered.
+const APP_STATUS = { ready: () => t('Ready'), 'sign-in': () => t('Needs sign-in') }
+
+function AppChip({ name, status, onRemove }) {
+  const label = APP_STATUS[status]?.()
+  return h('button', { type: 'button', className: 'bt-state bt-app-chip', 'aria-pressed': true, 'data-status': status ?? 'unknown', title: t('Remove {app}', { app: name }), onClick: onRemove },
+    name, label ? h('span', { className: 'bt-app-status' }, ` · ${label}`) : null)
+}
+
+// The picked apps (each with its status), and a search over Composio's app list to add more.
+// Without a key to search with, or when the search fails, the common apps are searched instead.
+export function AppPicker({ apps, onChange, search, statuses = {} }) {
+  const [query, setQuery] = useState('')
+  const [found, setFound] = useState(null)
+  const [failed, setFailed] = useState(null)
+  const names = useRef(new Map(APPS))
+  const asked = useRef(0)
+  useEffect(() => {
+    const text = query.trim()
+    if (text === '' || search === undefined) { setFound(null); setFailed(null); return undefined }
+    const ask = ++asked.current
+    const timer = setTimeout(() => {
+      search(text).then(list => {
+        if (ask !== asked.current) return
+        for (const app of list) names.current.set(app.slug, app.name)
+        setFound(list)
+        setFailed(null)
+      }, failure => {
+        if (ask !== asked.current) return
+        setFound(null)
+        setFailed(failure?.message ?? String(failure))
+      })
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [query, search])
+  const nameOf = slug => names.current.get(slug) ?? appName(slug)
   const picked = new Set(apps)
-  const toggle = slug => onChange(picked.has(slug) ? apps.filter(app => app !== slug) : [...apps, slug])
-  // The typed names replace the earlier typed ones; the buttons above keep theirs.
-  const typed = text => {
-    setMore(text)
-    const extra = text.split(/[\s,]+/).map(app => app.trim().toLowerCase()).filter(app => app !== '' && !KNOWN.has(app))
-    onChange([...new Set([...apps.filter(app => KNOWN.has(app)), ...extra])])
-  }
+  const needle = query.trim().toLowerCase()
+  const local = APPS.filter(([slug, name]) => needle === '' || slug.includes(needle) || name.toLowerCase().includes(needle)).map(([slug, name]) => ({ slug, name }))
+  const results = (found ?? local).filter(app => !picked.has(app.slug))
   return h('div', { className: 'bt-connector-apps' },
-    h('div', { className: 'bt-states' }, APPS.map(([slug, name]) =>
-      h('button', { key: slug, type: 'button', className: 'bt-state', 'aria-pressed': picked.has(slug), onClick: () => toggle(slug) }, name))),
-    h('input', { className: 'bt-input', value: more, spellCheck: false, 'aria-label': t('More apps'), placeholder: t('More apps: type Composio app names, separated by commas'), onChange: event => typed(event.target.value) }))
+    apps.length > 0 ? h('div', { className: 'bt-states', 'aria-label': t('Picked apps') }, apps.map(slug =>
+      h(AppChip, { key: slug, name: nameOf(slug), status: statuses[slug], onRemove: () => onChange(apps.filter(app => app !== slug)) }))) : null,
+    h('input', { className: 'bt-input', type: 'search', value: query, spellCheck: false, 'aria-label': t('Search apps'), placeholder: t('Search Composio apps'), onChange: event => setQuery(event.target.value) }),
+    failed ? h('span', { className: 'bt-set-hint' }, t('Could not search Composio: {error}', { error: failed })) : null,
+    h('div', { className: 'bt-states', 'aria-label': t('Apps to add') }, results.length === 0
+      ? h('span', { className: 'bt-set-hint' }, t('No apps match'))
+      : results.map(app => h('button', { key: app.slug, type: 'button', className: 'bt-state', 'aria-pressed': false, onClick: () => { names.current.set(app.slug, app.name); onChange([...apps, app.slug]) } }, app.name))))
+}
+
+// One line per picked app with whether it is ready or still needs a sign-in.
+export function AppStatusList({ apps, statuses }) {
+  if (apps.length === 0 || Object.keys(statuses).length === 0) return null
+  return h('ul', { className: 'bt-connector-app-list', 'aria-label': t('App status') }, apps.map(slug =>
+    h('li', { key: slug, className: 'bt-connector-app', 'data-status': statuses[slug] ?? 'unknown' },
+      h('span', { className: 'bt-connector-app-name' }, appName(slug)),
+      h('span', { className: 'bt-app-status' }, APP_STATUS[statuses[slug]]?.() ?? ''))))
 }
 
 function ConnectorRow({ connector, roster, actions }) {
@@ -68,6 +110,16 @@ function ConnectorRow({ connector, roster, actions }) {
     return task.then(() => { after?.() }, failure => setError(failure?.message ?? String(failure))).finally(() => setBusy(false))
   }
   const gateway = connector.id === 'composio'
+  const [statuses, setStatuses] = useState({})
+  const appsKey = (connector.apps ?? []).join(',')
+  // Asks Composio which picked apps are signed in, when the row is ready and again when the list changes.
+  useEffect(() => {
+    if (!gateway || connector.state !== 'ready' || appsKey === '' || actions.connectorAppStatus === undefined) { setStatuses({}); return undefined }
+    let live = true
+    actions.connectorAppStatus(connector.id).then(value => { if (live) setStatuses(value ?? {}) }, () => { if (live) setStatuses({}) })
+    return () => { live = false }
+  }, [gateway, connector.state, appsKey, picking])
+  const search = useCallback(query => actions.connectorAppSearch(connector.id, query, connector.state === 'off' ? token : undefined), [connector.id, connector.state, token])
   const connect = () => {
     if (busy || token.trim() === '') return
     if (gateway && apps.length === 0) { setError(t('Pick at least one app')); return }
@@ -95,17 +147,18 @@ function ConnectorRow({ connector, roster, actions }) {
         on
           ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
           : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
+    on && gateway && !picking ? h(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
     on ? h('span', { className: 'bt-connector-uses' }, usageText(roster, connector.id)) : null,
     on && bots ? h(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
     !on && form ? h('div', { className: 'bt-connector-form' },
       h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t('Composio API key') : t('GitHub token'), autoFocus: true })),
-      gateway ? h(AppPicker, { apps, onChange: setApps }) : null,
+      gateway ? h(AppPicker, { apps, onChange: setApps, search: token.trim() === '' ? undefined : search }) : null,
       h('div', { className: 'bt-connector-form-row' },
         h('a', { className: 'bt-connector-link', href: gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, gateway ? t('Get a Composio API key') : t('Create a token on GitHub')),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setError(null) } }, t('Cancel')),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || token.trim() === '', onClick: connect }, busy ? t('Connecting…') : t('Connect')))) : null,
     on && gateway && picking ? h('div', { className: 'bt-connector-form' },
-      h(AppPicker, { apps, onChange: setApps }),
+      h(AppPicker, { apps, onChange: setApps, search, statuses }),
       h('span', { className: 'bt-set-hint' }, t('The first time a Bot uses an app, it shows a sign-in link in the chat.')),
       h('div', { className: 'bt-connector-form-row' },
         h('span', { className: 'bt-connector-link' }),
