@@ -37,6 +37,7 @@
     "src/client/approval-notices.js",
     "test/approval-notices.test.js",
     "src/client/member-status.js",
+    "src/host/approvals.js",
     "test/group-status.test.js",
     "test/member-status.test.js"
   ],

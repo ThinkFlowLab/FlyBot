@@ -177,9 +177,9 @@ test('a card shows exactly one status, as an icon and a word, and its full title
   }
 })
 
-test('an answerable approval has Reject, Allow once and Open; everything else only Open', () => {
+test('an answerable approval has Reject, Allow once, the two Always allow choices (#540) and Open; everything else only Open', () => {
   const labels = card => plain(buttons(draw(card)).map(textOf))
-  assert.deepEqual(labels(cardOf('approval:a1')), ['Reject', 'Allow once', 'Open'])
+  assert.deepEqual(labels(cardOf('approval:a1')), ['Reject', 'Allow once', 'Always allow for this Bot', 'Always allow for this group', 'Open'])
   // DSH's own card in the Bot's chat answers this one; the inbox opens that chat.
   assert.deepEqual(labels(cardOf('approval:a2')), ['Open'])
   // Bot-sent messages are approved in their chat by the owner, never from the inbox.
@@ -192,7 +192,7 @@ test('the card buttons call back with the card and the choice', () => {
   const log = []
   const tree = draw(cardOf('approval:a1'), { onAnswer: (card, choice) => log.push([card.id, choice]), onOpen: card => log.push(['open', card.chat]) })
   for (const button of buttons(tree)) button.props.onClick()
-  assert.deepEqual(log, [['approval:a1', 'reject'], ['approval:a1', 'allow'], ['open', 'r1']])
+  assert.deepEqual(log, [['approval:a1', 'reject'], ['approval:a1', 'allow'], ['approval:a1', 'always-bot'], ['approval:a1', 'always-room'], ['open', 'r1']])
 })
 
 const dialog = (actions) => {
