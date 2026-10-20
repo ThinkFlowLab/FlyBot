@@ -174,7 +174,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  import { t } from './i18n.js'
  import { currentPart, relativeShort } from './text.js'
  
-@@ -25,16 +25,73 @@ const conversationOf = (roster, sessionId) => {
+@@ -25,18 +25,72 @@ const conversationOf = (roster, sessionId) => {
  export function mentionRows(roster, sessionId, query = '') {
    const here = conversationOf(roster, sessionId)
    if (here === null) return null
@@ -185,14 +185,14 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 -    : roster.bots.filter(bot => bot.id !== here.self.id)
 +    ? [
 +        ...here.room.members.map(id => roster.byId[id]).filter(Boolean)
-+          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot)),
++          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name) } : bot)),
 +        ...live.filter(p => p.kind === 'human')
 +          .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role })),
 +        // A remote seat already listed under its handle (a duplicate participant record) is offered once.
 +        ...uniqueBy(live.filter(p => p.remote), p => p.handle || p.id)
 +          .map(p => ({
 +            id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, handle: p.handle,
-+            ...(face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot'), false) } : {}),
++            ...(face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot')) } : {}),
 +          })),
 +      ]
 +    : listedChatBots(roster).filter(bot => bot.id !== here.self.id)
@@ -222,10 +222,11 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +    ...rows.filter(row => !(row.bot && remoteHandles.has(normHandle(remoteRecord(row.bot)?.handle)))),
 +    ...remoteMentionRows(roster, query),
 +  ]
-+}
-+
+ }
+ 
 +const isFaceRoom = room => room?.origin === 'face-to-face'
 +const memberCount = count => t(count === 1 ? '{count} member' : '{count} members', { count })
++const botCount = count => (count === 1 ? t('1 Bot') : t('{count} Bots', { count }))
 +const normHandle = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
 +// A friend's Bot chat in the roster: its remote record (the Bot itself in older rosters).
 +export const remoteRecord = bot => (bot?.remote ? (bot.remote === true ? bot : bot.remote) : null)
@@ -243,16 +244,14 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +    return true
 +  })
 +}
-+// In a face-to-face room a Bot is named as the Members panel names it: "Chief (Ann)",
-+// "Chief (you)" (#229, #305, #384). Only the label changes; the inserted "@Name" stays the
-+// one the room routes on.
-+const faceLabel = (person, bot, mine) => {
-+  if (mine) return t('{bot} (you)', { bot })
-+  if (!person) return bot
-+  return `${bot} (${person})`
- }
- 
++// In a face-to-face room a Bot is named as the Members panel names it, mine and a friend's
++// alike: "Chief (Ann)", "Chief (Bob)" (#229, #305, #384, #457); "(you)" is for a person, never a
++// Bot. Only the label changes; the inserted "@Name" stays the one the room routes on.
++const faceLabel = (person, bot) => (person ? `${bot} (${person})` : bot)
++
  // The chats a message here can reference: every other Bot's chat, then the latest
+ // conversations outside the team. Group chats stay out: a group's Session holds only
+ // the user's messages, so a snapshot of it would miss every Bot's reply.
 @@ -78,14 +78,31 @@ export function atSources({ roster, sessions, launched, iconFor }) {
      order: -20,
      showGroupTitle: false,
@@ -269,8 +268,8 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +        ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
 +        ...(row.remote ? { description: row.remote.handle } : {}),
 +        ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),
-+        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-+        ...(row.room ? { description: face ? t('Every Bot in this room') : memberCount(row.count) } : {}),
++        // A face room counts the Bots in it, mine and everyone else's (#305, #457).
++        ...(row.room ? { description: face ? botCount(row.count) : memberCount(row.count) } : {}),
          icon: iconFor(row),
          section: t('Bots'),
          value: row.text,
@@ -402,7 +401,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -2,12 +2,17 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
+@@ -2,12 +2,18 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
  import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
@@ -415,7 +414,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { SecretToolCell } from './secret-card.js'
  import { dateLocale, t } from './i18n.js'
 +import { remoteMessageText } from './flybot-registry.js'
-+import { isListedRemoteChat, remoteBotTitle } from '../shared/remote-label.js'
++import { isListedRemoteChat, normRemoteHandle, remoteBotTitle } from '../shared/remote-label.js'
++import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 +import { fileSize } from './flybot-slots.js'
 +import { HeldReplyActions } from './held-reply.js'
 +import { call } from './api.js'
@@ -524,7 +524,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  }
  
  function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
-@@ -170,16 +170,171 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+@@ -170,16 +170,183 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
    return h('div', { className: 'bt-event' }, parts)
  }
  
@@ -583,7 +583,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 -  return h('div', { className: 'bt-group-msg' },
 -    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
 -      room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null),
-+  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
++  // In a face room my Bot reads as everyone's does, "Chief (Ann)" (#457).
++  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, faceBotLabel(room, roster, bot) ?? bot.name,
 +    room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
 +  return h('div', { className: 'bt-group-msg' }, name,
      h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
@@ -596,10 +597,16 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  const handle = source.remote.handle
 +  const member = (roster.remoteBots ?? []).find(bot => bot.handle === handle)
 +  const chat = (roster.bots ?? []).find(bot => bot.remote?.handle === handle)
++  const room = roster.roomsById?.[sessionId]
 +  // In a face-to-face room the Bot's seat carries its owner's look (Bot Social members[]): the
 +  // bubble draws that look, as the Members panel and the waiting tiles do (#182).
-+  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle)
-+  const name = remoteBotTitle({
++  const seat = faceSeatLook(room, handle)
++  // ...and its name, as Members and the @ menu name it: "Chief (Bob)", never a stored label plus a
++  // lowercase id from its handle (#457). A seat that left still names it.
++  const faceSeat = room?.origin === 'face-to-face'
++    ? faceSeats(room, roster, { left: true }).find(item => !item.mine && normRemoteHandle(item.record?.handle) === normRemoteHandle(handle))
++    : undefined
++  const name = faceSeat ? faceSeatLabel(faceSeat) : remoteBotTitle({
 +    displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
 +    ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
 +    handle,
@@ -631,6 +638,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +const cleanCarrier = value => (typeof value === 'string' && value.trim() && !/[@()]/.test(value) ? value.trim() : '')
 +
 +export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
++  const room = roster.roomsById?.[sessionId]
++  const face = room?.origin === 'face-to-face'
 +  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId)
 +  const files = Array.isArray(source.attachments) ? source.attachments : []
 +  // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
@@ -649,8 +658,11 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +    ? h('button', { type: 'button', className: 'bt-lead', title: handle, 'aria-label': t("Open {name}'s chat", { name }), onClick: () => actions.openSession(chatId) }, mark)
 +    : h('span', { className: 'bt-lead', title: handle }, mark)
 +  return h('div', { className: 'bt-group-msg bt-remote-msg', 'data-remote': handle },
-+    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
-+      h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
++    // A face room's header is the one name alone; the handle is on hover only (#457).
++    face
++      ? h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) }, title: handle }, name)
++      : h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
++        h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
 +    h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 +}
@@ -798,7 +810,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const [live, setLive] = useState({ replies: [], speaking: null })
    useEffect(() => {
      if (done) return undefined
-@@ -571,11 +571,19 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -571,11 +571,21 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
      replies.map((reply, index) => {
        const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
        if (reply.kind === 'user') {
@@ -810,10 +822,12 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +        if (reply.other) {
 +          return h(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
 +        }
++        // My own line in a face room has my person mark too, as everyone else's (#457).
 +        return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
 +          who ? h('span', { className: 'bt-uauthor' }, who) : null,
 +          h('div', { className: 'bt-ububble' },
-+          h(MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: 'compact' })))
++          h(MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: 'compact' })),
++          room?.origin === 'face-to-face' ? h('span', { className: 'bt-lead', title: who || undefined }, h(PersonMark, { name: who || undefined })) : null)
        }
        if (reply.kind === 'failed') {
 -        return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event bt-event-error', role: 'status', title: [reply.code, reply.status, reply.text].filter(Boolean).join(' · ') },
@@ -2327,6 +2341,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
+@@ -959,6 +959,7 @@ div:has(> nav [class*="_marks"]){display:none!important}
+ .bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
+ .bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
+ .bt-urow{display:flex;justify-content:flex-end}
++.bt-urow>.bt-lead{align-self:flex-end;margin-left:6px}
+ .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
+ .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
+ .bt-ububble p{margin:0;line-height:22px}
 diff --git a/src/client/user-message.js b/src/client/user-message.js
 --- a/src/client/user-message.js
 +++ b/src/client/user-message.js
@@ -2338,12 +2360,12 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +import { BotMark, PersonMark } from './mark.js'
  import { CheckIcon, CopyIcon } from './icons.js'
  import { dateLocale, t } from './i18n.js'
-+import { faceAliases, remoteBotTitle } from '../shared/remote-label.js'
-+import { faceSeatLabel, faceSeats } from './face-seats.js'
++import { cleanPeerName, faceAliases, remoteBotTitle } from '../shared/remote-label.js'
++import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
-@@ -28,10 +28,55 @@ export function contentParts(content) {
+@@ -28,10 +28,58 @@ export function contentParts(content) {
  }
  
  // In a group only its members are called; elsewhere a mention opens that Bot's chat.
@@ -2374,8 +2396,11 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +function faceMentionables(room, roster, fromFriend) {
 +  const humans = (room.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
 +    .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
-+  const seats = faceSeats(room, roster)
-+  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend)]
++  // The seats of people who left come last: a line sent before the leave still names the Bot it
++  // named, "@Chief (Bob)" stays Bob's Chief and never turns into mine (#457).
++  const all = faceSeats(room, roster, { left: true })
++  const seats = all.filter(seat => !seat.left)
++  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend), ...all.filter(seat => seat.left)]
 +  const bots = ordered.flatMap((seat) => {
 +    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
 +    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
@@ -2421,7 +2446,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
      : h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))))
  }
  
-@@ -87,11 +87,28 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -87,11 +87,34 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
    const referenceLabels = data.referenceLabels ?? []
    const references = openFile && openSkill ? { openFile, openSkill } : undefined
    const steering = node.kind === 'steering'
@@ -2433,18 +2458,24 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  // A person in this home (the host stamps the signed-in member as the author); a friend's Bot
 +  // keeps its own label, so the person mark is never drawn from message text (#229).
 +  const person = incoming && author.authorKind === 'human' && !author.ownerName
-+  const held = Boolean(room && room.origin === 'face-to-face' && !incoming && (room.pendingCount ?? 0) > 0)
++  // In a face-to-face room my own line is a person's line like everyone else's: my name and my
++  // person mark beside it, in the sent colour always. Typing it is the approval (#179), so it is
++  // never drawn as held, whatever else in the room waits for approval (#457).
++  const faceMine = Boolean(room?.origin === 'face-to-face' && !incoming)
++  const myName = faceMine ? (facePeople(room, roster).find(entry => entry.mine)?.name || cleanPeerName(roster.self?.displayName, '') || author?.name || '') : ''
 +  return h('div', {
 +    className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
 +    'data-steering': steering || undefined,
-+    'data-held': held || undefined,
++    'data-face-mine': faceMine || undefined,
 +    'data-author': author?.authorId,
 +    'data-author-kind': author?.authorKind,
 +    'data-author-name': author?.name,
 +  },
 +    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
++    faceMine ? h('span', { className: 'bt-lead', title: myName || undefined }, h(PersonMark, { name: myName || undefined })) : null,
      h('div', { className: 'bt-ustack' },
-+      author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
++      faceMine && myName ? h('span', { className: 'bt-uauthor' }, myName)
++        : author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
        attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
        text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
 -        h(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
@@ -2464,7 +2495,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +.bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
  .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
  .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
-+.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
++.bt-umsg[data-face-mine]>.bt-lead{align-self:flex-end;margin-left:4px}
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
@@ -2668,7 +2699,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 +  const partsA = userTextParts(sent, mentionableBots(onA, 'r', { fromFriend: true }))
 +  assert.equal(partsA[0].bot.id, 'a1')
 +  assert.equal(partsA[0].label, "SelfA's Chief")
-+  assert.equal(partsA[0].bot.mentionLabel, 'Chief (you)')
++  assert.equal(partsA[0].bot.mentionLabel, 'Chief (SelfA)')
 +  // A friend's bare "@Chief" is the friend's own Chief, not mine.
 +  assert.equal(userTextParts('@Chief hi', mentionableBots(onA, 'r', { fromFriend: true }))[0].bot.id, '@chief.selfb.home')
 +  // A friend's Bot that is not in this room is not offered here.
@@ -2779,9 +2810,9 @@ diff --git a/test/user-bubble.test.js b/test/user-bubble.test.js
    assert.equal(declared(body, 'color'), 'var(--bt-user-ink)!important')
  })
 +
-+test('a held face-room outgoing line uses pending styles, not the sent user ink', () => {
++test('#457: my own face-room line is never drawn as held, so its colour does not flip', () => {
 +  const src = readFileSync(new URL('../src/client/user-message.js', import.meta.url), 'utf8')
-+  assert.match(src, /'data-held': held/)
-+  assert.match(src, /\.bt-umsg\[data-held\] \.bt-ubody\{[^}]*color:var\(--bt-ink\)/)
-+  assert.doesNotMatch(src, /\.bt-umsg\[data-held\] \.bt-ubody\{[^}]*color:var\(--bt-user-ink\)/)
++  assert.doesNotMatch(src, /'data-held'/)
++  assert.doesNotMatch(src, /\.bt-umsg\[data-held\]/)
++  assert.doesNotMatch(src, /pendingCount/)
 +})

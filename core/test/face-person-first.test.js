@@ -75,12 +75,13 @@ test('one entry per person, mine first, "(you)" only on the person, count = peop
   const opened = []
   const row = expand(FacePersonRow({ person: people[1], onOpenBot: id => opened.push(id) }), ['PersonMark'])
   assert.equal(row.props['data-flybot'], 'face-person')
-  assert.equal(find(row, n => n.props?.className === 'bt-person-mark').length, 1, 'a person mark, not a Bot avatar')
-  assert.match(text(row), /^SelfA0056Chief, Researcher$/)
+  assert.equal(find(row, n => String(n.props?.className ?? '').split(' ').includes('bt-person-mark')).length, 1, 'a person mark, not a Bot avatar')
+  const words = node => text(find(node, n => n.props?.className === 'bt-face-person-text')[0])
+  assert.match(words(row), /^SelfA0056Chief, Researcher$/)
   assert.equal(find(row, n => n.type === 'button').length, 0, "another person's Bots are not my chats")
   const mine = expand(FacePersonRow({ person: people[0], onOpenBot: id => opened.push(id) }), ['PersonMark'])
   assert.equal(mine.props['data-mine'], true)
-  assert.match(text(mine), /^SelfB0056 \(you\)Chief$/)
+  assert.match(words(mine), /^SelfB0056 \(you\)Chief$/)
   find(mine, n => n.type === 'button')[0].props.onClick()
   assert.deepEqual(opened, ['b1'], 'my own Bot opens its chat')
   // No Bot is ever "(you)".
@@ -110,7 +111,7 @@ test('a sent mention stays bound to the Bot it named after that person leaves', 
 test('a Bot bubble header in a face room is "Bot (Person)", no handle and no lowercase id', () => {
   const roster = onB()
   const source = { remote: { handle: '@researcher.selfa0056.home' }, senderName: 'Researcher · SelfA0056' }
-  assert.equal(remoteSpeaker(source, roster, roster.roomsById.r).name, 'Researcher (SelfA0056)')
+  assert.equal(remoteSpeaker(source, roster, 'r').name, 'Researcher (SelfA0056)')
   const drawn = RemoteMessage({ source, text: 'Try the noodles.', roster, actions: {}, sessionId: 'r' })
   const header = find(drawn, n => n.props?.className === 'bt-group-name')[0]
   assert.equal(text(header), 'Researcher (SelfA0056)')
@@ -118,7 +119,7 @@ test('a Bot bubble header in a face room is "Bot (Person)", no handle and no low
   assert.equal(find(drawn, n => n.props?.className === 'bt-remote-handle').length, 0)
   // Still named after the person left.
   const gone = onB([seatB, { ...researcherA, leftSeq: 3 }])
-  assert.equal(remoteSpeaker(source, gone, gone.roomsById.r).name, 'Researcher (SelfA0056)')
+  assert.equal(remoteSpeaker(source, gone, 'r').name, 'Researcher (SelfA0056)')
 })
 
 test('my own face-room line keeps one colour and has my name and person mark', () => {
@@ -127,6 +128,6 @@ test('my own face-room line keeps one colour and has my name and person mark', (
   const cell = expand(UserMessageCell({ node, sessionId: 'r', useRoster: select => select(roster), actions: {} }), ['PersonMark'])
   assert.equal(cell.props['data-held'], undefined, 'a Bot reply waiting elsewhere in the room does not grey my line')
   assert.equal(cell.props['data-face-mine'], true)
-  assert.equal(find(cell, n => n.props?.className === 'bt-person-mark').length, 1)
+  assert.equal(find(cell, n => String(n.props?.className ?? '').split(' ').includes('bt-person-mark')).length, 1)
   assert.equal(text(find(cell, n => n.props?.className === 'bt-uauthor')[0]), 'SelfB0056')
 })

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { faceMenuCss, planFaceMenu, watchFaceMenu } from '../src/client/face-at-filter.js'
 
 const bots = (status = 'ready') => ({ source: 'ds-bot', status, items: [
-  { name: 'Chief (you)', icon: 'bot', section: 'Bots', value: '@Chief ' },
+  { name: 'Chief (SelfB)', icon: 'bot', section: 'Bots', value: '@Chief ' },
   { name: 'Helper (SelfB)', icon: 'bot', section: 'Bots', value: '@Helper ' },
 ] })
 const reference = (status = 'ready', files = 1) => ({ source: 'reference', status, showGroupTitle: false, items: [

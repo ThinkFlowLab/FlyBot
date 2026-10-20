@@ -212,15 +212,12 @@ diff --git a/client.js b/client.js
    "Add to group chat": "加入群聊",
    "Message Bot": "给 Bot 发消息",
    "To:": "发给：",
-@@ -185,8 +185,11 @@ var ZH = {
-   "Admin leads": "管理员主持",
-   "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
+@@ -187,6 +187,8 @@ var ZH = {
    Everyone: "所有人",
-+  "Every Bot in this room": "房间里的所有 Bot",
    "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
    "Members · {count}": "成员 · {count}",
 +  "{name} (you)": "{name}（你）",
-+  "{bot} (you)": "{bot}（你的）",
++  Someone: "某人",
    "Leave the group without an admin": "让群聊不设管理员",
    Unset: "取消",
    "Make admin": "设为管理员",
@@ -1776,15 +1773,7 @@ diff --git a/client.js b/client.js
 +    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  }
 +  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
- }
--function previewOf(list, id, hiddenTurns = []) {
--  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
--  if (!Array.isArray(outline)) return "";
--  for (let index = outline.length - 1; index >= 0; index -= 1) {
--    const entry = outline[index];
--    if (hiddenTurns.includes(entry.turn)) continue;
--    const text = entry.response || entry.prompt || "";
--    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
++}
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
@@ -1796,21 +1785,17 @@ diff --git a/client.js b/client.js
 +    const count = (own[callId] ?? 0) + delta;
 +    if (count > 0) own[callId] = count;
 +    else delete own[callId];
-   }
--  return "";
++  }
 +  return { ...state, [sessionId]: own };
  }
--var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
--function usageOf(list, ids) {
--  let input = 0;
--  let cacheRead = 0;
--  let output = 0;
--  for (const id of ids) {
--    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
--    if (!usage) continue;
--    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
--    cacheRead += usage.cacheReadTokens ?? 0;
--    output += usage.outputTokens ?? 0;
+-function previewOf(list, id, hiddenTurns = []) {
+-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-  if (!Array.isArray(outline)) return "";
+-  for (let index = outline.length - 1; index >= 0; index -= 1) {
+-    const entry = outline[index];
+-    if (hiddenTurns.includes(entry.turn)) continue;
+-    const text = entry.response || entry.prompt || "";
+-    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
 +
 +// src/client/themes.js
 +var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
@@ -1835,9 +1820,7 @@ diff --git a/client.js b/client.js
 +    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 +    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
    }
--  if (input + output === 0) return "";
--  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
--  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
+-  return "";
 +};
 +var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 +function themeVars(mode, dark, accent = mode.accent) {
@@ -1860,7 +1843,18 @@ diff --git a/client.js b/client.js
 +    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
 +    "--bt-tag-ink": rgba(mode.text, 0.58)
 +  };
-+}
+ }
+-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+-function usageOf(list, ids) {
+-  let input = 0;
+-  let cacheRead = 0;
+-  let output = 0;
+-  for (const id of ids) {
+-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+-    if (!usage) continue;
+-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+-    cacheRead += usage.cacheReadTokens ?? 0;
+-    output += usage.outputTokens ?? 0;
 +var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 +var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
 +html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
@@ -1908,7 +1902,10 @@ diff --git a/client.js b/client.js
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
 +    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-+  }
+   }
+-  if (input + output === 0) return "";
+-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 +  const previous = customThemes[id];
 +  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
 +  registry3.set((value) => value + 1);
@@ -2238,6 +2235,14 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
+@@ -2776,6 +2776,7 @@ div:has(> nav [class*="_marks"]){display:none!important}
+ .bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
+ .bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
+ .bt-urow{display:flex;justify-content:flex-end}
++.bt-urow>.bt-lead{align-self:flex-end;margin-left:6px}
+ .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
+ .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
+ .bt-ububble p{margin:0;line-height:22px}
 @@ -2855,226 +2855,208 @@ function installCompiledStyles(text, tag) {
    };
  }
@@ -2342,6 +2347,20 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
+-}
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
+-  );
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -2373,19 +2392,13 @@ diff --git a/client.js b/client.js
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2395,7 +2408,9 @@ diff --git a/client.js b/client.js
 +    if (!owner || seen.has(key)) continue;
 +    seen.add(key);
 +    out.push(owner);
-+  }
+   }
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 +  return out.slice(0, 3);
 +}
@@ -2420,13 +2435,18 @@ diff --git a/client.js b/client.js
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
  }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2453,9 +2473,7 @@ diff --git a/client.js b/client.js
 +      handle: bot.remote.handle,
 +      isChief: bot.remote.isChief
 +    });
-   }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
++  }
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
@@ -2477,19 +2495,7 @@ diff --git a/client.js b/client.js
 +    offSessions?.();
 +    offRoster?.();
 +  };
- }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
++}
 +function installBrandChrome() {
 +  if (typeof document === "undefined") return () => {
 +  };
@@ -3321,10 +3327,69 @@ diff --git a/client.js b/client.js
    ];
  }
  var SECRET_CSS = `
-@@ -3756,6 +3756,83 @@ var SECRET_CSS = `
+@@ -3756,6 +3756,142 @@ var SECRET_CSS = `
  @media (prefers-reduced-motion:reduce){.bt-secret-glide{transition:none}.bt-secret-check,.bt-secret-done,.bt-secret-ok,.bt-secret-edit{animation:none}}
  `;
  
++// src/client/face-seats.js
++function faceSeats(room2, roster, { left = false } = {}) {
++  const records = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human");
++  const seat = (p) => {
++    const local = p.remote ? void 0 : roster.byId[p.id];
++    return {
++      key: p.handle || p.id,
++      local,
++      record: p,
++      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, "") : ownerNameOf(p),
++      bot: local ? local.name : cleanPeerName(p.displayName || p.name, "Bot"),
++      mine: Boolean(local)
++    };
++  };
++  const seats = records.filter((p) => p.leftSeq === void 0).map(seat);
++  for (const id of room2.members ?? []) {
++    const bot = roster.byId[id];
++    if (!bot || seats.some((item) => item.local?.id === id)) continue;
++    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ""), bot: bot.name, mine: true });
++  }
++  if (!left) return seats;
++  const gone = records.filter((p) => p.leftSeq !== void 0 && !seats.some((item) => item.key === (p.handle || p.id))).map((item) => ({ ...seat(item), left: true }));
++  return [...seats, ...gone];
++}
++function faceSeatLabel(seat) {
++  if (!seat.person) return seat.bot;
++  return `${seat.bot} (${seat.person})`;
++}
++function faceBotLabel(room2, roster, bot) {
++  if (room2?.origin !== "face-to-face" || !bot) return bot?.name;
++  const seat = faceSeats(room2, roster, { left: true }).find((item) => item.local?.id === bot.id || item.record?.id !== void 0 && item.record.id === bot.id);
++  return seat ? faceSeatLabel(seat) : bot.name;
++}
++function facePersonKey(seat) {
++  if (seat.mine) return ":you";
++  const record = seat.record ?? {};
++  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
++  if (home) return `home:${home}`;
++  const parts = String(record.handle || "").trim().toLowerCase().replace(/^@+/, "").split(".");
++  if (parts.length >= 3 && parts.at(-1) === "home") return `home:${parts.slice(-2).join(".")}`;
++  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`;
++}
++function facePeople(room2, roster) {
++  const people = [];
++  for (const seat of faceSeats(room2, roster)) {
++    const key = facePersonKey(seat);
++    const known = people.find((person) => person.key === key);
++    if (known) {
++      known.seats.push(seat);
++      continue;
++    }
++    people.push({ key, name: seat.person || (seat.mine ? cleanPeerName(roster.self?.displayName, "") : "") || t("Someone"), mine: seat.mine, seats: [seat] });
++  }
++  return [...people.filter((person) => person.mine), ...people.filter((person) => !person.mine)];
++}
++function facePersonLabel(person) {
++  return person.mine ? t("{name} (you)", { name: person.name }) : person.name;
++}
++
 +// src/client/held-reply.js
 +var import_react7 = require("react");
 +var call3 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -3585,7 +3650,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,225 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,61 +3940,230 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -3699,7 +3764,7 @@ diff --git a/client.js b/client.js
 +  const name = (0, import_react8.createElement)(
 +    "span",
 +    { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
-+    bot.name,
++    faceBotLabel(room2, roster, bot) ?? bot.name,
 +    room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +  );
 +  return (0, import_react8.createElement)(
@@ -3714,8 +3779,10 @@ diff --git a/client.js b/client.js
 +  const handle = source.remote.handle;
 +  const member = (roster.remoteBots ?? []).find((bot2) => bot2.handle === handle);
 +  const chat = (roster.bots ?? []).find((bot2) => bot2.remote?.handle === handle);
-+  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle);
-+  const name = remoteBotTitle({
++  const room2 = roster.roomsById?.[sessionId];
++  const seat = faceSeatLook(room2, handle);
++  const faceSeat = room2?.origin === "face-to-face" ? faceSeats(room2, roster, { left: true }).find((item) => !item.mine && normRemoteHandle(item.record?.handle) === normRemoteHandle(handle)) : void 0;
++  const name = faceSeat ? faceSeatLabel(faceSeat) : remoteBotTitle({
 +    displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
 +    ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
 +    handle,
@@ -3741,6 +3808,8 @@ diff --git a/client.js b/client.js
 +}
 +var cleanCarrier = (value) => typeof value === "string" && value.trim() && !/[@()]/.test(value) ? value.trim() : "";
 +function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
++  const room2 = roster.roomsById?.[sessionId];
++  const face = room2?.origin === "face-to-face";
 +  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
 +  const files = Array.isArray(source.attachments) ? source.attachments : [];
 +  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
@@ -3764,7 +3833,8 @@ diff --git a/client.js b/client.js
 +  return (0, import_react8.createElement)(
 +    "div",
 +    { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
-+    (0, import_react8.createElement)(
++    // A face room's header is the one name alone; the handle is on hover only (#457).
++    face ? (0, import_react8.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) }, title: handle }, name) : (0, import_react8.createElement)(
        "span",
        { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
 -      bot.name,
@@ -4128,7 +4198,7 @@ diff --git a/client.js b/client.js
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4366,66 +4366,92 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -4366,66 +4366,93 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
    const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
    if (replies.length === 0 && pending.length === 0) return null;
    const room2 = roster.roomsById[sessionId];
@@ -4155,7 +4225,8 @@ diff --git a/client.js b/client.js
 +            "div",
 +            { className: "bt-ububble" },
 +            (0, import_react8.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: "compact" })
-+          )
++          ),
++          room2?.origin === "face-to-face" ? (0, import_react8.createElement)("span", { className: "bt-lead", title: who || void 0 }, (0, import_react8.createElement)(PersonMark, { name: who || void 0 })) : null
 +        );
        }
        if (reply.kind === "failed") {
@@ -5841,7 +5912,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -5922,15 +5922,58 @@ var conversationOf = (roster, sessionId) => {
+@@ -5922,15 +5922,55 @@ var conversationOf = (roster, sessionId) => {
  function mentionRows(roster, sessionId, query = "") {
    const here = conversationOf(roster, sessionId);
    if (here === null) return null;
@@ -5849,7 +5920,7 @@ diff --git a/client.js b/client.js
 +  const face = isFaceRoom(here.room);
 +  const live = (here.room?.participants ?? []).filter((p) => p.leftSeq === void 0);
 +  const bots = here.room ? [
-+    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot),
++    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name) } : bot),
 +    ...live.filter((p) => p.kind === "human").map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role })),
 +    // A remote seat already listed under its handle (a duplicate participant record) is offered once.
 +    ...uniqueBy(live.filter((p) => p.remote), (p) => p.handle || p.id).map((p) => ({
@@ -5858,7 +5929,7 @@ diff --git a/client.js b/client.js
 +      kind: "bot",
 +      remote: p,
 +      handle: p.handle,
-+      ...face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot"), false) } : {}
++      ...face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot")) } : {}
 +    }))
 +  ] : listedChatBots(roster).filter((bot) => bot.id !== here.self.id);
    const needle = query.trim().toLowerCase();
@@ -5881,6 +5952,7 @@ diff --git a/client.js b/client.js
  }
 +var isFaceRoom = (room2) => room2?.origin === "face-to-face";
 +var memberCount = (count) => t(count === 1 ? "{count} member" : "{count} members", { count });
++var botCount = (count) => count === 1 ? t("1 Bot") : t("{count} Bots", { count });
 +var normHandle = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
 +var remoteRecord = (bot) => bot?.remote ? bot.remote === true ? bot : bot.remote : null;
 +var myOwnerName = (roster, live, bot) => {
@@ -5896,11 +5968,7 @@ diff --git a/client.js b/client.js
 +    return true;
 +  });
 +};
-+var faceLabel = (person, bot, mine) => {
-+  if (mine) return t("{bot} (you)", { bot });
-+  if (!person) return bot;
-+  return `${bot} (${person})`;
-+};
++var faceLabel = (person, bot) => person ? `${bot} (${person})` : bot;
  function chatRows(roster, list, sessionId) {
    const here = conversationOf(roster, sessionId);
    if (here === null) return [];
@@ -5920,8 +5988,8 @@ diff --git a/client.js b/client.js
 +        ...row.bot?.role && !face ? { description: row.bot.role } : {},
 +        ...row.remote ? { description: row.remote.handle } : {},
 +        ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
-+        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-+        ...row.room ? { description: face ? t("Every Bot in this room") : memberCount(row.count) } : {},
++        // A face room counts the Bots in it, mine and everyone else's (#305, #457).
++        ...row.room ? { description: face ? botCount(row.count) : memberCount(row.count) } : {},
          icon: iconFor(row),
          section: t("Bots"),
          value: row.text
@@ -8866,7 +8934,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,126 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,112 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -8928,33 +8996,6 @@ diff --git a/client.js b/client.js
    );
  }
  
-+// src/client/face-seats.js
-+function faceSeats(room2, roster) {
-+  const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human" && p.leftSeq === void 0);
-+  const seats = live.map((p) => {
-+    const local = p.remote ? void 0 : roster.byId[p.id];
-+    return {
-+      key: p.handle || p.id,
-+      local,
-+      record: p,
-+      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, "") : ownerNameOf(p),
-+      bot: local ? local.name : cleanPeerName(p.displayName || p.name, "Bot"),
-+      mine: Boolean(local)
-+    };
-+  });
-+  for (const id of room2.members ?? []) {
-+    const bot = roster.byId[id];
-+    if (!bot || seats.some((seat) => seat.local?.id === id)) continue;
-+    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ""), bot: bot.name, mine: true });
-+  }
-+  return seats;
-+}
-+function faceSeatLabel(seat) {
-+  if (seat.mine) return t("{bot} (you)", { bot: seat.bot });
-+  if (!seat.person) return seat.bot;
-+  return `${seat.bot} (${seat.person})`;
-+}
-+
  // src/client/group-settings.js
 -var import_react23 = require("react");
 +var import_react27 = require("react");
@@ -8963,20 +9004,33 @@ diff --git a/client.js b/client.js
    ["everyone", "Everyone", "Every member answers in turn, admin first."]
  ];
  var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
-+var personKey = (seat) => {
-+  const record = seat.record ?? {};
-+  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
-+  if (home) return `home:${home}`;
-+  const parts = String(record.handle || "").trim().toLowerCase().replace(/^@+/, "").split(".");
-+  if (parts.length >= 3 && parts.at(-1) === "home") return `home:${parts.slice(-2).join(".")}`;
-+  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`;
-+};
 +function faceRoomCount(room2, roster) {
-+  const seats = faceSeats(room2, roster);
-+  const people = new Set(seats.map((seat) => seat.mine ? ":you" : personKey(seat)));
-+  const persons = people.size === 1 ? t("1 person") : t("{count} people", { count: people.size });
-+  const bots = seats.length === 1 ? t("1 Bot") : t("{count} Bots", { count: seats.length });
++  const people = facePeople(room2, roster).length;
++  const seats = faceSeats(room2, roster).length;
++  const persons = people === 1 ? t("1 person") : t("{count} people", { count: people });
++  const bots = seats === 1 ? t("1 Bot") : t("{count} Bots", { count: seats });
 +  return `${persons} · ${bots}`;
++}
++function FacePersonRow({ person, onOpenBot, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
++  const bots = person.seats.flatMap((seat, index) => {
++    const name = seat.local && onOpenBot ? (0, import_react27.createElement)("button", { key: seat.key, type: "button", className: "bt-face-bot", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot) : (0, import_react27.createElement)("span", { key: seat.key, className: "bt-face-bot" }, seat.bot);
++    return index === 0 ? [name] : [(0, import_react27.createElement)("span", { key: `${seat.key}-sep` }, t(", ")), name];
++  });
++  return (0, import_react27.createElement)(
++    "div",
++    { className, role: "listitem", "data-flybot": "face-person", "data-mine": person.mine || void 0 },
++    (0, import_react27.createElement)(
++      "span",
++      { className: "bt-gs-who bt-face-person" },
++      (0, import_react27.createElement)(PersonMark, { size, name: person.name }),
++      (0, import_react27.createElement)(
++        "span",
++        { className: "bt-face-person-text" },
++        (0, import_react27.createElement)("span", { className: "bt-row-title" }, facePersonLabel(person)),
++        (0, import_react27.createElement)("span", { className: "bt-face-bots" }, bots)
++      )
++    )
++  );
 +}
  function roomSubtitle(room2, roster) {
 +  if (room2.origin === "face-to-face") return faceRoomCount(room2, roster);
@@ -9000,7 +9054,7 @@ diff --git a/client.js b/client.js
    const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
 -  const outside = roster.bots.filter((bot) => !room2.members.includes(bot.id));
 +  const face = room2.origin === "face-to-face";
-+  const seats = face ? faceSeats(room2, roster) : [];
++  const people = face ? facePeople(room2, roster) : [];
 +  const shared2 = humans.length > 1;
 +  const chiefs = new Set((roster.humans ?? []).map((person) => person.designatedChiefId).filter(Boolean));
 +  const outside = roster.bots.filter((bot) => {
@@ -9070,7 +9124,7 @@ diff --git a/client.js b/client.js
            key: id,
            type: "button",
            "aria-pressed": mode === id,
-@@ -8999,86 +8999,144 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
+@@ -8999,86 +8999,135 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
              if (mode !== id) void update({ mode: id });
            }
          }, t(label)))),
@@ -9094,22 +9148,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react27.createElement)(
-+      Card,
-+      { title: t("Members · {count}", { count: seats.length }) },
-+      seats.map((seat) => (0, import_react27.createElement)(
-+        "div",
-+        { key: seat.key, className: "bt-set-row bt-bs-row bt-gs-member", "data-flybot": "face-seat" },
-+        (0, import_react27.createElement)(
-+          "span",
-+          { className: "bt-gs-who" },
-+          (0, import_react27.createElement)(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false }),
-+          (0, import_react27.createElement)("span", { className: "bt-row-title" }, faceSeatLabel(seat))
-+        )
-+      ))
-+    ) : null,
-+    face ? null : (0, import_react27.createElement)(
        Card,
 -      { title: t("Members · {count}", { count: members.length }) },
++      { title: t("Members · {count}", { count: people.length }) },
++      people.map((person) => (0, import_react27.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))
++    ) : null,
++    face ? null : (0, import_react27.createElement)(
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react27.createElement)(
 +        "div",
@@ -9315,6 +9360,20 @@ diff --git a/client.js b/client.js
      )
    );
  }
+@@ -9156,6 +9156,13 @@ var GROUP_SETTINGS_CSS = `
+ .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .bt-gs-who:hover .bt-row-title{text-decoration:underline;text-underline-offset:2px}
+ .bt-gs-add{gap:8px;color:var(--bt-ink-2)}
++.bt-face-person{cursor:default}
++.bt-face-person:hover .bt-row-title{text-decoration:none}
++.bt-face-person-text{display:flex;flex-direction:column;min-width:0}
++.bt-face-bots{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
++.bt-face-bot{padding:0;border:0;background:none;color:inherit;font:inherit}
++button.bt-face-bot{cursor:pointer}
++button.bt-face-bot:hover{color:var(--bt-ink);text-decoration:underline;text-underline-offset:2px}
+ .bt-gs-pick{gap:10px;animation:bt-rise .16s ease-out}
+ .bt-bs-stack .bt-seg{align-self:stretch}
+ @media (prefers-reduced-motion:reduce){.bt-gs-pick{animation:none}}
 @@ -9277,13 +9277,13 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
    }
    return result;
@@ -11347,7 +11406,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,87 +11367,194 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,87 +11367,191 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -11377,11 +11436,8 @@ diff --git a/client.js b/client.js
    useMorph(body, open);
 -  return (0, import_react31.createElement)(
 +  return (0, import_react35.createElement)(
-     "div",
-     null,
--    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
--    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
--    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
++    "div",
++    null,
 +    (0, import_react35.createElement)("div", { className: "bt-section-title" }, t(title)),
 +    (0, import_react35.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
 +    long ? (0, import_react35.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
@@ -11431,20 +11487,20 @@ diff --git a/client.js b/client.js
 +  );
 +}
 +function FaceMembers({ room: room2, roster, actions }) {
-+  const seats = faceSeats(room2, roster);
++  const people = facePeople(room2, roster);
 +  return (0, import_react35.createElement)(
-+    "div",
-+    null,
-+    (0, import_react35.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: seats.length })),
-+    (0, import_react35.createElement)("div", { className: "bt-members", role: "list" }, seats.map((seat) => {
-+      const label = faceSeatLabel(seat);
-+      const avatar = (0, import_react35.createElement)(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false });
-+      return (0, import_react35.createElement)(
-+        "div",
-+        { key: seat.key, role: "listitem", "data-flybot": "face-seat", "data-mine": seat.mine || void 0 },
-+        (0, import_react35.createElement)("div", { className: "bt-member" }, seat.local ? (0, import_react35.createElement)("button", { type: "button", className: "bt-member-name", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => actions.openSession(seat.local.id) }, avatar, (0, import_react35.createElement)("span", null, label)) : (0, import_react35.createElement)("span", { className: "bt-member-name" }, avatar, (0, import_react35.createElement)("span", null, label)))
-+      );
-+    }))
+     "div",
+     null,
+-    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
+-    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
+-    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
++    (0, import_react35.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: people.length })),
++    (0, import_react35.createElement)("div", { className: "bt-members", role: "list" }, people.map((person) => (0, import_react35.createElement)(FacePersonRow, {
++      key: person.key,
++      person,
++      className: "bt-member",
++      onOpenBot: (id) => actions.openSession(id)
++    })))
    );
  }
  function GroupOverview({ room: room2, roster, actions, usage, useWork, openSettings }) {
@@ -12252,7 +12308,7 @@ diff --git a/client.js b/client.js
  var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
  var canDrawUserMessages = () => typeof ui.projectUserText === "function";
  function contentParts(content) {
-@@ -13119,10 +13119,40 @@ function contentParts(content) {
+@@ -13119,10 +13119,41 @@ function contentParts(content) {
    }
    return { text: texts2.join("\n"), attachments, rest };
  }
@@ -12269,8 +12325,9 @@ diff --git a/client.js b/client.js
 +}
 +function faceMentionables(room2, roster, fromFriend) {
 +  const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
-+  const seats = faceSeats(room2, roster);
-+  const ordered = [...seats.filter((seat) => seat.mine !== fromFriend), ...seats.filter((seat) => seat.mine === fromFriend)];
++  const all = faceSeats(room2, roster, { left: true });
++  const seats = all.filter((seat) => !seat.left);
++  const ordered = [...seats.filter((seat) => seat.mine !== fromFriend), ...seats.filter((seat) => seat.mine === fromFriend), ...all.filter((seat) => seat.left)];
 +  const bots = ordered.flatMap((seat) => {
 +    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: "bot", remote: seat.record };
 +    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person };
@@ -12352,7 +12409,7 @@ diff --git a/client.js b/client.js
  }
  var clock3 = (time) => typeof time === "number" ? new Date(time).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" }) : void 0;
  function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
-@@ -13178,28 +13178,50 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
+@@ -13178,28 +13178,52 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
    const referenceLabels = data.referenceLabels ?? [];
    const references = openFile && openSkill ? { openFile, openSkill } : void 0;
    const steering = node.kind === "steering";
@@ -12362,7 +12419,8 @@ diff --git a/client.js b/client.js
 +  const multiHuman = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).length > 1;
 +  const incoming = author && !author.mine;
 +  const person = incoming && author.authorKind === "human" && !author.ownerName;
-+  const held = Boolean(room2 && room2.origin === "face-to-face" && !incoming && (room2.pendingCount ?? 0) > 0);
++  const faceMine = Boolean(room2?.origin === "face-to-face" && !incoming);
++  const myName = faceMine ? facePeople(room2, roster).find((entry) => entry.mine)?.name || cleanPeerName(roster.self?.displayName, "") || author?.name || "" : "";
 +  return (0, import_react39.createElement)(
      "div",
 -    { className: "bt-umsg", "data-steering": steering || void 0 },
@@ -12370,18 +12428,19 @@ diff --git a/client.js b/client.js
 +    {
 +      className: incoming ? "bt-umsg bt-umsg-other" : "bt-umsg",
 +      "data-steering": steering || void 0,
-+      "data-held": held || void 0,
++      "data-face-mine": faceMine || void 0,
 +      "data-author": author?.authorId,
 +      "data-author-kind": author?.authorKind,
 +      "data-author-name": author?.name
 +    },
 +    person ? (0, import_react39.createElement)("span", { className: "bt-lead", title: author.name }, (0, import_react39.createElement)(PersonMark, { name: author.name })) : null,
++    faceMine ? (0, import_react39.createElement)("span", { className: "bt-lead", title: myName || void 0 }, (0, import_react39.createElement)(PersonMark, { name: myName || void 0 })) : null,
 +    (0, import_react39.createElement)(
        "div",
        { className: "bt-ustack" },
 -      attachments.length > 0 ? (0, import_react34.createElement)(Attachments, { attachments, renderMessageImages }) : null,
 -      text !== "" || rest.length > 0 ? (0, import_react34.createElement)(
-+      author && (incoming || multiHuman) ? (0, import_react39.createElement)("span", { className: "bt-uauthor" }, author.name, author.ownerName ? (0, import_react39.createElement)("span", { className: "bt-chip" }, t("Friend's Bot")) : null) : null,
++      faceMine && myName ? (0, import_react39.createElement)("span", { className: "bt-uauthor" }, myName) : author && (incoming || multiHuman) ? (0, import_react39.createElement)("span", { className: "bt-uauthor" }, author.name, author.ownerName ? (0, import_react39.createElement)("span", { className: "bt-chip" }, t("Friend's Bot")) : null) : null,
 +      attachments.length > 0 ? (0, import_react39.createElement)(Attachments, { attachments, renderMessageImages }) : null,
 +      text !== "" || rest.length > 0 ? (0, import_react39.createElement)(
          "div",
@@ -12408,7 +12467,7 @@ diff --git a/client.js b/client.js
 +.bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
  .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
  .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
-+.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
++.bt-umsg[data-face-mine]>.bt-lead{align-self:flex-end;margin-left:4px}
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
