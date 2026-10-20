@@ -960,6 +960,9 @@ export function install(rt) {
     fields,
     // True while another dsh holds the team: plugins then only read (no polling, no writes).
     readOnly: () => rt.readOnly() !== undefined,
+    // True while a FlyBot window on screen reads the team (#497): a plugin that polls a remote inbox
+    // reads it at its live cadence then, so what arrives shows in that window within seconds.
+    watched: () => rt.watched?.() === true,
     // Resolves once ds-bot's saved team is loaded, so bot.list() has every Bot.
     ready: () => rt.load().then(() => undefined),
     on: onFor(plugin),

@@ -1,0 +1,1 @@
+A friend's message to one of your Bots, the reply waiting for your approval, the Inbox count and the unread badge now show up in an open FlyBot window within a few seconds, instead of up to 15 seconds later, which looked like it needed a reload ([#497](https://github.com/ThinkFlowLab/FlyBot/issues/497)).

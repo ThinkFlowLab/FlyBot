@@ -1009,7 +1009,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,61 @@
+@@ -1,44 +1,62 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -1046,6 +1046,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { USAGE_CSS } from './usage-page.js'
  import { SCHEDULE_CSS } from './schedules.js'
 +import { INBOX_CSS } from './inbox.js'
++import { MOBILE_CSS } from './mobile.js'
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -1109,6 +1110,16 @@ diff --git a/src/client/index.js b/src/client/index.js
    const refreshed = new Set()
    // Pulls can overlap (the poll and a navigation); an older answer never wins.
    let pulls = 0
+@@ -132,7 +132,8 @@ export function apply(ctx) {
+   const pull = async () => {
+     const order = ++pulls
+     const known = roster.getSnapshot()
+-    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language() })
++    // `watching`: this window is on screen, so the host reads friends' inboxes at the live cadence (#497).
++    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language(), watching: !document.hidden })
+     if (order < applied) return
+     applied = order
+     const nextActivity = JSON.stringify(value.activity ?? {})
 @@ -145,11 +145,14 @@ export function apply(ctx) {
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
@@ -1296,7 +1307,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,11 +752,13 @@ export function apply(ctx) {
+@@ -752,27 +752,33 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1310,8 +1321,10 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    installCompiledStyles(FLYBOT_CSS, 'flybot'),
      installCompiledStyles(MEMBER_CSS, 'members'),
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
++    installCompiledStyles(MOBILE_CSS, 'mobile'),
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
-@@ -765,14 +765,17 @@ export function apply(ctx) {
+     installTheme(),
+     shadow('sidebar.workspaces', { priority: -10, inject: face }, TeamSidebar),
      shadow('sidebar.brand.mark', { priority: -10 }, BrandMark),
      shadow('sidebar.brand.name', { priority: -10 }, BrandName),
      shadow('sidebar.footer.action', { id: 'bot-account', order: -200, inject: face }, FooterAccount),
