@@ -221,7 +221,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
-@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto'
+@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
  import { questionReply } from './parts.js'
  import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
@@ -229,8 +229,10 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +import { faceMentions } from './face-mentions.js'
 +import { unwrapUntrusted } from './delivery.js'
  
++const NOTIFY_KINDS = ['approval', 'finished', 'failed']
  const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
  
+ const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 @@ -21,14 +21,21 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
@@ -385,7 +387,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,44 @@ export function install(rt) {
+@@ -97,28 +97,57 @@ export function install(rt) {
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -394,6 +396,19 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      if (body.notifications === null || body.notifications === true) delete state.prefs.notifications
 +      else if (body.notifications === false) state.prefs.notifications = false
 +      else throw invalid('Notifications must be on or off')
++    }
++    // Each kind is on unless switched off on its own; only the off ones are kept (#469).
++    if (body.notify !== undefined) {
++      const kinds = body.notify
++      if (kinds === null || typeof kinds !== 'object' || Array.isArray(kinds)) throw invalid('Notifications must be on or off')
++      const notify = { ...state.prefs.notify }
++      for (const [kind, on] of Object.entries(kinds)) {
++        if (!NOTIFY_KINDS.includes(kind) || typeof on !== 'boolean') throw invalid('Notifications must be on or off')
++        if (on) delete notify[kind]
++        else notify[kind] = false
++      }
++      if (Object.keys(notify).length > 0) state.prefs.notify = notify
++      else delete state.prefs.notify
 +    }
      return rt.save()
    }

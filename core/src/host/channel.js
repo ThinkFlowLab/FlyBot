@@ -7,6 +7,7 @@ import { isFaceRoom } from './room-membership.js'
 import { faceMentions } from './face-mentions.js'
 import { unwrapUntrusted } from './delivery.js'
 
+const NOTIFY_KINDS = ['approval', 'finished', 'failed']
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
@@ -175,6 +176,19 @@ export function install(rt) {
       if (body.notifications === null || body.notifications === true) delete state.prefs.notifications
       else if (body.notifications === false) state.prefs.notifications = false
       else throw invalid('Notifications must be on or off')
+    }
+    // Each kind is on unless switched off on its own; only the off ones are kept (#469).
+    if (body.notify !== undefined) {
+      const kinds = body.notify
+      if (kinds === null || typeof kinds !== 'object' || Array.isArray(kinds)) throw invalid('Notifications must be on or off')
+      const notify = { ...state.prefs.notify }
+      for (const [kind, on] of Object.entries(kinds)) {
+        if (!NOTIFY_KINDS.includes(kind) || typeof on !== 'boolean') throw invalid('Notifications must be on or off')
+        if (on) delete notify[kind]
+        else notify[kind] = false
+      }
+      if (Object.keys(notify).length > 0) state.prefs.notify = notify
+      else delete state.prefs.notify
     }
     return rt.save()
   }

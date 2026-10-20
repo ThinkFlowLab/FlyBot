@@ -35,7 +35,9 @@ function windowWith({ permission = 'granted', visibility = 'visible', prefs = {}
     document: { visibilityState: visibility },
     window: { focus() {} },
   })
-  return { ...module.exports, shown, opened, work, roster, openSession: id => opened.push(id) }
+  // Toy timestamps: the clock stays at 1000 unless a test brings its own.
+  const noticeApprovals = options => module.exports.noticeApprovals({ now: () => 1000, ...options })
+  return { ...module.exports, noticeApprovals, shown, opened, work, roster, openSession: id => opened.push(id) }
 }
 
 test('an approval that starts waiting while another conversation shows gets one notification', () => {
@@ -43,7 +45,7 @@ test('an approval that starts waiting while another conversation shows gets one 
   page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100 })
   page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
   page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
-  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [['Writer is waiting for your approval', 'Ops · pwsh', 'ds-bot-approval-x1']])
+  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [['Writer is waiting for your approval', 'Ops · pwsh', 'ds-bot-r1']])
   page.shown[0].onclick()
   assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
 })
@@ -76,8 +78,8 @@ test('a turn of my own Bot that finishes or fails elsewhere gets one notificatio
   page.work.set(ended([done, broke]))
   page.work.set(ended([done, broke]))
   assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [
-    ['Writer finished', '', 'ds-bot-turn-chat-b:1:200'],
-    ['Writer failed: upstream busy', 'Ops', 'ds-bot-turn-g:2:300'],
+    ['Writer finished', '', 'ds-bot-chat-b'],
+    ['Writer failed: upstream busy', 'Ops', 'ds-bot-r1'],
   ])
   page.shown[0].onclick()
   page.shown[1].onclick()
@@ -111,7 +113,93 @@ test('the Notifications switch turns off every kind, and switching it back on br
   assert.equal(page.shown.length, 0)
   page.roster.prefs = {}
   page.work.set({ bots: {}, approvals: [approval], ended: [{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }, { id: 'e2', botId: 'b', sessionId: 'chat-b', at: 300 }] })
-  assert.deepEqual(page.shown.map(note => note.tag), ['ds-bot-turn-e2'])
+  assert.deepEqual(page.shown.map(note => [note.title, note.body]), [['Writer finished', '']])
+})
+
+// A clock and timers the test moves by hand.
+function clock(start) {
+  let now = start
+  const pending = new Map()
+  let seq = 0
+  return {
+    now: () => now,
+    timers: {
+      setTimeout: (fn, ms) => { pending.set(++seq, { fn, at: now + ms }); return seq },
+      clearTimeout: id => pending.delete(id),
+    },
+    pending,
+    advance(ms) {
+      now += ms
+      for (const [id, { fn, at }] of [...pending]) {
+        if (at <= now) { pending.delete(id); fn() }
+      }
+    },
+  }
+}
+
+const MIN = 60 * 1000
+
+test('an approval still waiting after 15 min gets one more notification; one already decided gets none (#469)', () => {
+  const page = windowWith({ visibility: 'hidden' })
+  const time = clock(1000)
+  const stop = page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100, now: time.now, timers: time.timers })
+  const waiting = { id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 1000 }
+  const decided = { id: 'x2', botId: 'b', sessionId: 'b', tool: 'write', at: 1000 }
+  page.work.set({ bots: {}, approvals: [waiting, decided] })
+  assert.equal(page.shown.length, 2)
+  page.work.set({ bots: {}, approvals: [waiting] })
+  time.advance(14 * MIN)
+  assert.equal(page.shown.length, 2)
+  time.advance(MIN)
+  assert.deepEqual(page.shown.slice(2).map(note => [note.title, note.body, note.tag]), [['Writer has waited 15 min for your approval', 'Ops · pwsh', 'ds-bot-r1']])
+  time.advance(60 * MIN)
+  page.work.set({ bots: {}, approvals: [waiting] })
+  assert.equal(page.shown.length, 3)
+  stop()
+  assert.equal(time.pending.size, 0)
+})
+
+test('an approval that waited since before the window opened is reminded 15 min after it opened', () => {
+  const page = windowWith({ visibility: 'hidden' })
+  const time = clock(50 * MIN)
+  const old = { id: 'x1', botId: 'b', sessionId: 'b', tool: 'pwsh', at: MIN }
+  page.work.set({ bots: {}, approvals: [old] })
+  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 50 * MIN, now: time.now, timers: time.timers })
+  assert.equal(page.shown.length, 0)
+  time.advance(15 * MIN)
+  assert.deepEqual(page.shown.map(note => note.title), ['Writer has waited 64 min for your approval'])
+})
+
+test('each kind has its own switch; off for one kind keeps the others (#469)', () => {
+  const page = windowWith({ visibility: 'hidden', prefs: { notify: { approval: false, finished: false } } })
+  const time = clock(1000)
+  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100, now: time.now, timers: time.timers })
+  page.work.set({
+    bots: {},
+    approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 1000 }],
+    ended: [{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 1000 }, { id: 'e2', botId: 'b', sessionId: 'chat-c', at: 1000, failed: 'no model' }],
+  })
+  time.advance(20 * MIN)
+  assert.deepEqual(page.shown.map(note => note.title), ['Writer failed: no model'])
+})
+
+test('notifications from one chat collapse into one that counts the updates until the chat is opened (#469)', () => {
+  let onScreen = 'a'
+  const page = windowWith()
+  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => onScreen, openSession: page.openSession, since: 100 })
+  const turn = (id, at, extra) => ({ id, botId: 'b', roomId: 'r1', at, ...extra })
+  page.work.set(ended([turn('e1', 200), turn('e2', 300, { failed: 'busy' })]))
+  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [['Writer failed: busy', 'Ops · 2 updates', 'ds-bot-r1']])
+  page.work.set(ended([turn('e1', 200), turn('e2', 300, { failed: 'busy' }), turn('e3', 400)]))
+  assert.deepEqual(page.shown.slice(1).map(note => [note.title, note.body, note.tag]), [['Writer finished', 'Ops · 3 updates', 'ds-bot-r1']])
+  onScreen = 'r1'
+  page.work.set(ended([turn('e3', 400)]))
+  onScreen = 'a'
+  page.work.set(ended([turn('e3', 400), turn('e4', 500)]))
+  assert.deepEqual(page.shown.slice(2).map(note => [note.title, note.body]), [['Writer finished', 'Ops']])
+  page.shown[2].onclick()
+  page.work.set(ended([turn('e4', 500), turn('e5', 600)]))
+  assert.deepEqual(page.shown.slice(3).map(note => note.body), ['Ops'])
 })
 
 // The host side: which ended turns the window hears of.
@@ -174,4 +262,11 @@ test('the host lists finished and failed turns of my own Bots, not stopped, aske
   for (let n = 40; n < 60; n++) turn('b', n, completed)
   assert.equal(rt.endedView().length, 20)
   assert.ok(rt.endedView().every(entry => entry.failed === undefined))
+})
+
+test('Settings → General has one switch per kind under the main one, off while the main one is off (#469)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const settings = readFileSync(new URL('../src/client/settings.js', import.meta.url), 'utf8')
+  assert.match(settings, /\['approval', 'Waiting for approval', 'Once more if it still waits after 15 min\.'\],\n {2}\['finished', 'Finished'\],\n {2}\['failed', 'Failed'\],/)
+  assert.match(settings, /disabled: prefs\.notifications === false,\n\s*on: prefs\.notify\?\.\[kind\] !== false, onChange: on => run\(actions\.setPrefs\(\{ notify: \{ \[kind\]: on \} \}\)\)/)
 })

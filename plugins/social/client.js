@@ -18,6 +18,10 @@ window.__ModuleLoader__.load({
       const message = String(e?.message ?? e ?? '')
       return code === 'bot/not-found' || /Unknown FlyBot endpoint social\//i.test(message)
     }
+    // Re-accepting an invite for a Bot you already have is not an error (#496).
+    const ALREADY_HAVE = "You already have this friend's Bot."
+    // A friend's Bot with its owner: `Chief (SelfA1233)`, Bot first (#384).
+    const botWithOwner = (name, owner) => (name && owner && owner !== name ? `${name} (${owner})` : name || '')
     const errorText = (e) => {
       const code = String(e?.code ?? '')
       const http = code.match(/^HTTP_(\d+)$/)
@@ -27,7 +31,7 @@ window.__ModuleLoader__.load({
         return 'Social is not running: the plugin did not start. See Settings → Feedback.'
       }
       const message = String(e?.message ?? e ?? '')
-      if (/relationship_exists/i.test(message)) return "You're already friends. Their Bot is back in your list."
+      if (/relationship_exists/i.test(message)) return ALREADY_HAVE
       // Only the raw server words map here. The "invite wasn't found" sentence also says "already used" (as one of its possible
       // causes), so matching those words would relabel every unknown or mistyped link as a used one.
       if (/invite_unavailable|invite is used|invite_used/i.test(message)) return 'This invite was already used. Ask your friend for a new one.'
@@ -1722,13 +1726,17 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setStatus(null)
         try {
-          const message = await fn()
-          if (message) setStatus({ tone: 'ok', text: message })
-          await refresh(Boolean(message))
+          // `fn` answers a sentence, or { tone, text } for a neutral note (#496).
+          const result = await fn()
+          const message = typeof result === 'string' ? { tone: 'ok', text: result } : result
+          if (message?.text) setStatus(message)
+          await refresh(Boolean(message?.text))
           onChange?.()
         } catch (e) {
           const text = errorText(e)
-          setStatus({ tone: 'error', text: /^This invite was already used|^You're already friends/.test(text) ? text : `${label} failed: ${text}` })
+          setStatus(text === ALREADY_HAVE
+            ? { tone: 'info', text }
+            : { tone: 'error', text: /^This invite was already used/.test(text) ? text : `${label} failed: ${text}` })
         } finally {
           setBusy(false)
         }
@@ -1757,6 +1765,13 @@ window.__ModuleLoader__.load({
         return run('Accepting invite', async () => {
           const r = await call('social/join-invite', { code, ...(joiner ? { botId: joiner } : {}) })
           setCode('')
+          if (r?.alreadyHave) {
+            // Nothing changed unless a hidden or removed Bot really came back (#496).
+            const back = (r.restored ?? []).map(bot => botWithOwner(bot.name, bot.owner)).filter(Boolean)
+            if (back.length) return `${back.join(' and ')} ${back.length > 1 ? 'are' : 'is'} back in your list.`
+            const have = botWithOwner(r.botName, r.ownerName)
+            return { tone: 'info', text: have ? `You already have ${have}.` : ALREADY_HAVE }
+          }
           const who = r.inviterName ?? r.inviter ?? 'Your friend'
           const shared = r.inviterBotName || r.sharedBot
           if (r.status === 'active') {
@@ -1950,7 +1965,8 @@ window.__ModuleLoader__.load({
           setAuto(!on)
         } finally { setSaving(false) }
       }
-      const who = remote.homeName || remote.owner || home || 'Your friend'
+      const named = remote.homeName || remote.owner || ''
+      const who = named || home || 'Your friend'
       // Asked inline, like Leave on a face room (#230), not with the browser's confirm box.
       const removeBot = async () => {
         setAsking(false)
@@ -1974,7 +1990,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`)),
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
-            h('span', { className: 'fs-hint' }, `Remove ${bot.name}? ${who} can share it again.`),
+            h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? Your own Bots stay shared. ${who} can share it again.`),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, 'Remove'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, 'Keep'))
           : h('button', {
