@@ -74,7 +74,7 @@ export function NewChat({ mode, roster, actions }) {
       if (!link) throw new Error('no link')
     } catch {
       setInviteLink('')
-      setFixNote(t('Could not create the invite. Use Bot settings → Invite to this Bot.'))
+      setFixNote(t('Could not create the invite. Use Bot settings → Sharing → Copy invite link for this Bot.'))
       return
     }
     if (await copiedToClipboard(link)) {

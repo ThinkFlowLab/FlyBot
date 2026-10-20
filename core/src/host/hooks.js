@@ -946,7 +946,7 @@ export function install(rt) {
       list: () => team().map(view),
       find: name => view(rt.findBot?.(name)),
       isRemote,
-      // Whether this Bot has at least one person-grant (Invite to this Bot was accepted).
+      // Whether this Bot has at least one person-grant (Sharing → Copy invite link was accepted).
       hasGrant: (id, peer, roomId) => rt.hasGrant?.(id, peer, roomId) === true,
       hasAnyGrant: id => rt.hasAnyGrant?.(id) === true,
       of: sessionId => view(rt.botOf(rt.selfOf(sessionId))),

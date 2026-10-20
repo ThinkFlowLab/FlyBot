@@ -7,7 +7,7 @@
 // - Every local Bot is a member identity @<bot>.<home>, keys custodied by the server.
 //   A Bot is registered when it is invited, when it joins an invite, or at face-to-face
 //   join (room-only). There is no global "published" flag: access is a per-Bot GRANT
-//   (Invite to this Bot → accept). Default deny, Chief included. Revoked on 'bot.removed'.
+//   (Sharing → Copy invite link → accept). Default deny, Chief included. Revoked on 'bot.removed'.
 //   A face-to-face room-only identity is revoked when the Bot leaves its last face room.
 // - Friendship is Bot-to-Bot: an invite names one local Bot and the friend joins as one of
 //   theirs; each side sees and reaches only the Bots granted to them (the server's

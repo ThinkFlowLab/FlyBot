@@ -7,7 +7,7 @@
 // - A non-root tree Bot sending to a LOCAL Bot outside the tree is denied; the root (Chief, the
 //   user's main bot) may message any local bot.
 // - A local non-tree sender may reach only the tree root; other tree nodes are denied.
-// - Granted Bots on both sides (someone accepted Invite to this Bot) are not the tree's call
+// - Granted Bots on both sides (someone accepted Sharing → Copy invite link) are not the tree's call
 //   across trees or to non-tree Bots: undefined, and the core's owner policy decides who may
 //   reach whom. Inside one tree the parent/child rule still holds.
 // - Non-tree -> non-tree traffic is not the tree's call: undefined.

@@ -18,7 +18,7 @@ browser: `client.js`. Design: see "Social design: homes and members" in the root
   of the host's `Unknown FlyBot endpoint` message. The same failure is written to Settings → Feedback.
 - **Members**: a local Bot becomes `@<bot>.<home>` (`add_home_member`) when it is invited, when it
   joins an invite, or at face-to-face join, stored as field `social.member`. There is no published
-  flag: access is a per-Bot **grant** (Invite to this Bot → accept). Default deny, Chief included.
+  flag: access is a per-Bot **grant** (Sharing → Copy invite link → accept). Default deny, Chief included.
   Deleted Bots are revoked on `bot.removed`. Ungranted Bots are not registered at start and are
   not polled. **Face-to-face join** of my own Bot is an implicit room-scoped grant: if it has no
   identity yet, the plugin registers it room-only (`social.member.roomOnly`). That identity does

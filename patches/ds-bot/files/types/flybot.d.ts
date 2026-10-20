@@ -31,7 +31,7 @@ export interface BotView {
   name: string
   role?: string
   isMain: boolean
-  /** True when this Bot has at least one person-grant (Invite to this Bot was accepted). */
+  /** True when this Bot has at least one person-grant (Sharing → Copy invite link was accepted). */
   granted: boolean
   createdBy: BotId | null
   /** Text prompt.js appends to this Bot's system prompt (bot.setSystemPrompt). */

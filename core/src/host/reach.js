@@ -7,7 +7,7 @@
 //
 // There is no global "published" flag. Every access is an independent per-Bot GRANT
 // (one of my Bots → one grantee; optionally scoped to a group). Default deny, Chief
-// included. A grant is created when someone accepts "Invite to this Bot", or implicitly
+// included. A grant is created when someone accepts a Sharing → Copy invite link, or implicitly
 // when the owner brings their own Bot into a face-to-face room by its 6-digit number
 // (`viaCode: true`, this room only, while a member).
 //

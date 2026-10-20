@@ -10,7 +10,7 @@
 //   bot.send.use({ name, priority?, before?, after?, handle(msg) }) -> dispose   (bands: bot.send.priority)
 //     msg.target: { remote: false, id } | { remote: true, handle, home }
 //   bot.isRemote(ref) -> boolean ({ kind: 'remote' } or '@handle'; local ids never)
-//   bot.hasAnyGrant(id) -> boolean (a person accepted Invite to this Bot; may be absent on an older core)
+//   bot.hasAnyGrant(id) -> boolean (a person accepted Sharing → Copy invite link; may be absent on an older core)
 //   on('turn.start' | 'tool.start', fn) -> dispose  (team activity feed: ids, times, tool names; no text)
 //   api.handle(name, fn, { read? }) -> dispose      (UI endpoint, called from the browser as flybot.call(name))
 //   tools.register({ name, description, parameters, visibleTo(botId) SYNC, execute(args, { botId }) })

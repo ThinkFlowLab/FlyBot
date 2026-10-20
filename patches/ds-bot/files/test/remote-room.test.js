@@ -916,7 +916,7 @@ test('an ungranted local Bot refused next to a friend\'s Bot: the error names it
   await assert.rejects(async () => rt.applyParticipants({ id: 'new', members: [], participants: [], createdAt: 1 }, drafts, actorA), (error) => {
     assert.equal(error.code, 'bot/forbidden')
     assert.match(error.message, /^Writer A is not shared with Bob, so it cannot be in a group with their Bot/)
-    assert.match(error.message, /Invite to this Bot/)
+    assert.match(error.message, /Sharing → Copy invite link for Writer A/)
     assert.match(error.message, /leave it out/)
     assert.deepEqual(error.details, {
       reason: 'ungranted-local',

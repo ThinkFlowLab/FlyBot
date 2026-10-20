@@ -485,7 +485,7 @@ export function install(rt) {
     const names = localBots.map(bot => bot.name).join(', ')
     const friends = [...new Set(remotes.map(p => p.owner || p.name))].join(', ') || 'a friend'
     const many = localBots.length > 1
-    const message = `${names} ${many ? 'are' : 'is'} not shared with ${friends}, so ${many ? 'they' : 'it'} cannot be in a group with their Bot: the group's messages go to ${friends}'s home. Share ${many ? 'them' : 'it'} with ${friends} (Bot settings → Invite to this Bot), or leave ${many ? 'them' : 'it'} out.`
+    const message = `${names} ${many ? 'are' : 'is'} not shared with ${friends}, so ${many ? 'they' : 'it'} cannot be in a group with their Bot: the group's messages go to ${friends}'s home. Share ${many ? 'them' : 'it'} with ${friends} (Bot settings → Sharing → Copy invite link for ${names}), or leave ${many ? 'them' : 'it'} out.`
     return Object.assign(forbidden(message), { details: { reason: 'ungranted-local', bots: localBots, remotes } })
   }
 
