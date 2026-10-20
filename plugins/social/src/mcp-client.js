@@ -334,6 +334,22 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     return data
   }
 
+  // The public invite info (what the invite page shows): which Bot an invite shares and whose it is.
+  // No token goes with it; the route is public. Used only to name the Bot when a join answers
+  // relationship_exists, which names no Bot (#496).
+  async function inviteInfo(code) {
+    const value = String(code ?? '').trim()
+    if (!base || !value) return undefined
+    const response = await fetchImpl(`${base}/v1/invites/${encodeURIComponent(value)}`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!response.ok) throw new BotSocialError(`Bot Social GET /v1/invites: HTTP ${response.status}`, `http_${response.status}`)
+    const data = JSON.parse(await response.text())
+    return data && typeof data === 'object' ? data : undefined
+  }
+
   async function tryTool(name, args, fallback) {
     try {
       return await mcp.callTool(name, args)
@@ -485,6 +501,7 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     createInvite: args => mcp.callTool('create_invite', args),
     joinInvite: args => mcp.callTool('join_invite', args),
     listInvites: args => mcp.callTool('list_invites', args ?? {}),
+    inviteInfo,
     revokeInvite: args => mcp.callTool('revoke_invite', args),
     respondFriendRequest: args => mcp.callTool('respond_friend_request', args),
     removeFriend: args => mcp.callTool('remove_friend', args),
