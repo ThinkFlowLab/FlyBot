@@ -75,9 +75,38 @@ export function pickerBotLabel(bot) {
   })
 }
 
+// An owner name made up from an install id ("FlyBot 682b8a43") names nobody (#526): the owner's
+// username, the part of the home handle Bot Social derived from it, does.
+const AUTO_OWNER = /^flybot[\s._-]*(?=[0-9a-f]*\d)[0-9a-f]{6,}$/i
+export function isAutoOwnerName(name) {
+  return AUTO_OWNER.test(String(name ?? '').trim())
+}
+
 export function ownerNameOf(record) {
   if (!record) return ''
-  return cleanPeerName(record.ownerName || record.owner || record.homeName || record.ownerHome || record.home || ownerFromHandle(record.handle), '')
+  const named = cleanPeerName(record.ownerName || record.owner || record.homeName || record.ownerHome || record.home || ownerFromHandle(record.handle), '')
+  if (!isAutoOwnerName(named)) return named
+  const other = [record.ownerName, record.owner, record.homeName].map(value => cleanPeerName(value, '')).find(value => value && !isAutoOwnerName(value))
+  return other || cleanPeerName(ownerFromHandle(record.handle) || ownerFromHandle(record.ownerHome) || ownerFromHandle(record.home), '') || named
+}
+
+// The owner Bot Social stamped on my own Bot's seat, read the same way (#526); none: ''.
+export function seatOwnerName(ownerName, handle) {
+  return ownerName ? ownerNameOf({ ownerName, handle }) : ''
+}
+
+const ownerKey = value => String(value ?? '').toLowerCase().replace(/[\s._@-]+/g, '')
+
+// Bot Social labels a room member "<Bot> · <owner>". As a Bot's name that repeats the owner the
+// title adds anyway (#526: "Reviewer · FlyBot 682b8a43 (flybot682b8a43)"), so only the Bot's part
+// stays. A name whose tail is not that owner is the Bot's own name and is kept whole.
+export function remoteBotName(record, fallback = '') {
+  const name = cleanPeerName(record?.displayName || record?.name, fallback)
+  const at = name.lastIndexOf(' · ')
+  if (at <= 0) return name
+  const tail = ownerKey(name.slice(at + 3))
+  const owners = [record?.ownerName, record?.owner, record?.homeName, ownerFromHandle(record?.handle), ownerNameOf(record)].map(ownerKey).filter(Boolean)
+  return isAutoOwnerName(name.slice(at + 3)) || owners.includes(tail) ? name.slice(0, at).trim() : name
 }
 
 export function isChiefRecord(record) {
@@ -90,7 +119,7 @@ export function isChiefRecord(record) {
 // its owner in parentheses: "Helper (Bob)", and a friend's Chief the same way: "Chief (Bob)".
 export function remoteBotTitle(record) {
   const owner = ownerNameOf(record) || cleanPeerName(record?.handle, 'Friend')
-  const name = cleanPeerName(record?.displayName || record?.name, isChiefRecord(record) ? 'Chief' : cleanPeerName(record?.handle, 'Bot'))
+  const name = remoteBotName(record, isChiefRecord(record) ? 'Chief' : cleanPeerName(record?.handle, 'Bot'))
   return `${name} (${owner})`
 }
 

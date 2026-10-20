@@ -207,7 +207,7 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
           h('div', { className: 'bt-member' },
             h('span', { className: 'bt-member-name' },
               h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
-              h('span', null, person.label || remoteBotTitle(person))),
+              h('span', { title: person.handle || undefined }, person.label || remoteBotTitle(person))),
             face ? null : h('span', { className: 'bt-chip' }, t('Friend\'s Bot'))))),
         ...members.map((member) => {
         const entry = entries.find(item => item.id === member.id)

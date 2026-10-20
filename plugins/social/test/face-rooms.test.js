@@ -37,6 +37,7 @@ import {
   viewFaceLead,
   cleanFaceRole,
   platformLeadText,
+  faceOwnerName,
 } from '../src/face-rooms.js'
 import { formatFaceRoomTitle } from '../src/face-title.js'
 
@@ -134,6 +135,27 @@ test('peer names and system copy are sanitized', () => {
   assert.equal(faceMemberLabel({ display_name: 'Bot', owner_name: 'BoxA', handle: '@writer.boxa.home' }), 'Writer (BoxA)')
   assert.equal(alreadyLeftFace({ code: 'bot_not_found', message: 'That Bot is not one of yours on Bot Social.' }), true)
   assert.equal(alreadyLeftFace({ code: 'nope', message: 'busy' }), false)
+})
+
+test('#526: an owner name made up from the install id gives way to the owner username', () => {
+  // A seat as Bot Social sends it for an owner who never set a name.
+  const reviewer = { handle: '@reviewer.flybot682b8a43.home', display_name: 'Reviewer', owner_name: 'FlyBot 682b8a43' }
+  assert.equal(faceOwnerName(reviewer), 'flybot682b8a43')
+  assert.equal(faceMemberLabel(reviewer), 'Reviewer (flybot682b8a43)')
+  assert.equal(platformJoinText({ ...reviewer, published: true }), 'Reviewer (flybot682b8a43) joined')
+  assert.equal(platformLeadText(reviewer), 'Room lead: Reviewer (flybot682b8a43)')
+  assert.equal(platformLeaveText(reviewer), 'flybot682b8a43 left the room')
+  const typed = renderFaceEvent({
+    event_id: 'fev_526', event_cursor: 12, type: 'room.message',
+    from: reviewer, untrusted_content: { text: encodeFaceHuman({ who: 'x', text: 'hi' }) },
+  })
+  assert.equal(typed.who, 'flybot682b8a43', 'the person typing is named like their Bots')
+  // The seat the room, the waiting tiles and the host read carries that name as its owner.
+  assert.equal(viewFaceMember(reviewer).ownerName, 'flybot682b8a43')
+  // Real names, and no username to fall back on, stay as they are.
+  assert.equal(faceOwnerName({ handle: '@writer.flybot2.home', owner_name: 'FlyBot2' }), 'FlyBot2')
+  assert.equal(faceOwnerName({ handle: '@writer.alice.home', owner_name: 'Alice' }), 'Alice')
+  assert.equal(faceOwnerName({ owner_name: 'FlyBot 682b8a43' }), 'FlyBot 682b8a43')
 })
 
 test('owner-typed face-room lines encode as a human envelope', () => {

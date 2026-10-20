@@ -40,7 +40,7 @@ export function FacePersonRow({ person, onOpenBot, lead, className = 'bt-set-row
   const bots = person.seats.flatMap((seat, index) => {
     const name = seat.local && onOpenBot
       ? h('button', { key: seat.key, type: 'button', className: 'bt-face-bot', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot)
-      : h('span', { key: seat.key, className: 'bt-face-bot' }, seat.bot)
+      : h('span', { key: seat.key, className: 'bt-face-bot', title: seat.record?.handle || undefined }, seat.bot)
     const marked = isLeadSeat(seat, lead) ? [name, h('span', { key: `${seat.key}-lead`, className: 'bt-tag', 'data-flybot': 'face-lead-tag' }, t('Lead'))] : [name]
     return index === 0 ? marked : [h('span', { key: `${seat.key}-sep` }, t(', ')), ...marked]
   })
@@ -183,7 +183,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
       remotes.map((person) => h('div', { key: person.handle || person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
         h('span', { className: 'bt-gs-who' },
           h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
-          h('span', { className: 'bt-row-title' }, person.label || remoteBotTitle(person)),
+          h('span', { className: 'bt-row-title', title: person.handle || undefined }, person.label || remoteBotTitle(person)),
           room.origin === 'face-to-face' ? null : h('span', { className: 'bt-tag' }, t('Friend\'s Bot'))),
         room.origin === 'face-to-face' || members.length + remotes.length <= 2
           ? null

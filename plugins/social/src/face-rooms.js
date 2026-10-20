@@ -215,8 +215,20 @@ export function distinctFaceBotName(member) {
   return name && name !== 'Bot' ? name : ''
 }
 
-export function faceMemberLabel(member) {
+// An owner name made up from an install id ("FlyBot 682b8a43") names nobody (#526): the owner's
+// username, the part of the home handle Bot Social derived from it, does. Core's remote-label.js
+// reads owners the same way; this plugin ships on its own, so the rule is repeated here.
+const AUTO_OWNER = /^flybot[\s._-]*(?=[0-9a-f]*\d)[0-9a-f]{6,}$/i
+export function faceOwnerName(member) {
   const owner = cleanFaceName(member?.owner_name || member?.ownerName, '')
+  if (!AUTO_OWNER.test(owner)) return owner
+  const parts = String(member?.handle ?? '').trim().replace(/^@+/, '').toLowerCase().split('.')
+  const username = parts.length >= 2 && parts.at(-1) === 'home' ? parts.at(-2) : ''
+  return cleanFaceName(username, '') || owner
+}
+
+export function faceMemberLabel(member) {
+  const owner = faceOwnerName(member)
   const name = distinctFaceBotName(member) || 'Bot'
   if (!owner || name.toLowerCase() === owner.toLowerCase()) return name
   return `${name} (${owner})`
@@ -338,7 +350,7 @@ export function platformJoinText(member) {
 
 // A leave names the person, not their Bot (#191): "Bob left the room".
 export function platformLeaveText(member) {
-  const owner = cleanFaceName(member?.owner_name || member?.ownerName, '')
+  const owner = faceOwnerName(member)
   return owner ? `${owner} left the room` : `${faceMemberLabel(member)} left`
 }
 
@@ -381,7 +393,7 @@ export function viewFaceMember(member) {
     botId: member.bot_id || member.botId,
     handle,
     displayName: cleanFaceName(member.display_name || member.displayName, handle || 'Bot'),
-    ownerName: cleanFaceName(member.owner_name || member.ownerName, ''),
+    ownerName: faceOwnerName(member),
     roomOnly: member.roomOnly === true || member.published !== true,
     label: cleanFaceName(member.label, '') || faceMemberLabel(member),
     // The role label its home set for this room (#476): peer data, cleaned like a name.
@@ -525,7 +537,7 @@ export function renderFaceEvent(event, { attested = false } = {}) {
     const envelope = parseFaceHuman(body)
     const human = attested ? (viewed.typedByOwner === true ? { text: envelope ? envelope.text : body } : undefined) : envelope
     // A person's own line is attributed to the person, not to the Bot that carried it (#180).
-    const ownerName = cleanFaceName(from.owner_name || from.ownerName, '')
+    const ownerName = faceOwnerName(from)
     const who = human && ownerName ? ownerName : trustedFaceWho(from)
     const text = human ? human.text : (attested && envelope ? envelope.text : body)
     return {

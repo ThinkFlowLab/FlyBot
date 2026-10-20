@@ -5,7 +5,7 @@
 // rows stay beside them, because a source cannot be hidden for one Session (a face
 // room filters the session rows out of view: face-at-filter.js).
 import { mentionCandidates, remoteMentionRows } from './flybot-registry.js'
-import { cleanPeerName, friendBotTitle, ownerNameOf, remoteBotTitle, listedChatBots } from '../shared/remote-label.js'
+import { cleanPeerName, friendBotTitle, ownerNameOf, remoteBotTitle, listedChatBots, seatOwnerName } from '../shared/remote-label.js'
 import { t } from './i18n.js'
 import { currentPart, relativeShort } from './text.js'
 
@@ -78,7 +78,7 @@ export const remoteRecord = bot => (bot?.remote ? (bot.remote === true ? bot : b
 // As `faceSeats` names it: the owner name Bot Social stamped on my Bot's seat, else my own name.
 const myOwnerName = (roster, live, bot) => {
   const seat = live.find(p => !p.remote && p.kind !== 'human' && (p.id === bot.id || (bot.handle && p.handle === bot.handle)))
-  return cleanPeerName(seat?.ownerName || roster.self?.displayName, '')
+  return seatOwnerName(seat?.ownerName, seat?.handle) || cleanPeerName(roster.self?.displayName, '')
 }
 const uniqueBy = (list, key) => {
   const seen = new Set()

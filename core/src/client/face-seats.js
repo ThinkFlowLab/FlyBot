@@ -2,7 +2,7 @@
 // tiles, the @ menu, the bubble headers and the @ chips in a bubble (#229, #305, #457). Pure, so
 // the bubble module can use it.
 import { t } from './i18n.js'
-import { cleanPeerName, ownerNameOf } from '../shared/remote-label.js'
+import { cleanPeerName, ownerNameOf, remoteBotName, seatOwnerName } from '../shared/remote-label.js'
 
 // A face-to-face room lists people, each with the Bots they brought, and names every Bot one way
 // for every member: "Chief (Bob)", my own "Chief (Ann)" too (#229, #384, #457). Names come from
@@ -17,8 +17,8 @@ export function faceSeats(room, roster, { left = false } = {}) {
       key: p.handle || p.id,
       local,
       record: p,
-      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, '') : ownerNameOf(p),
-      bot: local ? local.name : cleanPeerName(p.displayName || p.name, 'Bot'),
+      person: local ? (seatOwnerName(p.ownerName, p.handle) || cleanPeerName(roster.self?.displayName, '')) : ownerNameOf(p),
+      bot: local ? local.name : remoteBotName(p, 'Bot'),
       mine: Boolean(local),
     }
   }
