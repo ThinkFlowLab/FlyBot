@@ -6,7 +6,7 @@ import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { ActivityIndicator } from './activity-row.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { t } from './i18n.js'
-import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { holdComposerLabel } from './composer-label.js'
 
 // -------------------------------------------------------------------------
@@ -71,7 +71,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const room = roster.roomsById[sessionId]
   const detailsOpen = useUi(state => state.details === sessionId)
   const name = bot?.remote
-    ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief })
+    ? friendBotTitle(bot)
     : (room?.displayName || (room?.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room?.name) || bot?.name || '')
   const useNews = useMemoryNews ?? noNews
   const memoryIds = bot ? [bot.id] : room?.members ?? []

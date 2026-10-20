@@ -1135,14 +1135,15 @@ window.__ModuleLoader__.load({
       const parts = String(bot.remote.handle).replace(/^@/, '').toLowerCase().split('.')
       return parts.length === 2 && parts[1] === 'home' ? undefined : bot
     }
-    // A friend's Bot by its one name: "Chief (UiA1415)", "Helper (UiB1415)" (#384).
-    function friendLabel(roster, handle) {
+    // Who owns a friend's Bot, named as the host names it (#498: one formatter, ds-bot's
+    // shared/remote-label.js via __flybot__.names). An approval card names this person (#418):
+    // "Chief → UiA1415", never "Chief → Chief (UiA1415)".
+    function friendPerson(roster, handle) {
       const bot = friendChatOf(roster, handle)
       if (!bot) return ''
-      const owner = String(bot.remote.owner || bot.remote.homeName || '').trim()
-      const name = String(bot.name ?? '').trim()
-      if (!owner) return name
-      return `${name} (${owner})`
+      const shared = globalThis.__flybot__?.names?.friendBotOwner
+      if (typeof shared === 'function') return String(shared(bot) ?? '').trim()
+      return String(bot.remote.owner || bot.remote.homeName || '').trim()
     }
     function localHoldView(approval, roster) {
       if (!approval?.id) return undefined
@@ -1155,8 +1156,8 @@ window.__ModuleLoader__.load({
         // The local Bot that wrote it (not a line you typed): its own chat shows the card (#254).
         ...(!composer && typeof approval.request?.from === 'string' ? { fromId: approval.request.from } : {}),
         to,
-        // A listed friend chat names the Bot (#384); otherwise the person who gets it (#418).
-        toName: friendLabel(roster, to) || approval.recipientName || approval.targetName || to,
+        // The person who gets it (#418, #498), as the host recorded it, else the friend chat's owner.
+        toName: approval.recipientName || friendPerson(roster, to) || approval.targetName || to,
         text: approval.request?.text || approval.reason,
         // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418), not in a dock.
         ...(approval.request?.via === 'auto-reply' && typeof approval.request?.meta?.replyIn?.sessionId === 'string' ? { inline: approval.request.meta.replyIn.sessionId } : {}),
@@ -1294,9 +1295,9 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
-      // The friend's Bot by name and owner, as the chat list shows it.
+      // The person who gets it (#418, #498), not the friend's Bot: a local hold already names the person.
       const named = list => list.map((item) => {
-        const label = friendLabel(roster, item.to)
+        const label = item.source === 'local' && item.toName && !looksLikeHandle(item.toName) ? '' : friendPerson(roster, item.to)
         const from = faceFromLabel(item, room)
         return label || from ? { ...item, ...(label ? { toName: label } : {}), ...(from ? { from } : {}) } : item
       })
@@ -1361,7 +1362,7 @@ window.__ModuleLoader__.load({
     }
 
     // The decision on a Bot's held reply to a friend, drawn on that reply's bubble (#418): who gets
-    // it (the person, or the friend's Bot by #384 naming), Approve / Reject, and Auto-send from now on. The
+    // it (the person, #498), Approve / Reject, and Auto-send from now on. The
     // bubble above is the text, so the card does not repeat it.
     function HeldReplyCard({ held, decide, call: callHost = call, actions } = {}) {
       useStyles()
@@ -2339,7 +2340,7 @@ window.__ModuleLoader__.load({
       HeldReplyCard,
       approvalsForOpenChat,
       localHoldView,
-      friendLabel,
+      friendPerson,
       MyHandle,
       FaceRoomStatus,
       PeerThinking,

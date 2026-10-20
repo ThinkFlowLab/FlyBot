@@ -9,7 +9,7 @@ import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
 import { remoteMessageText } from './flybot-registry.js'
-import { isListedRemoteChat, normRemoteHandle, remoteBotTitle } from '../shared/remote-label.js'
+import { cleanPeerName, friendBotOwner, normRemoteHandle, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
 import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 import { fileSize } from './flybot-slots.js'
 import { HeldReplyActions } from './held-reply.js'
@@ -193,11 +193,10 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
 // turn's closing text carries the buttons; an earlier text of the same turn is only marked.
 function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   const bot = roster.byId[sessionId]
-  // The friend's Bot by name and owner when its chat is listed (#384), else the person (#418).
-  const chat = (roster.bots ?? []).find(item => item.remote?.handle === held.to && isListedRemoteChat(item))
-  const toName = chat
-    ? remoteBotTitle({ displayName: chat.name, ownerName: chat.remote.homeName || chat.remote.owner, handle: chat.remote.handle, isChief: chat.remote.isChief })
-    : held.toOwner || held.to || t('a friend')
+  // The person who gets the reply (#418, #498): the host stored it with the hold, so the card reads
+  // the same live and after a reload; "Chief → Chief (SelfB1233)" named two Bots and no person.
+  const chat = (roster.bots ?? []).find(item => item.remote?.handle === held.to)
+  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t('a friend')
   return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': held.status === 'pending' ? '' : undefined },
     children,
     closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null)

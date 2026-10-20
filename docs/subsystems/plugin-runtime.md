@@ -87,7 +87,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 ### Host Bot look for classic-script plugins
 
-- Classic-script plugins cannot import `src/client/mark.js`. The host client `registry()` therefore also sets `globalThis.__flybot__.BotAvatar`, `BotMark` and `lookOf` to the same components the sidebar / session list / chat header use (configured image / shape / color / emoji, else a stable look from the Bot id or a remote handle). Plugins typically render `BotAvatar` at 24px with `badge: false`; face-to-face tiles pass 48. A stored `color` / `avatar` on the record still wins; a remote Bot without one is seeded by `remoteSeed(handle)`. A face-room `members[]` look overlays the chat record (`lookBotForRemote`).
+- Classic-script plugins cannot import `src/client/mark.js`. The host client `registry()` therefore also sets `globalThis.__flybot__.BotAvatar`, `BotMark` and `lookOf` to the same components the sidebar / session list / chat header use (configured image / shape / color / emoji, else a stable look from the Bot id or a remote handle). Plugins typically render `BotAvatar` at 24px with `badge: false`; face-to-face tiles pass 48. A stored `color` / `avatar` on the record still wins; a remote Bot without one is seeded by `remoteSeed(handle)`. A face-room `members[]` look overlays the chat record (`lookBotForRemote`). For the same reason `registry()` sets `globalThis.__flybot__.names` to `{ friendBotTitle, friendBotOwner }` from `shared/remote-label.js` (typed in `types/flybot.d.ts`), so a plugin names a friend's Bot (`Chief (SelfB1233)`) or its owner exactly as the sidebar and approval cards do (#498).
 
 ## Tests
 

@@ -175,6 +175,25 @@ test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, 
   assert.equal(remoteBotTitle({ displayName: 'Coder', homeName: 'Family Workspace' }), 'Coder (Family Workspace)')
 })
 
+test('#498: a friend\'s chat as the host keeps it (no name on `remote`) is offered by its one name, as its sidebar row says it', async () => {
+  const chat = indexRoster({
+    bots: [
+      { id: 'chief', name: 'Chief', sessionId: 'chief' },
+      { id: 'b-chief', name: 'Chief', sessionId: 'b-chief', remote: { handle: '@chief.selfb1233.home', home: '@selfb1233.home', homeName: 'SelfB1233' } },
+    ],
+    rooms: [],
+  })
+  const [bots] = atSources({
+    roster: { getSnapshot: () => chat },
+    sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
+    launched: () => false,
+    iconFor: () => 'bot',
+  })
+  const listed = await bots.candidates({ sessionId: 'chief' }, { query: '' })
+  const row = listed.find(item => item.description === '@chief.selfb1233.home')
+  assert.equal(row?.name, 'Chief (SelfB1233)', 'not "@chief.selfb1233.home (SelfB1233)"')
+})
+
 test('#305: "Everyone" in a group counts the Bots it reaches, seated friends\' Bots too, in the right number', async () => {
   const room = (participants) => indexRoster({
     bots: [{ id: 'chief', name: 'Chief', sessionId: 'chief' }],

@@ -492,7 +492,7 @@ diff --git a/src/client/header.js b/src/client/header.js
 -import { clockLabel, openingTurn, unseenSince } from './cells.js'
 +import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
  import { t } from './i18n.js'
-+import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
++import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 +import { holdComposerLabel } from './composer-label.js'
  
  // -------------------------------------------------------------------------
@@ -503,7 +503,7 @@ diff --git a/src/client/header.js b/src/client/header.js
    const detailsOpen = useUi(state => state.details === sessionId)
 -  const name = bot?.name ?? room?.name ?? ''
 +  const name = bot?.remote
-+    ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief })
++    ? friendBotTitle(bot)
 +    : (room?.displayName || (room?.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room?.name) || bot?.name || '')
    const useNews = useMemoryNews ?? noNews
    const memoryIds = bot ? [bot.id] : room?.members ?? []
@@ -1436,7 +1436,7 @@ diff --git a/test/at-menu.test.js b/test/at-menu.test.js
  test('"@" offers a group\'s members and everyone, or every other Bot in a Bot\'s chat', () => {
    assert.deepEqual(names(mentionRows(roster, 'room')), ['Chief', 'King', 'everyone'])
    assert.deepEqual(names(mentionRows(roster, 'chief-2')), ['King', 'Writer'])
-@@ -76,3 +76,94 @@ test('the chats join only the menu that "+" opened, and a pick inserts a session
+@@ -76,3 +76,113 @@ test('the chats join only the menu that "+" opened, and a pick inserts a session
    assert.deepEqual(bots.onPick({ candidate: mentions[1] }), { text: '@King ' })
    assert.deepEqual(await bots.candidates({ sessionId: 'plain' }, { query: '' }), [])
  })
@@ -1517,6 +1517,25 @@ diff --git a/test/at-menu.test.js b/test/at-menu.test.js
 +  ])
 +  assert.equal(remoteBotTitle({ displayName: 'Coder', owner: 'Bob', homeName: 'Family Workspace' }), 'Coder (Bob)')
 +  assert.equal(remoteBotTitle({ displayName: 'Coder', homeName: 'Family Workspace' }), 'Coder (Family Workspace)')
++})
++
++test('#498: a friend\'s chat as the host keeps it (no name on `remote`) is offered by its one name, as its sidebar row says it', async () => {
++  const chat = indexRoster({
++    bots: [
++      { id: 'chief', name: 'Chief', sessionId: 'chief' },
++      { id: 'b-chief', name: 'Chief', sessionId: 'b-chief', remote: { handle: '@chief.selfb1233.home', home: '@selfb1233.home', homeName: 'SelfB1233' } },
++    ],
++    rooms: [],
++  })
++  const [bots] = atSources({
++    roster: { getSnapshot: () => chat },
++    sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
++    launched: () => false,
++    iconFor: () => 'bot',
++  })
++  const listed = await bots.candidates({ sessionId: 'chief' }, { query: '' })
++  const row = listed.find(item => item.description === '@chief.selfb1233.home')
++  assert.equal(row?.name, 'Chief (SelfB1233)', 'not "@chief.selfb1233.home (SelfB1233)"')
 +})
 +
 +test('#305: "Everyone" in a group counts the Bots it reaches, seated friends\' Bots too, in the right number', async () => {

@@ -1467,6 +1467,21 @@ function remoteBotTitle(record) {
 function remoteOwnerBadge(record) {
   return ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
 }
+function friendRecord(bot) {
+  const remote = bot?.remote && typeof bot.remote === "object" ? bot.remote : {};
+  return {
+    displayName: remote.displayName || remote.name || bot?.name,
+    ownerName: remote.ownerName || remote.owner || remote.homeName,
+    handle: remote.handle ?? bot?.handle,
+    isChief: remote.isChief
+  };
+}
+function friendBotTitle(bot) {
+  return remoteBotTitle(friendRecord(bot));
+}
+function friendBotOwner(bot) {
+  return remoteOwnerBadge(friendRecord(bot));
+}
 function sharedRoomTitle(inviterName) {
   return `Shared room from ${cleanPeerName(inviterName, "a friend")}`;
 }
@@ -2143,6 +2158,7 @@ function registry2() {
   globalThis.__flybot__.BotMark ??= BotMark;
   globalThis.__flybot__.BotAvatar ??= BotAvatar;
   globalThis.__flybot__.lookOf ??= lookOf;
+  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner };
   return slots;
 }
 var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
@@ -2258,12 +2274,7 @@ var chatOf = (approval, roster) => approval.request?.meta?.roomId ?? approval.re
 function recipientName(approval, roster) {
   const handle = handleOf(approval.request?.to);
   const bot = friendChatOf(approval, roster);
-  if (bot) {
-    const owner = bot.remote.owner || bot.remote.homeName;
-    if (owner) return `${bot.name} (${owner})`;
-    return bot.name;
-  }
-  return approval.recipientName ?? approval.targetName ?? handle ?? String(approval.request?.to ?? "");
+  return approval.recipientName || (bot ? friendBotOwner(bot) : "") || approval.targetName || handle || String(approval.request?.to ?? "");
 }
 function FlyBotApprovals({ useRoster, actions } = {}) {
   const entries2 = useSlot("flybot.approvals");
@@ -3214,7 +3225,6 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
 .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
 .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-row-owner{flex:0 100 auto;min-width:24px;font-size:13px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
 .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -4245,12 +4255,7 @@ function sessionTabLabel(roster, sessionId) {
   const bot = roster.byId?.[sessionId];
   const room2 = roster.roomsById?.[sessionId];
   if (bot?.remote) {
-    return remoteBotTitle({
-      displayName: bot.name,
-      ownerName: bot.remote.homeName || bot.remote.owner,
-      handle: bot.remote.handle,
-      isChief: bot.remote.isChief
-    });
+    return friendBotTitle(bot);
   }
   if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
   if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
@@ -5413,8 +5418,8 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
 }
 function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   const bot = roster.byId[sessionId];
-  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to && isListedRemoteChat(item));
-  const toName = chat ? remoteBotTitle({ displayName: chat.name, ownerName: chat.remote.homeName || chat.remote.owner, handle: chat.remote.handle, isChief: chat.remote.isChief }) : held.toOwner || held.to || t("a friend");
+  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to);
+  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
   return (0, import_react8.createElement)(
     "div",
     { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
@@ -6988,11 +6993,9 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
   };
   const pinned = bot.pinned === true && !tile;
-  const remoteRecord2 = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
-  const shown = remoteRecord2 ? remoteBotTitle(remoteRecord2) : bot.name;
-  const rowName = remoteRecord2 ? cleanPeerName(bot.name, shown) : shown;
-  const owner = remoteRecord2 ? ownerNameOf(remoteRecord2) || cleanPeerName(bot.remote.handle) : "";
-  const secondLine = awayLine || preview || (remoteRecord2 ? t("Friend's Bot") : "");
+  const remote = Boolean(bot.remote);
+  const shown = remote ? friendBotTitle(bot) : bot.name;
+  const secondLine = awayLine || preview || (remote ? t("Friend's Bot") : "");
   const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
     return (0, import_react12.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react12.createElement)(
@@ -7024,7 +7027,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       "aria-current": active ? "page" : void 0,
       // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
       "data-bot-id": id,
-      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
+      title: remote ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
       onClick: () => actions.openSession(id),
       onContextMenu
     },
@@ -7036,8 +7039,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       (0, import_react12.createElement)(
         "span",
         { className: "bt-row-name" },
-        (0, import_react12.createElement)("span", { className: "bt-row-title" }, rowName),
-        owner ? (0, import_react12.createElement)("span", { className: "bt-row-owner" }, owner) : null,
+        (0, import_react12.createElement)("span", { className: "bt-row-title" }, shown),
         bot.remote ? (0, import_react12.createElement)(RemoteMark, { remote: bot.remote }) : null,
         pinned ? (0, import_react12.createElement)(PinMark) : null
       ),
@@ -7908,7 +7910,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   const bot = roster.byId[sessionId];
   const room2 = roster.roomsById[sessionId];
   const detailsOpen = useUi((state) => state.details === sessionId);
-  const name = bot?.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
+  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
   const useNews = useMemoryNews ?? noNews;
   const memoryIds = bot ? [bot.id] : room2?.members ?? [];
   const notice = useMemoryNotice(memoryIds, useNews);
@@ -8408,8 +8410,9 @@ function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot();
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
-        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
+        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
+        name: row.bot?.remote && !face ? row.bot.kind === "bot" ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
         ...row.bot?.role && !face ? { description: row.bot.role } : {},
         ...row.remote ? { description: row.remote.handle } : {},
         ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
@@ -16627,7 +16630,7 @@ function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
   const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
   const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
   const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
-  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })));
+  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: friendBotTitle(bot) })));
 }
 function faceMentionables(room2, roster, fromFriend) {
   const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
