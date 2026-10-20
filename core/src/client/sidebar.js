@@ -3,7 +3,7 @@ import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, us
 import { createPortal } from 'react-dom'
 import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { isMainOf } from './sources.js'
-import { awayGroups, currentPart, faceRowTitle, nameMentions, previewOf, relativeShort, unsentReplyTurns } from './text.js'
+import { awayGroups, botRowTitle, currentPart, faceRowTitle, modelOf, nameMentions, previewOf, relativeShort, unsentReplyTurns } from './text.js'
 import { PlusIcon, SearchIcon, GaugeIcon, PlugIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, FlyBotMark } from './icons.js'
 import { MAIN_LOOK } from './characters.js'
 import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
@@ -90,7 +90,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null
   const row = h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
-    'data-bot-id': id, title: remoteRecord ? shown : wide ? undefined : bot.name, onClick: () => actions.openSession(id), onContextMenu,
+    // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
+    'data-bot-id': id, title: remoteRecord ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide), onClick: () => actions.openSession(id), onContextMenu,
   },
   h(BotAvatar, { bot, size: 36, state, main }),
   pinned && !wide ? h(PinMark) : null,

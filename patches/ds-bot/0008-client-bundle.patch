@@ -161,7 +161,7 @@ diff --git a/client.js b/client.js
    Connected: "已连接",
    Disconnect: "断开",
    Connect: "连接",
-@@ -141,17 +141,37 @@ var ZH = {
+@@ -141,17 +141,44 @@ var ZH = {
    "GitHub addresses must start with https://": "GitHub 地址必须以 https:// 开头",
    "This DSH cannot load connectors": "这个 DSH 不能加载连接器",
    "No such connector": "没有这个连接器",
@@ -171,8 +171,15 @@ diff --git a/client.js b/client.js
 +  "Connected: {apps}": "已连接：{apps}",
 +  "Composio API key": "Composio API key",
 +  "Get a Composio API key": "去 Composio 获取 API key",
-+  "More apps": "更多应用",
-+  "More apps: type Composio app names, separated by commas": "更多应用：输入 Composio 应用名，用逗号隔开",
++  "Search apps": "搜索应用",
++  "Search Composio apps": "搜索 Composio 应用",
++  "Could not search Composio: {error}": "无法搜索 Composio：{error}",
++  "No apps match": "没有匹配的应用",
++  "Picked apps": "已选应用",
++  "Apps to add": "可添加的应用",
++  "Remove {app}": "移除 {app}",
++  "App status": "应用状态",
++  "Needs sign-in": "需要登录",
 +  "Choose apps": "选择应用",
 +  "Pick at least one app": "至少选一个应用",
 +  'An app name has only lowercase letters, digits, "_" and "-"': "应用名只能含小写字母、数字、“_”和“-”",
@@ -1543,7 +1550,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-+  };
+   };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1567,7 +1574,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-   };
++  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1661,10 +1668,13 @@ diff --git a/client.js b/client.js
  
  // src/shared/mentions.js
  var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
-@@ -1445,6 +1445,27 @@ function mentionSpans(text, bots, { references = [] } = {}) {
+@@ -1443,7 +1443,28 @@ function mentionSpans(text, bots, { references = [] } = {}) {
+     spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
+     at = end - 1;
    }
-   return spans;
- }
+-  return spans;
++  return spans;
++}
 +function unmatchedMentions(text, bots, { references = [] } = {}) {
 +  const value = String(text ?? "");
 +  const skip = [
@@ -1685,10 +1695,9 @@ diff --git a/client.js b/client.js
 +    if (word) missing.push(`@${word}`);
 +  }
 +  return missing;
-+}
+ }
  
  // src/client/text.js
- var MENTION_ORIGIN = "https://bots.local/";
 @@ -1463,6 +1463,19 @@ function mentionTarget(event) {
    const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
    return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
@@ -1802,7 +1811,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,9 +1624,177 @@ function usageOf(list, ids) {
+@@ -1624,9 +1624,188 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -1811,6 +1820,17 @@ diff --git a/client.js b/client.js
 +  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
 +  if (named) return `${named[2]} · ${named[1]}`;
 +  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
++}
++function modelOf(bot, roster) {
++  const ref = bot.model ?? bot.appliedModel;
++  if (!ref) return void 0;
++  const served = (roster.models ?? []).find((model) => model.ref === ref);
++  const [provider, ...rest] = ref.split("/");
++  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
++}
++function botRowTitle(name, model, wide) {
++  if (model) return `${name} · ${model}`;
++  return wide ? void 0 : name;
 +}
 +function awayGroups(groups, roomsById) {
 +  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
@@ -2205,7 +2225,7 @@ diff --git a/client.js b/client.js
  /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
     its layout, and not rendered. */
  .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-@@ -2308,7 +2308,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -2308,8 +2308,17 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-connector-form-row{display:flex;align-items:center;gap:6px}
@@ -2215,8 +2235,14 @@ diff --git a/client.js b/client.js
 +.bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 +.bt-connector-others{padding-left:20px}
  .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
++.bt-connector-app-list{list-style:none;margin:0;padding:0 0 0 48px;display:flex;flex-direction:column;gap:2px}
++.bt-connector-app{display:flex;gap:8px;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
++.bt-connector-app-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-app-status{color:var(--bt-ink-3)}
++[data-status=sign-in]>.bt-app-status{color:#c46a00}
  
  /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
+    shell offers them and CSS-module name suffixes elsewhere. */
 @@ -2427,7 +2427,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
@@ -2303,23 +2329,10 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2839,242 +2839,224 @@ function installCompiledStyles(text, tag) {
-   let timer;
-   const schedule = () => {
+@@ -2852,229 +2852,211 @@ function installCompiledStyles(text, tag) {
+     document.removeEventListener("load", onLoad, true);
      clearTimeout(timer);
--    timer = setTimeout(render, 120);
--  };
--  const onLoad = (event) => {
--    if (event.target instanceof HTMLLinkElement) schedule();
--  };
--  const observer = new MutationObserver(schedule);
--  observer.observe(document.head, { childList: true });
--  document.addEventListener("load", onLoad, true);
--  return () => {
--    observer.disconnect();
--    document.removeEventListener("load", onLoad, true);
--    clearTimeout(timer);
--    style.remove();
+     style.remove();
 -  };
 -}
 -
@@ -2385,20 +2398,7 @@ diff --git a/client.js b/client.js
 -    onAnimationEnd: poked ? (event) => {
 -      if (/^bt-poke/.test(event.animationName)) setPoked(false);
 -    } : void 0
-+    timer = setTimeout(render, 120);
-+  };
-+  const onLoad = (event) => {
-+    if (event.target instanceof HTMLLinkElement) schedule();
-+  };
-+  const observer = new MutationObserver(schedule);
-+  observer.observe(document.head, { childList: true });
-+  document.addEventListener("load", onLoad, true);
-+  return () => {
-+    observer.disconnect();
-+    document.removeEventListener("load", onLoad, true);
-+    clearTimeout(timer);
-+    style.remove();
-   };
+-  };
 -  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
 -  const box = shapeOf(look.shape).size;
 -  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
@@ -2419,6 +2419,7 @@ diff --git a/client.js b/client.js
 -    { viewBox: "0 0 20 20", "aria-hidden": true },
 -    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
 -  );
++  };
  }
 -function useSettled(state) {
 -  const prev = (0, import_react2.useRef)(state);
@@ -3848,8 +3849,7 @@ diff --git a/client.js b/client.js
      { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
 -    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
 +    (0, import_react8.createElement)(BotMark, { bot, size: 22 })
-   );
--  return (0, import_react6.createElement)(
++  );
 +  const name = (0, import_react8.createElement)(
 +    "span",
 +    { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
@@ -3857,9 +3857,8 @@ diff --git a/client.js b/client.js
 +    room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +  );
 +  return (0, import_react8.createElement)(
-     "div",
-     { className: "bt-group-msg" },
--    (0, import_react6.createElement)(
++    "div",
++    { className: "bt-group-msg" },
 +    name,
 +    (0, import_react8.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +  );
@@ -3924,14 +3923,11 @@ diff --git a/client.js b/client.js
 +    { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
 +    // A face room's header is the one name alone; the handle is on hover only (#457).
 +    face ? (0, import_react8.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) }, title: handle }, name) : (0, import_react8.createElement)(
-       "span",
-       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
--      bot.name,
--      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
++      "span",
++      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
 +      name,
 +      (0, import_react8.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react8.createElement)(GlobeMark), handle)
-     ),
--    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
++    ),
 +    (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react8.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
@@ -3948,7 +3944,8 @@ diff --git a/client.js b/client.js
 +    { width: 10, height: 10, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react8.createElement)("circle", { cx: 12, cy: 12, r: 9 }),
 +    (0, import_react8.createElement)("path", { d: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" })
-+  );
+   );
+-  return (0, import_react6.createElement)(
 +}
 +function RemoteFiles({ files, plugin, botId }) {
 +  const [busy, setBusy] = (0, import_react8.useState)("");
@@ -3971,7 +3968,15 @@ diff --git a/client.js b/client.js
 +    }
 +  };
 +  return (0, import_react8.createElement)(
-+    "div",
+     "div",
+-    { className: "bt-group-msg" },
+-    (0, import_react6.createElement)(
+-      "span",
+-      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+-      bot.name,
+-      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
+-    ),
+-    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    { className: "bt-file-chips" },
 +    files.map((file) => (0, import_react8.createElement)(
 +      "button",
@@ -4367,12 +4372,12 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react8.createElement)(RemoteMessage, {
@@ -5236,7 +5241,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4785,12 +4785,15 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4785,38 +4785,105 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
          onClick: () => actions.openSession(id),
          onContextMenu
        },
@@ -5256,12 +5261,13 @@ diff --git a/client.js b/client.js
      "button",
      {
        type: "button",
-@@ -4798,25 +4798,88 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+       className: "bt-row",
        "aria-label": label,
        "aria-current": active ? "page" : void 0,
++      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
        "data-bot-id": id,
 -      title: wide ? void 0 : bot.name,
-+      title: remoteRecord2 ? shown : wide ? void 0 : bot.name,
++      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
        onClick: () => actions.openSession(id),
        onContextMenu
      },
@@ -6791,8 +6797,17 @@ diff --git a/client.js b/client.js
  var import_react_dom6 = require("react-dom");
  var MENU_EXIT_MS = 120;
  function groupModels(models) {
-@@ -6376,8 +6376,8 @@ function modelOf(bot, roster) {
+@@ -6367,17 +6367,10 @@ function groupModels(models) {
+   });
  }
+ var servedOf = (roster, ref) => (roster.models ?? []).find((model) => model.ref === ref);
+-function modelOf(bot, roster) {
+-  const ref = bot.model ?? bot.appliedModel;
+-  if (!ref) return void 0;
+-  const served = servedOf(roster, ref);
+-  const [provider, ...rest] = ref.split("/");
+-  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
+-}
  var effortCache = /* @__PURE__ */ new Map();
  function useEfforts(served, ref, actions) {
 -  const [fetched, setFetched] = (0, import_react13.useState)(void 0);
@@ -6981,28 +6996,6 @@ diff --git a/client.js b/client.js
      { className: "bt-model-dock" },
 -    (0, import_react13.createElement)(
 +    (0, import_react16.createElement)(
-+      "div",
-+      { className: "bt-astack", "data-lead": "" },
-+      (0, import_react16.createElement)(
-+        "div",
-+        { className: "bt-msg" },
-+        (0, import_react16.createElement)(
-+          "div",
-+          { className: "bt-msg-line" },
-+          (0, import_react16.createElement)(BotMark, { bot, size: 22 }),
-+          (0, import_react16.createElement)("div", { className: "bt-bubble" }, text)
-+        )
-+      )
-+    ),
-+    (0, import_react16.createElement)("div", { className: "bt-model-chips", role: "group", "aria-label": t("Choose a model") }, choices),
-+    error ? (0, import_react16.createElement)("div", { className: "bt-secret-error bt-model-error", role: "alert" }, error) : null
-+  );
-+}
-+function RemoteGoneDock({ bot }) {
-+  return (0, import_react16.createElement)(
-+    "div",
-+    { className: "bt-model-dock", "data-flybot": "remote-gone" },
-+    (0, import_react16.createElement)(
        "div",
        { className: "bt-astack", "data-lead": "" },
 -      (0, import_react13.createElement)(
@@ -7016,19 +7009,44 @@ diff --git a/client.js b/client.js
 -          (0, import_react13.createElement)(BotMark, { bot, size: 22 }),
 -          (0, import_react13.createElement)("div", { className: "bt-bubble" }, text)
 +          (0, import_react16.createElement)(BotMark, { bot, size: 22 }),
-+          (0, import_react16.createElement)("div", { className: "bt-bubble" }, t("{name} ({handle}) is no longer shared with you, so messages to it cannot be delivered. It runs on its owner's machine, so another model cannot stand in. Ask its owner for a new invite.", { name: bot.name, handle: bot.remote.handle }))
++          (0, import_react16.createElement)("div", { className: "bt-bubble" }, text)
          )
        )
-+    )
+     ),
+-    (0, import_react13.createElement)("div", { className: "bt-model-chips", role: "group", "aria-label": t("Choose a model") }, choices),
+-    error ? (0, import_react13.createElement)("div", { className: "bt-secret-error bt-model-error", role: "alert" }, error) : null
++    (0, import_react16.createElement)("div", { className: "bt-model-chips", role: "group", "aria-label": t("Choose a model") }, choices),
++    error ? (0, import_react16.createElement)("div", { className: "bt-secret-error bt-model-error", role: "alert" }, error) : null
 +  );
 +}
-+function setupChoices(actions) {
-+  return [
-+    actions.canSignIn?.() ? [t("Sign in to DeepSeek"), () => actions.signIn()] : null,
-+    [t("Enter a DeepSeek API key"), () => openHarnessOnboarding("deepseek-official")],
++function RemoteGoneDock({ bot }) {
++  return (0, import_react16.createElement)(
++    "div",
++    { className: "bt-model-dock", "data-flybot": "remote-gone" },
++    (0, import_react16.createElement)(
++      "div",
++      { className: "bt-astack", "data-lead": "" },
++      (0, import_react16.createElement)(
++        "div",
++        { className: "bt-msg" },
++        (0, import_react16.createElement)(
++          "div",
++          { className: "bt-msg-line" },
++          (0, import_react16.createElement)(BotMark, { bot, size: 22 }),
++          (0, import_react16.createElement)("div", { className: "bt-bubble" }, t("{name} ({handle}) is no longer shared with you, so messages to it cannot be delivered. It runs on its owner's machine, so another model cannot stand in. Ask its owner for a new invite.", { name: bot.name, handle: bot.remote.handle }))
++        )
++      )
++    )
+   );
+ }
+ function setupChoices(actions) {
+   return [
+     actions.canSignIn?.() ? [t("Sign in to DeepSeek"), () => actions.signIn()] : null,
+     [t("Enter a DeepSeek API key"), () => openHarnessOnboarding("deepseek-official")],
+-    [t("Open settings to set up a custom model"), openHarnessSettings]
 +    [t("Open settings to set up a custom model"), openHarnessModels]
-+  ].filter(Boolean);
-+}
+   ].filter(Boolean);
+ }
 +var KEY_HELP_URL = "https://github.com/ThinkFlowLab/FlyBot/blob/main/docs/deepseek-api-key.md";
 +function KeyHelpLink() {
 +  return (0, import_react16.createElement)("a", { className: "bt-model-help", href: KEY_HELP_URL, target: "_blank", rel: "noopener noreferrer" }, t("How to set a DeepSeek API key"));
@@ -7065,24 +7083,15 @@ diff --git a/client.js b/client.js
 +      (0, import_react16.createElement)("span", { className: "bt-turn-error-title" }, title),
 +      (0, import_react16.createElement)("span", { className: "bt-turn-error-message" }, message),
 +      code ? (0, import_react16.createElement)("code", { className: "bt-turn-error-code" }, code) : null
-     ),
--    (0, import_react13.createElement)("div", { className: "bt-model-chips", role: "group", "aria-label": t("Choose a model") }, choices),
--    error ? (0, import_react13.createElement)("div", { className: "bt-secret-error bt-model-error", role: "alert" }, error) : null
++    ),
 +    choices.length > 0 ? (0, import_react16.createElement)(
 +      "div",
 +      { className: "bt-turn-error-actions" },
 +      choices.map(([label, run]) => (0, import_react16.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)),
 +      deepseek ? (0, import_react16.createElement)(KeyHelpLink, { key: "key-help" }) : null
 +    ) : null
-   );
- }
--function setupChoices(actions) {
--  return [
--    actions.canSignIn?.() ? [t("Sign in to DeepSeek"), () => actions.signIn()] : null,
--    [t("Enter a DeepSeek API key"), () => openHarnessOnboarding("deepseek-official")],
--    [t("Open settings to set up a custom model"), openHarnessSettings]
--  ].filter(Boolean);
--}
++  );
++}
  function DeepSeekSignIn({ useUi, actions }) {
    const open = useUi((state) => state.signIn);
    const entry = open ? actions.signInEntry?.() : null;
@@ -9809,13 +9818,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react28.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: people2.length }) },
 +      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react28.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react28.createElement)(
 +        "div",
@@ -9889,10 +9898,7 @@ diff --git a/client.js b/client.js
 +          (0, import_react28.createElement)(BotMark, { bot, size: 22 }),
 +          (0, import_react28.createElement)("span", { className: "bt-set-copy" }, (0, import_react28.createElement)("span", { className: "bt-bs-label" }, bot.name)),
 +          (0, import_react28.createElement)("span", { className: "bt-set-hint" }, t("Add"))
-         )),
--        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
--      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
--      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
++        )),
 +        ...outsideRemotes.map((bot) => (0, import_react28.createElement)(
 +          "button",
 +          { key: bot.handle, type: "button", className: "bt-set-row bt-bs-row bt-gs-pick", onClick: () => {
@@ -9902,7 +9908,10 @@ diff --git a/client.js b/client.js
 +          (0, import_react28.createElement)(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
 +          (0, import_react28.createElement)("span", { className: "bt-set-copy" }, (0, import_react28.createElement)("span", { className: "bt-bs-label" }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
 +          (0, import_react28.createElement)("span", { className: "bt-set-hint" }, t("Add friend's Bot"))
-+        )),
+         )),
+-        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
+-      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
+-      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
 +        (0, import_react28.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
 +      ] : outside.length + outsidePeople.length + outsideRemotes.length > 0 ? (0, import_react28.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react28.createElement)(PlusIcon), t("Add member")) : null,
 +      (0, import_react28.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react28.createElement)(
@@ -10725,7 +10734,7 @@ diff --git a/client.js b/client.js
      body
    );
  }
-@@ -10150,33 +10150,88 @@ button.bt-us-row:hover{background:var(--bt-hover)}
+@@ -10150,33 +10150,135 @@ button.bt-us-row:hover{background:var(--bt-hover)}
  @keyframes bt-us-drop{from{opacity:0;transform:translateY(-4px) scale(.96)}}
  @keyframes bt-us-fade{from{opacity:0}}
  @keyframes bt-us-cell{from{opacity:0;transform:scale(.5)}}
@@ -10771,7 +10780,6 @@ diff --git a/client.js b/client.js
 +  ["twitter", "X (Twitter)"],
 +  ["youtube", "YouTube"]
 +];
-+var KNOWN = new Set(APPS.map(([slug]) => slug));
 +var appName = (slug) => APPS.find(([id]) => id === slug)?.[1] ?? slug;
 +var GitHubMark = () => (0, import_react30.createElement)(
    "svg",
@@ -10798,21 +10806,69 @@ diff --git a/client.js b/client.js
 -  const [token, setToken] = (0, import_react25.useState)("");
 -  const [busy, setBusy] = (0, import_react25.useState)(false);
 -  const [error, setError] = (0, import_react25.useState)(null);
-+function AppPicker({ apps, onChange }) {
-+  const [more, setMore] = (0, import_react30.useState)(() => apps.filter((app) => !KNOWN.has(app)).join(", "));
++var APP_STATUS = { ready: () => t("Ready"), "sign-in": () => t("Needs sign-in") };
++function AppChip({ name, status, onRemove }) {
++  const label = APP_STATUS[status]?.();
++  return (0, import_react30.createElement)(
++    "button",
++    { type: "button", className: "bt-state bt-app-chip", "aria-pressed": true, "data-status": status ?? "unknown", title: t("Remove {app}", { app: name }), onClick: onRemove },
++    name,
++    label ? (0, import_react30.createElement)("span", { className: "bt-app-status" }, ` · ${label}`) : null
++  );
++}
++function AppPicker({ apps, onChange, search, statuses = {} }) {
++  const [query, setQuery] = (0, import_react30.useState)("");
++  const [found, setFound] = (0, import_react30.useState)(null);
++  const [failed, setFailed] = (0, import_react30.useState)(null);
++  const names = (0, import_react30.useRef)(new Map(APPS));
++  const asked = (0, import_react30.useRef)(0);
++  (0, import_react30.useEffect)(() => {
++    const text = query.trim();
++    if (text === "" || search === void 0) {
++      setFound(null);
++      setFailed(null);
++      return void 0;
++    }
++    const ask = ++asked.current;
++    const timer = setTimeout(() => {
++      search(text).then((list) => {
++        if (ask !== asked.current) return;
++        for (const app of list) names.current.set(app.slug, app.name);
++        setFound(list);
++        setFailed(null);
++      }, (failure) => {
++        if (ask !== asked.current) return;
++        setFound(null);
++        setFailed(failure?.message ?? String(failure));
++      });
++    }, 250);
++    return () => clearTimeout(timer);
++  }, [query, search]);
++  const nameOf = (slug) => names.current.get(slug) ?? appName(slug);
 +  const picked = new Set(apps);
-+  const toggle = (slug) => onChange(picked.has(slug) ? apps.filter((app) => app !== slug) : [...apps, slug]);
-+  const typed = (text) => {
-+    setMore(text);
-+    const extra = text.split(/[\s,]+/).map((app) => app.trim().toLowerCase()).filter((app) => app !== "" && !KNOWN.has(app));
-+    onChange([.../* @__PURE__ */ new Set([...apps.filter((app) => KNOWN.has(app)), ...extra])]);
-+  };
++  const needle = query.trim().toLowerCase();
++  const local = APPS.filter(([slug, name]) => needle === "" || slug.includes(needle) || name.toLowerCase().includes(needle)).map(([slug, name]) => ({ slug, name }));
++  const results = (found ?? local).filter((app) => !picked.has(app.slug));
 +  return (0, import_react30.createElement)(
 +    "div",
 +    { className: "bt-connector-apps" },
-+    (0, import_react30.createElement)("div", { className: "bt-states" }, APPS.map(([slug, name]) => (0, import_react30.createElement)("button", { key: slug, type: "button", className: "bt-state", "aria-pressed": picked.has(slug), onClick: () => toggle(slug) }, name))),
-+    (0, import_react30.createElement)("input", { className: "bt-input", value: more, spellCheck: false, "aria-label": t("More apps"), placeholder: t("More apps: type Composio app names, separated by commas"), onChange: (event) => typed(event.target.value) })
++    apps.length > 0 ? (0, import_react30.createElement)("div", { className: "bt-states", "aria-label": t("Picked apps") }, apps.map((slug) => (0, import_react30.createElement)(AppChip, { key: slug, name: nameOf(slug), status: statuses[slug], onRemove: () => onChange(apps.filter((app) => app !== slug)) }))) : null,
++    (0, import_react30.createElement)("input", { className: "bt-input", type: "search", value: query, spellCheck: false, "aria-label": t("Search apps"), placeholder: t("Search Composio apps"), onChange: (event) => setQuery(event.target.value) }),
++    failed ? (0, import_react30.createElement)("span", { className: "bt-set-hint" }, t("Could not search Composio: {error}", { error: failed })) : null,
++    (0, import_react30.createElement)("div", { className: "bt-states", "aria-label": t("Apps to add") }, results.length === 0 ? (0, import_react30.createElement)("span", { className: "bt-set-hint" }, t("No apps match")) : results.map((app) => (0, import_react30.createElement)("button", { key: app.slug, type: "button", className: "bt-state", "aria-pressed": false, onClick: () => {
++      names.current.set(app.slug, app.name);
++      onChange([...apps, app.slug]);
++    } }, app.name)))
 +  );
++}
++function AppStatusList({ apps, statuses }) {
++  if (apps.length === 0 || Object.keys(statuses).length === 0) return null;
++  return (0, import_react30.createElement)("ul", { className: "bt-connector-app-list", "aria-label": t("App status") }, apps.map((slug) => (0, import_react30.createElement)(
++    "li",
++    { key: slug, className: "bt-connector-app", "data-status": statuses[slug] ?? "unknown" },
++    (0, import_react30.createElement)("span", { className: "bt-connector-app-name" }, appName(slug)),
++    (0, import_react30.createElement)("span", { className: "bt-app-status" }, APP_STATUS[statuses[slug]]?.() ?? "")
++  )));
 +}
 +function ConnectorRow({ connector, roster, actions }) {
 +  const [form, setForm] = (0, import_react30.useState)(false);
@@ -10825,11 +10881,29 @@ diff --git a/client.js b/client.js
    const run = (task, after) => {
      setBusy(true);
      setError(null);
-@@ -10184,72 +10184,109 @@ function ConnectorRow({ connector, actions }) {
+@@ -10184,72 +10184,128 @@ function ConnectorRow({ connector, actions }) {
        after?.();
      }, (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
    };
 +  const gateway = connector.id === "composio";
++  const [statuses, setStatuses] = (0, import_react30.useState)({});
++  const appsKey = (connector.apps ?? []).join(",");
++  (0, import_react30.useEffect)(() => {
++    if (!gateway || connector.state !== "ready" || appsKey === "" || actions.connectorAppStatus === void 0) {
++      setStatuses({});
++      return void 0;
++    }
++    let live = true;
++    actions.connectorAppStatus(connector.id).then((value) => {
++      if (live) setStatuses(value ?? {});
++    }, () => {
++      if (live) setStatuses({});
++    });
++    return () => {
++      live = false;
++    };
++  }, [gateway, connector.state, appsKey, picking]);
++  const search = (0, import_react30.useCallback)((query) => actions.connectorAppSearch(connector.id, query, connector.state === "off" ? token : void 0), [connector.id, connector.state, token]);
    const connect = () => {
      if (busy || token.trim() === "") return;
 -    void run(actions.connectorConnect(connector.id, token), () => {
@@ -10891,6 +10965,7 @@ diff --git a/client.js b/client.js
        )
      ),
 -    !on && form ? (0, import_react25.createElement)(
++    on && gateway && !picking ? (0, import_react30.createElement)(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
 +    on ? (0, import_react30.createElement)("span", { className: "bt-connector-uses" }, usageText(roster, connector.id)) : null,
 +    on && bots ? (0, import_react30.createElement)(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
 +    !on && form ? (0, import_react30.createElement)(
@@ -10899,7 +10974,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react25.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react25.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t("GitHub token"), autoFocus: true })),
 -      (0, import_react25.createElement)(
 +      (0, import_react30.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react30.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t("Composio API key") : t("GitHub token"), autoFocus: true })),
-+      gateway ? (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps }) : null,
++      gateway ? (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps, search: token.trim() === "" ? void 0 : search }) : null,
 +      (0, import_react30.createElement)(
          "div",
          { className: "bt-connector-form-row" },
@@ -10918,7 +10993,7 @@ diff --git a/client.js b/client.js
 +    on && gateway && picking ? (0, import_react30.createElement)(
 +      "div",
 +      { className: "bt-connector-form" },
-+      (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps }),
++      (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps, search, statuses }),
 +      (0, import_react30.createElement)("span", { className: "bt-set-hint" }, t("The first time a Bot uses an app, it shows a sign-in link in the chat.")),
 +      (0, import_react30.createElement)(
 +        "div",
@@ -13527,13 +13602,15 @@ diff --git a/client.js b/client.js
      endVisit: (id) => {
        leaveVisits([id]);
        ui2.set((state) => {
-@@ -13819,15 +13819,21 @@ function apply(ctx) {
+@@ -13819,15 +13819,23 @@ function apply(ctx) {
      secretCancel: (requestId) => after(call("secret-cancel", { requestId })),
      secretUpdate: (name, scope) => after(call("secret-update", { name, scope })),
      secretDelete: (name) => after(call("secret-delete", { name })),
 -    connectorConnect: (id, token) => after(call("connector-connect", { id, token })),
 +    connectorConnect: (id, token, apps) => after(call("connector-connect", { id, token, ...apps !== void 0 ? { apps } : {} })),
 +    connectorApps: (id, apps) => after(call("connector-apps", { id, apps })),
++    connectorAppSearch: (id, query, token) => call("connector-app-search", { id, query, ...token ? { token } : {} }),
++    connectorAppStatus: (id) => call("connector-app-status", { id }),
      connectorDisconnect: (id) => after(call("connector-disconnect", { id })),
      connectorRetry: (id) => after(call("connector-retry", { id })),
      saveCapability: (capability) => after(call("capability-save", capability)),

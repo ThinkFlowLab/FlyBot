@@ -129,6 +129,8 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------ formatting
     // The host cleaned every name already; this is the second line, for a host that did not.
     const safe = (value, max = 60) => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069<>]/g, '').trim().slice(0, max)
+    // A turn's model as the tooltip names it: the model id of `provider/model`, as Bot settings fall back to.
+    const modelName = ref => safe(String(ref ?? '').split('/').slice(1).join('/') || ref, 80)
     const pad = n => String(n).padStart(2, '0')
     const fmtClock = (t, seconds = true) => {
       const d = new Date(t)
@@ -269,7 +271,7 @@ window.__ModuleLoader__.load({
         bars.push({
           id: safe(turn.id, 80), lane: lane.id, x: x0, y, w, h: BAR_H, running: turn.running === true, lost: turn.lost === true,
           outcome: turn.outcome, group: turn.place === 'group', room: roomLane ? roomLane.name : undefined,
-          title: `${lane.name}${roomLane ? ` in ${roomLane.name}` : ''}: ${fmtDur(end - turn.t0)}${turn.running ? ' (running)' : ''}${turn.lost ? ' (cut off by a restart; end unknown)' : ''}${turn.outcome && turn.outcome !== 'completed' ? ` · ${turn.outcome}${turn.errorCode ? ` ${safe(turn.errorCode, 40)}` : ''}` : ''}`,
+          title: `${lane.name}${roomLane ? ` in ${roomLane.name}` : ''}: ${fmtDur(end - turn.t0)}${turn.running ? ' (running)' : ''}${turn.lost ? ' (cut off by a restart; end unknown)' : ''}${turn.outcome && turn.outcome !== 'completed' ? ` · ${turn.outcome}${turn.errorCode ? ` ${safe(turn.errorCode, 40)}` : ''}` : ''}${modelName(turn.model) ? ` · ${modelName(turn.model)}` : ''}`,
           tools: turn.tools.map((tool) => {
             const a = X(Math.max(from, tool.t0))
             const b = X(Math.min(to, tool.t1 ?? to))

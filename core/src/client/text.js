@@ -306,6 +306,22 @@ export function faceRowTitle(title) {
   return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text
 }
 
+// What a Bot runs on, for display: the chosen model, else the one it last ran on.
+export function modelOf(bot, roster) {
+  const ref = bot.model ?? bot.appliedModel
+  if (!ref) return undefined
+  const served = (roster.models ?? []).find(model => model.ref === ref)
+  const [provider, ...rest] = ref.split('/')
+  return { ref, name: served?.name ?? rest.join('/'), provider: served?.providerName ?? provider, served: served !== undefined }
+}
+
+// A Bot row's hover title names the model the Bot runs on (#366): "Coder · DeepSeek V4 Pro".
+// Without a model, a wide row needs none (its name is on it) and a narrow one names the Bot.
+export function botRowTitle(name, model, wide) {
+  if (model) return `${name} · ${model}`
+  return wide ? undefined : name
+}
+
 // The group chats whose work shows on a Bot's row as "<group> · Thinking…". A face room has its
 // own row, so its turns never take over the Bot's preview (#458).
 export function awayGroups(groups, roomsById) {

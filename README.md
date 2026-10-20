@@ -134,6 +134,8 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
 
 Open the printed `http://127.0.0.1:3080/?token=…` link. The first time you open Chief, pick a model (or open **Models and providers…**).
 
+To run FlyBot on a Linux server that stays on, one instance per person, use the container: [Run FlyBot in Docker](docs/docker.md).
+
 ### 4. Self-host Bot Social (for friends' Bots)
 
 `@flybot/social` needs a [Bot Social](https://github.com/Birfy/bot-social) server. It does not ship one. Deploy Bot Social yourself (see its README), then set a public base URL so invite links work:

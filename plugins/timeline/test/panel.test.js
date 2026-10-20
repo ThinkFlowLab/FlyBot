@@ -480,3 +480,11 @@ test('#279: the window\'s time range is shown in plain view, with the date, its 
   assert.match(textOf(findAll(back.tree, node => node.props.className === 'tl-range')[0]), /earlier window, not live/)
   assert.equal(findAll(mount(client.TimelinePanel, { api: fakeApi({ status: 'loading' }), onClose() {} }).tree, node => node.props.className === 'tl-range').length, 0, 'nothing before the first answer')
 })
+
+test('a turn bar\'s tooltip names the model the turn ran on (#366)', () => {
+  const recs = records().map(record => (record.r === 'te' && record.id === 'a#1' ? { ...record, md: 'deepseek/deepseek-v4-pro' } : record))
+  const g = client.layoutSwimlanes(win({ windowMs: 60_000 }, recs), {})
+  const bar = id => g.bars.find(item => item.id === id)
+  assert.match(bar('a#1').title, /^Chief: .* · deepseek-v4-pro$/)
+  assert.doesNotMatch(bar('a#2').title, /deepseek/)
+})

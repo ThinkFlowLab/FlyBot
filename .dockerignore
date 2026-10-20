@@ -1,0 +1,11 @@
+# Only what the image build needs (#352): the packages, their pack check and docker/.
+.git
+**/node_modules
+**/.dsh*
+**/.env
+**/.credentials.yaml
+core/dev/harness/node_modules
+ds-bot
+docs/images
+*.log
+/deepseek-harness

@@ -6,7 +6,8 @@
 //   boot  the recorder started: turns still open before it were cut off by a restart
 //   ts    turn start   { id, bot?, room?, pl, x?, f?, ro? }  pl = chat | group | room;
 //                       x = triggering exchange id, f = who sent it, ro = its role
-//   te    turn end     { id, o, ec? }                          o = completed | aborted | error
+//   te    turn end     { id, o, ec?, md? }                     o = completed | aborted | error;
+//                       md = the model it ran on (`provider/model`)
 //   ks    tool start   { id, tid, nm, bot?, room? }
 //   ke    tool end     { id, tid, ok, ir? }                    ir = the turn ended first
 //   m     delivered    { id, f, to, ro, hop, rt?, room?, n }   f/to = party; rt = replyTo
@@ -95,7 +96,8 @@ export function createRecorder({ adapter, trace, now = Date.now }) {
       const t = cleanTime(event?.time)
       if (!id || !t) return
       const o = OUTCOMES.has(event.outcome) ? event.outcome : 'completed'
-      write({ r: 'te', t, id, o, ...(o === 'error' ? { ec: cleanCode(event.errorCode) } : {}) })
+      const md = typeof event.model === 'string' ? cleanLabel(event.model, 120) : ''
+      write({ r: 'te', t, id, o, ...(o === 'error' ? { ec: cleanCode(event.errorCode) } : {}), ...(md ? { md } : {}) })
     },
     'tool.start'(event) {
       if (isRemoteChat(event)) return

@@ -25,7 +25,7 @@ const NO_ACTOR_ALLOWED = new Set(['auth-redeem', 'auth-whoami', 'auth-invite'])
 // is one of them: there is at most one, and it carries no owner.
 const SHARED_BLOCKED = new Set([
   'secret-set', 'secret-allow', 'secret-cancel', 'secret-update', 'secret-delete',
-  'connector-connect', 'connector-apps', 'connector-disconnect', 'connector-retry', 'bot-connectors',
+  'connector-connect', 'connector-apps', 'connector-app-search', 'connector-app-status', 'connector-disconnect', 'connector-retry', 'bot-connectors',
   'capability-save', 'capability-delete', 'capability-approve',
   'folders', 'folder-pick', 'folder-list',
   'browser-wait', 'browser-result',
