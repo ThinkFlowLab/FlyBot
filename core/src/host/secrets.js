@@ -7,6 +7,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { output } from './tools.js'
+import { OTHER, settled } from './turn-origin.js'
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
 export const ENV_PREFIX = 'DSH_SECRET_'
@@ -486,9 +487,21 @@ export function install(rt) {
     return ctx.llm.stream({ ...options, messages: fresh, ...(system !== undefined ? { system } : {}) })
   })
 
+  // Keys are the owner's (#359, #545): a shell gets them only on the owner's own turn. A turn
+  // someone else started (a friend, another room member, another owner's Bot) gets none, and a
+  // shell outside a known turn gets them only while the Bot is shared with nobody, the same
+  // fail-closed rule as the connector tools (connector-access.js).
+  const ownersTurn = (sessionId, bot) => {
+    const verdict = settled(rt, sessionId)
+    if (verdict !== undefined) return verdict !== OTHER
+    return rt.sharedWith(bot.id).length === 0
+  }
+
   function resolveEnv(execution) {
-    const botId = rt.selfOf(execution?.agent?.session?.header?.id ?? execution?.agent?.id)
-    if (rt.botOf(botId) === undefined) return {}
+    const sessionId = execution?.agent?.session?.header?.id ?? execution?.agent?.id
+    const botId = rt.selfOf(sessionId)
+    const bot = rt.botOf(botId)
+    if (bot === undefined || bot.remote !== undefined || !ownersTurn(sessionId, bot)) return {}
     const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
     const values = {}
     let used = false
@@ -550,7 +563,14 @@ export function install(rt) {
   Object.assign(rt, {
     secretsView,
     secretValue: name => secrets.get(name)?.value,
-    canUseSecret: (name, botId) => canUse(secrets.get(name), botId),
+    // For a capability, which mounts for the Bot's whole Agent whatever the turn: a key for all
+    // Bots stays out of a Bot that is shared with anyone; a key whose list names the Bot is the
+    // owner's explicit choice (#545).
+    canUseSecret: (name, botId) => {
+      const secret = secrets.get(name)
+      if (!canUse(secret, botId) || rt.botOf(botId)?.remote !== undefined) return false
+      return secret.scope !== 'all' || rt.sharedWith(botId).length === 0
+    },
     secretEndpoint,
     forgetBotSecrets,
     loadSecrets,
