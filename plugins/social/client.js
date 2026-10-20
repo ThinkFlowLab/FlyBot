@@ -155,6 +155,10 @@ window.__ModuleLoader__.load({
 .fs-face-item[data-past] .fs-face-row{gap:8px}
 .fs-face-item[data-past] .fs-chip-status{margin-left:4px}
 .fs-face-item[data-past] .fs-face-actions{margin-left:8px;gap:6px}
+.fs-face-time{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));white-space:nowrap;font-variant-numeric:tabular-nums}
+.fs-face-item[data-past] .fs-face-row{border-radius:6px}
+.fs-face-item[data-past] .fs-face-row[data-open]:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-face-item[data-past] .fs-face-row[data-open]:focus-visible{outline:2px solid var(--bt-accent,#4d6bfe);outline-offset:-2px}
 .fs-face-head{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding:2px 0 6px}
 .fs-face-top{display:flex;align-items:center;gap:10px;min-width:0}
 .fs-face-head .fs-face-auto-wrap{min-width:0}
@@ -823,6 +827,21 @@ window.__ModuleLoader__.load({
       }
       return bits.join(' · ')
     }
+    // The time a Past row shows (#304): when the room ended here, else when it started (or was
+    // created). Today reads `14:05`, an earlier day `Oct 19`; the hover text has the full time.
+    const FACE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    function faceRowTime(room, today = new Date()) {
+      const ended = Date.parse(room?.endedAt || '')
+      const deadline = Date.parse(room?.expiresAt || '')
+      const started = Date.parse(room?.startedAt || '') || Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : NaN)
+      const at = Number.isFinite(ended) ? ended : started
+      if (!Number.isFinite(at)) return undefined
+      const when = new Date(at)
+      const hhmm = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
+      const day = `${FACE_MONTHS[when.getMonth()]} ${when.getDate()}`
+      const sameDay = when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth() && when.getDate() === today.getDate()
+      return { text: sameDay ? hhmm : day, full: `${Number.isFinite(ended) ? 'Ended' : 'Started'} ${day} ${hhmm}` }
+    }
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
@@ -853,23 +872,36 @@ window.__ModuleLoader__.load({
         } catch (e) { setNote({ tone: 'error', text: errorText(e) }) }
         finally { setBusy('') }
       }
+      const title = shownFaceTitle(room)
+      const time = past ? faceRowTime(room) : undefined
+      // A past row is one button: clicking anywhere on it opens the read-only room (#304).
+      const rowOpens = past && openable
       return h('div', { className: 'fs-face-item', 'data-flybot': 'face-room', 'data-status': room.status, 'data-past': past || undefined },
         h('div', {
           className: 'fs-face-row',
           'data-open': openable ? true : undefined,
-          onClick: openable ? () => open() : undefined,
+          onClick: openable ? () => (busy ? undefined : open()) : undefined,
+          ...(rowOpens ? {
+            role: 'button', tabIndex: 0, 'aria-label': `Open ${title}`, 'aria-busy': busy ? true : undefined,
+            onKeyDown: (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault?.()
+              return busy ? undefined : open()
+            },
+          } : {}),
         },
           h('span', { className: 'fs-stack', 'aria-label': 'Members' },
             shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
               h(FaceAvatar, { bot: look(m), size: 20 }))),
             extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
           // One line; the full title on hover when the narrow sidebar cuts it (#304).
-          h('span', { className: 'fs-name', title: shownFaceTitle(room) }, shownFaceTitle(room)),
+          h('span', { className: 'fs-name', title }, title),
+          time ? h('span', { className: 'fs-face-time', 'data-flybot': 'face-time', title: time.full }, time.text) : null,
           h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(room) }, faceChipLabel(room)),
-          h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
-            past
-              ? (openable ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => open() }, 'Open') : null)
-              : h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
+          past
+            ? null
+            : h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
+              h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
@@ -1290,9 +1322,21 @@ window.__ModuleLoader__.load({
       }
       return out
     }
+    // Past rooms stays open or folded across a reload (#304).
+    const PAST_OPEN_KEY = 'flybot.social.pastRoomsOpen'
+    function readPastOpen() {
+      try { return globalThis.localStorage?.getItem(PAST_OPEN_KEY) === '1' } catch { return false }
+    }
+    function writePastOpen(open) {
+      try { globalThis.localStorage?.setItem(PAST_OPEN_KEY, open ? '1' : '0') } catch { /* storage unavailable */ }
+    }
     function FaceRooms({ actions, enabled = true, roster, remoteChats } = {}) {
       const [rooms, setRooms] = useState([])
-      const [pastOpen, setPastOpen] = useState(false)
+      const [pastOpen, setPastOpen] = useState(readPastOpen())
+      const togglePast = () => {
+        writePastOpen(!pastOpen)
+        setPastOpen(!pastOpen)
+      }
       const unique = uniqueFaceRooms(rooms)
       const past = unique.filter(isPastFace)
       const load = (poll = true) => call('social/face-rooms', { poll }).then(value => {
@@ -1316,7 +1360,7 @@ window.__ModuleLoader__.load({
       })
       return h('div', { 'data-flybot': 'face-rooms' },
         h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
-          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
+          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: togglePast },
             h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
             'Past rooms',
             h('span', { className: 'fs-count' }, String(past.length))),
