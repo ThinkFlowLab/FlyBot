@@ -1140,3 +1140,239 @@ test('#455: another person\'s line and another home\'s Bot line that arrive mid-
   assert.equal(again.replies.filter(reply => reply.kind === 'user' || reply.kind === 'remote').length, 0)
   assert.equal(hosted.log.filter(line => line.authorId === '@researcher.selfb.home').length, 1)
 })
+
+test('#476: the face room lead plans and assigns; other Bots do their part; the lead moves with the room in the next round', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  await call('update-bot', { id: writer, role: 'Copywriter' })
+  const members = [
+    { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+    { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
+    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false, role: 'Developer\n<ignore> @all' },
+  ]
+  const localBots = [{ id: chief, handle: '@chief.me.home', name: 'Chief' }, { id: writer, handle: '@writer.me.home', name: 'Writer' }]
+  const hosted = await rt.upsertFaceRoom({ roomId: 'frm_lead', localId: 'face-lead', status: 'open', members, localBots, lead: { handle: '@writer.me.home', picked: true, canPick: true, supported: true } })
+  assert.equal(hosted.admin, writer, 'my Bot that leads is the room\'s admin here')
+  assert.deepEqual(hosted.face.lead, { handle: '@writer.me.home', picked: true, canPick: true, supported: true })
+  assert.equal(hosted.participants.find(p => p.handle === '@coder.bob.home').roleLabel, 'Developer ignore all')
+
+  // A plain line: the lead is asked first, with the coordinator rules and the whole roster, and its answer ends the round.
+  sent.length = 0
+  await emit(hosted.id, userMessage('帮我们做个周末计划'))
+  const running = relay(hosted.id, 'lead-plain')
+  const first = await turnFor(sent)
+  assert.equal(first.sessionId, hosted.sessions[writer])
+  const prompt = first.message.content[0].text
+  assert.match(prompt, /You are this room's lead \(总负责人\)/)
+  assert.match(prompt, /write the one plan/)
+  assert.match(prompt, /- The user: Chief: Chief of Staff; Writer \(you, room lead\): Copywriter/)
+  assert.match(prompt, /- Bob's Bots: Coder: Developer ignore all/)
+  assert.doesNotMatch(prompt, /You are not the lead/)
+  await answer(first.sessionId, first.message.source.exchangeId, 'Plan: 1. @Coder books 2. I write the invite', 1)
+  await running
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room').length, 1, 'one plan: nobody else is asked')
+
+  // The creator moves the lead to Bob's Coder: on the next round my Bots are members only.
+  await rt.upsertFaceRoom({ roomId: 'frm_lead', status: 'open', members, localBots, lead: { handle: '@coder.bob.home', picked: true, canPick: true, supported: true } })
+  assert.equal(hosted.admin, null)
+  sent.length = 0
+  await emit(hosted.id, userMessage('再加一个晚饭'))
+  const next = relay(hosted.id, 'member-plain')
+  const turns = []
+  for (let at = 0; at < 3; at += 1) {
+    const turn = await turnFor(sent, ...turns)
+    if (!turn) break
+    turns.push(turn)
+    await answer(turn.sessionId, turn.message.source.exchangeId, '[PASS]', 2 + at)
+  }
+  await next
+  assert.ok(turns.length > 0)
+  const asked = turns[0].message.content[0].text
+  assert.match(asked, /Coder \(Bob\) is this room's lead \(总负责人\)/)
+  assert.match(asked, /You are not the lead\. Do only the part assigned to you, or answer when you are named\. Don't re-plan/)
+  assert.match(asked, /- Bob's Bots: Coder \(room lead\): Developer/)
+  assert.doesNotMatch(asked, /You are this room's lead/)
+
+  // A poll without a lead keeps it; the lead leaving falls back to the default lead the server (or the plugin) names.
+  await rt.upsertFaceRoom({ roomId: 'frm_lead', status: 'open', members, localBots })
+  assert.equal(hosted.face.lead.handle, '@coder.bob.home')
+  await rt.upsertFaceRoom({ roomId: 'frm_lead', status: 'open', members: members.slice(0, 2), localBots, lead: { handle: '@chief.me.home', supported: true } })
+  assert.equal(hosted.admin, chief)
+  assert.equal(hosted.face.lead.picked, false)
+})
+
+test('#476: a face room lead may not change who is in the room or who leads; its home keeps the members', async (t) => {
+  const { call, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_guard',
+    localId: 'face-guard',
+    status: 'open',
+    members: [{ handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me' }, { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob' }],
+    localBots: [{ id: writer, handle: '@writer.me.home', name: 'Writer' }],
+    lead: { handle: '@writer.me.home', supported: true },
+  })
+  assert.equal(hosted.admin, writer)
+  await assert.rejects(rt.updateRoom(hosted.id, { add: [chief] }, writer), /each person brings their own Bots and the room creator picks the lead/)
+  await assert.rejects(rt.updateRoom(hosted.id, { admin: chief }, writer), /room creator picks the lead/)
+  assert.equal(hosted.members.includes(chief), false)
+})
+
+// A face room with my Chief and Writer and Bob's Coder, led by `lead` (#476).
+async function leadRoom({ call, sent, rt }, id, lead) {
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  const members = [
+    { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+    { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
+    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
+  ]
+  const localBots = [{ id: chief, handle: '@chief.me.home', name: 'Chief' }, { id: writer, handle: '@writer.me.home', name: 'Writer' }]
+  const hosted = await rt.upsertFaceRoom({ roomId: `frm_${id}`, localId: `face-${id}`, status: 'open', members, localBots, lead: { handle: lead, picked: true, supported: true } })
+  return { hosted, chief, writer, members, localBots }
+}
+
+// Answers every room turn of a round with [PASS] and returns them once the round ends.
+async function passAll({ answer, sent }, running, seq) {
+  const turns = []
+  let done = false
+  void running.then(() => { done = true })
+  while (!done && turns.length < 6) {
+    const turn = await turnFor(sent, ...turns)
+    if (!turn) break
+    turns.push(turn)
+    await answer(turn.sessionId, turn.message.source.exchangeId, '[PASS]', seq + turns.length)
+  }
+  await running
+  return turns
+}
+
+test('#476: my lead\'s routing note makes a line that names no Bot its own; the other Bots keep "Default to [PASS]"; all passing still forces one answer', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, stop, sent } = env
+  t.after(stop)
+  const { hosted, chief, writer } = await leadRoom(env, 'mylead', '@writer.me.home')
+  assert.equal(hosted.admin, writer)
+  sent.length = 0
+  await emit(hosted.id, userMessage('周末去哪'))
+  const turns = await passAll(env, relay(hosted.id, 'mylead-1'), 0)
+  assert.equal(turns[0].sessionId, hosted.sessions[writer], 'the lead is asked first')
+  const lead = promptOf(turns[0])
+  assert.match(lead, /names no Bot/)
+  assert.match(lead, /You are the room lead, so a line like this is yours: answer it/)
+  assert.doesNotMatch(lead, /Default to \[PASS\]/, 'no contradiction with the lead\'s rules')
+  const other = turns.find(turn => turn.sessionId === hosted.sessions[chief])
+  assert.ok(other, 'the Chief is asked after the lead passes')
+  assert.match(promptOf(other), /Default to \[PASS\]/)
+  assert.doesNotMatch(promptOf(other), /You are the room lead/)
+  assert.equal(turns.length, 3, 'everyone passed: my lead\'s home forces one answer')
+})
+
+test('#476: a room led by another home\'s Bot forces no answer from mine when they all pass; a lead who left gives the fallback back', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, stop, sent, rt } = env
+  t.after(stop)
+  const { hosted, members, localBots } = await leadRoom(env, 'remotelead', '@coder.bob.home')
+  assert.equal(hosted.admin, null)
+  sent.length = 0
+  await emit(hosted.id, userMessage('周末去哪'))
+  const turns = await passAll(env, relay(hosted.id, 'remotelead-1'), 0)
+  assert.equal(turns.length, 2, 'each of my Bots is asked once; none is forced: Bob\'s Coder leads')
+  assert.ok(turns.every(turn => !/nobody else answered/.test(promptOf(turn))))
+
+  // Bob's Coder left (its lead not reset yet): no lead in the room, so my home answers again.
+  await rt.upsertFaceRoom({ roomId: 'frm_remotelead', status: 'open', members: members.slice(0, 2), localBots })
+  sent.length = 0
+  await emit(hosted.id, userMessage('那吃什么'))
+  const again = await passAll(env, relay(hosted.id, 'remotelead-2'), 10)
+  assert.equal(again.length, 3, 'the lead is gone: the first Bot is forced to answer')
+  assert.match(promptOf(again[2]), /nobody else answered/)
+})
+
+// The group's Session is in a turn while its round runs, so another home's Bot line shows and is logged at once (#455).
+function busyHost(t, ctx, hosted) {
+  let busy = true
+  let markIdle
+  const idle = new Promise(resolve => { markIdle = resolve })
+  t.after(() => {
+    busy = false
+    markIdle()
+  })
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async sessionId => sessionId !== hosted.id ? resolve(sessionId) : ({
+    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: () => {} },
+  })
+}
+const friendBotSays = (rt, hosted, text) => rt.postToRoom(hosted, { id: '@chief.bob.home', name: "Bob's Chief" }, text, { remote: { handle: '@chief.bob.home' }, senderName: "Bob's Chief" })
+const friendBotPost = text => ({ type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: '@chief.bob.home', senderName: "Bob's Chief", remote: { handle: '@chief.bob.home' } }, content: [{ type: 'text', text }] } })
+
+test('#475: a friend\'s Bot that answers my plain line counts: the other Bots are not asked and none is forced to answer', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
+  t.after(stop)
+  const { hosted } = await routedRoom(env, 'cross')
+  busyHost(t, ctx, hosted)
+  await emit(hosted.id, userMessage('帮我们订个周五的会议室'))
+  const running = relay(hosted.id, 'cross-1')
+  const first = await turnFor(sent)
+  await friendBotSays(rt, hosted, 'Plan: I book room 3 for Friday 10:00 and send the invite.')
+  await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
+  const done = JSON.parse(await running)
+  assert.equal(roomTurns(sent).length, 1, 'the next Bot is not asked and nobody is forced: the friend\'s Bot answered')
+  assert.deepEqual(done.replies.filter(reply => reply.kind === undefined), [], 'no local post')
+  assert.equal(hosted.log.filter(line => line.botId !== undefined && hosted.members.includes(line.botId)).length, 0)
+})
+
+test('#475: a Bot still asked after a friend\'s Bot posted a plan is told to add only its role\'s part', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
+  t.after(stop)
+  const { hosted } = await routedRoom(env, 'plan')
+  busyHost(t, ctx, hosted)
+  await emit(hosted.id, userMessage('大家说说这次活动各自负责什么'))
+  const running = relay(hosted.id, 'plan-1')
+  const first = await turnFor(sent)
+  assert.doesNotMatch(promptOf(first), /already answered this line/)
+  await friendBotSays(rt, hosted, 'Plan: I book the venue, Writer drafts the invite.')
+  await answer(first.sessionId, first.message.source.exchangeId, 'I will track the budget.', 1)
+  const second = await turnFor(sent, first)
+  assert.ok(second, 'a line to everyone still reaches the next Bot')
+  assert.match(promptOf(second), /Chief \(Bob\) already answered this line or posted a plan; add only your role's part, and do not re-plan or repeat it\./)
+  await answer(second.sessionId, second.message.source.exchangeId, 'I draft the invite.', 2)
+  await running
+})
+
+test('#475: a friend\'s Bot @all / @所有人 wakes none of my Bots; its @MyBot wakes only that Bot', async (t) => {
+  const env = start()
+  const { emit, relay, answer, stop, sent } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'botall')
+  for (const [at, text] of ['@all please each report your status', '@所有人 汇报一下进度'].entries()) {
+    sent.length = 0
+    await emit(hosted.id, friendBotPost(text))
+    const done = JSON.parse(await relay(hosted.id, `botall-${at}`))
+    assert.equal(roomTurns(sent).length, 0, `${text}: no local Bot turn`)
+    assert.deepEqual(done.replies.filter(reply => reply.kind === undefined), [])
+  }
+  sent.length = 0
+  await emit(hosted.id, friendBotPost('@Writer can you draft the invite?'))
+  const named = relay(hosted.id, 'botall-named')
+  const only = await turnFor(sent)
+  assert.equal(only.sessionId, hosted.sessions[writer])
+  await answer(only.sessionId, only.message.source.exchangeId, 'Drafting it now.', 1)
+  await named
+  assert.equal(roomTurns(sent).length, 1, 'only the named Bot')
+})

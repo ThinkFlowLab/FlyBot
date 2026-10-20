@@ -119,6 +119,8 @@ const FRIENDLY = {
   code_void: 'This number is no longer valid. The room already started.',
   room_closed: 'This room has closed.',
   not_a_member: 'You are no longer in this room.',
+  not_room_creator: 'Only the person who created this room can pick its lead.',
+  bot_not_in_room: 'That Bot is no longer in this room.',
   dlp_blocked: 'That message was blocked and was not sent.',
   connector_token_rest_forbidden: 'This Bot Social connection cannot use that request. Try again, or reconnect in Friends\' Bots.',
   confirmation_required: 'Bot Social asked for a confirmation. Try the toggle again.',
@@ -340,6 +342,11 @@ export function platformLeaveText(member) {
   return owner ? `${owner} left the room` : `${faceMemberLabel(member)} left`
 }
 
+export function platformLeadText(member, reason) {
+  if (member) return `Room lead: ${faceMemberLabel(member)}`
+  return reason === 'lead_left' ? 'The room lead left. The default lead takes over.' : 'The room lead is back to the default.'
+}
+
 export function platformStartedText(reason) {
   if (reason === 'expired') return 'Joining has ended. The room is now open. The number is no longer valid.'
   return 'The room is now open. The number is no longer valid.'
@@ -377,14 +384,40 @@ export function viewFaceMember(member) {
     ownerName: cleanFaceName(member.owner_name || member.ownerName, ''),
     roomOnly: member.roomOnly === true || member.published !== true,
     label: cleanFaceName(member.label, '') || faceMemberLabel(member),
+    // The role label its home set for this room (#476): peer data, cleaned like a name.
+    ...(cleanFaceRole(member.role) ? { role: cleanFaceRole(member.role) } : {}),
     ...faceMemberLook(member),
   }
+}
+
+export const FACE_ROLE_MAX = 80
+export function cleanFaceRole(value) {
+  if (typeof value !== 'string') return ''
+  return stripFaceMarkers(value)
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+    .replace(/[[\]"<>`@]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, FACE_ROLE_MAX)
+}
+
+// The room lead every home follows (#476). Bot Social sends the creator's pick, else its default
+// (the first Bot of the creator's home that joined) as `effective_lead_bot_handle`. A server without
+// the field gets the same default here: the first member, by join order. Only the creator may pick,
+// and only on a server that stores it.
+export function viewFaceLead(body, members = []) {
+  const supported = Object.prototype.hasOwnProperty.call(body ?? {}, 'effective_lead_bot_handle')
+  const handle = normHandle(supported ? body.effective_lead_bot_handle : members[0]?.handle)
+  if (!handle) return undefined
+  return { handle, picked: supported && Boolean(normHandle(body.lead_bot_handle)), canPick: supported && body.created_by_me === true, supported }
 }
 
 export function viewFaceRoom(body) {
   if (!body || typeof body !== 'object') return undefined
   const roomId = String(body.room_id || body.roomId || '')
   if (!roomId) return undefined
+  const members = (body.members ?? []).map(viewFaceMember).filter(Boolean)
+  const lead = viewFaceLead(body, members)
   return {
     roomId,
     status: body.status === 'open' || body.status === 'closed' ? body.status : 'candidate',
@@ -393,7 +426,8 @@ export function viewFaceRoom(body) {
     createdAt: body.created_at || body.createdAt || null,
     closedAt: body.closed_at || body.closedAt || null,
     eventCursor: Number(body.event_cursor ?? body.eventCursor ?? 0) || 0,
-    members: (body.members ?? []).map(viewFaceMember).filter(Boolean),
+    members,
+    ...(lead ? { lead } : {}),
     events: (body.events ?? []).map(viewFaceEvent).filter(Boolean),
     memberCount: Number(body.member_count ?? body.members?.length ?? 0) || 0,
     myBots: (body.my_bots ?? body.myBots ?? []).map(viewFaceMember).filter(Boolean),
@@ -405,6 +439,7 @@ const INBOX_TYPES = {
   'face_room.left': 'member.left',
   'face_room.started': 'room.started',
   'face_room.message': 'room.message',
+  'face_room.lead_changed': 'room.lead_changed',
   joined: 'member.joined',
   left: 'member.left',
   started: 'room.started',
@@ -436,7 +471,8 @@ export function viewFaceEvent(event) {
   const raw = String(event.type || event.event_type || '')
   const mapped = INBOX_TYPES[raw] || raw
   if (!mapped) return undefined
-  const member = event.member ? viewFaceMember(event.member) : undefined
+  // A lead change names the new lead (#476) where a join names the member.
+  const member = event.member ? viewFaceMember(event.member) : (mapped === 'room.lead_changed' && event.lead ? viewFaceMember(event.lead) : undefined)
   const from = event.from ? viewFaceMember(event.from) : undefined
   return {
     eventId: String(event.event_id || event.eventId || ''),
@@ -466,6 +502,7 @@ function sanitizePlatformText(text, type, member, reason) {
   if (type === 'member.joined' && member) return platformJoinText(member)
   if (type === 'member.left' && member) return platformLeaveText(member)
   if (type === 'room.started') return platformStartedText(reason)
+  if (type === 'room.lead_changed') return platformLeadText(member, reason)
   const cleaned = String(text ?? '')
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/[[\]"<>`@]/g, '')
@@ -512,7 +549,7 @@ export function renderFaceEvent(event, { attested = false } = {}) {
       ...(attested && human && viewed.typedByOwner === true ? { attested: true } : {}),
     }
   }
-  const kind = viewed.type === 'member.left' ? 'left' : viewed.type === 'room.started' ? 'started' : 'joined'
+  const kind = viewed.type === 'member.left' ? 'left' : viewed.type === 'room.started' ? 'started' : viewed.type === 'room.lead_changed' ? 'notice' : 'joined'
   return {
     kind,
     system: true,
@@ -614,6 +651,20 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
       const handles = (Array.isArray(bots) ? bots : bots ? [bots] : []).map(normHandle).filter(Boolean)
       const body = await request('POST', `/${encodeURIComponent(String(roomId))}/leave`, handles.length ? { bots: handles } : {})
       return viewFaceRoom(body) ?? { roomId, status: body?.status }
+    },
+    // The room creator picks the room lead (#476): a Bot in the room by handle, or null for the default.
+    // Bot Social answers 403 not_room_creator for anyone else; an older server has no such route.
+    async setLead(roomId, bot) {
+      const handle = bot ? normHandle(bot) : ''
+      const body = await request('POST', `/${encodeURIComponent(String(roomId))}/lead`, { bot: handle || null })
+      return viewFaceRoom(body)
+    },
+    // Role labels of this home's own Bots in a room (#476 roster): { '@handle': 'Writer' | null }.
+    async setRoles(roomId, roles = {}) {
+      const clean = Object.fromEntries(Object.entries(roles).map(([handle, role]) => [normHandle(handle), role ? cleanFaceRole(role) || null : null]).filter(([handle]) => handle))
+      if (Object.keys(clean).length === 0) return undefined
+      const body = await request('PUT', `/${encodeURIComponent(String(roomId))}/roles`, { roles: clean })
+      return viewFaceRoom(body)
     },
     // Bot Social features (GET /v1/platform): what this server can do. An older server, or any
     // failure, is an empty list, so callers keep the behaviour they had.

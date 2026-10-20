@@ -12,6 +12,8 @@ test('connector token scope: only the Bot Social routes that accept it', () => {
     '/v1/face-rooms/frm_1/start',
     '/v1/face-rooms/frm_1/leave',
     '/v1/face-rooms/frm_1/messages',
+    '/v1/face-rooms/frm_1/lead',
+    '/v1/face-rooms/frm_1/roles',
     '/v1/bots/b1/grants',
     '/v1/bots/b1/grants/g1',
     '/v1/bots/b1/profile',

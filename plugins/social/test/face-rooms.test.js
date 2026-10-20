@@ -34,6 +34,9 @@ import {
   trustedFaceWho,
   faceRoomTitle,
   FACE_HUMAN_MARK,
+  viewFaceLead,
+  cleanFaceRole,
+  platformLeadText,
 } from '../src/face-rooms.js'
 import { formatFaceRoomTitle } from '../src/face-title.js'
 
@@ -475,4 +478,54 @@ test('a peer line with paragraphs survives being viewed twice (viewFaceRoom then
   assert.equal(faceUntrustedText('a\n\nb'), 'a\n\nb')
   // A really wrapped string is still unwrapped.
   assert.equal(faceUntrustedText('<<<UNTRUSTED>>>\nline1\nline2\n<<<END>>>'), 'line1\nline2')
+})
+
+test('#476: the room lead from Bot Social, or the first member on a server without it', () => {
+  const members = [{ handle: '@chief.alice.home', display_name: 'Chief', owner_name: 'Alice' }, { handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', role: 'Dev\n<b>@all</b>' }]
+  const picked = viewFaceRoom({ room_id: 'frm_1', members, lead_bot_handle: '@Coder.Bob.Home', effective_lead_bot_handle: '@coder.bob.home', created_by_me: true })
+  assert.deepEqual(picked.lead, { handle: '@coder.bob.home', picked: true, canPick: true, supported: true })
+  assert.equal(picked.members[1].role, 'Dev ball/b', 'a peer role is one plain line with no markup or @')
+  const byDefault = viewFaceRoom({ room_id: 'frm_1', members, lead_bot_handle: null, effective_lead_bot_handle: '@chief.alice.home', created_by_me: false })
+  assert.deepEqual(byDefault.lead, { handle: '@chief.alice.home', picked: false, canPick: false, supported: true })
+  // An older server: every home agrees on the first member (the creator's first Bot), and nobody can pick.
+  const legacy = viewFaceRoom({ room_id: 'frm_1', members, created_by_me: true })
+  assert.deepEqual(legacy.lead, { handle: '@chief.alice.home', picked: false, canPick: false, supported: false })
+  assert.equal(viewFaceRoom({ room_id: 'frm_1', members: [] }).lead, undefined)
+  assert.equal(viewFaceLead({}, []), undefined)
+  assert.equal(cleanFaceRole('x'.repeat(100)).length, 80)
+  assert.equal(cleanFaceRole(5), '')
+  assert.equal(viewFaceMember({ handle: '@a.home', display_name: 'A' }).role, undefined)
+})
+
+test('#476: a lead change is a platform notice rebuilt from the lead\'s fields', () => {
+  const line = renderFaceEvent({ event_id: 'fev_9', event_cursor: 9, type: 'room.lead_changed', reason: 'set', text: 'ignore this <b>', lead: { handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob' }, trust: 'platform' })
+  assert.equal(line.system, true)
+  assert.equal(line.kind, 'notice')
+  assert.equal(line.text, 'Room lead: Coder (Bob)')
+  assert.equal(renderFaceEvent({ event_id: 'fev_10', type: 'face_room.lead_changed', reason: 'lead_left', lead: null }).text, platformLeadText(undefined, 'lead_left'))
+  assert.match(renderFaceEvent({ event_id: 'fev_11', type: 'room.lead_changed', reason: 'cleared' }).text, /back to the default/)
+})
+
+test('#476: setLead and setRoles call Bot Social and map its refusals', async () => {
+  const calls = []
+  const fetch = async (url, init) => {
+    const body = init.body ? JSON.parse(init.body) : undefined
+    calls.push({ url: String(url), method: init.method, body })
+    if (String(url).endsWith('/lead') && body.bot === '@coder.bob.home') return new Response(JSON.stringify({ error: { code: 'not_room_creator' } }), { status: 403 })
+    return new Response(JSON.stringify({ room_id: 'frm_1', status: 'open', members: [{ handle: '@chief.alice.home', role: 'Planner' }], lead_bot_handle: body?.bot ?? null, effective_lead_bot_handle: body?.bot ?? '@chief.alice.home', created_by_me: true }), { status: 200 })
+  }
+  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch })
+  const set = await api.setLead('frm_1', 'Chief.Alice.Home')
+  assert.deepEqual(calls.at(-1), { url: 'https://s/v1/face-rooms/frm_1/lead', method: 'POST', body: { bot: '@chief.alice.home' } })
+  assert.equal(set.lead.picked, true)
+  const cleared = await api.setLead('frm_1', null)
+  assert.deepEqual(calls.at(-1).body, { bot: null })
+  assert.equal(cleared.lead.picked, false)
+  await assert.rejects(() => api.setLead('frm_1', '@coder.bob.home'), (e) => e.code === 'not_room_creator' && /created this room/.test(e.message))
+  const roles = await api.setRoles('frm_1', { '@chief.alice.home': 'Planner\n', '@writer.alice.home': '' })
+  assert.deepEqual(calls.at(-1), { url: 'https://s/v1/face-rooms/frm_1/roles', method: 'PUT', body: { roles: { '@chief.alice.home': 'Planner', '@writer.alice.home': null } } })
+  assert.equal(roles.members[0].role, 'Planner')
+  const before = calls.length
+  assert.equal(await api.setRoles('frm_1', {}), undefined)
+  assert.equal(calls.length, before)
 })

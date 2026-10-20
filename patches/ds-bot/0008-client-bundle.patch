@@ -219,7 +219,7 @@ diff --git a/client.js b/client.js
    "Add to group chat": "加入群聊",
    "Message Bot": "给 Bot 发消息",
    "To:": "发给：",
-@@ -187,6 +187,8 @@ var ZH = {
+@@ -187,9 +187,20 @@ var ZH = {
    Everyone: "所有人",
    "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
    "Members · {count}": "成员 · {count}",
@@ -228,6 +228,18 @@ diff --git a/client.js b/client.js
    "Leave the group without an admin": "让群聊不设管理员",
    Unset: "取消",
    "Make admin": "设为管理员",
++  // Face room lead (#476)
++  "Room lead": "总负责人",
++  Lead: "总负责人",
++  "Make lead": "设为总负责人",
++  "Use the default lead": "改回默认总负责人",
++  "Writes the plan and gives each Bot its part.": "写计划，并给每个 Bot 分配任务。",
++  "Default: the first Bot of the room creator that joined.": "默认：房间创建者最先加入的 Bot。",
++  "Only the person who created this room can change it.": "只有创建这个房间的人可以更改。",
++  "Could not change the room lead.": "无法更改总负责人。",
+   "Remove {name} from the group": "把 {name} 移出群聊",
+   "Remove from group": "移出群聊",
+   "Add member": "添加成员",
 @@ -247,6 +247,25 @@ var ZH = {
    "This model is not available now. Pick another one.": "这个模型现在不可用，请换一个。",
    "Every message of this Bot runs on it.": "这个 Bot 的每条消息都用它。",
@@ -1541,7 +1553,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-+  };
+   };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1565,7 +1577,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-   };
++  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1775,21 +1787,21 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1573,60 +1573,235 @@ function relaysBefore(contexts, steps, step) {
-       break;
-     }
+@@ -1583,50 +1583,236 @@ function commRunOf(order, peers, turn, hiddenTurns = []) {
+     if (hidden && peer === void 0) continue;
+     turns.push({ turn: entry, peer, hidden });
    }
--  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
-+  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
-+}
-+function commRunOf(order, peers, turn, hiddenTurns = []) {
-+  const turns = [];
-+  for (const entry of order) {
-+    const peer = peers[entry];
-+    const hidden = hiddenTurns.includes(entry);
-+    if (hidden && peer === void 0) continue;
-+    turns.push({ turn: entry, peer, hidden });
-+  }
+-  const at = turns.findIndex((entry) => entry.turn === turn);
+-  if (at === -1 || turns[at].peer === void 0) return null;
+-  const previous = turns[at - 1];
+-  if (previous?.peer !== void 0 && previous.hidden) return "folded";
+-  let count = 0;
+-  const peerIds = [];
+-  for (let index = at; index < turns.length; index += 1) {
+-    const entry = turns[index];
+-    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
+-    count += entry.hidden ? 2 : 1;
+-    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
 +  const at = turns.findIndex((entry) => entry.turn === turn);
 +  if (at === -1 || turns[at].peer === void 0) return null;
 +  const previous = turns[at - 1];
@@ -1843,6 +1855,17 @@ diff --git a/client.js b/client.js
 +  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
 +  if (named) return `${named[2]} · ${named[1]}`;
 +  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
++}
++function modelOf(bot, roster) {
++  const ref = bot.model ?? bot.appliedModel;
++  if (!ref) return void 0;
++  const served = (roster.models ?? []).find((model) => model.ref === ref);
++  const [provider, ...rest] = ref.split("/");
++  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
++}
++function botRowTitle(name, model, wide) {
++  if (model) return `${name} · ${model}`;
++  return wide ? void 0 : name;
 +}
 +function awayGroups(groups, roomsById) {
 +  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
@@ -1898,28 +1921,18 @@ diff --git a/client.js b/client.js
 +    const count = (own[callId] ?? 0) + delta;
 +    if (count > 0) own[callId] = count;
 +    else delete own[callId];
-+  }
+   }
+-  return { count, peerIds };
 +  return { ...state, [sessionId]: own };
  }
--function commRunOf(order, peers, turn, hiddenTurns = []) {
--  const turns = [];
--  for (const entry of order) {
--    const peer = peers[entry];
--    const hidden = hiddenTurns.includes(entry);
--    if (hidden && peer === void 0) continue;
--    turns.push({ turn: entry, peer, hidden });
--  }
--  const at = turns.findIndex((entry) => entry.turn === turn);
--  if (at === -1 || turns[at].peer === void 0) return null;
--  const previous = turns[at - 1];
--  if (previous?.peer !== void 0 && previous.hidden) return "folded";
--  let count = 0;
--  const peerIds = [];
--  for (let index = at; index < turns.length; index += 1) {
--    const entry = turns[index];
--    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
--    count += entry.hidden ? 2 : 1;
--    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
+-function previewOf(list, id, hiddenTurns = []) {
+-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-  if (!Array.isArray(outline)) return "";
+-  for (let index = outline.length - 1; index >= 0; index -= 1) {
+-    const entry = outline[index];
+-    if (hiddenTurns.includes(entry.turn)) continue;
+-    const text = entry.response || entry.prompt || "";
+-    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
 +
 +// src/client/themes.js
 +var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
@@ -1944,7 +1957,7 @@ diff --git a/client.js b/client.js
 +    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 +    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
    }
--  return { count, peerIds };
+-  return "";
 +};
 +var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 +function themeVars(mode, dark, accent = mode.accent) {
@@ -1968,16 +1981,17 @@ diff --git a/client.js b/client.js
 +    "--bt-tag-ink": rgba(mode.text, 0.58)
 +  };
  }
--function previewOf(list, id, hiddenTurns = []) {
--  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
--  if (!Array.isArray(outline)) return "";
--  for (let index = outline.length - 1; index >= 0; index -= 1) {
--    const entry = outline[index];
--    if (hiddenTurns.includes(entry.turn)) continue;
--    const text = entry.response || entry.prompt || "";
--    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
--  }
--  return "";
+-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+-function usageOf(list, ids) {
+-  let input = 0;
+-  let cacheRead = 0;
+-  let output = 0;
+-  for (const id of ids) {
+-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+-    if (!usage) continue;
+-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+-    cacheRead += usage.cacheReadTokens ?? 0;
+-    output += usage.outputTokens ?? 0;
 +var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 +var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
 +html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
@@ -2020,18 +2034,7 @@ diff --git a/client.js b/client.js
 +    else delete SHAPES[id];
 +    refresh();
 +  };
- }
--var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
--function usageOf(list, ids) {
--  let input = 0;
--  let cacheRead = 0;
--  let output = 0;
--  for (const id of ids) {
--    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
--    if (!usage) continue;
--    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
--    cacheRead += usage.cacheReadTokens ?? 0;
--    output += usage.outputTokens ?? 0;
++}
 +function registerTheme(id, theme) {
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
@@ -2385,34 +2388,10 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2818,263 +2818,245 @@ function compileFragmentSelectors(text, names) {
-     return compiled.get(fragment);
-   });
- }
--function installCompiledStyles(text, tag) {
--  const style = installStyles("", tag);
--  const cache = /* @__PURE__ */ new WeakMap();
--  const render = () => {
--    const names = /* @__PURE__ */ new Set();
--    for (const sheet of document.styleSheets) {
--      if (sheet.ownerNode?.dataset?.dshBot) continue;
--      let list = cache.get(sheet);
--      if (!list) {
--        list = sheetClassNames(sheet);
--        cache.set(sheet, list);
--      }
--      for (const name of list) names.add(name);
--    }
--    const next = compileFragmentSelectors(text, names);
--    if (style.textContent !== next) style.textContent = next;
--  };
--  render();
--  let timer;
--  const schedule = () => {
--    clearTimeout(timer);
--    timer = setTimeout(render, 120);
--  };
--  const onLoad = (event) => {
+@@ -2842,239 +2842,221 @@ function installCompiledStyles(text, tag) {
+     timer = setTimeout(render, 120);
+   };
+   const onLoad = (event) => {
 -    if (event.target instanceof HTMLLinkElement) schedule();
 -  };
 -  const observer = new MutationObserver(schedule);
@@ -2519,36 +2498,13 @@ diff --git a/client.js b/client.js
 -    if (state !== "idle") {
 -      setSettled(false);
 -      return void 0;
-+function installCompiledStyles(text, tag) {
-+  const style = installStyles("", tag);
-+  const cache = /* @__PURE__ */ new WeakMap();
-+  const render = () => {
-+    const names = /* @__PURE__ */ new Set();
-+    for (const sheet of document.styleSheets) {
-+      if (sheet.ownerNode?.dataset?.dshBot) continue;
-+      let list = cache.get(sheet);
-+      if (!list) {
-+        list = sheetClassNames(sheet);
-+        cache.set(sheet, list);
-+      }
-+      for (const name of list) names.add(name);
-     }
+-    }
 -    if (was === "idle" || was === "alert") return void 0;
 -    setSettled(true);
 -    const timer = setTimeout(() => setSettled(false), 1800);
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
-+    const next = compileFragmentSelectors(text, names);
-+    if (style.textContent !== next) style.textContent = next;
-+  };
-+  render();
-+  let timer;
-+  const schedule = () => {
-+    clearTimeout(timer);
-+    timer = setTimeout(render, 120);
-+  };
-+  const onLoad = (event) => {
 +    if (event.target instanceof HTMLLinkElement) schedule();
 +  };
 +  const observer = new MutationObserver(schedule);
@@ -3982,9 +3938,8 @@ diff --git a/client.js b/client.js
 +    room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
 +  );
 +  return (0, import_react8.createElement)(
-     "div",
-     { className: "bt-group-msg" },
--    (0, import_react6.createElement)(
++    "div",
++    { className: "bt-group-msg" },
 +    name,
 +    (0, import_react8.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +  );
@@ -4049,14 +4004,11 @@ diff --git a/client.js b/client.js
 +    { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
 +    // A face room's header is the one name alone; the handle is on hover only (#457).
 +    face ? (0, import_react8.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) }, title: handle }, name) : (0, import_react8.createElement)(
-       "span",
-       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
--      bot.name,
--      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
++      "span",
++      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
 +      name,
 +      (0, import_react8.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react8.createElement)(GlobeMark), handle)
-     ),
--    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
++    ),
 +    (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react8.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
@@ -4096,7 +4048,15 @@ diff --git a/client.js b/client.js
 +    }
 +  };
 +  return (0, import_react8.createElement)(
-+    "div",
+     "div",
+-    { className: "bt-group-msg" },
+-    (0, import_react6.createElement)(
+-      "span",
+-      { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
+-      bot.name,
+-      room2?.admin === bot.id ? (0, import_react6.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
+-    ),
+-    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    { className: "bt-file-chips" },
 +    files.map((file) => (0, import_react8.createElement)(
 +      "button",
@@ -5361,7 +5321,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4785,12 +4785,15 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4785,38 +4785,105 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
          onClick: () => actions.openSession(id),
          onContextMenu
        },
@@ -5381,12 +5341,13 @@ diff --git a/client.js b/client.js
      "button",
      {
        type: "button",
-@@ -4798,25 +4798,88 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+       className: "bt-row",
        "aria-label": label,
        "aria-current": active ? "page" : void 0,
++      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
        "data-bot-id": id,
 -      title: wide ? void 0 : bot.name,
-+      title: remoteRecord2 ? shown : wide ? void 0 : bot.name,
++      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
        onClick: () => actions.openSession(id),
        onContextMenu
      },
@@ -6916,8 +6877,17 @@ diff --git a/client.js b/client.js
  var import_react_dom6 = require("react-dom");
  var MENU_EXIT_MS = 120;
  function groupModels(models) {
-@@ -6376,8 +6376,8 @@ function modelOf(bot, roster) {
+@@ -6367,17 +6367,10 @@ function groupModels(models) {
+   });
  }
+ var servedOf = (roster, ref) => (roster.models ?? []).find((model) => model.ref === ref);
+-function modelOf(bot, roster) {
+-  const ref = bot.model ?? bot.appliedModel;
+-  if (!ref) return void 0;
+-  const served = servedOf(roster, ref);
+-  const [provider, ...rest] = ref.split("/");
+-  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
+-}
  var effortCache = /* @__PURE__ */ new Map();
  function useEfforts(served, ref, actions) {
 -  const [fetched, setFetched] = (0, import_react13.useState)(void 0);
@@ -9664,7 +9634,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,69 +8875,112 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,69 +8875,162 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -9741,10 +9711,13 @@ diff --git a/client.js b/client.js
 +  const bots = seats === 1 ? t("1 Bot") : t("{count} Bots", { count: seats });
 +  return `${persons} · ${bots}`;
 +}
-+function FacePersonRow({ person, onOpenBot, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
++var handleKey = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
++var isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(seat.record?.handle) === handleKey(lead));
++function FacePersonRow({ person, onOpenBot, lead, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
 +  const bots = person.seats.flatMap((seat, index) => {
 +    const name = seat.local && onOpenBot ? (0, import_react28.createElement)("button", { key: seat.key, type: "button", className: "bt-face-bot", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot) : (0, import_react28.createElement)("span", { key: seat.key, className: "bt-face-bot" }, seat.bot);
-+    return index === 0 ? [name] : [(0, import_react28.createElement)("span", { key: `${seat.key}-sep` }, t(", ")), name];
++    const marked = isLeadSeat(seat, lead) ? [name, (0, import_react28.createElement)("span", { key: `${seat.key}-lead`, className: "bt-tag", "data-flybot": "face-lead-tag" }, t("Lead"))] : [name];
++    return index === 0 ? marked : [(0, import_react28.createElement)("span", { key: `${seat.key}-sep` }, t(", ")), ...marked];
 +  });
 +  return (0, import_react28.createElement)(
 +    "div",
@@ -9760,6 +9733,53 @@ diff --git a/client.js b/client.js
 +        (0, import_react28.createElement)("span", { className: "bt-face-bots" }, bots)
 +      )
 +    )
++  );
++}
++function FaceLead({ room: room2, roster, pick: pick2 }) {
++  const lead = room2.face?.lead;
++  const [open, setOpen] = (0, import_react28.useState)(false);
++  const [busy, setBusy] = (0, import_react28.useState)(false);
++  const [error, setError] = (0, import_react28.useState)("");
++  const seats = faceSeats(room2, roster);
++  const current = seats.find((seat) => isLeadSeat(seat, lead?.handle));
++  if (!current) return null;
++  const canPick = lead.canPick === true && typeof pick2 === "function";
++  const choose = async (handle) => {
++    setBusy(true);
++    setError("");
++    try {
++      await pick2(handle);
++      setOpen(false);
++    } catch (err) {
++      setError(err?.message || t("Could not change the room lead."));
++    } finally {
++      setBusy(false);
++    }
++  };
++  return (0, import_react28.createElement)(
++    "div",
++    { className: "bt-face-lead", "data-flybot": "face-lead" },
++    (0, import_react28.createElement)("div", { className: "bt-section-title" }, t("Room lead")),
++    (0, import_react28.createElement)(
++      "div",
++      { className: "bt-set-row" },
++      (0, import_react28.createElement)(
++        "span",
++        { className: "bt-set-copy" },
++        (0, import_react28.createElement)("span", { className: "bt-row-title" }, faceSeatLabel(current)),
++        (0, import_react28.createElement)("span", { className: "bt-set-hint" }, lead.picked ? t("Writes the plan and gives each Bot its part.") : t("Default: the first Bot of the room creator that joined."))
++      ),
++      canPick ? (0, import_react28.createElement)("button", { type: "button", className: "bt-mini", "aria-expanded": open, onClick: () => setOpen(!open) }, open ? t("Done") : t("Change")) : null
++    ),
++    open && canPick ? seats.map((seat) => (0, import_react28.createElement)(
++      "div",
++      { key: seat.key, className: "bt-set-row" },
++      (0, import_react28.createElement)("span", { className: "bt-set-copy" }, faceSeatLabel(seat)),
++      seat === current ? (0, import_react28.createElement)("span", { className: "bt-tag" }, t("Lead")) : (0, import_react28.createElement)("button", { type: "button", className: "bt-mini", disabled: busy, onClick: () => void choose(seat.record?.handle) }, t("Make lead"))
++    )) : null,
++    open && canPick && lead.picked ? (0, import_react28.createElement)("button", { type: "button", className: "bt-more", disabled: busy, onClick: () => void choose(null) }, t("Use the default lead")) : null,
++    canPick || !lead.supported ? null : (0, import_react28.createElement)("div", { className: "bt-set-hint" }, t("Only the person who created this room can change it.")),
++    error ? (0, import_react28.createElement)("div", { className: "bt-set-hint", role: "alert" }, error) : null
 +  );
 +}
  function roomSubtitle(room2, roster) {
@@ -9880,7 +9900,7 @@ diff --git a/client.js b/client.js
 +    face ? (0, import_react28.createElement)(
 +      Card,
 +      { title: t("Members · {count}", { count: people2.length }) },
-+      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))
++      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react28.createElement)(
        Card,
@@ -9958,10 +9978,7 @@ diff --git a/client.js b/client.js
 +          (0, import_react28.createElement)(BotMark, { bot, size: 22 }),
 +          (0, import_react28.createElement)("span", { className: "bt-set-copy" }, (0, import_react28.createElement)("span", { className: "bt-bs-label" }, bot.name)),
 +          (0, import_react28.createElement)("span", { className: "bt-set-hint" }, t("Add"))
-         )),
--        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
--      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
--      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
++        )),
 +        ...outsideRemotes.map((bot) => (0, import_react28.createElement)(
 +          "button",
 +          { key: bot.handle, type: "button", className: "bt-set-row bt-bs-row bt-gs-pick", onClick: () => {
@@ -9971,7 +9988,10 @@ diff --git a/client.js b/client.js
 +          (0, import_react28.createElement)(BotAvatar, { bot: lookBotForRemote({ handle: bot.handle, displayName: bot.name, avatar: bot.avatar, color: bot.color }, roster), size: 22, badge: false, live: false }),
 +          (0, import_react28.createElement)("span", { className: "bt-set-copy" }, (0, import_react28.createElement)("span", { className: "bt-bs-label" }, remoteBotTitle({ displayName: bot.name, ownerName: bot.homeName || bot.owner, handle: bot.handle, isChief: bot.isChief }))),
 +          (0, import_react28.createElement)("span", { className: "bt-set-hint" }, t("Add friend's Bot"))
-+        )),
+         )),
+-        (0, import_react23.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
+-      ] : outside.length > 0 ? (0, import_react23.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react23.createElement)(PlusIcon), t("Add member")) : null,
+-      (0, import_react23.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react23.createElement)(
 +        (0, import_react28.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
 +      ] : outside.length + outsidePeople.length + outsideRemotes.length > 0 ? (0, import_react28.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react28.createElement)(PlusIcon), t("Add member")) : null,
 +      (0, import_react28.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react28.createElement)(
@@ -12248,7 +12268,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,87 +11367,191 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,87 +11367,194 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -12330,18 +12350,21 @@ diff --git a/client.js b/client.js
 +}
 +function FaceMembers({ room: room2, roster, actions }) {
 +  const people2 = facePeople(room2, roster);
++  const pick2 = (bot) => call("social/face-lead", { roomId: room2.id, bot });
 +  return (0, import_react36.createElement)(
      "div",
      null,
 -    (0, import_react31.createElement)("div", { className: "bt-section-title" }, t(title)),
 -    (0, import_react31.createElement)("div", { ref: body, className: "bt-about", "data-open": open || void 0 }, text),
 -    long ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
++    (0, import_react36.createElement)(FaceLead, { room: room2, roster, pick: pick2 }),
 +    (0, import_react36.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: people2.length })),
 +    (0, import_react36.createElement)("div", { className: "bt-members", role: "list" }, people2.map((person) => (0, import_react36.createElement)(FacePersonRow, {
 +      key: person.key,
 +      person,
 +      className: "bt-member",
-+      onOpenBot: (id) => actions.openSession(id)
++      onOpenBot: (id) => actions.openSession(id),
++      lead: room2.face?.lead?.handle
 +    })))
    );
  }

@@ -264,3 +264,58 @@ test('a friend\'s request into a team Bot names the friend as the sidebar does, 
   emit('a', 'user/message', { source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'q2', hop: 0, remote: { handle: '@stranger.zed.home' } }, content: [] }, 7100)
   assert.deepEqual(only(feed, 'exchange.delivered')[1].from, { kind: 'remote', handle: '@stranger.zed.home' })
 })
+
+const header = (provider, model) => ({ header: { config: { provider, model } }, reason: 'change' })
+
+test('turn.end names the model of the turn\'s latest request header (#366)', async (t) => {
+  const { feed, emit, stop } = await boot()
+  t.after(stop)
+  emit('a', 'turn/start', { turn: 1 })
+  emit('a', 'step/start', { turn: 1, step: 1 })
+  emit('a', 'request/header', header('deepseek', 'deepseek-v4-pro'))
+  emit('a', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  // DSH logs no new header while the model stays: the next turn still ran on it.
+  emit('a', 'turn/start', { turn: 2 })
+  emit('a', 'step/start', { turn: 2, step: 1 })
+  emit('a', 'turn/end', { turn: 2, reason: { kind: 'completed' } })
+  // A change of model mid-session is the next turn's label, not the earlier ones'.
+  emit('a', 'turn/start', { turn: 3 })
+  emit('a', 'step/start', { turn: 3, step: 1 })
+  emit('a', 'request/header', header('kimi', 'kimi-k2'))
+  emit('a', 'turn/end', { turn: 3, reason: { kind: 'error', error: { code: 'RATE_LIMIT' } } })
+  assert.deepEqual(only(feed, 'turn.end').map(end => end.model), ['deepseek/deepseek-v4-pro', 'deepseek/deepseek-v4-pro', 'kimi/kimi-k2'])
+  assert.equal(only(feed, 'turn.start').some(start => 'model' in start), false)
+})
+
+test('turn.end: no model for a turn without a model call, and the Session\'s own header before the feed saw one (#366)', async (t) => {
+  const { ctx, feed, stop } = await boot()
+  t.after(stop)
+  let seq = 0
+  const session = { id: 'b', requestHeader: () => ({ config: { provider: 'deepseek', model: 'deepseek-v4-flash' } }) }
+  const emit = (type, data) => ctx.emitArgs('session/event', session, { type, seq: ++seq, time: 5000 + seq, data })
+  emit('turn/start', { turn: 1 })
+  emit('turn/end', { turn: 1, reason: { kind: 'aborted' } })
+  emit('turn/start', { turn: 2 })
+  emit('step/start', { turn: 2, step: 1 })
+  emit('turn/end', { turn: 2, reason: { kind: 'completed' } })
+  const ends = only(feed, 'turn.end')
+  assert.equal('model' in ends[0], false)
+  assert.equal(ends[1].model, 'deepseek/deepseek-v4-flash')
+})
+
+test('negative: a model name is cleaned, and a friend\'s Bot chat never names one (#366)', async (t) => {
+  const { feed, emit, stop } = await boot()
+  t.after(stop)
+  emit('a', 'turn/start', { turn: 1 })
+  emit('a', 'step/start', { turn: 1, step: 1 })
+  emit('a', 'request/header', header('deepseek', 'v4\n<untrusted-message from="x">'))
+  emit('a', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  emit('rc', 'turn/start', { turn: 1 })
+  emit('rc', 'step/start', { turn: 1, step: 1 })
+  emit('rc', 'request/header', header('flybot-remote', '@helper.uib.home'))
+  emit('rc', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  const [mine, remote] = only(feed, 'turn.end')
+  assert.doesNotMatch(mine.model, /untrusted|\n/i)
+  assert.equal(remote.place, 'remote')
+  assert.equal('model' in remote, false)
+})

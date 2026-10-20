@@ -329,6 +329,15 @@ var ZH = {
   "Leave the group without an admin": "让群聊不设管理员",
   Unset: "取消",
   "Make admin": "设为管理员",
+  // Face room lead (#476)
+  "Room lead": "总负责人",
+  Lead: "总负责人",
+  "Make lead": "设为总负责人",
+  "Use the default lead": "改回默认总负责人",
+  "Writes the plan and gives each Bot its part.": "写计划，并给每个 Bot 分配任务。",
+  "Default: the first Bot of the room creator that joined.": "默认：房间创建者最先加入的 Bot。",
+  "Only the person who created this room can change it.": "只有创建这个房间的人可以更改。",
+  "Could not change the room lead.": "无法更改总负责人。",
   "Remove {name} from the group": "把 {name} 移出群聊",
   "Remove from group": "移出群聊",
   "Add member": "添加成员",
@@ -2676,6 +2685,17 @@ function faceRowTitle(title) {
   const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
   if (named) return `${named[2]} · ${named[1]}`;
   return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
+}
+function modelOf(bot, roster) {
+  const ref = bot.model ?? bot.appliedModel;
+  if (!ref) return void 0;
+  const served = (roster.models ?? []).find((model) => model.ref === ref);
+  const [provider, ...rest] = ref.split("/");
+  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
+}
+function botRowTitle(name, model, wide) {
+  if (model) return `${name} · ${model}`;
+  return wide ? void 0 : name;
 }
 function awayGroups(groups, roomsById) {
   return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
@@ -6950,8 +6970,9 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       className: "bt-row",
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
+      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
       "data-bot-id": id,
-      title: remoteRecord2 ? shown : wide ? void 0 : bot.name,
+      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
       onClick: () => actions.openSession(id),
       onContextMenu
     },
@@ -8800,13 +8821,6 @@ function groupModels(models) {
   });
 }
 var servedOf = (roster, ref) => (roster.models ?? []).find((model) => model.ref === ref);
-function modelOf(bot, roster) {
-  const ref = bot.model ?? bot.appliedModel;
-  if (!ref) return void 0;
-  const served = servedOf(roster, ref);
-  const [provider, ...rest] = ref.split("/");
-  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
-}
 var effortCache = /* @__PURE__ */ new Map();
 function useEfforts(served, ref, actions) {
   const [fetched, setFetched] = (0, import_react16.useState)(void 0);
@@ -11756,10 +11770,13 @@ function faceRoomCount(room2, roster) {
   const bots = seats === 1 ? t("1 Bot") : t("{count} Bots", { count: seats });
   return `${persons} · ${bots}`;
 }
-function FacePersonRow({ person, onOpenBot, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
+var handleKey = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
+var isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(seat.record?.handle) === handleKey(lead));
+function FacePersonRow({ person, onOpenBot, lead, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
   const bots = person.seats.flatMap((seat, index) => {
     const name = seat.local && onOpenBot ? (0, import_react28.createElement)("button", { key: seat.key, type: "button", className: "bt-face-bot", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot) : (0, import_react28.createElement)("span", { key: seat.key, className: "bt-face-bot" }, seat.bot);
-    return index === 0 ? [name] : [(0, import_react28.createElement)("span", { key: `${seat.key}-sep` }, t(", ")), name];
+    const marked = isLeadSeat(seat, lead) ? [name, (0, import_react28.createElement)("span", { key: `${seat.key}-lead`, className: "bt-tag", "data-flybot": "face-lead-tag" }, t("Lead"))] : [name];
+    return index === 0 ? marked : [(0, import_react28.createElement)("span", { key: `${seat.key}-sep` }, t(", ")), ...marked];
   });
   return (0, import_react28.createElement)(
     "div",
@@ -11775,6 +11792,53 @@ function FacePersonRow({ person, onOpenBot, className = "bt-set-row bt-bs-row bt
         (0, import_react28.createElement)("span", { className: "bt-face-bots" }, bots)
       )
     )
+  );
+}
+function FaceLead({ room: room2, roster, pick: pick2 }) {
+  const lead = room2.face?.lead;
+  const [open, setOpen] = (0, import_react28.useState)(false);
+  const [busy, setBusy] = (0, import_react28.useState)(false);
+  const [error, setError] = (0, import_react28.useState)("");
+  const seats = faceSeats(room2, roster);
+  const current = seats.find((seat) => isLeadSeat(seat, lead?.handle));
+  if (!current) return null;
+  const canPick = lead.canPick === true && typeof pick2 === "function";
+  const choose = async (handle) => {
+    setBusy(true);
+    setError("");
+    try {
+      await pick2(handle);
+      setOpen(false);
+    } catch (err) {
+      setError(err?.message || t("Could not change the room lead."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (0, import_react28.createElement)(
+    "div",
+    { className: "bt-face-lead", "data-flybot": "face-lead" },
+    (0, import_react28.createElement)("div", { className: "bt-section-title" }, t("Room lead")),
+    (0, import_react28.createElement)(
+      "div",
+      { className: "bt-set-row" },
+      (0, import_react28.createElement)(
+        "span",
+        { className: "bt-set-copy" },
+        (0, import_react28.createElement)("span", { className: "bt-row-title" }, faceSeatLabel(current)),
+        (0, import_react28.createElement)("span", { className: "bt-set-hint" }, lead.picked ? t("Writes the plan and gives each Bot its part.") : t("Default: the first Bot of the room creator that joined."))
+      ),
+      canPick ? (0, import_react28.createElement)("button", { type: "button", className: "bt-mini", "aria-expanded": open, onClick: () => setOpen(!open) }, open ? t("Done") : t("Change")) : null
+    ),
+    open && canPick ? seats.map((seat) => (0, import_react28.createElement)(
+      "div",
+      { key: seat.key, className: "bt-set-row" },
+      (0, import_react28.createElement)("span", { className: "bt-set-copy" }, faceSeatLabel(seat)),
+      seat === current ? (0, import_react28.createElement)("span", { className: "bt-tag" }, t("Lead")) : (0, import_react28.createElement)("button", { type: "button", className: "bt-mini", disabled: busy, onClick: () => void choose(seat.record?.handle) }, t("Make lead"))
+    )) : null,
+    open && canPick && lead.picked ? (0, import_react28.createElement)("button", { type: "button", className: "bt-more", disabled: busy, onClick: () => void choose(null) }, t("Use the default lead")) : null,
+    canPick || !lead.supported ? null : (0, import_react28.createElement)("div", { className: "bt-set-hint" }, t("Only the person who created this room can change it.")),
+    error ? (0, import_react28.createElement)("div", { className: "bt-set-hint", role: "alert" }, error) : null
   );
 }
 function roomSubtitle(room2, roster) {
@@ -11883,7 +11947,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
     face ? (0, import_react28.createElement)(
       Card,
       { title: t("Members · {count}", { count: people2.length }) },
-      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))
+      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
     ) : null,
     face ? null : (0, import_react28.createElement)(
       Card,
@@ -14538,15 +14602,18 @@ function SharedRoomApprovals({ room: room2 }) {
 }
 function FaceMembers({ room: room2, roster, actions }) {
   const people2 = facePeople(room2, roster);
+  const pick2 = (bot) => call("social/face-lead", { roomId: room2.id, bot });
   return (0, import_react36.createElement)(
     "div",
     null,
+    (0, import_react36.createElement)(FaceLead, { room: room2, roster, pick: pick2 }),
     (0, import_react36.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: people2.length })),
     (0, import_react36.createElement)("div", { className: "bt-members", role: "list" }, people2.map((person) => (0, import_react36.createElement)(FacePersonRow, {
       key: person.key,
       person,
       className: "bt-member",
-      onOpenBot: (id) => actions.openSession(id)
+      onOpenBot: (id) => actions.openSession(id),
+      lead: room2.face?.lead?.handle
     })))
   );
 }

@@ -487,7 +487,8 @@ export function install(rt) {
   // Main Bots and the admins of a group also write the team's; Main Bots read and
   // write every Bot's. The user may do everything from the memory panel.
 
-  const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId)
+  // A face-to-face room's lead (its admin there, #476) gets no team rights from it.
+  const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId && room.origin !== 'face-to-face')
 
   // Team memory is one team's. A review that reads a room where another owner sits
   // keeps entries in the Bot's own memory only (#53); ownership, not the admin role,

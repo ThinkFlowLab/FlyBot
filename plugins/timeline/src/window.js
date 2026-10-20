@@ -70,7 +70,7 @@ function fold(records) {
         break
       case 'te': {
         const turn = turns.get(record.id)
-        if (turn && turn.t1 === undefined) Object.assign(turn, { t1: Math.max(turn.t0, record.t), outcome: record.o, errorCode: record.ec })
+        if (turn && turn.t1 === undefined) Object.assign(turn, { t1: Math.max(turn.t0, record.t), outcome: record.o, errorCode: record.ec, model: typeof record.md === 'string' ? cleanLabel(record.md, 120) : undefined })
         break
       }
       case 'ks':
@@ -165,6 +165,7 @@ export function buildWindow(records, { now = Date.now(), to, windowMs, bots = []
     running: turn.t1 === undefined && live,
     ...(turn.outcome ? { outcome: turn.outcome } : {}),
     ...(turn.errorCode ? { errorCode: cleanCode(turn.errorCode) } : {}),
+    ...(turn.model ? { model: turn.model } : {}),
     ...(turn.lost ? { lost: true } : {}),
     ...(turn.trigger ? { trigger: { exchangeId: turn.trigger.x, ...(turn.trigger.from ? { from: laneOfParty(turn.trigger.from) } : {}), ...(turn.trigger.role ? { role: turn.trigger.role } : {}) } } : {}),
     tools: (toolsOf.get(turn.id) ?? [])

@@ -232,3 +232,14 @@ test('a gone Bot or group with no remembered name is "Removed Bot" / "Removed gr
   assert.deepEqual(win.lanes.filter(lane => lane.removed).map(lane => lane.name), ['Removed Bot', 'Removed Bot 2', 'Removed group'])
   assert.doesNotMatch(JSON.stringify(win.lanes), /"name":"session-/)
 })
+
+test('turns name the model they ran on; an old or malformed record has none (#366)', () => {
+  const recs = records().map(record => (record.r === 'te' && record.id === 'a#1' ? { ...record, md: 'deepseek/deepseek-v4-pro' } : record.r === 'te' && record.id === 'b#1' ? { ...record, md: 42 } : record))
+  recs.push({ r: 'ts', t: at(43000), id: 'b#2', pl: 'chat', bot: 'b' }, { r: 'te', t: at(44000), id: 'b#2', o: 'completed', md: 'x/<b>bold</b>\u202e' })
+  const turns = buildWindow(recs, { now: NOW, bots, rooms }).turns
+  const turn = id => turns.find(item => item.id === id)
+  assert.equal(turn('a#1').model, 'deepseek/deepseek-v4-pro')
+  assert.equal('model' in turn('b#1'), false)
+  assert.equal('model' in turn('a#2'), false)
+  assert.equal(turn('b#2').model, 'x/bbold/b')
+})

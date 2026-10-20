@@ -30,13 +30,19 @@ export function faceRoomCount(room, roster) {
   return `${persons} · ${bots}`
 }
 
+// The seat of a face room's lead (#476), by handle.
+const handleKey = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
+export const isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(seat.record?.handle) === handleKey(lead))
+
 // One row per person (#457): "Ann (you) · Chief, Researcher", my own Bots each opening its chat.
-export function FacePersonRow({ person, onOpenBot, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
+// `lead`: the room lead's handle (#476), marked on its Bot.
+export function FacePersonRow({ person, onOpenBot, lead, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
   const bots = person.seats.flatMap((seat, index) => {
     const name = seat.local && onOpenBot
       ? h('button', { key: seat.key, type: 'button', className: 'bt-face-bot', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot)
       : h('span', { key: seat.key, className: 'bt-face-bot' }, seat.bot)
-    return index === 0 ? [name] : [h('span', { key: `${seat.key}-sep` }, t(', ')), name]
+    const marked = isLeadSeat(seat, lead) ? [name, h('span', { key: `${seat.key}-lead`, className: 'bt-tag', 'data-flybot': 'face-lead-tag' }, t('Lead'))] : [name]
+    return index === 0 ? marked : [h('span', { key: `${seat.key}-sep` }, t(', ')), ...marked]
   })
   return h('div', { className, role: 'listitem', 'data-flybot': 'face-person', 'data-mine': person.mine || undefined },
     h('span', { className: 'bt-gs-who bt-face-person' },
@@ -44,6 +50,45 @@ export function FacePersonRow({ person, onOpenBot, className = 'bt-set-row bt-bs
       h('span', { className: 'bt-face-person-text' },
         h('span', { className: 'bt-row-title' }, facePersonLabel(person)),
         h('span', { className: 'bt-face-bots' }, bots))))
+}
+
+// A face room's lead (总负责人, #476): the one Bot, from any home, that writes the plan and gives out the
+// parts. The room creator changes it here, with a button; everyone else sees it read-only. Until the
+// creator picks, it is the first Bot of the creator's home that joined.
+export function FaceLead({ room, roster, pick }) {
+  const lead = room.face?.lead
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const seats = faceSeats(room, roster)
+  const current = seats.find(seat => isLeadSeat(seat, lead?.handle))
+  if (!current) return null
+  const canPick = lead.canPick === true && typeof pick === 'function'
+  const choose = async (handle) => {
+    setBusy(true)
+    setError('')
+    try {
+      await pick(handle)
+      setOpen(false)
+    } catch (err) {
+      setError(err?.message || t('Could not change the room lead.'))
+    } finally { setBusy(false) }
+  }
+  return h('div', { className: 'bt-face-lead', 'data-flybot': 'face-lead' },
+    h('div', { className: 'bt-section-title' }, t('Room lead')),
+    h('div', { className: 'bt-set-row' },
+      h('span', { className: 'bt-set-copy' },
+        h('span', { className: 'bt-row-title' }, faceSeatLabel(current)),
+        h('span', { className: 'bt-set-hint' }, lead.picked ? t('Writes the plan and gives each Bot its part.') : t('Default: the first Bot of the room creator that joined.'))),
+      canPick ? h('button', { type: 'button', className: 'bt-mini', 'aria-expanded': open, onClick: () => setOpen(!open) }, open ? t('Done') : t('Change')) : null),
+    open && canPick ? seats.map(seat => h('div', { key: seat.key, className: 'bt-set-row' },
+      h('span', { className: 'bt-set-copy' }, faceSeatLabel(seat)),
+      seat === current
+        ? h('span', { className: 'bt-tag' }, t('Lead'))
+        : h('button', { type: 'button', className: 'bt-mini', disabled: busy, onClick: () => void choose(seat.record?.handle) }, t('Make lead')))) : null,
+    open && canPick && lead.picked ? h('button', { type: 'button', className: 'bt-more', disabled: busy, onClick: () => void choose(null) }, t('Use the default lead')) : null,
+    canPick || !lead.supported ? null : h('div', { className: 'bt-set-hint' }, t('Only the person who created this room can change it.')),
+    error ? h('div', { className: 'bt-set-hint', role: 'alert' }, error) : null)
 }
 
 export function roomSubtitle(room, roster) {
@@ -112,7 +157,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
         h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
     face ? h(Card, { title: t('Members · {count}', { count: people.length }) },
-      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))) : null,
+      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room.face?.lead?.handle }))) : null,
     face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
       humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
         h('span', { className: 'bt-gs-who' },

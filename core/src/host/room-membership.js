@@ -36,6 +36,7 @@
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
 import { encodeRoomShare, parseRoomShare } from '../shared/room-share.js'
+import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
 
@@ -1194,6 +1195,7 @@ export function install(rt) {
       // Face-to-face: the matching room is the scope. No person-grant is implied.
       roomOnly: member.roomOnly === true || member.published !== true,
       role: 'member',
+      ...(cleanRoleLabel(member.role) ? { roleLabel: cleanRoleLabel(member.role) } : {}),
       joinedSeq,
       joinedAt: at,
       ...faceLookFields(member),
@@ -1246,6 +1248,9 @@ export function install(rt) {
       existing.roomOnly = member.roomOnly === true || member.published !== true
       const label = cleanPeerName(member.label, '')
       if (label) existing.label = label
+      // The role label its home set for this room (#476); gone when that home clears it.
+      if (cleanRoleLabel(member.role)) existing.roleLabel = cleanRoleLabel(member.role)
+      else delete existing.roleLabel
       const look = faceLookFields(member)
       if (look.color) existing.color = look.color
       if (look.avatar) existing.avatar = look.avatar
@@ -1325,6 +1330,8 @@ export function install(rt) {
     if (!serverId) throw invalid('A face-to-face room needs a room id')
     let room = Object.values(state.rooms || {}).find(item => item.face?.roomId === serverId)
     const title = faceRoomFallbackTitle(spec, room)
+    // The room lead every home follows (#476): kept until a snapshot names it again.
+    const lead = spec.lead !== undefined ? cleanFaceLead(spec.lead) : room?.face?.lead
     const at = Date.now()
     if (!room) {
       const id = spec.localId || (typeof rt.createSession === 'function' ? await rt.createSession(title) : `face-${serverId}`)
@@ -1354,9 +1361,13 @@ export function install(rt) {
       eventCursor: Math.max(Number(room.face.eventCursor) || 0, Number(spec.eventCursor) || 0),
       seenEvents: Array.isArray(room.face.seenEvents) ? room.face.seenEvents : [],
       ...(faceJoinCode(spec, room) ? { joinCode: faceJoinCode(spec, room) } : {}),
+      ...(lead ? { lead } : {}),
     }
     if (spec.name || isAutoFaceTitle(room.name)) room.name = title
     if (Array.isArray(spec.members)) rt.syncFaceParticipants(room, spec.members, spec.localBots)
+    // When the lead is one of my Bots it is this room's admin here, so the round asks it first (#476).
+    const leadSeat = faceLeadOf(room)
+    room.admin = leadSeat && !leadSeat.remote && room.members.includes(leadSeat.id) ? leadSeat.id : null
     await rt.save?.()
     return room
   }

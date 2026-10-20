@@ -66,7 +66,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  import { useEscape } from './overlay-hooks.js'
  import { BotSettingsForm } from './bot-settings.js'
 -import { GroupSettingsForm, ROOM_MODES, roomSubtitle, shownMode } from './group-settings.js'
-+import { FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
++import { FaceLead, FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
  import { ModelMenu, modelOf } from './model-menu.js'
  import { FolderMenu } from './folder-menu.js'
  import { MemoryRow } from './memory-panel.js'
@@ -80,7 +80,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  
  function transcriptOf(list, id, name, hiddenTurns = []) {
    const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
-@@ -113,16 +113,97 @@ function About({ text, title = 'About' }) {
+@@ -113,16 +113,100 @@ function About({ text, title = 'About' }) {
  
  // A group's overview: what members read, who is in it, and who answers. Changes are
  // made in its settings.
@@ -119,12 +119,15 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +
 +// One row per person, each with the Bots they brought; my own Bot opens its chat (#229, #457).
 +// The count is people, not Bots.
++// The room lead (#476) sits above the people: the creator picks it with a button, never in chat.
 +function FaceMembers({ room, roster, actions }) {
 +  const people = facePeople(room, roster)
++  const pick = bot => call('social/face-lead', { roomId: room.id, bot })
 +  return h('div', null,
++    h(FaceLead, { room, roster, pick }),
 +    h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: people.length })),
 +    h('div', { className: 'bt-members', role: 'list' }, people.map(person => h(FacePersonRow, {
-+      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id),
++      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id), lead: room.face?.lead?.handle,
 +    }))))
 +}
 +
@@ -290,7 +293,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
  
  export const ROOM_MODES = [
    ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
-@@ -15,7 +15,38 @@ export const ROOM_MODES = [
+@@ -15,7 +15,83 @@ export const ROOM_MODES = [
  // Without an admin the host answers as everyone, whatever the stored mode says.
  export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
  
@@ -308,13 +311,19 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +  return `${persons} · ${bots}`
 +}
 +
++// The seat of a face room's lead (#476), by handle.
++const handleKey = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
++export const isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(seat.record?.handle) === handleKey(lead))
++
 +// One row per person (#457): "Ann (you) · Chief, Researcher", my own Bots each opening its chat.
-+export function FacePersonRow({ person, onOpenBot, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
++// `lead`: the room lead's handle (#476), marked on its Bot.
++export function FacePersonRow({ person, onOpenBot, lead, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
 +  const bots = person.seats.flatMap((seat, index) => {
 +    const name = seat.local && onOpenBot
 +      ? h('button', { key: seat.key, type: 'button', className: 'bt-face-bot', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot)
 +      : h('span', { key: seat.key, className: 'bt-face-bot' }, seat.bot)
-+    return index === 0 ? [name] : [h('span', { key: `${seat.key}-sep` }, t(', ')), name]
++    const marked = isLeadSeat(seat, lead) ? [name, h('span', { key: `${seat.key}-lead`, className: 'bt-tag', 'data-flybot': 'face-lead-tag' }, t('Lead'))] : [name]
++    return index === 0 ? marked : [h('span', { key: `${seat.key}-sep` }, t(', ')), ...marked]
 +  })
 +  return h('div', { className, role: 'listitem', 'data-flybot': 'face-person', 'data-mine': person.mine || undefined },
 +    h('span', { className: 'bt-gs-who bt-face-person' },
@@ -322,6 +331,45 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +      h('span', { className: 'bt-face-person-text' },
 +        h('span', { className: 'bt-row-title' }, facePersonLabel(person)),
 +        h('span', { className: 'bt-face-bots' }, bots))))
++}
++
++// A face room's lead (总负责人, #476): the one Bot, from any home, that writes the plan and gives out the
++// parts. The room creator changes it here, with a button; everyone else sees it read-only. Until the
++// creator picks, it is the first Bot of the creator's home that joined.
++export function FaceLead({ room, roster, pick }) {
++  const lead = room.face?.lead
++  const [open, setOpen] = useState(false)
++  const [busy, setBusy] = useState(false)
++  const [error, setError] = useState('')
++  const seats = faceSeats(room, roster)
++  const current = seats.find(seat => isLeadSeat(seat, lead?.handle))
++  if (!current) return null
++  const canPick = lead.canPick === true && typeof pick === 'function'
++  const choose = async (handle) => {
++    setBusy(true)
++    setError('')
++    try {
++      await pick(handle)
++      setOpen(false)
++    } catch (err) {
++      setError(err?.message || t('Could not change the room lead.'))
++    } finally { setBusy(false) }
++  }
++  return h('div', { className: 'bt-face-lead', 'data-flybot': 'face-lead' },
++    h('div', { className: 'bt-section-title' }, t('Room lead')),
++    h('div', { className: 'bt-set-row' },
++      h('span', { className: 'bt-set-copy' },
++        h('span', { className: 'bt-row-title' }, faceSeatLabel(current)),
++        h('span', { className: 'bt-set-hint' }, lead.picked ? t('Writes the plan and gives each Bot its part.') : t('Default: the first Bot of the room creator that joined.'))),
++      canPick ? h('button', { type: 'button', className: 'bt-mini', 'aria-expanded': open, onClick: () => setOpen(!open) }, open ? t('Done') : t('Change')) : null),
++    open && canPick ? seats.map(seat => h('div', { key: seat.key, className: 'bt-set-row' },
++      h('span', { className: 'bt-set-copy' }, faceSeatLabel(seat)),
++      seat === current
++        ? h('span', { className: 'bt-tag' }, t('Lead'))
++        : h('button', { type: 'button', className: 'bt-mini', disabled: busy, onClick: () => void choose(seat.record?.handle) }, t('Make lead')))) : null,
++    open && canPick && lead.picked ? h('button', { type: 'button', className: 'bt-more', disabled: busy, onClick: () => void choose(null) }, t('Use the default lead')) : null,
++    canPick || !lead.supported ? null : h('div', { className: 'bt-set-hint' }, t('Only the person who created this room can change it.')),
++    error ? h('div', { className: 'bt-set-hint', role: 'alert' }, error) : null)
 +}
 +
  export function roomSubtitle(room, roster) {
@@ -359,7 +407,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
 -    h(Card, { title: t('Members · {count}', { count: members.length }) },
 +    face ? h(Card, { title: t('Members · {count}', { count: people.length }) },
-+      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))) : null,
++      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room.face?.lead?.handle }))) : null,
 +    face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
 +        h('span', { className: 'bt-gs-who' },
@@ -602,7 +650,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  //
  // Work does not hold a round up: a member that is still busy with tools a little after
  // it started, or that is called while still at earlier work, lets the round go on. Its
-@@ -17,11 +17,16 @@
+@@ -17,11 +17,17 @@
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
  import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -615,6 +663,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  import { GROUP_REF, output } from './tools.js'
  import { failureLine } from './turns.js'
 +import { currentParticipants, isFaceRoom } from './room-membership.js'
++import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, faceRoster, isFaceLead } from './face-lead.js'
 +import { faceMentions } from './face-mentions.js'
 +import { stripSessionChips } from './delivery.js'
 +import { createDshRoomParticipant } from './room-participant.js'
@@ -630,7 +679,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  
  // Logs written before rooms were versioned get sequence numbers in place.
  const ensureRoomLog = (room) => {
-@@ -41,9 +41,48 @@ const ensureRoomLog = (room) => {
+@@ -41,9 +41,61 @@ const ensureRoomLog = (room) => {
    room.seen ??= {}
  }
  
@@ -657,6 +706,19 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +  return undefined
 +}
 +const lastPersonSeq = room => lastPersonLine(room)?.seq ?? 0
++// Another home's Bots that posted while this round answers the person's line (#475): each home runs its own round
++// over its own Bots, so a friend's Bot that already answered or planned counts as this line's answer here too. A
++// Bot post queued before the round started is not counted: it may be older than the line it is logged after.
++const friendAnswers = (room, round) => {
++  if (round.faceLine === undefined) return []
++  const after = Math.max(round.faceLine, round.openedSeq ?? 0)
++  const names = []
++  for (const line of room.log ?? []) {
++    if ((line.seq ?? 0) <= after || line.kind || line.botId === undefined || line.botId === 'face-notice' || room.members.includes(line.botId)) continue
++    if (!names.includes(line.who)) names.push(line.who)
++  }
++  return names
++}
 +const FACE_ASKED_KEPT = 24
 +const currentFaceLine = (room, seq) => (room.faceLine !== undefined && room.faceLine.seq === seq && lastPersonSeq(room) === seq ? room.faceLine : undefined)
 +// `authorId`: a friend's line is only tracked once it is in the log (applyFaceLine logs it first).
@@ -700,7 +762,17 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -113,31 +113,54 @@ const ROOM_READ_MAX = 30
+@@ -100,7 +100,8 @@ const slotLabel = (slot) => {
+   return slot.name
+ }
+ 
+-const adminNote = room => [
++// A face-to-face room's admin is its lead (#476), with the lead's rules instead.
++const adminNote = room => isFaceRoom(room) ? FACE_LEAD_NOTE : [
+   'You are this group\'s admin.',
+   room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
+   '"@all" calls every member. When the user asks, change the group with update_group.',
+@@ -113,31 +113,58 @@ const ROOM_READ_MAX = 30
  
  export function install(rt) {
    const { ctx } = rt
@@ -762,19 +834,40 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    const everyone = room.members.map(rt.botOf).filter(Boolean)
 +    const roles = everyone.filter(bot => bot.role).map(bot => `${bot.name}${bot.id === member.id ? ' (you)' : ''}: ${String(bot.role).slice(0, 80)}`)
 +    const friends = currentParticipants(room).filter(p => p.kind === 'bot' && p.remote).map(p => p.label || p.displayName).filter(Boolean)
++    const answered = friendAnswers(room, round)
 +    return [
 +      'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
 +      broadcast
 +        ? 'It is addressed to everyone (introductions, what each of you can do, a round of opinions): give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
-+        : 'Default to [PASS]: exactly one Bot answers a line like this, and the first Bot that answers ends it, so the Bots after it are not asked. Answer only if it is for you: it names you or your role, no other member\'s role fits it better, or it follows up on your own last answer. Reply [PASS] when it is for another Bot by name or role, when it follows up on another Bot\'s answer, or when you would only be guessing.',
++        : isFaceLead(room, member)
++          ? FACE_LEAD_ROUTE
++          : 'Default to [PASS]: exactly one Bot answers a line like this, and the first Bot that answers ends it, so the Bots after it are not asked. Answer only if it is for you: it names you or your role, no other member\'s role fits it better, or it follows up on your own last answer. Reply [PASS] when it is for another Bot by name or role, when it follows up on another Bot\'s answer, or when you would only be guessing.',
 +      last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
 +      roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
 +      friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
++      answered.length > 0 ? `${answered.join(', ')} already answered this line or posted a plan; add only your role's part, and do not re-plan or repeat it.` : '',
 +      '[PASS] posts nothing and nobody sees it: never explain a pass.',
 +    ].filter(Boolean).join(' ')
    }
  
    // Lines from before the round's opening message are kept apart from this round, so
+@@ -153,14 +153,14 @@ export function install(rt) {
+     const index = round.slots.findIndex(slot => slot.status === 'speaking')
+     const before = index
+     const after = round.slots.length - index - 1
+-    const members = `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
++    const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
+     const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
+     if (round.kickoff) return [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n')
+     const working = workingIn(room).filter(item => item.bot.id !== member.id)
+     return [
+       members,
+       notice,
+-      leads ? adminNote(room) : '',
++      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
+       earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
+       current.length
+         ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${transcript(current)}`
 @@ -169,83 +169,19 @@ export function install(rt) {
        working.length > 0 ? `Still at work on what they were asked; each posts here when done: ${working.map(item => `${item.bot.name} (${minutesSince(item.since)} min)`).join(', ')}.` : '',
        `Speaking order for this round: ${round.slots.map(slotLabel).join(' → ')}.`,
@@ -895,7 +988,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      }
      // The user spoke in this room, so Bots may start their own rounds again.
      room.botRounds = 0
-@@ -305,14 +305,78 @@ export function install(rt) {
+@@ -305,14 +305,85 @@ export function install(rt) {
      return round.slots.length - before
    }
  
@@ -913,15 +1006,22 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    return speakers
 +  }
 +
-+  // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval.
-+  const answeredAlready = round => round.route !== undefined && !round.route.broadcast && round.route.forced === undefined
-+    && round.slots.some(slot => slot.status === 'posted' || slot.status === 'working' || slot.status === 'waiting-approval')
++  // A routed, non-broadcast round where a Bot already posted, is working on it or waits for the owner's approval,
++  // or where another home's Bot already answered the line (#475).
++  const answeredAlready = (room, round) => round.route !== undefined && !round.route.broadcast && round.route.forced === undefined
++    && (round.slots.some(slot => slot.status === 'posted' || slot.status === 'working' || slot.status === 'waiting-approval')
++      || friendAnswers(room, round).length > 0)
 +
 +  // True once a routed round ended with every Bot silent on the owner's own line (a friend's line is not
-+  // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer.
-+  function fallbackDue(round) {
++  // forced: the friend's own home answers it). A line that follows up a friend's Bot is theirs to answer, and
++  // a line a friend's Bot already answered is answered (#475). A room led by another home's Bot is
++  // that lead's to answer (#476); with no lead known, my own lead, or a lead who left, the fallback stays.
++  function fallbackDue(room, round) {
 +    const route = round.route
 +    if (!route?.fallback || route.forced !== undefined || (route.last?.remote && !route.broadcast)) return false
++    if (friendAnswers(room, round).length > 0) return false
++    // Another home's Bot leads this room (#476): it answers what my Bots leave, so mine are not forced.
++    if (faceLeadIsRemote(room)) return false
 +    const states = round.slots.map(slot => slot.status)
 +    return !states.some(status => status === 'posted' || status === 'working' || status === 'waiting-approval' || status === 'speaking' || status === 'waiting')
 +      && states.some(status => status === 'passed' || status === 'missed')
@@ -962,11 +1062,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      // The inbox check keeps a message sent during the last speaker's turn inside
      // this round: it drains at the loop's head even once the slots ran out.
 -    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0) && round.turns < limit; index += 1) {
-+    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(round)) && round.turns < limit; index += 1) {
++    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(room, round)) && round.turns < limit; index += 1) {
        if (signal.aborted) break
        limit += drainRoomInbox(room, round, turns, index, agent)
 +      // Everyone passed on the owner's own plain line: the first Bot that passed answers, so the user is never ignored (#299).
-+      if (index >= round.slots.length && fallbackDue(round)) {
++      if (index >= round.slots.length && fallbackDue(room, round)) {
 +        const first = round.slots.find(slot => slot.status === 'passed' || slot.status === 'missed')
 +        round.route.forced = first.id
 +        round.slots.push({ id: first.id, name: first.name, status: 'waiting', note: 'nobody answered yet' })
@@ -981,7 +1081,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        }
 +      // One answer for a line that is not for everyone (#299): once a Bot has answered, the Bots still waiting are not
 +      // asked at all (no model call, no line), so three Bots never post three similar answers.
-+      if (answeredAlready(round) || currentFaceLine(room, round.faceLine)?.answered.includes(member.id)) {
++      if (answeredAlready(room, round) || currentFaceLine(room, round.faceLine)?.answered.includes(member.id)) {
 +        slot.status = 'passed'
 +        round.passed.push(member.name)
 +        continue
@@ -1034,7 +1134,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      }
    }
  
-@@ -400,35 +400,46 @@ export function install(rt) {
+@@ -400,35 +400,47 @@ export function install(rt) {
        // The opening greeting is a cue for the admin, not a line of the group; a member's
        // late failure, its work picked up after a restart, or its work the user stopped is
        // an event of the round.
@@ -1074,6 +1174,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
          members: room.members,
 +        ...(route ? { route } : {}),
          startSeq,
++        openedSeq: room.seq,
          ...(opener.kickoff ? { kickoff: true } : {}),
          ...(references.length > 0 ? { references, shown: [] } : {}),
 -        slots: openingSpeakers(room, opener).map(member => ({
@@ -1130,7 +1231,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        return lines.length === 0 ? `"${room.name}" has no messages yet.` : `Latest in "${room.name}" (oldest first):\n${transcript(lines)}`
      },
    }))
-@@ -548,25 +548,120 @@ export function install(rt) {
+@@ -548,25 +548,121 @@ export function install(rt) {
    // the admin answers alone in admin mode, or first of everyone. What a member posts
    // after its round moved on is answered by the member that asked for it; work the
    // user asked for is left for the user to read.
@@ -1187,8 +1288,9 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      }
 +    }
      if (found.length > 0 && !all) return found
-+    // Face-to-face Bot posts: a plain one stays in the room; only @Name / @all calls a Bot (#167).
-+    if (isFaceRoom(room) && !all) return []
++    // Face-to-face Bot posts: a plain one stays in the room; only @Name / @all calls a Bot (#167). Another
++    // home's Bot's @all wakes none of mine (#475): only the local Bots it names answer.
++    if (isFaceRoom(room) && (!all || (opener.botId !== undefined && !room.members.includes(opener.botId)))) return found
      if (!all && room.mode === 'admin' && admin) return [admin]
      return admin ? [admin, ...members.filter(bot => bot !== admin)] : members
    }

@@ -1,6 +1,6 @@
 import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { currentPart } from './text.js'
+import { currentPart, modelOf } from './text.js'
 import { CheckIcon, SlidersIcon } from './icons.js'
 import { BotMark } from './mark.js'
 import { openHarnessModels, openHarnessOnboarding } from './sidebar.js'
@@ -33,14 +33,8 @@ export function groupModels(models) {
 
 const servedOf = (roster, ref) => (roster.models ?? []).find(model => model.ref === ref)
 
-// What a Bot runs on, for display: the chosen model, else the one it last ran on.
-export function modelOf(bot, roster) {
-  const ref = bot.model ?? bot.appliedModel
-  if (!ref) return undefined
-  const served = servedOf(roster, ref)
-  const [provider, ...rest] = ref.split('/')
-  return { ref, name: served?.name ?? rest.join('/'), provider: served?.providerName ?? provider, served: served !== undefined }
-}
+// `modelOf` lives in text.js so the sidebar can name a Bot's model without this module (#366).
+export { modelOf }
 
 // The thinking levels of one model, `{efforts, defaultEffort?}` or undefined when it
 // has none. The catalog carries them for models Bots use; any other ref asks the host.
