@@ -10,7 +10,7 @@ import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
 import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
-import { lookFromServer, lookToServer, lookFingerprint, hexOfColor } from '../src/look.js'
+import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
 import { encodeFaceHuman } from '../src/face-rooms.js'
 import {
@@ -1880,11 +1880,21 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
   // This home did not leave: the room ended around it, so it reads Closed, not Left (#304) ...
   assert.equal(past.status, 'closed')
   assert.match(past.name, / · 123456$/)
+  // ... it still names the person who left, like the room header, and lists their Bot (#304) ...
+  assert.equal(past.name, 'Face-to-face · Danyang, Bob · 123456')
+  assert.deepEqual(past.members.map(m => [m.handle, m.left === true]), [['@chief.danyang.home', false], ['@coder.bob.home', true]])
+  // ... and carries when it ended, for the row's time.
+  assert.ok(Number.isFinite(Date.parse(past.endedAt)))
   assert.equal(listed.rooms.filter(item => item.faceRoomId === 'frm_123456').length, 1)
   // ... and it leaves on Bot Social too, so it stops polling the room and releases its seat.
   assert.equal(room.status, 'closed', 'left on Bot Social')
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
   assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
+  // Later lists keep the same people and the first end time.
+  const again = (await call('flybot/social/face-rooms', { poll: true })).value.rooms.find(item => item.faceRoomId === 'frm_123456')
+  assert.equal(again.name, 'Face-to-face · Danyang, Bob · 123456')
+  assert.equal(again.members.length, 2)
+  assert.equal(again.endedAt, past.endedAt)
 })
 
 test('#304: a failed automatic leave is tried again on the next poll', async (t) => {
@@ -2825,7 +2835,7 @@ test('Face-to-face past card titles rebuild from every member, not a stale auto 
   assert.equal(String(title?.children?.join?.('') ?? ''), 'Face-to-face · UiA1415, UiB1415 · Oct 17 14:38')
 })
 
-test('Past face room Open resolves the hosted session through face-open', async () => {
+test('#304: clicking a Past room row opens it through face-open; there is no separate Open button', async () => {
   const opened = []
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
@@ -2838,12 +2848,20 @@ test('Past face room Open resolves the hosted session through face-open', async 
     past: true,
     actions: { openSession: id => opened.push(id) },
   }))
-  const btn = tree.find(n => n.type === 'button' && n.children.includes('Open'))
-  assert.ok(btn)
-  await btn.props.onClick()
+  assert.equal(tree.some(n => n.type === 'button' && n.children.includes('Open')), false)
+  const row = tree.find(n => n.props.className === 'fs-face-row')
+  assert.equal(row.props.role, 'button')
+  assert.equal(row.props.tabIndex, 0)
+  assert.equal(row.props['aria-label'], 'Open Hall')
+  await row.props.onClick()
   assert.equal(calls[0][0], 'social/face-open')
   assert.equal(calls[0][1].faceRoomId, 'frm_old')
   assert.deepEqual(opened, ['g-fixed'])
+  // The keyboard opens it too.
+  await row.props.onKeyDown({ key: 'Enter', preventDefault() {} })
+  await row.props.onKeyDown({ key: 'Tab', preventDefault() {} })
+  assert.equal(calls.length, 2)
+  assert.deepEqual(opened, ['g-fixed', 'g-fixed'])
 })
 
 test('Face-to-face room card titles include people and a distinguisher, not Face-to-face room', () => {
@@ -2910,11 +2928,12 @@ test('Face-to-face past rooms sit under a Past rooms fold; live rooms stay off t
   assert.ok(opened.some(n => n.props['data-status'] === 'closed'))
   assert.ok(opened.some(n => n.props['data-status'] === 'left'))
   assert.equal(opened.filter(n => n.props['data-flybot'] === 'face-room' && n.props['data-past']).length, 2)
-  assert.equal(opened.filter(n => n.type === 'button' && n.children.includes('Open')).length, 2)
+  // Each past row is the button that opens it (#304).
+  assert.equal(opened.filter(n => n.props.className === 'fs-face-row' && n.props.role === 'button').length, 2)
+  assert.equal(opened.filter(n => n.type === 'button' && n.children.includes('Open')).length, 0)
   assert.equal(opened.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 0)
   assert.equal(opened.some(n => n.type === 'button' && n.children.includes('Start')), false)
   assert.equal(opened.some(n => n.props['data-status'] === 'open'), false)
-  assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.fs-face-item\[data-past\] \.fs-face-actions\{[^}]*margin-left:8px/)
 
   const pastOnly = walk(pluginOf([
     [{ faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] }],
@@ -3047,7 +3066,7 @@ test('#306: in an open room Leave sits on the status line, a row away from the A
   assert.match(src, /\.fs-dialog-back\{[^}]*z-index:6[0-9]/)
 })
 
-test('an ended matching window sits under Past rooms with Open, not Leave', () => {
+test('an ended matching window sits under Past rooms and opens from its row, not Leave', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const rooms = [
     { faceRoomId: 'frm_end', roomId: 'g4', name: 'Old meet', status: 'candidate', expiresAt: '2000-01-01T00:00:00.000Z', members: [] },
@@ -3057,11 +3076,11 @@ test('an ended matching window sits under Past rooms with Open, not Leave', () =
   const ended = tree.find(n => n.props['data-flybot'] === 'face-room' && n.props['data-status'] === 'candidate')
   assert.ok(ended?.props['data-past'])
   assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('ended')))
-  assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Open')))
+  assert.ok(tree.some(n => n.props.className === 'fs-face-row' && n.props.role === 'button'))
   assert.equal(tree.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 0)
 })
 
-test('Face-to-face past rooms hide duplicate ids and keep Open as the only action', () => {
+test('Face-to-face past rooms hide duplicate ids and opening the row is the only action', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const rooms = [
     { faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] },
@@ -3069,8 +3088,8 @@ test('Face-to-face past rooms hide duplicate ids and keep Open as the only actio
   ]
   const tree = walk(pluginOf([rooms, true]).FaceRooms({}))
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'face-room').length, 1)
-  assert.ok(tree.some(n => n.type === 'button' && n.children.includes('Open')))
-  assert.equal(tree.some(n => n.type === 'button' && n.children.includes('Leave')), false)
+  assert.ok(tree.some(n => n.props.className === 'fs-face-row' && n.props.role === 'button'))
+  assert.equal(tree.some(n => n.type === 'button' && (n.children.includes('Open') || n.children.includes('Leave'))), false)
 })
 
 test('Add friend mints and copies an invite link in one click', async () => {
@@ -5413,6 +5432,87 @@ test('#304: Past rooms keep the room\'s number and never show the joining deadli
   assert.match(title({ name: '', status: 'closed', expiresAt: '2026-10-18T08:42:00.000Z', startedAt: '2026-10-18T08:35:00.000Z', members }), new RegExp(`${hhmm}$`))
 })
 
+test('#304: each Past room row shows its time: when it ended, else when it started', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const timeOf = room => walk(pluginOf([]).FaceRoomCard({ room, past: true })).find(n => n.props['data-flybot'] === 'face-time')
+  const pad = n => String(n).padStart(2, '0')
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  // Ended today: the clock time; the hover names the full moment.
+  const today = new Date()
+  today.setHours(9, 5, 0, 0)
+  const ended = timeOf({ faceRoomId: 'f1', name: 'Hall', status: 'closed', members: [], endedAt: today.toISOString(), startedAt: '2026-01-02T03:04:00.000Z' })
+  assert.equal(ended.children.join(''), '09:05')
+  assert.equal(ended.props.title, `Ended ${months[today.getMonth()]} ${today.getDate()} 09:05`)
+  // An earlier day: the date; the hover keeps the time.
+  const old = new Date(2026, 9, 18, 21, 40)
+  const earlier = timeOf({ faceRoomId: 'f2', name: 'Hall', status: 'left', members: [], endedAt: old.toISOString() })
+  assert.equal(earlier.children.join(''), 'Oct 18')
+  assert.equal(earlier.props.title, 'Ended Oct 18 21:40')
+  // Never closed here (an ended joining window, or a row kept before end times): when it started.
+  const start = new Date(2026, 9, 17, 8, 30)
+  assert.equal(timeOf({ faceRoomId: 'f3', name: 'Hall', status: 'closed', members: [], startedAt: start.toISOString() }).props.title, 'Started Oct 17 08:30')
+  const deadline = new Date(2026, 9, 16, 12, 10)
+  assert.equal(timeOf({ faceRoomId: 'f4', name: 'Hall', status: 'candidate', members: [], expiresAt: deadline.toISOString() }).props.title, `Started Oct 16 ${pad(12)}:00`)
+  // No time known: no empty slot. Live rows show no time.
+  assert.equal(timeOf({ faceRoomId: 'f5', name: 'Hall', status: 'closed', members: [] }), undefined)
+  assert.equal(walk(pluginOf([]).FaceRoomCard({ room: { faceRoomId: 'f6', name: 'Hall', status: 'open', members: [], startedAt: start.toISOString() } })).some(n => n.props['data-flybot'] === 'face-time'), false)
+  // The time is quiet and fixed-width; a past row reads as one clickable band.
+  const css = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(css, /\.fs-face-time\{flex:none;[^}]*white-space:nowrap/)
+  assert.match(css, /\.fs-face-item\[data-past\] \.fs-face-row\[data-open\]:hover\{background:/)
+})
+
+test('#304: a Past room title lists everyone who was in the room, including who left', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const tree = walk(pluginOf([]).FaceRoomCard({
+    room: {
+      faceRoomId: 'frm_1', name: 'Face-to-face · SelfA0056 · 482915', status: 'closed',
+      members: [
+        { handle: '@chief.selfa.home', ownerName: 'SelfA0056' },
+        { handle: '@chief.selfb.home', ownerName: 'SelfB0056', left: true },
+      ],
+    },
+    past: true,
+  }))
+  assert.equal(tree.find(n => n.props.className === 'fs-name').children.join(''), 'Face-to-face · SelfA0056, SelfB0056 · 482915')
+  assert.equal(tree.filter(n => n.props['data-flybot'] === 'face-card-member').length, 2)
+})
+
+test('#304: Past rooms remembers whether it is open across a reload', () => {
+  const { walk, registered, sandbox } = loadSocialClient(async () => ({}))
+  const store = new Map()
+  sandbox.localStorage = { getItem: key => (store.has(key) ? store.get(key) : null), setItem: (key, value) => store.set(key, String(value)) }
+  const rooms = [{ faceRoomId: 'frm_old', roomId: 'g2', name: 'Hall', status: 'closed', members: [] }]
+  // A page render with the real initial fold value: the room list is preset, the fold is read from storage.
+  const page = () => {
+    let i = 0
+    const plugin = registered[0].factory(() => ({
+      createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }), Fragment: 'F',
+      useEffect: () => {}, useRef: v => ({ current: v }), useMemo: f => f(),
+      useState: v => [i++ === 0 ? rooms : v, () => {}],
+    }))
+    const tree = walk(plugin.FaceRooms({}))
+    return { head: tree.find(n => n.props.className === 'fs-past-head'), rows: tree.filter(n => n.props['data-flybot'] === 'face-room') }
+  }
+  // Nothing stored: folded.
+  let shown = page()
+  assert.equal(shown.head.props['aria-expanded'], false)
+  assert.equal(shown.rows.length, 0)
+  // Opening it is kept, so the next page load shows it open.
+  shown.head.props.onClick()
+  shown = page()
+  assert.equal(shown.head.props['aria-expanded'], true)
+  assert.equal(shown.rows.length, 1)
+  // Folding it is kept too.
+  shown.head.props.onClick()
+  assert.equal(page().head.props['aria-expanded'], false)
+  // Storage that throws (private mode) just starts folded.
+  sandbox.localStorage = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
+  shown = page()
+  assert.equal(shown.head.props['aria-expanded'], false)
+  shown.head.props.onClick()
+})
+
 test('#191: an ended face room says so in plain view and names the person who left', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const plugin = pluginOf([])
@@ -5734,8 +5834,10 @@ test('#137: owner look is sent with update_bot_profile; old servers are skipped'
   await new Promise(resolve => setTimeout(resolve, 40))
   const sent = server.calls.filter(c => c.name === 'update_bot_profile')
   assert.ok(sent.length > probed)
-  assert.equal(sent.at(-1).args.avatar, 'whale')
-  assert.equal(sent.at(-1).args.color, '#4d6bfe')
+  // Each Bot's own call: Writer (no stored look) gets its generated look too (#182).
+  const chief = sent.filter(c => c.args.bot_id === ctx.flybot.scope('social').fields.get('a', 'member')?.bot_id).at(-1)
+  assert.equal(chief.args.avatar, 'whale')
+  assert.equal(chief.args.color, '#4d6bfe')
   assert.ok(JSON.parse(readFileSync(settingsPath, 'utf8')).lookSynced?.a)
 })
 
@@ -7408,4 +7510,85 @@ test('#442: message.not_delivered shows a Not sent line in the owner\'s chat wit
   log.push(notDelivered(2, via, '@writer.bob.home'))
   await social.pollInbox()
   assert.equal(delivered.length, 1)
+})
+
+test('#182: the generated look matches core, so a Bot with no look of its own is sent as its home draws it', async () => {
+  const core = await import('../../../core/src/client/characters.js')
+  assert.deepEqual(LOOK_DEFAULT_SHAPES, core.DEFAULT_SHAPES)
+  assert.deepEqual(LOOK_DEFAULT_COLORS, core.DEFAULT_COLORS)
+  for (const id of ['a', 'b', 'chief', 'writer-2', 'bot_9f3a', '会议助手', ...Array.from({ length: 200 }, (_, n) => `s${n * 7919}`)]) {
+    assert.equal(defaultShapeOf(id), core.defaultShape(id), id)
+    assert.equal(defaultColorOf(id), core.defaultColor(id), id)
+    // What Bot Social gets is what core draws for that Bot.
+    const drawn = core.lookOf({ id })
+    const sent = lookToServer(shownLook({ id, name: 'X' }))
+    assert.equal(sent.avatar, drawn.shape, id)
+    assert.equal(sent.color, hexOfColor(drawn.color), id)
+  }
+  // A stored look wins; only what is missing is filled.
+  assert.deepEqual(lookToServer(shownLook({ id: 'a', color: 'deepseek', avatar: { shape: 'whale' } })), { color: '#4d6bfe', avatar: 'whale' })
+  assert.equal(lookToServer(shownLook({ id: 'a', color: 'green' })).avatar, defaultShapeOf('a'))
+  assert.equal(lookToServer(shownLook({ id: 'a', avatar: { shape: 'whale' } })).color, hexOfColor(defaultColorOf('a')))
+  // An emoji or image is kept as it is (no generated shape over it), and an emoji beats a stray shape,
+  // in the order the home draws them.
+  assert.equal(lookToServer(shownLook({ id: 'a', avatar: { emoji: '🦊' } })).avatar, '🦊')
+  assert.equal(lookToServer({ avatar: { emoji: '🦊', shape: 'star' } }).avatar, '🦊')
+  const data = 'data:image/png;base64,AAAA'
+  assert.equal(lookToServer(shownLook({ id: 'a', avatar: { image: data } })).avatar, data)
+})
+
+test('#182: a Bot with no stored look gets its generated look on Bot Social, before it joins a face room', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.tools.update_bot_profile = a => ({ bot_id: a.bot_id, avatar: a.avatar ?? null, avatar_kind: 'preset', color: a.color ?? null, avatar_updated_at: '2026-10-20T00:00:00.000Z' })
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  // Writer (`b`) has no identity yet and no stored look: the join registers it room-only.
+  assert.equal(ctx.flybot.bot.get('b').avatar, undefined)
+  const joined = await call('flybot/social/face-join', { code: '123456', botId: 'b' })
+  assert.equal(joined.ok, true, joined.error?.message)
+  const member = ctx.flybot.scope('social').fields.get('b', 'member')
+  assert.ok(member?.bot_id)
+  const names = server.calls.map(c => c.name)
+  const look = server.calls.findIndex(c => c.name === 'update_bot_profile' && c.args.bot_id === member.bot_id)
+  assert.ok(look >= 0, 'the look is sent to the new identity')
+  assert.ok(look < names.indexOf('REST POST /join'), 'and before the join, so the other home never sees a seeded look first')
+  assert.equal(server.calls[look].args.avatar, defaultShapeOf('b'))
+  assert.equal(server.calls[look].args.color, hexOfColor(defaultColorOf('b')))
+})
+
+test('#182: the waiting dialog draws my own Bot with its roster look, also right after a join gave it a new identity', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const roster = {
+    bots: [{ id: 'chief', name: 'Chief', color: 'violet', avatar: { shape: 'acorn' } }],
+    byId: { chief: { id: 'chief', name: 'Chief', color: 'violet', avatar: { shape: 'acorn' } } },
+  }
+  // The Bot list was read before the join: Chief had no handle then.
+  const bots = [{ id: 'chief', name: 'Chief' }]
+  const peer = { handle: '@chief-9a.bob.home', displayName: 'Chief', ownerName: 'Bob', color: '#2a92fe', avatar: { shape: 'whale' } }
+  const tiles = (room) => walk(pluginOf(['waiting', bots, ['chief'], '482913', false, null, [], room, 0]).FaceToFaceGroup({ roster, actions: {} }))
+    .filter(n => n.props['data-flybot'] === 'bot-avatar')
+  // The join's answer: Bot Social members[] only (no local id), my handle only in joinedAs.
+  const fresh = tiles({
+    roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z',
+    members: [{ handle: '@chief-x1.danyang.home', displayName: 'Chief', ownerName: 'Danyang', botId: 'bot_x1' }, peer],
+    mineHandles: ['@chief-x1.danyang.home'], mineBots: [{ botId: 'chief', botName: 'Chief', handle: '@chief-x1.danyang.home' }],
+  })
+  assert.equal(fresh[0].props['data-shape'], 'acorn')
+  assert.equal(fresh[0].props['data-color'], 'violet')
+  // The friend's Bot keeps the look its owner gave it.
+  assert.equal(fresh[1].props['data-shape'], 'whale')
+  assert.equal(fresh[1].props['data-color'], '#2a92fe')
+  // A later poll: the hosted room's record (remote false, local id) finds the same Bot.
+  const polled = tiles({
+    roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z',
+    members: [{ id: 'chief', handle: '@chief-x1.danyang.home', displayName: 'Chief', remote: false }, { ...peer, id: peer.handle, remote: true }],
+  })
+  assert.equal(polled[0].props['data-shape'], 'acorn')
+  assert.equal(polled[0].props['data-bot-id'], 'chief')
+  assert.equal(polled[1].props['data-shape'], 'whale')
 })

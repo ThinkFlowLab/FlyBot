@@ -821,6 +821,7 @@ export const CONVERSATION_CSS = `
 .bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 .bt-think[open] .bt-think-caret{transform:rotate(90deg)}
 .bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
+.bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 .bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
 /* A person's typed line keeps its line breaks, as on the sender's side (#455): Markdown would join them. */
 .bt-person-msg .bt-bubble :is(p,li){white-space:pre-line}

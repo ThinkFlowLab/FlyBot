@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople } from './src/client/mark.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople, PersonMark } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople, PersonMark } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -211,4 +211,45 @@ test("#420: a sender's first line in a Bot's own chat gets one quiet line naming
   const known = { ...roster, remoteBots: [{ handle: '@helper.selfb1238.home', name: 'Helper', owner: 'SelfB1238' }] }
   const bot = FirstContact({ roster: known, sessionId: 's', source: { remote: { handle: '@helper.selfb1238.home', firstContact: true }, senderName: 'Helper' } })
   assert.equal(text(bot), 'Helper (SelfB1238) is talking to Chief through Bot Social')
+})
+
+test("a face room's remote Bot speaks with its seat's look, the one Members and the waiting tiles draw (#182)", () => {
+  const handle = '@chief-9a.bob.home'
+  const seat = { kind: 'bot', remote: true, id: handle, handle, displayName: 'Chief', ownerName: 'Bob', color: '#2a92fe', avatar: { shape: 'whale' } }
+  const room = { id: 'room-1', origin: 'face-to-face', participants: [seat] }
+  const source = { remote: { handle }, senderName: 'Chief' }
+  const roster = { bots: [], remoteBots: [], roomsById: { 'room-1': room } }
+  const spoke = remoteSpeaker(source, roster, 'room-1')
+  assert.equal(lookOf(spoke.bot).shape, 'whale')
+  assert.equal(lookOf(spoke.bot).color, '#2a92fe')
+  // The Members panel draws the seat through lookBotForRemote: the same look.
+  const members = lookOf(lookBotForRemote(seat, roster))
+  assert.equal(lookOf(spoke.bot).shape, members.shape)
+  assert.equal(lookOf(spoke.bot).color, members.color)
+  // A chat record for the same handle keeps its id (its chat opens from the bubble) but wears the seat's look.
+  const chat = { id: 'session-c', name: 'Chief', color: 'orange', avatar: { shape: 'star' }, remote: { handle } }
+  const withChat = remoteSpeaker(source, { ...roster, bots: [chat] }, 'room-1')
+  assert.equal(withChat.bot.id, 'session-c')
+  assert.equal(withChat.chatId, 'session-c')
+  assert.equal(lookOf(withChat.bot).shape, 'whale')
+  // Outside a face room (or a seat with no look) nothing changes: the chat record as before.
+  assert.equal(remoteSpeaker(source, { ...roster, bots: [chat] }).bot, chat)
+  const bare = { ...room, participants: [{ ...seat, color: undefined, avatar: undefined }] }
+  assert.equal(remoteSpeaker(source, { bots: [chat], remoteBots: [], roomsById: { 'room-1': bare } }, 'room-1').bot, chat)
+})
+
+test("a person's mark is their initial on a color from their name, the same on every home (#182)", () => {
+  const bob = PersonMark({ name: 'Bob', size: 22 })
+  assert.equal(bob.props['data-initial'], 'B')
+  assert.deepEqual(bob.props.children, ['B'])
+  assert.match(bob.props.className, /bt-person-initial/)
+  assert.equal(PersonMark({ name: ' bob ' }).props.style.background, bob.props.style.background)
+  // Two people are told apart by initial or color.
+  const ann = PersonMark({ name: 'Ann' })
+  assert.notEqual(`${ann.props['data-initial']}${ann.props.style.background}`, `${bob.props['data-initial']}${bob.props.style.background}`)
+  assert.equal(PersonMark({ name: '小明' }).props['data-initial'], '小')
+  // No name: the plain silhouette, as before.
+  const plain = PersonMark({})
+  assert.equal(plain.props['data-initial'], undefined)
+  assert.equal(plain.props.className, 'bt-person-mark')
 })

@@ -32,7 +32,7 @@ import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf, personHomeOf } from './mcp-client.js'
-import { lookFromServer, lookToServer, lookFingerprint } from './look.js'
+import { lookFromServer, lookToServer, lookFingerprint, shownLook } from './look.js'
 import { createPresence } from './presence.js'
 import {
   createFaceRoomApi,
@@ -605,7 +605,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       handle: member.handle,
       ...(forFace ? { roomOnly: true } : {}),
     })
-    void syncBotLook(bot).catch(error => warn('look not synced', error))
+    // Before the identity joins anything, so the other home's first members[] already carries
+    // the owner's look and never paints a handle-seeded one first (#182).
+    await syncBotLook(bot).catch(error => warn('look not synced', error))
     return memberOf(bot.id)
   }
   // Existing identities and granted Bots at startup, once ds-bot's team is loaded.
@@ -652,11 +654,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   async function syncBotLook(bot) {
     const member = memberOf(bot?.id)
     if (!member?.bot_id || typeof api.updateBotProfile !== 'function') return
-    const patch = lookToServer(bot)
+    // The look as the owner's home draws it, a generated one included (#182).
+    const look = shownLook(bot)
+    const patch = lookToServer(look)
     // The record names the Bot Social identity it was sent to: a room-only identity is released after
     // its last face room and the next room registers a new one, which has no look until it is sent
     // again (#182). A record from before this (look only) sends once more.
-    const fingerprint = `${member.bot_id}|${lookFingerprint(bot)}`
+    const fingerprint = `${member.bot_id}|${lookFingerprint(look)}`
     const synced = settings.lookSynced?.[bot.id]
     if (synced === fingerprint) return
     const empty = !('avatar' in patch) && !('color' in patch)
@@ -2593,9 +2597,23 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     throw new FaceRoomError(`${bot.name} could not be registered on Bot Social. Try again.`, 'register_failed')
   }
+  // A past room lists everyone who was in it, like its header (#304); a live room lists who is still there.
+  function faceViewMembers(room, past) {
+    const all = room.participants ?? []
+    if (!past) return all.filter(p => p.leftSeq === undefined)
+    const byKey = new Map()
+    for (const p of all) {
+      const key = String(p.handle || p.id || '').toLowerCase()
+      if (!key) continue
+      const seen = byKey.get(key)
+      if (!seen || (seen.leftSeq !== undefined && p.leftSeq === undefined)) byKey.set(key, p)
+    }
+    return [...byKey.values()]
+  }
   function viewHostedFace(room, extra = {}) {
     if (!room) return undefined
-    const live = (room.participants ?? []).filter(p => p.leftSeq === undefined)
+    const status = extra.status || room.face?.status
+    const live = faceViewMembers(room, status === 'closed' || status === 'left')
     return {
       roomId: room.id,
       faceRoomId: room.face?.roomId,
@@ -2611,6 +2629,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         ownerName: p.ownerName,
         remote: p.remote === true,
         roomOnly: p.roomOnly === true || p.published !== true,
+        ...(p.leftSeq !== undefined ? { left: true } : {}),
         label: p.label || faceMemberLabel({ displayName: p.displayName, ownerName: p.ownerName, handle: p.handle }) || p.displayName || p.id,
         ...(p.color ? { color: p.color } : {}),
         ...(p.avatar ? { avatar: p.avatar } : {}),
@@ -2857,8 +2876,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const before = (settings.pastFaceRooms ?? []).find(item => item.faceRoomId === room.faceRoomId)
     // Who left keeps "Left": a poll that later finds the room gone must not relabel it "Closed" (#304).
     const status = before?.status === 'left' ? 'left' : (room.status || 'left')
+    // When the room ended here, kept from the first time it was remembered: the time its Past row shows (#304).
+    const endedAt = before?.endedAt || room.endedAt || new Date(now()).toISOString()
     const next = [
-      { ...room, status, ...(before?.joinCode && !room.joinCode ? { joinCode: before.joinCode } : {}) },
+      { ...room, status, endedAt, ...(before?.joinCode && !room.joinCode ? { joinCode: before.joinCode } : {}) },
       ...(settings.pastFaceRooms ?? []).filter(item => item.faceRoomId !== room.faceRoomId),
     ]
     settings.pastFaceRooms = next.slice(0, 20)
@@ -2988,7 +3009,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       status: seed.status === 'open' ? 'closed' : (seed.status || 'closed'),
       expiresAt: seed.expiresAt,
       startedAt: seed.startedAt,
-      members: seed.members ?? [],
+      // Who had left before the room ended is listed for the title, not seated again.
+      members: (seed.members ?? []).filter(member => member?.left !== true),
       localBots: bringable(),
     })
     if (!room?.id) throw new Error('Could not open that room')
@@ -2998,13 +3020,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/face-open', async (payload) => openFaceRoom(payload), { read: true }))
   disposers.push(flybot.api.handle('social/face-rooms', async (payload) => {
     if (payload?.poll !== false) await pollFaceRooms().catch(() => { /* a failed poll shows the rooms as last polled */ })
+    const pastById = new Map((settings.pastFaceRooms ?? []).filter(item => item?.faceRoomId).map(item => [item.faceRoomId, item]))
     const rooms = Object.entries(settings.faceRooms).map(([faceRoomId, meta]) => {
       const room = flybot.rooms.ofFace?.(faceRoomId)
-      return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor, joinCode: meta.joinCode }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate', joinCode: meta.joinCode }
+      const endedAt = pastById.get(faceRoomId)?.endedAt
+      return viewHostedFace(room, { faceRoomId, localRoomId: meta.localRoomId, cursor: meta.cursor, joinCode: meta.joinCode, ...(endedAt ? { endedAt } : {}) }) || { faceRoomId, roomId: meta.localRoomId, status: 'candidate', joinCode: meta.joinCode }
     }).filter(Boolean)
     const liveIds = new Set(rooms.map(room => room.faceRoomId).filter(Boolean))
     for (const past of settings.pastFaceRooms ?? []) {
-      if (past?.faceRoomId && !liveIds.has(past.faceRoomId)) rooms.push(past)
+      if (!past?.faceRoomId || liveIds.has(past.faceRoomId)) continue
+      // The kept room still knows everyone who was in it: a row stored with only who was left lists them all (#304).
+      const hosted = flybot.rooms.ofFace?.(past.faceRoomId)
+      const everyone = hosted ? viewHostedFace(hosted, { status: past.status })?.members : undefined
+      rooms.push(everyone?.length > (past.members?.length ?? 0) ? { ...past, members: everyone } : past)
     }
     return { rooms, bots: localFaceBots(), autoApproveFaceRooms: await faceAutoApprove().catch(() => false) }
   }, { read: true }))

@@ -152,9 +152,11 @@ window.__ModuleLoader__.load({
 .fs-chip{flex:none;font-size:11px;line-height:14px;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.56));white-space:nowrap}
 .fs-chip-status{min-width:44px;text-align:center;font-weight:600;letter-spacing:.01em}
 .fs-chip-status[data-status=open],.fs-chip-status[data-status=closed],.fs-chip-status[data-status=left]{font-size:12px;line-height:16px;padding:2px 8px;color:var(--bt-ink-2,rgba(20,20,20,.72));background:var(--bt-hover,rgba(119,119,119,.12))}
-.fs-face-item[data-past] .fs-face-row{gap:8px}
+.fs-face-item[data-past] .fs-face-row{gap:8px;border-radius:6px}
 .fs-face-item[data-past] .fs-chip-status{margin-left:4px}
-.fs-face-item[data-past] .fs-face-actions{margin-left:8px;gap:6px}
+.fs-face-time{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));white-space:nowrap;font-variant-numeric:tabular-nums}
+.fs-face-item[data-past] .fs-face-row[data-open]:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-face-item[data-past] .fs-face-row[data-open]:focus-visible{outline:2px solid var(--bt-accent,#4d6bfe);outline-offset:-2px}
 .fs-face-head{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding:2px 0 6px}
 .fs-face-top{display:flex;align-items:center;gap:10px;min-width:0}
 .fs-face-head .fs-face-auto-wrap{min-width:0}
@@ -265,13 +267,20 @@ window.__ModuleLoader__.load({
     // Local picker rows use the team roster record (configured image / shape / color).
     // Waiting-room "mine" matches the same local Bot; a friend's Bot uses its chat
     // record or a handle-seeded remote look, plus any avatar the member payload carries.
-    function faceLook({ roster, remoteChats, bots, local, member } = {}) {
+    // My own Bot is found by its room record (remote false, local id), by the handle the
+    // Bot list knows, or by the handle a join just returned (`mine`: { botId, handle }):
+    // a Bot that got its room-only identity at this join is not in the list yet, and must
+    // not be drawn with a look seeded from that new handle (#182).
+    function faceLook({ roster, remoteChats, bots, local, member, mine: joined } = {}) {
       if (local) {
         const full = rosterBot(roster, local.id)
         return full ? { ...local, ...full } : local
       }
       if (!member) return undefined
-      const mine = (bots ?? []).find(bot => bot.handle && bot.handle === member.handle)
+      const recorded = member.remote === false && member.id ? rosterBot(roster, member.id) : undefined
+      const listed = (bots ?? []).find(bot => bot.handle && bot.handle === member.handle)
+      const justJoined = member.handle ? (joined ?? []).find(item => item?.botId && item.handle === member.handle) : undefined
+      const mine = recorded || listed || (justJoined ? rosterBot(roster, justJoined.botId) || { id: justJoined.botId, name: justJoined.botName || member.displayName } : undefined)
       if (mine) return faceLook({ roster, bots, local: mine })
       const extra = {}
       if (member.color) extra.color = member.color
@@ -635,6 +644,7 @@ window.__ModuleLoader__.load({
         setStatus(null)
         setFailures([])
         const mine = []
+        const joined = []
         const failed = []
         let last
         for (const botId of selected) {
@@ -642,7 +652,10 @@ window.__ModuleLoader__.load({
           try {
             const result = await call('social/face-join', { code: digits, botId })
             last = result
-            if (result?.joinedAs?.handle) mine.push(result.joinedAs.handle)
+            if (result?.joinedAs?.handle) {
+              mine.push(result.joinedAs.handle)
+              joined.push(result.joinedAs)
+            }
           } catch (e) {
             failed.push({ botId, name: bot?.name || 'Bot', text: errorText(e) })
             if (shouldStopJoin(e) && !last) {
@@ -660,7 +673,7 @@ window.__ModuleLoader__.load({
           setBusy(false)
           return
         }
-        setRoom({ ...last, mineHandles: mine, joinCode: last.joinCode || digits })
+        setRoom({ ...last, mineHandles: mine, mineBots: joined, joinCode: last.joinCode || digits })
         setStep('waiting')
         setBusy(false)
         // The main pane (and its title) moves to the new room at once, not the room before it (#191).
@@ -717,7 +730,7 @@ window.__ModuleLoader__.load({
               h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
                 members.map(member => h(FaceTile, {
                   key: member.handle || member.id,
-                  bot: faceLook({ roster, remoteChats, bots, member }),
+                  bot: faceLook({ roster, remoteChats, bots, member, mine: room.mineBots }),
                   member,
                   handle: member.handle,
                   mine: memberIsMine(member, bots, room),
@@ -823,6 +836,21 @@ window.__ModuleLoader__.load({
       }
       return bits.join(' · ')
     }
+    // The time a Past row shows (#304): when the room ended here, else when it started (or was
+    // created). Today reads `14:05`, an earlier day `Oct 19`; the hover text has the full time.
+    const FACE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    function faceRowTime(room, today = new Date()) {
+      const ended = Date.parse(room?.endedAt || '')
+      const deadline = Date.parse(room?.expiresAt || '')
+      const started = Date.parse(room?.startedAt || '') || Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : NaN)
+      const at = Number.isFinite(ended) ? ended : started
+      if (!Number.isFinite(at)) return undefined
+      const when = new Date(at)
+      const hhmm = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
+      const day = `${FACE_MONTHS[when.getMonth()]} ${when.getDate()}`
+      const sameDay = when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth() && when.getDate() === today.getDate()
+      return { text: sameDay ? hhmm : day, full: `${Number.isFinite(ended) ? 'Ended' : 'Started'} ${day} ${hhmm}` }
+    }
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
@@ -853,23 +881,36 @@ window.__ModuleLoader__.load({
         } catch (e) { setNote({ tone: 'error', text: errorText(e) }) }
         finally { setBusy('') }
       }
+      const title = shownFaceTitle(room)
+      const time = past ? faceRowTime(room) : undefined
+      // A past row is one button: clicking anywhere on it opens the read-only room (#304).
+      const rowOpens = past && openable
       return h('div', { className: 'fs-face-item', 'data-flybot': 'face-room', 'data-status': room.status, 'data-past': past || undefined },
         h('div', {
           className: 'fs-face-row',
           'data-open': openable ? true : undefined,
-          onClick: openable ? () => open() : undefined,
+          onClick: openable ? () => (busy ? undefined : open()) : undefined,
+          ...(rowOpens ? {
+            role: 'button', tabIndex: 0, 'aria-label': `Open ${title}`, 'aria-busy': busy ? true : undefined,
+            onKeyDown: (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault?.()
+              return busy ? undefined : open()
+            },
+          } : {}),
         },
           h('span', { className: 'fs-stack', 'aria-label': 'Members' },
             shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
               h(FaceAvatar, { bot: look(m), size: 20 }))),
             extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
           // One line; the full title on hover when the narrow sidebar cuts it (#304).
-          h('span', { className: 'fs-name', title: shownFaceTitle(room) }, shownFaceTitle(room)),
+          h('span', { className: 'fs-name', title }, title),
+          time ? h('span', { className: 'fs-face-time', 'data-flybot': 'face-time', title: time.full }, time.text) : null,
           h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(room) }, faceChipLabel(room)),
-          h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
-            past
-              ? (openable ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => open() }, 'Open') : null)
-              : h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
+          past
+            ? null
+            : h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
+              h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 
@@ -1290,9 +1331,21 @@ window.__ModuleLoader__.load({
       }
       return out
     }
+    // Past rooms stays open or folded across a reload (#304).
+    const PAST_OPEN_KEY = 'flybot.social.pastRoomsOpen'
+    function readPastOpen() {
+      try { return globalThis.localStorage?.getItem(PAST_OPEN_KEY) === '1' } catch { return false }
+    }
+    function writePastOpen(open) {
+      try { globalThis.localStorage?.setItem(PAST_OPEN_KEY, open ? '1' : '0') } catch { /* storage unavailable */ }
+    }
     function FaceRooms({ actions, enabled = true, roster, remoteChats } = {}) {
       const [rooms, setRooms] = useState([])
-      const [pastOpen, setPastOpen] = useState(false)
+      const [pastOpen, setPastOpen] = useState(readPastOpen())
+      const togglePast = () => {
+        writePastOpen(!pastOpen)
+        setPastOpen(!pastOpen)
+      }
       const unique = uniqueFaceRooms(rooms)
       const past = unique.filter(isPastFace)
       const load = (poll = true) => call('social/face-rooms', { poll }).then(value => {
@@ -1316,7 +1369,7 @@ window.__ModuleLoader__.load({
       })
       return h('div', { 'data-flybot': 'face-rooms' },
         h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
-          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: () => setPastOpen(open => !open) },
+          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: togglePast },
             h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
             'Past rooms',
             h('span', { className: 'fs-count' }, String(past.length))),

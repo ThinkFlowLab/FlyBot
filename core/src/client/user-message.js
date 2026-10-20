@@ -153,7 +153,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
     'data-author-kind': author?.authorKind,
     'data-author-name': author?.name,
   },
-    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark)) : null,
+    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
     h('div', { className: 'bt-ustack' },
       author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
       attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,

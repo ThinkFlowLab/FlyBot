@@ -109,7 +109,7 @@ test('a reply to a line the friend typed themselves is drawn as the person, not 
   const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles'])
   const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
   assert.equal(person.props['data-person'], 'Bob')
-  assert.equal(find(drawn, node => node.props?.className === 'bt-person-mark').length, 1)
+  assert.equal(find(drawn, node => /\bbt-person-mark\b/.test(node.props?.className ?? '')).length, 1)
   assert.equal(find(drawn, node => node.props?.className === 'bt-group-name' && node.children.includes('Bob')).length, 1)
   assert.equal(find(drawn, node => node.type === MarkdownText).length, 1, 'the text is still rendered as markdown')
   // Another turn, or no mark at all: the Bot\'s own bubble.

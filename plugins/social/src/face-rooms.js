@@ -248,7 +248,9 @@ export function trustedFaceWho(from) {
 }
 
 export function faceRoomTitle(snapshot = {}, { code, room } = {}) {
-  const members = snapshot.members ?? room?.participants ?? []
+  // Everyone who was in the room, like the core title (#182): a poll after someone left must not
+  // drop them from the title its Past row keeps (#304).
+  const members = [...(snapshot.members ?? []), ...(room?.participants ?? [])]
   const at = faceRoomCreatedAt({
     createdAt: snapshot.createdAt,
     expiresAt: snapshot.expiresAt || room?.face?.expiresAt,
