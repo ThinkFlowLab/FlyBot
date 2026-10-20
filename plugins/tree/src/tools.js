@@ -73,7 +73,7 @@ export function registerTreeTools(fb, tree) {
         if (bad) return fail(bad)
         const nodes = tree.snapshot()
         if (!nodes[botId]) return fail('this bot is not part of the tree')
-        return { children: tree.childrenOf(nodes, botId).map(({ id, name, role }) => ({ id, name, role })), depth: tree.depthOf(nodes, botId), limits: tree.limits }
+        return { children: tree.childrenOf(nodes, botId).map(({ id, name, role }) => ({ id, name, role, load: tree.loadOf(id) })), depth: tree.depthOf(nodes, botId), limits: tree.limits }
       },
     }),
     fb.registerTool({

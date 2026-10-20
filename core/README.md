@@ -72,6 +72,7 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
     memory: true                    # false turns memory off: no memory tools, section or panel
     memoryReview: true              # false leaves memory to the Bots' own remember calls
     diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
+    stateJournal: true              # record every team change in <home>/journal/state.jsonl (0600, 7 days or 20 MB) for replay with scripts/replay.mjs; default off
     updateCheck: true               # look for a newer DS Bot when a window opens; default true
     automationTasks: false          # false stops FlyBot switching on DSH's Automation tasks bundle (once per profile) for Scheduled tasks; default on
     updateRegistry: https://registry.example/   # ask only this npm registry for updates

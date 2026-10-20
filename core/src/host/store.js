@@ -6,6 +6,7 @@ import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/pr
 import { join } from 'node:path'
 import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
+import { openJournal } from './journal.js'
 import { currentColor, normalize, unquote } from './text.js'
 
 // The saved team's format version. Version 2 (#47) adds the identity schema: member
@@ -18,13 +19,15 @@ const OWNER_ID = 'owner-1'
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 export function install(rt) {
-  const { ctx, home, statePath } = rt
+  const { ctx, home, statePath, config = {} } = rt
 
   /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>}} */
   const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   const { warn } = rt
+  // Opt-in (#511): every saved change is also recorded for replay; off by default.
+  const journal = config.stateJournal === true ? openJournal({ path: join(home, 'journal', 'state.jsonl'), warn }) : undefined
 
   const EMPTY = JSON.stringify(state)
   // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
@@ -449,6 +452,7 @@ export function install(rt) {
         ensureLock()
         await rename(temp, statePath)
         seen = stamp()
+        await journal?.record(snapshot)
         rt.capabilitiesStateSaved?.()
       } catch (error) {
         await unlink(temp).catch(() => { /* the temp file may already be gone */ })
