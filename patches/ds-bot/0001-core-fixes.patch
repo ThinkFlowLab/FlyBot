@@ -517,7 +517,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -154,6 +154,8 @@ const ZH = {
+@@ -154,9 +154,20 @@ const ZH = {
    Everyone: '所有人',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
@@ -526,6 +526,18 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Leave the group without an admin': '让群聊不设管理员',
    Unset: '取消',
    'Make admin': '设为管理员',
++  // Face room lead (#476)
++  'Room lead': '总负责人',
++  Lead: '总负责人',
++  'Make lead': '设为总负责人',
++  'Use the default lead': '改回默认总负责人',
++  'Writes the plan and gives each Bot its part.': '写计划，并给每个 Bot 分配任务。',
++  'Default: the first Bot of the room creator that joined.': '默认：房间创建者最先加入的 Bot。',
++  'Only the person who created this room can change it.': '只有创建这个房间的人可以更改。',
++  'Could not change the room lead.': '无法更改总负责人。',
+   'Remove {name} from the group': '把 {name} 移出群聊',
+   'Remove from group': '移出群聊',
+   'Add member': '添加成员',
 @@ -215,6 +215,25 @@ const ZH = {
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
@@ -2091,10 +2103,14 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
    `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
    'Keep, as a new entry:',
-@@ -488,6 +488,22 @@ export function install(rt) {
+@@ -486,7 +486,24 @@ export function install(rt) {
+   // Main Bots and the admins of a group also write the team's; Main Bots read and
+   // write every Bot's. The user may do everything from the memory panel.
  
-   const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId)
- 
+-  const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId)
++  // A face-to-face room's lead (its admin there, #476) gets no team rights from it.
++  const writesTeam = botId => rt.isMain(botId) || Object.values(state.rooms).some(room => room.admin === botId && room.origin !== 'face-to-face')
++
 +  // Team memory is one team's. A review that reads a room where another owner sits
 +  // keeps entries in the Bot's own memory only (#53); ownership, not the admin role,
 +  // decides whose memory "team" refers to there.
@@ -2110,10 +2126,9 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +    owners.delete(undefined)
 +    return owners.size <= 1
 +  }
-+
+ 
    // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
    function namedScope(raw, botId) {
-     const value = unquote(raw)
 @@ -632,7 +632,7 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
@@ -2329,7 +2344,16 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -23,7 +23,8 @@ const TEAM_RULES = [
+@@ -10,7 +10,7 @@ const TEAM_RULES = [
+   '- When a "[Message from …]" opens a turn, your final text in that turn is delivered back to that Bot automatically and the user does not see it. If one arrives while you are working on something else, take it into account in that work but do not answer it there: once the work is done, it comes back to you in a turn of its own to answer. Answer it directly and briefly, as a list of facts. Never invent facts: say "not discussed yet" when you do not know. If the message brings a request or a decision meant for the user, handle it in the same turn too — do the work, or ask the user with ask_user.',
+   '- When a "[Message from … · the user sees your reply here]" arrives, your reply is shown to the user in your own chat and is not sent back. Talk to the user directly, as yourself.',
+   '- When a "[Reply from …]" arrives, tell the user the outcome if it matters to them.',
+-  '- Chat like a teammate texting: short sentences, often two or three short messages instead of one long one, no headings. When the user asks for a deliverable (a plan, schedule, draft, or list), write it out in full in the chat; never claim you gave something you did not write. Mention other Bots by their exact name.',
++  '- Chat like a teammate texting: short sentences, often two or three short messages instead of one long one, no headings. When the user asks for a deliverable (a plan, schedule, draft, or list), write it out in full in the chat (in a group that has a lead, only the lead writes the plan; you write only the part it gives you); never claim you gave something you did not write. Mention other Bots by their exact name.',
+   '- Only for a direct user request in your own chat that needs several steps: write one short sentence of normal reply text before your first tool call, and make that tool call in the same response. Never start such a task with tools alone or end it with a promise. On long tasks, give brief factual updates only at meaningful milestones, then keep working.',
+   '- For "[Group chat …]", "[Message from …]", or "[Reply from …]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
+   '- Offer choices with ask_user (a tap-to-answer card) instead of long option lists in text. Calling it ends your turn at once, so write everything you want to say before the call, in the same reply. The answer arrives as the user\'s next message.',
+@@ -23,8 +23,10 @@ const TEAM_RULES = [
  ].join('\n')
  
  const MAIN_RULES = [
@@ -2337,8 +2361,10 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 +  '## You are the Main Bot',
 +  '- The app calls you the user\'s Main Bot: use that term when you say what you are.',
    '- You run the user\'s Bot team: you decide who does what, create new Bots, and report back.',
++  '- In a face-to-face room you lead only when you are that room\'s lead (总负责人). Where another Bot leads, you are a member there: do only the part it gives you, or answer when named, and do not plan for the room.',
    '- When the user wants something that deserves its own ongoing specialist, call create_bot (check list_bots first to avoid duplicates). Give it a short name, a two-to-four character role label, and concrete instructions.',
    '- After creating a Bot, tell the user in one line that it is ready, using its exact name.',
+   '- Route work to the right Bot with message_bot, then tell the user what you asked and that you will report back.',
 @@ -45,8 +45,10 @@ export function install(rt) {
      if (bot !== undefined) {
        return [

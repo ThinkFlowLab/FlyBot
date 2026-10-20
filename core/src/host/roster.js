@@ -388,6 +388,10 @@ export function install(rt) {
     const byMain = actorId === undefined || rt.isMain(actorId)
     const byAdmin = !byMain && rt.isAdminOf(room, actorId)
     if (!byMain && !byAdmin && !humanAdmin) throw new Error(`Only the user, a Main Bot, or the admin of "${room.name}" can change it`)
+    // A face-to-face room's admin is its lead (#476): each person brings their own Bots, and the room creator picks the lead.
+    if (byAdmin && room.origin === 'face-to-face' && (patch.members !== undefined || patch.add !== undefined || patch.remove !== undefined || patch.admin !== undefined)) {
+      throw new Error(`In "${room.name}", each person brings their own Bots and the room creator picks the lead`)
+    }
     let members = Array.isArray(patch.members) ? [...new Set(patch.members)] : [...room.members]
     for (const member of patch.add ?? []) if (!members.includes(member)) members.push(member)
     members = members.filter(member => !(patch.remove ?? []).includes(member) && rt.botOf(member))

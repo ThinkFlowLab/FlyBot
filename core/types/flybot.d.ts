@@ -391,9 +391,12 @@ export interface FlyBot {
       expiresAt?: string | null
       startedAt?: string | null
       eventCursor?: number
-      members?: Array<{ handle?: string; displayName?: string; ownerName?: string; roomOnly?: boolean; published?: boolean; id?: string }>
+      /** `role`: the role label that Bot's home set for this room (#476), untrusted. */
+      members?: Array<{ handle?: string; displayName?: string; ownerName?: string; roomOnly?: boolean; published?: boolean; id?: string; role?: string }>
       localBots?: Array<{ id: string; handle?: string; name?: string }>
       localId?: string
+      /** The room lead every home follows (#476): its handle, whether the creator picked it, whether this home may pick, whether the server stores one. */
+      lead?: { handle?: string; picked?: boolean; canPick?: boolean; supported?: boolean }
     }): Promise<{ id: string; face?: { roomId?: string } } | undefined>
     applyFaceLine(roomId: string, line: Record<string, unknown>): unknown
     ofFace(serverId: string): { id: string; face?: { roomId?: string; eventCursor?: number } } | undefined

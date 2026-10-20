@@ -7863,3 +7863,67 @@ test('#458: waiting alone says so; Enter chat steps aside while Leave asks; Leav
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
   assert.deepEqual(nav, [['closeOverlay'], ['open', 'helper']])
 })
+
+// Bot Social with the room lead (#476): POST /lead and PUT /roles answer the room, as the server does.
+function leadFaceServer(features) {
+  const server = attestingFaceServer({ features })
+  const inner = server.fetch
+  server.fetch = async (url, init) => {
+    const hit = String(url).match(/\/v1\/face-rooms\/([^/?]+)\/(lead|roles)$/)
+    if (!hit) return inner(url, init)
+    const room = server.face.rooms.get(hit[1])
+    const body = JSON.parse(init.body)
+    server.calls.push({ url, name: `REST ${init.method} /${hit[2]}`, args: body })
+    if (hit[2] === 'lead') Object.assign(room, { lead_bot_handle: body.bot, effective_lead_bot_handle: body.bot ?? room.members[0].handle })
+    else for (const [handle, role] of Object.entries(body.roles)) Object.assign(room.members.find(member => member.handle === handle) ?? {}, { role })
+    return new Response(JSON.stringify(room), { status: 200 })
+  }
+  return server
+}
+
+test('#476: the room creator picks the lead with the button; my Bots\' roles go to the room once; others see it read-only', async (t) => {
+  const server = leadFaceServer(['typed_by_owner', 'room_lead', 'member_roles'])
+  const { call, ctx, room } = await faceFixture(t, server)
+  const body = server.face.rooms.get('frm_123456')
+  const mine = body.members[0].handle
+  Object.assign(body, { created_by_me: true, lead_bot_handle: null, effective_lead_bot_handle: mine })
+  body.members.push({ bot_id: 'bot_coder', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob', role: 'Developer' })
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = () => ctx.flybot.rooms.ofFace('frm_123456')
+  assert.deepEqual(hosted().face.lead, { handle: mine, picked: false, canPick: true, supported: true })
+  assert.equal(hosted().participants.find(p => p.handle === '@coder.bob.home').roleLabel, 'Developer')
+  const roleCalls = () => server.calls.filter(c => c.name === 'REST PUT /roles')
+  assert.deepEqual(roleCalls()[0].args, { roles: { [mine]: 'Boss' } })
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(roleCalls().length, 1, 'a role the room already shows is not sent again')
+
+  const picked = await call('flybot/social/face-lead', { roomId: room.id, bot: '@coder.bob.home' })
+  assert.equal(picked.ok, true)
+  assert.deepEqual(server.calls.filter(c => c.name === 'REST POST /lead').at(-1).args, { bot: '@coder.bob.home' })
+  assert.equal(picked.value.lead.handle, '@coder.bob.home')
+  assert.equal(hosted().face.lead.picked, true)
+  assert.equal(hosted().admin, null, 'another home\'s Bot leads: none of mine is the admin here')
+
+  // Someone who did not create the room sees the lead, and has no way to change it.
+  body.created_by_me = false
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(hosted().face.lead.canPick, false)
+  const refused = await call('flybot/social/face-lead', { roomId: room.id, bot: null })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /created this room/)
+  assert.equal(server.calls.filter(c => c.name === 'REST POST /lead').length, 1)
+})
+
+test('#476: a server without the room lead: the first member leads on every home, nobody can pick, no roles are sent', async (t) => {
+  const server = leadFaceServer(['typed_by_owner'])
+  const { call, ctx, room } = await faceFixture(t, server)
+  const body = server.face.rooms.get('frm_123456')
+  body.members.push({ bot_id: 'bot_coder', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' })
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.deepEqual(hosted.face.lead, { handle: body.members[0].handle, picked: false, canPick: false, supported: false })
+  assert.ok(hosted.admin, 'my first Bot is the default lead, so it is asked first')
+  assert.equal(server.calls.some(c => c.name === 'REST PUT /roles'), false)
+  assert.equal((await call('flybot/social/face-lead', { roomId: room.id, bot: '@coder.bob.home' })).ok, false)
+  assert.equal(server.calls.some(c => c.name === 'REST POST /lead'), false)
+})

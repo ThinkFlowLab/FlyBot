@@ -6,7 +6,7 @@ import { botState, BotMark, BotAvatar, RoomAvatar, lookBotForRemote } from './ma
 import { GlobeIcon, Favicon } from './browser-pane.js'
 import { useEscape } from './overlay-hooks.js'
 import { BotSettingsForm } from './bot-settings.js'
-import { FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
+import { FaceLead, FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
 import { ModelMenu, modelOf } from './model-menu.js'
 import { FolderMenu } from './folder-menu.js'
 import { MemoryRow } from './memory-panel.js'
@@ -151,12 +151,15 @@ function SharedRoomApprovals({ room }) {
 
 // One row per person, each with the Bots they brought; my own Bot opens its chat (#229, #457).
 // The count is people, not Bots.
+// The room lead (#476) sits above the people: the creator picks it with a button, never in chat.
 function FaceMembers({ room, roster, actions }) {
   const people = facePeople(room, roster)
+  const pick = bot => call('social/face-lead', { roomId: room.id, bot })
   return h('div', null,
+    h(FaceLead, { room, roster, pick }),
     h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: people.length })),
     h('div', { className: 'bt-members', role: 'list' }, people.map(person => h(FacePersonRow, {
-      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id),
+      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id), lead: room.face?.lead?.handle,
     }))))
 }
 

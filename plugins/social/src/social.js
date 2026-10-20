@@ -52,6 +52,7 @@ import {
   humanFaceWho,
   faceRoomTitle,
   parseFaceHuman,
+  cleanFaceRole,
 } from './face-rooms.js'
 import {
   hideRemoteInSettings,
@@ -361,7 +362,7 @@ export const SOCIAL_UI_ENDPOINTS = [
   'social/auto-approve', 'social/auto-accept', 'social/auto-send', 'social/poll', 'social/approvals', 'social/decide-approval',
   'social/attachment',
   'social/face-join', 'social/face-rooms', 'social/face-leave', 'social/face-start', 'social/face-send',
-  'social/face-auto',
+  'social/face-auto', 'social/face-lead',
   'social/hide-remote',
   'social/access', 'social/revoke-grant',
 ]
@@ -1414,7 +1415,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // The probe is shared: while one is in flight every caller awaits its result (#234) — an early
   // "not attesting" from a probe that has not finished would render forgeable envelopes as person
   // lines and mark the events seen, with no self-heal once the probe lands.
-  const typed = { supported: false, forbidden: false, mentions: false, presence: false, probedAt: 0, probeFailed: false, probing: undefined }
+  const typed = { supported: false, forbidden: false, mentions: false, presence: false, roles: false, probedAt: 0, probeFailed: false, probing: undefined }
   const TYPED_RECHECK_MS = 10 * 60_000
   // A probe that got no answer (features() → undefined: an unreachable or pre-platform server) is
   // not a "no": it is retried soon, not held for the recheck window.
@@ -1434,6 +1435,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (features?.includes('typed_by_owner')) typed.supported = true
       if (features?.includes('mentions')) typed.mentions = true
       if (features?.includes('presence')) typed.presence = true
+      if (features?.includes('member_roles')) typed.roles = true
       return typed.supported
     } finally {
       typed.probing = undefined
@@ -2753,12 +2755,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         ownerName: m.ownerName,
         label: m.label,
         roomOnly: m.roomOnly === true || m.published !== true,
+        ...(m.role ? { role: m.role } : {}),
         ...(m.color ? { color: m.color } : {}),
         ...(m.avatar ? { avatar: m.avatar } : {}),
       })),
+      // The room lead every home follows (#476); a server without it gets the default lead (first member).
+      ...(snapshot.lead ? { lead: snapshot.lead } : {}),
       localBots: locals,
     })
     if (!room?.id) return undefined
+    publishFaceRoles(snapshot)
     const prev = settings.faceRooms[snapshot.roomId]
     settings.faceRooms[snapshot.roomId] = rememberAsBot({
       localRoomId: room.id,
@@ -2848,6 +2854,34 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         .catch(error => warn('face-room leave after the last peer left failed', error))
     }
     return flybot.rooms.ofFace?.(snapshot.roomId) ?? room
+  }
+  // Each home tells the room its own Bots' role labels (#476), so the lead sees who does what. Sent only
+  // on a server that stores them, when a label differs from what the room shows, once per value.
+  const sentRoles = new Map()
+  function publishFaceRoles(snapshot) {
+    if (!typed.roles || !faceApi?.setRoles || !Array.isArray(snapshot?.members) || flybot.readOnly?.()) return
+    const wanted = {}
+    for (const bot of flybot.bot.list()) {
+      const handle = norm(memberOf(bot.id)?.handle)
+      const seat = handle && snapshot.members.find(member => member.handle === handle)
+      if (!seat) continue
+      const role = cleanFaceRole(bot.role ?? '')
+      const key = `${snapshot.roomId} ${handle}`
+      if ((seat.role ?? '') === role || sentRoles.get(key) === role) continue
+      sentRoles.set(key, role)
+      wanted[handle] = role || null
+    }
+    if (Object.keys(wanted).length > 0) void faceApi.setRoles(snapshot.roomId, wanted).catch(error => warn('face-room role labels', error))
+  }
+  // The room creator's pick of the room lead (#476), from the room's Room lead button only.
+  async function setFaceLead({ roomId, faceRoomId, bot } = {}) {
+    const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
+    if (!id) throw new Error('which room?')
+    const hosted = flybot.rooms.ofFace?.(id)
+    if (hosted?.face?.lead?.canPick !== true) throw new Error('Only the person who created this room can pick its lead.')
+    const snapshot = await faceNeed().setLead(id, bot ? norm(bot) : null)
+    const room = await applyFaceSnapshot(snapshot)
+    return viewHostedFace(room, { faceRoomId: id, ...(room?.face?.lead ? { lead: room.face.lead } : {}) })
   }
   async function pollOneFace(serverId, meta, listed) {
     const after = meta?.cursor ?? 0
@@ -3155,6 +3189,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }))
   disposers.push(flybot.api.handle('social/face-leave', async (payload) => leaveFaceRoom(payload)))
   disposers.push(flybot.api.handle('social/face-start', async (payload) => startFaceRoom(payload)))
+  disposers.push(flybot.api.handle('social/face-lead', async (payload) => setFaceLead(payload)))
   disposers.push(flybot.api.handle('social/face-send', async ({ roomId, faceRoomId, text, botId } = {}) => {
     const id = faceRoomId || Object.entries(settings.faceRooms).find(([, item]) => item.localRoomId === roomId)?.[0]
     if (!id) throw new Error('which room?')

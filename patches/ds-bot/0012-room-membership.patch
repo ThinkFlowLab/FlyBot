@@ -66,7 +66,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  import { useEscape } from './overlay-hooks.js'
  import { BotSettingsForm } from './bot-settings.js'
 -import { GroupSettingsForm, ROOM_MODES, roomSubtitle, shownMode } from './group-settings.js'
-+import { FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
++import { FaceLead, FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
  import { ModelMenu, modelOf } from './model-menu.js'
  import { FolderMenu } from './folder-menu.js'
  import { MemoryRow } from './memory-panel.js'
@@ -80,7 +80,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  
  function transcriptOf(list, id, name, hiddenTurns = []) {
    const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
-@@ -113,16 +113,97 @@ function About({ text, title = 'About' }) {
+@@ -113,16 +113,100 @@ function About({ text, title = 'About' }) {
  
  // A group's overview: what members read, who is in it, and who answers. Changes are
  // made in its settings.
@@ -119,12 +119,15 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +
 +// One row per person, each with the Bots they brought; my own Bot opens its chat (#229, #457).
 +// The count is people, not Bots.
++// The room lead (#476) sits above the people: the creator picks it with a button, never in chat.
 +function FaceMembers({ room, roster, actions }) {
 +  const people = facePeople(room, roster)
++  const pick = bot => call('social/face-lead', { roomId: room.id, bot })
 +  return h('div', null,
++    h(FaceLead, { room, roster, pick }),
 +    h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: people.length })),
 +    h('div', { className: 'bt-members', role: 'list' }, people.map(person => h(FacePersonRow, {
-+      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id),
++      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id), lead: room.face?.lead?.handle,
 +    }))))
 +}
 +
@@ -290,7 +293,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
  
  export const ROOM_MODES = [
    ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
-@@ -15,7 +15,38 @@ export const ROOM_MODES = [
+@@ -15,7 +15,83 @@ export const ROOM_MODES = [
  // Without an admin the host answers as everyone, whatever the stored mode says.
  export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
  
@@ -308,13 +311,19 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +  return `${persons} · ${bots}`
 +}
 +
++// The seat of a face room's lead (#476), by handle.
++const handleKey = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
++export const isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(seat.record?.handle) === handleKey(lead))
++
 +// One row per person (#457): "Ann (you) · Chief, Researcher", my own Bots each opening its chat.
-+export function FacePersonRow({ person, onOpenBot, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
++// `lead`: the room lead's handle (#476), marked on its Bot.
++export function FacePersonRow({ person, onOpenBot, lead, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
 +  const bots = person.seats.flatMap((seat, index) => {
 +    const name = seat.local && onOpenBot
 +      ? h('button', { key: seat.key, type: 'button', className: 'bt-face-bot', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot)
 +      : h('span', { key: seat.key, className: 'bt-face-bot' }, seat.bot)
-+    return index === 0 ? [name] : [h('span', { key: `${seat.key}-sep` }, t(', ')), name]
++    const marked = isLeadSeat(seat, lead) ? [name, h('span', { key: `${seat.key}-lead`, className: 'bt-tag', 'data-flybot': 'face-lead-tag' }, t('Lead'))] : [name]
++    return index === 0 ? marked : [h('span', { key: `${seat.key}-sep` }, t(', ')), ...marked]
 +  })
 +  return h('div', { className, role: 'listitem', 'data-flybot': 'face-person', 'data-mine': person.mine || undefined },
 +    h('span', { className: 'bt-gs-who bt-face-person' },
@@ -322,6 +331,45 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +      h('span', { className: 'bt-face-person-text' },
 +        h('span', { className: 'bt-row-title' }, facePersonLabel(person)),
 +        h('span', { className: 'bt-face-bots' }, bots))))
++}
++
++// A face room's lead (总负责人, #476): the one Bot, from any home, that writes the plan and gives out the
++// parts. The room creator changes it here, with a button; everyone else sees it read-only. Until the
++// creator picks, it is the first Bot of the creator's home that joined.
++export function FaceLead({ room, roster, pick }) {
++  const lead = room.face?.lead
++  const [open, setOpen] = useState(false)
++  const [busy, setBusy] = useState(false)
++  const [error, setError] = useState('')
++  const seats = faceSeats(room, roster)
++  const current = seats.find(seat => isLeadSeat(seat, lead?.handle))
++  if (!current) return null
++  const canPick = lead.canPick === true && typeof pick === 'function'
++  const choose = async (handle) => {
++    setBusy(true)
++    setError('')
++    try {
++      await pick(handle)
++      setOpen(false)
++    } catch (err) {
++      setError(err?.message || t('Could not change the room lead.'))
++    } finally { setBusy(false) }
++  }
++  return h('div', { className: 'bt-face-lead', 'data-flybot': 'face-lead' },
++    h('div', { className: 'bt-section-title' }, t('Room lead')),
++    h('div', { className: 'bt-set-row' },
++      h('span', { className: 'bt-set-copy' },
++        h('span', { className: 'bt-row-title' }, faceSeatLabel(current)),
++        h('span', { className: 'bt-set-hint' }, lead.picked ? t('Writes the plan and gives each Bot its part.') : t('Default: the first Bot of the room creator that joined.'))),
++      canPick ? h('button', { type: 'button', className: 'bt-mini', 'aria-expanded': open, onClick: () => setOpen(!open) }, open ? t('Done') : t('Change')) : null),
++    open && canPick ? seats.map(seat => h('div', { key: seat.key, className: 'bt-set-row' },
++      h('span', { className: 'bt-set-copy' }, faceSeatLabel(seat)),
++      seat === current
++        ? h('span', { className: 'bt-tag' }, t('Lead'))
++        : h('button', { type: 'button', className: 'bt-mini', disabled: busy, onClick: () => void choose(seat.record?.handle) }, t('Make lead')))) : null,
++    open && canPick && lead.picked ? h('button', { type: 'button', className: 'bt-more', disabled: busy, onClick: () => void choose(null) }, t('Use the default lead')) : null,
++    canPick || !lead.supported ? null : h('div', { className: 'bt-set-hint' }, t('Only the person who created this room can change it.')),
++    error ? h('div', { className: 'bt-set-hint', role: 'alert' }, error) : null)
 +}
 +
  export function roomSubtitle(room, roster) {
@@ -359,7 +407,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
 -    h(Card, { title: t('Members · {count}', { count: members.length }) },
 +    face ? h(Card, { title: t('Members · {count}', { count: people.length }) },
-+      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))) : null,
++      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room.face?.lead?.handle }))) : null,
 +    face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
 +        h('span', { className: 'bt-gs-who' },
@@ -602,7 +650,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  //
  // Work does not hold a round up: a member that is still busy with tools a little after
  // it started, or that is called while still at earlier work, lets the round go on. Its
-@@ -17,11 +17,16 @@
+@@ -17,11 +17,17 @@
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
  import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -615,6 +663,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  import { GROUP_REF, output } from './tools.js'
  import { failureLine } from './turns.js'
 +import { currentParticipants, isFaceRoom } from './room-membership.js'
++import { FACE_LEAD_NOTE, faceMemberNote, faceRoster } from './face-lead.js'
 +import { faceMentions } from './face-mentions.js'
 +import { stripSessionChips } from './delivery.js'
 +import { createDshRoomParticipant } from './room-participant.js'
@@ -700,6 +749,16 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
+@@ -100,7 +100,8 @@ const slotLabel = (slot) => {
+   return slot.name
+ }
+ 
+-const adminNote = room => [
++// A face-to-face room's admin is its lead (#476), with the lead's rules instead.
++const adminNote = room => isFaceRoom(room) ? FACE_LEAD_NOTE : [
+   'You are this group\'s admin.',
+   room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
+   '"@all" calls every member. When the user asks, change the group with update_group.',
 @@ -113,31 +113,54 @@ const ROOM_READ_MAX = 30
  
  export function install(rt) {
@@ -775,6 +834,23 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    }
  
    // Lines from before the round's opening message are kept apart from this round, so
+@@ -153,14 +153,14 @@ export function install(rt) {
+     const index = round.slots.findIndex(slot => slot.status === 'speaking')
+     const before = index
+     const after = round.slots.length - index - 1
+-    const members = `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
++    const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
+     const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
+     if (round.kickoff) return [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n')
+     const working = workingIn(room).filter(item => item.bot.id !== member.id)
+     return [
+       members,
+       notice,
+-      leads ? adminNote(room) : '',
++      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
+       earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
+       current.length
+         ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${transcript(current)}`
 @@ -169,83 +169,19 @@ export function install(rt) {
        working.length > 0 ? `Still at work on what they were asked; each posts here when done: ${working.map(item => `${item.bot.name} (${minutesSince(item.since)} min)`).join(', ')}.` : '',
        `Speaking order for this round: ${round.slots.map(slotLabel).join(' → ')}.`,

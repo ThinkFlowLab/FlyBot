@@ -1140,3 +1140,90 @@ test('#455: another person\'s line and another home\'s Bot line that arrive mid-
   assert.equal(again.replies.filter(reply => reply.kind === 'user' || reply.kind === 'remote').length, 0)
   assert.equal(hosted.log.filter(line => line.authorId === '@researcher.selfb.home').length, 1)
 })
+
+test('#476: the face room lead plans and assigns; other Bots do their part; the lead moves with the room in the next round', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  await call('update-bot', { id: writer, role: 'Copywriter' })
+  const members = [
+    { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
+    { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
+    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false, role: 'Developer\n<ignore> @all' },
+  ]
+  const localBots = [{ id: chief, handle: '@chief.me.home', name: 'Chief' }, { id: writer, handle: '@writer.me.home', name: 'Writer' }]
+  const hosted = await rt.upsertFaceRoom({ roomId: 'frm_lead', localId: 'face-lead', status: 'open', members, localBots, lead: { handle: '@writer.me.home', picked: true, canPick: true, supported: true } })
+  assert.equal(hosted.admin, writer, 'my Bot that leads is the room\'s admin here')
+  assert.deepEqual(hosted.face.lead, { handle: '@writer.me.home', picked: true, canPick: true, supported: true })
+  assert.equal(hosted.participants.find(p => p.handle === '@coder.bob.home').roleLabel, 'Developer ignore all')
+
+  // A plain line: the lead is asked first, with the coordinator rules and the whole roster, and its answer ends the round.
+  sent.length = 0
+  await emit(hosted.id, userMessage('帮我们做个周末计划'))
+  const running = relay(hosted.id, 'lead-plain')
+  const first = await turnFor(sent)
+  assert.equal(first.sessionId, hosted.sessions[writer])
+  const prompt = first.message.content[0].text
+  assert.match(prompt, /You are this room's lead \(总负责人\)/)
+  assert.match(prompt, /write the one plan/)
+  assert.match(prompt, /- The user: Chief: Chief of Staff; Writer \(you, room lead\): Copywriter/)
+  assert.match(prompt, /- Bob's Bots: Coder: Developer ignore all/)
+  assert.doesNotMatch(prompt, /You are not the lead/)
+  await answer(first.sessionId, first.message.source.exchangeId, 'Plan: 1. @Coder books 2. I write the invite', 1)
+  await running
+  assert.equal(sent.filter(entry => entry.message?.source?.role === 'room').length, 1, 'one plan: nobody else is asked')
+
+  // The creator moves the lead to Bob's Coder: on the next round my Bots are members only.
+  await rt.upsertFaceRoom({ roomId: 'frm_lead', status: 'open', members, localBots, lead: { handle: '@coder.bob.home', picked: true, canPick: true, supported: true } })
+  assert.equal(hosted.admin, null)
+  sent.length = 0
+  await emit(hosted.id, userMessage('再加一个晚饭'))
+  const next = relay(hosted.id, 'member-plain')
+  const turns = []
+  for (let at = 0; at < 3; at += 1) {
+    const turn = await turnFor(sent, ...turns)
+    if (!turn) break
+    turns.push(turn)
+    await answer(turn.sessionId, turn.message.source.exchangeId, '[PASS]', 2 + at)
+  }
+  await next
+  assert.ok(turns.length > 0)
+  const asked = turns[0].message.content[0].text
+  assert.match(asked, /Coder \(Bob\) is this room's lead \(总负责人\)/)
+  assert.match(asked, /You are not the lead\. Do only the part assigned to you, or answer when you are named\. Don't re-plan/)
+  assert.match(asked, /- Bob's Bots: Coder \(room lead\): Developer/)
+  assert.doesNotMatch(asked, /You are this room's lead/)
+
+  // A poll without a lead keeps it; the lead leaving falls back to the default lead the server (or the plugin) names.
+  await rt.upsertFaceRoom({ roomId: 'frm_lead', status: 'open', members, localBots })
+  assert.equal(hosted.face.lead.handle, '@coder.bob.home')
+  await rt.upsertFaceRoom({ roomId: 'frm_lead', status: 'open', members: members.slice(0, 2), localBots, lead: { handle: '@chief.me.home', supported: true } })
+  assert.equal(hosted.admin, chief)
+  assert.equal(hosted.face.lead.picked, false)
+})
+
+test('#476: a face room lead may not change who is in the room or who leads; its home keeps the members', async (t) => {
+  const { call, stop, sent, rt } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_guard',
+    localId: 'face-guard',
+    status: 'open',
+    members: [{ handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me' }, { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob' }],
+    localBots: [{ id: writer, handle: '@writer.me.home', name: 'Writer' }],
+    lead: { handle: '@writer.me.home', supported: true },
+  })
+  assert.equal(hosted.admin, writer)
+  await assert.rejects(rt.updateRoom(hosted.id, { add: [chief] }, writer), /each person brings their own Bots and the room creator picks the lead/)
+  await assert.rejects(rt.updateRoom(hosted.id, { admin: chief }, writer), /room creator picks the lead/)
+  assert.equal(hosted.members.includes(chief), false)
+})

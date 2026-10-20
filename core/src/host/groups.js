@@ -26,6 +26,7 @@ import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
 import { failureLine } from './turns.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
+import { FACE_LEAD_NOTE, faceMemberNote, faceRoster } from './face-lead.js'
 import { faceMentions } from './face-mentions.js'
 import { stripSessionChips } from './delivery.js'
 import { createDshRoomParticipant } from './room-participant.js'
@@ -154,7 +155,8 @@ const slotLabel = (slot) => {
   return slot.name
 }
 
-const adminNote = room => [
+// A face-to-face room's admin is its lead (#476), with the lead's rules instead.
+const adminNote = room => isFaceRoom(room) ? FACE_LEAD_NOTE : [
   'You are this group\'s admin.',
   room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
   '"@all" calls every member. When the user asks, change the group with update_group.',
@@ -230,14 +232,14 @@ export function install(rt) {
     const index = round.slots.findIndex(slot => slot.status === 'speaking')
     const before = index
     const after = round.slots.length - index - 1
-    const members = `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
+    const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
     const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
     if (round.kickoff) return [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n')
     const working = workingIn(room).filter(item => item.bot.id !== member.id)
     return [
       members,
       notice,
-      leads ? adminNote(room) : '',
+      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
       earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
       current.length
         ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${transcript(current)}`
