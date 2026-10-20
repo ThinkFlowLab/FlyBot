@@ -692,7 +692,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,34 @@ const ZH = {
+@@ -360,9 +360,36 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -719,6 +719,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  '1 message waits for your approval': '1 条消息等你批准',
 +  '{count} messages wait for your approval': '{count} 条消息等你批准',
 +  'Approve it in the chat': '请在对话里批准',
++  'The last turn did not finish': '上一轮没有完成',
++  'Latest: {text}': '最新：{text}',
 +  'Untitled task': '未命名任务',
 +  'for {time}': '已 {time}',
 +  'just started': '刚开始',
@@ -2919,16 +2921,27 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -238,6 +238,31 @@ export function install(rt) {
+@@ -238,6 +238,42 @@ export function install(rt) {
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
 +  // The latest turns of the user's own Bots that finished or failed, for a system notification
-+  // (#353). Process-local and bounded; a window skips the ones from before it opened. Left out:
-+  // a friend's Bots, turns a friend started, turns another Bot asked for (hidden in the chat),
-+  // rooms shared with other people, and turns the user stopped.
++  // (#353) and the Agent inbox's failed turns (#471). Process-local and bounded; a window skips
++  // the ones from before it opened. Left out: a friend's Bots, turns a friend started, turns
++  // another Bot asked for (hidden in the chat), rooms shared with other people, and turns the
++  // user stopped. Past the last 20, a place's (Bot + group) latest turn is kept while it is a
++  // failure younger than 7 days, so busy Bots elsewhere do not push it out of the inbox.
 +  const ENDED_KEPT = 20
++  const FAILED_KEPT = 50
++  const FAILED_MS = 7 * 86_400_000
 +  let ended = []
++  const placeOfEnded = entry => `${entry.botId}|${entry.roomId ?? ''}`
++  const trimEnded = (list, now) => {
++    const latest = new Map(list.map(entry => [placeOfEnded(entry), entry]))
++    const older = list.slice(0, -ENDED_KEPT)
++      .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
++    return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
++  }
 +  const noteEnded = (id, turn, info, reason, failure) => {
 +    if (failure === undefined && reason?.kind !== 'completed') return
 +    const owner = rt.groupOwners.get(id)
@@ -2938,13 +2951,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    if (owner === undefined && state.exchangeTurns?.[id]?.includes(turn)) return
 +    if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
 +    const at = Date.now()
-+    ended = [...ended, {
++    ended = trimEnded([...ended, {
 +      id: `${id}:${turn}:${at}`,
 +      botId: bot.id,
 +      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
 +      at,
 +      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
-+    }].slice(-ENDED_KEPT)
++    }], at)
 +  }
 +  const endedView = () => ended
 +
@@ -3192,7 +3205,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    const module = { exports: {} }
    runInNewContext(bundle.outputFiles[0].text, {
      module, exports: module.exports, Notification,
-@@ -62,3 +62,109 @@ test('no notification for the conversation on screen, for approvals older than t
+@@ -62,3 +62,114 @@ test('no notification for the conversation on screen, for approvals older than t
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -3300,7 +3313,12 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy' }],
 +  ])
 +  for (let n = 10; n < 40; n++) turn('b', n, completed)
++  // Past the last 20, the failure in r1 stays: it is still the latest turn there (#471).
++  assert.deepEqual(rt.endedView().map(entry => entry.id.split(':').slice(0, 2).join(':')), ['g1:1', ...Array.from({ length: 20 }, (_, i) => `b:${20 + i}`)])
++  turn('g1', 2, completed, { kind: SOURCE_KIND, role: 'room', exchangeId: 'r1y' })
++  for (let n = 40; n < 60; n++) turn('b', n, completed)
 +  assert.equal(rt.endedView().length, 20)
++  assert.ok(rt.endedView().every(entry => entry.failed === undefined))
 +})
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
