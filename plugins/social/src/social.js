@@ -302,12 +302,17 @@ export function parseInviteInput(input) {
   return { code: code && INVITE_CODE.test(code) ? code : raw, ...(host ? { host } : {}) }
 }
 
+// Neutral, not an error: re-accepting an invite for a Bot this home already has (#496).
+export const ALREADY_HAVE = "You already have this friend's Bot."
+
 export function mapJoinInviteError(error, { foreignHost } = {}) {
   const msg = String(error?.message ?? error ?? '')
   const code = String(error?.code ?? '')
   const blob = `${code} ${msg}`
   if (/relationship_exists/i.test(blob)) {
-    return Object.assign(new Error("You're already friends. Their Bot is back in your list."), {
+    // Nothing failed: this home already has the invite's Bot (#496). The join handler answers that as a
+    // result; this sentence is only the fallback when it cannot (no home on this server).
+    return Object.assign(new Error(ALREADY_HAVE), {
       code: 'relationship_exists',
       ...(error?.peer ? { peer: error.peer } : {}),
       ...(error?.bot ? { bot: error.bot } : {}),
@@ -1912,6 +1917,63 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
   }
   disposers.push(flybot.api.handle('social/status', socialStatus, { read: true }))
+  // `relationship_exists` on a join means this home already has the invite's Bot: nothing failed (#496).
+  // Answer it as a result: which Bot it is (Bot Social's 409 names no Bot, so the public invite info
+  // `GET /v1/invites/{code}` does; it needs no token), and which hidden or declined Bots really came
+  // back into the list. Unhiding stays scoped to the invite's Bot/peer home, never every remote.
+  async function alreadyHave(mapped, code, before) {
+    let bot = mapped.bot?.handle ? mapped.bot : undefined
+    let owner = cleanText(mapped.peer?.owner_display_name || mapped.peer?.display_name)
+    if (!bot && typeof client.inviteInfo === 'function') {
+      try {
+        const info = await client.inviteInfo(code)
+        if (info?.inviter?.handle) {
+          bot = info.inviter
+          owner = cleanText(info.inviter.owner_display_name) || owner
+        }
+      } catch (error) {
+        warn('could not look up the invite after relationship_exists', error)
+      }
+    }
+    const restored = []
+    try {
+      const result = await client.callTool('list_remote_bots', { home: home.id })
+      const homes = mapRemoteHomes(result?.homes)
+      const focus = norm(bot?.handle || mapped.peer?.handle)
+      const present = presentRemoteHandles(homes)
+      const handles = focus && focus !== '@'
+        ? present.filter(h => {
+          const homeKey = isHomeLevelHandle(focus) ? focus : homeOfPeer(focus)
+          return h === focus || h === homeKey || homeOfPeer(h) === homeKey
+        })
+        : []
+      const wasHidden = new Set(handles.filter(h => declinedRemotes.has(h) || isHiddenRemote(settings, h)))
+      if (handles.length) unhideDeclined(handles)
+      const next = handles.length ? revealHiddenIfPresent(settings, handles) : settings
+      if (next !== settings) { settings = next; saveSettings() }
+      fetchedAt = 0
+      await remoteBots({ fresh: true }).catch(() => { /* the roster refreshes on the next poll */ })
+      for (const item of listedRemoteBots()) {
+        if (wasHidden.has(item.handle) && !before.has(item.handle)) restored.push({ handle: item.handle, name: item.name, ...(item.owner || item.homeName ? { owner: item.owner || item.homeName } : {}) })
+      }
+      if (!owner && bot?.handle) {
+        const entry = homes.find(item => item.home === homeOfPeer(norm(bot.handle)))
+        owner = cleanText(entry?.owner || entry?.name)
+      }
+    } catch (revealError) {
+      warn('could not unhide after relationship_exists', revealError)
+    }
+    const botName = cleanText(bot?.display_name || bot?.name)
+    return {
+      alreadyHave: true,
+      status: 'active',
+      ...(mapped.relationshipId ? { relationshipId: mapped.relationshipId } : {}),
+      ...(bot?.handle ? { bot: norm(bot.handle) } : {}),
+      ...(botName ? { botName } : {}),
+      ...(owner ? { ownerName: owner } : {}),
+      restored,
+    }
+  }
   // Joining a friend's invite (code or link). If the server asks this owner to approve
   // the request too, the click counts as that approval.
   // The friendship is between the invited Bot and the Bot that joins (botId, else the Main
@@ -1938,28 +2000,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       joined = await client.callTool('join_invite', { code: parsed.code, ...from })
     } catch (error) {
       const mapped = mapJoinInviteError(error, { foreignHost: Boolean(parsed.host && configuredHost() && parsed.host !== configuredHost()) })
-      if (mapped.code === 'relationship_exists' && home) {
-        try {
-          const result = await client.callTool('list_remote_bots', { home: home.id })
-          const homes = mapRemoteHomes(result?.homes)
-          // Scope unhide to the invite's Bot/peer home — never every remote on the home.
-          const focus = norm(mapped.bot?.handle || mapped.peer?.handle)
-          const present = presentRemoteHandles(homes)
-          const handles = focus
-            ? present.filter(h => {
-              const homeKey = isHomeLevelHandle(focus) ? focus : homeOfPeer(focus)
-              return h === focus || h === homeKey || homeOfPeer(h) === homeKey
-            })
-            : []
-          if (handles.length) unhideDeclined(handles)
-          const next = handles.length ? revealHiddenIfPresent(settings, handles) : settings
-          if (next !== settings) { settings = next; saveSettings() }
-          fetchedAt = 0
-          await remoteBots({ fresh: true }).catch(() => { /* the roster refreshes on the next poll */ })
-        } catch (revealError) {
-          warn('could not unhide after relationship_exists', revealError)
-        }
-      }
+      if (mapped.code === 'relationship_exists' && home) return alreadyHave(mapped, parsed.code, before)
       throw mapped
     }
     // Bot Social answers with `inviter` = the invited Bot itself (a member handle, @chief.bob.home) and

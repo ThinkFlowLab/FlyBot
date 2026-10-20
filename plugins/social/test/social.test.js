@@ -956,7 +956,7 @@ test('#230: removing a friend\'s Bot asks inline, not with the browser confirm b
     const { plugin, all, text } = clientPlugin([false, false, false, true, ''])
     const nodes = all(plugin.FriendChatSettings({ bot }))
     const ask = byId(nodes, 'remove-friend-bot-confirm')
-    assert.match(text(ask), /Remove Helper\? SelfA can share it again\./)
+    assert.equal(text(ask).replace(/RemoveKeep$/, ''), 'Remove Helper (SelfA) from your list? Your own Bots stay shared. SelfA can share it again.')
     assert.ok(byId(nodes, 'remove-friend-bot-yes'))
     assert.ok(byId(nodes, 'remove-friend-bot-no'))
   }
@@ -5103,14 +5103,79 @@ test('#139: join errors are English and relationship_exists unhides', async (t) 
   assert.equal(unavailable.ok, false)
   assert.match(unavailable.error.message, /already used/i)
   assert.doesNotMatch(unavailable.error.message, /invite_unavailable/)
+  // #496: not an error; it names the Bot and says what really came back.
   const exists = await call('flybot/social/join-invite', { code: 'EXISTS' })
-  assert.equal(exists.ok, false)
-  assert.match(exists.error.message, /already friends/i)
-  assert.doesNotMatch(exists.error.message, /relationship_exists/)
+  assert.equal(exists.ok, true)
+  assert.equal(exists.value.alreadyHave, true)
+  assert.equal(exists.value.botName, 'Coder')
+  assert.equal(exists.value.ownerName, 'Bob')
+  assert.deepEqual(exists.value.restored, [{ handle: '@coder.bob.home', name: 'Coder', owner: 'Bob' }])
   const again = (await call('flybot/social/remote-bots', { fresh: true })).value
   assert.equal(again.homes.some(h => h.bots.some(bot => bot.handle === '@coder.bob.home')), true)
   assert.equal(again.homes.some(h => h.bots.some(bot => bot.handle === '@helper.eve.home')), false, 'unrelated hidden Eve stays hidden')
-  assert.equal(mapJoinInviteError(Object.assign(new Error('relationship_exists'), { code: 'relationship_exists' })).message.includes('already friends'), true)
+  assert.equal(mapJoinInviteError(Object.assign(new Error('relationship_exists'), { code: 'relationship_exists' })).message, "You already have this friend's Bot.")
+})
+
+test('#496: re-accepting an invite for a Bot I already have names it from the public invite info, restores nothing, no token sent', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // Like Bot Social: the 409 names no Bot (the MCP error carries code and message only).
+  const lookups = []
+  const wrapped = async (url, init = {}) => {
+    if (/\/v1\/invites\/[^/]+$/.test(String(url)) && (init.method ?? 'GET') === 'GET') {
+      lookups.push({ url: String(url), authorization: init.headers?.authorization })
+      return new Response(JSON.stringify({ code: 'LIVE1', status: 'active', inviter: { bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' } }), { status: 200 })
+    }
+    const body = String(url).endsWith('/mcp') && init.body ? JSON.parse(init.body) : undefined
+    if (body?.params?.name === 'join_invite') {
+      const text = JSON.stringify({ code: 'relationship_exists', message: 'you are already connected to this Bot (or a request is pending)', relationship_id: 'r1' })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text }] } }), { status: 200 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: wrapped }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: wrapped }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const exists = await call('flybot/social/join-invite', { code: 'https://s/i/LIVE1' })
+  assert.equal(exists.ok, true, exists.error?.message)
+  assert.equal(exists.value.alreadyHave, true)
+  assert.equal(exists.value.bot, '@coder.bob.home')
+  assert.equal(exists.value.botName, 'Coder')
+  assert.equal(exists.value.ownerName, 'Bob')
+  assert.deepEqual(exists.value.restored, [], 'nothing was hidden, so nothing came back')
+  assert.deepEqual(lookups.map(item => [item.url, item.authorization]), [['https://s/v1/invites/LIVE1', undefined]], 'the public invite info is read without the connector token')
+})
+
+test('#496: the panel shows an already-had Bot as neutral text, a restored one as back, the fallback never red', async () => {
+  const lastStatus = setters => { const value = setters.filter(([index, item]) => index === 2 && item !== null).at(-1)?.[1]; return value && { tone: value.tone, text: value.text } }
+  for (const [reply, tone, expected] of [
+    [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [] }, 'info', 'You already have Chief (SelfA1233).'],
+    [{ alreadyHave: true, status: 'active', restored: [] }, 'info', "You already have this friend's Bot."],
+    [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [{ handle: '@chief.selfa1233.home', name: 'Chief', owner: 'SelfA1233' }] }, 'ok', 'Chief (SelfA1233) is back in your list.'],
+  ]) {
+    const { plugin, all, setters } = clientPlugin([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''], {
+      call: async endpoint => (endpoint === 'social/join-invite' ? reply : {}),
+    })
+    const nodes = all(plugin.AddFriend({ onDone() {} }))
+    await nodes.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.deepEqual(lastStatus(setters), { tone, text: expected })
+  }
+  // An older plugin host that still throws relationship_exists: the same neutral sentence, no "failed:".
+  const { plugin, all, setters } = clientPlugin([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''], {
+    call: async endpoint => { if (endpoint === 'social/join-invite') throw new Error('Bot Social join_invite: relationship_exists'); return {} },
+  })
+  const nodes = all(plugin.AddFriend({ onDone() {} }))
+  await nodes.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(lastStatus(setters), { tone: 'info', text: "You already have this friend's Bot." })
+  assert.doesNotMatch(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /already friends/)
 })
 
 test('#138: leaving a face room drops room-only remotes from Friends\' Bots', async (t) => {
@@ -6039,7 +6104,7 @@ test('#139: Remove asks once (inline, #230); Keep leaves the Bot', () => {
   // The first click only opens the question; nothing is removed yet.
   walk(pluginOf([false, false, false, false, '']).FriendChatSettings({ bot })).find(n => n.props['data-flybot'] === 'remove-friend-bot').props.onClick()
   const open = walk(pluginOf([false, false, false, true, '']).FriendChatSettings({ bot }))
-  assert.match(open.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm').children.flatMap(c => c.children ?? [c]).join(' '), /Remove Helper\? Bob can share it again\./)
+  assert.match(open.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm').children.flatMap(c => c.children ?? [c]).join(' '), /Remove Helper \(Bob\) from your list\? Your own Bots stay shared\. Bob can share it again\./)
   open.find(n => n.props['data-flybot'] === 'remove-friend-bot-no').props.onClick()
   assert.equal(asked.length, 0)
   assert.equal(hidden.length, 0)
@@ -6322,7 +6387,7 @@ test('#197: a read-only face room hides the composer, the own handle uses normal
   for (const text of [source, server]) {
     assert.doesNotMatch(text, /(?:return|Error\()[^\n]*in Friends' Bots/)
   }
-  assert.equal(mapJoinInviteError(Object.assign(new Error('relationship_exists'), { code: 'relationship_exists' })).message, "You're already friends. Their Bot is back in your list.")
+  assert.equal(mapJoinInviteError(Object.assign(new Error('relationship_exists'), { code: 'relationship_exists' })).message, "You already have this friend's Bot.")
 })
 
 

@@ -34,32 +34,46 @@ diff --git a/README.md b/README.md
 diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
 --- a/src/client/approval-notices.js
 +++ b/src/client/approval-notices.js
-@@ -1,28 +1,44 @@
+@@ -1,36 +1,82 @@
  import { t } from './i18n.js'
  
 -// A system notification for each approval that starts waiting while this window is in
 -// the background or shows another conversation. Only where the platform already allows
 -// notifications: DS Bot never asks for the permission.
-+// A system notification for each approval that starts waiting, and each turn of the user's
-+// own Bots that finishes or fails (#353), while this window is in the background or shows
-+// another conversation. Only where the platform already allows notifications: DS Bot never
-+// asks for the permission. Settings → General → Notifications turns them all off. A
-+// notification only opens its chat: it never approves, rejects or sends anything.
- export function noticeApprovals({ work, roster, shownSession, openSession, since = Date.now() }) {
+-export function noticeApprovals({ work, roster, shownSession, openSession, since = Date.now() }) {
++// An approval still waiting after this long gets one more reminder (#469, owner decision).
++export const WAITING_TOO_LONG = 15 * 60 * 1000
++
++// A system notification for each approval that starts waiting, one more when it has waited
++// too long (#469), and each turn of the user's own Bots that finishes or fails (#353), while
++// this window is in the background or shows another conversation. Only where the platform
++// already allows notifications: DS Bot never asks for the permission. Settings → General →
++// Notifications turns them all off, or each kind on its own (`prefs.notify`, #469). One chat
++// keeps one notification: a newer one replaces it and counts the updates since the chat was
++// last open. A notification only opens its chat: it never approves, rejects or sends anything.
++export function noticeApprovals({ work, roster, shownSession, openSession, since = Date.now(), now = () => Date.now(), timers = globalThis }) {
    const told = new Set()
++  const unseen = new Map()
++  let timer
    const notify = () => {
 -    const approvals = work.getSnapshot().approvals ?? []
++    timers.clearTimeout?.(timer)
++    timer = undefined
 +    const { approvals = [], ended = [] } = work.getSnapshot()
++    const at = now()
++    const lateAt = entry => Math.max(entry.at ?? 0, since) + WAITING_TOO_LONG
 +    const events = [
-+      ...approvals.map(entry => ({ entry, kind: 'approval' })),
-+      ...ended.map(entry => ({ entry, kind: entry.failed === undefined ? 'finished' : 'failed' })),
++      ...approvals.map(entry => ({ entry, kind: 'approval', key: `approval-${entry.id}`, when: entry.at ?? 0 })),
++      ...approvals.filter(entry => lateAt(entry) <= at).map(entry => ({ entry, kind: 'late', key: `late-${entry.id}`, when: lateAt(entry) })),
++      ...ended.map(entry => ({ entry, kind: entry.failed === undefined ? 'finished' : 'failed', key: `turn-${entry.id}`, when: entry.at ?? 0 })),
 +    ]
-+    const key = ({ entry, kind }) => `${kind === 'approval' ? 'approval' : 'turn'}-${entry.id}`
-+    const current = new Set(events.map(key))
++    const current = new Set(events.map(event => event.key))
      for (const id of told) {
 -      if (!approvals.some(entry => entry.id === id)) told.delete(id)
 +      if (!current.has(id)) told.delete(id)
      }
++    const next = Math.min(...approvals.map(lateAt).filter(due => due > at))
++    if (Number.isFinite(next)) timer = timers.setTimeout?.(notify, next - at)
      if (typeof Notification !== 'function' || Notification.permission !== 'granted') return
 -    for (const entry of approvals) {
 -      if (told.has(entry.id)) continue
@@ -68,31 +82,58 @@ diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
 -      if ((entry.at ?? 0) < since) continue
 +    const { byId, roomsById, prefs } = roster.getSnapshot()
 +    const on = prefs?.notifications !== false
++    const kinds = prefs?.notify ?? {}
++    const visible = document.visibilityState === 'visible'
++    const shown = shownSession()
++    if (visible) unseen.delete(shown)
++    const fresh = new Map()
 +    for (const event of events) {
-+      const id = key(event)
-+      if (told.has(id)) continue
-+      told.add(id)
++      if (told.has(event.key)) continue
++      told.add(event.key)
 +      const { entry, kind } = event
 +      // Waiting or ending before this window opened is no news: the sidebar shows it.
 +      // Switched off, it stays told, so switching back on brings no old ones.
-+      if (!on || (entry.at ?? 0) < since) continue
++      if (!on || kinds[kind === 'late' ? 'approval' : kind] === false) continue
++      if (kind !== 'late' && (entry.at ?? 0) < since) continue
        const place = entry.roomId ?? entry.sessionId
-       if (document.visibilityState === 'visible' && shownSession() === place) continue
+-      if (document.visibilityState === 'visible' && shownSession() === place) continue
 -      const { byId, roomsById } = roster.getSnapshot()
++      if (visible && shown === place) continue
++      fresh.set(place, [...fresh.get(place) ?? [], event])
++    }
++    for (const [place, list] of fresh) {
++      const { entry, kind } = list.reduce((last, event) => (event.when >= last.when ? event : last))
++      const count = (unseen.get(place) ?? 0) + list.filter(event => event.kind !== 'late').length
++      unseen.set(place, count)
        const room = entry.roomId ? roomsById[entry.roomId] : undefined
 -      const note = new Notification(t('{name} is waiting for your approval', { name: byId[entry.botId]?.name ?? t('A Bot') }), {
 -        body: [room?.name, entry.tool].filter(Boolean).join(' · '),
 -        tag: `ds-bot-approval-${entry.id}`,
 +      const name = byId[entry.botId]?.name ?? t('A Bot')
 +      const title = kind === 'approval' ? t('{name} is waiting for your approval', { name })
-+        : kind === 'finished' ? t('{name} finished', { name })
-+          : t('{name} failed: {reason}', { name, reason: entry.failed })
++        : kind === 'late' ? t('{name} has waited {n} min for your approval', { name, n: Math.max(15, Math.floor((at - (entry.at ?? at)) / 60000)) })
++          : kind === 'finished' ? t('{name} finished', { name })
++            : t('{name} failed: {reason}', { name, reason: entry.failed })
 +      const note = new Notification(title, {
-+        body: [room?.name, kind === 'approval' ? entry.tool : undefined].filter(Boolean).join(' · '),
-+        tag: `ds-bot-${id}`,
++        body: [room?.name, kind === 'approval' || kind === 'late' ? entry.tool : undefined, count > 1 ? t('{count} updates', { count }) : undefined].filter(Boolean).join(' · '),
++        tag: `ds-bot-${place}`,
        })
        note.onclick = () => {
          window.focus()
++        unseen.delete(place)
+         openSession(entry.roomId ?? entry.botId)
+         note.close()
+       }
+     }
+   }
+   notify()
+-  return work.subscribe(notify)
++  const off = work.subscribe(notify)
++  return () => {
++    off()
++    timers.clearTimeout?.(timer)
++  }
+ }
 diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 --- a/src/client/bot-browsers.js
 +++ b/src/client/bot-browsers.js
@@ -748,12 +789,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -450,9 +450,16 @@ const ZH = {
+@@ -450,9 +450,19 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
 +  '{name} finished': '{name} 已完成',
 +  '{name} failed: {reason}': '{name} 失败：{reason}',
++  '{name} has waited {n} min for your approval': '{name} 已经等你批准 {n} 分钟了',
++  '{count} updates': '{count} 条更新',
++  'Once more if it still waits after 15 min.': '等了 15 分钟还没批准时再提醒一次。',
 +  Notifications: '通知',
 +  'When your Bots finish, fail, or wait for your approval while you are in another chat or app.': '你的 Bot 完成、失败或等你批准时提醒你（你在别的对话或应用里时）。',
    '{first} and {second} are waiting for your approval': '{first}、{second} 等你批准',
@@ -3258,7 +3302,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    const shown = []
    const opened = []
    function Notification(title, options) {
-@@ -26,7 +26,7 @@ function windowWith({ permission = 'granted', visibility = 'visible' } = {}) {
+@@ -26,14 +26,16 @@ function windowWith({ permission = 'granted', visibility = 'visible' } = {}) {
      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
      set: (next) => { snapshot = next; for (const listener of listeners) listener() },
    }
@@ -3267,7 +3311,26 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    const module = { exports: {} }
    runInNewContext(bundle.outputFiles[0].text, {
      module, exports: module.exports, Notification,
-@@ -62,3 +62,114 @@ test('no notification for the conversation on screen, for approvals older than t
+     document: { visibilityState: visibility },
+     window: { focus() {} },
+   })
+-  return { ...module.exports, shown, opened, work, roster, openSession: id => opened.push(id) }
++  // Toy timestamps: the clock stays at 1000 unless a test brings its own.
++  const noticeApprovals = options => module.exports.noticeApprovals({ now: () => 1000, ...options })
++  return { ...module.exports, noticeApprovals, shown, opened, work, roster, openSession: id => opened.push(id) }
+ }
+ 
+ test('an approval that starts waiting while another conversation shows gets one notification', () => {
+@@ -41,7 +41,7 @@ test('an approval that starts waiting while another conversation shows gets one
+   page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100 })
+   page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
+   page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
+-  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [['Writer is waiting for your approval', 'Ops · pwsh', 'ds-bot-approval-x1']])
++  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [['Writer is waiting for your approval', 'Ops · pwsh', 'ds-bot-r1']])
+   page.shown[0].onclick()
+   assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
+ })
+@@ -62,3 +62,207 @@ test('no notification for the conversation on screen, for approvals older than t
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -3283,8 +3346,8 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  page.work.set(ended([done, broke]))
 +  page.work.set(ended([done, broke]))
 +  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [
-+    ['Writer finished', '', 'ds-bot-turn-chat-b:1:200'],
-+    ['Writer failed: upstream busy', 'Ops', 'ds-bot-turn-g:2:300'],
++    ['Writer finished', '', 'ds-bot-chat-b'],
++    ['Writer failed: upstream busy', 'Ops', 'ds-bot-r1'],
 +  ])
 +  page.shown[0].onclick()
 +  page.shown[1].onclick()
@@ -3318,7 +3381,93 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  assert.equal(page.shown.length, 0)
 +  page.roster.prefs = {}
 +  page.work.set({ bots: {}, approvals: [approval], ended: [{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 200 }, { id: 'e2', botId: 'b', sessionId: 'chat-b', at: 300 }] })
-+  assert.deepEqual(page.shown.map(note => note.tag), ['ds-bot-turn-e2'])
++  assert.deepEqual(page.shown.map(note => [note.title, note.body]), [['Writer finished', '']])
++})
++
++// A clock and timers the test moves by hand.
++function clock(start) {
++  let now = start
++  const pending = new Map()
++  let seq = 0
++  return {
++    now: () => now,
++    timers: {
++      setTimeout: (fn, ms) => { pending.set(++seq, { fn, at: now + ms }); return seq },
++      clearTimeout: id => pending.delete(id),
++    },
++    pending,
++    advance(ms) {
++      now += ms
++      for (const [id, { fn, at }] of [...pending]) {
++        if (at <= now) { pending.delete(id); fn() }
++      }
++    },
++  }
++}
++
++const MIN = 60 * 1000
++
++test('an approval still waiting after 15 min gets one more notification; one already decided gets none (#469)', () => {
++  const page = windowWith({ visibility: 'hidden' })
++  const time = clock(1000)
++  const stop = page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100, now: time.now, timers: time.timers })
++  const waiting = { id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 1000 }
++  const decided = { id: 'x2', botId: 'b', sessionId: 'b', tool: 'write', at: 1000 }
++  page.work.set({ bots: {}, approvals: [waiting, decided] })
++  assert.equal(page.shown.length, 2)
++  page.work.set({ bots: {}, approvals: [waiting] })
++  time.advance(14 * MIN)
++  assert.equal(page.shown.length, 2)
++  time.advance(MIN)
++  assert.deepEqual(page.shown.slice(2).map(note => [note.title, note.body, note.tag]), [['Writer has waited 15 min for your approval', 'Ops · pwsh', 'ds-bot-r1']])
++  time.advance(60 * MIN)
++  page.work.set({ bots: {}, approvals: [waiting] })
++  assert.equal(page.shown.length, 3)
++  stop()
++  assert.equal(time.pending.size, 0)
++})
++
++test('an approval that waited since before the window opened is reminded 15 min after it opened', () => {
++  const page = windowWith({ visibility: 'hidden' })
++  const time = clock(50 * MIN)
++  const old = { id: 'x1', botId: 'b', sessionId: 'b', tool: 'pwsh', at: MIN }
++  page.work.set({ bots: {}, approvals: [old] })
++  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 50 * MIN, now: time.now, timers: time.timers })
++  assert.equal(page.shown.length, 0)
++  time.advance(15 * MIN)
++  assert.deepEqual(page.shown.map(note => note.title), ['Writer has waited 64 min for your approval'])
++})
++
++test('each kind has its own switch; off for one kind keeps the others (#469)', () => {
++  const page = windowWith({ visibility: 'hidden', prefs: { notify: { approval: false, finished: false } } })
++  const time = clock(1000)
++  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100, now: time.now, timers: time.timers })
++  page.work.set({
++    bots: {},
++    approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 1000 }],
++    ended: [{ id: 'e1', botId: 'b', sessionId: 'chat-b', at: 1000 }, { id: 'e2', botId: 'b', sessionId: 'chat-c', at: 1000, failed: 'no model' }],
++  })
++  time.advance(20 * MIN)
++  assert.deepEqual(page.shown.map(note => note.title), ['Writer failed: no model'])
++})
++
++test('notifications from one chat collapse into one that counts the updates until the chat is opened (#469)', () => {
++  let onScreen = 'a'
++  const page = windowWith()
++  page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => onScreen, openSession: page.openSession, since: 100 })
++  const turn = (id, at, extra) => ({ id, botId: 'b', roomId: 'r1', at, ...extra })
++  page.work.set(ended([turn('e1', 200), turn('e2', 300, { failed: 'busy' })]))
++  assert.deepEqual(page.shown.map(note => [note.title, note.body, note.tag]), [['Writer failed: busy', 'Ops · 2 updates', 'ds-bot-r1']])
++  page.work.set(ended([turn('e1', 200), turn('e2', 300, { failed: 'busy' }), turn('e3', 400)]))
++  assert.deepEqual(page.shown.slice(1).map(note => [note.title, note.body, note.tag]), [['Writer finished', 'Ops · 3 updates', 'ds-bot-r1']])
++  onScreen = 'r1'
++  page.work.set(ended([turn('e3', 400)]))
++  onScreen = 'a'
++  page.work.set(ended([turn('e3', 400), turn('e4', 500)]))
++  assert.deepEqual(page.shown.slice(2).map(note => [note.title, note.body]), [['Writer finished', 'Ops']])
++  page.shown[2].onclick()
++  page.work.set(ended([turn('e4', 500), turn('e5', 600)]))
++  assert.deepEqual(page.shown.slice(3).map(note => note.body), ['Ops'])
 +})
 +
 +// The host side: which ended turns the window hears of.
@@ -3381,6 +3530,13 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  for (let n = 40; n < 60; n++) turn('b', n, completed)
 +  assert.equal(rt.endedView().length, 20)
 +  assert.ok(rt.endedView().every(entry => entry.failed === undefined))
++})
++
++test('Settings → General has one switch per kind under the main one, off while the main one is off (#469)', async () => {
++  const { readFileSync } = await import('node:fs')
++  const settings = readFileSync(new URL('../src/client/settings.js', import.meta.url), 'utf8')
++  assert.match(settings, /\['approval', 'Waiting for approval', 'Once more if it still waits after 15 min\.'\],\n {2}\['finished', 'Finished'\],\n {2}\['failed', 'Failed'\],/)
++  assert.match(settings, /disabled: prefs\.notifications === false,\n\s*on: prefs\.notify\?\.\[kind\] !== false, onChange: on => run\(actions\.setPrefs\(\{ notify: \{ \[kind\]: on \} \}\)\)/)
 +})
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
@@ -4107,7 +4263,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: api route',
      'route POST /api/bot',
      'effect ds-bot: load state',
-@@ -137,6 +137,10 @@ test('the client channel answers from the saved state', async (t) => {
+@@ -137,6 +137,17 @@ test('the client channel answers from the saved state', async (t) => {
    assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
    assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
    assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })
@@ -4115,6 +4271,13 @@ diff --git a/test/install.test.js b/test/install.test.js
 +  assert.equal((await call('set-prefs', { notifications: false })).value.notifications, false)
 +  assert.equal('notifications' in (await call('set-prefs', { notifications: true })).value, false)
 +  assert.deepEqual((await call('set-prefs', { notifications: 'loud' })).error, { code: 'bot/invalid', message: 'Notifications must be on or off', details: {} })
++  // Each kind on its own; only the off ones are kept (#469).
++  assert.deepEqual((await call('set-prefs', { notify: { finished: false } })).value.notify, { finished: false })
++  assert.deepEqual((await call('set-prefs', { notify: { approval: false } })).value.notify, { finished: false, approval: false })
++  assert.deepEqual((await call('set-prefs', { notify: { finished: true, approval: true } })).value.notify, undefined)
++  for (const notify of [{ loud: false }, { failed: 'no' }, ['approval'], null]) {
++    assert.deepEqual((await call('set-prefs', { notify })).error, { code: 'bot/invalid', message: 'Notifications must be on or off', details: {} })
++  }
    // A refusal from the team code keeps its message for the user.
    assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
    // Off the Desktop profile there are no Bot browsers.
