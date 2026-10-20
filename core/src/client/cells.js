@@ -807,10 +807,16 @@ function toolActivity(name, arg, findBot, self) {
   }
 }
 
-// What a Bot busy elsewhere is doing, from its current tool alone.
+// What a Bot busy elsewhere is doing, from its current tool alone. A tool without a
+// phrase is named, so the line never says only "On it".
 export function workPhrase(tool) {
   if (!tool) return t('Thinking about it')
-  return toolActivity(tool, () => undefined, () => undefined)?.label ?? t('On it')
+  return toolActivity(tool, () => undefined, () => undefined)?.label ?? t('Using {tool}', { tool })
+}
+
+// The phrase and, when the host knows it, the step the tool acts on (a command, a path).
+export function workText(tool, step) {
+  return step ? t('{action}: {detail}', { action: workPhrase(tool), detail: step }) : `${workPhrase(tool)}…`
 }
 
 // Transcript rows report what is in flight to the one activity row at the tail.
@@ -823,8 +829,8 @@ function useLiveNote(actions, sessionId, id, entry) {
   }, [sessionId, id, key])
 }
 
-export function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
-  const [live, setLive] = useState({ replies: [], speaking: null })
+export function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
+  const [live, setLive] = useState({ replies: [] })
   useEffect(() => {
     if (done) return undefined
     let stop = false
@@ -834,8 +840,8 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
       const result = await actions.roomProgress(sessionId)
       if (stop) return
       const entry = (result ?? []).find(item => item.callId === callId) ?? (result ?? [])[0]
-      const key = entry ? JSON.stringify([entry.replies, entry.speaking]) : ''
-      if (entry && key !== seen) { seen = key; setLive({ replies: entry.replies ?? [], speaking: entry.speaking ?? null }) }
+      const key = entry ? JSON.stringify(entry.replies) : ''
+      if (entry && key !== seen) { seen = key; setLive({ replies: entry.replies ?? [] }) }
       timer = setTimeout(tick, document.hidden ? 5000 : 1000)
     }
     void tick()
@@ -845,10 +851,9 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
   if (done) {
     try { replies = JSON.parse(contentText(content)).replies ?? [] } catch { replies = [] }
   }
-  // Members speak one at a time, so only the current speaker is typing.
-  const pending = done || !live.speaking ? [] : [live.speaking]
-  const speakerTool = useWork?.(work => work.bots?.[live.speaking]?.tool) ?? undefined
-  if (replies.length === 0 && pending.length === 0) return null
+  // Who is at work, the current speaker included, shows in the member dock above the
+  // composer (member-status.js), one row per Bot in one column.
+  if (replies.length === 0) return null
   const room = roster.roomsById[sessionId]
   return h('div', { className: 'bt-group-replies' },
     replies.map((reply, index) => {
@@ -910,13 +915,6 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
         })
       }
       return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, seq: reply.seq })
-    }),
-    pending.map((id) => {
-      const bot = roster.byId[id]
-      if (!bot) return null
-      return h('div', { key: `pending-${id}`, className: 'bt-activity' },
-        h(BotMark, { bot: bot, size: 22, state: speakerTool ? toolState(speakerTool) : 'thinking' }),
-        h(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t('{name} is typing…', { name: bot.name })))
     }))
 }
 
@@ -953,7 +951,7 @@ function useShownCards(actions, sessionId, callIds) {
   }, [sessionId, key])
 }
 
-function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot }) {
+function renderCall(call, { sessionId, roster, actions, useUi, findBot }) {
   const tool = toolName(call)
   const done = call.kind === 'tool-result'
   const { text: arg, value: argValue } = toolArgs(call)
@@ -979,7 +977,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot 
       return done && target ? h(EventLine, { prefix: t('Updated'), bots: [target], onOpen: bot => actions.openSession(bot.id) }) : null
     }
     case 'group_relay':
-      return h(GroupReplies, { sessionId, callId: call.callId, done, content: call.content, roster, actions, useUi, useWork })
+      return h(GroupReplies, { sessionId, callId: call.callId, done, content: call.content, roster, actions, useUi })
     case 'create_group':
     case 'update_group':
     case 'delete_group':
@@ -1029,7 +1027,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot 
   }
 }
 
-export function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
+export function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   const roster = useRoster(value => value)
   const root = node.data.root
   const turn = node.location?.turn?.turn ?? root.turn
@@ -1044,6 +1042,6 @@ export function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }
   useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note)
   useShownCards(actions, sessionId, drawn.filter(call => CARDS.has(toolName(call)) && call.callId).map(call => call.callId))
   if (drawn.length === 0) return null
-  const env = { sessionId, roster, actions, useUi, useWork, findBot }
+  const env = { sessionId, roster, actions, useUi, findBot }
   return h(Fragment, null, drawn.map((call, index) => h(Fragment, { key: call.callId ?? index }, renderCall(call, env))))
 }

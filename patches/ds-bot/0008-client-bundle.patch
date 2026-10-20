@@ -388,6 +388,23 @@ diff --git a/client.js b/client.js
    "Stopped by": "叫停者：",
    "{count} messages with": "{count} 条消息，来自",
    "Routine started": "例行任务开始",
+@@ -468,6 +468,8 @@ var ZH = {
+   "Working out a plan": "理一下思路",
+   "Sorting out the details": "梳理细节",
+   "On it": "在做了",
++  "Using {tool}": "使用 {tool}",
++  "{action}: {detail}": "{action}：{detail}",
+   "Busy with it": "正在处理",
+   "Moving ahead": "推进中",
+   "Taking care of it": "处理中",
+@@ -495,7 +495,6 @@ var ZH = {
+   "Looking back through the chat": "翻看聊天记录",
+   "{name} looked up its own chat": "{name} 查看了自己的对话",
+   "{name} looked up its own chat for “{text}”": "{name} 在自己的对话里查找「{text}」",
+-  "{name} is typing…": "{name} 正在输入…",
+   "{name} didn't answer in time": "{name} 没有及时回应",
+   "{name} paused for your approval": "{name} 停下来等你批准",
+   "{name} started on it": "{name} 开始做了",
 @@ -506,12 +506,30 @@ var ZH = {
    "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
    "A Bot": "一个 Bot",
@@ -2357,6 +2374,14 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
+@@ -2612,7 +2612,6 @@ var CONVERSATION_CSS = `
+ .bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
+ [class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
+-.bt-activity{display:flex;align-items:center;gap:10px;margin:8px 0 4px 2px;font-size:14px;color:var(--bt-ink-2)}
+ .bt-group-replies{display:contents}
+ /* A Bot chat is flat in every work-details mode, without changing the user's mode
+    (it is a DSH-wide setting): step groups lose their header and stay open, and what a
 @@ -2631,12 +2631,13 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
  /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
@@ -4350,7 +4375,15 @@ diff --git a/client.js b/client.js
  }
  var PHRASES = {
    thinking: ["Thinking about it", "Weighing the options", "Working out a plan", "Sorting out the details"],
-@@ -4324,15 +4324,15 @@ function workPhrase(tool) {
+@@ -4320,19 +4320,22 @@ function toolActivity(name, arg, findBot, self) {
+ }
+ function workPhrase(tool) {
+   if (!tool) return t("Thinking about it");
+-  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("On it");
++  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("Using {tool}", { tool });
++}
++function workText(tool, step) {
++  return step ? t("{action}: {detail}", { action: workPhrase(tool), detail: step }) : `${workPhrase(tool)}…`;
  }
  function useLiveNote(actions, sessionId, id, entry) {
    const key = entry ? JSON.stringify(entry) : "";
@@ -4361,17 +4394,36 @@ diff --git a/client.js b/client.js
      return () => actions.noteLive(sessionId, id, null);
    }, [sessionId, id, key]);
  }
- function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
+-function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
 -  const [live, setLive] = (0, import_react6.useState)({ replies: [], speaking: null });
 -  (0, import_react6.useEffect)(() => {
-+  const [live, setLive] = (0, import_react8.useState)({ replies: [], speaking: null });
++function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
++  const [live, setLive] = (0, import_react8.useState)({ replies: [] });
 +  (0, import_react8.useEffect)(() => {
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4366,66 +4366,93 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
-   const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
-   if (replies.length === 0 && pending.length === 0) return null;
+@@ -4341,10 +4341,10 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+       const result = await actions.roomProgress(sessionId);
+       if (stop) return;
+       const entry = (result ?? []).find((item) => item.callId === callId) ?? (result ?? [])[0];
+-      const key = entry ? JSON.stringify([entry.replies, entry.speaking]) : "";
++      const key = entry ? JSON.stringify(entry.replies) : "";
+       if (entry && key !== seen) {
+         seen = key;
+-        setLive({ replies: entry.replies ?? [], speaking: entry.speaking ?? null });
++        setLive({ replies: entry.replies ?? [] });
+       }
+       timer = setTimeout(tick, document.hidden ? 5e3 : 1e3);
+     };
+@@ -4362,71 +4362,86 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+       replies = [];
+     }
+   }
+-  const pending = done || !live.speaking ? [] : [live.speaking];
+-  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
+-  if (replies.length === 0 && pending.length === 0) return null;
++  if (replies.length === 0) return null;
    const room2 = roster.roomsById[sessionId];
 -  return (0, import_react6.createElement)(
 +  return (0, import_react8.createElement)(
@@ -4450,6 +4502,16 @@ diff --git a/client.js b/client.js
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
        }
 -      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
+-    }),
+-    pending.map((id) => {
+-      const bot = roster.byId[id];
+-      if (!bot) return null;
+-      return (0, import_react6.createElement)(
+-        "div",
+-        { key: `pending-${id}`, className: "bt-activity" },
+-        (0, import_react6.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
+-        (0, import_react6.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
+-      );
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -4468,21 +4530,9 @@ diff --git a/client.js b/client.js
 +        });
 +      }
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
-     }),
-     pending.map((id) => {
-       const bot = roster.byId[id];
-       if (!bot) return null;
--      return (0, import_react6.createElement)(
-+      return (0, import_react8.createElement)(
-         "div",
-         { key: `pending-${id}`, className: "bt-activity" },
--        (0, import_react6.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
--        (0, import_react6.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
-+        (0, import_react8.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
-+        (0, import_react8.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
-       );
      })
    );
+ }
 @@ -4435,52 +4435,52 @@ var CARDS = /* @__PURE__ */ new Set(["ask_user", "request_secret"]);
  function callTree(root) {
    const calls = [];
@@ -4515,7 +4565,7 @@ diff --git a/client.js b/client.js
 -  const tool = toolName(call2);
 -  const done = call2.kind === "tool-result";
 -  const { text: arg, value: argValue } = toolArgs(call2);
-+function renderCall(call4, { sessionId, roster, actions, useUi, useWork, findBot }) {
++function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
 +  const tool = toolName(call4);
 +  const done = call4.kind === "tool-result";
 +  const { text: arg, value: argValue } = toolArgs(call4);
@@ -4548,11 +4598,11 @@ diff --git a/client.js b/client.js
      }
      case "group_relay":
 -      return (0, import_react6.createElement)(GroupReplies, { sessionId, callId: call2.callId, done, content: call2.content, roster, actions, useUi, useWork });
-+      return (0, import_react8.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi, useWork });
++      return (0, import_react8.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi });
      case "create_group":
      case "update_group":
      case "delete_group":
-@@ -4492,41 +4492,41 @@ function renderCall(call2, { sessionId, roster, actions, useUi, useWork, findBot
+@@ -4492,64 +4492,72 @@ function renderCall(call2, { sessionId, roster, actions, useUi, useWork, findBot
          post_to_group: ["Posted in", "Couldn't post in the group"]
        }[tool];
        if (!done) return null;
@@ -4604,7 +4654,12 @@ diff --git a/client.js b/client.js
      default:
        return null;
    }
-@@ -4538,18 +4538,26 @@ function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
+ }
+-function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
++function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
+   const roster = useRoster((value) => value);
+   const root = node.data.root;
+   const turn = node.location?.turn?.turn ?? root.turn;
    const hidden = isHiddenTurn(roster, sessionId, turn);
    const findBot = (nameOrId) => roster.byId[nameOrId] ?? roster.bots.find((bot) => bot.name.toLowerCase() === String(nameOrId ?? "").toLowerCase());
    const calls = hidden ? [] : callTree(root);
@@ -4617,8 +4672,9 @@ diff --git a/client.js b/client.js
 -  useShownCards(actions, sessionId, drawn.filter((call2) => CARDS.has(toolName(call2)) && call2.callId).map((call2) => call2.callId));
 +  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
    if (drawn.length === 0) return null;
-   const env = { sessionId, roster, actions, useUi, useWork, findBot };
+-  const env = { sessionId, roster, actions, useUi, useWork, findBot };
 -  return (0, import_react6.createElement)(import_react6.Fragment, null, drawn.map((call2, index) => (0, import_react6.createElement)(import_react6.Fragment, { key: call2.callId ?? index }, renderCall(call2, env))));
++  const env = { sessionId, roster, actions, useUi, findBot };
 +  return (0, import_react8.createElement)(import_react8.Fragment, null, drawn.map((call4, index) => (0, import_react8.createElement)(import_react8.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
 +}
 +
@@ -4737,7 +4793,7 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4624,156 +4624,836 @@ function useRowEntrances(replacing) {
+@@ -4624,156 +4624,841 @@ function useRowEntrances(replacing) {
      const observer = new MutationObserver(() => {
        if (!frame) frame = requestAnimationFrame(scan);
      });
@@ -4900,12 +4956,16 @@ diff --git a/client.js b/client.js
 +var import_react11 = require("react");
 +var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
 +var ROWS_MAX = 4;
++var stepIn = (work, botId, roomId, tool) => {
++  const own = work.bots?.[botId];
++  return own?.roomId === roomId && own.tool === tool ? own.step : void 0;
++};
 +function memberWork(room2, work = NO_WORK) {
 +  const here = work.rooms?.[room2.id] ?? [];
 +  return room2.members.map((id) => {
 +    const approvals = (work.approvals ?? []).filter((entry) => entry.botId === id);
 +    const local = here.find((entry) => entry.botId === id);
-+    const doing = local ? { ...local, roomId: room2.id } : work.bots?.[id];
++    const doing = local ? { ...local, roomId: room2.id, step: stepIn(work, id, room2.id, local.tool) } : work.bots?.[id];
 +    return { id, approvals, doing, here: local !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
 +  });
 +}
@@ -4914,15 +4974,15 @@ diff --git a/client.js b/client.js
 +  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
 +}
 +function splitBusy(busy) {
-+  const speaking = (entry) => entry.state === "work" && entry.here && entry.doing.speaking === true;
-+  const rows = busy.filter((entry) => entry.state === "work" && entry.here && !speaking(entry)).slice(0, ROWS_MAX);
-+  return { rows, rest: busy.filter((entry) => !rows.includes(entry) && !speaking(entry)) };
++  const here = busy.filter((entry) => entry.state === "work" && entry.here);
++  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
++  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
 +}
 +function botGroupWork(botId, work, roster) {
 +  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
 +    const entry = entries2.find((item) => item.botId === botId);
 +    const room2 = roster.roomsById[roomId];
-+    return entry && room2 ? [{ room: room2, tool: entry.tool, since: entry.since }] : [];
++    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
 +  });
 +}
 +function summaryText(busy) {
@@ -4931,7 +4991,7 @@ diff --git a/client.js b/client.js
 +  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
 +  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
 +  const first = workers[0];
-+  const doing = first ? `${first.bot.name} · ${workPhrase(first.doing.tool)}…${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
++  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
 +  return { waiting, doing };
 +}
 +function Face({ entry, size }) {
@@ -4941,9 +5001,10 @@ diff --git a/client.js b/client.js
 +    (0, import_react11.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
 +  );
 +}
-+function WorkRow({ bot, tool, label, at, now, onOpen }) {
-+  const text = `${label} · ${workPhrase(tool)}…`;
-+  const elapsed = typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
++var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
++function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
++  const text = `${label} · ${workText(tool, step)}`;
++  const elapsed = elapsedSince(now, at);
 +  return (0, import_react11.createElement)(
 +    "button",
 +    { type: "button", className: "bt-mw-row", "aria-label": [text, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
@@ -4952,19 +5013,21 @@ diff --git a/client.js b/client.js
 +    elapsed ? (0, import_react11.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
 +  );
 +}
-+function SummaryLine({ busy, onOpen }) {
++function SummaryLine({ busy, now, onOpen }) {
 +  const { waiting, doing } = summaryText(busy);
++  const elapsed = doing ? elapsedSince(now, busy.find((entry) => entry.state === "work")?.doing.since) : "";
 +  return (0, import_react11.createElement)(
-+    "div",
-+    { className: "bt-event bt-mw-dock" },
++    "button",
++    { type: "button", className: "bt-mw-row bt-mw-line", "aria-label": [waiting, doing, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
++    (0, import_react11.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react11.createElement)(Face, { key: entry.id, entry, size: 16 }))),
 +    (0, import_react11.createElement)(
-+      "button",
-+      { type: "button", className: "bt-event-whole bt-mw-line", "aria-label": [waiting, doing].filter(Boolean).join(" · "), onClick: onOpen },
-+      (0, import_react11.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react11.createElement)(Face, { key: entry.id, entry, size: 16 }))),
++      "span",
++      { className: "bt-mw-row-text" },
 +      waiting ? (0, import_react11.createElement)("span", { className: "bt-mw-ask" }, waiting) : null,
-+      waiting && doing ? (0, import_react11.createElement)("span", { "aria-hidden": true }, "·") : null,
-+      doing ? (0, import_react11.createElement)("span", { className: "bt-event-name" }, (0, import_react11.createElement)(Shimmer, null, doing)) : null
-+    )
++      waiting && doing ? " · " : null,
++      doing ? (0, import_react11.createElement)(Shimmer, null, doing) : null
++    ),
++    elapsed ? (0, import_react11.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
 +  );
 +}
 +function MemberDock({ sessionId, useRoster, useWork, actions }) {
@@ -4986,14 +5049,15 @@ diff --git a/client.js b/client.js
 +    return (0, import_react11.createElement)(
 +      "div",
 +      { ref, className: "bt-mw-dock-stack" },
-+      rows.map((entry) => (0, import_react11.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
-+      rest.length > 0 ? (0, import_react11.createElement)(SummaryLine, { busy: rest, onOpen: open }) : null
++      rows.map((entry) => (0, import_react11.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
++      rest.length > 0 ? (0, import_react11.createElement)(SummaryLine, { busy: rest, now, onOpen: open }) : null
 +    );
 +  }
 +  return (0, import_react11.createElement)("div", { ref, className: "bt-mw-dock-stack" }, groups.slice(0, ROWS_MAX).map((item) => (0, import_react11.createElement)(WorkRow, {
 +    key: item.room.id,
 +    bot,
 +    tool: item.tool,
++    step: item.step,
 +    label: t("in {name}", { name: item.room.name }),
 +    at: item.since,
 +    now,
@@ -5079,7 +5143,7 @@ diff --git a/client.js b/client.js
 +    (0, import_react11.createElement)(
 +      "div",
 +      { className: "bt-mw-state bt-mw-work" },
-+      (0, import_react11.createElement)("span", null, (0, import_react11.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
++      (0, import_react11.createElement)("span", null, (0, import_react11.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : "", since(now, entry.doing.since)),
 +      entry.here ? (0, import_react11.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
 +    )
 +  );
@@ -5092,7 +5156,6 @@ diff --git a/client.js b/client.js
 +}
 +var MEMBER_CSS = `
 +.bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
-+.bt-mw-dock-stack>.bt-event.bt-mw-dock{align-self:stretch;margin:0}
 +.bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
 +.bt-mw-row:hover{background:var(--bt-hover)}
 +.bt-mw-row>.bt-mark{flex:none}
@@ -5102,9 +5165,7 @@ diff --git a/client.js b/client.js
 +.bt-mw-stop{flex:none;height:22px;padding:0 10px;border:1px solid var(--bt-line,rgba(0,0,0,.12));border-radius:11px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer}
 +.bt-mw-stop:hover{background:var(--bt-hover)}
 +.bt-mw-stop:disabled{opacity:.5;cursor:default}
-+.bt-event.bt-mw-dock{margin:0 0 6px;pointer-events:none}
-+.bt-mw-dock>button{pointer-events:auto;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards}
-+.bt-mw-line{gap:6px!important}
++.bt-mw-line{gap:8px}
 +.bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
 +.bt-mw-stack>*+*{margin-left:-4px}
 +.bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
@@ -5123,7 +5184,7 @@ diff --git a/client.js b/client.js
 +.bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
 +.bt-mw-actions>button:disabled{opacity:.5;cursor:default}
 +@keyframes bt-mw-in{from{opacity:0;transform:translateY(4px)}}
-+@media (prefers-reduced-motion:reduce){.bt-mw-dock>button,.bt-mw-row{animation:none}}
++@media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
 +`;
 +
 +// src/client/inbox.js
@@ -6194,12 +6255,10 @@ diff --git a/client.js b/client.js
 -    setTip(false);
 -  };
 -  return (0, import_react8.createElement)(
-+  return (0, import_react13.createElement)(
-     "span",
-     { className: "bt-connect-wrap" },
+-    "span",
+-    { className: "bt-connect-wrap" },
 -    (0, import_react8.createElement)(
-+    (0, import_react13.createElement)(
-       "button",
+-      "button",
 -      {
 -        ref: button,
 -        type: "button",
@@ -6220,6 +6279,11 @@ diff --git a/client.js b/client.js
 -      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
 -      t("Plugin compatibility is not fully verified.")
 -    ), document.body) : null
++  return (0, import_react13.createElement)(
++    "span",
++    { className: "bt-connect-wrap" },
++    (0, import_react13.createElement)(
++      "button",
 +      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
 +      (0, import_react13.createElement)(PlugIcon),
 +      t("Connect apps")
@@ -12410,17 +12474,17 @@ diff --git a/client.js b/client.js
          key: label,
          type: "button",
          role: "menuitem",
-@@ -10968,303 +10968,79 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -10967,304 +10967,80 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+         onClick: () => {
            actions.closeMenu();
            void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
-         }
+-        }
 -      }, (0, import_react29.createElement)(Icon), label))
-+      }, (0, import_react36.createElement)(Icon), label))
-     ))
-   );
- }
- 
- // src/client/storage.js
+-    ))
+-  );
+-}
+-
+-// src/client/storage.js
 -var STORAGE = {
 -  unread: "ds-bot:unread",
 -  reactions: "ds-bot:reactions",
@@ -12666,7 +12730,18 @@ diff --git a/client.js b/client.js
 -      (0, import_react30.createElement)("span", null, (0, import_react30.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
 -      entry.here ? (0, import_react30.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
 -    )
--  );
++        }
++      }, (0, import_react36.createElement)(Icon), label))
++    ))
+   );
+ }
+-function useMemberWork(room2, useWork) {
+-  const work = useWork?.((value) => value) ?? NO_WORK;
+-  const entries2 = room2 ? memberWork(room2, work) : [];
+-  const now = useNow2(entries2.some((entry) => entry.state !== "idle"));
+-  return { entries: entries2, now };
++
++// src/client/storage.js
 +var STORAGE = {
 +  unread: "ds-bot:unread",
 +  reactions: "ds-bot:reactions",
@@ -12685,12 +12760,7 @@ diff --git a/client.js b/client.js
 +  if (key === STORAGE.browsers) return LEGACY_BROWSER_KEYS;
 +  const name = key.slice(key.indexOf(":") + 1);
 +  return LEGACY_PREFIXES.map((prefix) => `${prefix}${name}`);
- }
--function useMemberWork(room2, useWork) {
--  const work = useWork?.((value) => value) ?? NO_WORK;
--  const entries2 = room2 ? memberWork(room2, work) : [];
--  const now = useNow2(entries2.some((entry) => entry.state !== "idle"));
--  return { entries: entries2, now };
++}
 +var migrateBrowsers = (storage) => {
 +  if (storage.getItem(STORAGE.browsers) !== null) {
 +    for (const key of LEGACY_BROWSER_KEYS) storage.removeItem(key);

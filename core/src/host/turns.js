@@ -211,7 +211,19 @@ export function install(rt) {
     return merged
   }
 
-  // Per Bot, the turn it is running and its current tool; its own chat wins over a group.
+  // What the newest running call acts on, in one short line: the command, pattern, query,
+  // address or path, else its own description.
+  const stepOf = (entry) => {
+    let args
+    try { args = JSON.parse([...(entry.calls?.values() ?? [])].at(-1)?.args ?? '{}') } catch { args = {} }
+    const value = ['command', 'cmd', 'pattern', 'query', 'url', 'file_path', 'path', 'description']
+      .map(key => args?.[key]).find(item => typeof item === 'string' && item.trim() !== '')
+    const line = value?.replace(/\s+/g, ' ').trim()
+    return line && line.length > 80 ? `${line.slice(0, 79)}…` : line
+  }
+
+  // Per Bot, the turn it is running, its current tool and that tool's step; its own chat
+  // wins over a group. Only the owner reads this view (authz.js), so the step stays theirs.
   const workView = () => {
     const bots = {}
     for (const [id, entry] of live) {
@@ -219,7 +231,8 @@ export function install(rt) {
       const owner = rt.groupOwners.get(id)
       const botId = owner?.botId ?? rt.chatOwners.get(id)
       if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
-      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(owner ? { roomId: owner.roomId } : {}) }
+      const step = entry.tool ? stepOf(entry) : undefined
+      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}) }
     }
     return bots
   }
