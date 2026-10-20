@@ -533,8 +533,9 @@ export function install(rt) {
         room.lateRounds = 0
       }
       await rt.save()
-      // An event post never picks the speakers over a message queued with it.
-      const opener = posts.findLast(post => !event(post)) ?? posts.at(-1)
+      // An event post never picks the speakers over a message queued with it; a friend's line that asks
+      // this home's Bots to answer is a person's line, not an event (#462).
+      const opener = posts.findLast(post => !event(post) || friendAsks(post)) ?? posts.at(-1)
       const references = posts.flatMap(post => post.references ?? [])
       // A member a Bot's post calls by name works for that Bot.
       const named = opener.botId === undefined ? [] : mentionsIn(opener.text ?? '', room.members.map(rt.botOf).filter(Boolean)).found
@@ -557,8 +558,7 @@ export function install(rt) {
         // One pass: a plain line's speakers do not call each other on (#295), so Bots in two homes cannot loop.
         ...(isPlainFaceLine(room, opener) ? { single: true } : {}),
         // A person's plain line, the friend's attested one too, is answered once per Bot (#456).
-        ...(isPlainFaceLine(room, opener) ? { faceLine: openFaceLine(room) } : {}),
-        ...(!isPlainFaceLine(room, opener) && opener.plain === true && isFaceRoom(room) ? { faceLine: openFaceLine(room, String(opener.human?.authorId ?? '')) } : {}),
+        ...(isPlainFaceLine(room, opener) ? { faceLine: openFaceLine(room, friendLine(opener) ? String(opener.human.authorId ?? '') : undefined) } : {}),
         speaking: null,
         turns: 0,
         replies: [],
@@ -691,12 +691,19 @@ export function install(rt) {
   // room's order, one at a time (each sees the earlier replies), capped (#295).
   const plainSpeakers = (members, admin) => (admin ? [admin, ...members.filter(bot => bot !== admin)] : members).slice(0, FACE_PLAIN_SPEAKERS)
 
+  // A friend's own typed line, as postHuman posts it (#180, #462): the room's quiet notice sender, carrying the person.
+  const friendLine = post => post.botId === 'face-notice' && post.human !== undefined
+  // One that asks this home's Bots to answer: attested plain (or @all), or naming my Bots (#287, #295).
+  const friendAsks = post => friendLine(post) && (post.plain === true || post.callIds?.length > 0)
+
   // Whether this opener is a person's plain line there: the one that starts a single pass over the
   // Bots with no Bot-triggered follow-ups inside it (#295). An @ that names a Bot, a Bot's post, a late
   // reply and the greeting are not.
   function isPlainFaceLine(room, opener) {
-    if (!isFaceRoom(room) || opener.botId !== undefined || opener.kickoff || opener.late) return false
-    if (opener.plain) return true
+    if (!isFaceRoom(room) || opener.kickoff || opener.late) return false
+    // A friend's attested plain line (or @all) is a person's line too, routed and single like the owner's (#462).
+    if (friendLine(opener)) return opener.plain === true
+    if (opener.botId !== undefined) return false
     if (opener.quiet || opener.callIds?.length > 0) return false
     const said = faceMentions(room, opener.text, rt.botOf, { references: (opener.references ?? []).flatMap(reference => reference.labels) })
     return !said.all && said.bots.length === 0 && said.friends.length === 0
