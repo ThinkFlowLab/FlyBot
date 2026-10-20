@@ -256,3 +256,81 @@ test('the sidebar has one Inbox row at its top, and the dialog is an overlay', (
   assert.ok(sidebar.indexOf('h(InboxRow,') < sidebar.indexOf("className: 'bt-list'"))
   assert.match(readFileSync(new URL('../src/client/overlays.js', import.meta.url), 'utf8'), /h\(InboxDialog,/)
 })
+
+// #471: failed turns from the ended turns the finish/fail notifications use (#353), and a
+// one-line latest activity on each card.
+const endedWork = {
+  ...work,
+  ended: [
+    { id: 'e1', botId: 'b2', sessionId: 's2', at: NOW - 10 * 60_000 },
+    { id: 'e2', botId: 'b2', sessionId: 's2', at: NOW - 5 * 60_000, failed: 'upstream busy' },
+    { id: 'e3', botId: 'b3', roomId: 'r1', at: NOW - 3 * 60_000, failed: 'quota' },
+    { id: 'e4', botId: 'b1', sessionId: 's1', at: NOW - 4 * 60_000, failed: 'timeout' },
+    { id: 'e5', botId: 'f1', sessionId: 'f1', at: NOW - 60_000, failed: 'friend side' },
+    { id: 'e6', botId: 'b3', sessionId: 's3', at: NOW - 8 * DAY, failed: 'too old' },
+    { id: 'e7', botId: 'b1', roomId: 'r2', at: NOW - 9 * 60_000, failed: 'gone' },
+    { id: 'e8', botId: 'b1', roomId: 'r2', at: NOW - 2 * 60_000 },
+  ],
+}
+const endedSessions = {
+  byId: {
+    ...sessions.byId,
+    r1: { updatedAt: NOW - 60_000, projectionValues: { turnOutline: [{ turn: 4, prompt: 'Ship the release notes', response: '' }] } },
+  },
+}
+const endedModel = inboxModel({ roster, work: endedWork, tasks, sessions: endedSessions, now: NOW })
+
+test('a failed turn of my own Bot needs me while it is the latest turn in its chat and the Bot is not back at work there', () => {
+  const turns = endedModel.needs.filter(card => card.kind === 'turn')
+  // b3 in Ops waits for approval a1 and b1 runs again in its own chat; r2's failure was
+  // followed by a finished turn; f1 is a friend's Bot; e6 is older than 7 days.
+  assert.deepEqual(plain(ids(turns)), ['turn:e2'])
+  const [card] = turns
+  assert.equal(card.status, 'failed')
+  assert.equal(card.reason, 'upstream busy')
+  assert.equal(card.chat, 'b2')
+  assert.equal(card.title, 'Here is the weekly summary of everything that changed')
+  assert.equal(card.executingBot, 'b2')
+  // The chat whose last turn failed is not also Done.
+  assert.ok(!ids(endedModel.done).includes('chat:b2'))
+  assert.equal(needsCount(roster, endedWork, tasks), model.needs.length + 1)
+  // Without the Session list (the row's badge), the title says what happened.
+  assert.equal(inboxModel({ roster, work: endedWork, tasks, now: NOW }).needs.find(entry => entry.id === 'turn:e2').title, 'The last turn did not finish')
+  assert.deepEqual(plain(buttons(draw(card)).map(textOf)), ['Open'])
+})
+
+test('a failure no longer needs me once the Bot works or waits there again', () => {
+  const again = inboxModel({ roster, work: { ...endedWork, bots: { ...endedWork.bots, b2: { since: NOW - 1000 } } }, tasks, sessions: endedSessions, now: NOW })
+  assert.ok(!ids(again.needs).includes('turn:e2'))
+  const freed = inboxModel({ roster, work: { ...endedWork, approvals: [], rooms: {} }, tasks, sessions: endedSessions, now: NOW })
+  assert.ok(ids(freed.needs).includes('turn:e3'))
+  assert.equal(freed.needs.find(card => card.id === 'turn:e3').place, 'in Ops')
+})
+
+test('each card has a one-line latest activity that never repeats its title or reason', () => {
+  const byId = Object.fromEntries([...endedModel.needs, ...endedModel.progress, ...endedModel.done].map(card => [card.id, card]))
+  // An approval and a running turn in Ops show that chat's last line.
+  assert.equal(byId['approval:a1'].activity, 'Ship the release notes')
+  assert.equal(byId['run:b1|r1'].activity, 'Ship the release notes')
+  // A held message in b2's chat shows its last line; a task its newest note.
+  assert.equal(byId['held:b2'].activity, 'Here is the weekly summary of everything that changed')
+  const noted = inboxModel({ roster, work, tasks: [task('t10', 'working', { actors: [{ status: 'claimed', why: 'Reading the spec' }] })], now: NOW })
+  assert.equal(noted.progress.find(card => card.id === 'task:t10').activity, 'Reading the spec')
+  // A running task's Bot shows the tool it runs when there is no note.
+  const busy = inboxModel({ roster, work: { bots: { b2: { since: NOW - 1000, tool: 'pwsh' } } }, tasks: [task('t11', 'working')], now: NOW })
+  assert.match(busy.progress.find(card => card.id === 'task:t11').activity, /…$/)
+  // Repeats are left out: the failed turn's title is its chat's last line, the failed task's
+  // reason its newest note (so its chat's last line shows instead).
+  assert.equal(byId['turn:e2'].activity, '')
+  assert.equal(byId['task:t2'].activity, 'Here is the weekly summary of everything that changed')
+  assert.equal(inboxModel({ roster, work: {}, tasks, sessions, now: NOW }).done.find(card => card.id === 'chat:b2').activity, '')
+  for (const card of Object.values(byId)) {
+    assert.ok(card.activity !== card.title || card.activity === '', card.id)
+    const rows = byClass(draw(card), 'bt-inbox-activity')
+    assert.equal(rows.length, card.activity ? 1 : 0, card.id)
+    if (card.activity) {
+      assert.equal(rows[0].props.title, card.activity)
+      assert.equal(textOf(rows[0]), `Latest: ${card.activity}`)
+    }
+  }
+})

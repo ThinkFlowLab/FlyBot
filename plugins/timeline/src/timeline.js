@@ -2,10 +2,11 @@
 import { createRecorder } from './recorder.js'
 import { openTrace, TraceLocked } from './store.js'
 import { buildWindow, clampWindow } from './window.js'
+import { createExporter } from './otel.js'
 
 export const ENDPOINT = 'timeline/window'
 
-export function createTimeline(adapter, { dir, persist = true, now = Date.now, ...limits } = {}) {
+export function createTimeline(adapter, { dir, persist = true, now = Date.now, exporter, ...limits } = {}) {
   let trace
   let persisting = persist
   try {
@@ -20,6 +21,17 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, .
   const off = adapter.subscribe(recorder.handlers)
   recorder.start()
 
+  // OTLP export is opt-in: without an `exporter` (send + intervalMs) nothing leaves the host.
+  let exportTimer
+  let exportNow
+  if (exporter && typeof exporter.send === 'function') {
+    const cursor = createExporter({ send: exporter.send, serviceName: exporter.serviceName, serviceVersion: exporter.serviceVersion, exportNames: exporter.exportNames === true, warn: adapter.warn })
+    exportNow = async () => { try { return await cursor.push(trace.records(), trace.names()) } catch (error) { adapter.warn('flybot-timeline: export failed: %s', error?.message ?? error); return 0 } }
+    const intervalMs = Number.isFinite(exporter.intervalMs) && exporter.intervalMs > 0 ? exporter.intervalMs : 5000
+    exportTimer = setInterval(() => { void exportNow() }, intervalMs)
+    exportTimer.unref?.()
+  }
+
   // The panel polls this every 2 s. Reads only; a host that another dsh holds still answers.
   const window = (body = {}) => buildWindow(trace.records(), {
     now: now(),
@@ -32,8 +44,9 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, .
   })
   const offEndpoint = adapter.handle(ENDPOINT, window)
   return {
-    trace, recorder, window,
+    trace, recorder, window, exportNow,
     dispose() {
+      if (exportTimer !== undefined) clearInterval(exportTimer)
       offEndpoint()
       off()
       trace.close()

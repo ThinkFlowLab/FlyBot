@@ -554,6 +554,8 @@ const ZH = {
   '1 message waits for your approval': '1 条消息等你批准',
   '{count} messages wait for your approval': '{count} 条消息等你批准',
   'Approve it in the chat': '请在对话里批准',
+  'The last turn did not finish': '上一轮没有完成',
+  'Latest: {text}': '最新：{text}',
   'Untitled task': '未命名任务',
   'for {time}': '已 {time}',
   'just started': '刚开始',
