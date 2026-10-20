@@ -1,0 +1,1 @@
+Group chats: when a Bot works on something handed out in a group and needs to ask you a question, the question card now shows in that group instead of in the Bot's private chat. Answer it there and the Bot carries on with the work, reporting back in the group; the Bot's private chat stays untouched ([#550](https://github.com/ThinkFlowLab/FlyBot/issues/550)).
