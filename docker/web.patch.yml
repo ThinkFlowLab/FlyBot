@@ -1,0 +1,14 @@
+# Container-only overlay (#352). Inside the container DSH listens on every interface of the
+# container's own network, so the published port can reach it; compose.yaml publishes that
+# port on the host's 127.0.0.1 only. Never publish it on a public address: use your own
+# HTTPS proxy or an SSH tunnel (docs/docker.md). A patch replaces the entry's whole config,
+# so the other values repeat what the web profile composes.
+- id: webserver
+  inject:
+    - webStartup
+  config:
+    host: 0.0.0.0
+    port: !!js ctx.webStartup.port ?? 3080
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024

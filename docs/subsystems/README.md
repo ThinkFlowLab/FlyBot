@@ -11,7 +11,7 @@ Detail pages for each FlyBot subsystem. Each page lists `owned_paths`, what the 
 | tree | [tree.md](tree.md) | `plugins/tree/` |
 | timeline | [timeline.md](timeline.md) | `plugins/timeline/` |
 | social | [social.md](social.md) | `plugins/social/` |
-| install | [install.md](install.md) | `core/scripts/`, arch-doc tests, `plugins/README.md` |
+| install | [install.md](install.md) | `core/scripts/`, arch-doc tests, `plugins/README.md`, the container image (`Dockerfile`, `compose.yaml`, `docker/`) |
 | team | [team.md](team.md) | `docs/subsystems/team.md` — **planned contract only** (no code paths; multi-human is not shipped) |
 | interop | [interop.md](interop.md) | `dev/interop/`, `scripts/lint-interop.mjs` — offline development harness only |
 | live-e2e | [live-e2e.md](live-e2e.md) | `dev/live-e2e/`, `scripts/lint-live-e2e.mjs` — real-model browser suite (#204) |

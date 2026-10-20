@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
-import { cleanApps, composioDeleteSession, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
+import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
 
 const fresh = () => `ghp_${randomBytes(16).toString('hex')}`
@@ -633,4 +633,109 @@ test('a mount error that quotes the session address shows it as [session address
   const composio = result.value.find(entry => entry.id === 'composio')
   assert.equal(composio.state, 'error')
   assert.equal(composio.error, 'cannot reach [session address]')
+})
+
+// --- #359: search Composio's app list, and show whether each picked app is signed in ---
+
+test('composioSearchApps asks Composio\'s app list with the key only in the header, and keeps only slugs a session can take', async () => {
+  const key = composioKey()
+  const requests = []
+  const fetch = async (url, init) => {
+    requests.push({ url, init })
+    return answer(200, { items: [
+      { slug: 'gmail', name: 'Gmail' }, { slug: 'GMAIL', name: 'Gmail again' }, { slug: 'google sheets', name: 'Bad' },
+      { slug: 'googlesheets', name: '  ' }, { name: 'No slug' }, null,
+    ] })
+  }
+  const found = await composioSearchApps(key, { api: 'https://composio.test/api/v3.1/', query: '  g mail ', fetch })
+  assert.deepEqual(found, [{ slug: 'gmail', name: 'Gmail' }, { slug: 'googlesheets', name: 'googlesheets' }])
+  const url = new URL(requests[0].url)
+  assert.equal(url.origin + url.pathname, 'https://composio.test/api/v3.1/toolkits')
+  assert.equal(url.searchParams.get('search'), 'g mail')
+  assert.equal(url.searchParams.get('sort_by'), 'usage')
+  assert.equal(url.searchParams.get('limit'), '20')
+  assert.ok(!requests[0].url.includes(key))
+  assert.equal(requests[0].init.headers['x-api-key'], key)
+  assert.equal(requests[0].init.redirect, 'error')
+  await composioSearchApps(key, { api: 'https://composio.test/api/v3.1', query: 'x'.repeat(200), fetch })
+  assert.equal(new URL(requests[1].url).searchParams.get('search').length, 64)
+  await composioSearchApps(key, { api: 'https://composio.test/api/v3.1', fetch })
+  assert.equal(new URL(requests[2].url).searchParams.has('search'), false)
+  await assert.rejects(composioSearchApps(key, { fetch: async () => answer(401, {}) }), /did not accept/)
+  await assert.rejects(composioSearchApps(key, { fetch: async () => answer(500, {}) }), /answered 500/)
+  await assert.rejects(composioSearchApps(key, { fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
+  assert.deepEqual(await composioSearchApps(key, { fetch: async () => answer(200, {}) }), [])
+})
+
+test('composioAppStatus reads the session\'s apps: ready when signed in or no sign-in is needed, needs sign-in otherwise', async () => {
+  const key = composioKey()
+  const requests = []
+  const fetch = async (url, init) => {
+    requests.push({ url, init })
+    return answer(200, { items: [
+      { slug: 'gmail', is_no_auth: false, connected_account: { id: 'ca_1', status: 'ACTIVE' } },
+      { slug: 'slack', is_no_auth: false, connected_account: { id: 'ca_2', status: 'INITIATED' } },
+      { slug: 'hackernews', is_no_auth: true, connected_account: null },
+      { slug: 'notion', is_no_auth: false, connected_account: null },
+    ] })
+  }
+  const status = await composioAppStatus(key, { api: 'https://composio.test/api/v3.1', id: 'trs_1', apps: ['gmail', 'slack', 'hackernews', 'notion', 'linear'], fetch })
+  assert.deepEqual(status, { gmail: 'ready', slack: 'sign-in', hackernews: 'ready', notion: 'sign-in', linear: 'sign-in' })
+  const url = new URL(requests[0].url)
+  assert.equal(url.origin + url.pathname, 'https://composio.test/api/v3.1/tool_router/session/trs_1/toolkits')
+  assert.equal(url.searchParams.get('toolkits'), 'gmail,slack,hackernews,notion,linear')
+  assert.equal(requests[0].init.headers['x-api-key'], key)
+  assert.ok(!requests[0].url.includes(key))
+  await assert.rejects(composioAppStatus(key, { id: '../x', apps: ['gmail'], fetch }), /Connect Composio first/)
+  assert.equal(requests.length, 1)
+  await assert.rejects(composioAppStatus(key, { id: 'trs_1', apps: ['gmail'], fetch: async () => answer(403, {}) }), /did not accept/)
+})
+
+test('the Connectors page searches apps with the pasted key before connecting (never saving it) and with the saved key after, and shows each app\'s status', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const sent = fakeComposio(numbered())
+  const searches = []
+  globalThis.fetch = async (url, init) => {
+    const path = new URL(url).pathname
+    if (path.endsWith('/toolkits') && path.includes('/tool_router/session/')) {
+      searches.push({ url, key: init.headers['x-api-key'] })
+      return answer(200, { items: [{ slug: 'gmail', connected_account: { status: 'ACTIVE' } }, { slug: 'notion', connected_account: null }] })
+    }
+    if (path.endsWith('/toolkits')) {
+      searches.push({ url, key: init.headers['x-api-key'] })
+      return answer(200, { items: [{ slug: 'notion', name: 'Notion' }] })
+    }
+    return sent.fetch(url, init)
+  }
+  const { ctx, home } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const key = composioKey()
+
+  const keyless = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not' })
+  assert.equal(keyless.ok, false)
+  assert.match(keyless.error.message, /Paste a key first/)
+  const early = await call(ctx, 'connector-app-status', { id: 'composio' })
+  assert.equal(early.ok, false)
+  assert.match(early.error.message, /Connect Composio first/)
+
+  const pasted = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not', token: ` ${key} ` })
+  assert.equal(pasted.ok, true, JSON.stringify(pasted))
+  assert.deepEqual(pasted.value, [{ slug: 'notion', name: 'Notion' }])
+  assert.equal(searches.at(-1).key, key)
+  assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [], 'a search never saves the key')
+
+  await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail', 'notion'] })
+  const after = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not' })
+  assert.equal(after.ok, true)
+  assert.equal(searches.at(-1).key, key)
+  const status = await call(ctx, 'connector-app-status', { id: 'composio' })
+  assert.equal(status.ok, true, JSON.stringify(status))
+  assert.deepEqual(status.value, { gmail: 'ready', notion: 'sign-in' })
+  assert.match(searches.at(-1).url, /\/tool_router\/session\/trs_1\/toolkits\?/)
+  assert.ok(!JSON.stringify(status).includes(key))
+
+  const github = await call(ctx, 'connector-app-search', { id: 'github', query: 'x' })
+  assert.equal(github.ok, false)
+  assert.match(github.error.message, /no apps to pick/)
 })

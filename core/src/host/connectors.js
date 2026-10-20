@@ -157,6 +157,69 @@ export async function composioDeleteSession(apiKey, { api = COMPOSIO_DEFAULTS.ap
   }
 }
 
+const MAX_FOUND = 20
+const MAX_QUERY = 64
+
+// Searches Composio's app list (GET /toolkits?search=, `x-api-key`) and returns up to MAX_FOUND
+// { slug, name }, most used first. Only slugs a session can take are returned.
+export async function composioSearchApps(apiKey, { api = COMPOSIO_DEFAULTS.api, query = '', fetch: request = fetch } = {}) {
+  const base = api.replace(/\/$/, '')
+  const params = new URLSearchParams({ sort_by: 'usage', limit: String(MAX_FOUND) })
+  const search = String(query).trim().slice(0, MAX_QUERY)
+  if (search !== '') params.set('search', search)
+  let response
+  try {
+    response = await request(`${base}/toolkits?${params}`, {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, accept: 'application/json', 'user-agent': 'ds-bot' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    })
+  } catch {
+    throw new Error('Could not reach Composio')
+  }
+  if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
+  if (!response.ok) throw new Error(`Composio answered ${response.status}`)
+  const body = await response.json().catch(() => ({}))
+  const items = Array.isArray(body?.items) ? body.items : []
+  const found = new Map()
+  for (const item of items) {
+    const slug = typeof item?.slug === 'string' ? item.slug.toLowerCase() : ''
+    if (!APP_SLUG.test(slug) || found.has(slug)) continue
+    const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 80) : slug
+    found.set(slug, { slug, name })
+  }
+  return [...found.values()].slice(0, MAX_FOUND)
+}
+
+// Asks Composio which of the session's apps are signed in (GET /tool_router/session/{id}/toolkits).
+// Returns { [slug]: 'ready' | 'sign-in' } for the given apps: ready when the app needs no sign-in or
+// has an active connected account, sign-in otherwise (also for an app Composio does not list).
+export async function composioAppStatus(apiKey, { api = COMPOSIO_DEFAULTS.api, id, apps, fetch: request = fetch } = {}) {
+  if (typeof id !== 'string' || !SESSION_ID.test(id)) throw new Error('Connect Composio first')
+  const params = new URLSearchParams({ toolkits: apps.join(','), limit: '50' })
+  let response
+  try {
+    response = await request(`${sessionAddress(api, id)}/toolkits?${params}`, {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, accept: 'application/json', 'user-agent': 'ds-bot' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    })
+  } catch {
+    throw new Error('Could not reach Composio')
+  }
+  if (response.status === 401 || response.status === 403) throw new Error('Composio did not accept this API key')
+  if (!response.ok) throw new Error(`Composio answered ${response.status}`)
+  const body = await response.json().catch(() => ({}))
+  const ready = new Set()
+  for (const item of Array.isArray(body?.items) ? body.items : []) {
+    const slug = typeof item?.slug === 'string' ? item.slug.toLowerCase() : ''
+    if (item?.is_no_auth === true || String(item?.connected_account?.status ?? '').toUpperCase() === 'ACTIVE') ready.add(slug)
+  }
+  return Object.fromEntries(apps.map(app => [app, ready.has(app) ? 'ready' : 'sign-in']))
+}
+
 // What state.json keeps of a session: its id and apps, never the address (see composioSessionFind).
 const kept = session => ({ id: session.id, apps: session.apps })
 
@@ -400,6 +463,37 @@ export function install(rt) {
       await retire(c, { gone: previous?.session, kept: record.session, keys: [token] })
       await sync(c)
       return connectorsView()
+    },
+    // Searches Composio's app list: with the saved key, or before connecting with the key being pasted
+    // (sent only to Composio, never saved by this call).
+    async 'connector-app-search'(body) {
+      const c = known(body.id)
+      if (c.def.id !== COMPOSIO) throw new Error('This connector has no apps to pick')
+      if (c.insecure) throw new Error(INSECURE(c.def.name))
+      await rt.loadSecrets()
+      const pasted = typeof body.token === 'string' ? body.token.trim() : ''
+      const token = pasted !== '' ? pasted : rt.secretValue(c.def.secret)
+      if (token === undefined) throw new Error('Paste a key first')
+      try {
+        return await composioSearchApps(token, { api: c.options.api, query: typeof body.query === 'string' ? body.query : '' })
+      } catch (error) {
+        throw new Error(reason(error))
+      }
+    },
+    // Whether each picked app is signed in on Composio yet.
+    async 'connector-app-status'(body) {
+      const c = known(body.id)
+      if (c.def.id !== COMPOSIO) throw new Error('This connector has no apps to pick')
+      if (c.insecure) throw new Error(INSECURE(c.def.name))
+      await rt.loadSecrets()
+      const token = rt.secretValue(c.def.secret)
+      const record = saved(c)
+      if (token === undefined || record?.session?.id === undefined) throw new Error('Connect Composio first')
+      try {
+        return await composioAppStatus(token, { api: c.options.api, id: record.session.id, apps: cleanApps(record.apps) })
+      } catch (error) {
+        throw new Error(reason(error))
+      }
     },
     async 'connector-disconnect'(body) {
       const c = known(body.id)
