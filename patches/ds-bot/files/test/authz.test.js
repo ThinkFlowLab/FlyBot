@@ -215,6 +215,24 @@ test('schedule-create cannot hide a foreign target behind an owned sessionId', a
   assert.equal(rt.authorize(actorA, 'schedule-create', { target: 'a1' }).ok, true)
 })
 
+test('editing, pausing and resuming a task need its Session, and an edit its new target too (#354)', async (t) => {
+  const { rt } = runtime(t, TEAM)
+  await rt.load()
+  const sessionA = await redeemOwner(rt)
+  await redeemOwner(rt)
+  rt.state.bots.a1 = { id: 'a1', sessionId: 'chat-a1', name: 'A', instructions: '', createdAt: 2, ownerId: 'owner-1' }
+  rt.state.bots.b1 = { id: 'b1', sessionId: 'chat-b1', name: 'B', instructions: '', createdAt: 3, ownerId: 'owner-2' }
+  await rt.save() // indexes the Bots' Sessions
+  const actorA = await rt.authenticate(sessionA.sessionToken)
+  assert.equal(rt.authorize(actorA, 'schedule-update', { sessionId: 'chat-a1', id: 's1', target: 'a1' }).ok, true)
+  assert.equal(rt.authorize(actorA, 'schedule-update', { sessionId: 'chat-a1', id: 's1', target: 'b1' }).code, 'bot/forbidden')
+  assert.equal(rt.authorize(actorA, 'schedule-update', { sessionId: 'chat-b1', id: 's1', target: 'a1' }).code, 'bot/forbidden')
+  for (const ep of ['schedule-pause', 'schedule-resume']) {
+    assert.equal(rt.authorize(actorA, ep, { sessionId: 'chat-a1', id: 's1' }).ok, true)
+    assert.equal(rt.authorize(actorA, ep, { sessionId: 'chat-b1', id: 's1' }).code, 'bot/forbidden')
+  }
+})
+
 test('task endpoints are an explicit allow-list, not a task-* prefix', async (t) => {
   const { rt } = runtime(t, TEAM)
   await rt.load()

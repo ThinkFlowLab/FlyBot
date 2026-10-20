@@ -1202,7 +1202,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {
-@@ -539,13 +539,16 @@ export function apply(ctx) {
+@@ -539,15 +539,21 @@ export function apply(ctx) {
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
@@ -1219,7 +1219,12 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    tasks: () => call('tasks'),
      schedules: () => call('schedules'),
      scheduleCreate: task => call('schedule-create', task),
++    scheduleUpdate: task => call('schedule-update', task),
++    schedulePause: (sessionId, id) => call('schedule-pause', { sessionId, id }),
++    scheduleResume: (sessionId, id) => call('schedule-resume', { sessionId, id }),
      scheduleDelete: (sessionId, id) => call('schedule-delete', { sessionId, id }),
+     exchange: (a, b) => call('exchange', { a, b }).catch(() => []),
+     roomProgress: roomId => call('room-progress', { roomId }).catch(() => []),
 @@ -566,6 +566,8 @@ export function apply(ctx) {
        noteClientError(where, error)
        ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
