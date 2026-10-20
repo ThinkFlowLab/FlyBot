@@ -25,12 +25,13 @@
 //                            Section(title) and Row(label, hint) so the page looks like the others and reads zh in a zh UI
 //
 // The same registry object also carries the host Bot look so a plugin can draw a Bot
-// exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf (set in registry()).
+// exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf, and name a friend's Bot
+// or its owner the same way: __flybot__.names.friendBotTitle / friendBotOwner (set in registry()).
 //
 // Types: ds-bot/types/flybot.d.ts (FlyBotClientRegistry).
 import { Component, createElement as h, Fragment, useEffect, useState } from 'react'
 import { call as callHost } from './api.js'
-import { isListedRemoteChat } from '../shared/remote-label.js'
+import { friendBotOwner, friendBotTitle, isListedRemoteChat } from '../shared/remote-label.js'
 import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { t } from './i18n.js'
@@ -52,6 +53,8 @@ export function registry() {
   globalThis.__flybot__.BotMark ??= BotMark
   globalThis.__flybot__.BotAvatar ??= BotAvatar
   globalThis.__flybot__.lookOf ??= lookOf
+  // The same for a friend's Bot's one name and its owner (#498), so the social plugin says it as the sidebar does.
+  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner }
   return slots
 }
 
@@ -182,16 +185,12 @@ const friendChatOf = (approval, roster) => {
 // Bot that wrote it (#278). The chat's dock draws its card; the pointer opens that chat.
 // A Bot's held reply to a friend is decided on its bubble in the chat it answers (#418).
 const chatOf = (approval, roster) => approval.request?.meta?.roomId ?? approval.request?.meta?.replyIn?.sessionId ?? friendChatOf(approval, roster)?.id ?? (typeof approval.request?.from === 'string' ? approval.request.from : undefined)
-// A friend's Bot by name and owner when the roster knows its chat; otherwise what the host called it.
+// The person who gets it (#418, #498): the host's `recipientName`, else the owner of the friend's chat,
+// else what the host called it. "Chief → SelfB1233", never two Bot names side by side.
 function recipientName(approval, roster) {
   const handle = handleOf(approval.request?.to)
   const bot = friendChatOf(approval, roster)
-  if (bot) {
-    const owner = bot.remote.owner || bot.remote.homeName
-    if (owner) return `${bot.name} (${owner})`
-    return bot.name
-  }
-  return approval.recipientName ?? approval.targetName ?? handle ?? String(approval.request?.to ?? '')
+  return approval.recipientName || (bot ? friendBotOwner(bot) : '') || approval.targetName || handle || String(approval.request?.to ?? '')
 }
 
 export function FlyBotApprovals({ useRoster, actions } = {}) {

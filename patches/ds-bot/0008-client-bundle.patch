@@ -638,7 +638,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,314 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,329 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -723,6 +723,21 @@ diff --git a/client.js b/client.js
 +}
 +function remoteOwnerBadge(record) {
 +  return ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
++}
++function friendRecord(bot) {
++  const remote = bot?.remote && typeof bot.remote === "object" ? bot.remote : {};
++  return {
++    displayName: remote.displayName || remote.name || bot?.name,
++    ownerName: remote.ownerName || remote.owner || remote.homeName,
++    handle: remote.handle ?? bot?.handle,
++    isChief: remote.isChief
++  };
++}
++function friendBotTitle(bot) {
++  return remoteBotTitle(friendRecord(bot));
++}
++function friendBotOwner(bot) {
++  return remoteOwnerBadge(friendRecord(bot));
 +}
 +function sharedRoomTitle(inviterName) {
 +  return `Shared room from ${cleanPeerName(inviterName, "a friend")}`;
@@ -1032,7 +1047,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,162 +1242,519 @@ function maskOf(shape) {
+@@ -1242,162 +1242,515 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1098,14 +1113,6 @@ diff --git a/client.js b/client.js
 -  const byId = {};
 -  for (const bot of value.bots) {
 -    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
--  }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1139,27 +1146,23 @@ diff --git a/client.js b/client.js
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
    }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
++}
 +var personInitial = (name) => (Array.from(String(name ?? "").trim())[0] ?? "").toUpperCase();
 +var personColor = (name) => defaultColor(`person:${String(name ?? "").trim().toLowerCase()}`);
 +function PersonMark({ size = 22, name }) {
@@ -1172,7 +1175,7 @@ diff --git a/client.js b/client.js
 +      "aria-hidden": true
 +    }, initial);
    }
--  return { ...state, [sessionId]: own };
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 +  return (0, import_react.createElement)(
 +    "span",
 +    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
@@ -1184,92 +1187,19 @@ diff --git a/client.js b/client.js
 +    )
 +  );
  }
--
--// src/client/themes.js
--var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
--var THEMES = {
--  deepseek: {
--    label: "DeepSeek",
--    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
--    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
--  },
--  mono: {
--    label: "Mono",
--    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
--    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
--  },
--  paper: {
--    label: "Paper",
--    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
--    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
--  },
--  moonlight: {
--    label: "Moonlight",
--    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
--    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
--};
--var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
--function themeVars(mode, dark, accent = mode.accent) {
--  return {
--    "--bt-ink": mode.text,
--    "--bt-ink-2": rgba(mode.text, 0.6),
--    "--bt-ink-3": rgba(mode.text, 0.36),
--    "--bt-bubble": mode.bubble,
--    "--bt-sidebar": mode.sidebar,
--    "--bt-main": mode.bg,
--    "--bt-card": mode.card,
--    "--bt-line": rgba(mode.text, 0.08),
--    "--bt-line-2": rgba(mode.text, 0.15),
--    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
--    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
--    "--bt-accent": accent,
--    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
--    "--bt-user": mode.user,
--    "--bt-user-ink": mode.userText,
--    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
--    "--bt-tag-ink": rgba(mode.text, 0.58)
--  };
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
 +function AdminStar() {
 +  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
  }
--var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
--var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
--html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
--${theme.css ?? ""}`;
--var shellTokens = ({ light, dark }) => ({
--  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
--  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
--  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
--  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
--  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
--  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
--});
--var customThemes = {};
--var registry = createSource(0);
--var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
--function registerShape(id, shape) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
--  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
--  const at = shape.eyes?.at;
--  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
--  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
--  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
--  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
--  const previous = SHAPES[id];
--  SHAPES[id] = {
--    label: String(shape.label ?? id),
--    size,
--    body: shape.body,
--    eyes,
--    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
--  };
--  const refresh = () => {
--    markupCache.clear();
--    maskCache.delete(id);
--    registry.set((value) => value + 1);
--  };
--  refresh();
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
 +function MainStar() {
 +  return (0, import_react.createElement)(
 +    "svg",
@@ -1315,10 +1245,34 @@ diff --git a/client.js b/client.js
 +    const size = frame * 5 / 9;
 +    const rest = frame - size;
 +    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-+  }
+   }
+-  return { ...state, [sessionId]: own };
 +  const half = frame / 2;
 +  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
-+}
+ }
+-
+-// src/client/themes.js
+-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+-var THEMES = {
+-  deepseek: {
+-    label: "DeepSeek",
+-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+-  },
+-  mono: {
+-    label: "Mono",
+-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+-  },
+-  paper: {
+-    label: "Paper",
+-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+-  },
+-  moonlight: {
+-    label: "Moonlight",
+-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
 +function roomAvatarPeople(room2, roster) {
 +  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
 +  const seen = new Set(members.map((bot) => bot.id));
@@ -1348,10 +1302,69 @@ diff --git a/client.js b/client.js
 +      color: p.color,
 +      avatar: p.avatar
 +    }, roster));
-+  }
+   }
+-};
+-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+-function themeVars(mode, dark, accent = mode.accent) {
+-  return {
+-    "--bt-ink": mode.text,
+-    "--bt-ink-2": rgba(mode.text, 0.6),
+-    "--bt-ink-3": rgba(mode.text, 0.36),
+-    "--bt-bubble": mode.bubble,
+-    "--bt-sidebar": mode.sidebar,
+-    "--bt-main": mode.bg,
+-    "--bt-card": mode.card,
+-    "--bt-line": rgba(mode.text, 0.08),
+-    "--bt-line-2": rgba(mode.text, 0.15),
+-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+-    "--bt-accent": accent,
+-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+-    "--bt-user": mode.user,
+-    "--bt-user-ink": mode.userText,
+-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+-    "--bt-tag-ink": rgba(mode.text, 0.58)
+-  };
 +  if (members.length === 1 && remotes.length === 0) return [members[0], null];
 +  return [...members, ...remotes];
-+}
+ }
+-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+-${theme.css ?? ""}`;
+-var shellTokens = ({ light, dark }) => ({
+-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+-});
+-var customThemes = {};
+-var registry = createSource(0);
+-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+-function registerShape(id, shape) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+-  const at = shape.eyes?.at;
+-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+-  const previous = SHAPES[id];
+-  SHAPES[id] = {
+-    label: String(shape.label ?? id),
+-    size,
+-    body: shape.body,
+-    eyes,
+-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+-  };
+-  const refresh = () => {
+-    markupCache.clear();
+-    maskCache.delete(id);
+-    registry.set((value) => value + 1);
+-  };
+-  refresh();
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people2 = roomAvatarPeople(room2, roster);
 +  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
@@ -1426,6 +1439,7 @@ diff --git a/client.js b/client.js
 +  globalThis.__flybot__.BotMark ??= BotMark;
 +  globalThis.__flybot__.BotAvatar ??= BotAvatar;
 +  globalThis.__flybot__.lookOf ??= lookOf;
++  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner };
 +  return slots;
 +}
 +var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
@@ -1548,12 +1562,7 @@ diff --git a/client.js b/client.js
 +function recipientName(approval, roster) {
 +  const handle = handleOf(approval.request?.to);
 +  const bot = friendChatOf(approval, roster);
-+  if (bot) {
-+    const owner = bot.remote.owner || bot.remote.homeName;
-+    if (owner) return `${bot.name} (${owner})`;
-+    return bot.name;
-+  }
-+  return approval.recipientName ?? approval.targetName ?? handle ?? String(approval.request?.to ?? "");
++  return approval.recipientName || (bot ? friendBotOwner(bot) : "") || approval.targetName || handle || String(approval.request?.to ?? "");
 +}
 +function FlyBotApprovals({ useRoster, actions } = {}) {
 +  const entries2 = useSlot("flybot.approvals");
@@ -1836,7 +1845,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,51 +1624,230 @@ function usageOf(list, ids) {
+@@ -1624,47 +1624,226 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -1914,15 +1923,6 @@ diff --git a/client.js b/client.js
 -    last = now;
 -    const steps = Math.ceil(dt * 240);
 -    const h34 = dt / steps;
--    let moving = false;
--    for (const value of values.values()) {
--      for (let index = 0; index < steps; index += 1) {
--        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
--        value.x += value.v * h34;
--      }
--      if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
--        value.x = value.to;
--        value.v = 0;
 +var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 +var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 +function indexRoster(value) {
@@ -2097,18 +2097,16 @@ diff --git a/client.js b/client.js
 +    last = now;
 +    const steps = Math.ceil(dt * 240);
 +    const h42 = dt / steps;
-+    let moving = false;
-+    for (const value of values.values()) {
-+      for (let index = 0; index < steps; index += 1) {
+     let moving = false;
+     for (const value of values.values()) {
+       for (let index = 0; index < steps; index += 1) {
+-        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
+-        value.x += value.v * h34;
 +        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h42;
 +        value.x += value.v * h42;
-+      }
-+      if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
-+        value.x = value.to;
-+        value.v = 0;
-       } else moving = true;
-     }
-     apply2(read());
+       }
+       if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
+         value.x = value.to;
 @@ -1699,10 +1699,10 @@ function liveSprings(apply2) {
  }
  var CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]';
@@ -2233,11 +2231,10 @@ diff --git a/client.js b/client.js
  .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
  .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
-@@ -1950,21 +1950,24 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -1950,21 +1950,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-+.bt-row-owner{flex:0 100 auto;min-width:24px;font-size:13px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 +.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
  .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2421,7 +2418,7 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2855,226 +2855,208 @@ function installCompiledStyles(text, tag) {
+@@ -2855,226 +2855,203 @@ function installCompiledStyles(text, tag) {
    };
  }
  
@@ -2581,12 +2578,7 @@ diff --git a/client.js b/client.js
 +  const bot = roster.byId?.[sessionId];
 +  const room2 = roster.roomsById?.[sessionId];
 +  if (bot?.remote) {
-+    return remoteBotTitle({
-+      displayName: bot.name,
-+      ownerName: bot.remote.homeName || bot.remote.owner,
-+      handle: bot.remote.handle,
-+      isChief: bot.remote.isChief
-+    });
++    return friendBotTitle(bot);
 +  }
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
@@ -2673,18 +2665,7 @@ diff --git a/client.js b/client.js
 -      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 -      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 -    );
-+function installBrandChrome() {
-+  if (typeof document === "undefined") return () => {
-+  };
-+  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
-+  let link = document.getElementById("flybot-favicon");
-+  if (!link) {
-+    link = document.createElement("link");
-+    link.id = "flybot-favicon";
-+    link.rel = "icon";
-+    link.type = "image/svg+xml";
-+    document.head.appendChild(link);
-   }
+-  }
 -  const seats = clusterSeats(Math.min(people.length, 4), size);
 -  const overflow = people.length > 4 ? people.length - 3 : 0;
 -  const gap = size / 14;
@@ -2703,6 +2684,18 @@ diff --git a/client.js b/client.js
 -      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 -    })
 -  );
++function installBrandChrome() {
++  if (typeof document === "undefined") return () => {
++  };
++  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
++  let link = document.getElementById("flybot-favicon");
++  if (!link) {
++    link = document.createElement("link");
++    link.id = "flybot-favicon";
++    link.rel = "icon";
++    link.type = "image/svg+xml";
++    document.head.appendChild(link);
++  }
 +  link.href = href;
 +  const retitle = () => {
 +    const next = brandTitle(document.title);
@@ -3839,8 +3832,8 @@ diff --git a/client.js b/client.js
 +}
 +function HeldReply({ held, roster, sessionId, actions, closing, children }) {
 +  const bot = roster.byId[sessionId];
-+  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to && isListedRemoteChat(item));
-+  const toName = chat ? remoteBotTitle({ displayName: chat.name, ownerName: chat.remote.homeName || chat.remote.owner, handle: chat.remote.handle, isChief: chat.remote.isChief }) : held.toOwner || held.to || t("a friend");
++  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to);
++  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
 +  return (0, import_react8.createElement)(
 +    "div",
 +    { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
@@ -4022,10 +4015,8 @@ diff --git a/client.js b/client.js
 -    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react8.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
-   );
- }
--function GroupEvent({ prefix, room: room2, name, roster, actions }) {
--  return (0, import_react6.createElement)(
++  );
++}
 +function FirstContact({ source, roster, sessionId }) {
 +  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
 +  const who = person || remoteSpeaker(source, roster).name;
@@ -4061,10 +4052,7 @@ diff --git a/client.js b/client.js
 +    }
 +  };
 +  return (0, import_react8.createElement)(
-     "div",
--    { className: "bt-event" },
--    (0, import_react6.createElement)("span", null, prefix),
--    room2 ? (0, import_react6.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react6.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react6.createElement)("span", null, name) : null
++    "div",
 +    { className: "bt-file-chips" },
 +    files.map((file) => (0, import_react8.createElement)(
 +      "button",
@@ -4072,12 +4060,15 @@ diff --git a/client.js b/client.js
 +      `📎 ${file.name} · ${fileSize(file.size)}`
 +    )),
 +    error ? (0, import_react8.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
-+  );
-+}
-+function GroupEvent({ prefix, room: room2, name, roster, actions }) {
+   );
+ }
+ function GroupEvent({ prefix, room: room2, name, roster, actions }) {
+-  return (0, import_react6.createElement)(
 +  return (0, import_react8.createElement)(
-+    "div",
-+    { className: "bt-event" },
+     "div",
+     { className: "bt-event" },
+-    (0, import_react6.createElement)("span", null, prefix),
+-    room2 ? (0, import_react6.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react6.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react6.createElement)("span", null, name) : null
 +    (0, import_react8.createElement)("span", null, prefix),
 +    room2 ? (0, import_react8.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react8.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react8.createElement)("span", null, name) : null
    );
@@ -4457,7 +4448,8 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -4474,8 +4466,7 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
      }),
      pending.map((id) => {
@@ -4746,7 +4737,7 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4624,156 +4624,838 @@ function useRowEntrances(replacing) {
+@@ -4624,156 +4624,836 @@ function useRowEntrances(replacing) {
      const observer = new MutationObserver(() => {
        if (!frame) frame = requestAnimationFrame(scan);
      });
@@ -5680,11 +5671,9 @@ diff --git a/client.js b/client.js
    };
    const pinned = bot.pinned === true && !tile;
 -  const label = [bot.name, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", approval ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
-+  const remoteRecord2 = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
-+  const shown = remoteRecord2 ? remoteBotTitle(remoteRecord2) : bot.name;
-+  const rowName = remoteRecord2 ? cleanPeerName(bot.name, shown) : shown;
-+  const owner = remoteRecord2 ? ownerNameOf(remoteRecord2) || cleanPeerName(bot.remote.handle) : "";
-+  const secondLine = awayLine || preview || (remoteRecord2 ? t("Friend's Bot") : "");
++  const remote = Boolean(bot.remote);
++  const shown = remote ? friendBotTitle(bot) : bot.name;
++  const secondLine = awayLine || preview || (remote ? t("Friend's Bot") : "");
 +  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
    if (tile && wide) {
 -    return (0, import_react8.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react8.createElement)(
@@ -5692,7 +5681,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4785,38 +4785,105 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4785,38 +4785,104 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
          onClick: () => actions.openSession(id),
          onContextMenu
        },
@@ -5718,7 +5707,7 @@ diff --git a/client.js b/client.js
 +      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
        "data-bot-id": id,
 -      title: wide ? void 0 : bot.name,
-+      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
++      title: remote ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
        onClick: () => actions.openSession(id),
        onContextMenu
      },
@@ -5735,8 +5724,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react13.createElement)(
 +        "span",
 +        { className: "bt-row-name" },
-+        (0, import_react13.createElement)("span", { className: "bt-row-title" }, rowName),
-+        owner ? (0, import_react13.createElement)("span", { className: "bt-row-owner" }, owner) : null,
++        (0, import_react13.createElement)("span", { className: "bt-row-title" }, shown),
 +        bot.remote ? (0, import_react13.createElement)(RemoteMark, { remote: bot.remote }) : null,
 +        pinned ? (0, import_react13.createElement)(PinMark) : null
 +      ),
@@ -6527,7 +6515,7 @@ diff --git a/client.js b/client.js
    const room2 = roster.roomsById[sessionId];
    const detailsOpen = useUi((state) => state.details === sessionId);
 -  const name = bot?.name ?? room2?.name ?? "";
-+  const name = bot?.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
++  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
    const useNews = useMemoryNews ?? noNews;
    const memoryIds = bot ? [bot.id] : room2?.members ?? [];
    const notice = useMemoryNotice(memoryIds, useNews);
@@ -6921,7 +6909,7 @@ diff --git a/client.js b/client.js
  function chatRows(roster, list, sessionId) {
    const here = conversationOf(roster, sessionId);
    if (here === null) return [];
-@@ -5959,14 +5959,29 @@ function atSources({ roster, sessions, launched, iconFor }) {
+@@ -5959,14 +5959,30 @@ function atSources({ roster, sessions, launched, iconFor }) {
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -6932,8 +6920,9 @@ diff --git a/client.js b/client.js
 +      const snapshot = roster.getSnapshot();
 +      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
 +      const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
-+        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
++        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
++        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
++        name: row.bot?.remote && !face ? row.bot.kind === "bot" ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
 +        ...row.bot?.role && !face ? { description: row.bot.role } : {},
 +        ...row.remote ? { description: row.remote.handle } : {},
 +        ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
@@ -13923,7 +13912,7 @@ diff --git a/client.js b/client.js
 +  const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
 +  const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
 +  const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
-+  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })));
++  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: friendBotTitle(bot) })));
 +}
 +function faceMentionables(room2, roster, fromFriend) {
 +  const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));

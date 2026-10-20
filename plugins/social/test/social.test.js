@@ -3502,14 +3502,14 @@ test('#260: one place per context, the same words, two decision buttons', () => 
   }
   const roster = { bots: [{ id: 'f1', name: 'Chief', remote: { handle: '@chief.uia.home', owner: 'UiA1415' } }] }
   const view = pluginOf([[], []]).localHoldView(approval, roster)
-  assert.equal(view.toName, 'Chief (UiA1415)', 'the friend by name and owner, as the chat list shows it')
+  assert.equal(view.toName, 'UiA1415', 'the person who gets it (#418, #498), not the friend\'s Bot')
   const dock = (props, claim) => walk(pluginOf([[], [view], ''], Boolean(claim)).ChatApprovalDock({ ...props, ...(claim ? { claim } : {}) }))
   // The sender Bot's own chat: the card names both sides the way the overlay does.
   // One place per approval: the friend's chat is in the roster, so only that chat draws it (#278).
   assert.equal(dock({ bot: { id: 'session-helper', name: 'Helper' }, roster }).filter(n => n.props['data-flybot'] === 'chat-approval').length, 0)
   // Before that chat exists, the Bot that wrote it shows it.
   const own = dock({ bot: { id: 'session-helper', name: 'Helper' }, roster: { bots: [] } })
-  assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes('Helper → Chief (UiA1415)')))
+  assert.ok(own.some(n => n.props.className === 'fs-sub' && n.children.includes('Helper → UiA1415')))
   // Two buttons decide; the standing choice is a quiet link, and there is no third button.
   const buttons = own.filter(n => n.type === 'button')
   assert.deepEqual(buttons.map(n => n.children.join('')), ['Approve', 'Reject', 'Auto-send from now on'])
@@ -7569,6 +7569,25 @@ test('#418: a Bot\'s held reply to a friend is listed on its turn for the owner,
   assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1)
   assert.equal(ctx.flybot.bot.list().find(bot => bot.name === 'Writer') !== undefined, true)
   assert.equal((await call('state', {})).value.bots.find(bot => bot.name === 'Writer').heldReplies, undefined)
+})
+
+test('#498: approval cards name the receiving person through the core\'s one formatter, never two Bot names', async () => {
+  const { walk, pluginOf, sandbox } = loadSocialClient(async () => ({}))
+  const { friendBotOwner } = await import('../../../core/src/shared/remote-label.js')
+  const used = []
+  sandbox.__flybot__.names = { friendBotOwner: bot => { used.push(bot.id); return friendBotOwner(bot) } }
+  const roster = { bots: [{ id: 'f1', name: 'Chief', remote: { handle: '@chief.selfb1233.home', home: '@selfb1233.home', homeName: 'SelfB1233' } }] }
+  // A Bot Social hold names the friend's Bot (`to.display_name`): the card names its owner instead.
+  const server = { id: 'srv-1', kind: 'outbound_message', from: 'Chief', to: '@chief.selfb1233.home', toName: 'Chief', text: 'hi' }
+  const subs = walk(pluginOf([[server], [], '']).ChatApprovalDock({ bot: { id: 'f1', remote: { handle: '@chief.selfb1233.home' } }, roster }))
+    .filter(n => n.props.className === 'fs-sub').flatMap(n => n.children)
+  assert.ok(subs.includes('Chief → SelfB1233'), subs.join('|'))
+  assert.equal(subs.some(line => /Chief \(SelfB1233\)/.test(line)), false)
+  // A local hold: the stored person first, the friend chat's owner when the host stored none.
+  const hold = { id: 'loc-1', status: 'pending', by: 'social', senderName: 'Chief', targetName: '@chief.selfb1233.home', request: { from: 'chief', to: { kind: 'remote', handle: '@chief.selfb1233.home', home: '@selfb1233.home' }, text: 'x', via: 'composer' } }
+  assert.equal(pluginOf([[]]).localHoldView({ ...hold, recipientName: 'SelfB1233' }, roster).toName, 'SelfB1233')
+  assert.equal(pluginOf([[]]).localHoldView(hold, roster).toName, 'SelfB1233')
+  assert.ok(used.includes('f1'), 'the host formatter is the one used')
 })
 
 test('#418: the held reply is decided on its bubble, not in a dock, and names the person', async () => {

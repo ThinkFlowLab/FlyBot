@@ -210,20 +210,26 @@ test('a face-room sidebar row stays on one line and shows its full title on hove
   assert.match(styles, /\.bt-row-title\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)
 })
 
-test("a friend's Bot sidebar row is its name and owner on one line, with a second line like own rows (#384)", async () => {
+test("a friend's Bot sidebar row is its one name, \"Chief (Bob)\", on one line, with a second line like own rows (#384, #498)", async () => {
   const { readFileSync } = await import('node:fs')
   const sidebar = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   const styles = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   const row = sidebar.slice(sidebar.indexOf('function BotRow('), sidebar.indexOf('function RemoteMark('))
-  assert.match(row, /const rowName = remoteRecord \? cleanPeerName\(bot\.name, shown\) : shown/)
-  assert.match(row, /h\('span', \{ className: 'bt-row-title' \}, rowName\)/)
-  assert.match(row, /owner \? h\('span', \{ className: 'bt-row-owner' \}, owner\) : null/)
-  assert.match(row, /const owner = remoteRecord \? ownerNameOf\(remoteRecord\) \|\| cleanPeerName\(bot\.remote\.handle\) : ''/)
+  // The same string as the header, tab, composer placeholder and @ menu: one formatter (#498).
+  assert.match(row, /const shown = remote \? friendBotTitle\(bot\) : bot\.name/)
+  assert.match(row, /h\('span', \{ className: 'bt-row-title' \}, shown\)/)
+  // No second, muted owner part ("Chief" + grey "Bob" read as a different format).
+  assert.doesNotMatch(row, /bt-row-owner/)
+  assert.doesNotMatch(styles, /\.bt-row-owner\{/)
   // Before the first message the second line still says what the row is.
-  assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remoteRecord \? t\("Friend's Bot"\) : ''\)/)
-  // The full "Helper · Bob's Bot" title is on hover and in the label.
-  assert.match(row, /title: remoteRecord \? shown :/)
-  assert.match(styles, /\.bt-row-owner\{flex:0 100 auto;[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)
+  assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remote \? t\("Friend's Bot"\) : ''\)/)
+  // The full name is on hover and in the label.
+  assert.match(row, /title: remote \? shown :/)
+  for (const file of ['header.js', 'brand.js', 'user-message.js', 'at-menu.js']) {
+    const src = readFileSync(new URL(`../src/client/${file}`, import.meta.url), 'utf8')
+    assert.match(src, /friendBotTitle\(/, `${file} names a friend's chat through friendBotTitle`)
+    assert.doesNotMatch(src, /ownerName: bot\.remote\.homeName \|\| bot\.remote\.owner/, `${file} builds no name of its own`)
+  }
   assert.match(styles, /\.bt-row-remote\{[^}]*color:var\(--bt-ink-2\)\}/)
   const { DICTIONARY } = await import('../src/client/i18n.js')
   assert.equal(DICTIONARY.zh["Friend's Bot"], '好友的 Bot')
