@@ -1021,6 +1021,7 @@ var ZH = {
   "On the schedule {expression}": "按计划 {expression}",
   "Next: {time}": "下次 {time}",
   Finished: "已结束",
+  Resume: "继续",
   "in {name}": "在 {name}",
   "Click again to delete": "再点一次删除",
   "Delete task": "删除任务",
@@ -1059,6 +1060,12 @@ var ZH = {
   "Repeat every 1 minute to 7 days": "重复间隔要在 1 分钟到 7 天之间",
   "Pick when it runs": "选择什么时候运行",
   "No such task": "没有这个任务",
+  "This task has finished": "这个任务已经结束",
+  "The task changed meanwhile. Try again": "任务刚刚有变化，请再试一次",
+  "The task could not be saved": "任务没能保存",
+  "This task cannot be edited here": "这个任务不能在这里编辑",
+  "This task cannot be paused": "这个任务不能暂停",
+  "Its time has passed. Edit the task to pick a new one": "时间已经过了，请编辑任务选一个新时间",
   "Working folder": "工作文件夹",
   "Working folder: {folder}": "工作文件夹：{folder}",
   Folder: "文件夹",
@@ -9070,8 +9077,8 @@ function timingText(task) {
       return "";
   }
 }
-var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
-function TaskRow({ task, actions, onView, showBot, roster }) {
+var nextText = (task) => task.status === "paused" ? t("Paused") : task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
+function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
   const [confirming, setConfirming] = (0, import_react18.useState)(false);
   const [busy, setBusy] = (0, import_react18.useState)(false);
   (0, import_react18.useEffect)(() => {
@@ -9087,10 +9094,19 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
     setBusy(true);
     void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
   };
+  const toggle = () => {
+    setBusy(true);
+    const step = task.status === "paused" ? actions.scheduleResume : actions.schedulePause;
+    void step(task.sessionId, task.id).then((next) => {
+      setBusy(false);
+      onView(next);
+    }, () => setBusy(false));
+  };
   const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
+  const stoppable = task.status === "active" || task.status === "paused";
   return (0, import_react18.createElement)(
     "div",
-    { className: "bt-set-row bt-task", "data-done": task.status === "active" ? void 0 : "", "data-busy": busy || void 0 },
+    { className: "bt-set-row bt-task", "data-done": stoppable ? void 0 : "", "data-paused": task.status === "paused" || void 0, "data-busy": busy || void 0 },
     showBot ? (0, import_react18.createElement)(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
     (0, import_react18.createElement)(
       "span",
@@ -9100,6 +9116,8 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
       task.prompt && task.prompt !== task.title ? (0, import_react18.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null
     ),
     (0, import_react18.createElement)("span", { className: "bt-task-next" }, nextText(task)),
+    onEdit ? (0, import_react18.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react18.createElement)(PencilIcon)) : null,
+    stoppable ? (0, import_react18.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
     (0, import_react18.createElement)("button", {
       type: "button",
       className: "bt-mini bt-task-remove",
@@ -9119,22 +9137,44 @@ function inAnHour() {
 }
 var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
 var UNITS = [["minutes", 1, "minutes"], ["hours", 60, "hours"], ["days", 1440, "days"]];
-function TaskForm({ roster, actions, start, onDone, onCancel }) {
-  const [target, setTarget] = (0, import_react18.useState)(start ?? roster.bots[0]?.id ?? "");
-  const [title, setTitle] = (0, import_react18.useState)("");
-  const [prompt, setPrompt] = (0, import_react18.useState)("");
-  const [kind, setKind] = (0, import_react18.useState)("daily");
-  const [at, setAt] = (0, import_react18.useState)(inAnHour);
-  const [time, setTime] = (0, import_react18.useState)("09:00");
-  const [weekdays, setWeekdays] = (0, import_react18.useState)([1, 2, 3, 4, 5]);
-  const [count, setCount] = (0, import_react18.useState)(1);
-  const [unit, setUnit] = (0, import_react18.useState)("hours");
+function localInput(ms) {
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function formStart(task) {
+  const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
+  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : ["minutes", 60];
+  const once = task?.kind === "at" || task?.kind === "after";
+  return {
+    title: task?.title ?? "",
+    prompt: task?.prompt ?? "",
+    kind: once ? "at" : task?.kind ?? "daily",
+    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
+    time: task?.time ? clock2(task.time) : "09:00",
+    weekdays: task?.kind === "weekly" && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
+    count: Math.max(1, Math.round(seconds / size)),
+    unit,
+    timeZone: task?.timeZone || localZone()
+  };
+}
+function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
+  const first = formStart(task);
+  const [target, setTarget] = (0, import_react18.useState)(task ? task.botId ?? task.roomId : start ?? roster.bots[0]?.id ?? "");
+  const [title, setTitle] = (0, import_react18.useState)(first.title);
+  const [prompt, setPrompt] = (0, import_react18.useState)(first.prompt);
+  const [kind, setKind] = (0, import_react18.useState)(first.kind);
+  const [at, setAt] = (0, import_react18.useState)(first.at);
+  const [time, setTime] = (0, import_react18.useState)(first.time);
+  const [weekdays, setWeekdays] = (0, import_react18.useState)(first.weekdays);
+  const [count, setCount] = (0, import_react18.useState)(first.count);
+  const [unit, setUnit] = (0, import_react18.useState)(first.unit);
   const [busy, setBusy] = (0, import_react18.useState)(false);
   const [error, setError] = (0, import_react18.useState)("");
   const timing = () => {
+    if (kind === "cron") return { kind: "keep" };
     if (kind === "at") return { kind, at: new Date(at).toISOString() };
     if (kind === "every") return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
-    return { kind, time, timeZone: localZone(), ...kind === "weekly" ? { weekdays } : {} };
+    return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
   };
   const submit = (event) => {
     event.preventDefault();
@@ -9149,7 +9189,8 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
       setBusy(false);
       return;
     }
-    void actions.scheduleCreate({ target, title, prompt, when: when3 }).then(onDone, (failure) => {
+    const saved = task ? actions.scheduleUpdate({ sessionId: task.sessionId, id: task.id, target, title, prompt, when: when3 }) : actions.scheduleCreate({ target, title, prompt, when: when3 });
+    void saved.then(onDone, (failure) => {
       setError(hostText(failure?.message ?? String(failure)));
       setBusy(false);
     });
@@ -9189,6 +9230,7 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
       (0, import_react18.createElement)(
         "div",
         { key: kind, className: "bt-task-when bt-veil" },
+        kind === "cron" ? (0, import_react18.createElement)("span", { className: "bt-task-every" }, timingText(task)) : null,
         kind === "at" ? (0, import_react18.createElement)("input", { className: "bt-input", type: "datetime-local", value: at, "aria-label": t("Date and time"), onChange: (event) => setAt(event.target.value) }) : null,
         kind === "weekly" ? (0, import_react18.createElement)("div", { className: "bt-task-days", role: "group", "aria-label": t("Days") }, [1, 2, 3, 4, 5, 6, 7].map((day) => (0, import_react18.createElement)("button", {
           key: day,
@@ -9216,7 +9258,11 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
       "div",
       { className: "bt-set-row bt-task-foot" },
       (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
-      (0, import_react18.createElement)("button", { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" }, busy ? t("Creating…") : t("Create task"))
+      (0, import_react18.createElement)(
+        "button",
+        { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" },
+        task ? busy ? t("Saving…") : t("Save changes") : busy ? t("Creating…") : t("Create task")
+      )
     )
   );
 }
@@ -9237,47 +9283,76 @@ function AutomationOff({ actions }) {
 function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions);
   const [adding, setAdding] = (0, import_react18.useState)(Boolean(start));
+  const [editing, setEditing] = (0, import_react18.useState)(null);
   if (view === null) return (0, import_react18.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
   if (!view.available) return (0, import_react18.createElement)(AutomationOff, { actions });
   const shown = (next) => {
     publish(next);
     setAdding(false);
+    setEditing(null);
+  };
+  const edit = (task) => {
+    setAdding(false);
+    setEditing(task);
   };
   const byChat = [
     ...roster.bots.map((bot) => [bot.id, (0, import_react18.createElement)(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter((task) => task.botId === bot.id)]),
     ...roster.rooms.map((room2) => [room2.id, (0, import_react18.createElement)(RoomAvatar, { room: room2, roster, size: 18 }), room2.name, view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id)])
   ].filter(([, , , tasks]) => tasks.length > 0);
   return [
-    adding ? (0, import_react18.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react18.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => setAdding(true) }, (0, import_react18.createElement)(PlusIcon), t("New task"))),
+    adding ? (0, import_react18.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react18.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
+      setEditing(null);
+      setAdding(true);
+    } }, (0, import_react18.createElement)(PlusIcon), t("New task"))),
     byChat.length === 0 && !adding ? (0, import_react18.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react18.createElement)("div", { className: "bt-set-row" }, (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react18.createElement)(
       "section",
       { key: id, className: "bt-set-section" },
       (0, import_react18.createElement)("h3", { className: "bt-task-head" }, avatar, name),
-      (0, import_react18.createElement)("div", { className: "bt-set-card" }, tasks.map((task) => (0, import_react18.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })))
+      (0, import_react18.createElement)(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
     ))
   ];
 }
+function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
+  const open = editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
+  const rows = tasks.filter((task) => task !== open).map((task) => (0, import_react18.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }));
+  return (0, import_react18.createElement)(
+    import_react18.Fragment,
+    null,
+    open ? (0, import_react18.createElement)(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
+    rows.length + extra.length > 0 ? (0, import_react18.createElement)("div", { className: "bt-set-card" }, ...rows, ...extra) : null
+  );
+}
 function BotSchedules({ bot, roster, actions }) {
   const view = useSchedules(actions);
+  const [editing, setEditing] = (0, import_react18.useState)(null);
   if (view === null) return null;
   const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
   return (0, import_react18.createElement)(
     "section",
     { className: "bt-set-section" },
     (0, import_react18.createElement)("h3", null, t("Scheduled tasks")),
-    (0, import_react18.createElement)(
+    !view.available ? (0, import_react18.createElement)(
       "div",
       { className: "bt-set-card" },
-      !view.available ? (0, import_react18.createElement)(
+      (0, import_react18.createElement)(
         "div",
         { className: "bt-set-row bt-bs-row" },
         (0, import_react18.createElement)("span", { className: "bt-set-copy" }, (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page."))),
         (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
-      ) : [
-        ...tasks.map((task) => (0, import_react18.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
-        (0, import_react18.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react18.createElement)(PlusIcon), t("New task"))
-      ]
-    )
+      )
+    ) : (0, import_react18.createElement)(TaskList, {
+      tasks,
+      editing,
+      roster,
+      actions,
+      onEdit: setEditing,
+      onDone: (next) => {
+        publish(next);
+        setEditing(null);
+      },
+      onCancel: () => setEditing(null),
+      extra: [(0, import_react18.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react18.createElement)(PlusIcon), t("New task"))]
+    })
   );
 }
 function ScheduleSummary({ bot, actions }) {
@@ -9305,6 +9380,10 @@ var SCHEDULE_CSS = `
 .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
 .bt-task-remove svg{width:14px;height:14px}
+.bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
+.bt-task-tool svg{width:14px;height:14px}
+.bt-task-pause{height:26px;color:var(--bt-ink-2)}
+.bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
 .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
 .bt-task-head{display:flex;align-items:center;gap:6px}
 .bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
@@ -16704,6 +16783,9 @@ function apply(ctx) {
     setBotCapability: (botId, name, attached) => after(call("bot-capability", { botId, name, attached })),
     schedules: () => call("schedules"),
     scheduleCreate: (task) => call("schedule-create", task),
+    scheduleUpdate: (task) => call("schedule-update", task),
+    schedulePause: (sessionId, id) => call("schedule-pause", { sessionId, id }),
+    scheduleResume: (sessionId, id) => call("schedule-resume", { sessionId, id }),
     scheduleDelete: (sessionId, id) => call("schedule-delete", { sessionId, id }),
     exchange: (a, b) => call("exchange", { a, b }).catch(() => []),
     roomProgress: (roomId) => call("room-progress", { roomId }).catch(() => []),

@@ -421,6 +421,14 @@ diff --git a/client.js b/client.js
    "Scheduled tasks": "定时任务",
    "Every day": "每天",
    "Every {count} days": "每 {count} 天",
+@@ -835,6 +835,7 @@ var ZH = {
+   "On the schedule {expression}": "按计划 {expression}",
+   "Next: {time}": "下次 {time}",
+   Finished: "已结束",
++  Resume: "继续",
+   "in {name}": "在 {name}",
+   "Click again to delete": "再点一次删除",
+   "Delete task": "删除任务",
 @@ -856,8 +856,8 @@ var ZH = {
    Unit: "单位",
    "Create task": "创建任务",
@@ -432,6 +440,19 @@ diff --git a/client.js b/client.js
    "New task": "新建任务",
    "No scheduled tasks yet.": "还没有定时任务。",
    "No scheduled tasks yet. Add one": "还没有定时任务，去添加",
+@@ -873,6 +873,12 @@ var ZH = {
+   "Repeat every 1 minute to 7 days": "重复间隔要在 1 分钟到 7 天之间",
+   "Pick when it runs": "选择什么时候运行",
+   "No such task": "没有这个任务",
++  "This task has finished": "这个任务已经结束",
++  "The task changed meanwhile. Try again": "任务刚刚有变化，请再试一次",
++  "The task could not be saved": "任务没能保存",
++  "This task cannot be edited here": "这个任务不能在这里编辑",
++  "This task cannot be paused": "这个任务不能暂停",
++  "Its time has passed. Edit the task to pick a new one": "时间已经过了，请编辑任务选一个新时间",
+   "Working folder": "工作文件夹",
+   "Working folder: {folder}": "工作文件夹：{folder}",
+   Folder: "文件夹",
 @@ -898,10 +898,13 @@ var HOST_ERRORS = [
    [/^A group chat holds at most (\d+) Bots$/, "一个群聊最多 $1 个 Bot"],
    [/^Reply mode must be one of (.+)$/, "回复模式只能是 $1"],
@@ -957,6 +978,7 @@ diff --git a/client.js b/client.js
 -      value = resolved;
 -      for (const listener of [...listeners2]) listener();
 -    }
+-  };
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -993,7 +1015,21 @@ diff --git a/client.js b/client.js
 +      document.documentElement.removeEventListener("pointerleave", onLeave);
 +    };
 +  }, [enabled]);
-+}
+ }
+-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+-var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
+-function indexRoster(value) {
+-  const byId = {};
+-  for (const bot of value.bots) {
+-    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+-  }
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1019,30 +1055,35 @@ diff --git a/client.js b/client.js
 +    onAnimationEnd: poked ? (event) => {
 +      if (/^bt-poke/.test(event.animationName)) setPoked(false);
 +    } : void 0
-   };
++  };
 +  if (look.image) return (0, import_react.createElement)("span", common, (0, import_react.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
 +  if (look.emoji) {
 +    return (0, import_react.createElement)("span", common, (0, import_react.createElement)("span", {
 +      className: "bt-mark-emoji",
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
-+  }
+   }
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
  }
--var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
--var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
--function indexRoster(value) {
--  const byId = {};
--  for (const bot of value.bots) {
--    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
-+}
+ }
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
 +var personInitial = (name) => (Array.from(String(name ?? "").trim())[0] ?? "").toUpperCase();
 +var personColor = (name) => defaultColor(`person:${String(name ?? "").trim().toLowerCase()}`);
 +function PersonMark({ size = 22, name }) {
@@ -1055,13 +1096,7 @@ diff --git a/client.js b/client.js
 +      "aria-hidden": true
 +    }, initial);
    }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
+-  return { ...state, [sessionId]: own };
 +  return (0, import_react.createElement)(
 +    "span",
 +    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
@@ -1072,10 +1107,93 @@ diff --git a/client.js b/client.js
 +      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
 +    )
 +  );
-+}
+ }
+-
+-// src/client/themes.js
+-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+-var THEMES = {
+-  deepseek: {
+-    label: "DeepSeek",
+-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+-  },
+-  mono: {
+-    label: "Mono",
+-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+-  },
+-  paper: {
+-    label: "Paper",
+-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+-  },
+-  moonlight: {
+-    label: "Moonlight",
+-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
+-  }
+-};
+-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+-function themeVars(mode, dark, accent = mode.accent) {
+-  return {
+-    "--bt-ink": mode.text,
+-    "--bt-ink-2": rgba(mode.text, 0.6),
+-    "--bt-ink-3": rgba(mode.text, 0.36),
+-    "--bt-bubble": mode.bubble,
+-    "--bt-sidebar": mode.sidebar,
+-    "--bt-main": mode.bg,
+-    "--bt-card": mode.card,
+-    "--bt-line": rgba(mode.text, 0.08),
+-    "--bt-line-2": rgba(mode.text, 0.15),
+-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+-    "--bt-accent": accent,
+-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+-    "--bt-user": mode.user,
+-    "--bt-user-ink": mode.userText,
+-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+-    "--bt-tag-ink": rgba(mode.text, 0.58)
+-  };
 +function AdminStar() {
 +  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
-+}
+ }
+-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+-${theme.css ?? ""}`;
+-var shellTokens = ({ light, dark }) => ({
+-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+-});
+-var customThemes = {};
+-var registry = createSource(0);
+-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+-function registerShape(id, shape) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+-  const at = shape.eyes?.at;
+-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+-  const previous = SHAPES[id];
+-  SHAPES[id] = {
+-    label: String(shape.label ?? id),
+-    size,
+-    body: shape.body,
+-    eyes,
+-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+-  };
+-  const refresh = () => {
+-    markupCache.clear();
+-    maskCache.delete(id);
+-    registry.set((value) => value + 1);
+-  };
+-  refresh();
 +function MainStar() {
 +  return (0, import_react.createElement)(
 +    "svg",
@@ -1121,15 +1239,10 @@ diff --git a/client.js b/client.js
 +    const size = frame * 5 / 9;
 +    const rest = frame - size;
 +    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-   }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
++  }
 +  const half = frame / 2;
 +  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function roomAvatarPeople(room2, roster) {
 +  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
 +  const seen = new Set(members.map((bot) => bot.id));
@@ -1162,13 +1275,7 @@ diff --git a/client.js b/client.js
 +  }
 +  if (members.length === 1 && remotes.length === 0) return [members[0], null];
 +  return [...members, ...remotes];
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
++}
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people = roomAvatarPeople(room2, roster);
 +  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
@@ -1180,8 +1287,7 @@ diff --git a/client.js b/client.js
 +      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 +      people.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 +    );
-   }
--  return { ...state, [sessionId]: own };
++  }
 +  const seats = clusterSeats(Math.min(people.length, 4), size);
 +  const overflow = people.length > 4 ? people.length - 3 : 0;
 +  const gap = size / 14;
@@ -1200,97 +1306,15 @@ diff --git a/client.js b/client.js
 +      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 +    })
 +  );
- }
- 
--// src/client/themes.js
--var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
--var THEMES = {
--  deepseek: {
--    label: "DeepSeek",
--    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
--    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
--  },
--  mono: {
--    label: "Mono",
--    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
--    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
--  },
--  paper: {
--    label: "Paper",
--    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
--    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
--  },
--  moonlight: {
--    label: "Moonlight",
--    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
--    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
++}
++
 +// src/client/approval-claims.js
 +var claims = /* @__PURE__ */ new Map();
 +var claimListeners = /* @__PURE__ */ new Set();
 +var openChats = /* @__PURE__ */ new Map();
 +var changed = () => {
 +  for (const fn of [...claimListeners]) fn();
- };
--var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
--function themeVars(mode, dark, accent = mode.accent) {
--  return {
--    "--bt-ink": mode.text,
--    "--bt-ink-2": rgba(mode.text, 0.6),
--    "--bt-ink-3": rgba(mode.text, 0.36),
--    "--bt-bubble": mode.bubble,
--    "--bt-sidebar": mode.sidebar,
--    "--bt-main": mode.bg,
--    "--bt-card": mode.card,
--    "--bt-line": rgba(mode.text, 0.08),
--    "--bt-line-2": rgba(mode.text, 0.15),
--    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
--    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
--    "--bt-accent": accent,
--    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
--    "--bt-user": mode.user,
--    "--bt-user-ink": mode.userText,
--    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
--    "--bt-tag-ink": rgba(mode.text, 0.58)
--  };
--}
--var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
--var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
--html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
--${theme.css ?? ""}`;
--var shellTokens = ({ light, dark }) => ({
--  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
--  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
--  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
--  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
--  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
--  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
--});
--var customThemes = {};
--var registry = createSource(0);
--var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
--function registerShape(id, shape) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
--  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
--  const at = shape.eyes?.at;
--  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
--  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
--  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
--  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
--  const previous = SHAPES[id];
--  SHAPES[id] = {
--    label: String(shape.label ?? id),
--    size,
--    body: shape.body,
--    eyes,
--    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
--  };
--  const refresh = () => {
--    markupCache.clear();
--    maskCache.delete(id);
--    registry.set((value) => value + 1);
--  };
--  refresh();
++};
 +function chatOpened(sessionId, delta) {
 +  const count = (openChats.get(sessionId) ?? 0) + delta;
 +  if (count > 0) openChats.set(sessionId, count);
@@ -1477,7 +1501,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-+  };
+   };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1501,7 +1525,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-   };
++  };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1796,15 +1820,7 @@ diff --git a/client.js b/client.js
 +    else delete own[callId];
 +  }
 +  return { ...state, [sessionId]: own };
- }
--function previewOf(list, id, hiddenTurns = []) {
--  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
--  if (!Array.isArray(outline)) return "";
--  for (let index = outline.length - 1; index >= 0; index -= 1) {
--    const entry = outline[index];
--    if (hiddenTurns.includes(entry.turn)) continue;
--    const text = entry.response || entry.prompt || "";
--    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
++}
 +
 +// src/client/themes.js
 +var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
@@ -1828,8 +1844,7 @@ diff --git a/client.js b/client.js
 +    label: "Moonlight",
 +    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 +    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
-   }
--  return "";
++  }
 +};
 +var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 +function themeVars(mode, dark, accent = mode.accent) {
@@ -1853,17 +1868,16 @@ diff --git a/client.js b/client.js
 +    "--bt-tag-ink": rgba(mode.text, 0.58)
 +  };
  }
--var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
--function usageOf(list, ids) {
--  let input = 0;
--  let cacheRead = 0;
--  let output = 0;
--  for (const id of ids) {
--    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
--    if (!usage) continue;
--    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
--    cacheRead += usage.cacheReadTokens ?? 0;
--    output += usage.outputTokens ?? 0;
+-function previewOf(list, id, hiddenTurns = []) {
+-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-  if (!Array.isArray(outline)) return "";
+-  for (let index = outline.length - 1; index >= 0; index -= 1) {
+-    const entry = outline[index];
+-    if (hiddenTurns.includes(entry.turn)) continue;
+-    const text = entry.response || entry.prompt || "";
+-    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
+-  }
+-  return "";
 +var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 +var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
 +html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
@@ -1906,7 +1920,18 @@ diff --git a/client.js b/client.js
 +    else delete SHAPES[id];
 +    refresh();
 +  };
-+}
+ }
+-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+-function usageOf(list, ids) {
+-  let input = 0;
+-  let cacheRead = 0;
+-  let output = 0;
+-  for (const id of ids) {
+-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+-    if (!usage) continue;
+-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+-    cacheRead += usage.cacheReadTokens ?? 0;
+-    output += usage.outputTokens ?? 0;
 +function registerTheme(id, theme) {
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
@@ -2358,20 +2383,6 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
--}
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -2403,13 +2414,19 @@ diff --git a/client.js b/client.js
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
+-  );
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2419,9 +2436,7 @@ diff --git a/client.js b/client.js
 +    if (!owner || seen.has(key)) continue;
 +    seen.add(key);
 +    out.push(owner);
-   }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
++  }
 +  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 +  return out.slice(0, 3);
 +}
@@ -2446,18 +2461,13 @@ diff --git a/client.js b/client.js
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
  }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2484,11 +2494,25 @@ diff --git a/client.js b/client.js
 +      handle: bot.remote.handle,
 +      isChief: bot.remote.isChief
 +    });
-+  }
+   }
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
-+}
+ }
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -6892,29 +6916,44 @@ diff --git a/client.js b/client.js
      });
      load();
      return () => {
-@@ -6898,9 +6898,9 @@ function timingText(task) {
+@@ -6896,11 +6896,11 @@ function timingText(task) {
+       return "";
+   }
  }
- var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
- function TaskRow({ task, actions, onView, showBot, roster }) {
+-var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
+-function TaskRow({ task, actions, onView, showBot, roster }) {
 -  const [confirming, setConfirming] = (0, import_react15.useState)(false);
 -  const [busy, setBusy] = (0, import_react15.useState)(false);
 -  (0, import_react15.useEffect)(() => {
++var nextText = (task) => task.status === "paused" ? t("Paused") : task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
++function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
 +  const [confirming, setConfirming] = (0, import_react18.useState)(false);
 +  const [busy, setBusy] = (0, import_react18.useState)(false);
 +  (0, import_react18.useEffect)(() => {
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(false), 3e3);
      return () => clearTimeout(timer);
-@@ -6914,19 +6914,19 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -6913,20 +6913,31 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+     setBusy(true);
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
    };
++  const toggle = () => {
++    setBusy(true);
++    const step = task.status === "paused" ? actions.scheduleResume : actions.schedulePause;
++    void step(task.sessionId, task.id).then((next) => {
++      setBusy(false);
++      onView(next);
++    }, () => setBusy(false));
++  };
    const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
 -  return (0, import_react15.createElement)(
++  const stoppable = task.status === "active" || task.status === "paused";
 +  return (0, import_react18.createElement)(
      "div",
-     { className: "bt-set-row bt-task", "data-done": task.status === "active" ? void 0 : "", "data-busy": busy || void 0 },
+-    { className: "bt-set-row bt-task", "data-done": task.status === "active" ? void 0 : "", "data-busy": busy || void 0 },
 -    showBot ? (0, import_react15.createElement)(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
 -    (0, import_react15.createElement)(
++    { className: "bt-set-row bt-task", "data-done": stoppable ? void 0 : "", "data-paused": task.status === "paused" || void 0, "data-busy": busy || void 0 },
 +    showBot ? (0, import_react18.createElement)(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
 +    (0, import_react18.createElement)(
        "span",
@@ -6929,6 +6968,8 @@ diff --git a/client.js b/client.js
 -    (0, import_react15.createElement)("span", { className: "bt-task-next" }, nextText(task)),
 -    (0, import_react15.createElement)("button", {
 +    (0, import_react18.createElement)("span", { className: "bt-task-next" }, nextText(task)),
++    onEdit ? (0, import_react18.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react18.createElement)(PencilIcon)) : null,
++    stoppable ? (0, import_react18.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
 +    (0, import_react18.createElement)("button", {
        type: "button",
        className: "bt-mini bt-task-remove",
@@ -6942,10 +6983,11 @@ diff --git a/client.js b/client.js
    );
  }
  var pad = (number) => String(number).padStart(2, "0");
-@@ -6946,17 +6946,17 @@ function inAnHour() {
+@@ -6945,22 +6945,44 @@ function inAnHour() {
+ }
  var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
  var UNITS = [["minutes", 1, "minutes"], ["hours", 60, "hours"], ["days", 1440, "days"]];
- function TaskForm({ roster, actions, start, onDone, onCancel }) {
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 -  const [target, setTarget] = (0, import_react15.useState)(start ?? roster.bots[0]?.id ?? "");
 -  const [title, setTitle] = (0, import_react15.useState)("");
 -  const [prompt, setPrompt] = (0, import_react15.useState)("");
@@ -6957,21 +6999,57 @@ diff --git a/client.js b/client.js
 -  const [unit, setUnit] = (0, import_react15.useState)("hours");
 -  const [busy, setBusy] = (0, import_react15.useState)(false);
 -  const [error, setError] = (0, import_react15.useState)("");
-+  const [target, setTarget] = (0, import_react18.useState)(start ?? roster.bots[0]?.id ?? "");
-+  const [title, setTitle] = (0, import_react18.useState)("");
-+  const [prompt, setPrompt] = (0, import_react18.useState)("");
-+  const [kind, setKind] = (0, import_react18.useState)("daily");
-+  const [at, setAt] = (0, import_react18.useState)(inAnHour);
-+  const [time, setTime] = (0, import_react18.useState)("09:00");
-+  const [weekdays, setWeekdays] = (0, import_react18.useState)([1, 2, 3, 4, 5]);
-+  const [count, setCount] = (0, import_react18.useState)(1);
-+  const [unit, setUnit] = (0, import_react18.useState)("hours");
++function localInput(ms) {
++  const date = new Date(ms);
++  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
++}
++function formStart(task) {
++  const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
++  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : ["minutes", 60];
++  const once = task?.kind === "at" || task?.kind === "after";
++  return {
++    title: task?.title ?? "",
++    prompt: task?.prompt ?? "",
++    kind: once ? "at" : task?.kind ?? "daily",
++    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
++    time: task?.time ? clock2(task.time) : "09:00",
++    weekdays: task?.kind === "weekly" && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
++    count: Math.max(1, Math.round(seconds / size)),
++    unit,
++    timeZone: task?.timeZone || localZone()
++  };
++}
++function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
++  const first = formStart(task);
++  const [target, setTarget] = (0, import_react18.useState)(task ? task.botId ?? task.roomId : start ?? roster.bots[0]?.id ?? "");
++  const [title, setTitle] = (0, import_react18.useState)(first.title);
++  const [prompt, setPrompt] = (0, import_react18.useState)(first.prompt);
++  const [kind, setKind] = (0, import_react18.useState)(first.kind);
++  const [at, setAt] = (0, import_react18.useState)(first.at);
++  const [time, setTime] = (0, import_react18.useState)(first.time);
++  const [weekdays, setWeekdays] = (0, import_react18.useState)(first.weekdays);
++  const [count, setCount] = (0, import_react18.useState)(first.count);
++  const [unit, setUnit] = (0, import_react18.useState)(first.unit);
 +  const [busy, setBusy] = (0, import_react18.useState)(false);
 +  const [error, setError] = (0, import_react18.useState)("");
    const timing = () => {
++    if (kind === "cron") return { kind: "keep" };
      if (kind === "at") return { kind, at: new Date(at).toISOString() };
      if (kind === "every") return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
-@@ -6981,101 +6981,105 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+-    return { kind, time, timeZone: localZone(), ...kind === "weekly" ? { weekdays } : {} };
++    return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
+   };
+   const submit = (event) => {
+     event.preventDefault();
+@@ -6975,146 +6975,185 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+       setBusy(false);
+       return;
+     }
+-    void actions.scheduleCreate({ target, title, prompt, when: when3 }).then(onDone, (failure) => {
++    const saved = task ? actions.scheduleUpdate({ sessionId: task.sessionId, id: task.id, target, title, prompt, when: when3 }) : actions.scheduleCreate({ target, title, prompt, when: when3 });
++    void saved.then(onDone, (failure) => {
+       setError(hostText(failure?.message ?? String(failure)));
+       setBusy(false);
      });
    };
    const toggleDay = (day) => setWeekdays((days) => days.includes(day) ? days.filter((item) => item !== day) : [...days, day].sort());
@@ -7027,6 +7105,7 @@ diff --git a/client.js b/client.js
          { key: kind, className: "bt-task-when bt-veil" },
 -        kind === "at" ? (0, import_react15.createElement)("input", { className: "bt-input", type: "datetime-local", value: at, "aria-label": t("Date and time"), onChange: (event) => setAt(event.target.value) }) : null,
 -        kind === "weekly" ? (0, import_react15.createElement)("div", { className: "bt-task-days", role: "group", "aria-label": t("Days") }, [1, 2, 3, 4, 5, 6, 7].map((day) => (0, import_react15.createElement)("button", {
++        kind === "cron" ? (0, import_react18.createElement)("span", { className: "bt-task-every" }, timingText(task)) : null,
 +        kind === "at" ? (0, import_react18.createElement)("input", { className: "bt-input", type: "datetime-local", value: at, "aria-label": t("Date and time"), onChange: (event) => setAt(event.target.value) }) : null,
 +        kind === "weekly" ? (0, import_react18.createElement)("div", { className: "bt-task-days", role: "group", "aria-label": t("Days") }, [1, 2, 3, 4, 5, 6, 7].map((day) => (0, import_react18.createElement)("button", {
            key: day,
@@ -7065,7 +7144,11 @@ diff --git a/client.js b/client.js
 -      (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
 -      (0, import_react15.createElement)("button", { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" }, busy ? t("Creating…") : t("Create task"))
 +      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
-+      (0, import_react18.createElement)("button", { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" }, busy ? t("Creating…") : t("Create task"))
++      (0, import_react18.createElement)(
++        "button",
++        { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" },
++        task ? busy ? t("Saving…") : t("Save changes") : busy ? t("Creating…") : t("Create task")
++      )
      )
    );
  }
@@ -7095,11 +7178,17 @@ diff --git a/client.js b/client.js
 -  if (view === null) return (0, import_react15.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
 -  if (!view.available) return (0, import_react15.createElement)(AutomationOff);
 +  const [adding, setAdding] = (0, import_react18.useState)(Boolean(start));
++  const [editing, setEditing] = (0, import_react18.useState)(null);
 +  if (view === null) return (0, import_react18.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
 +  if (!view.available) return (0, import_react18.createElement)(AutomationOff, { actions });
    const shown = (next) => {
      publish(next);
      setAdding(false);
++    setEditing(null);
++  };
++  const edit = (task) => {
++    setAdding(false);
++    setEditing(task);
    };
    const byChat = [
 -    ...roster.bots.map((bot) => [bot.id, (0, import_react15.createElement)(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter((task) => task.botId === bot.id)]),
@@ -7110,19 +7199,33 @@ diff --git a/client.js b/client.js
    return [
 -    adding ? (0, import_react15.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react15.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => setAdding(true) }, (0, import_react15.createElement)(PlusIcon), t("New task"))),
 -    byChat.length === 0 && !adding ? (0, import_react15.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react15.createElement)("div", { className: "bt-set-row" }, (0, import_react15.createElement)("span", { className: "bt-set-hint" }, t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react15.createElement)(
-+    adding ? (0, import_react18.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react18.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => setAdding(true) }, (0, import_react18.createElement)(PlusIcon), t("New task"))),
++    adding ? (0, import_react18.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react18.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
++      setEditing(null);
++      setAdding(true);
++    } }, (0, import_react18.createElement)(PlusIcon), t("New task"))),
 +    byChat.length === 0 && !adding ? (0, import_react18.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react18.createElement)("div", { className: "bt-set-row" }, (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react18.createElement)(
        "section",
        { key: id, className: "bt-set-section" },
 -      (0, import_react15.createElement)("h3", { className: "bt-task-head" }, avatar, name),
 -      (0, import_react15.createElement)("div", { className: "bt-set-card" }, tasks.map((task) => (0, import_react15.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })))
 +      (0, import_react18.createElement)("h3", { className: "bt-task-head" }, avatar, name),
-+      (0, import_react18.createElement)("div", { className: "bt-set-card" }, tasks.map((task) => (0, import_react18.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })))
++      (0, import_react18.createElement)(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
      ))
    ];
  }
-@@ -7083,21 +7083,21 @@ function BotSchedules({ bot, roster, actions }) {
++function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
++  const open = editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
++  const rows = tasks.filter((task) => task !== open).map((task) => (0, import_react18.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }));
++  return (0, import_react18.createElement)(
++    import_react18.Fragment,
++    null,
++    open ? (0, import_react18.createElement)(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
++    rows.length + extra.length > 0 ? (0, import_react18.createElement)("div", { className: "bt-set-card" }, ...rows, ...extra) : null
++  );
++}
+ function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions);
++  const [editing, setEditing] = (0, import_react18.useState)(null);
    if (view === null) return null;
    const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
 -  return (0, import_react15.createElement)(
@@ -7132,26 +7235,38 @@ diff --git a/client.js b/client.js
 -    (0, import_react15.createElement)("h3", null, t("Scheduled tasks")),
 -    (0, import_react15.createElement)(
 +    (0, import_react18.createElement)("h3", null, t("Scheduled tasks")),
-+    (0, import_react18.createElement)(
++    !view.available ? (0, import_react18.createElement)(
        "div",
        { className: "bt-set-card" },
 -      !view.available ? (0, import_react15.createElement)(
-+      !view.available ? (0, import_react18.createElement)(
++      (0, import_react18.createElement)(
          "div",
          { className: "bt-set-row bt-bs-row" },
 -        (0, import_react15.createElement)("span", { className: "bt-set-copy" }, (0, import_react15.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page in Harness settings."))),
 -        (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: openHarnessSettings }, t("Open Harness settings"))
-+        (0, import_react18.createElement)("span", { className: "bt-set-copy" }, (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page."))),
-+        (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
-       ) : [
+-      ) : [
 -        ...tasks.map((task) => (0, import_react15.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
 -        (0, import_react15.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react15.createElement)(PlusIcon), t("New task"))
-+        ...tasks.map((task) => (0, import_react18.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
-+        (0, import_react18.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react18.createElement)(PlusIcon), t("New task"))
-       ]
-     )
+-      ]
+-    )
++        (0, import_react18.createElement)("span", { className: "bt-set-copy" }, (0, import_react18.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page."))),
++        (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
++      )
++    ) : (0, import_react18.createElement)(TaskList, {
++      tasks,
++      editing,
++      roster,
++      actions,
++      onEdit: setEditing,
++      onDone: (next) => {
++        publish(next);
++        setEditing(null);
++      },
++      onCancel: () => setEditing(null),
++      extra: [(0, import_react18.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react18.createElement)(PlusIcon), t("New task"))]
++    })
    );
-@@ -7105,16 +7105,16 @@ function BotSchedules({ bot, roster, actions }) {
+ }
  function ScheduleSummary({ bot, actions }) {
    const view = useSchedules(actions);
    const tasks = view?.available ? view.tasks.filter((task) => task.botId === bot.id && task.status === "active") : [];
@@ -7174,6 +7289,17 @@ diff --git a/client.js b/client.js
      )))
    );
  }
+@@ -7127,6 +7127,10 @@ var SCHEDULE_CSS = `
+ .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+ .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
+ .bt-task-remove svg{width:14px;height:14px}
++.bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
++.bt-task-tool svg{width:14px;height:14px}
++.bt-task-pause{height:26px;color:var(--bt-ink-2)}
++.bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
+ .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
+ .bt-task-head{display:flex;align-items:center;gap:6px}
+ .bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
 @@ -7158,7 +7158,7 @@ var SCHEDULE_CSS = `
  `;
  
@@ -12672,7 +12798,7 @@ diff --git a/client.js b/client.js
      endVisit: (id) => {
        leaveVisits([id]);
        ui2.set((state) => {
-@@ -13819,12 +13819,14 @@ function apply(ctx) {
+@@ -13819,15 +13819,20 @@ function apply(ctx) {
      secretCancel: (requestId) => after(call("secret-cancel", { requestId })),
      secretUpdate: (name, scope) => after(call("secret-update", { name, scope })),
      secretDelete: (name) => after(call("secret-delete", { name })),
@@ -12688,6 +12814,12 @@ diff --git a/client.js b/client.js
      setBotCapability: (botId, name, attached) => after(call("bot-capability", { botId, name, attached })),
      schedules: () => call("schedules"),
      scheduleCreate: (task) => call("schedule-create", task),
++    scheduleUpdate: (task) => call("schedule-update", task),
++    schedulePause: (sessionId, id) => call("schedule-pause", { sessionId, id }),
++    scheduleResume: (sessionId, id) => call("schedule-resume", { sessionId, id }),
+     scheduleDelete: (sessionId, id) => call("schedule-delete", { sessionId, id }),
+     exchange: (a, b) => call("exchange", { a, b }).catch(() => []),
+     roomProgress: (roomId) => call("room-progress", { roomId }).catch(() => []),
 @@ -13846,6 +13846,8 @@ function apply(ctx) {
        noteClientError(where, error);
        ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));

@@ -664,6 +664,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
+@@ -785,6 +785,7 @@ const ZH = {
+   'On the schedule {expression}': '按计划 {expression}',
+   'Next: {time}': '下次 {time}',
+   Finished: '已结束',
++  Resume: '继续',
+   'in {name}': '在 {name}',
+   'Click again to delete': '再点一次删除',
+   'Delete task': '删除任务',
 @@ -806,8 +806,8 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
@@ -675,6 +683,19 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New task': '新建任务',
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
+@@ -823,6 +823,12 @@ const ZH = {
+   'Repeat every 1 minute to 7 days': '重复间隔要在 1 分钟到 7 天之间',
+   'Pick when it runs': '选择什么时候运行',
+   'No such task': '没有这个任务',
++  'This task has finished': '这个任务已经结束',
++  'The task changed meanwhile. Try again': '任务刚刚有变化，请再试一次',
++  'The task could not be saved': '任务没能保存',
++  'This task cannot be edited here': '这个任务不能在这里编辑',
++  'This task cannot be paused': '这个任务不能暂停',
++  'Its time has passed. Edit the task to pick a new one': '时间已经过了，请编辑任务选一个新时间',
+   'Working folder': '工作文件夹',
+   'Working folder: {folder}': '工作文件夹：{folder}',
+   Folder: '文件夹',
 @@ -851,10 +851,13 @@ const HOST_ERRORS = [
    [/^A group chat holds at most (\d+) Bots$/, '一个群聊最多 $1 个 Bot'],
    [/^Reply mode must be one of (.+)$/, '回复模式只能是 $1'],
@@ -895,25 +916,156 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js
-@@ -4,7 +4,6 @@
+@@ -1,10 +1,10 @@
+ // Scheduled tasks: Settings → Scheduled tasks, a Bot's card in its settings, and the
+ // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
+-// sends its prompt to the Bot's chat when it is due.
++// sends its prompt to the Bot's chat when it is due. A row edits its task in the same
++// form that creates one, and pauses or resumes it (#354).
  import { createElement as h, Fragment, useEffect, useState } from 'react'
  import { BotAvatar, RoomAvatar } from './mark.js'
- import { ClockIcon, PlusIcon, TrashIcon } from './icons.js'
+-import { ClockIcon, PlusIcon, TrashIcon } from './icons.js'
 -import { openHarnessSettings } from './sidebar.js'
++import { ClockIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
-@@ -169,20 +169,27 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
-       h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' }, busy ? t('Creating…') : t('Create task'))))
+@@ -70,9 +70,10 @@ export function timingText(task) {
+     default: return ''
+   }
  }
+-const nextText = task => (task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished'))
++const nextText = task => (task.status === 'paused' ? t('Paused')
++  : task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished'))
  
+-function TaskRow({ task, actions, onView, showBot, roster }) {
++function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
+   const [confirming, setConfirming] = useState(false)
+   const [busy, setBusy] = useState(false)
+   useEffect(() => {
+@@ -85,14 +85,22 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+     setBusy(true)
+     void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
+   }
++  const toggle = () => {
++    setBusy(true)
++    const step = task.status === 'paused' ? actions.scheduleResume : actions.schedulePause
++    void step(task.sessionId, task.id).then((next) => { setBusy(false); onView(next) }, () => setBusy(false))
++  }
+   const room = task.roomId ? roster.roomsById[task.roomId] : undefined
+-  return h('div', { className: 'bt-set-row bt-task', 'data-done': task.status === 'active' ? undefined : '', 'data-busy': busy || undefined },
++  const stoppable = task.status === 'active' || task.status === 'paused'
++  return h('div', { className: 'bt-set-row bt-task', 'data-done': stoppable ? undefined : '', 'data-paused': task.status === 'paused' || undefined, 'data-busy': busy || undefined },
+     showBot ? h(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
+     h('span', { className: 'bt-set-copy' },
+       h('span', { className: 'bt-task-title' }, task.title),
+       h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
+       task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null),
+     h('span', { className: 'bt-task-next' }, nextText(task)),
++    onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
++    stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,
+     h('button', {
+       type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
+       'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
+@@ -108,23 +108,50 @@ function inAnHour() {
+ const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
+ const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
++// A stored instant as the value of a datetime-local input, in this browser's zone.
++function localInput(ms) {
++  const date = new Date(ms)
++  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
++}
++// What the form starts with: a new task's defaults, or the edited task's own values.
++// A cron rule has no control here, so it is kept unless another kind is picked.
++export function formStart(task) {
++  const seconds = task?.kind === 'every' ? Number(task.everySeconds) : 3600
++  const [unit, size] = seconds % 86400 === 0 ? ['days', 86400] : seconds % 3600 === 0 ? ['hours', 3600] : ['minutes', 60]
++  const once = task?.kind === 'at' || task?.kind === 'after'
++  return {
++    title: task?.title ?? '',
++    prompt: task?.prompt ?? '',
++    kind: once ? 'at' : task?.kind ?? 'daily',
++    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
++    time: task?.time ? clock(task.time) : '09:00',
++    weekdays: task?.kind === 'weekly' && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
++    count: Math.max(1, Math.round(seconds / size)),
++    unit,
++    timeZone: task?.timeZone || localZone(),
++  }
++}
++
++function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
+   // A task goes to a Bot's chat or to a group chat, where it reads as your message.
+-  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
+-  const [title, setTitle] = useState('')
+-  const [prompt, setPrompt] = useState('')
+-  const [kind, setKind] = useState('daily')
+-  const [at, setAt] = useState(inAnHour)
+-  const [time, setTime] = useState('09:00')
+-  const [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5])
+-  const [count, setCount] = useState(1)
+-  const [unit, setUnit] = useState('hours')
++  const first = formStart(task)
++  const [target, setTarget] = useState(task ? (task.botId ?? task.roomId) : start ?? roster.bots[0]?.id ?? '')
++  const [title, setTitle] = useState(first.title)
++  const [prompt, setPrompt] = useState(first.prompt)
++  const [kind, setKind] = useState(first.kind)
++  const [at, setAt] = useState(first.at)
++  const [time, setTime] = useState(first.time)
++  const [weekdays, setWeekdays] = useState(first.weekdays)
++  const [count, setCount] = useState(first.count)
++  const [unit, setUnit] = useState(first.unit)
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState('')
+   const timing = () => {
++    if (kind === 'cron') return { kind: 'keep' }
+     if (kind === 'at') return { kind, at: new Date(at).toISOString() }
+     if (kind === 'every') return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
+-    return { kind, time, timeZone: localZone(), ...(kind === 'weekly' ? { weekdays } : {}) }
++    // An edited task keeps its own time zone; a new one takes this browser's.
++    return { kind, time, timeZone: first.timeZone, ...(kind === 'weekly' ? { weekdays } : {}) }
+   }
+   const submit = (event) => {
+     event.preventDefault()
+@@ -133,8 +133,10 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+     setError('')
+     let when
+     try { when = timing() } catch { setError(t('Pick a date and time')); setBusy(false); return }
+-    void actions.scheduleCreate({ target, title, prompt, when })
+-      .then(onDone, (failure) => { setError(hostText(failure?.message ?? String(failure))); setBusy(false) })
++    const saved = task
++      ? actions.scheduleUpdate({ sessionId: task.sessionId, id: task.id, target, title, prompt, when })
++      : actions.scheduleCreate({ target, title, prompt, when })
++    void saved.then(onDone, (failure) => { setError(hostText(failure?.message ?? String(failure))); setBusy(false) })
+   }
+   const toggleDay = day => setWeekdays(days => (days.includes(day) ? days.filter(item => item !== day) : [...days, day].sort()))
+   return h('form', { className: 'bt-set-card bt-task-form', onSubmit: submit },
+@@ -153,6 +153,7 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+       h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('When'))),
+       h(Segmented, { label: t('When'), value: kind }, KINDS.map(([id, label]) => h('button', { key: id, type: 'button', 'aria-pressed': kind === id, onClick: () => setKind(id) }, t(label)))),
+       h('div', { key: kind, className: 'bt-task-when bt-veil' },
++        kind === 'cron' ? h('span', { className: 'bt-task-every' }, timingText(task)) : null,
+         kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
+         kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
+           key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
+@@ -166,24 +166,34 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+     error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
+     h('div', { className: 'bt-set-row bt-task-foot' },
+       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
+-      h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' }, busy ? t('Creating…') : t('Create task'))))
++      h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' },
++        task ? (busy ? t('Saving…') : t('Save changes')) : busy ? t('Creating…') : t('Create task'))))
++}
++
 +// The switch for Automation tasks is DSH's Plugins panel, not its settings dialog. The
 +// Settings dialog closes first so the panel is not left behind it.
 +export function openPlugins(actions) {
 +  actions.closeSettings()
 +  actions.selectPanel('plugins')
-+}
-+
+ }
+ 
  // Settings has no schedule service to show: Automation tasks are off in DSH.
 -function AutomationOff() {
 +function AutomationOff({ actions }) {
@@ -929,23 +1081,71 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  export function SchedulesPage({ roster, actions, start }) {
    const view = useSchedules(actions)
    const [adding, setAdding] = useState(Boolean(start))
++  const [editing, setEditing] = useState(null)
    if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
 -  if (!view.available) return h(AutomationOff)
+-  const shown = next => { publish(next); setAdding(false) }
 +  if (!view.available) return h(AutomationOff, { actions })
-   const shown = next => { publish(next); setAdding(false) }
++  const shown = next => { publish(next); setAdding(false); setEditing(null) }
++  const edit = (task) => { setAdding(false); setEditing(task) }
    const byChat = [
      ...roster.bots.map(bot => [bot.id, h(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter(task => task.botId === bot.id)]),
-@@ -210,8 +210,8 @@ export function BotSchedules({ bot, roster, actions }) {
-     h('div', { className: 'bt-set-card' },
-       !view.available
-         ? h('div', { className: 'bt-set-row bt-bs-row' },
+     ...roster.rooms.map(room => [room.id, h(RoomAvatar, { room, roster, size: 18 }), room.name, view.tasks.filter(task => task.botId === undefined && task.roomId === room.id)]),
+@@ -191,31 +191,43 @@ export function SchedulesPage({ roster, actions, start }) {
+   return [
+     adding
+       ? h(TaskForm, { key: 'form', roster, actions, start, onDone: shown, onCancel: () => setAdding(false) })
+-      : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => setAdding(true) }, h(PlusIcon), t('New task'))),
++      : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => { setEditing(null); setAdding(true) } }, h(PlusIcon), t('New task'))),
+     byChat.length === 0 && !adding
+       ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No scheduled tasks yet.'))))
+       : byChat.map(([id, avatar, name, tasks]) => h('section', { key: id, className: 'bt-set-section' },
+           h('h3', { className: 'bt-task-head' }, avatar, name),
+-          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
++          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
+   ]
+ }
+ 
++// One chat's rows; the task being edited opens the form in its place.
++function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
++  const open = editing ? tasks.find(task => task.id === editing.id && task.sessionId === editing.sessionId) : undefined
++  const rows = tasks.filter(task => task !== open).map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }))
++  return h(Fragment, null,
++    open ? h(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
++    rows.length + extra.length > 0 ? h('div', { className: 'bt-set-card' }, ...rows, ...extra) : null)
++}
++
+ // A Bot's tasks in its settings form, with the way to add one.
+ export function BotSchedules({ bot, roster, actions }) {
+   const view = useSchedules(actions)
++  const [editing, setEditing] = useState(null)
+   if (view === null) return null
+   const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
+   return h('section', { className: 'bt-set-section' },
+     h('h3', null, t('Scheduled tasks')),
+-    h('div', { className: 'bt-set-card' },
+-      !view.available
+-        ? h('div', { className: 'bt-set-row bt-bs-row' },
 -            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Harness settings.'))),
 -            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: openHarnessSettings }, t('Open Harness settings')))
+-        : [
+-            ...tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
+-            h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task')),
+-          ]))
++    !view.available
++      ? h('div', { className: 'bt-set-card' },
++          h('div', { className: 'bt-set-row bt-bs-row' },
 +            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.'))),
-+            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
-         : [
-             ...tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish })),
-             h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task')),
++            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins'))))
++      : h(TaskList, {
++          tasks, editing, roster, actions, onEdit: setEditing,
++          onDone: (next) => { publish(next); setEditing(null) },
++          onCancel: () => setEditing(null),
++          extra: [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
++        }))
+ }
+ 
+ // The details panel's line: the Bot's next tasks, or how to add one.
 @@ -225,7 +225,7 @@ export function ScheduleSummary({ bot, actions }) {
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
@@ -955,6 +1155,17 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
        : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
  }
+@@ -239,6 +239,10 @@ export const SCHEDULE_CSS = `
+ .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+ .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
+ .bt-task-remove svg{width:14px;height:14px}
++.bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
++.bt-task-tool svg{width:14px;height:14px}
++.bt-task-pause{height:26px;color:var(--bt-ink-2)}
++.bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
+ .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
+ .bt-task-head{display:flex;align-items:center;gap:6px}
+ .bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
 diff --git a/src/client/text.js b/src/client/text.js
 --- a/src/client/text.js
 +++ b/src/client/text.js
@@ -2111,6 +2322,214 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    }
  
    // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH
+diff --git a/src/host/schedules.js b/src/host/schedules.js
+--- a/src/host/schedules.js
++++ b/src/host/schedules.js
+@@ -5,6 +5,15 @@
+ // them. A group chat's task lives on the group's own Session, so the reminder reaches
+ // the group like a message from the user (see reminderText). DSH 0.2.0 mounts the service only with its Automation tasks bundle on, so
+ // the service is optional and every endpoint reports whether it is there.
++//
++// Edit and Pause (#354). Edit keeps a task where it is: on the same Session it goes
++// through DSH's own compare-and-update (the id and delivery records stay); to another
++// Bot or group chat, or for a finished one-shot, the new task is created before the old
++// one goes, so a failure keeps the old task. DSH has no pause, so Pause keeps the task's
++// record in FlyBot's state (`pausedSchedules`) before it removes it from DSH, and Resume
++// creates it again on the Bot's current part. A missed run is DSH's: after the app was
++// closed a recurring task runs once, for its latest missed time, never once per missed
++// time (docs/subsystems/core-host.md).
+ 
+ const MAX_TITLE = 120
+ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+@@ -39,6 +39,28 @@ function requestOf(record) {
+   return null
+ }
+ 
++// A create request's timing as the record fields a paused task keeps (the inverse of
++// requestOf), so a paused task reads like any other in the list.
++function timingOf(selector) {
++  if (selector.at !== undefined) return { kind: 'at', scheduledAt: selector.at }
++  if (selector.every_seconds !== undefined) return { kind: 'every', everySeconds: selector.every_seconds }
++  if (selector.daily !== undefined) return { kind: 'daily', time: selector.daily.time, timeZone: selector.daily.time_zone }
++  if (selector.weekly !== undefined) return { kind: 'weekly', time: selector.weekly.time, timeZone: selector.weekly.time_zone, weekdays: selector.weekly.weekdays }
++  if (selector.cron !== undefined) return { kind: 'cron', expression: selector.cron.expression, timeZone: selector.cron.time_zone }
++  return {}
++}
++const TIMING_FIELDS = ['at', 'every_seconds', 'daily', 'weekly', 'cron']
++const timingPart = request => Object.fromEntries(TIMING_FIELDS.filter(key => request[key] !== undefined).map(key => [key, request[key]]))
++// DSH's update takes a timing change as one discriminated value.
++function changeOf(selector) {
++  if (selector.at !== undefined) return { kind: 'at', at: selector.at }
++  if (selector.every_seconds !== undefined) return { kind: 'every', every_seconds: selector.every_seconds }
++  if (selector.daily !== undefined) return { kind: 'daily', daily: selector.daily }
++  if (selector.weekly !== undefined) return { kind: 'weekly', weekly: selector.weekly }
++  return { kind: 'cron', cron: selector.cron }
++}
++const UPDATE_MISSES = { schedule_not_found: 'No such task', schedule_ended: 'This task has finished', schedule_conflict: 'The task changed meanwhile. Try again' }
++
+ // The settings form's timing as a create request selector.
+ function selectorOf(when) {
+   const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
+@@ -89,6 +89,35 @@ export function install(rt) {
+     return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
+   }
+   const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
++  // Paused tasks, by their DSH id: { id, sessionId, record, pausedAt }. DSH ids are
++  // unique across the host, so a paused task keeps the id it had.
++  const paused = () => {
++    if (state.pausedSchedules === null || typeof state.pausedSchedules !== 'object' || Array.isArray(state.pausedSchedules)) state.pausedSchedules = {}
++    return state.pausedSchedules
++  }
++  const pausedEntry = (sessionId, id) => {
++    const entry = Object.hasOwn(paused(), String(id ?? '')) ? paused()[id] : undefined
++    return entry !== undefined && entry.sessionId === sessionId ? entry : undefined
++  }
++  // The Session a Bot's or group chat's new task goes to: the Bot's current part.
++  const sessionFor = owner => (owner.botId !== undefined ? rt.chatOf(owner.botId) : owner.roomId)
++  const ensureService = () => { if (service === null) throw invalid('Automation tasks are off in DSH') }
++
++  // The form's name, instruction and target, checked as creation checks them.
++  function contentOf(body) {
++    const bot = state.bots[body.target]
++    const room = state.rooms[body.target]
++    if (bot === undefined && room === undefined) throw invalid('No such Bot or group chat')
++    const title = String(body.title ?? '').trim()
++    const prompt = String(body.prompt ?? '').trim()
++    if (title === '') throw invalid('Give the task a name')
++    if (title.length > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
++    if (prompt === '') throw invalid('Say what the Bot should do')
++    return { sessionId: bot ? rt.chatOf(bot.id) : room.id, title, prompt }
++  }
++
++  // One stored task as DSH has it, active or finished, or undefined.
++  const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
+ 
+   async function schedulesView() {
+     if (service === null) return { available: false, tasks: [] }
+@@ -98,27 +98,112 @@ export function install(rt) {
+       if (!known(owner)) continue
+       tasks.push({ ...entry, ...owner })
+     }
++    for (const entry of Object.values(paused())) {
++      const owner = ownerOf(entry.sessionId)
++      if (!known(owner)) continue
++      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner })
++    }
+     return { available: true, tasks }
+   }
+ 
++  // Edit: a paused task stays paused with its new content; an active one is updated in
++  // place on the same Session, otherwise created anew before the old one is deleted.
++  // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
++  async function updateSchedule(body) {
++    ensureService()
++    const sessionId = String(body.sessionId ?? '')
++    const id = String(body.id ?? '')
++    if (ownerOf(sessionId) === undefined) throw invalid('No such task')
++    const content = contentOf(body)
++    const keep = body.when?.kind === 'keep'
++    const held = pausedEntry(sessionId, id)
++    if (held !== undefined) {
++      const timing = keep ? timingPart(requestOf(held.record) ?? {}) : selectorOf(body.when)
++      paused()[id] = { ...held, sessionId: content.sessionId, record: { title: content.title, prompt: content.prompt, ...timingOf(timing) } }
++      await rt.save()
++      return schedulesView()
++    }
++    // DSH's update compares the exact record `list` gives (active tasks only).
++    const active = (await service.list({ sessionId })).find(entry => entry.id === id)
++    const record = active ?? await findRecord(sessionId, id)
++    if (record === undefined) throw invalid('No such task')
++    const stored = requestOf(record)
++    if (stored === null) throw invalid('This task cannot be edited here')
++    const timing = keep ? timingPart(stored) : selectorOf(body.when)
++    if (active !== undefined && content.sessionId === sessionId && typeof service.update === 'function') {
++      const same = JSON.stringify(timingPart(stored)) === JSON.stringify(timing)
++      const result = await service.update({ sessionId, id, expected: active, title: content.title, prompt: content.prompt, ...(same ? {} : { change: changeOf(timing) }) })
++      if (result?.record === undefined) throw invalid(UPDATE_MISSES[result?.code] ?? result?.message ?? 'The task could not be saved')
++      return schedulesView()
++    }
++    if (timing.at !== undefined && Date.parse(timing.at) <= Date.now()) throw invalid('Pick a time in the future')
++    await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
++    await service.delete({ sessionId, id })
++    return schedulesView()
++  }
++
++  // Pause: the record is saved in FlyBot's state before DSH lets the task go, so a
++  // failed delete leaves it running and never loses it.
++  async function pauseSchedule(body) {
++    ensureService()
++    const sessionId = String(body.sessionId ?? '')
++    const id = String(body.id ?? '')
++    if (ownerOf(sessionId) === undefined) throw invalid('No such task')
++    if (pausedEntry(sessionId, id) !== undefined) return schedulesView()
++    const record = await findRecord(sessionId, id)
++    if (record === undefined) throw invalid('No such task')
++    if (record.status !== 'active') throw invalid('This task has finished')
++    const request = requestOf(record)
++    if (request === null) throw invalid('This task cannot be paused')
++    paused()[id] = { id, sessionId, record: { title: record.title, prompt: record.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
++    await rt.save()
++    try {
++      const result = await service.delete({ sessionId, id })
++      if (result?.deleted === false) throw invalid('No such task')
++    } catch (error) {
++      delete paused()[id]
++      await rt.save()
++      throw error
++    }
++    return schedulesView()
++  }
++
++  // Resume: DSH gets the task again, on the Bot's current part, before FlyBot forgets
++  // the paused copy. A one-time task whose time has passed waits for an edit.
++  async function resumeSchedule(body) {
++    ensureService()
++    const sessionId = String(body.sessionId ?? '')
++    const held = pausedEntry(sessionId, String(body.id ?? ''))
++    const owner = ownerOf(sessionId)
++    if (held === undefined || !known(owner)) throw invalid('No such task')
++    const request = requestOf(held.record)
++    if (request === null) throw invalid('No such task')
++    if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Its time has passed. Edit the task to pick a new one')
++    await service.create(sessionFor(owner), request)
++    delete paused()[held.id]
++    await rt.save()
++    return schedulesView()
++  }
++
+   const endpoints = {
+     schedules: () => schedulesView(),
+     async 'schedule-create'(body) {
+-      if (service === null) throw invalid('Automation tasks are off in DSH')
+-      const bot = state.bots[body.target]
+-      const room = state.rooms[body.target]
+-      if (bot === undefined && room === undefined) throw invalid('No such Bot or group chat')
+-      const title = String(body.title ?? '').trim()
+-      const prompt = String(body.prompt ?? '').trim()
+-      if (title === '') throw invalid('Give the task a name')
+-      if (title.length > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
+-      if (prompt === '') throw invalid('Say what the Bot should do')
+-      await service.create(bot ? rt.chatOf(bot.id) : room.id, { title, prompt, ...selectorOf(body.when) })
++      ensureService()
++      const { sessionId, title, prompt } = contentOf(body)
++      await service.create(sessionId, { title, prompt, ...selectorOf(body.when) })
+       return schedulesView()
+     },
++    'schedule-update': body => updateSchedule(body),
++    'schedule-pause': body => pauseSchedule(body),
++    'schedule-resume': body => resumeSchedule(body),
+     async 'schedule-delete'(body) {
+-      if (service === null) throw invalid('Automation tasks are off in DSH')
++      ensureService()
+       if (ownerOf(body.sessionId) === undefined) throw invalid('No such task')
++      if (pausedEntry(body.sessionId, body.id) !== undefined) {
++        delete paused()[body.id]
++        await rt.save()
++        return schedulesView()
++      }
+       await service.delete({ sessionId: body.sessionId, id: body.id })
+       return schedulesView()
+     },
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
@@ -3455,6 +3874,216 @@ diff --git a/test/models.test.js b/test/models.test.js
 +  await assert.rejects(rt.testModel('r1'), error => error.code === 'bot/invalid')
 +  await assert.rejects(rt.testModel('missing'), error => error.code === 'bot/not-found')
 +  assert.equal(calls.length, 2)
++})
+diff --git a/test/schedules.test.js b/test/schedules.test.js
+--- a/test/schedules.test.js
++++ b/test/schedules.test.js
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict'
+-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+@@ -21,22 +21,48 @@ const TEAM = {
+   questions: {},
+ }
+ 
++// The record fields DSH stores for each create selector (see dsh-schedule's README).
++const KINDS = {
++  at: at => ({ kind: 'at', scheduledAt: at }),
++  every_seconds: seconds => ({ kind: 'every', everySeconds: seconds, scheduledAt: '2030-01-01T01:00:00.000Z' }),
++  daily: ({ time, time_zone }) => ({ kind: 'daily', time, timeZone: time_zone, scheduledAt: '2030-01-01T01:00:00.000Z' }),
++  weekly: ({ time, time_zone, weekdays }) => ({ kind: 'weekly', time, timeZone: time_zone, weekdays, scheduledAt: '2030-01-01T01:00:00.000Z' }),
++  cron: ({ expression, time_zone }) => ({ kind: 'cron', expression, timeZone: time_zone, scheduledAt: '2030-01-01T01:00:00.000Z' }),
++}
++const CHANGE = { at: 'at', every: 'every_seconds', daily: 'daily', weekly: 'weekly', cron: 'cron' }
++
+ // An in-memory stand-in for DSH's schedule service.
+ function scheduleService() {
+   const tasks = new Map()
++  const updates = []
+   let next = 1
+   return {
+     tasks,
++    updates,
++    failCreate: false,
++    failDelete: false,
+     async create(sessionId, request) {
++      if (this.failCreate) throw new Error('create failed')
+       const id = `schedule-${next++}`
+       const kind = Object.keys(request).find(key => !['title', 'prompt'].includes(key))
+-      const record = { id, kind, title: request.title, prompt: request.prompt, timing: request[kind], scheduledAt: '2030-01-01T01:00:00.000Z' }
+-      tasks.set(id, { sessionId, record })
++      const record = { id, title: request.title, prompt: request.prompt, timing: request[kind], ...KINDS[kind](request[kind]) }
++      tasks.set(id, { sessionId, record, status: 'active' })
+       return record
+     },
+-    async list({ sessionId }) { return [...tasks.values()].filter(task => task.sessionId === sessionId).map(task => task.record) },
+-    async catalog() { return [...tasks.values()].map(task => ({ ...task.record, sessionId: task.sessionId, status: 'active' })) },
++    async list({ sessionId }) { return [...tasks.values()].filter(task => task.sessionId === sessionId && task.status === 'active').map(task => task.record) },
++    async catalog() { return [...tasks.values()].map(task => ({ ...task.record, sessionId: task.sessionId, status: task.status })) },
++    async update(request) {
++      updates.push(request)
++      const task = tasks.get(request.id)
++      if (task?.sessionId !== request.sessionId) return { id: request.id, updated: false, code: 'schedule_not_found' }
++      if (task.status !== 'active') return { id: request.id, updated: false, code: 'schedule_ended' }
++      assert.deepEqual(request.expected, task.record, 'update compares the exact listed record')
++      const timing = request.change === undefined ? {} : { timing: request.change[CHANGE[request.change.kind]], ...KINDS[CHANGE[request.change.kind]](request.change[CHANGE[request.change.kind]]) }
++      task.record = { ...task.record, title: request.title ?? task.record.title, prompt: request.prompt ?? task.record.prompt, ...timing }
++      return { id: request.id, updated: true, record: task.record }
++    },
+     async delete({ sessionId, id }) {
++      if (this.failDelete) throw new Error('delete failed')
+       if (tasks.get(id)?.sessionId !== sessionId) return { id, deleted: false, code: 'schedule_not_found' }
+       tasks.delete(id)
+       return { id, deleted: true }
+@@ -121,3 +121,146 @@ test('a due reminder reaches a group as its prompts', () => {
+   assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
+   assert.equal(reminderText('plain text'), 'plain text')
+ })
++
++const DAILY = { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' }
++
++test('editing a task on the same chat updates it in place and keeps its id', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  const [id] = schedule.tasks.keys()
++
++  // Same timing: only the name and instruction change, so DSH keeps the next run.
++  const renamed = await call('schedule-update', { sessionId: 'm1', id, target: 'm1', title: ' Morning ', prompt: 'Sum up the night', when: DAILY })
++  assert.equal(renamed.ok, true, JSON.stringify(renamed))
++  assert.equal(schedule.updates.at(-1).change, undefined)
++  assert.deepEqual(renamed.value.tasks.map(task => [task.id, task.title, task.prompt]), [[id, 'Morning', 'Sum up the night']])
++
++  const moved = await call('schedule-update', { sessionId: 'm1', id, target: 'm1', title: 'Morning', prompt: 'Sum up the night', when: { kind: 'weekly', time: '08:30', timeZone: 'UTC', weekdays: [1, 3] } })
++  assert.equal(moved.ok, true, JSON.stringify(moved))
++  assert.deepEqual(schedule.updates.at(-1).change, { kind: 'weekly', weekly: { time: '08:30:00', time_zone: 'UTC', weekdays: [1, 3] } })
++  assert.deepEqual(moved.value.tasks.map(task => [task.id, task.kind, task.weekdays]), [[id, 'weekly', [1, 3]]])
++
++  // Keep: a cron rule the form cannot show keeps its timing.
++  await schedule.create('m1', { title: 'Cron', prompt: 'x', cron: { expression: '*/15 9-17 * * 1-5', time_zone: 'UTC' } })
++  const cronId = [...schedule.tasks.keys()].at(-1)
++  const kept = await call('schedule-update', { sessionId: 'm1', id: cronId, target: 'm1', title: 'Cron 2', prompt: 'y', when: { kind: 'keep' } })
++  assert.equal(kept.ok, true, JSON.stringify(kept))
++  assert.equal(schedule.updates.at(-1).change, undefined)
++  assert.equal(schedule.tasks.get(cronId).record.title, 'Cron 2')
++
++  for (const [body, message] of [
++    [{ sessionId: 'm1', id, target: 'm1', title: '', prompt: 'y', when: DAILY }, /name/],
++    [{ sessionId: 'm1', id, target: 'm1', title: 'x', prompt: 'y', when: { kind: 'daily', time: '9am' } }, /time of day/],
++    [{ sessionId: 'm1', id: 'schedule-99', target: 'm1', title: 'x', prompt: 'y', when: DAILY }, /No such task/],
++    [{ sessionId: 'outside', id, target: 'm1', title: 'x', prompt: 'y', when: DAILY }, /No such task/],
++    [{ sessionId: 'm1', id, target: 'nobody', title: 'x', prompt: 'y', when: DAILY }, /No such Bot or group chat/],
++  ]) assert.match((await call('schedule-update', body)).error.message, message)
++  assert.equal(schedule.tasks.get(id).record.title, 'Morning')
++})
++
++test('editing a task onto another chat creates the new one before deleting the old', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  const [id] = schedule.tasks.keys()
++
++  schedule.failCreate = true
++  const failed = await call('schedule-update', { sessionId: 'm1', id, target: 'g1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  assert.equal(failed.ok, false)
++  assert.deepEqual([...schedule.tasks.values()].map(task => [task.sessionId, task.record.id]), [['m1', id]], 'a failed create keeps the old task')
++
++  schedule.failCreate = false
++  const moved = await call('schedule-update', { sessionId: 'm1', id, target: 'g1', title: 'Standup', prompt: 'Where are we?', when: DAILY })
++  assert.equal(moved.ok, true, JSON.stringify(moved))
++  assert.deepEqual(moved.value.tasks.map(task => [task.title, task.roomId, task.botId]), [['Standup', 'g1', undefined]])
++  assert.equal(schedule.tasks.has(id), false)
++
++  // A finished one-shot cannot be updated in DSH, so its edit is a new task too.
++  const [groupId] = schedule.tasks.keys()
++  schedule.tasks.get(groupId).status = 'inactive'
++  const again = await call('schedule-update', { sessionId: 'g1', id: groupId, target: 'g1', title: 'Standup', prompt: 'Again', when: DAILY })
++  assert.equal(again.ok, true, JSON.stringify(again))
++  assert.deepEqual(again.value.tasks.map(task => [task.prompt, task.status]), [['Again', 'active']])
++})
++
++test('pause keeps the task in FlyBot and removes it from DSH; resume brings it back', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'weekly', time: '09:00', timeZone: 'UTC', weekdays: [1, 5] } })
++  const [id] = schedule.tasks.keys()
++
++  // A failed delete leaves the task running and nothing paused.
++  schedule.failDelete = true
++  assert.equal((await call('schedule-pause', { sessionId: 'w2', id })).ok, false)
++  assert.equal(schedule.tasks.size, 1)
++  assert.deepEqual((await call('schedules', {})).value.tasks.map(task => task.status), ['active'])
++  schedule.failDelete = false
++
++  const paused = await call('schedule-pause', { sessionId: 'w2', id })
++  assert.equal(paused.ok, true, JSON.stringify(paused))
++  assert.equal(schedule.tasks.size, 0, 'DSH no longer runs it')
++  assert.deepEqual(paused.value.tasks.map(task => [task.id, task.status, task.botId, task.kind, task.time, task.weekdays]), [[id, 'paused', 'w1', 'weekly', '09:00:00', [1, 5]]])
++  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
++  assert.equal(saved.pausedSchedules[id].record.title, 'Briefing', 'the paused task survives a restart')
++  // Pausing twice is harmless; a finished or unknown task cannot be paused.
++  assert.equal((await call('schedule-pause', { sessionId: 'w2', id })).ok, true)
++  assert.match((await call('schedule-pause', { sessionId: 'w2', id: 'nope' })).error.message, /No such task/)
++
++  // Editing a paused task keeps it paused.
++  const edited = await call('schedule-update', { sessionId: 'w2', id, target: 'w1', title: 'Weekly', prompt: 'Plan', when: { kind: 'every', minutes: 90 } })
++  assert.equal(edited.ok, true, JSON.stringify(edited))
++  assert.equal(schedule.tasks.size, 0)
++  assert.deepEqual(edited.value.tasks.map(task => [task.title, task.status, task.kind, task.everySeconds]), [['Weekly', 'paused', 'every', 5400]])
++
++  // Resume creates it again on the Bot's current part.
++  schedule.failCreate = true
++  assert.equal((await call('schedule-resume', { sessionId: 'w2', id })).ok, false)
++  assert.equal((await call('schedules', {})).value.tasks[0].status, 'paused', 'a failed resume keeps it paused')
++  schedule.failCreate = false
++  const resumed = await call('schedule-resume', { sessionId: 'w2', id })
++  assert.equal(resumed.ok, true, JSON.stringify(resumed))
++  assert.deepEqual([...schedule.tasks.values()].map(task => [task.sessionId, task.record.title, task.record.everySeconds]), [['w2', 'Weekly', 5400]])
++  assert.deepEqual(resumed.value.tasks.map(task => task.status), ['active'])
++  assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).pausedSchedules, {})
++  assert.match((await call('schedule-resume', { sessionId: 'w2', id })).error.message, /No such task/)
++})
++
++test('a paused task can be deleted, and a passed one-time task waits for an edit', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const soon = new Date(Date.now() + 60_000).toISOString()
++  await call('schedule-create', { target: 'm1', title: 'Once', prompt: 'Ping', when: { kind: 'at', at: soon } })
++  const [id] = schedule.tasks.keys()
++  assert.equal((await call('schedule-pause', { sessionId: 'm1', id })).ok, true)
++  t.mock.method(Date, 'now', () => Date.parse(soon) + 1000)
++  assert.match((await call('schedule-resume', { sessionId: 'm1', id })).error.message, /time has passed/)
++  t.mock.restoreAll()
++  const removed = await call('schedule-delete', { sessionId: 'm1', id })
++  assert.deepEqual(removed.value.tasks, [])
++  assert.equal(schedule.tasks.size, 0)
++})
++
++// What DSH does with runs missed while the app was closed (docs/subsystems/core-host.md):
++// a recurring task runs once, for its latest missed time, and then waits for its next
++// time; it never runs once per missed time. A one-time task is one record, so it runs
++// once when the app starts again.
++test('a recurring task missed while the app was closed runs once, for its latest time', async () => {
++  const dsh = await import('@deepseek-ai/dsh-schedule')
++  const created = Date.parse('2030-01-01T00:00:00.000Z')
++  const daily = dsh.createDailyScheduleRecord(dsh.ScheduleId('d1'), 'Sum up', { time: '09:00:00', time_zone: 'UTC' }, created, 'Briefing')
++  assert.equal(daily.scheduledAt, '2030-01-01T09:00:00.000Z')
++  // Closed for three days: opened on Jan 4 at 12:00.
++  const reopened = Date.parse('2030-01-04T12:00:00.000Z')
++  const due = dsh.resolveRecurringOccurrence(daily, reopened)
++  assert.equal(due.occurrenceAt, '2030-01-04T09:00:00.000Z', 'only the latest missed time is delivered')
++  assert.equal(due.nextScheduledAt, '2030-01-05T09:00:00.000Z', 'the next run is in the future, so no second catch-up')
++  const every = dsh.createEveryScheduleRecord(dsh.ScheduleId('e1'), 'Check', 3600, created, 'Hourly')
++  const hourly = dsh.resolveRecurringOccurrence(every, created + 50 * 3600_000 + 60_000)
++  assert.ok(Date.parse(hourly.nextScheduledAt) > created + 50 * 3600_000 + 60_000)
++  assert.ok(Date.parse(hourly.occurrenceAt) > created + 49 * 3600_000, 'fifty missed hours give one run')
 +})
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js

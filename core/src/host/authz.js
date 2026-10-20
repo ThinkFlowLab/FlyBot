@@ -38,7 +38,7 @@ const SHARED_BLOCKED = new Set([
 const BOT_TARGETED = new Set([
   'update-bot', 'delete-bot', 'duplicate-bot', 'set-flags', 'bot-capability',
   'memory-view', 'memory-ask', 'memory-forget',
-  'schedules', 'schedule-create', 'schedule-delete',
+  'schedules', 'schedule-create', 'schedule-update', 'schedule-pause', 'schedule-resume', 'schedule-delete',
   'agent-session', 'agent-adopt', 'agent-archive', 'agent-rename', 'remove-agent',
   'stop-member-work', 'set-main', 'test-model',
 ])
@@ -225,15 +225,16 @@ export function install(rt) {
     const requireSession = id => (sessionOwnedBy(actor, id) ? ALLOW : deny('bot/forbidden', 'You do not own that session'))
 
     if (BOT_TARGETED.has(ep)) {
-      if (ep === 'schedules' || ep === 'schedule-create' || ep === 'schedule-delete') {
+      if (ep === 'schedules' || ep.startsWith('schedule-')) {
         // The create endpoint keys off `body.target` (Bot or room id); `sessionId` is
         // the list/delete key. Checking only sessionId would allow a foreign target
-        // paired with an owned session (#106).
-        if (ep === 'schedule-create') {
+        // paired with an owned session (#106). An edit needs both: the task's Session
+        // and the target it moves to (#354).
+        if (ep === 'schedule-create' || ep === 'schedule-update') {
           const target = body?.target
           if (typeof target === 'string' && target !== '') {
-            if (botOwnedBy(actor, target) || roomOwnedBy(actor, target) || roomMemberOf(actor, target)) return ALLOW
-            return deny('bot/forbidden', 'You do not own that Bot or group chat')
+            if (!(botOwnedBy(actor, target) || roomOwnedBy(actor, target) || roomMemberOf(actor, target))) return deny('bot/forbidden', 'You do not own that Bot or group chat')
+            if (ep === 'schedule-create') return ALLOW
           }
         }
         if (ep === 'schedule-delete' && typeof body?.id === 'string' && !sessionOwnedBy(actor, body.id) && !sessionOwnedBy(actor, body.sessionId)) return deny('bot/forbidden', 'You do not own that schedule')

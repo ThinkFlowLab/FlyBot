@@ -135,7 +135,7 @@ export function install(rt) {
   // A chat reference chip names a Session whose snapshot rides to every recipient of
   // the message, so the author must be able to read what they share (#53, #106).
   // Actor-authored text that becomes a session user message: send, room-post,
-  // answer-question, schedule-create. Bot-authored room posts strip chips in groups.js.
+  // answer-question, schedule-create, schedule-update. Bot-authored room posts strip chips in groups.js.
   // Menu chips encode the session id as base64url(JSON); raw ids still appear in tests.
   const decodeSessionChip = (payload) => {
     try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) } catch { return undefined }
@@ -345,10 +345,13 @@ export function install(rt) {
         case 'bot-connectors':
           return ok(await rt.botConnectorEndpoint(body))
         case 'schedules':
+        case 'schedule-pause':
+        case 'schedule-resume':
         case 'schedule-delete':
           await rt.load()
           return ok(await rt.scheduleEndpoint(endpoint, body))
-        case 'schedule-create': {
+        case 'schedule-create':
+        case 'schedule-update': {
           await rt.load()
           const leaked = unshareableReference(actor, [body.title, body.prompt].filter(part => typeof part === 'string').join('\n'))
           if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
