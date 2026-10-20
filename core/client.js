@@ -752,7 +752,7 @@ var ZH = {
   Dismissed: "已关闭",
   "Your answer": "你的回答",
   // Secrets
-  "All Bots": "所有 Bot",
+  "All my Bots": "我的所有 Bot",
   "No Bot": "没有 Bot",
   "Paste or type the key": "粘贴或输入密钥",
   "Only {name}": "只给 {name}",
@@ -795,7 +795,7 @@ var ZH = {
   "NAME, e.g. GITHUB_TOKEN": "名字，例如 GITHUB_TOKEN",
   "What it is for": "用途",
   Value: "值",
-  "New keys are for all Bots; narrow it down afterwards.": "新密钥默认所有 Bot 可用，之后可以收窄。",
+  "New keys are for all your Bots; change who may use it afterwards.": "新密钥默认你的所有 Bot 可用，之后可以更改谁能用。",
   "Save key": "保存密钥",
   "Keys your Bots asked for. Bots never see the values: they use them as ": "你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ",
   " in their shell, and every value is replaced by ": " 使用，而且发给模型之前，每个值都会被替换成 ",
@@ -4684,7 +4684,7 @@ var WarnIcon = () => (0, import_react6.createElement)(
 var MASK_BY_CSS = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("-webkit-text-security", "disc");
 var insecure = () => typeof location !== "undefined" && location.protocol === "http:" && !/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/.test(location.hostname);
 var scopeLabel = (scope, roster) => {
-  if (scope === "all") return t("All Bots");
+  if (scope === "all") return t("All my Bots");
   const names = (scope ?? []).map((id) => roster.byId[id]?.name).filter(Boolean);
   return names.length === 0 ? t("No Bot") : names.join(t(" and "));
 };
@@ -4715,7 +4715,7 @@ function MaskedInput({ value, onChange, onEnter, label, autoFocus = false }) {
   });
 }
 function ScopeSwitch({ value, onChange, bot }) {
-  const options = [["all", t("All Bots")], ["bot", t("Only {name}", { name: bot.name })]];
+  const options = [["all", t("All my Bots")], ["bot", t("Only {name}", { name: bot.name })]];
   return (0, import_react6.createElement)(
     "div",
     { className: "bt-secret-scope", role: "radiogroup", "aria-label": t("Who may use it") },
@@ -4847,11 +4847,13 @@ function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
   if (waiting.length === 0) return null;
   return (0, import_react6.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react6.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
 }
+var scopeMode = (scope) => scope === "all" ? "all" : scope.length === 0 ? "none" : "some";
 function ScopeEditor({ secret, roster, onSave }) {
-  const [mode, setMode] = (0, import_react6.useState)(secret.scope === "all" ? "all" : "some");
+  const [mode, setMode] = (0, import_react6.useState)(scopeMode(secret.scope));
   const [picked, setPicked] = (0, import_react6.useState)(secret.scope === "all" ? [] : secret.scope);
   const toggle = (id) => setPicked((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
-  const same2 = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
+  const next = mode === "all" ? "all" : mode === "none" ? [] : picked;
+  const same2 = next === "all" ? secret.scope === "all" : secret.scope !== "all" && [...next].sort().join() === [...secret.scope].sort().join();
   return (0, import_react6.createElement)(
     "div",
     { className: "bt-secret-edit-block" },
@@ -4859,7 +4861,7 @@ function ScopeEditor({ secret, roster, onSave }) {
     (0, import_react6.createElement)(
       "div",
       { className: "bt-secret-radios", role: "radiogroup", "aria-label": t("Who may use {name}", { name: secret.name }) },
-      [["all", t("All Bots")], ["some", t("Chosen Bots")]].map(([id, text]) => (0, import_react6.createElement)(
+      [["all", t("All my Bots")], ["some", t("Chosen Bots")], ["none", t("No Bot")]].map(([id, text]) => (0, import_react6.createElement)(
         "label",
         { key: id, className: "bt-secret-radio" },
         (0, import_react6.createElement)("input", { type: "radio", name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }),
@@ -4876,7 +4878,7 @@ function ScopeEditor({ secret, roster, onSave }) {
     (0, import_react6.createElement)(
       "div",
       { className: "bt-secret-row-actions" },
-      (0, import_react6.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same2, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
+      (0, import_react6.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same2, onClick: () => onSave(next) }, t("Save access"))
     )
   );
 }
@@ -4933,7 +4935,7 @@ function SecretRow({ secret, roster, actions, run, open, onToggle }) {
       (0, import_react6.createElement)(
         "span",
         { className: "bt-set-control" },
-        secret.scope === "all" ? (0, import_react6.createElement)("span", { className: "bt-tag" }, t("All Bots")) : allowed.length === 0 ? (0, import_react6.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react6.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react6.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
+        secret.scope === "all" ? (0, import_react6.createElement)("span", { className: "bt-tag" }, t("All my Bots")) : allowed.length === 0 ? (0, import_react6.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react6.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react6.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
       )
     ),
     open ? (0, import_react6.createElement)(
@@ -4976,7 +4978,7 @@ function AddSecret({ actions, run, onDone }) {
     (0, import_react6.createElement)(
       "div",
       { className: "bt-secret-row-actions" },
-      (0, import_react6.createElement)("span", { className: "bt-set-hint" }, t("New keys are for all Bots; narrow it down afterwards.")),
+      (0, import_react6.createElement)("span", { className: "bt-set-hint" }, t("New keys are for all your Bots; change who may use it afterwards.")),
       (0, import_react6.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onDone }, t("Cancel")),
       (0, import_react6.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !ready, onClick: save }, t("Save key"))
     )

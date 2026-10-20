@@ -77,7 +77,7 @@ async function call(ctx, endpoint, payload) {
   return response.json()
 }
 
-test('connecting saves the token, kept out of every Bot shell, and mounts GitHub MCP; disconnecting undoes both', async (t) => {
+test('connecting saves the token for all of the owner\'s Bots (#545) and mounts GitHub MCP; disconnecting undoes both', async (t) => {
   const realFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async () => answer(200, { login: 'octo' })
@@ -100,7 +100,7 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
     failOnStartupError: true,
   })
   const state = await call(ctx, 'state', {})
-  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', []]])
+  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all']])
   assert.ok(!JSON.stringify(state).includes(token))
   assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(token))
 
@@ -250,7 +250,7 @@ test('composioSession limits the session to the apps, proves the key, and keeps 
   await assert.rejects(composioSession(key, { ...options, fetch: async () => { throw new Error(`boom ${key}`) } }), /^Error: Could not reach Composio$/)
 })
 
-test('connecting Composio keeps the key out of every Bot shell and the profile, mounts mcp__composio__ tools, and disconnecting undoes it', async (t) => {
+test('connecting Composio saves the key for all of the owner\'s Bots (#545), keeps it out of the profile, mounts mcp__composio__ tools, and disconnecting undoes it', async (t) => {
   const realFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = realFetch })
   const sent = fakeComposio()
@@ -286,7 +286,7 @@ test('connecting Composio keeps the key out of every Bot shell and the profile, 
   assert.match([...userIds][0], /^flybot-[0-9a-f-]{36}$/)
 
   const state = await call(ctx, 'state', {})
-  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['COMPOSIO_API_KEY', []]])
+  assert.deepEqual(state.value.secrets.map(secret => [secret.name, secret.scope]), [['COMPOSIO_API_KEY', 'all']])
   assert.ok(!JSON.stringify(state).includes(key))
   assert.ok(!readFileSync(join(home, 'state.json'), 'utf8').includes(key))
   assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.apps, ['gmail', 'slack'])

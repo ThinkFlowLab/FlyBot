@@ -11,7 +11,7 @@ const { outputFiles } = await build({
     contents: [
       "export { ToolCell, callTree } from './src/client/cells.js'",
       "export { QuestionDock } from './src/client/questions.js'",
-      "export { SecretDock } from './src/client/secret-card.js'",
+      "export { SecretDock, ScopeEditor } from './src/client/secret-card.js'",
       "export { countCards } from './src/client/sources.js'",
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
@@ -44,7 +44,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { ToolCell, callTree, QuestionDock, SecretDock, countCards } = module.exports
+const { ToolCell, callTree, QuestionDock, SecretDock, ScopeEditor, countCards } = module.exports
 
 // Runs the effects collected since the last render; returns the cleanups.
 const mount = () => {
@@ -368,4 +368,17 @@ test('#278: a Face-to-face room drops the old "Waiting for the owner\'s approval
   assert.match(inFace, /Bob joined the room/)
   // Another kind of room keeps whatever notice it was given.
   assert.match(shown(root, { sessionId: 'room' }), /Waiting for the owner/)
+})
+
+// The Secrets page says who may use a key with three explicit choices (#545): all my Bots,
+// chosen Bots, or none; a key for no Bot shows that choice, not a list with nobody in it.
+test('the scope editor offers all my Bots, chosen Bots, or none, and shows the current one', () => {
+  const radios = (scope) => {
+    const out = expand(ScopeEditor({ secret: { name: 'GITHUB_TOKEN', scope }, roster: team(), onSave: () => {} }))
+    const group = find(out, node => node.props?.role === 'radiogroup')
+    return group.props.children.flat().map(label => [text(label), find(label, node => node.type === 'input').props.checked])
+  }
+  assert.deepEqual(radios('all'), [['All my Bots', true], ['Chosen Bots', false], ['No Bot', false]])
+  assert.deepEqual(radios([]), [['All my Bots', false], ['Chosen Bots', false], ['No Bot', true]])
+  assert.deepEqual(radios(['writer']), [['All my Bots', false], ['Chosen Bots', true], ['No Bot', false]])
 })
