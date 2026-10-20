@@ -113,6 +113,7 @@ const settle = async (check) => {
   while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
   assert.ok(check(), 'condition not reached')
 }
+const plain = value => JSON.parse(JSON.stringify(value))
 const text = message => message.content.map(block => block.text ?? '').join('\n')
 const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
 
@@ -286,6 +287,27 @@ test('members still at work show in the team view and in the prompts of the othe
   assert.deepEqual(value.work.rooms.r1.map(entry => [entry.botId, entry.tool, entry.speaking]), [['b', 'pwsh', undefined], ['c', undefined, true]])
   host.finish('gc', '没问题。')
   await settle(() => result() !== undefined)
+})
+
+// #553: a group shows only its own work. An own-chat turn names the group it was handed out
+// from, so the group can show it; the Bot's other own-chat work names none.
+test('an own-chat turn handed out from a group names that group in the work view (#553)', async (t) => {
+  const host = await start(t)
+  const bots = async () => (await host.call('state', {})).value.work.bots
+  await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
+  host.begin('c')
+  host.emit('c', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: 'npm test' }) })
+  assert.deepEqual(plain((await bots()).c), { since: (await bots()).c.since, tool: 'pwsh', step: 'npm test', fromRoomId: 'r1' })
+  host.finish('c', 'ok')
+  // The user's own line, and a hand-off answered to the user in the Bot's own chat, are the Bot's own.
+  host.emit('a', 'turn/start', { turn: 1 })
+  host.emit('a', 'user/message', { content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } })
+  await host.tool('message_bot', { to: 'Writer', message: '跟用户打个招呼', reply_to: 'user' }, 'ga')
+  host.begin('b')
+  const view = await bots()
+  assert.deepEqual([view.a?.fromRoomId, view.a?.roomId, view.b?.fromRoomId], [undefined, undefined, undefined])
+  assert.notEqual(view.a, undefined)
+  assert.notEqual(view.b, undefined)
 })
 
 // #550: work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own

@@ -222,8 +222,22 @@ export function install(rt) {
     return line && line.length > 80 ? `${line.slice(0, 79)}…` : line
   }
 
+  // Work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own chat,
+  // and its reply goes back to that member's Session in the group: the group and the trigger, else
+  // undefined. A request the Bot answers to the user, or a friend's, stays the Bot's own (#550).
+  const handedFromGroup = (sessionId) => {
+    if (!rt.chatOwners.has(sessionId)) return undefined
+    const info = live.get(sessionId)?.info
+    if (info?.role !== 'request' || info.audience === 'user' || info.remote !== undefined) return undefined
+    const room = rt.roomOf(info.senderRoomId)
+    if (room?.sessions?.[info.senderSessionId] === undefined) return undefined
+    return { room, info }
+  }
+
   // Per Bot, the turn it is running, its current tool and that tool's step; its own chat
-  // wins over a group. Only the owner reads this view (authz.js), so the step stays theirs.
+  // wins over a group. An own-chat turn handed out from a group names that group
+  // (`fromRoomId`), so the group shows it as its work (#553). Only the owner reads this
+  // view (authz.js), so the step stays theirs.
   const workView = () => {
     const bots = {}
     for (const [id, entry] of live) {
@@ -232,7 +246,8 @@ export function install(rt) {
       const botId = owner?.botId ?? rt.chatOwners.get(id)
       if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
       const step = entry.tool ? stepOf(entry) : undefined
-      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}) }
+      const handed = owner ? undefined : handedFromGroup(id)
+      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}), ...(handed ? { fromRoomId: handed.room.id } : {}) }
     }
     return bots
   }
@@ -622,5 +637,5 @@ export function install(rt) {
     return found
   }
 
-  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
+  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
 }

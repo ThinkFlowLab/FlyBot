@@ -808,7 +808,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "{name} didn't answer in time": '{name} 没有及时回应',
    '{name} paused for your approval': '{name} 停下来等你批准',
    '{name} started on it': '{name} 开始做了',
-@@ -450,12 +450,30 @@ const ZH = {
+@@ -450,12 +450,29 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -822,10 +822,10 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    '{first} and {second} are waiting for your approval': '{first}、{second} 等你批准',
    '{first}, {second} and {count} more are waiting for your approval': '{first}、{second} 等 {total} 个等你批准',
    'Waiting for your approval': '等你批准',
+-  'in its own chat': '在自己的对话里',
 +  'Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.': '你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。',
 +  'Turn on auto-send': '打开自动发送',
 +  'Approve and always auto-send in this room': '批准并在此房间始终自动发送',
-   'in its own chat': '在自己的对话里',
    Reject: '拒绝',
    'Allow once': '允许一次',
 +  'Always allow for this Bot': '此 Bot 始终允许',
@@ -1014,7 +1014,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 diff --git a/src/client/member-status.js b/src/client/member-status.js
 --- a/src/client/member-status.js
 +++ b/src/client/member-status.js
-@@ -1,6 +1,6 @@
+@@ -1,26 +1,45 @@
  import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
  import { BotMark, toolState } from './mark.js'
 -import { Shimmer, workPhrase } from './cells.js'
@@ -1022,10 +1022,21 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  import { elapsedLabel } from './activity-row.js'
  import { t } from './i18n.js'
  
-@@ -13,13 +13,20 @@ import { t } from './i18n.js'
+ // -------------------------------------------------------------------------
+ // What a group's members are doing: above the group's composer, a row for each member
+-// at work in this group and a line for those busy elsewhere or waiting for an approval;
+-// above a Bot's own composer, the groups it is at work in; and per member in the
+-// details panel, where the approvals their group turns wait on are answered.
++// at work in this group and a line for those waiting for an approval here; above a Bot's
++// own composer, the groups it is at work in; and per member in the details panel, where
++// the approvals their group turns wait on are answered. A group (or face room) shows only
++// its own work (#553): a Bot busy in another room or its own chat is idle here, and that
++// room's steps never show in this one, whose members can be other people.
+ 
  const NO_WORK = { bots: {}, rooms: {}, approvals: [] }
  const ROWS_MAX = 4
  
+-// Work in this group wins over the Bot's own chat or another group.
 +// The step the Bot's own view names (a command, a path) belongs to its work in this group
 +// when that view is about this group and the same tool.
 +const stepIn = (work, botId, roomId, tool) => {
@@ -1033,17 +1044,32 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 +  return own?.roomId === roomId && own.tool === tool ? own.step : undefined
 +}
 +
- // Work in this group wins over the Bot's own chat or another group.
++// A Bot's work for this room: its turn here, else its own chat's turn handed out from here
++// with message_bot (the host's `fromRoomId`).
++const workIn = (room, work, id) => {
++  const local = (work.rooms?.[room.id] ?? []).find(entry => entry.botId === id)
++  if (local) return { ...local, roomId: room.id, step: stepIn(work, id, room.id, local.tool) }
++  const own = work.bots?.[id]
++  return own !== undefined && own.roomId === undefined && own.fromRoomId === room.id ? { ...own, roomId: room.id, handed: true } : undefined
++}
++
++// An approval is this room's when its turn runs here, or is the own-chat turn handed out from here.
++const askedIn = (room, work, id, doing) => (work.approvals ?? [])
++  .filter(entry => entry.botId === id && (entry.roomId === room.id || (entry.roomId === undefined && doing?.handed === true)))
++
  export function memberWork(room, work = NO_WORK) {
-   const here = work.rooms?.[room.id] ?? []
+-  const here = work.rooms?.[room.id] ?? []
    return room.members.map((id) => {
-     const approvals = (work.approvals ?? []).filter(entry => entry.botId === id)
-     const local = here.find(entry => entry.botId === id)
+-    const approvals = (work.approvals ?? []).filter(entry => entry.botId === id)
+-    const local = here.find(entry => entry.botId === id)
 -    const doing = local ? { ...local, roomId: room.id } : work.bots?.[id]
-+    const doing = local ? { ...local, roomId: room.id, step: stepIn(work, id, room.id, local.tool) } : work.bots?.[id]
-     return { id, approvals, doing, here: local !== undefined, state: approvals.length > 0 ? 'ask' : doing ? 'work' : 'idle' }
+-    return { id, approvals, doing, here: local !== undefined, state: approvals.length > 0 ? 'ask' : doing ? 'work' : 'idle' }
++    const doing = workIn(room, work, id)
++    const approvals = askedIn(room, work, id, doing)
++    return { id, approvals, doing, here: doing !== undefined, state: approvals.length > 0 ? 'ask' : doing ? 'work' : 'idle' }
    })
  }
+ 
 @@ -31,12 +31,12 @@ export function busyMembers(room, work, roster) {
      .map(entry => ({ ...entry, bot: roster.byId[entry.id] }))
  }
@@ -1080,7 +1106,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    return { waiting, doing }
  }
  
-@@ -66,24 +66,29 @@ function Face({ entry, size }) {
+@@ -66,24 +66,30 @@ function Face({ entry, size }) {
      h(BotMark, { bot: entry.bot, size, state: entry.state === 'ask' ? 'alert' : toolState(entry.doing?.tool ?? '') }))
  }
  
@@ -1101,7 +1127,8 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
 -function SummaryLine({ busy, onOpen }) {
-+// The rest, in the rows' column and shape: who waits for an approval, then who works elsewhere.
++// The rest, in the rows' column and shape: who waits for an approval here, then who works
++// here past the rows.
 +function SummaryLine({ busy, now, onOpen }) {
    const { waiting, doing } = summaryText(busy)
 -  return h('div', { className: 'bt-event bt-mw-dock' },
@@ -1149,7 +1176,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  function ApprovalCard({ approval, bot, actions }) {
    const [busy, setBusy] = useState(false)
    const answer = (choice) => {
-@@ -164,7 +164,8 @@ function ApprovalCard({ approval, bot, actions }) {
+@@ -164,14 +164,16 @@ function ApprovalCard({ approval, bot, actions }) {
      approval.answerable
        ? h('div', { className: 'bt-mw-actions' },
          h('button', { type: 'button', className: 'bt-q-btn', disabled: busy, onClick: () => answer('reject') }, t('Reject')),
@@ -1159,15 +1186,38 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
        : h('div', { className: 'bt-mw-actions' },
          h('button', { type: 'button', className: 'bt-q-btn', onClick: () => actions.openSession(bot.id) }, t("Open {name}'s chat", { name: bot.name }))))
  }
-@@ -190,7 +190,7 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
+ 
+-// Under a member's row in the group's details: what it is doing, and where. Work in
+-// this group can be stopped here, since the user cannot reach its Session otherwise.
+-export function MemberWork({ entry, bot, room, roster, actions, now }) {
++// Under a member's row in the group's details: what it is doing for this group. Its turn in
++// the group can be stopped here, since the user cannot reach that Session otherwise; work
++// handed out from here runs in the Bot's own chat, which has its own Stop.
++export function MemberWork({ entry, bot, room, actions, now }) {
+   const [stopping, setStopping] = useState(false)
+   if (entry.state === 'ask') {
+     return h('div', { className: 'bt-mw-member' },
+@@ -179,9 +179,6 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
+       entry.approvals.map(approval => h(ApprovalCard, { key: approval.id, approval, bot, actions })))
+   }
+   if (entry.state !== 'work') return null
+-  const where = entry.doing.roomId === room.id ? ''
+-    : entry.doing.roomId ? t('in {name}', { name: roster.roomsById[entry.doing.roomId]?.name ?? t('a group chat') })
+-      : t('in its own chat')
+   const stop = () => {
+     setStopping(true)
+     void Promise.resolve(actions.stopMemberWork(room.id, bot.id))
+@@ -190,8 +190,8 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
    }
    return h('div', { className: 'bt-mw-member' },
      h('div', { className: 'bt-mw-state bt-mw-work' },
 -      h('span', null, h(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : '', since(now, entry.doing.since)),
-+      h('span', null, h(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : '', since(now, entry.doing.since)),
-       entry.here ? h('button', { type: 'button', className: 'bt-mw-stop', disabled: stopping, onClick: stop }, t('Stop')) : null))
+-      entry.here ? h('button', { type: 'button', className: 'bt-mw-stop', disabled: stopping, onClick: stop }, t('Stop')) : null))
++      h('span', null, h(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), since(now, entry.doing.since)),
++      entry.here && entry.doing.handed !== true ? h('button', { type: 'button', className: 'bt-mw-stop', disabled: stopping, onClick: stop }, t('Stop')) : null))
  }
  
+ export function useMemberWork(room, useWork) {
 @@ -203,7 +203,6 @@ export function useMemberWork(room, useWork) {
  
  export const MEMBER_CSS = `
@@ -3593,7 +3643,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +196,19 @@ export function install(rt) {
+@@ -196,7 +196,33 @@ export function install(rt) {
      return merged
    }
  
@@ -3609,18 +3659,33 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    return line && line.length > 80 ? `${line.slice(0, 79)}…` : line
 +  }
 +
++  // Work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own chat,
++  // and its reply goes back to that member's Session in the group: the group and the trigger, else
++  // undefined. A request the Bot answers to the user, or a friend's, stays the Bot's own (#550).
++  const handedFromGroup = (sessionId) => {
++    if (!rt.chatOwners.has(sessionId)) return undefined
++    const info = live.get(sessionId)?.info
++    if (info?.role !== 'request' || info.audience === 'user' || info.remote !== undefined) return undefined
++    const room = rt.roomOf(info.senderRoomId)
++    if (room?.sessions?.[info.senderSessionId] === undefined) return undefined
++    return { room, info }
++  }
++
 +  // Per Bot, the turn it is running, its current tool and that tool's step; its own chat
-+  // wins over a group. Only the owner reads this view (authz.js), so the step stays theirs.
++  // wins over a group. An own-chat turn handed out from a group names that group
++  // (`fromRoomId`), so the group shows it as its work (#553). Only the owner reads this
++  // view (authz.js), so the step stays theirs.
    const workView = () => {
      const bots = {}
      for (const [id, entry] of live) {
-@@ -204,7 +204,8 @@ export function install(rt) {
+@@ -204,7 +204,9 @@ export function install(rt) {
        const owner = rt.groupOwners.get(id)
        const botId = owner?.botId ?? rt.chatOwners.get(id)
        if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
 -      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(owner ? { roomId: owner.roomId } : {}) }
 +      const step = entry.tool ? stepOf(entry) : undefined
-+      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}) }
++      const handed = owner ? undefined : handedFromGroup(id)
++      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}), ...(handed ? { fromRoomId: handed.room.id } : {}) }
      }
      return bots
    }
@@ -3852,7 +3917,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    return found
 +  }
 +
-+  Object.assign(rt, { botTurnOrigin, live, liveOf, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
++  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
  }
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
@@ -4970,10 +5035,39 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 diff --git a/test/group-work.test.js b/test/group-work.test.js
 --- a/test/group-work.test.js
 +++ b/test/group-work.test.js
-@@ -287,3 +287,82 @@ test('members still at work show in the team view and in the prompts of the othe
+@@ -113,6 +113,7 @@ const settle = async (check) => {
+   while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
+   assert.ok(check(), 'condition not reached')
+ }
++const plain = value => JSON.parse(JSON.stringify(value))
+ const text = message => message.content.map(block => block.text ?? '').join('\n')
+ const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
+ 
+@@ -287,3 +287,103 @@ test('members still at work show in the team view and in the prompts of the othe
    host.finish('gc', '没问题。')
    await settle(() => result() !== undefined)
  })
++
++// #553: a group shows only its own work. An own-chat turn names the group it was handed out
++// from, so the group can show it; the Bot's other own-chat work names none.
++test('an own-chat turn handed out from a group names that group in the work view (#553)', async (t) => {
++  const host = await start(t)
++  const bots = async () => (await host.call('state', {})).value.work.bots
++  await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
++  host.begin('c')
++  host.emit('c', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: 'npm test' }) })
++  assert.deepEqual(plain((await bots()).c), { since: (await bots()).c.since, tool: 'pwsh', step: 'npm test', fromRoomId: 'r1' })
++  host.finish('c', 'ok')
++  // The user's own line, and a hand-off answered to the user in the Bot's own chat, are the Bot's own.
++  host.emit('a', 'turn/start', { turn: 1 })
++  host.emit('a', 'user/message', { content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } })
++  await host.tool('message_bot', { to: 'Writer', message: '跟用户打个招呼', reply_to: 'user' }, 'ga')
++  host.begin('b')
++  const view = await bots()
++  assert.deepEqual([view.a?.fromRoomId, view.a?.roomId, view.b?.fromRoomId], [undefined, undefined, undefined])
++  assert.notEqual(view.a, undefined)
++  assert.notEqual(view.b, undefined)
++})
 +
 +// #550: work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own
 +// chat; a question there belongs to the group the work came from, and its answer goes back the same way.
@@ -5135,28 +5229,45 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
  // Values from the bundle's realm compare by content only.
  const plain = value => JSON.parse(JSON.stringify(value))
  // Renders the dock's own parts of an element tree, and lists its rows' labels.
+@@ -41,10 +41,10 @@ const rowLabels = (node) => {
+ test('the members line names who waits for an approval first, then who is at work', () => {
+   const names = { a: 'Anvil', b: 'Flint', c: 'Prism', d: 'Quill', e: 'King', f: 'Comet' }
+   const roster = { byId: Object.fromEntries(Object.entries(names).map(([id, name]) => [id, { id, name }])) }
+-  const room = { members: ['e', 'd', 'a', 'b', 'c', 'f'] }
++  const room = { id: 'g', members: ['e', 'd', 'a', 'b', 'c', 'f'] }
+   const work = {
+-    bots: { d: { since: 1, tool: 'edit' }, a: { since: 1, tool: 'pwsh' }, f: { since: 1 } },
+-    approvals: [{ botId: 'a' }, { botId: 'b' }, { botId: 'c' }],
++    rooms: { g: [{ botId: 'd', since: 1, tool: 'edit' }, { botId: 'a', since: 1, tool: 'pwsh' }, { botId: 'f', since: 1 }] },
++    approvals: [{ botId: 'a', roomId: 'g' }, { botId: 'b', roomId: 'g' }, { botId: 'c', roomId: 'g' }],
+   }
+   const busy = busyMembers(room, work, roster)
+   assert.deepEqual(plain(busy.map(entry => [entry.bot.name, entry.state])), [['Anvil', 'ask'], ['Flint', 'ask'], ['Prism', 'ask'], ['Quill', 'work'], ['Comet', 'work']])
 @@ -61,7 +61,7 @@ const team = {
  }
  const dock = (sessionId, work) => expand(MemberDock({ sessionId, useRoster: pick => pick(team), useWork: pick => pick(work), actions: {} }))
  
 -test('a member at work in the group gets a row; the speaker, work elsewhere and approvals do not', () => {
-+test('a member at work in the group gets a row, the speaker first; work elsewhere and approvals do not', () => {
++test('a member at work in the group gets a row, the speaker first; approvals go on the line, work elsewhere nowhere', () => {
    const work = {
      // Anvil runs in its own chat too; its work here wins.
      bots: { a: { since: 1, tool: 'pwsh' }, b: { since: 1, roomId: 'r2', tool: 'edit' } },
-@@ -70,9 +70,9 @@ test('a member at work in the group gets a row; the speaker, work elsewhere and
+@@ -70,10 +70,10 @@ test('a member at work in the group gets a row; the speaker, work elsewhere and
    }
    const busy = busyMembers(team.roomsById.r1, work, team)
    const { rows, rest } = splitBusy(busy)
 -  assert.deepEqual(plain(rows.map(entry => [entry.bot.name, entry.doing.tool, entry.doing.roomId])), [['Anvil', 'write', 'r1']])
-+  assert.deepEqual(plain(rows.map(entry => [entry.bot.name, entry.doing.tool, entry.doing.roomId])), [['Quill', null, 'r1'], ['Anvil', 'write', 'r1']])
-   assert.deepEqual(plain(rest.map(entry => [entry.bot.name, entry.state])), [['Prism', 'ask'], ['Flint', 'work']])
+-  assert.deepEqual(plain(rest.map(entry => [entry.bot.name, entry.state])), [['Prism', 'ask'], ['Flint', 'work']])
 -  assert.deepEqual(rowLabels(dock('r1', work)), ['Anvil · Writing changes…'])
+-  assert.equal(busyMembers(team.roomsById.r2, work, team).length, 2)
++  assert.deepEqual(plain(rows.map(entry => [entry.bot.name, entry.doing.tool, entry.doing.roomId])), [['Quill', null, 'r1'], ['Anvil', 'write', 'r1']])
++  assert.deepEqual(plain(rest.map(entry => [entry.bot.name, entry.state])), [['Prism', 'ask']])
 +  assert.deepEqual(rowLabels(dock('r1', work)), ['Quill · Thinking about it…', 'Anvil · Writing changes…'])
-   assert.equal(busyMembers(team.roomsById.r2, work, team).length, 2)
++  assert.deepEqual(plain(busyMembers(team.roomsById.r2, work, team).map(entry => [entry.bot.name, entry.state])), [['Flint', 'work']])
  })
  
-@@ -82,3 +82,48 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
+ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat runs', () => {
+@@ -82,3 +82,118 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
    assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
    assert.equal(dock('b', away), null)
  })
@@ -5191,19 +5302,89 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 +  const work = {
 +    bots: { a: { since: now - 11 * 60000, roomId: 'r1', tool: 'pwsh', step: 'npm test' }, b: { since: now - 3 * 60000, tool: 'mcp_custom_tool' } },
 +    rooms: { r1: [{ botId: 'a', since: now - 11 * 60000, tool: 'pwsh', speaking: true }, { botId: 'd', since: now - 2 * 60000, tool: 'grep' }] },
-+    approvals: [],
++    approvals: [{ id: 'p1', botId: 'c', roomId: 'r1', at: now - 60000 }],
 +  }
 +  // The dock's clock is a stub here, so the rows draw at a real now.
 +  const at = node => (Array.isArray(node) ? node.map(at) : node === null || typeof node !== 'object' ? node
 +    : { ...node, props: 'now' in node.props ? { ...node.props, now } : node.props, children: node.children.map(at) })
 +  const tree = expand(at(MemberDock({ sessionId: 'r1', useRoster: pick => pick(team), useWork: pick => pick(work), actions: {} })))
 +  assert.deepEqual(rowLabels(tree), ['Anvil · Running shell commands: npm test · 11m', 'Quill · Looking through files… · 2m'])
-+  // Work elsewhere is one line in the same column, never a centered event line.
++  // The rest is one line in the same column, never a centered event line; Flint's own chat
++  // is not this group's work (#553).
 +  const [line] = nodes(tree, node => String(node.props.className ?? '').includes('bt-mw-line'))
 +  assert.equal(line.type, 'button')
 +  assert.equal(nodes(tree, node => String(node.props.className ?? '').split(' ').includes('bt-event')).length, 0)
-+  assert.equal(line.props['aria-label'], 'Flint · Using mcp_custom_tool… · 3m')
-+  assert.match(textOf(line), /Flint · Using mcp_custom_tool…· 3m/)
++  assert.equal(line.props['aria-label'], 'Prism is waiting for your approval')
++  assert.doesNotMatch(textOf(tree), /Flint|mcp_custom_tool/)
++})
++
++// #553, owner report 2026-10-20 23:03: in 研发组 the dock read "Chief · Running shell
++// commands: cd … && sed -n 55,80p AGENTS.md · 1m" and the member list "… in FlyBot 交付组"
++// while Chief worked in that other group. A room shows only its own work.
++const rooms = {
++  byId: { ...team.byId, h: { id: 'h', name: 'Chief' } },
++  roomsById: {
++    dev: { id: 'dev', name: '研发组', members: ['h', 'a', 'b'] },
++    ship: { id: 'ship', name: 'FlyBot 交付组', members: ['h', 'c'] },
++    face: { id: 'face', name: 'Face', face: { roomId: 'srv1' }, members: ['h', 'a'] },
++  },
++}
++const roomDock = (sessionId, work) => expand(MemberDock({ sessionId, useRoster: pick => pick(rooms), useWork: pick => pick(work), actions: {} }))
++const memberText = (roomId, work, id) => {
++  const room = rooms.roomsById[roomId]
++  const entry = busyMembers(room, work, rooms).find(item => item.id === id)
++  return entry === undefined ? '' : textOf(MemberWork({ entry, bot: rooms.byId[id], room, actions: {}, now: Date.now() }))
++}
++const SED = 'cd /data/dsh/bot/workspace/main && sed -n 55,80p AGENTS.md'
++
++test('a Bot at work in another room shows nothing in this room or face room, not even a hint (#553)', () => {
++  const work = {
++    bots: { h: { since: 1, roomId: 'ship', tool: 'pwsh', step: SED } },
++    rooms: { ship: [{ botId: 'h', since: 1, tool: 'pwsh' }] },
++    approvals: [],
++  }
++  for (const roomId of ['dev', 'face']) {
++    assert.equal(roomDock(roomId, work), null, roomId)
++    assert.equal(busyMembers(rooms.roomsById[roomId], work, rooms).length, 0, roomId)
++  }
++  // Its own room still shows it, with the step; so does the Bot's own chat dock.
++  assert.deepEqual(rowLabels(roomDock('ship', work)), [`Chief · Running shell commands: ${SED}`])
++  assert.match(memberText('ship', work, 'h'), /sed -n 55,80p/)
++  assert.deepEqual(rowLabels(roomDock('h', work)), [`in FlyBot 交付组 · Running shell commands: ${SED}`])
++})
++
++test('a Bot busy in its own chat, or waiting for an approval elsewhere, is idle in this room (#553)', () => {
++  const work = {
++    bots: { h: { since: 1, tool: 'pwsh', step: SED } },
++    rooms: {},
++    approvals: [{ id: 'p1', botId: 'h', tool: 'pwsh', detail: { code: SED }, answerable: false }, { id: 'p2', botId: 'a', roomId: 'ship', tool: 'pwsh', answerable: true }],
++  }
++  for (const roomId of ['dev', 'face']) {
++    assert.equal(roomDock(roomId, work), null, roomId)
++    assert.equal(memberText(roomId, work, 'h'), '', roomId)
++  }
++})
++
++test('work handed out from this room with message_bot shows here with its step, and nowhere else (#553)', () => {
++  const work = {
++    bots: { h: { since: 1, tool: 'pwsh', step: 'npm test', fromRoomId: 'dev' } },
++    rooms: {},
++    approvals: [],
++  }
++  assert.deepEqual(rowLabels(roomDock('dev', work)), ['Chief · Running shell commands: npm test'])
++  assert.equal(roomDock('ship', work), null)
++  assert.equal(roomDock('face', work), null)
++  // It runs in the Bot's own chat, so the group's Stop (which stops the group turn) is not offered.
++  const room = rooms.roomsById.dev
++  const [entry] = busyMembers(room, work, rooms)
++  const stops = nodes(MemberWork({ entry, bot: rooms.byId.h, room, actions: {}, now: 0 }), node => node.props.className === 'bt-mw-stop')
++  assert.equal(stops.length, 0)
++  const local = busyMembers(room, { bots: {}, rooms: { dev: [{ botId: 'h', since: 1, tool: 'pwsh' }] }, approvals: [] }, rooms)[0]
++  assert.equal(nodes(MemberWork({ entry: local, bot: rooms.byId.h, room, actions: {}, now: 0 }), node => node.props.className === 'bt-mw-stop').length, 1)
++  // Its approval waits here too.
++  const asking = { ...work, approvals: [{ id: 'p1', botId: 'h', tool: 'pwsh', answerable: false }] }
++  assert.deepEqual(plain(busyMembers(room, asking, rooms).map(item => [item.id, item.state])), [['h', 'ask']])
++  assert.equal(busyMembers(rooms.roomsById.ship, asking, rooms).length, 0)
 +})
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js

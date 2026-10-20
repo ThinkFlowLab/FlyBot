@@ -723,7 +723,6 @@ var ZH = {
   "Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.": "你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。",
   "Turn on auto-send": "打开自动发送",
   "Approve and always auto-send in this room": "批准并在此房间始终自动发送",
-  "in its own chat": "在自己的对话里",
   Reject: "拒绝",
   "Allow once": "允许一次",
   "Always allow for this Bot": "此 Bot 始终允许",
@@ -6582,13 +6581,18 @@ var stepIn = (work, botId, roomId, tool) => {
   const own = work.bots?.[botId];
   return own?.roomId === roomId && own.tool === tool ? own.step : void 0;
 };
+var workIn = (room2, work, id) => {
+  const local = (work.rooms?.[room2.id] ?? []).find((entry) => entry.botId === id);
+  if (local) return { ...local, roomId: room2.id, step: stepIn(work, id, room2.id, local.tool) };
+  const own = work.bots?.[id];
+  return own !== void 0 && own.roomId === void 0 && own.fromRoomId === room2.id ? { ...own, roomId: room2.id, handed: true } : void 0;
+};
+var askedIn = (room2, work, id, doing) => (work.approvals ?? []).filter((entry) => entry.botId === id && (entry.roomId === room2.id || entry.roomId === void 0 && doing?.handed === true));
 function memberWork(room2, work = NO_WORK) {
-  const here = work.rooms?.[room2.id] ?? [];
   return room2.members.map((id) => {
-    const approvals = (work.approvals ?? []).filter((entry) => entry.botId === id);
-    const local = here.find((entry) => entry.botId === id);
-    const doing = local ? { ...local, roomId: room2.id, step: stepIn(work, id, room2.id, local.tool) } : work.bots?.[id];
-    return { id, approvals, doing, here: local !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
+    const doing = workIn(room2, work, id);
+    const approvals = askedIn(room2, work, id, doing);
+    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
   });
 }
 function busyMembers(room2, work, roster) {
@@ -6743,7 +6747,7 @@ function ApprovalCard({ approval, bot, actions }) {
     )
   );
 }
-function MemberWork({ entry, bot, room: room2, roster, actions, now }) {
+function MemberWork({ entry, bot, room: room2, actions, now }) {
   const [stopping, setStopping] = (0, import_react11.useState)(false);
   if (entry.state === "ask") {
     return (0, import_react11.createElement)(
@@ -6754,7 +6758,6 @@ function MemberWork({ entry, bot, room: room2, roster, actions, now }) {
     );
   }
   if (entry.state !== "work") return null;
-  const where = entry.doing.roomId === room2.id ? "" : entry.doing.roomId ? t("in {name}", { name: roster.roomsById[entry.doing.roomId]?.name ?? t("a group chat") }) : t("in its own chat");
   const stop = () => {
     setStopping(true);
     void Promise.resolve(actions.stopMemberWork(room2.id, bot.id)).catch((error) => actions.reportError(error, "stop")).finally(() => setStopping(false));
@@ -6765,8 +6768,8 @@ function MemberWork({ entry, bot, room: room2, roster, actions, now }) {
     (0, import_react11.createElement)(
       "div",
       { className: "bt-mw-state bt-mw-work" },
-      (0, import_react11.createElement)("span", null, (0, import_react11.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : "", since(now, entry.doing.since)),
-      entry.here ? (0, import_react11.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
+      (0, import_react11.createElement)("span", null, (0, import_react11.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), since(now, entry.doing.since)),
+      entry.here && entry.doing.handed !== true ? (0, import_react11.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
     )
   );
 }

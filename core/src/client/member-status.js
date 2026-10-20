@@ -6,9 +6,11 @@ import { t } from './i18n.js'
 
 // -------------------------------------------------------------------------
 // What a group's members are doing: above the group's composer, a row for each member
-// at work in this group and a line for those busy elsewhere or waiting for an approval;
-// above a Bot's own composer, the groups it is at work in; and per member in the
-// details panel, where the approvals their group turns wait on are answered.
+// at work in this group and a line for those waiting for an approval here; above a Bot's
+// own composer, the groups it is at work in; and per member in the details panel, where
+// the approvals their group turns wait on are answered. A group (or face room) shows only
+// its own work (#553): a Bot busy in another room or its own chat is idle here, and that
+// room's steps never show in this one, whose members can be other people.
 
 const NO_WORK = { bots: {}, rooms: {}, approvals: [] }
 const ROWS_MAX = 4
@@ -20,14 +22,24 @@ const stepIn = (work, botId, roomId, tool) => {
   return own?.roomId === roomId && own.tool === tool ? own.step : undefined
 }
 
-// Work in this group wins over the Bot's own chat or another group.
+// A Bot's work for this room: its turn here, else its own chat's turn handed out from here
+// with message_bot (the host's `fromRoomId`).
+const workIn = (room, work, id) => {
+  const local = (work.rooms?.[room.id] ?? []).find(entry => entry.botId === id)
+  if (local) return { ...local, roomId: room.id, step: stepIn(work, id, room.id, local.tool) }
+  const own = work.bots?.[id]
+  return own !== undefined && own.roomId === undefined && own.fromRoomId === room.id ? { ...own, roomId: room.id, handed: true } : undefined
+}
+
+// An approval is this room's when its turn runs here, or is the own-chat turn handed out from here.
+const askedIn = (room, work, id, doing) => (work.approvals ?? [])
+  .filter(entry => entry.botId === id && (entry.roomId === room.id || (entry.roomId === undefined && doing?.handed === true)))
+
 export function memberWork(room, work = NO_WORK) {
-  const here = work.rooms?.[room.id] ?? []
   return room.members.map((id) => {
-    const approvals = (work.approvals ?? []).filter(entry => entry.botId === id)
-    const local = here.find(entry => entry.botId === id)
-    const doing = local ? { ...local, roomId: room.id, step: stepIn(work, id, room.id, local.tool) } : work.bots?.[id]
-    return { id, approvals, doing, here: local !== undefined, state: approvals.length > 0 ? 'ask' : doing ? 'work' : 'idle' }
+    const doing = workIn(room, work, id)
+    const approvals = askedIn(room, work, id, doing)
+    return { id, approvals, doing, here: doing !== undefined, state: approvals.length > 0 ? 'ask' : doing ? 'work' : 'idle' }
   })
 }
 
@@ -85,7 +97,8 @@ function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
     elapsed ? h('span', { className: 'bt-mw-row-time' }, `· ${elapsed}`) : null)
 }
 
-// The rest, in the rows' column and shape: who waits for an approval, then who works elsewhere.
+// The rest, in the rows' column and shape: who waits for an approval here, then who works
+// here past the rows.
 function SummaryLine({ busy, now, onOpen }) {
   const { waiting, doing } = summaryText(busy)
   const elapsed = doing ? elapsedSince(now, busy.find(entry => entry.state === 'work')?.doing.since) : ''
@@ -189,9 +202,10 @@ function ApprovalCard({ approval, bot, actions }) {
         h('button', { type: 'button', className: 'bt-q-btn', onClick: () => actions.openSession(bot.id) }, t("Open {name}'s chat", { name: bot.name }))))
 }
 
-// Under a member's row in the group's details: what it is doing, and where. Work in
-// this group can be stopped here, since the user cannot reach its Session otherwise.
-export function MemberWork({ entry, bot, room, roster, actions, now }) {
+// Under a member's row in the group's details: what it is doing for this group. Its turn in
+// the group can be stopped here, since the user cannot reach that Session otherwise; work
+// handed out from here runs in the Bot's own chat, which has its own Stop.
+export function MemberWork({ entry, bot, room, actions, now }) {
   const [stopping, setStopping] = useState(false)
   if (entry.state === 'ask') {
     return h('div', { className: 'bt-mw-member' },
@@ -199,9 +213,6 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
       entry.approvals.map(approval => h(ApprovalCard, { key: approval.id, approval, bot, actions })))
   }
   if (entry.state !== 'work') return null
-  const where = entry.doing.roomId === room.id ? ''
-    : entry.doing.roomId ? t('in {name}', { name: roster.roomsById[entry.doing.roomId]?.name ?? t('a group chat') })
-      : t('in its own chat')
   const stop = () => {
     setStopping(true)
     void Promise.resolve(actions.stopMemberWork(room.id, bot.id))
@@ -210,8 +221,8 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
   }
   return h('div', { className: 'bt-mw-member' },
     h('div', { className: 'bt-mw-state bt-mw-work' },
-      h('span', null, h(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : '', since(now, entry.doing.since)),
-      entry.here ? h('button', { type: 'button', className: 'bt-mw-stop', disabled: stopping, onClick: stop }, t('Stop')) : null))
+      h('span', null, h(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), since(now, entry.doing.since)),
+      entry.here && entry.doing.handed !== true ? h('button', { type: 'button', className: 'bt-mw-stop', disabled: stopping, onClick: stop }, t('Stop')) : null))
 }
 
 export function useMemberWork(room, useWork) {

@@ -527,7 +527,9 @@ export function install(rt) {
         .filter(option => option.label !== '')
         .slice(0, 6)
       if (options.length === 0) return 'Give at least one option.'
-      const handed = handedFromGroup(id)
+      // Work handed out from a group (turns.js): the user handed it out there, so a question
+      // about it is asked there too, never in the Bot's own chat (#550).
+      const handed = rt.handedFromGroup(id)
       if (handed !== undefined) return askInGroup(handed, args, options, exec)
       // A hidden Bot-to-Bot turn shows none of its calls, so its card goes to the
       // composer dock, which takes questions without a call.
@@ -548,18 +550,6 @@ export function install(rt) {
       return 'The card is on screen; the user\'s answer arrives as their next message.'
     },
   }))
-
-  // Work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own chat,
-  // and its reply goes back to that member's Session in the group (turns.js). The user handed the
-  // work out there, so a question about it is asked there too, never in the Bot's own chat (#550).
-  const handedFromGroup = (sessionId) => {
-    if (!rt.chatOwners.has(sessionId)) return undefined
-    const info = rt.live.get(sessionId)?.info
-    if (info?.role !== 'request' || info.audience === 'user' || info.remote !== undefined) return undefined
-    const room = rt.roomOf(info.senderRoomId)
-    if (room?.sessions?.[info.senderSessionId] === undefined) return undefined
-    return { room, info }
-  }
 
   // The card sits in the group's composer dock, named for the Bot that asks. One card per group:
   // while another Bot's waits there, this one asks in its reply, which goes back to the group.

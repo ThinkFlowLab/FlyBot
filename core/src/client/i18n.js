@@ -667,7 +667,6 @@ const ZH = {
   'Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.': '你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。',
   'Turn on auto-send': '打开自动发送',
   'Approve and always auto-send in this room': '批准并在此房间始终自动发送',
-  'in its own chat': '在自己的对话里',
   Reject: '拒绝',
   'Allow once': '允许一次',
   'Always allow for this Bot': '此 Bot 始终允许',
