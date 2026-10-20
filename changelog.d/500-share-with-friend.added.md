@@ -1,1 +1,0 @@
-Share a Bot with an existing friend in one click from Sharing (no invite link); the new share appears in People with access and can be Revoked or declined as usual ([#500](https://github.com/ThinkFlowLab/FlyBot/issues/500)).

@@ -1,1 +1,0 @@
-The Agent inbox now lists a turn of your own Bot that failed under **Needs you**, with the reason, until the Bot finishes a turn in that chat again, from the same events as the finished/failed notifications; and each inbox card shows a one-line **Latest:** row with what happened last in its chat ([#471](https://github.com/ThinkFlowLab/FlyBot/issues/471)).

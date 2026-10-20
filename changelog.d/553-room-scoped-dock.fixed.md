@@ -1,1 +1,0 @@
-Group chats and face rooms: the status rows above the message box and the member list show only work in that room, including work handed out from it. A Bot busy in another group or its own chat no longer shows there, and that room's commands no longer appear in a room with different members ([#553](https://github.com/ThinkFlowLab/FlyBot/issues/553)).

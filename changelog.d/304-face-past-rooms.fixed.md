@@ -1,1 +1,0 @@
-Past rooms list everyone who was in a face-to-face room (a home that stayed no longer drops the person who left), each row shows when the room ended, clicking anywhere on the row opens it, and the Past rooms fold stays open or closed across a reload ([#304](https://github.com/ThinkFlowLab/FlyBot/issues/304)).

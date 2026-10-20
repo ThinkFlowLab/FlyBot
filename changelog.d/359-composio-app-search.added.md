@@ -1,1 +1,0 @@
-Settings → Connectors: pick Composio apps by searching Composio's app list instead of typing app names, and see for each picked app whether it is ready or still needs a sign-in ([#359](https://github.com/ThinkFlowLab/FlyBot/issues/359)).

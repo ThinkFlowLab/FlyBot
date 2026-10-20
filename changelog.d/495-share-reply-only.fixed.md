@@ -1,1 +1,0 @@
-**People with access** keeps listing a friend after the two of you joined each other's invite, so the owner can still see and **Revoke** that share on both homes; FlyBot now uses Bot Social's `reply_only` mark to tell a real share from a talk-through grant ([#495](https://github.com/ThinkFlowLab/FlyBot/issues/495)).

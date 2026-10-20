@@ -1,1 +1,0 @@
-A guide, [Set a DeepSeek API key](docs/deepseek-api-key.md), explains the ways to give DeepSeek Harness your key (the key dialog, its credentials file, or `DEEPSEEK_API_KEY`), and the missing-key error and the no-model setup choices link to it ([#451](https://github.com/ThinkFlowLab/FlyBot/issues/451)).

@@ -1,1 +1,0 @@
-Face-to-face rooms: a friend's plain line is now answered like your own: your Bots decide who answers it (usually one, the Bot that spoke last first), and a Bot's @mention in its answer no longer calls another Bot on, so Bots in two homes cannot set each other off ([#462](https://github.com/ThinkFlowLab/FlyBot/issues/462)).
