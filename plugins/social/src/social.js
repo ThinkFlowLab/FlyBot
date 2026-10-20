@@ -881,6 +881,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // relationship, the Bot is one this friendship covers, and the grantee is a Bot the friend
   // shared with us. It is not us sharing that Bot (#178).
   function isTalkThroughGrant(member, grant, homes = remote.homes) {
+    // Bot Social marks the talk-through grant `reply_only`; when it says so, that is the only rule, so a
+    // real share in a relationship both homes joined (a regrant through the second invite) stays listed
+    // and revocable (#495). The guess below is for servers that do not send the field.
+    if (typeof grant.replyOnly === 'boolean') return grant.replyOnly
     const rid = grant.relationshipId
     const grantee = memberHandleOf(grant.grantee)
     if (!rid || !grantee || !member?.handle || !settings.inboundBots?.[grantee]) return false
@@ -1161,6 +1165,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       else revoking.delete(botId)
     }
   }
+  // Per Bot, the grant ids Bot Social confirmed as full shares (`reply_only: false`) at the last sync (#495).
+  const confirmedShares = new Map()
   // `only`: one Bot's grants (an open People with access refreshes just that Bot). `roster`: the
   // friends' homes to classify talk-through grants against, when they are newer than `remote`.
   // Resolves true only when every Bot's grants were listed and stored; a failure is warned, not thrown.
@@ -1198,6 +1204,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           }
         }).filter(Boolean)
         await flybot.grants.set(bot.id, [...people, ...roomScoped])
+        confirmedShares.set(bot.id, new Set(listed.filter(grant => grant.replyOnly === false && grant.id).map(grant => grant.id)))
       } catch (error) {
         ok = false
         warn(`${bot.name} grants not synced`, error)
@@ -1737,6 +1744,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const live = config.facePollMs > 0 ? config.facePollMs : 4_000
     return hasLiveFace() ? Math.min(live, idle) : idle
   }
+  // When the inbox was last asked for, so the watched poll below does not double the shared timer's.
+  let inboxAt = 0
+  const pollInboxNow = () => { inboxAt = now(); return pollInbox() }
   let pollTimer
   let lastPollMs
   function armSocialPoll() {
@@ -1746,13 +1756,25 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     lastPollMs = ms
     if (!(ms > 0)) return
     pollTimer = every(() => {
-      void pollInbox().catch(() => {})
+      void pollInboxNow().catch(() => {})
       void pollFaceRooms().then(() => armSocialPoll()).catch(() => armSocialPoll())
       if (now() - fetchedAt >= REMOTE_TTL_MS) void remoteBots({ fresh: true }).catch(() => {})
     }, ms)
   }
   disposers.push(() => { if (pollTimer) clear(pollTimer) })
   armSocialPoll()
+  // While a FlyBot window is on screen (#497, `flybot.watched`), the inbox is also read at the live
+  // cadence: a friend's first line, the held reply's approval card and the Inbox count reach the open
+  // window within seconds, not up to one idle poll (15 s) later. With no window open only the idle poll
+  // runs, and a tick that the shared timer already covers (a live face room) is skipped.
+  const watchMs = config.facePollMs > 0 ? config.facePollMs : 4_000
+  if (config.inboxPollMs > watchMs) {
+    const watchTimer = every(() => {
+      if (flybot.watched?.() !== true || lastPollMs <= watchMs || now() - inboxAt < watchMs / 2) return
+      void pollInboxNow().catch(() => {})
+    }, watchMs)
+    disposers.push(() => clear(watchTimer))
+  }
 
   // ------------------------------------------------------------ model tools (every local Bot)
   disposers.push(flybot.tools.register({
@@ -2047,7 +2069,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // A grant to a Bot shared with us, in a relationship not recorded as joined here, may be a
       // talk-through grant from a join made before that record (#383): it keeps a row of its own, so
       // Revoke on the person's row never takes it along and breaks that chat (Codex P1 on #387).
-      const toInbound = Boolean(settings.inboundBots?.[memberHandleOf(grant.grantee)])
+      // A grant Bot Social confirmed as a full share is never unsure (#495).
+      const toInbound = Boolean(settings.inboundBots?.[memberHandleOf(grant.grantee)]) && !confirmedShares.get(botId)?.has(grant.id)
       const unsure = toInbound && !(grant.relationshipId && settings.joinedRelationships?.[grant.relationshipId])
       const key = unsure ? `grant:${grant.id}` : (norm(grantee) || String(grant.id))
       const rooms = roomsUsing(botId, view.member || grant.grantee)

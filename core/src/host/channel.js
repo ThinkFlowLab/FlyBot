@@ -24,6 +24,12 @@ export function install(rt) {
 
   // The DSH interface language of the last browser that asked for the team.
   let uiLocale
+  // When a window on screen last read the team (#497). A visible window asks every 1.5 s, a hidden one
+  // every 10 s and says so (`watching: false`); a plugin that polls a remote inbox reads it faster while
+  // someone watches (flybot.watched), so a friend's line and its held reply reach the open window live.
+  const WATCH_MS = 8_000
+  let watchedAt = 0
+  rt.watched = () => Date.now() - watchedAt < WATCH_MS
   rt.uiLanguage = () => (uiLocale === undefined ? 'English' : LANGUAGES[uiLocale.split('-')[0].toLowerCase()] ?? uiLocale)
 
   const ok = value => ({ ok: true, value })
@@ -188,6 +194,7 @@ export function install(rt) {
       switch (endpoint) {
         case 'state':
           if (typeof body.locale === 'string' && /^[a-z]{2,3}(-[\w-]+)?$/i.test(body.locale)) uiLocale = body.locale
+          if (body.watching !== false) watchedAt = Date.now()
           if (readOnly === undefined) await rt.bootstrap()
           await rt.catalog()
           await rt.loadSecrets()

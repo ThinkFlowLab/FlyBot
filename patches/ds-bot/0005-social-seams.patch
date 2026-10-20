@@ -231,11 +231,17 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
  
-@@ -21,14 +21,15 @@ export function install(rt) {
+@@ -21,14 +21,21 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
 -  rt.uiLanguage = () => (uiLocale === undefined ? undefined : LANGUAGES[uiLocale.split('-')[0].toLowerCase()] ?? uiLocale)
++  // When a window on screen last read the team (#497). A visible window asks every 1.5 s, a hidden one
++  // every 10 s and says so (`watching: false`); a plugin that polls a remote inbox reads it faster while
++  // someone watches (flybot.watched), so a friend's line and its held reply reach the open window live.
++  const WATCH_MS = 8_000
++  let watchedAt = 0
++  rt.watched = () => Date.now() - watchedAt < WATCH_MS
 +  rt.uiLanguage = () => (uiLocale === undefined ? 'English' : LANGUAGES[uiLocale.split('-')[0].toLowerCase()] ?? uiLocale)
  
    const ok = value => ({ ok: true, value })
@@ -379,7 +385,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,43 @@ export function install(rt) {
+@@ -97,28 +97,44 @@ export function install(rt) {
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -409,6 +415,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
        switch (endpoint) {
          case 'state':
            if (typeof body.locale === 'string' && /^[a-z]{2,3}(-[\w-]+)?$/i.test(body.locale)) uiLocale = body.locale
++          if (body.watching !== false) watchedAt = Date.now()
            if (readOnly === undefined) await rt.bootstrap()
            await rt.catalog()
            await rt.loadSecrets()
