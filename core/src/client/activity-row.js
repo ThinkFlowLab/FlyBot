@@ -150,7 +150,7 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   const entries = useMemo(() => Object.values(JSON.parse(liveKey)), [liveKey])
   const streaming = entries.some(entry => entry.text)
   const tools = entries.filter(entry => !entry.text).sort((a, b) => a.at - b.at)
-  // Group chats show who is typing on their own while members speak.
+  // While members speak, the member dock shows each one at work (member-status.js).
   const relaying = tools.some(entry => entry.relay)
   // A friend's chat (#443): my message leaves in one short turn and the reply comes back in
   // another, so the row stays up from the send until the reply lands, with the friend's Bot mark.

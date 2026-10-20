@@ -388,6 +388,23 @@ diff --git a/client.js b/client.js
    "Stopped by": "叫停者：",
    "{count} messages with": "{count} 条消息，来自",
    "Routine started": "例行任务开始",
+@@ -468,6 +468,8 @@ var ZH = {
+   "Working out a plan": "理一下思路",
+   "Sorting out the details": "梳理细节",
+   "On it": "在做了",
++  "Using {tool}": "使用 {tool}",
++  "{action}: {detail}": "{action}：{detail}",
+   "Busy with it": "正在处理",
+   "Moving ahead": "推进中",
+   "Taking care of it": "处理中",
+@@ -495,7 +495,6 @@ var ZH = {
+   "Looking back through the chat": "翻看聊天记录",
+   "{name} looked up its own chat": "{name} 查看了自己的对话",
+   "{name} looked up its own chat for “{text}”": "{name} 在自己的对话里查找「{text}」",
+-  "{name} is typing…": "{name} 正在输入…",
+   "{name} didn't answer in time": "{name} 没有及时回应",
+   "{name} paused for your approval": "{name} 停下来等你批准",
+   "{name} started on it": "{name} 开始做了",
 @@ -506,9 +506,19 @@ var ZH = {
    "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
    "A Bot": "一个 Bot",
@@ -1043,6 +1060,7 @@ diff --git a/client.js b/client.js
 -      value = resolved;
 -      for (const listener of [...listeners2]) listener();
 -    }
+-  };
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -1079,7 +1097,21 @@ diff --git a/client.js b/client.js
 +      document.documentElement.removeEventListener("pointerleave", onLeave);
 +    };
 +  }, [enabled]);
-+}
+ }
+-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+-var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
+-function indexRoster(value) {
+-  const byId = {};
+-  for (const bot of value.bots) {
+-    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+-  }
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1105,30 +1137,35 @@ diff --git a/client.js b/client.js
 +    onAnimationEnd: poked ? (event) => {
 +      if (/^bt-poke/.test(event.animationName)) setPoked(false);
 +    } : void 0
-   };
++  };
 +  if (look.image) return (0, import_react.createElement)("span", common, (0, import_react.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
 +  if (look.emoji) {
 +    return (0, import_react.createElement)("span", common, (0, import_react.createElement)("span", {
 +      className: "bt-mark-emoji",
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
-+  }
+   }
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
  }
--var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
--var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
--function indexRoster(value) {
--  const byId = {};
--  for (const bot of value.bots) {
--    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
-+}
+ }
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
 +var personInitial = (name) => (Array.from(String(name ?? "").trim())[0] ?? "").toUpperCase();
 +var personColor = (name) => defaultColor(`person:${String(name ?? "").trim().toLowerCase()}`);
 +function PersonMark({ size = 22, name }) {
@@ -1141,13 +1178,7 @@ diff --git a/client.js b/client.js
 +      "aria-hidden": true
 +    }, initial);
    }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
+-  return { ...state, [sessionId]: own };
 +  return (0, import_react.createElement)(
 +    "span",
 +    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
@@ -1158,10 +1189,93 @@ diff --git a/client.js b/client.js
 +      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
 +    )
 +  );
-+}
+ }
+-
+-// src/client/themes.js
+-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+-var THEMES = {
+-  deepseek: {
+-    label: "DeepSeek",
+-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+-  },
+-  mono: {
+-    label: "Mono",
+-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+-  },
+-  paper: {
+-    label: "Paper",
+-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+-  },
+-  moonlight: {
+-    label: "Moonlight",
+-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
+-  }
+-};
+-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+-function themeVars(mode, dark, accent = mode.accent) {
+-  return {
+-    "--bt-ink": mode.text,
+-    "--bt-ink-2": rgba(mode.text, 0.6),
+-    "--bt-ink-3": rgba(mode.text, 0.36),
+-    "--bt-bubble": mode.bubble,
+-    "--bt-sidebar": mode.sidebar,
+-    "--bt-main": mode.bg,
+-    "--bt-card": mode.card,
+-    "--bt-line": rgba(mode.text, 0.08),
+-    "--bt-line-2": rgba(mode.text, 0.15),
+-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+-    "--bt-accent": accent,
+-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+-    "--bt-user": mode.user,
+-    "--bt-user-ink": mode.userText,
+-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+-    "--bt-tag-ink": rgba(mode.text, 0.58)
+-  };
 +function AdminStar() {
 +  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
-+}
+ }
+-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+-${theme.css ?? ""}`;
+-var shellTokens = ({ light, dark }) => ({
+-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+-});
+-var customThemes = {};
+-var registry = createSource(0);
+-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+-function registerShape(id, shape) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+-  const at = shape.eyes?.at;
+-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+-  const previous = SHAPES[id];
+-  SHAPES[id] = {
+-    label: String(shape.label ?? id),
+-    size,
+-    body: shape.body,
+-    eyes,
+-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+-  };
+-  const refresh = () => {
+-    markupCache.clear();
+-    maskCache.delete(id);
+-    registry.set((value) => value + 1);
+-  };
+-  refresh();
 +function MainStar() {
 +  return (0, import_react.createElement)(
 +    "svg",
@@ -1207,15 +1321,10 @@ diff --git a/client.js b/client.js
 +    const size = frame * 5 / 9;
 +    const rest = frame - size;
 +    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-   }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
++  }
 +  const half = frame / 2;
 +  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function roomAvatarPeople(room2, roster) {
 +  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
 +  const seen = new Set(members.map((bot) => bot.id));
@@ -1248,13 +1357,7 @@ diff --git a/client.js b/client.js
 +  }
 +  if (members.length === 1 && remotes.length === 0) return [members[0], null];
 +  return [...members, ...remotes];
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
++}
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people2 = roomAvatarPeople(room2, roster);
 +  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
@@ -1266,8 +1369,7 @@ diff --git a/client.js b/client.js
 +      people2.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 +      people2.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people2.length - 3}`) : null
 +    );
-   }
--  return { ...state, [sessionId]: own };
++  }
 +  const seats = clusterSeats(Math.min(people2.length, 4), size);
 +  const overflow = people2.length > 4 ? people2.length - 3 : 0;
 +  const gap = size / 14;
@@ -1286,97 +1388,15 @@ diff --git a/client.js b/client.js
 +      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 +    })
 +  );
- }
- 
--// src/client/themes.js
--var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
--var THEMES = {
--  deepseek: {
--    label: "DeepSeek",
--    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
--    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
--  },
--  mono: {
--    label: "Mono",
--    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
--    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
--  },
--  paper: {
--    label: "Paper",
--    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
--    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
--  },
--  moonlight: {
--    label: "Moonlight",
--    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
--    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
++}
++
 +// src/client/approval-claims.js
 +var claims = /* @__PURE__ */ new Map();
 +var claimListeners = /* @__PURE__ */ new Set();
 +var openChats = /* @__PURE__ */ new Map();
 +var changed = () => {
 +  for (const fn of [...claimListeners]) fn();
- };
--var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
--function themeVars(mode, dark, accent = mode.accent) {
--  return {
--    "--bt-ink": mode.text,
--    "--bt-ink-2": rgba(mode.text, 0.6),
--    "--bt-ink-3": rgba(mode.text, 0.36),
--    "--bt-bubble": mode.bubble,
--    "--bt-sidebar": mode.sidebar,
--    "--bt-main": mode.bg,
--    "--bt-card": mode.card,
--    "--bt-line": rgba(mode.text, 0.08),
--    "--bt-line-2": rgba(mode.text, 0.15),
--    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
--    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
--    "--bt-accent": accent,
--    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
--    "--bt-user": mode.user,
--    "--bt-user-ink": mode.userText,
--    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
--    "--bt-tag-ink": rgba(mode.text, 0.58)
--  };
--}
--var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
--var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
--html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
--${theme.css ?? ""}`;
--var shellTokens = ({ light, dark }) => ({
--  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
--  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
--  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
--  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
--  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
--  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
--});
--var customThemes = {};
--var registry = createSource(0);
--var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
--function registerShape(id, shape) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
--  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
--  const at = shape.eyes?.at;
--  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
--  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
--  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
--  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
--  const previous = SHAPES[id];
--  SHAPES[id] = {
--    label: String(shape.label ?? id),
--    size,
--    body: shape.body,
--    eyes,
--    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
--  };
--  const refresh = () => {
--    markupCache.clear();
--    maskCache.delete(id);
--    registry.set((value) => value + 1);
--  };
--  refresh();
++};
 +function chatOpened(sessionId, delta) {
 +  const count = (openChats.get(sessionId) ?? 0) + delta;
 +  if (count > 0) openChats.set(sessionId, count);
@@ -1797,11 +1817,35 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1597,14 +1597,21 @@ function commRunOf(order, peers, turn, hiddenTurns = []) {
+@@ -1573,60 +1573,246 @@ function relaysBefore(contexts, steps, step) {
+       break;
+     }
    }
-   return { count, peerIds };
- }
--function previewOf(list, id, hiddenTurns = []) {
+-  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
++  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
++}
++function commRunOf(order, peers, turn, hiddenTurns = []) {
++  const turns = [];
++  for (const entry of order) {
++    const peer = peers[entry];
++    const hidden = hiddenTurns.includes(entry);
++    if (hidden && peer === void 0) continue;
++    turns.push({ turn: entry, peer, hidden });
++  }
++  const at = turns.findIndex((entry) => entry.turn === turn);
++  if (at === -1 || turns[at].peer === void 0) return null;
++  const previous = turns[at - 1];
++  if (previous?.peer !== void 0 && previous.hidden) return "folded";
++  let count = 0;
++  const peerIds = [];
++  for (let index = at; index < turns.length; index += 1) {
++    const entry = turns[index];
++    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
++    count += entry.hidden ? 2 : 1;
++    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
++  }
++  return { count, peerIds };
++}
 +function heldReplyOf(bot, sessionId, turn) {
 +  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : [];
 +  let found;
@@ -1810,22 +1854,32 @@ diff --git a/client.js b/client.js
 +}
 +var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
 +function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
-   const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
-   if (!Array.isArray(outline)) return "";
-   for (let index = outline.length - 1; index >= 0; index -= 1) {
-     const entry = outline[index];
-     if (hiddenTurns.includes(entry.turn)) continue;
--    const text = entry.response || entry.prompt || "";
--    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
++  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
++  if (!Array.isArray(outline)) return "";
++  for (let index = outline.length - 1; index >= 0; index -= 1) {
++    const entry = outline[index];
++    if (hiddenTurns.includes(entry.turn)) continue;
 +    const text = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
 +    if (text !== "") return stripTrace(stripHeader(text)).replace(/\s+/g, " ").trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, "");
-   }
-   return "";
- }
-@@ -1624,9 +1624,188 @@ function usageOf(list, ids) {
-   const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
-   return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
- }
++  }
++  return "";
++}
++var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
++function usageOf(list, ids) {
++  let input = 0;
++  let cacheRead = 0;
++  let output = 0;
++  for (const id of ids) {
++    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
++    if (!usage) continue;
++    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
++    cacheRead += usage.cacheReadTokens ?? 0;
++    output += usage.outputTokens ?? 0;
++  }
++  if (input + output === 0) return "";
++  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
++  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
++}
 +function faceRowTitle(title) {
 +  const text = String(title ?? "");
 +  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
@@ -1885,7 +1939,26 @@ diff --git a/client.js b/client.js
 +    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  }
 +  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
-+}
+ }
+-function commRunOf(order, peers, turn, hiddenTurns = []) {
+-  const turns = [];
+-  for (const entry of order) {
+-    const peer = peers[entry];
+-    const hidden = hiddenTurns.includes(entry);
+-    if (hidden && peer === void 0) continue;
+-    turns.push({ turn: entry, peer, hidden });
+-  }
+-  const at = turns.findIndex((entry) => entry.turn === turn);
+-  if (at === -1 || turns[at].peer === void 0) return null;
+-  const previous = turns[at - 1];
+-  if (previous?.peer !== void 0 && previous.hidden) return "folded";
+-  let count = 0;
+-  const peerIds = [];
+-  for (let index = at; index < turns.length; index += 1) {
+-    const entry = turns[index];
+-    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
+-    count += entry.hidden ? 2 : 1;
+-    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
@@ -1897,9 +1970,18 @@ diff --git a/client.js b/client.js
 +    const count = (own[callId] ?? 0) + delta;
 +    if (count > 0) own[callId] = count;
 +    else delete own[callId];
-+  }
+   }
+-  return { count, peerIds };
 +  return { ...state, [sessionId]: own };
-+}
+ }
+-function previewOf(list, id, hiddenTurns = []) {
+-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-  if (!Array.isArray(outline)) return "";
+-  for (let index = outline.length - 1; index >= 0; index -= 1) {
+-    const entry = outline[index];
+-    if (hiddenTurns.includes(entry.turn)) continue;
+-    const text = entry.response || entry.prompt || "";
+-    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
 +
 +// src/client/themes.js
 +var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
@@ -1923,7 +2005,8 @@ diff --git a/client.js b/client.js
 +    label: "Moonlight",
 +    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 +    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
-+  }
+   }
+-  return "";
 +};
 +var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 +function themeVars(mode, dark, accent = mode.accent) {
@@ -1946,7 +2029,18 @@ diff --git a/client.js b/client.js
 +    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
 +    "--bt-tag-ink": rgba(mode.text, 0.58)
 +  };
-+}
+ }
+-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+-function usageOf(list, ids) {
+-  let input = 0;
+-  let cacheRead = 0;
+-  let output = 0;
+-  for (const id of ids) {
+-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+-    if (!usage) continue;
+-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+-    cacheRead += usage.cacheReadTokens ?? 0;
+-    output += usage.outputTokens ?? 0;
 +var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 +var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
 +html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
@@ -1994,7 +2088,10 @@ diff --git a/client.js b/client.js
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
 +    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-+  }
+   }
+-  if (input + output === 0) return "";
+-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 +  const previous = customThemes[id];
 +  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
 +  registry3.set((value) => value + 1);
@@ -2003,7 +2100,7 @@ diff --git a/client.js b/client.js
 +    else delete customThemes[id];
 +    registry3.set((value) => value + 1);
 +  };
-+}
+ }
 +var allThemes = () => ({ ...THEMES, ...customThemes });
  
  // src/client/motion.js
@@ -4276,7 +4373,15 @@ diff --git a/client.js b/client.js
  }
  var PHRASES = {
    thinking: ["Thinking about it", "Weighing the options", "Working out a plan", "Sorting out the details"],
-@@ -4324,15 +4324,15 @@ function workPhrase(tool) {
+@@ -4320,19 +4320,22 @@ function toolActivity(name, arg, findBot, self) {
+ }
+ function workPhrase(tool) {
+   if (!tool) return t("Thinking about it");
+-  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("On it");
++  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("Using {tool}", { tool });
++}
++function workText(tool, step) {
++  return step ? t("{action}: {detail}", { action: workPhrase(tool), detail: step }) : `${workPhrase(tool)}…`;
  }
  function useLiveNote(actions, sessionId, id, entry) {
    const key = entry ? JSON.stringify(entry) : "";
@@ -4287,17 +4392,36 @@ diff --git a/client.js b/client.js
      return () => actions.noteLive(sessionId, id, null);
    }, [sessionId, id, key]);
  }
- function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
+-function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
 -  const [live, setLive] = (0, import_react6.useState)({ replies: [], speaking: null });
 -  (0, import_react6.useEffect)(() => {
-+  const [live, setLive] = (0, import_react8.useState)({ replies: [], speaking: null });
++function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
++  const [live, setLive] = (0, import_react8.useState)({ replies: [] });
 +  (0, import_react8.useEffect)(() => {
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4366,66 +4366,93 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
-   const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
-   if (replies.length === 0 && pending.length === 0) return null;
+@@ -4341,10 +4341,10 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+       const result = await actions.roomProgress(sessionId);
+       if (stop) return;
+       const entry = (result ?? []).find((item) => item.callId === callId) ?? (result ?? [])[0];
+-      const key = entry ? JSON.stringify([entry.replies, entry.speaking]) : "";
++      const key = entry ? JSON.stringify(entry.replies) : "";
+       if (entry && key !== seen) {
+         seen = key;
+-        setLive({ replies: entry.replies ?? [], speaking: entry.speaking ?? null });
++        setLive({ replies: entry.replies ?? [] });
+       }
+       timer = setTimeout(tick, document.hidden ? 5e3 : 1e3);
+     };
+@@ -4362,71 +4362,86 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+       replies = [];
+     }
+   }
+-  const pending = done || !live.speaking ? [] : [live.speaking];
+-  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
+-  if (replies.length === 0 && pending.length === 0) return null;
++  if (replies.length === 0) return null;
    const room2 = roster.roomsById[sessionId];
 -  return (0, import_react6.createElement)(
 +  return (0, import_react8.createElement)(
@@ -4374,12 +4498,22 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
+-    }),
+-    pending.map((id) => {
+-      const bot = roster.byId[id];
+-      if (!bot) return null;
+-      return (0, import_react6.createElement)(
+-        "div",
+-        { key: `pending-${id}`, className: "bt-activity" },
+-        (0, import_react6.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
+-        (0, import_react6.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
+-      );
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
 +      if (remote) {
 +        return (0, import_react8.createElement)(RemoteMessage, {
@@ -4394,21 +4528,9 @@ diff --git a/client.js b/client.js
 +        });
 +      }
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
-     }),
-     pending.map((id) => {
-       const bot = roster.byId[id];
-       if (!bot) return null;
--      return (0, import_react6.createElement)(
-+      return (0, import_react8.createElement)(
-         "div",
-         { key: `pending-${id}`, className: "bt-activity" },
--        (0, import_react6.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
--        (0, import_react6.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
-+        (0, import_react8.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
-+        (0, import_react8.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
-       );
      })
    );
+ }
 @@ -4435,52 +4435,52 @@ var CARDS = /* @__PURE__ */ new Set(["ask_user", "request_secret"]);
  function callTree(root) {
    const calls = [];
@@ -4441,7 +4563,7 @@ diff --git a/client.js b/client.js
 -  const tool = toolName(call2);
 -  const done = call2.kind === "tool-result";
 -  const { text: arg, value: argValue } = toolArgs(call2);
-+function renderCall(call4, { sessionId, roster, actions, useUi, useWork, findBot }) {
++function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
 +  const tool = toolName(call4);
 +  const done = call4.kind === "tool-result";
 +  const { text: arg, value: argValue } = toolArgs(call4);
@@ -4474,11 +4596,11 @@ diff --git a/client.js b/client.js
      }
      case "group_relay":
 -      return (0, import_react6.createElement)(GroupReplies, { sessionId, callId: call2.callId, done, content: call2.content, roster, actions, useUi, useWork });
-+      return (0, import_react8.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi, useWork });
++      return (0, import_react8.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi });
      case "create_group":
      case "update_group":
      case "delete_group":
-@@ -4492,41 +4492,41 @@ function renderCall(call2, { sessionId, roster, actions, useUi, useWork, findBot
+@@ -4492,64 +4492,72 @@ function renderCall(call2, { sessionId, roster, actions, useUi, useWork, findBot
          post_to_group: ["Posted in", "Couldn't post in the group"]
        }[tool];
        if (!done) return null;
@@ -4530,7 +4652,12 @@ diff --git a/client.js b/client.js
      default:
        return null;
    }
-@@ -4538,18 +4538,26 @@ function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
+ }
+-function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
++function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
+   const roster = useRoster((value) => value);
+   const root = node.data.root;
+   const turn = node.location?.turn?.turn ?? root.turn;
    const hidden = isHiddenTurn(roster, sessionId, turn);
    const findBot = (nameOrId) => roster.byId[nameOrId] ?? roster.bots.find((bot) => bot.name.toLowerCase() === String(nameOrId ?? "").toLowerCase());
    const calls = hidden ? [] : callTree(root);
@@ -4543,8 +4670,9 @@ diff --git a/client.js b/client.js
 -  useShownCards(actions, sessionId, drawn.filter((call2) => CARDS.has(toolName(call2)) && call2.callId).map((call2) => call2.callId));
 +  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
    if (drawn.length === 0) return null;
-   const env = { sessionId, roster, actions, useUi, useWork, findBot };
+-  const env = { sessionId, roster, actions, useUi, useWork, findBot };
 -  return (0, import_react6.createElement)(import_react6.Fragment, null, drawn.map((call2, index) => (0, import_react6.createElement)(import_react6.Fragment, { key: call2.callId ?? index }, renderCall(call2, env))));
++  const env = { sessionId, roster, actions, useUi, findBot };
 +  return (0, import_react8.createElement)(import_react8.Fragment, null, drawn.map((call4, index) => (0, import_react8.createElement)(import_react8.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
 +}
 +
@@ -9898,13 +10026,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react28.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: people2.length }) },
 +      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react28.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react28.createElement)(
 +        "div",
@@ -11068,9 +11196,8 @@ diff --git a/client.js b/client.js
          } }, t("Cancel")),
 -        (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
 +        (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
-       )
-     ) : null,
--    error ? (0, import_react25.createElement)("div", { className: "bt-connector-error", role: "alert" }, error) : null
++      )
++    ) : null,
 +    on && gateway && picking ? (0, import_react30.createElement)(
 +      "div",
 +      { className: "bt-connector-form" },
@@ -11085,8 +11212,9 @@ diff --git a/client.js b/client.js
 +          setError(null);
 +        } }, t("Cancel")),
 +        (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || apps.length === 0, onClick: saveApps }, busy ? t("Connecting…") : t("Save"))
-+      )
-+    ) : null,
+       )
+     ) : null,
+-    error ? (0, import_react25.createElement)("div", { className: "bt-connector-error", role: "alert" }, error) : null
 +    error ? (0, import_react30.createElement)("div", { className: "bt-connector-error", role: "alert" }, error) : null
    );
  }
@@ -11994,7 +12122,7 @@ diff --git a/client.js b/client.js
    prefs: "ds-bot:prefs",
    surface: "ds-bot:surface",
    agentSessions: "ds-bot:agent-sessions",
-@@ -11039,7 +11039,7 @@ function migrateStorage(storage = globalThis.localStorage) {
+@@ -11039,15 +11039,19 @@ function migrateStorage(storage = globalThis.localStorage) {
  }
  
  // src/client/member-status.js
@@ -12002,8 +12130,46 @@ diff --git a/client.js b/client.js
 +var import_react35 = require("react");
  var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
  var ROWS_MAX = 4;
++var stepIn = (work, botId, roomId, tool) => {
++  const own = work.bots?.[botId];
++  return own?.roomId === roomId && own.tool === tool ? own.step : void 0;
++};
  function memberWork(room2, work = NO_WORK) {
-@@ -11077,35 +11077,35 @@ function summaryText(busy) {
+   const here = work.rooms?.[room2.id] ?? [];
+   return room2.members.map((id) => {
+     const approvals = (work.approvals ?? []).filter((entry) => entry.botId === id);
+     const local = here.find((entry) => entry.botId === id);
+-    const doing = local ? { ...local, roomId: room2.id } : work.bots?.[id];
++    const doing = local ? { ...local, roomId: room2.id, step: stepIn(work, id, room2.id, local.tool) } : work.bots?.[id];
+     return { id, approvals, doing, here: local !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
+   });
+ }
+@@ -11056,15 +11056,15 @@ function busyMembers(room2, work, roster) {
+   return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
+ }
+ function splitBusy(busy) {
+-  const speaking = (entry) => entry.state === "work" && entry.here && entry.doing.speaking === true;
+-  const rows = busy.filter((entry) => entry.state === "work" && entry.here && !speaking(entry)).slice(0, ROWS_MAX);
+-  return { rows, rest: busy.filter((entry) => !rows.includes(entry) && !speaking(entry)) };
++  const here = busy.filter((entry) => entry.state === "work" && entry.here);
++  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
++  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
+ }
+ function botGroupWork(botId, work, roster) {
+   return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
+     const entry = entries2.find((item) => item.botId === botId);
+     const room2 = roster.roomsById[roomId];
+-    return entry && room2 ? [{ room: room2, tool: entry.tool, since: entry.since }] : [];
++    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
+   });
+ }
+ function summaryText(busy) {
+@@ -11073,40 +11073,43 @@ function summaryText(busy) {
+   const names = asks.slice(0, 2).map((entry) => entry.bot.name);
+   const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
+   const first = workers[0];
+-  const doing = first ? `${first.bot.name} · ${workPhrase(first.doing.tool)}…${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
++  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
    return { waiting, doing };
  }
  function Face({ entry, size }) {
@@ -12015,10 +12181,14 @@ diff --git a/client.js b/client.js
 +    (0, import_react35.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
    );
  }
- function WorkRow({ bot, tool, label, at, now, onOpen }) {
-   const text = `${label} · ${workPhrase(tool)}…`;
-   const elapsed = typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
+-function WorkRow({ bot, tool, label, at, now, onOpen }) {
+-  const text = `${label} · ${workPhrase(tool)}…`;
+-  const elapsed = typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
 -  return (0, import_react30.createElement)(
++var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
++function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
++  const text = `${label} · ${workText(tool, step)}`;
++  const elapsed = elapsedSince(now, at);
 +  return (0, import_react35.createElement)(
      "button",
      { type: "button", className: "bt-mw-row", "aria-label": [text, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
@@ -12030,28 +12200,37 @@ diff --git a/client.js b/client.js
 +    elapsed ? (0, import_react35.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
    );
  }
- function SummaryLine({ busy, onOpen }) {
+-function SummaryLine({ busy, onOpen }) {
++function SummaryLine({ busy, now, onOpen }) {
    const { waiting, doing } = summaryText(busy);
 -  return (0, import_react30.createElement)(
-+  return (0, import_react35.createElement)(
-     "div",
-     { className: "bt-event bt-mw-dock" },
+-    "div",
+-    { className: "bt-event bt-mw-dock" },
 -    (0, import_react30.createElement)(
-+    (0, import_react35.createElement)(
-       "button",
-       { type: "button", className: "bt-event-whole bt-mw-line", "aria-label": [waiting, doing].filter(Boolean).join(" · "), onClick: onOpen },
+-      "button",
+-      { type: "button", className: "bt-event-whole bt-mw-line", "aria-label": [waiting, doing].filter(Boolean).join(" · "), onClick: onOpen },
 -      (0, import_react30.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react30.createElement)(Face, { key: entry.id, entry, size: 16 }))),
 -      waiting ? (0, import_react30.createElement)("span", { className: "bt-mw-ask" }, waiting) : null,
 -      waiting && doing ? (0, import_react30.createElement)("span", { "aria-hidden": true }, "·") : null,
 -      doing ? (0, import_react30.createElement)("span", { className: "bt-event-name" }, (0, import_react30.createElement)(Shimmer, null, doing)) : null
-+      (0, import_react35.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react35.createElement)(Face, { key: entry.id, entry, size: 16 }))),
+-    )
++  const elapsed = doing ? elapsedSince(now, busy.find((entry) => entry.state === "work")?.doing.since) : "";
++  return (0, import_react35.createElement)(
++    "button",
++    { type: "button", className: "bt-mw-row bt-mw-line", "aria-label": [waiting, doing, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
++    (0, import_react35.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react35.createElement)(Face, { key: entry.id, entry, size: 16 }))),
++    (0, import_react35.createElement)(
++      "span",
++      { className: "bt-mw-row-text" },
 +      waiting ? (0, import_react35.createElement)("span", { className: "bt-mw-ask" }, waiting) : null,
-+      waiting && doing ? (0, import_react35.createElement)("span", { "aria-hidden": true }, "·") : null,
-+      doing ? (0, import_react35.createElement)("span", { className: "bt-event-name" }, (0, import_react35.createElement)(Shimmer, null, doing)) : null
-     )
++      waiting && doing ? " · " : null,
++      doing ? (0, import_react35.createElement)(Shimmer, null, doing) : null
++    ),
++    elapsed ? (0, import_react35.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
    );
  }
-@@ -11118,21 +11118,21 @@ function MemberDock({ sessionId, useRoster, useWork, actions }) {
+ function MemberDock({ sessionId, useRoster, useWork, actions }) {
+@@ -11118,24 +11118,25 @@ function MemberDock({ sessionId, useRoster, useWork, actions }) {
    const busy = room2 ? busyMembers(room2, work, roster) : [];
    const groups = bot !== void 0 && !ownChat ? botGroupWork(bot.id, work, roster) : [];
    const shown = busy.length > 0 || groups.length > 0;
@@ -12070,8 +12249,8 @@ diff --git a/client.js b/client.js
        { ref, className: "bt-mw-dock-stack" },
 -      rows.map((entry) => (0, import_react30.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
 -      rest.length > 0 ? (0, import_react30.createElement)(SummaryLine, { busy: rest, onOpen: open }) : null
-+      rows.map((entry) => (0, import_react35.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
-+      rest.length > 0 ? (0, import_react35.createElement)(SummaryLine, { busy: rest, onOpen: open }) : null
++      rows.map((entry) => (0, import_react35.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
++      rest.length > 0 ? (0, import_react35.createElement)(SummaryLine, { busy: rest, now, onOpen: open }) : null
      );
    }
 -  return (0, import_react30.createElement)("div", { ref, className: "bt-mw-dock-stack" }, groups.slice(0, ROWS_MAX).map((item) => (0, import_react30.createElement)(WorkRow, {
@@ -12079,6 +12258,10 @@ diff --git a/client.js b/client.js
      key: item.room.id,
      bot,
      tool: item.tool,
++    step: item.step,
+     label: t("in {name}", { name: item.room.name }),
+     at: item.since,
+     now,
 @@ -11143,7 +11143,7 @@ function MemberDock({ sessionId, useRoster, useWork, actions }) {
    })));
  }
@@ -12155,7 +12338,7 @@ diff --git a/client.js b/client.js
      );
    }
    if (entry.state !== "work") return null;
-@@ -11210,21 +11210,21 @@ function MemberWork({ entry, bot, room: room2, roster, actions, now }) {
+@@ -11210,26 +11210,25 @@ function MemberWork({ entry, bot, room: room2, roster, actions, now }) {
      setStopping(true);
      void Promise.resolve(actions.stopMemberWork(room2.id, bot.id)).catch((error) => actions.reportError(error, "stop")).finally(() => setStopping(false));
    };
@@ -12169,7 +12352,7 @@ diff --git a/client.js b/client.js
        { className: "bt-mw-state bt-mw-work" },
 -      (0, import_react30.createElement)("span", null, (0, import_react30.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
 -      entry.here ? (0, import_react30.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
-+      (0, import_react35.createElement)("span", null, (0, import_react35.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
++      (0, import_react35.createElement)("span", null, (0, import_react35.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : "", since(now, entry.doing.since)),
 +      entry.here ? (0, import_react35.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
      )
    );
@@ -12182,7 +12365,28 @@ diff --git a/client.js b/client.js
    return { entries: entries2, now };
  }
  var MEMBER_CSS = `
-@@ -11264,7 +11264,7 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
+ .bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
+-.bt-mw-dock-stack>.bt-event.bt-mw-dock{align-self:stretch;margin:0}
+ .bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
+ .bt-mw-row:hover{background:var(--bt-hover)}
+ .bt-mw-row>.bt-mark{flex:none}
+@@ -11239,9 +11239,7 @@ var MEMBER_CSS = `
+ .bt-mw-stop{flex:none;height:22px;padding:0 10px;border:1px solid var(--bt-line,rgba(0,0,0,.12));border-radius:11px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer}
+ .bt-mw-stop:hover{background:var(--bt-hover)}
+ .bt-mw-stop:disabled{opacity:.5;cursor:default}
+-.bt-event.bt-mw-dock{margin:0 0 6px;pointer-events:none}
+-.bt-mw-dock>button{pointer-events:auto;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards}
+-.bt-mw-line{gap:6px!important}
++.bt-mw-line{gap:8px}
+ .bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
+ .bt-mw-stack>*+*{margin-left:-4px}
+ .bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
+@@ -11260,11 +11260,11 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
+ .bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
+ .bt-mw-actions>button:disabled{opacity:.5;cursor:default}
+ @keyframes bt-mw-in{from{opacity:0;transform:translateY(4px)}}
+-@media (prefers-reduced-motion:reduce){.bt-mw-dock>button,.bt-mw-row{animation:none}}
++@media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
  `;
  
  // src/client/details-drawer.js

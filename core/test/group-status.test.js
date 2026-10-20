@@ -294,3 +294,20 @@ test('an approval asked inside a PTC program shows what that call does', async (
   assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
   assert.equal(value.work.bots.b.tool, 'pwsh')
 })
+
+test('a running Bot\'s work names its current step, in one short line, until the turn ends', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  const bots = async () => (await host.call('state', {})).value.work.bots
+  host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: 'rg -n "TODO"\n  src/client   --glob *.js', description: 'Find the TODOs' }) })
+  assert.deepEqual([(await bots()).b.tool, (await bots()).b.step], ['pwsh', 'rg -n "TODO" src/client --glob *.js'])
+  host.emit('gb', 'tool/result', { callId: 'k1' })
+  host.emit('gb', 'tool/call', { callId: 'k2', name: 'web_fetch', arguments: JSON.stringify({ url: `https://example.com/${'a'.repeat(200)}` }) })
+  const { step } = (await bots()).b
+  assert.ok(step.startsWith('https://example.com/a') && step.endsWith('…') && step.length <= 80, step)
+  host.emit('gb', 'tool/result', { callId: 'k2' })
+  assert.equal((await bots()).b.step, undefined)
+  host.emit('gb', 'turn/end', { reason: { kind: 'error', error: new Error('boom') } })
+  assert.equal((await bots()).b, undefined)
+})

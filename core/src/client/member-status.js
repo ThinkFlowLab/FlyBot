@@ -1,6 +1,6 @@
 import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BotMark, toolState } from './mark.js'
-import { Shimmer, workPhrase } from './cells.js'
+import { Shimmer, workText } from './cells.js'
 import { elapsedLabel } from './activity-row.js'
 import { t } from './i18n.js'
 
@@ -13,13 +13,20 @@ import { t } from './i18n.js'
 const NO_WORK = { bots: {}, rooms: {}, approvals: [] }
 const ROWS_MAX = 4
 
+// The step the Bot's own view names (a command, a path) belongs to its work in this group
+// when that view is about this group and the same tool.
+const stepIn = (work, botId, roomId, tool) => {
+  const own = work.bots?.[botId]
+  return own?.roomId === roomId && own.tool === tool ? own.step : undefined
+}
+
 // Work in this group wins over the Bot's own chat or another group.
 export function memberWork(room, work = NO_WORK) {
   const here = work.rooms?.[room.id] ?? []
   return room.members.map((id) => {
     const approvals = (work.approvals ?? []).filter(entry => entry.botId === id)
     const local = here.find(entry => entry.botId === id)
-    const doing = local ? { ...local, roomId: room.id } : work.bots?.[id]
+    const doing = local ? { ...local, roomId: room.id, step: stepIn(work, id, room.id, local.tool) } : work.bots?.[id]
     return { id, approvals, doing, here: local !== undefined, state: approvals.length > 0 ? 'ask' : doing ? 'work' : 'idle' }
   })
 }
@@ -31,12 +38,12 @@ export function busyMembers(room, work, roster) {
     .map(entry => ({ ...entry, bot: roster.byId[entry.id] }))
 }
 
-// Members at work in this group get a row of their own, apart from the round's current
-// speaker, which its round shows; the rest go on the summary line.
+// Members at work in this group, the round's current speaker first, get a row of their
+// own; the rest go on the summary line.
 export function splitBusy(busy) {
-  const speaking = entry => entry.state === 'work' && entry.here && entry.doing.speaking === true
-  const rows = busy.filter(entry => entry.state === 'work' && entry.here && !speaking(entry)).slice(0, ROWS_MAX)
-  return { rows, rest: busy.filter(entry => !rows.includes(entry) && !speaking(entry)) }
+  const here = busy.filter(entry => entry.state === 'work' && entry.here)
+  const rows = [...here.filter(entry => entry.doing.speaking === true), ...here.filter(entry => entry.doing.speaking !== true)].slice(0, ROWS_MAX)
+  return { rows, rest: busy.filter(entry => !rows.includes(entry)) }
 }
 
 // The groups a Bot is at work in.
@@ -44,7 +51,7 @@ export function botGroupWork(botId, work, roster) {
   return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries]) => {
     const entry = entries.find(item => item.botId === botId)
     const room = roster.roomsById[roomId]
-    return entry && room ? [{ room, tool: entry.tool, since: entry.since }] : []
+    return entry && room ? [{ room, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : []
   })
 }
 
@@ -57,7 +64,7 @@ export function summaryText(busy) {
       : asks.length === 2 ? t('{first} and {second} are waiting for your approval', { first: names[0], second: names[1] })
         : t('{first}, {second} and {count} more are waiting for your approval', { first: names[0], second: names[1], count: asks.length - 2, total: asks.length })
   const first = workers[0]
-  const doing = first ? `${first.bot.name} · ${workPhrase(first.doing.tool)}…${workers.length > 1 ? ` +${workers.length - 1}` : ''}` : ''
+  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ''}` : ''
   return { waiting, doing }
 }
 
@@ -66,24 +73,29 @@ function Face({ entry, size }) {
     h(BotMark, { bot: entry.bot, size, state: entry.state === 'ask' ? 'alert' : toolState(entry.doing?.tool ?? '') }))
 }
 
-// One piece of work: the Bot's mark and what it is doing, like the activity row.
-function WorkRow({ bot, tool, label, at, now, onOpen }) {
-  const text = `${label} · ${workPhrase(tool)}…`
-  const elapsed = typeof at === 'number' && now - at >= 60000 ? elapsedLabel(now - at) : ''
+const elapsedSince = (now, at) => (typeof at === 'number' && now - at >= 60000 ? elapsedLabel(now - at) : '')
+
+// One piece of work: the Bot's mark, what it is doing and on what, and for how long.
+function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
+  const text = `${label} · ${workText(tool, step)}`
+  const elapsed = elapsedSince(now, at)
   return h('button', { type: 'button', className: 'bt-mw-row', 'aria-label': [text, elapsed].filter(Boolean).join(' · '), onClick: onOpen },
     h(BotMark, { bot, size: 22, state: toolState(tool ?? ''), live: true }),
     h('span', { className: 'bt-mw-row-text' }, h(Shimmer, null, text)),
     elapsed ? h('span', { className: 'bt-mw-row-time' }, `· ${elapsed}`) : null)
 }
 
-function SummaryLine({ busy, onOpen }) {
+// The rest, in the rows' column and shape: who waits for an approval, then who works elsewhere.
+function SummaryLine({ busy, now, onOpen }) {
   const { waiting, doing } = summaryText(busy)
-  return h('div', { className: 'bt-event bt-mw-dock' },
-    h('button', { type: 'button', className: 'bt-event-whole bt-mw-line', 'aria-label': [waiting, doing].filter(Boolean).join(' · '), onClick: onOpen },
-      h('span', { className: 'bt-mw-stack', 'aria-hidden': true }, busy.slice(0, 4).map(entry => h(Face, { key: entry.id, entry, size: 16 }))),
+  const elapsed = doing ? elapsedSince(now, busy.find(entry => entry.state === 'work')?.doing.since) : ''
+  return h('button', { type: 'button', className: 'bt-mw-row bt-mw-line', 'aria-label': [waiting, doing, elapsed].filter(Boolean).join(' · '), onClick: onOpen },
+    h('span', { className: 'bt-mw-stack', 'aria-hidden': true }, busy.slice(0, 4).map(entry => h(Face, { key: entry.id, entry, size: 16 }))),
+    h('span', { className: 'bt-mw-row-text' },
       waiting ? h('span', { className: 'bt-mw-ask' }, waiting) : null,
-      waiting && doing ? h('span', { 'aria-hidden': true }, '·') : null,
-      doing ? h('span', { className: 'bt-event-name' }, h(Shimmer, null, doing)) : null))
+      waiting && doing ? ' · ' : null,
+      doing ? h(Shimmer, null, doing) : null),
+    elapsed ? h('span', { className: 'bt-mw-row-time' }, `· ${elapsed}`) : null)
 }
 
 // Above a group's composer: who is at work here, and a line for the rest; both open the
@@ -106,11 +118,11 @@ export function MemberDock({ sessionId, useRoster, useWork, actions }) {
     const { rows, rest } = splitBusy(busy)
     const open = () => actions.showDetails(sessionId)
     return h('div', { ref, className: 'bt-mw-dock-stack' },
-      rows.map(entry => h(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
-      rest.length > 0 ? h(SummaryLine, { busy: rest, onOpen: open }) : null)
+      rows.map(entry => h(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
+      rest.length > 0 ? h(SummaryLine, { busy: rest, now, onOpen: open }) : null)
   }
   return h('div', { ref, className: 'bt-mw-dock-stack' }, groups.slice(0, ROWS_MAX).map(item => h(WorkRow, {
-    key: item.room.id, bot, tool: item.tool, label: t('in {name}', { name: item.room.name }), at: item.since, now, onOpen: () => actions.openSession(item.room.id),
+    key: item.room.id, bot, tool: item.tool, step: item.step, label: t('in {name}', { name: item.room.name }), at: item.since, now, onOpen: () => actions.openSession(item.room.id),
   })))
 }
 
@@ -190,7 +202,7 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
   }
   return h('div', { className: 'bt-mw-member' },
     h('div', { className: 'bt-mw-state bt-mw-work' },
-      h('span', null, h(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : '', since(now, entry.doing.since)),
+      h('span', null, h(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : '', since(now, entry.doing.since)),
       entry.here ? h('button', { type: 'button', className: 'bt-mw-stop', disabled: stopping, onClick: stop }, t('Stop')) : null))
 }
 
@@ -203,7 +215,6 @@ export function useMemberWork(room, useWork) {
 
 export const MEMBER_CSS = `
 .bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
-.bt-mw-dock-stack>.bt-event.bt-mw-dock{align-self:stretch;margin:0}
 .bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
 .bt-mw-row:hover{background:var(--bt-hover)}
 .bt-mw-row>.bt-mark{flex:none}
@@ -213,9 +224,7 @@ export const MEMBER_CSS = `
 .bt-mw-stop{flex:none;height:22px;padding:0 10px;border:1px solid var(--bt-line,rgba(0,0,0,.12));border-radius:11px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer}
 .bt-mw-stop:hover{background:var(--bt-hover)}
 .bt-mw-stop:disabled{opacity:.5;cursor:default}
-.bt-event.bt-mw-dock{margin:0 0 6px;pointer-events:none}
-.bt-mw-dock>button{pointer-events:auto;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards}
-.bt-mw-line{gap:6px!important}
+.bt-mw-line{gap:8px}
 .bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
 .bt-mw-stack>*+*{margin-left:-4px}
 .bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
@@ -234,5 +243,5 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 .bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
 .bt-mw-actions>button:disabled{opacity:.5;cursor:default}
 @keyframes bt-mw-in{from{opacity:0;transform:translateY(4px)}}
-@media (prefers-reduced-motion:reduce){.bt-mw-dock>button,.bt-mw-row{animation:none}}
+@media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
 `

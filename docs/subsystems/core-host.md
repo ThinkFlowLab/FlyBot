@@ -109,6 +109,10 @@ These endpoints do not prompt, deliver a clarification, resume an agent or grant
 execution/tool permissions. Automatic exchange wiring, runtime-scoped observation
 credentials and team mode remain separate work under #55/#198.
 
+### Work view step (#546)
+
+`work.bots[id]` (`turns.js` `workView`) carries `step`: what the newest running call acts on, from its arguments (`command`, `cmd`, `pattern`, `query`, `url`, `file_path`, `path`, else `description`), whitespace collapsed and capped at 80 characters. It is in the owner-only Bot view (`authz.js` `ownedLive` picks the actor's own Bots), not in `work.rooms`, which other members of a shared group read. It goes with the call's result and the turn's end. Covered by `core/test/group-status.test.js`.
+
 ### Inbound shared rooms
 
 - Bot Social conversations are 1:1; it does not list a FlyBot group. When a room gains a granted remote Bot (create-room, addParticipants, or 新建群聊 picking a friend's chat), the host fans out a `FLYBOT-ROOM-SHARE` envelope (`src/shared/room-share.js`) through `flybotSend` (`via: 'room-share'` for join/leave, `via: 'room'` for lines, `meta.roomId` set) so the Bot's owner's FlyBot can project it immediately — including a room with no chat lines yet. Receive is `rt.applyInboundRoomShare` (`origin: 'inbound-share'`, `recordInboundSharedRoom`), labelled **Shared room from \<inviter\>** with the room name stored. A leave envelope, hide, or grant revoke marks it left/hidden. `reach()` allows a local member to message a remote that already sits in that room when `roomId` is on the send. Still not team mode.
