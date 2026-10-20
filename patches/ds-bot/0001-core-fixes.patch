@@ -557,7 +557,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,7 +360,7 @@ const ZH = {
+@@ -360,9 +360,34 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -565,7 +565,34 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Update FlyBot core {version} first.': '先更新 FlyBot 核心 {version}。',
    'Open updates': '打开更新',
  
++  // Agent inbox (#349)
++  Inbox: '收件箱',
++  'Inbox, {count} need you': '收件箱，{count} 项需要你',
++  'Close inbox': '关闭收件箱',
++  'Your Bots': '你的 Bot',
++  'Needs you': '需要你',
++  'In progress': '进行中',
++  'Nothing needs you right now.': '现在没有需要你处理的事。',
++  'Nothing is running.': '没有正在进行的事。',
++  'Nothing finished in the last 7 days.': '最近 7 天没有完成的事。',
++  'Waiting to send': '等待发送',
++  'Needs your answer': '等你回答',
++  'Result ready': '结果已就绪',
++  Failed: '失败',
++  Cancelled: '已取消',
++  'A tool call': '一次工具调用',
++  '1 message waits for your approval': '1 条消息等你批准',
++  '{count} messages wait for your approval': '{count} 条消息等你批准',
++  'Approve it in the chat': '请在对话里批准',
++  'Untitled task': '未命名任务',
++  'for {time}': '已 {time}',
++  'just started': '刚开始',
++  'Open {name}': '打开 {name}',
++  'Allowed once for {name}': '已为 {name} 允许一次',
++  'Rejected for {name}': '已拒绝 {name} 的请求',
    // Command palette
+   Messages: '消息',
+   Commands: '命令',
 @@ -390,6 +390,7 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',

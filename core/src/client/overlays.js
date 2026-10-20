@@ -9,6 +9,7 @@ import { ContextMenu } from './context-menu.js'
 import { PANEL_LINGER_MS, BotPanel } from './browser-pane.js'
 import { MemoryDialog } from './memory-panel.js'
 import { RemoteBotSettingsSheet } from './remote-bot-settings.js'
+import { InboxDialog } from './inbox.js'
 import { useLinger } from './motion.js'
 
 // How long a closing dialog or menu stays for its exit (see their [data-leaving] CSS).
@@ -41,6 +42,7 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
   const [remoteBotSettings, remoteLeaving] = useLinger(remoteBotId, DIALOG_EXIT_MS)
   const [memory, memoryLeaving] = useLinger(ui.memory && roster.byId[ui.memory] ? ui.memory : null, DIALOG_EXIT_MS)
   const [menu, menuLeaving] = useLinger(ui.menu, MENU_EXIT_MS)
+  const [inbox, inboxLeaving] = useLinger(ui.inbox ?? null, DIALOG_EXIT_MS)
   return h(Fragment, null,
     pane ? createPortal(h(BotPanel, { pane, leaving: open === null, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }), document.body) : null,
     ui.newChat ? createPortal(h(NewChat, { key: ui.newChat, mode: ui.newChat, roster, actions }), document.body) : null,
@@ -50,5 +52,6 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
     menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
     settings ? createPortal(h(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
     remoteBotSettings ? createPortal(h(RemoteBotSettingsSheet, { key: remoteBotSettings, bot: roster.byId[remoteBotSettings], roster, actions, leaving: remoteLeaving }), document.body) : null,
-    memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null)
+    memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null,
+    inbox ? createPortal(h(InboxDialog, { roster, useWork, useSessions, actions, leaving: inboxLeaving }), document.body) : null)
 }
