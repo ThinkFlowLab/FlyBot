@@ -733,7 +733,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,34 @@ const ZH = {
+@@ -360,9 +360,36 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -760,6 +760,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  '1 message waits for your approval': '1 条消息等你批准',
 +  '{count} messages wait for your approval': '{count} 条消息等你批准',
 +  'Approve it in the chat': '请在对话里批准',
++  'The last turn did not finish': '上一轮没有完成',
++  'Latest: {text}': '最新：{text}',
 +  'Untitled task': '未命名任务',
 +  'for {time}': '已 {time}',
 +  'just started': '刚开始',
@@ -2303,7 +2305,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
+@@ -25,9 +25,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
@@ -2311,6 +2313,10 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  import { defineTool } from '@deepseek-ai/dsh-tools'
  import { splitRef, unquote } from './text.js'
  import { output } from './tools.js'
++import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
+ 
+ // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
+ // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
 @@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
@@ -2373,6 +2379,64 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const dir = dirOf(ownScope(botId))
        if (!existsSync(dir)) return
        const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
+@@ -837,11 +837,13 @@ export function install(rt) {
+ 
+   ctx.tools.register(defineTool({
+     name: 'recall',
+-    description: 'Search your memory and the team memory, or read one topic whole. It also finds entries saved after this conversation began. With no arguments, lists what is saved where.',
++    description: 'Search your memory and the team memory, or read one topic whole. It also finds entries saved after this conversation began. With semantic: "true" it ranks entries by meaning, so an entry whose wording differs from the query still matches. With related it lists what a topic or Bot links to ([[topic]] references and who wrote it). With no arguments, lists what is saved where.',
+     parameters: {
+       query: { type: 'string', description: 'Words to look for, separated by spaces. An entry must have all of them; when none has, those with the most are shown' },
+       topic: { type: 'string', description: 'A topic to read whole, as listed with [[topic]]' },
+       scope: { type: 'string', description: 'Omit for yours and the team\'s; "own", "team", or a Bot\'s name (Main Bots only)' },
++      semantic: { type: 'string', enum: ['true', 'false'], description: 'Set to "true" to rank entries by meaning instead of exact words, when the query wording may differ from what was saved' },
++      related: { type: 'string', description: 'A topic or Bot name; lists what memory links it to, instead of searching' },
+     },
+     output,
+     async execute(args, exec) {
+@@ -861,6 +861,20 @@ export function install(rt) {
+         const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
+         return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
+       }
++      const related = String(args.related ?? '').trim().slice(0, 60)
++      if (related !== '') {
++        const labels = loaded.map(item => item.label).join(' and ')
++        const graph = buildGraph(loaded.flatMap(({ files }) => files.map(file => ({ topic: file.topic, entries: file.entries }))))
++        const start = graph.has(topicNode(related)) ? topicNode(related) : graph.has(botNode(related)) ? botNode(related) : null
++        if (start === null) return `Nothing in ${labels} links "${related}". Its topics are listed with no arguments.`
++        const show = node => (node.kind === 'bot' ? `Bot ${node.name}` : `[[${node.name}]]`)
++        const { neighbours } = relatedOf(graph, start, { hops: 2 })
++        if (neighbours.length === 0) return `${show(start)} in ${labels} links to nothing else yet.`
++        return [
++          `Near ${show(start)} in ${labels}:`,
++          ...neighbours.map(node => `- ${show(node)} — ${node.via === 'by' ? 'wrote it' : 'linked'}${node.distance > 1 ? ', 2 steps away' : ''}`),
++        ].join('\n')
++      }
+       const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
+       const query = String(args.query ?? '').trim().slice(0, 120)
+       if (query === '') {
+@@ -872,6 +872,21 @@ export function install(rt) {
+           ].join('\n')
+         }).join('\n\n')
+       }
++      const wantsSemantic = /^(1|true|yes|on)$/i.test(String(args.semantic ?? '').trim())
++      if (wantsSemantic) {
++        const labels = loaded.map(item => item.label).join(' and ')
++        const docs = loaded.flatMap(({ tag, label, files }) => allEntries(files).map(entry => ({
++          key: `${tag}|${entry.file.topic ?? 'memory'}|${entry.line}`,
++          ref: `${entry.text} ${entry.file.topic ?? ''}`,
++          entry, tag, label, file: entry.file,
++        })))
++        const hits = searchIndex(buildIndex(docs), query, { k: RECALL_MAX })
++        if (hits.length === 0) return `Nothing in ${labels} is close to "${query}". read_own_chat searches what was said.`
++        return [
++          `Entries closest in meaning to "${query}" in ${labels}:`,
++          ...hits.map(({ doc }) => `[${where(doc.tag, doc.file)}] ${formatEntry(doc.entry.text, doc.entry.meta).slice(2)}`),
++        ].join('\n')
++      }
+       const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
+       const scored = loaded.flatMap(({ tag, files }) => allEntries(files).map((entry) => {
+         const hay = squash(`${entry.text} ${entry.file.topic ?? ''}`)
 @@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
@@ -2963,16 +3027,27 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -238,6 +238,31 @@ export function install(rt) {
+@@ -238,6 +238,42 @@ export function install(rt) {
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
 +  // The latest turns of the user's own Bots that finished or failed, for a system notification
-+  // (#353). Process-local and bounded; a window skips the ones from before it opened. Left out:
-+  // a friend's Bots, turns a friend started, turns another Bot asked for (hidden in the chat),
-+  // rooms shared with other people, and turns the user stopped.
++  // (#353) and the Agent inbox's failed turns (#471). Process-local and bounded; a window skips
++  // the ones from before it opened. Left out: a friend's Bots, turns a friend started, turns
++  // another Bot asked for (hidden in the chat), rooms shared with other people, and turns the
++  // user stopped. Past the last 20, a place's (Bot + group) latest turn is kept while it is a
++  // failure younger than 7 days, so busy Bots elsewhere do not push it out of the inbox.
 +  const ENDED_KEPT = 20
++  const FAILED_KEPT = 50
++  const FAILED_MS = 7 * 86_400_000
 +  let ended = []
++  const placeOfEnded = entry => `${entry.botId}|${entry.roomId ?? ''}`
++  const trimEnded = (list, now) => {
++    const latest = new Map(list.map(entry => [placeOfEnded(entry), entry]))
++    const older = list.slice(0, -ENDED_KEPT)
++      .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
++    return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
++  }
 +  const noteEnded = (id, turn, info, reason, failure) => {
 +    if (failure === undefined && reason?.kind !== 'completed') return
 +    const owner = rt.groupOwners.get(id)
@@ -2982,13 +3057,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    if (owner === undefined && state.exchangeTurns?.[id]?.includes(turn)) return
 +    if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
 +    const at = Date.now()
-+    ended = [...ended, {
++    ended = trimEnded([...ended, {
 +      id: `${id}:${turn}:${at}`,
 +      botId: bot.id,
 +      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
 +      at,
 +      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
-+    }].slice(-ENDED_KEPT)
++    }], at)
 +  }
 +  const endedView = () => ended
 +
@@ -3255,7 +3330,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    page.shown[0].onclick()
    assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
  })
-@@ -62,3 +62,202 @@ test('no notification for the conversation on screen, for approvals older than t
+@@ -62,3 +62,207 @@ test('no notification for the conversation on screen, for approvals older than t
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -3449,7 +3524,12 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy' }],
 +  ])
 +  for (let n = 10; n < 40; n++) turn('b', n, completed)
++  // Past the last 20, the failure in r1 stays: it is still the latest turn there (#471).
++  assert.deepEqual(rt.endedView().map(entry => entry.id.split(':').slice(0, 2).join(':')), ['g1:1', ...Array.from({ length: 20 }, (_, i) => `b:${20 + i}`)])
++  turn('g1', 2, completed, { kind: SOURCE_KIND, role: 'room', exchangeId: 'r1y' })
++  for (let n = 40; n < 60; n++) turn('b', n, completed)
 +  assert.equal(rt.endedView().length, 20)
++  assert.ok(rt.endedView().every(entry => entry.failed === undefined))
 +})
 +
 +test('Settings → General has one switch per kind under the main one, off while the main one is off (#469)', async () => {
@@ -4348,7 +4428,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,70 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,94 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -4418,6 +4498,30 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  }
 +  assert.equal(existsSync(join(home, 'memory', 'team', 'MEMORY.md')), false, 'no team write from another owner\'s room')
 +  assert.match(readFileSync(join(home, 'memory', 'bots', 'b3', 'MEMORY.md'), 'utf8'), /The launch stays on Friday/)
++})
++
++test('recall semantic ranks entries by meaning, not only by exact words', async (t) => {
++  const { tool, stop } = start()
++  t.after(() => stop())
++  await tool('remember', { text: 'The user prefers window seats on long flights' }, 'b2')
++  await tool('remember', { text: 'The user ships releases on Friday' }, 'b2')
++  const out = await tool('recall', { query: 'flight seat', semantic: 'true' }, 'b2')
++  assert.match(out, /^Entries closest in meaning to "flight seat" in your memory and the team memory:/)
++  assert.match(out.split('\n')[1], /window seats/, 'the worded-differently entry is the top hit')
++  assert.doesNotMatch(out, /Friday/, 'an entry that shares no meaning is left out')
++  // The default path is unchanged: exact words still drive it.
++  assert.match(await tool('recall', { query: 'window' }, 'b2'), /^Entries with "window"/)
++})
++
++test('recall related lists what a topic links to', async (t) => {
++  const { tool, stop } = start()
++  t.after(() => stop())
++  await tool('remember', { text: 'Trip plan to Hangzhou', topic: 'travel' }, 'b2')
++  await tool('remember', { text: 'See [[travel]] for the whole trip' }, 'b2')
++  const out = await tool('recall', { related: 'travel' }, 'b2')
++  assert.match(out, /^Near \[\[travel\]\] in your memory and the team memory:/)
++  assert.match(out, /- \[\[memory\]\] — linked/)
++  assert.match(await tool('recall', { related: 'nothinghere' }, 'b2'), /Nothing in your memory and the team memory links "nothinghere"/)
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js

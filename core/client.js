@@ -613,6 +613,8 @@ var ZH = {
   "1 message waits for your approval": "1 条消息等你批准",
   "{count} messages wait for your approval": "{count} 条消息等你批准",
   "Approve it in the chat": "请在对话里批准",
+  "The last turn did not finish": "上一轮没有完成",
+  "Latest: {text}": "最新：{text}",
   "Untitled task": "未命名任务",
   "for {time}": "已 {time}",
   "just started": "刚开始",
@@ -6614,6 +6616,19 @@ var roomName = (roster, id) => roster.roomsById?.[id]?.name;
 var placeOf = (roster, roomId) => roomId && roomName(roster, roomId) ? t("in {name}", { name: roomName(roster, roomId) }) : "";
 var lastWhy = (task) => [...task.actors ?? []].reverse().find((entry) => typeof entry.why === "string" && entry.why !== "")?.why ?? "";
 var chatOfTask = (task) => task.origin?.roomId ?? task.origin?.sessionId ?? task.ownerBotId;
+var placeKey = (botId, roomId) => `${botId}|${roomId ?? ""}`;
+var partOf = (roster, chat) => roster.roomsById?.[chat] || !roster.byId?.[chat] ? chat : currentPart(roster.byId[chat]);
+var runningIn = (work, botId, roomId) => roomId === void 0 ? work.bots?.[botId]?.roomId === void 0 ? work.bots?.[botId] : void 0 : (work.rooms?.[roomId] ?? []).find((entry) => entry.botId === botId) ?? (work.bots?.[botId]?.roomId === roomId ? work.bots[botId] : void 0);
+function latestActivity(card, { roster, work, sessions }) {
+  const options = [];
+  if (card.kind === "task") options.push(lastWhy(card.task));
+  if (card.kind === "run" || card.kind === "task") {
+    const entry = card.executingBot ? runningIn(work, card.executingBot, roster.roomsById?.[card.chat] ? card.chat : void 0) : void 0;
+    if (entry) options.push(`${workPhrase(entry.tool)}…`);
+  }
+  if (sessions?.byId && card.chat) options.push(previewOf(sessions, partOf(roster, card.chat)));
+  return options.find((text) => typeof text === "string" && text !== "" && text !== card.title && text !== card.reason) ?? "";
+}
 function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() }) {
   const needs = [];
   const progress = [];
@@ -6679,6 +6694,29 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   };
   for (const [botId, entry] of Object.entries(work.bots ?? {})) running(botId, entry, entry.roomId);
   for (const [roomId, entries2] of Object.entries(work.rooms ?? {})) for (const entry of entries2) running(entry.botId, entry, roomId);
+  const lastEnded = /* @__PURE__ */ new Map();
+  for (const entry of work.ended ?? []) {
+    const key = placeKey(entry.botId, entry.roomId);
+    if ((entry.at ?? 0) >= (lastEnded.get(key)?.at ?? -Infinity)) lastEnded.set(key, entry);
+  }
+  for (const [key, entry] of lastEnded) {
+    const bot = ownBot(roster, entry.botId);
+    if (bot === void 0 || entry.failed === void 0 || !fresh(entry.at) || seen.has(key) || waitingAt.has(key)) continue;
+    const chat = entry.roomId ?? bot.id;
+    const asked = sessions?.byId ? previewOf(sessions, partOf(roster, chat)) : "";
+    needs.push({
+      id: `turn:${entry.id}`,
+      kind: "turn",
+      status: "failed",
+      bot,
+      at: entry.at,
+      title: asked || t("The last turn did not finish"),
+      reason: entry.failed,
+      place: placeOf(roster, entry.roomId),
+      chat,
+      ...people(roster, bot.id)
+    });
+  }
   for (const task of tasks) {
     const bot = ownBot(roster, task.ownerBotId);
     if (bot === void 0) continue;
@@ -6703,6 +6741,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   if (sessions?.byId) {
     for (const bot of roster.bots ?? []) {
       if (ownBot(roster, bot.id) === void 0 || work.bots?.[bot.id] !== void 0 || waitingAt.has(`${bot.id}|`)) continue;
+      if (lastEnded.get(placeKey(bot.id))?.failed !== void 0) continue;
       const part = currentPart(bot);
       const at = sessions.byId[part]?.updatedAt;
       if (!fresh(at)) continue;
@@ -6712,6 +6751,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
     }
   }
   const newest = (a, b) => (b.at ?? Infinity) - (a.at ?? Infinity);
+  for (const card of [...needs, ...progress, ...done]) card.activity = latestActivity(card, { roster, work, sessions });
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 }
 var needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length;
@@ -6767,6 +6807,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
       ),
       (0, import_react11.createElement)("span", { className: "bt-inbox-title", title: card.title }, card.title),
       card.reason ? (0, import_react11.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
+      card.activity ? (0, import_react11.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
       card.hint ? (0, import_react11.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
       error ? (0, import_react11.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
     ),
@@ -6891,7 +6932,8 @@ var INBOX_CSS = `
 .bt-inbox-status[data-tone=muted]{background:var(--bt-hover);color:var(--bt-ink-2)}
 .bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-inbox-reason,.bt-inbox-hint{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 .bt-inbox-actions .bt-send{height:28px;font-size:12px}

@@ -29,6 +29,7 @@ import { currentParticipants } from './room-membership.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { splitRef, unquote } from './text.js'
 import { output } from './tools.js'
+import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
 
 // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
 // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
@@ -855,11 +856,13 @@ export function install(rt) {
 
   ctx.tools.register(defineTool({
     name: 'recall',
-    description: 'Search your memory and the team memory, or read one topic whole. It also finds entries saved after this conversation began. With no arguments, lists what is saved where.',
+    description: 'Search your memory and the team memory, or read one topic whole. It also finds entries saved after this conversation began. With semantic: "true" it ranks entries by meaning, so an entry whose wording differs from the query still matches. With related it lists what a topic or Bot links to ([[topic]] references and who wrote it). With no arguments, lists what is saved where.',
     parameters: {
       query: { type: 'string', description: 'Words to look for, separated by spaces. An entry must have all of them; when none has, those with the most are shown' },
       topic: { type: 'string', description: 'A topic to read whole, as listed with [[topic]]' },
       scope: { type: 'string', description: 'Omit for yours and the team\'s; "own", "team", or a Bot\'s name (Main Bots only)' },
+      semantic: { type: 'string', enum: ['true', 'false'], description: 'Set to "true" to rank entries by meaning instead of exact words, when the query wording may differ from what was saved' },
+      related: { type: 'string', description: 'A topic or Bot name; lists what memory links it to, instead of searching' },
     },
     output,
     async execute(args, exec) {
@@ -879,6 +882,20 @@ export function install(rt) {
         const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
         return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
       }
+      const related = String(args.related ?? '').trim().slice(0, 60)
+      if (related !== '') {
+        const labels = loaded.map(item => item.label).join(' and ')
+        const graph = buildGraph(loaded.flatMap(({ files }) => files.map(file => ({ topic: file.topic, entries: file.entries }))))
+        const start = graph.has(topicNode(related)) ? topicNode(related) : graph.has(botNode(related)) ? botNode(related) : null
+        if (start === null) return `Nothing in ${labels} links "${related}". Its topics are listed with no arguments.`
+        const show = node => (node.kind === 'bot' ? `Bot ${node.name}` : `[[${node.name}]]`)
+        const { neighbours } = relatedOf(graph, start, { hops: 2 })
+        if (neighbours.length === 0) return `${show(start)} in ${labels} links to nothing else yet.`
+        return [
+          `Near ${show(start)} in ${labels}:`,
+          ...neighbours.map(node => `- ${show(node)} — ${node.via === 'by' ? 'wrote it' : 'linked'}${node.distance > 1 ? ', 2 steps away' : ''}`),
+        ].join('\n')
+      }
       const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
       const query = String(args.query ?? '').trim().slice(0, 120)
       if (query === '') {
@@ -889,6 +906,21 @@ export function install(rt) {
             ...main.entries.map(entry => `[${where(tag, main)}] ${formatEntry(entry.text, entry.meta).slice(2)}`),
           ].join('\n')
         }).join('\n\n')
+      }
+      const wantsSemantic = /^(1|true|yes|on)$/i.test(String(args.semantic ?? '').trim())
+      if (wantsSemantic) {
+        const labels = loaded.map(item => item.label).join(' and ')
+        const docs = loaded.flatMap(({ tag, label, files }) => allEntries(files).map(entry => ({
+          key: `${tag}|${entry.file.topic ?? 'memory'}|${entry.line}`,
+          ref: `${entry.text} ${entry.file.topic ?? ''}`,
+          entry, tag, label, file: entry.file,
+        })))
+        const hits = searchIndex(buildIndex(docs), query, { k: RECALL_MAX })
+        if (hits.length === 0) return `Nothing in ${labels} is close to "${query}". read_own_chat searches what was said.`
+        return [
+          `Entries closest in meaning to "${query}" in ${labels}:`,
+          ...hits.map(({ doc }) => `[${where(doc.tag, doc.file)}] ${formatEntry(doc.entry.text, doc.entry.meta).slice(2)}`),
+        ].join('\n')
       }
       const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
       const scored = loaded.flatMap(({ tag, files }) => allEntries(files).map((entry) => {

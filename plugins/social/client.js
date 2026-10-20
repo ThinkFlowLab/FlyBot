@@ -1999,6 +1999,7 @@ window.__ModuleLoader__.load({
       // The host draws the Sharing title (#406).
       return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
         h(InviteToBot, { bot }),
+        h(ShareWithFriend, { bot }),
         h(ManageAccess, { bot }))
     }
 
@@ -2028,6 +2029,76 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => copy(invite.text) }, 'Copy with instructions'),
           h('button', { type: 'button', className: 'fs-link fs-invite-new', 'data-flybot': 'new-invite-link', disabled: busy, onClick: create }, 'New link')) : null,
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
+    }
+
+    // #500: share this Bot with an existing friend (no invite link). Lists friends who do not
+    // already have it; one click each. Invite links for new people stay above.
+    function ShareWithFriend({ bot }) {
+      useStyles()
+      const [friends, setFriends] = useState(null)
+      const [busy, setBusy] = useState('')
+      const [note, setNote] = useState(null)
+      const load = async () => {
+        if (!bot?.id) return
+        try {
+          const next = await call('social/share-friends', { botId: bot.id })
+          setFriends(Array.isArray(next?.friends) ? next.friends : [])
+        } catch (e) {
+          setFriends([])
+          setNote({ tone: 'error', text: errorText(e) })
+        }
+      }
+      useEffect(() => {
+        setFriends(null)
+        setNote(null)
+        void load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, 5000)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [bot?.id])
+      if (!bot?.id) return null
+      const share = async (friend) => {
+        setBusy(friend.home || friend.ownerId || 'share')
+        setNote(null)
+        try {
+          const result = await call('social/share-with-friend', {
+            botId: bot.id,
+            home: friend.home,
+            ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
+          })
+          setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })
+          const next = await call('social/share-friends', { botId: bot.id }).catch(() => null)
+          if (next) setFriends(Array.isArray(next.friends) ? next.friends : [])
+          else setFriends(list => (list ?? []).filter(item => item.home !== friend.home))
+        } catch (e) {
+          setNote({ tone: 'error', text: errorText(e) })
+        } finally { setBusy('') }
+      }
+      const list = friends ?? []
+      const loading = friends === null
+      return h('div', { className: 'fs fs-card', 'data-flybot': 'share-with-friend' },
+        h('div', { className: 'fs-name' }, 'Share with a friend'),
+        h('div', { className: 'fs-hint' }, `One click shares ${bot.name || 'this Bot'} with someone you already know. No invite link. They can decline; you can Revoke in People with access.`),
+        loading ? h('div', { className: 'fs-hint' }, 'Loading friends…') : null,
+        !loading && list.length === 0
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
+          : null,
+        list.map(friend => h('div', { key: friend.home || friend.ownerId, className: 'fs-line', 'data-flybot': 'share-friend-row' },
+          h('div', { className: 'fs-col' },
+            h('span', { className: 'fs-name' }, friend.name || friend.home),
+            friend.home && friend.name && !String(friend.name).includes(String(friend.home).replace(/^@/, ''))
+              ? h('span', { className: 'fs-sub' }, friend.home)
+              : null),
+          h('button', {
+            type: 'button',
+            className: 'fs-btn fs-btn-sm',
+            disabled: Boolean(busy),
+            'data-flybot': 'share-friend',
+            'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
+            onClick: () => { void share(friend) },
+          }, busy === (friend.home || friend.ownerId || 'share') ? 'Sharing…' : 'Share'))),
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text) : null)
     }
 
     // A friend chat Bot Social paused (#404): a quiet notice, no buttons. There is no turn limit and
@@ -2190,6 +2261,7 @@ window.__ModuleLoader__.load({
       errorText,
       canInvite,
       InviteToBot,
+      ShareWithFriend,
       ManageAccess,
       BotSocialDetails,
       SocialServerSettings,
