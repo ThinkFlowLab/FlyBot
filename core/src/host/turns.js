@@ -361,6 +361,8 @@ export function install(rt) {
             ...(source.quiet ? { quiet: true } : {}),
             ...(source.notice ? { notice: true } : {}),
             ...(source.human ? { human: source.human } : {}),
+            // Shown (and logged) by the round that was running when it arrived (groups.js, #455).
+            ...(source.shown === true ? { shown: true } : {}),
             ...(source.plain ? { plain: true } : {}),
             ...(source.everyone ? { everyone: true } : {}),
             ...(Array.isArray(source.callIds) && source.callIds.length > 0 ? { callIds: source.callIds.filter(id => typeof id === 'string') } : {}),

@@ -1081,3 +1081,62 @@ test('#299: two owner lines queued together are still routed by the newest one',
   assert.equal(result.replies.filter(reply => reply.kind === undefined).length, 1)
   assert.ok(writer)
 })
+
+test('#455: another person\'s line and another home\'s Bot line that arrive mid-turn show in the running round, never in the Session queue', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt, ctx } = start()
+  t.after(stop)
+  await team(call, sent)
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const hosted = await rt.upsertFaceRoom({
+    roomId: 'frm_455',
+    localId: 'face-455',
+    status: 'open',
+    members: [{ handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false }],
+    localBots: [{ id: chief, handle: '@chief.me.home', name: 'Chief' }],
+  })
+  // The group's Session is in a turn (its round is running): a followup would wait in DSH's composer queue.
+  const queued = []
+  let busy = true
+  let markIdle
+  const idle = new Promise(resolve => { markIdle = resolve })
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async sessionId => sessionId !== hosted.id ? resolve(sessionId) : ({
+    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: message => queued.push(message) },
+  })
+  sent.length = 0
+  await emit(hosted.id, userMessage('Hi, we just met. Can someone suggest a lunch spot?'))
+  const running = relay(hosted.id, 'r455')
+  const turn = await turnFor(sent)
+  assert.ok(turn, 'my Chief is answering')
+
+  const lines = 'Line one from B\nLine two: I like noodles\nLine three: budget 50'
+  await rt.postToRoom(hosted, { id: 'face-notice', name: 'SelfB' }, lines, { quiet: true, notice: true, human: { authorId: '@chief.selfb.home', name: 'SelfB' }, plain: true })
+  await rt.postToRoom(hosted, { id: '@researcher.selfb.home', name: 'Researcher' }, 'Since B likes noodles, try the corner shop.', { remote: { handle: '@researcher.selfb.home' }, senderName: 'Researcher' })
+  // What the open chat polls while the round runs, and what waits in the composer queue meanwhile.
+  const waiting = queued.length
+  const live = structuredClone([...rt.roomProgress.values()].find(entry => entry.roomId === hosted.id)?.replies ?? [])
+  const logged = hosted.log.filter(line => line.authorId === '@researcher.selfb.home').length
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'How about noodles?', 1)
+  const done = JSON.parse(await running)
+  assert.equal(waiting, 0, 'nothing waits in the composer queue')
+  // Both lines are in the running round at once, the person's with its line breaks, neither with a header.
+  assert.deepEqual(live.map(({ kind, other, name, text }) => ({ kind, other, name, text })), [
+    { kind: 'user', other: true, name: 'SelfB', text: lines },
+    { kind: 'remote', other: undefined, name: 'Researcher', text: 'Since B likes noodles, try the corner shop.' },
+  ])
+  assert.equal(logged, 1, 'the Bot line is in the room for the Bots still to speak')
+  assert.deepEqual(done.replies.map(reply => reply.kind ?? 'bot'), ['user', 'remote', 'bot'])
+
+  // Once the turn is done the Session gets both lines, marked as shown, for their own rounds.
+  busy = false
+  markIdle()
+  await waitFor(() => (queued.length === 2 ? true : undefined))
+  assert.deepEqual(queued.map(message => [message.source.role, message.source.shown]), [['post', true], ['post', true]])
+  for (const message of queued) await emit(hosted.id, { type: 'user/message', data: { source: message.source, content: message.content } })
+  // Both fold into one relay here; the person's line is not drawn twice and the Bot line is not logged twice.
+  sent.length = 0
+  const again = JSON.parse(await relay(hosted.id, 'r455-next'))
+  assert.equal(again.replies.filter(reply => reply.kind === 'user' || reply.kind === 'remote').length, 0)
+  assert.equal(hosted.log.filter(line => line.authorId === '@researcher.selfb.home').length, 1)
+})

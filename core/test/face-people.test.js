@@ -114,3 +114,22 @@ test('another home member\'s line shows their person mark and a received surface
   // The bundle carries the same rule.
   assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.bt-umsg-other \.bt-ubody\{background:var\(--bt-bubble\)/)
 })
+
+test('#455: a line a running round already showed draws no second bubble, and a person\'s line keeps its line breaks', async () => {
+  const { TriggerCell } = await load('cells.js')
+  const { CONVERSATION_CSS } = await load('styles.js')
+  const roster = { bots: [], byId: {}, exchangeTurns: {}, roomsById: { g1: { id: 'g1', origin: 'face-to-face', members: [], participants: [] } } }
+  const cell = shown => TriggerCell({
+    node: { data: { turn: 3, source: { kind: 'bot', role: 'post', remote: { handle: '@researcher.selfb.home' }, senderName: 'Researcher', senderSessionId: '@researcher.selfb.home', ...(shown ? { shown: true } : {}) }, content: [{ type: 'text', text: '[Group post from Researcher]\nTry the corner shop.' }] } },
+    sessionId: 'g1',
+    useRoster: select => select(roster),
+    useSessions: select => select({ byId: {}, projectionsBySession: {} }),
+    useTurnClock: select => select({}),
+    useUi: select => select({}),
+    actions: { noteTurnPeer() {} },
+  })
+  assert.notEqual(cell(false), null, 'a line that opens its own round is drawn by its trigger')
+  assert.equal(cell(true), null, 'one the running round showed is not drawn again')
+  assert.match(CONVERSATION_CSS, /\.bt-person-msg \.bt-bubble :is\(p,li\)\{white-space:pre-line\}/)
+  assert.match(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), /\.bt-person-msg \.bt-bubble :is\(p,li\)\{white-space:pre-line\}/)
+})

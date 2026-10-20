@@ -516,17 +516,13 @@ export function install(rt) {
       // late failure, its work picked up after a restart, or its work the user stopped is
       // an event of the round.
       const event = item => item.failed || item.resumed || item.stopped || item.notice || item.botId === 'face-notice'
-      for (const post of posts.filter(item => !item.kickoff && !event(item))) {
+      // A post a running round already showed and logged when it arrived (#455) is not logged again.
+      for (const post of posts.filter(item => !item.kickoff && !event(item) && !item.shown)) {
         // Image readings go into the log only; `@` names are picked from what the user typed.
         const text = post.images === undefined ? post.text : [post.text, ...await rt.imagesForGroup(post.images, room.id)].filter(Boolean).join('\n')
         // A face-room line the send path already logged and sent is not logged or sent again (#287).
         if (!post.botId && takePosted(room.id, post.text)) continue
-        appendRoom(room, rt.authoredRoomLine?.(room, post.botId
-          ? { who: rt.botOf(post.botId)?.name ?? post.name ?? 'Bot', botId: post.botId, authorId: post.botId, authorKind: 'bot', text }
-          : { who: post.authorName || 'User', text, authorId: post.authorId, authorKind: post.authorKind || 'human' })
-          ?? (post.botId
-            ? { who: rt.botOf(post.botId)?.name ?? post.name ?? 'Bot', botId: post.botId, text }
-            : { who: 'User', text }))
+        logPost(room, post, text)
       }
       if (posts.some(post => !post.botId && !post.kickoff)) {
         room.botRounds = 0
@@ -581,10 +577,10 @@ export function install(rt) {
         appendRoom(room, { who: name, botId: post.botId, kind, text: '' })
         round.replies.push({ kind, botId: post.botId, name, color: bot?.color, time: Date.now() })
       }
-      for (const post of posts.filter(item => item.notice || item.botId === 'face-notice')) {
+      for (const post of posts.filter(item => (item.notice || item.botId === 'face-notice') && !item.shown)) {
         const text = String(post.text ?? '')
         if (!text) continue
-        if (post.human) round.replies.push({ kind: 'user', other: true, text, authorId: post.human.authorId, authorKind: 'human', name: post.human.name, time: Date.now() })
+        if (post.human) round.replies.push(personReply(post.human, text))
         else round.replies.push({ kind: 'notice', text, time: Date.now() })
       }
       if (posts.some(post => post.resumed || post.stopped)) await rt.save()
@@ -746,10 +742,59 @@ export function install(rt) {
     return admin ? [admin, ...members.filter(bot => bot !== admin)] : members
   }
 
+  // A post's line in the room log, as the relay writes it: a Bot's (mine or another home's) or a person's.
+  function logPost(room, post, text) {
+    return appendRoom(room, rt.authoredRoomLine?.(room, post.botId
+      ? { who: rt.botOf(post.botId)?.name ?? post.name ?? 'Bot', botId: post.botId, authorId: post.botId, authorKind: 'bot', text }
+      : { who: post.authorName || 'User', text, authorId: post.authorId, authorKind: post.authorKind || 'human' })
+      ?? (post.botId
+        ? { who: rt.botOf(post.botId)?.name ?? post.name ?? 'Bot', botId: post.botId, text }
+        : { who: 'User', text }))
+  }
+  // Another person's own line as a round shows it: their bubble, never one of mine (#180).
+  const personReply = (human, text) => ({ kind: 'user', other: true, text, authorId: human.authorId, authorKind: 'human', name: human.name, time: Date.now() })
+
+  // Another person's line or another home's Bot's line that arrives while the group's Session is in a turn
+  // (#455). DSH would hold a followup in the composer's queue until the turn ends, shown raw with its
+  // "[Group post from …]" header and steerable as if the owner had typed it. Instead the round that is
+  // running shows it at once, as that person's or Bot's bubble (a Bot's line is logged then too, so the
+  // Bots still to speak see it; a person's line Bot Social delivered is logged already), and the Session
+  // gets it once the turn is done, for the round its own rules open (who answers, if anyone).
+  const heldPosts = new Map()
+  const fromElsewhere = extra => extra.human !== undefined || extra.remote !== undefined
+  function showInRound(room, sender, text, extra) {
+    const round = [...rt.roomProgress.values()].findLast(entry => entry.roomId === room.id)
+    if (round === undefined || text === '') return false
+    if (extra.human) {
+      round.replies.push(personReply(extra.human, text))
+      return true
+    }
+    logPost(room, { botId: sender.id, name: sender.name }, text)
+    void rt.save().catch(() => {})
+    // Not a reply to the round, so a round report leaves it out (kind), and the chat draws the friend's Bot.
+    round.replies.push({ kind: 'remote', remote: true, botId: sender.id, handle: extra.remote.handle, name: sender.name, text, time: Date.now() })
+    return true
+  }
+  function holdPost(room, agent, sender, text, extra) {
+    const shown = extra.shown === true || showInRound(room, sender, text, extra)
+    const held = heldPosts.get(room.id) ?? []
+    heldPosts.set(room.id, [...held, { sender, text, extra: shown ? { ...extra, shown: true } : extra }])
+    if (held.length > 0) return
+    void Promise.resolve().then(() => agent.whenIdle()).then(async () => {
+      const waiting = heldPosts.get(room.id) ?? []
+      heldPosts.delete(room.id)
+      for (const post of waiting) await postToRoom(rt.roomOf(room.id) ?? room, post.sender, post.text, post.extra)
+    }).catch(error => rt.warn('ds-bot: a line held for %s was not delivered: %s', room.name, error))
+  }
+
   // A Bot's message into the group's own Session, which relays it as a new round.
   // Chips are stripped here and again in deliver() for Bot-to-Bot own-chat followups (#106).
   async function postToRoom(room, sender, text, extra = {}) {
     const agent = await rt.resolveAgent(room.id)
+    if (fromElsewhere(extra) && agent.status === 'running' && typeof agent.whenIdle === 'function') {
+      holdPost(room, agent, sender, stripSessionChips(text), extra)
+      return
+    }
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: `[Group post from ${sender.name}]\n${stripSessionChips(text)}` }],
       source: { kind: SOURCE_KIND, form: 'relay', role: 'post', exchangeId: randomUUID(), senderName: sender.name, senderSessionId: sender.id, roomId: room.id, hop: 0, ...extra },

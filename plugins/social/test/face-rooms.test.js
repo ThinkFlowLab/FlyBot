@@ -5,6 +5,7 @@ import {
   mapFaceError,
   formatRetryAfter,
   countdownLabel,
+  serverClockOffset,
   cleanFaceName,
   stripFaceMarkers,
   faceUntrustedText,
@@ -88,6 +89,24 @@ test('countdown copy for a candidate room', () => {
   assert.equal(countdownLabel('2026-10-15T10:09:40.000Z', now), '9:40 left to join')
   assert.equal(countdownLabel('2026-10-15T10:00:05.000Z', now), '0:05 left to join')
   assert.equal(countdownLabel('2026-10-15T09:00:00.000Z', now), 'Joining has ended')
+})
+
+test('#458: every home counts down to the server deadline, whatever its own clock says', async () => {
+  const now = Date.parse('2026-10-15T10:00:00.000Z')
+  // This home's clock is 40 s behind Bot Social: the same deadline reads the same as on a home whose clock is right.
+  assert.equal(countdownLabel('2026-10-15T10:08:35.000Z', now - 40_000, 40_000), '8:35 left to join')
+  // A gap under 3 s is header rounding, not skew.
+  assert.equal(serverClockOffset('Thu, 15 Oct 2026 10:00:01 GMT', now, now + 200), 0)
+  assert.equal(serverClockOffset('Thu, 15 Oct 2026 10:00:40 GMT', now, now), 40_500)
+  assert.equal(serverClockOffset('Thu, 15 Oct 2026 09:59:00 GMT', now, now), -59_500)
+  assert.equal(serverClockOffset(undefined, now, now), undefined)
+  const api = createFaceRoomApi({
+    server: 'https://s', token: 't',
+    fetch: async () => new Response(JSON.stringify({ rooms: [] }), { status: 200, headers: { date: new Date(Date.now() + 5 * 60_000).toUTCString() } }),
+  })
+  assert.equal(api.clockOffsetMs(), 0)
+  await api.list()
+  assert.ok(Math.abs(api.clockOffsetMs() - 5 * 60_000) < 2000, String(api.clockOffsetMs()))
 })
 
 test('peer names and system copy are sanitized', () => {

@@ -2628,6 +2628,15 @@ function usageOf(list, ids) {
   const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
   return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 }
+function faceRowTitle(title) {
+  const text = String(title ?? "");
+  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
+  if (named) return `${named[2]} · ${named[1]}`;
+  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
+}
+function awayGroups(groups, roomsById) {
+  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
+}
 
 // src/client/sources.js
 function createSource(initial) {
@@ -3803,6 +3812,8 @@ var CONVERSATION_CSS = `
 .bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
 .bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 .bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
+/* A person's typed line keeps its line breaks, as on the sender's side (#455): Markdown would join them. */
+.bt-person-msg .bt-bubble :is(p,li){white-space:pre-line}
 .bt-remote-handle{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
 .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
@@ -5683,6 +5694,7 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
   return unreadOpening ? (0, import_react8.createElement)(import_react8.Fragment, null, (0, import_react8.createElement)("div", { className: "bt-open-new" }, (0, import_react8.createElement)(NewDivider), (0, import_react8.createElement)("div", { className: "bt-time-sep", role: "separator" }, unreadOpening)), body) : body;
   function triggerBody() {
     if (source.form === "remote-chat") return null;
+    if (source.shown === true) return null;
     if (source.remote?.handle) {
       const message = (0, import_react8.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
       return source.remote.firstContact === true ? (0, import_react8.createElement)(import_react8.Fragment, null, (0, import_react8.createElement)(FirstContact, { source, roster, sessionId }), message) : message;
@@ -6464,7 +6476,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const groups = workKeys(useGroupWork(useWork, (rooms) => Object.entries(rooms).flatMap(([roomId, entries2]) => entries2.filter((entry) => entry.botId === id).map((entry) => `${roomId}|${entry.tool ?? ""}`))));
   const away = !running && groups.length > 0;
   const state = botState(running || away, doing, alert);
-  const awayLine = away ? workLine(roster.roomsById[groups[0].id]?.name ?? t("a group chat"), groups[0].tool, groups.length - 1) : null;
+  const shownAway = away ? awayGroups(groups, roster.roomsById) : [];
+  const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t("a group chat"), shownAway[0].tool, shownAway.length - 1) : null;
   if (!isListedRemoteChat(bot) && !active && !main) return null;
   const onContextMenu = (event) => {
     event.preventDefault();
@@ -6622,7 +6635,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
     wide ? (0, import_react10.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react10.createElement)("span", { className: "bt-row-name" }, (0, import_react10.createElement)("span", { className: "bt-row-title" }, title), face ? (0, import_react10.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react10.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react10.createElement)(PinMark) : null),
+      (0, import_react10.createElement)("span", { className: "bt-row-name" }, (0, import_react10.createElement)("span", { className: "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react10.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react10.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react10.createElement)(PinMark) : null),
       workingLine ? (0, import_react10.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react10.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && waiting && !active ? (0, import_react10.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react10.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
