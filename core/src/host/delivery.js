@@ -69,7 +69,8 @@ export function install(rt) {
     return resolved.agent
   }
 
-  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false } = {}) => {
+  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false, answeredIn } = {}) => {
+    if (answeredIn !== undefined) return `[The user answered your question card in the group "${answeredIn}" · your reply goes back to ${fromName} there]`
     if (deferred) return `[Message from ${fromName} · you read it during your last task; answer it now]`
     if (retried && role !== 'room') return '[Your last reply wrote a tool call as text, so nothing ran]'
     if (resumed && role === 'resume') return '[DeepSeek Harness restarted while you were working]'
@@ -126,8 +127,9 @@ export function install(rt) {
   // text (resume.js, turns.js), and `resent` is a message a shutdown cancelled; their
   // exchange is recorded already too. `askedBy` is the member whose @mention called a
   // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
-  // from; the reply goes back to that Session (turns.js).
-  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin }) {
+  // from; the reply goes back to that Session (turns.js). `answeredIn`: the group where the user
+  // answered the Bot's question card about work handed over from there (tools.js, #550).
+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin }) {
     const from = rt.botOf(fromId)
     const to = rt.botOf(toId)
     if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -174,7 +176,7 @@ export function install(rt) {
     // queues for the next turn (see turns.js for how each is routed).
     const body = fromId ? stripSessionChips(text) : text
     const message = createUserMessage({
-      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
+      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
       source,
     })
     if (steer) agent.steer(message)

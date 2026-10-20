@@ -72,9 +72,17 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
   assert.doesNotMatch(report.markdown, /sk-abc|\/home\//)
   assert.equal(report.entries[0].code, 'RATE_LIMIT', 'newest first')
 
-  // Written as JSON lines; a new host reads them back.
-  await new Promise(resolve => setTimeout(resolve, 50))
-  assert.equal(readFileSync(join(home, 'logs', 'diagnostics.jsonl'), 'utf8').trim().split('\n').length, 2)
+  // Written as JSON lines in the background; a new host reads them back. Wait for the
+  // lines rather than a fixed pause, which a busy CI disk can outlast (#551 queue run).
+  const logLines = () => {
+    try {
+      return readFileSync(join(home, 'logs', 'diagnostics.jsonl'), 'utf8').trim().split('\n').length
+    } catch {
+      return 0 // not written yet
+    }
+  }
+  for (let waited = 0; logLines() < 2 && waited < 5000; waited += 20) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(logLines(), 2)
   const again = host(home)
   assert.deepEqual((await again.diagnostics.entries()).map(entry => entry.code), ['EACCES', 'RATE_LIMIT'])
   assert.match(await again.diagnostics.logText(), /\n {4}at TestContext/)

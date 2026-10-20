@@ -382,3 +382,30 @@ test('views keep the sole owner whole and narrow per owner with two members', as
   assert.deepEqual(live2.connectors, [])
   assert.equal(live2.memoryReviews, 0)
 })
+
+test('a group\'s question card is its Bot owner\'s to see and answer, not every member\'s (#550)', async (t) => {
+  const { rt } = runtime(t, TEAM)
+  await rt.load()
+  const sessionA = await redeemOwner(rt)
+  const sessionB = await redeemOwner(rt)
+  rt.state.bots.a1 = { id: 'a1', sessionId: 'a1', name: 'A', instructions: '', createdAt: 2, ownerId: 'owner-1' }
+  rt.state.bots.b1 = { id: 'b1', sessionId: 'b1', name: 'B', instructions: '', createdAt: 3, ownerId: 'owner-2' }
+  rt.state.rooms.rx = {
+    id: 'rx', name: 'Shared', members: ['a1', 'b1'], admin: 'a1', sessions: { a1: 'gs-a1', b1: 'gs-b1' },
+    participants: [
+      { kind: 'human', id: 'owner-1', role: 'admin', joinedSeq: 0 },
+      { kind: 'human', id: 'owner-2', role: 'member', joinedSeq: 0 },
+    ],
+  }
+  rt.state.questions.rx = { id: 'q1', question: 'Which branch?', options: [{ label: 'dev' }], botId: 'a1' }
+  await rt.save()
+  const actorA = await rt.authenticate(sessionA.sessionToken)
+  const actorB = await rt.authenticate(sessionB.sessionToken)
+  assert.equal(rt.authorize(actorB, 'send', { sessionId: 'rx' }).ok, true)
+  assert.equal(rt.authorize(actorA, 'answer-question', { sessionId: 'rx' }).ok, true)
+  assert.equal(rt.authorize(actorB, 'answer-question', { sessionId: 'rx' }).ok, false)
+  assert.equal(rt.authorize(actorB, 'dismiss-question', { sessionId: 'rx' }).ok, false)
+  const full = { bots: Object.values(rt.state.bots), rooms: [], questions: { rx: rt.state.questions.rx } }
+  assert.deepEqual(Object.keys(rt.ownedView(full, actorA).questions), ['rx'])
+  assert.deepEqual(Object.keys(rt.ownedView(full, actorB).questions), [])
+})

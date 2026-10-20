@@ -461,8 +461,9 @@ export function install(rt) {
           }
           const own = rt.chatOwners.get(id)
           if (own !== undefined) rt.dropKickoff(own)
-          // Any user message answers or supersedes the open question card.
-          if (state.questions[id] !== undefined) {
+          // Any user message answers or supersedes the open question card. A group's card waits for
+          // its own answer: a line typed in the group goes to its round, not to the Bot that asked (#550).
+          if (state.questions[id] !== undefined && !rt.roomOf(id)) {
             delete state.questions[id]
             void rt.save().catch(() => {})
           }

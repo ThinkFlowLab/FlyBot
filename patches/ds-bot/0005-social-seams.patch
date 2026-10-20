@@ -548,8 +548,17 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'memory-view':
          case 'memory-ask':
          case 'memory-forget':
-@@ -260,6 +260,8 @@ export function install(rt) {
+@@ -258,8 +258,17 @@ export function install(rt) {
+           const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
+           const question = state.questions[sessionId]
            if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
++          // A card in a group about work handed over from there (#550) answers the Bot that asked.
++          if (question.botId !== undefined && rt.roomOf(sessionId) !== undefined) {
++            const leaked = unshareableReference(actor, String(body.answer?.custom ?? ''))
++            if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
++            const answered = await rt.answerGroupQuestion(sessionId, question, body.answer, actor)
++            return answered.ok ? ok(true) : fail(answered.error, answered.code)
++          }
            const reply = questionReply(question, body.answer)
            if (reply === undefined) return fail('Nothing to send', 'bot/invalid')
 +          const leaked = unshareableReference(actor, reply.text)
@@ -783,7 +792,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
  
  export function install(rt) {
    const { ctx, state } = rt
-@@ -10,6 +10,8 @@ export function install(rt) {
+@@ -10,10 +10,13 @@ export function install(rt) {
      const resolved = await ctx.sessionController.resolveAgent(sessionId)
      if ('error' in resolved) throw new Error(resolved.error?.message ?? 'Session unavailable')
      rt.hideBlockingQuestion(resolved.agent)
@@ -792,6 +801,12 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      return resolved.agent
    }
  
+-  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false } = {}) => {
++  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false, answeredIn } = {}) => {
++    if (answeredIn !== undefined) return `[The user answered your question card in the group "${answeredIn}" · your reply goes back to ${fromName} there]`
+     if (deferred) return `[Message from ${fromName} · you read it during your last task; answer it now]`
+     if (retried && role !== 'room') return '[Your last reply wrote a tool call as text, so nothing ran]'
+     if (resumed && role === 'resume') return '[DeepSeek Harness restarted while you were working]'
 @@ -28,6 +28,38 @@ export function install(rt) {
      return `[Message from ${fromName}]`
    }
@@ -831,12 +846,15 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
    // Roles recorded as team exchanges.
    const EXCHANGE_ROLES = new Set(['request', 'reply', 'stopped'])
  
-@@ -39,12 +39,16 @@ export function install(rt) {
+@@ -38,13 +38,18 @@ export function install(rt) {
+   // text (resume.js, turns.js), and `resent` is a message a shutdown cancelled; their
    // exchange is recorded already too. `askedBy` is the member whose @mention called a
    // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
-   // from; the reply goes back to that Session (turns.js).
+-  // from; the reply goes back to that Session (turns.js).
 -  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId }) {
-+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin }) {
++  // from; the reply goes back to that Session (turns.js). `answeredIn`: the group where the user
++  // answered the Bot's question card about work handed over from there (tools.js, #550).
++  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin }) {
      const from = rt.botOf(fromId)
      const to = rt.botOf(toId)
      if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -879,7 +897,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +    const body = fromId ? stripSessionChips(text) : text
      const message = createUserMessage({
 -      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${text}` }],
-+      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
++      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
        source,
      })
      if (steer) agent.steer(message)

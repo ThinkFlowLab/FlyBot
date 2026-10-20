@@ -475,6 +475,7 @@ export function install(rt) {
     if (room === undefined) throw new Error('Unknown group chat')
     for (const botId of Object.keys(room.sessions ?? {})) rt.dropGroupSession(room, botId)
     delete state.rooms[id]
+    delete state.questions[id]
     rt.roomInbox.delete(id)
     const failed = await saveForDelete()
     // Armed scheduled tasks refuse a plain archive and would keep delivering into
@@ -531,6 +532,10 @@ export function install(rt) {
       delete state.questions[part]
       delete state.exchangeTurns[part]
       delete state.remoteTypedTurns?.[part]
+    }
+    // A card it asked in a group (#550) has nobody left to answer.
+    for (const [key, question] of Object.entries(state.questions)) {
+      if (question?.botId === id) delete state.questions[key]
     }
     const touched = []
     for (const room of Object.values(state.rooms)) {

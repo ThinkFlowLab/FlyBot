@@ -134,6 +134,11 @@ export function install(rt) {
     return false
   }
 
+  // A card a Bot asks in a group about work handed over from there (#550) is its owner's to see
+  // and answer, like that Bot's approvals; the room's owner may too. Other members get no card.
+  const questionFor = (actor, sessionId, question) => question?.botId === undefined
+    || botOwnedBy(actor, question.botId) || roomOwnedBy(actor, sessionId)
+
   rt.botOwnedBy = botOwnedBy
   rt.roomOwnedBy = roomOwnedBy
   rt.roomMemberOf = roomMemberOf
@@ -162,7 +167,7 @@ export function install(rt) {
       bots: full.bots.filter(bot => bot.ownerId === actor.memberId || sharedBots.has(bot.id)),
       rooms,
       self: { memberId: actor.memberId, displayName: actor.displayName },
-      questions: bySession(full.questions),
+      questions: Object.fromEntries(Object.entries(bySession(full.questions)).filter(([id, question]) => questionFor(actor, id, question))),
       exchangeTurns: bySession(full.exchangeTurns),
       remoteTypedTurns: bySession(full.remoteTypedTurns),
       remoteAwaiting: bySession(full.remoteAwaiting),
@@ -346,6 +351,9 @@ export function install(rt) {
         // A standing grant outlives this one request: only the Bot's own owner gives it (#540).
         if (String(body?.choice ?? '').startsWith('always')) return botOwnedBy(actor, approval.botId) ? ALLOW : deny('bot/forbidden', 'Only the Bot\'s owner can always allow')
         return botOwnedBy(actor, approval.botId) || roomOwnedBy(actor, approval.roomId) ? ALLOW : deny('bot/forbidden', 'You do not own that approval')
+      }
+      if ((ep === 'answer-question' || ep === 'dismiss-question') && !questionFor(actor, String(body?.sessionId ?? ''), state.questions?.[String(body?.sessionId ?? '')])) {
+        return deny('bot/forbidden', 'This question is not yours to answer')
       }
       return requireSession(body?.sessionId)
     }

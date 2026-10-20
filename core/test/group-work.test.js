@@ -287,3 +287,82 @@ test('members still at work show in the team view and in the prompts of the othe
   host.finish('gc', '没问题。')
   await settle(() => result() !== undefined)
 })
+
+// #550: work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own
+// chat; a question there belongs to the group the work came from, and its answer goes back the same way.
+const askBranch = (host, sessionId = 'c') => host.tool('ask_user', { question: 'Which branch?', options: [{ label: 'main' }, { label: 'dev' }] }, sessionId, { callId: 'q1', concludeTurn() {} })
+
+test('a question about work handed out from a group shows in that group, not in the Bot\'s own chat (#550)', async (t) => {
+  const host = await start(t)
+  await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
+  host.begin('c')
+  assert.match(await askBranch(host), /in the group "Ops"/)
+  const { value } = await host.call('state', {})
+  assert.equal(value.questions.c, undefined)
+  assert.deepEqual([value.questions.r1?.question, value.questions.r1?.botId, value.questions.r1?.header], ['Which branch?', 'c', 'Tester'])
+})
+
+test('the answer given in the group reaches the asking Bot\'s waiting work and its reply returns to the group (#550)', async (t) => {
+  const host = await start(t)
+  await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
+  host.begin('c')
+  await askBranch(host)
+  host.finish('c', 'Need to know the branch first.')
+  await settle(() => host.agentOf('gb').calls.length === 1)
+  const asked = (await host.call('state', {})).value.questions.r1
+  // A line typed in the group goes to the group's round; the card waits for its own answer.
+  host.emit('r1', 'user/message', host.say('大家好'))
+  assert.equal((await host.call('state', {})).value.questions.r1?.id, asked.id)
+  const before = host.agentOf('c').calls.length
+  const answered = await host.call('answer-question', { sessionId: 'r1', questionId: asked.id, answer: { selected: ['dev'] } })
+  assert.equal(answered.ok, true)
+  assert.equal((await host.call('state', {})).value.questions.r1, undefined)
+  // Exactly one new message in Tester's own chat: a hidden request that carries the answer, not a user turn.
+  const added = host.agentOf('c').calls.slice(before)
+  assert.equal(added.length, 1)
+  assert.deepEqual([added[0].source.kind, added[0].source.role, added[0].source.senderSessionId, added[0].source.senderRoomId], ['bot', 'request', 'b', 'r1'])
+  assert.match(text(added[0]), /group "Ops"/)
+  assert.match(text(added[0]), /Which branch\?\nAnswer: dev/)
+  // The group sees the answer as a quiet notice.
+  await settle(() => host.agentOf('r1').calls.some(call => call.source?.notice === true))
+  const notice = host.agentOf('r1').calls.find(call => call.source?.notice === true)
+  assert.equal(notice.source.quiet, true)
+  assert.match(text(notice), /answered Tester: Which branch\? → dev/)
+  // Tester's reply goes back to Writer's Session in the group, which posts it there.
+  host.begin('c')
+  host.finish('c', 'Ran it on dev: all green.')
+  await settle(() => host.agentOf('gb').calls.length === 2)
+  assert.match(text(host.agentOf('gb').calls.at(-1)), /^\[Reply from Tester\]\nRan it on dev: all green\./)
+  assert.equal((await host.call('answer-question', { sessionId: 'r1', questionId: asked.id, answer: { selected: ['dev'] } })).error.code, 'bot/stale')
+})
+
+test('a question in the Bot\'s own chat stays there, and a request answered to the user keeps its card there (#550)', async (t) => {
+  const host = await start(t)
+  host.emit('c', 'turn/start', { turn: 1 })
+  host.emit('c', 'user/message', host.say('hi'))
+  await askBranch(host)
+  let { value } = await host.call('state', {})
+  assert.deepEqual([value.questions.c?.question, value.questions.r1], ['Which branch?', undefined])
+  host.finish('c', '')
+  await host.call('dismiss-question', { sessionId: 'c' })
+  await host.tool('message_bot', { to: 'Tester', message: '跟用户打个招呼', reply_to: 'user' }, 'gb')
+  host.begin('c')
+  await askBranch(host)
+  ;({ value } = await host.call('state', {}))
+  assert.deepEqual([value.questions.c?.question, value.questions.r1], ['Which branch?', undefined])
+})
+
+test('a face-to-face room asks and answers the same way (#550)', async (t) => {
+  const host = await start(t, { origin: 'face-to-face' })
+  await host.tool('message_bot', { to: 'Tester', message: 'check it' }, 'gb')
+  host.begin('c')
+  await askBranch(host)
+  const asked = (await host.call('state', {})).value.questions.r1
+  assert.equal(asked?.botId, 'c')
+  host.finish('c', '')
+  const before = host.agentOf('c').calls.length
+  assert.equal((await host.call('answer-question', { sessionId: 'r1', questionId: asked.id, answer: { selected: [], custom: 'the release branch' } })).ok, true)
+  const added = host.agentOf('c').calls.slice(before)
+  assert.deepEqual(added.map(call => [call.source.role, call.source.senderRoomId]), [['request', 'r1']])
+  assert.match(text(added[0]), /Answer: the release branch/)
+})

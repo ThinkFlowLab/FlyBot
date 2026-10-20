@@ -401,6 +401,13 @@ export function install(rt) {
           const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
           const question = state.questions[sessionId]
           if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
+          // A card in a group about work handed over from there (#550) answers the Bot that asked.
+          if (question.botId !== undefined && rt.roomOf(sessionId) !== undefined) {
+            const leaked = unshareableReference(actor, String(body.answer?.custom ?? ''))
+            if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
+            const answered = await rt.answerGroupQuestion(sessionId, question, body.answer, actor)
+            return answered.ok ? ok(true) : fail(answered.error, answered.code)
+          }
           const reply = questionReply(question, body.answer)
           if (reply === undefined) return fail('Nothing to send', 'bot/invalid')
           const leaked = unshareableReference(actor, reply.text)
