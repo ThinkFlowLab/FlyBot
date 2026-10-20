@@ -1009,7 +1009,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,60 @@
+@@ -1,44 +1,61 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -1045,6 +1045,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { FOLDER_CSS } from './folder-menu.js'
  import { USAGE_CSS } from './usage-page.js'
  import { SCHEDULE_CSS } from './schedules.js'
++import { INBOX_CSS } from './inbox.js'
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -1156,7 +1157,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        expected = target
        ctx.uiWorkspace.openSession(target)
      },
-@@ -444,8 +444,15 @@ export function apply(ctx) {
+@@ -444,10 +444,20 @@ export function apply(ctx) {
      // Opening the conversation would move focus to its composer and blur the name field.
      renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
      // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
@@ -1173,13 +1174,18 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    closeSettings: () => { ui.set(state => (state.settings || state.remoteBotSettings ? { ...state, settings: null, remoteBotSettings: null } : state)) },
      openMemory: (botId) => { ui.set(state => ({ ...state, memory: botId, menu: null, palette: null })) },
      closeMemory: () => { ui.set(state => (state.memory ? { ...state, memory: null } : state)) },
++    // The Agent inbox (#349) opens over the conversation; Open on a card closes it first.
++    openInbox: () => { ui.set(state => ({ ...state, inbox: true, menu: null, palette: null, newChat: null })) },
++    closeInbox: () => { ui.set(state => (state.inbox ? { ...state, inbox: null } : state)) },
      openConnectors: () => { ui.set(state => ({ ...state, settings: { page: 'connectors', id: null }, menu: null, palette: null, newChat: null })) },
+     // Agent mode hands the surface back to the shell; everything open on the Bot
+     // surface closes first so nothing stale reopens on the way back.
 @@ -455,7 +455,7 @@ export function apply(ctx) {
        if (mode !== 'bot' && mode !== 'agent') return
        if (surface.getSnapshot().mode === mode) return
        if (mode === 'agent') {
 -        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, toast: null }))
-+        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, toast: null }))
++        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, toast: null }))
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
@@ -1196,7 +1202,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {
-@@ -539,15 +539,20 @@ export function apply(ctx) {
+@@ -539,15 +539,21 @@ export function apply(ctx) {
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
@@ -1210,6 +1216,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      approveCapability: name => after(call('capability-approve', { name })),
 +    setBotConnector: (botId, connector, enabled, scope = 'owner') => after(call('bot-connectors', { botId, connector, enabled, scope })),
      setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
++    tasks: () => call('tasks'),
      schedules: () => call('schedules'),
      scheduleCreate: task => call('schedule-create', task),
 +    scheduleUpdate: task => call('schedule-update', task),
@@ -1287,7 +1294,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,11 +752,12 @@ export function apply(ctx) {
+@@ -752,11 +752,13 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1295,6 +1302,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    installCompiledStyles(MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS + REMOTE_BOT_SETTINGS_CSS, 'models'),
      installCompiledStyles(USAGE_CSS, 'usage'),
      installCompiledStyles(SCHEDULE_CSS, 'schedules'),
++    installCompiledStyles(INBOX_CSS, 'inbox'),
      installCompiledStyles(FEEDBACK_CSS, 'feedback'),
      installCompiledStyles(ABOUT_CSS, 'about'),
 +    installCompiledStyles(FLYBOT_CSS, 'flybot'),
@@ -1582,15 +1590,16 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 diff --git a/src/client/overlays.js b/src/client/overlays.js
 --- a/src/client/overlays.js
 +++ b/src/client/overlays.js
-@@ -8,6 +8,7 @@ import { SettingsDialog } from './settings.js'
+@@ -8,6 +8,8 @@ import { SettingsDialog } from './settings.js'
  import { ContextMenu } from './context-menu.js'
  import { PANEL_LINGER_MS, BotPanel } from './browser-pane.js'
  import { MemoryDialog } from './memory-panel.js'
 +import { RemoteBotSettingsSheet } from './remote-bot-settings.js'
++import { InboxDialog } from './inbox.js'
  import { useLinger } from './motion.js'
  
  // How long a closing dialog or menu stays for its exit (see their [data-leaving] CSS).
-@@ -36,6 +36,8 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+@@ -36,8 +36,11 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
    }, [ui.details, ui.view, ui.renaming, ui.tab])
    const pane = open ?? kept
    const [settings, settingsLeaving] = useLinger(ui.settings, DIALOG_EXIT_MS)
@@ -1598,13 +1607,18 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
 +  const [remoteBotSettings, remoteLeaving] = useLinger(remoteBotId, DIALOG_EXIT_MS)
    const [memory, memoryLeaving] = useLinger(ui.memory && roster.byId[ui.memory] ? ui.memory : null, DIALOG_EXIT_MS)
    const [menu, menuLeaving] = useLinger(ui.menu, MENU_EXIT_MS)
++  const [inbox, inboxLeaving] = useLinger(ui.inbox ?? null, DIALOG_EXIT_MS)
    return h(Fragment, null,
-@@ -46,5 +46,6 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+     pane ? createPortal(h(BotPanel, { pane, leaving: open === null, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }), document.body) : null,
+     ui.newChat ? createPortal(h(NewChat, { key: ui.newChat, mode: ui.newChat, roster, actions }), document.body) : null,
+@@ -46,5 +46,7 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
      ui.voice ? createPortal(h(VoiceMode, { key: ui.voice, sessionId: ui.voice, roster, actions, useSessions, useSessionStatus }), document.body) : null,
      menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
      settings ? createPortal(h(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
+-    memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null)
 +    remoteBotSettings ? createPortal(h(RemoteBotSettingsSheet, { key: remoteBotSettings, bot: roster.byId[remoteBotSettings], roster, actions, leaving: remoteLeaving }), document.body) : null,
-     memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null)
++    memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null,
++    inbox ? createPortal(h(InboxDialog, { roster, useWork, useSessions, actions, leaving: inboxLeaving }), document.body) : null)
  }
 diff --git a/src/client/palette.js b/src/client/palette.js
 --- a/src/client/palette.js
@@ -1646,7 +1660,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
-@@ -1,15 +1,17 @@
+@@ -1,16 +1,19 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 +import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -1665,8 +1679,10 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { hostText, t } from './i18n.js'
 +import { cleanPeerName, ownerNameOf, remoteBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
  import { showsDshRow } from './dsh-offer.js'
++import { InboxRow } from './inbox.js'
  
  // -------------------------------------------------------------------------
+ // Sidebar
 @@ -37,56 +37,118 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
@@ -1890,9 +1906,11 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
    useLandOnMainBot(roster, useSessions, actions)
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
-@@ -278,12 +278,14 @@ export function TeamSidebar(props) {
+@@ -277,13 +277,16 @@ export function TeamSidebar(props) {
+           h(UpdateButton, { useUpdate: props.useUpdate, actions }),
            h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
      wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
++    h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
      h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
 -      main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
 -      order.map(entry => (entry.kind === 'bot'
