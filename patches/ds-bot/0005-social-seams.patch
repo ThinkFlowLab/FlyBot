@@ -1248,7 +1248,7 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
  test('a message sent between rounds still opens a full round', async (t) => {
    const { call, emit, userMessage, relay, answer, stop, sent } = start()
    t.after(stop)
-@@ -347,3 +347,575 @@ test('a message sent between rounds still opens a full round', async (t) => {
+@@ -347,3 +347,649 @@ test('a message sent between rounds still opens a full round', async (t) => {
    const result = JSON.parse(await running)
    assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer'])
  })
@@ -1748,6 +1748,80 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
 +  await assert.rejects(rt.updateRoom(hosted.id, { add: [chief] }, writer), /each person brings their own Bots and the room creator picks the lead/)
 +  await assert.rejects(rt.updateRoom(hosted.id, { admin: chief }, writer), /room creator picks the lead/)
 +  assert.equal(hosted.members.includes(chief), false)
++})
++
++// A face room with my Chief and Writer and Bob's Coder, led by `lead` (#476).
++async function leadRoom({ call, sent, rt }, id, lead) {
++  await team(call, sent)
++  await rt.load()
++  const state = (await call('state', {})).value
++  const chief = state.mainBotId
++  const writer = state.bots.find(bot => bot.name === 'Writer').id
++  const members = [
++    { handle: '@chief.me.home', displayName: 'Chief', ownerName: 'Me', published: false },
++    { handle: '@writer.me.home', displayName: 'Writer', ownerName: 'Me', published: false },
++    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
++  ]
++  const localBots = [{ id: chief, handle: '@chief.me.home', name: 'Chief' }, { id: writer, handle: '@writer.me.home', name: 'Writer' }]
++  const hosted = await rt.upsertFaceRoom({ roomId: `frm_${id}`, localId: `face-${id}`, status: 'open', members, localBots, lead: { handle: lead, picked: true, supported: true } })
++  return { hosted, chief, writer, members, localBots }
++}
++
++// Answers every room turn of a round with [PASS] and returns them once the round ends.
++async function passAll({ answer, sent }, running, seq) {
++  const turns = []
++  let done = false
++  void running.then(() => { done = true })
++  while (!done && turns.length < 6) {
++    const turn = await turnFor(sent, ...turns)
++    if (!turn) break
++    turns.push(turn)
++    await answer(turn.sessionId, turn.message.source.exchangeId, '[PASS]', seq + turns.length)
++  }
++  await running
++  return turns
++}
++
++test('#476: my lead\'s routing note makes a line that names no Bot its own; the other Bots keep "Default to [PASS]"; all passing still forces one answer', async (t) => {
++  const env = start()
++  const { emit, userMessage, relay, stop, sent } = env
++  t.after(stop)
++  const { hosted, chief, writer } = await leadRoom(env, 'mylead', '@writer.me.home')
++  assert.equal(hosted.admin, writer)
++  sent.length = 0
++  await emit(hosted.id, userMessage('周末去哪'))
++  const turns = await passAll(env, relay(hosted.id, 'mylead-1'), 0)
++  assert.equal(turns[0].sessionId, hosted.sessions[writer], 'the lead is asked first')
++  const lead = promptOf(turns[0])
++  assert.match(lead, /names no Bot/)
++  assert.match(lead, /You are the room lead, so a line like this is yours: answer it/)
++  assert.doesNotMatch(lead, /Default to \[PASS\]/, 'no contradiction with the lead\'s rules')
++  const other = turns.find(turn => turn.sessionId === hosted.sessions[chief])
++  assert.ok(other, 'the Chief is asked after the lead passes')
++  assert.match(promptOf(other), /Default to \[PASS\]/)
++  assert.doesNotMatch(promptOf(other), /You are the room lead/)
++  assert.equal(turns.length, 3, 'everyone passed: my lead\'s home forces one answer')
++})
++
++test('#476: a room led by another home\'s Bot forces no answer from mine when they all pass; a lead who left gives the fallback back', async (t) => {
++  const env = start()
++  const { emit, userMessage, relay, stop, sent, rt } = env
++  t.after(stop)
++  const { hosted, members, localBots } = await leadRoom(env, 'remotelead', '@coder.bob.home')
++  assert.equal(hosted.admin, null)
++  sent.length = 0
++  await emit(hosted.id, userMessage('周末去哪'))
++  const turns = await passAll(env, relay(hosted.id, 'remotelead-1'), 0)
++  assert.equal(turns.length, 2, 'each of my Bots is asked once; none is forced: Bob\'s Coder leads')
++  assert.ok(turns.every(turn => !/nobody else answered/.test(promptOf(turn))))
++
++  // Bob's Coder left (its lead not reset yet): no lead in the room, so my home answers again.
++  await rt.upsertFaceRoom({ roomId: 'frm_remotelead', status: 'open', members: members.slice(0, 2), localBots })
++  sent.length = 0
++  await emit(hosted.id, userMessage('那吃什么'))
++  const again = await passAll(env, relay(hosted.id, 'remotelead-2'), 10)
++  assert.equal(again.length, 3, 'the lead is gone: the first Bot is forced to answer')
++  assert.match(promptOf(again[2]), /nobody else answered/)
 +})
 +
 +// The group's Session is in a turn while its round runs, so another home's Bot line shows and is logged at once (#455).

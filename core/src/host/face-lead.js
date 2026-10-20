@@ -35,6 +35,19 @@ export function faceLeadOf(room) {
   return currentParticipants(room).find(p => p.kind === 'bot' && handleKey(p.handle) === key)
 }
 
+// True when the room's lead is a Bot of another home that is in the room now (#476): that home answers
+// the lines nobody else takes, so this home forces no fallback answer of its own.
+export const faceLeadIsRemote = room => room?.origin === 'face-to-face' && faceLeadOf(room)?.remote === true
+
+// True when this Bot is the room's lead (#476).
+export const isFaceLead = (room, member) => {
+  const lead = room?.origin === 'face-to-face' ? faceLeadOf(room) : undefined
+  return Boolean(lead && !lead.remote && lead.id === member?.id)
+}
+
+// The lead's line in the routing note (#476), in place of "Default to [PASS]": a line that names no Bot is its own.
+export const FACE_LEAD_ROUTE = 'You are the room lead, so a line like this is yours: answer it, and when it needs other Bots, write the plan and give them their parts by @Name. Leave it only when it is plainly for another Bot by name or role, or follows up on another Bot\'s own answer: then reply [PASS]. Once you answer, the Bots after you are not asked.'
+
 const botName = (p, botOf) => (p.remote ? cleanPeerName(p.displayName, 'Bot') : (botOf(p.id)?.name ?? cleanPeerName(p.displayName, 'Bot')))
 const roleOf = (p, botOf) => cleanRoleLabel(p.remote ? p.roleLabel : botOf(p.id)?.role)
 const personOf = p => cleanPeerName(ownerNameOf(p) || p.ownerName, '')
