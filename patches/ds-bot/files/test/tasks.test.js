@@ -406,6 +406,30 @@ test('an untagged hold stamps the latest working task so two tasks do not share 
   assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'cancelled')
 })
 
+test('two tasks started in the same millisecond still order by their start (#549)', async (t) => {
+  const { fb, call, signIn, createTask } = await start(t)
+  const alice = await signIn('Alice')
+  // Freeze the clock at the value the session was signed in at, so both starts share one
+  // millisecond: the tie that made the other test fail 1 run in 6 must not reorder them.
+  const realNow = Date.now
+  const frozen = realNow()
+  Date.now = () => frozen
+  let first, second
+  try {
+    first = await createTask(alice.sessionToken, { botId: 'a', title: 'Tie one' })
+    second = await createTask(alice.sessionToken, { botId: 'a', title: 'Tie two' })
+    for (const id of [first.value.id, second.value.id]) {
+      await call('task-accept', { id }, alice.sessionToken)
+      await call('task-start', { id }, alice.sessionToken)
+    }
+  } finally { Date.now = realNow }
+  fb.bot.send.use({ name: 'gate', handle: async msg => (msg.meta?.hold ? { action: 'hold', reason: 'held by test' } : undefined) })
+  const held = await fb.bot.send({ from: 'a', to: 's', text: 'untagged send', meta: { hold: true } })
+  assert.equal(held.action, 'hold', JSON.stringify(held))
+  assert.equal((await statusOf(call, alice.sessionToken, second.value.id)).status, 'blocked', 'the later start owns the untagged hold')
+  assert.equal((await statusOf(call, alice.sessionToken, first.value.id)).status, 'working')
+})
+
 test('a send without taskId matches the working task whose origin is this session', async (t) => {
   const { fb, call, signIn, createTask } = await start(t)
   const alice = await signIn('Alice')

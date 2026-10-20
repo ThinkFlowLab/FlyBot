@@ -78,8 +78,14 @@ export function install(rt) {
       && live.some(p => p.kind === 'bot' && !p.remote && p.id === bot.id)
   }
 
+  // `updatedAt` orders tasks — the latest working task a send is bound to (#111) and the order
+  // prune drops them in. Two transitions in one millisecond must still order, so the stamp is
+  // strictly increasing: never below the previous stamp even when the clock has not moved (#549).
+  let lastStamp = 0
+  const stamp = () => (lastStamp = Math.max(lastStamp + 1, Date.now()))
+
   function record(task, actor, extra) {
-    task.updatedAt = Date.now()
+    task.updatedAt = stamp()
     task.actors.push({ status: task.status, at: task.updatedAt, ...(actor?.memberId ? { memberId: actor.memberId } : {}), ...extra })
   }
   function transition(task, to, actor, extra) {
@@ -198,15 +204,15 @@ export function install(rt) {
         const task = {
           id: `task-${randomBytes(8).toString('hex')}`,
           status: 'open',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+          createdAt: stamp(),
+          updatedAt: stamp(),
           requesterId,
           ownerBotId: botId,
           // workBotId is the specialist on the exchange; assigned with #55 wiring (#111).
           title: String(body.title ?? '').slice(0, 300),
           ...(typeof body.criteria === 'string' && body.criteria.trim() !== '' ? { criteria: body.criteria.slice(0, 2000) } : {}),
           origin: { ...(roomId ? { roomId } : {}), ...(body.sessionId ? { sessionId: String(body.sessionId) } : {}) },
-          actors: [{ status: 'open', at: Date.now(), ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
+          actors: [{ status: 'open', at: stamp(), ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
         }
         store()[task.id] = task
         prune()
