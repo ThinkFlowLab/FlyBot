@@ -265,32 +265,6 @@ test('in admin mode a plain mid-round message goes to the admin', async (t) => {
   assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer', 'User', 'Chief'])
 })
 
-test('a mid-round user line resets the room\'s bot-round budget', async (t) => {
-  const { call, emit, userMessage, compose, relay, answer, stop, sent, ctx, home } = start()
-  t.after(stop)
-  const room = await team(call, sent)
-
-  await emit(room.id, userMessage('Start'))
-  const running = relay(room.id, 'relay')
-  const first = await turnFor(sent)
-  await answer(first.sessionId, first.message.source.exchangeId, 'one', 1)
-  const second = await turnFor(sent, first)
-
-  // A Main Bot posts into the room while the last member is still answering:
-  // that spends one bot-round budget.
-  const posted = await ctx.registeredTools.get('post_to_group').execute({ group: 'R1', message: 'bot note' }, { agent: { id: first.sessionId } })
-  const roomState = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).rooms[room.id]
-  assert.equal(roomState().botRounds, 1, String(posted))
-
-  // The user's mid-round message counts as the user speaking: the budget reopens.
-  await compose(room.id, '@Writer user back mid-round')
-  await answer(second.sessionId, second.message.source.exchangeId, 'two', 2)
-  const third = await turnFor(sent, first, second)
-  await answer(third.sessionId, third.message.source.exchangeId, 'three', 3)
-  JSON.parse(await running)
-  assert.equal(roomState().botRounds, 0)
-})
-
 test('a message with an image or a chat reference waits for its own round, and so does what follows it', async (t) => {
   const { call, emit, userMessage, compose, relay, inboxOf, answer, stop, sent } = start()
   t.after(stop)
@@ -1375,4 +1349,23 @@ test('#475: a friend\'s Bot @all / @所有人 wakes none of my Bots; its @MyBot 
   await answer(only.sessionId, only.message.source.exchangeId, 'Drafting it now.', 1)
   await named
   assert.equal(roomTurns(sent).length, 1, 'only the named Bot')
+})
+
+// #557: the per-group "rounds since the user spoke" gate is off (owner decision 2026-10-21 07:34
+// Asia/Shanghai); it blocked owner-set scheduled runs without a trace in the group.
+test('a Bot may post into a group any number of times without the user speaking there', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, ctx } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+
+  await emit(room.id, userMessage('Start'))
+  const running = relay(room.id, 'relay')
+  const first = await turnFor(sent)
+  await answer(first.sessionId, first.message.source.exchangeId, 'one', 1)
+  const second = await turnFor(sent, first)
+  // More posts than the old gate's three, with nobody speaking in the group in between.
+  const post = message => ctx.registeredTools.get('post_to_group').execute({ group: 'R1', message }, { agent: { id: first.sessionId } })
+  for (let n = 1; n <= 5; n += 1) assert.match(String(await post(`scheduled run ${n}`)), /^Posted in "R1"/, `post ${n}`)
+  await answer(second.sessionId, second.message.source.exchangeId, 'two', 2)
+  JSON.parse(await running)
 })

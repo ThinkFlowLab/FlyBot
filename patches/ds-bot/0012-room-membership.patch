@@ -937,7 +937,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // A called member moves up if it is still waiting, or gets one more turn if it
    // already spoke; either way it goes right after slot `index`. `cap` is the caller's
    // per-member turn bound for the round; `by` is the calling member, if a member called.
-@@ -291,12 +291,28 @@ export function install(rt) {
+@@ -291,28 +291,114 @@ export function install(rt) {
      if (lines.length === 0) return 0
      const before = round.slots.length
      const members = room.members.map(rt.botOf).filter(Boolean)
@@ -967,9 +967,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      }
 +      callMembers(round, turns, index - 1, speakers, note, ROOM_ADMIN_TURNS_EACH)
      }
-     // The user spoke in this room, so Bots may start their own rounds again.
-     room.botRounds = 0
-@@ -305,14 +305,85 @@ export function install(rt) {
+-    // The user spoke in this room, so Bots may start their own rounds again.
+-    room.botRounds = 0
++    // The user spoke in this room, so late replies may be answered again.
+     room.lateRounds = 0
+     void rt.save().catch(() => {})
      return round.slots.length - before
    }
  
@@ -1115,7 +1117,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      }
    }
  
-@@ -400,35 +400,47 @@ export function install(rt) {
+@@ -400,35 +400,44 @@ export function install(rt) {
        // The opening greeting is a cue for the admin, not a line of the group; a member's
        // late failure, its work picked up after a restart, or its work the user stopped is
        // an event of the round.
@@ -1129,14 +1131,15 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -        appendRoom(room, post.botId
 -          ? { who: rt.botOf(post.botId)?.name ?? post.name ?? 'Bot', botId: post.botId, text }
 -          : { who: 'User', text })
+-      }
+-      if (posts.some(post => !post.botId && !post.kickoff)) {
+-        room.botRounds = 0
+-        room.lateRounds = 0
 +        // A face-room line the send path already logged and sent is not logged or sent again (#287).
 +        if (!post.botId && takePosted(room.id, post.text)) continue
 +        logPost(room, post, text)
        }
-       if (posts.some(post => !post.botId && !post.kickoff)) {
-         room.botRounds = 0
-         room.lateRounds = 0
-       }
++      if (posts.some(post => !post.botId && !post.kickoff)) room.lateRounds = 0
        await rt.save()
 -      // An event post never picks the speakers over a message queued with it.
 -      const opener = posts.findLast(post => !event(post)) ?? posts.at(-1)

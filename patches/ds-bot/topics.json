@@ -47,6 +47,7 @@
     "src/host/store.js",
     "src/host/roster.js",
     "src/host/tools.js",
+    "src/host/constants.js",
     "src/host/home-lock.js",
     "test/fake-ctx.js"
   ],

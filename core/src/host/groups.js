@@ -346,8 +346,7 @@ export function install(rt) {
       }
       callMembers(round, turns, index - 1, speakers, note, ROOM_ADMIN_TURNS_EACH)
     }
-    // The user spoke in this room, so Bots may start their own rounds again.
-    room.botRounds = 0
+    // The user spoke in this room, so late replies may be answered again.
     room.lateRounds = 0
     void rt.save().catch(() => {})
     return round.slots.length - before
@@ -550,10 +549,7 @@ export function install(rt) {
         if (!post.botId && takePosted(room.id, post.text)) continue
         logPost(room, post, text)
       }
-      if (posts.some(post => !post.botId && !post.kickoff)) {
-        room.botRounds = 0
-        room.lateRounds = 0
-      }
+      if (posts.some(post => !post.botId && !post.kickoff)) room.lateRounds = 0
       await rt.save()
       // An event post never picks the speakers over a message queued with it; a friend's line that asks
       // this home's Bots to answer is a person's line, not an event (#462).

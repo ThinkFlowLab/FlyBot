@@ -2,7 +2,7 @@
 // question card. Group rounds and reading chats are in groups.js.
 import { randomUUID } from 'node:crypto'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_BOT_ROUNDS, ROOM_MODES, SOURCE_KIND } from './constants.js'
+import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_MODES, SOURCE_KIND } from './constants.js'
 import { unquote } from './text.js'
 import { isListedRemoteChat } from '../shared/remote-label.js'
 import { currentParticipants } from './room-membership.js'
@@ -477,9 +477,8 @@ export function install(rt) {
       if ((info?.hop ?? 0) >= MAX_HOPS) return 'This chain of Bot messages is already long. Stop here and report to the user instead.'
       const text = String(args.message ?? '').trim()
       if (text === '') return 'Write a message to post.'
-      if ((room.botRounds ?? 0) >= ROOM_BOT_ROUNDS) return `Bots already started ${ROOM_BOT_ROUNDS} rounds in "${room.name}" since the user last spoke there. Wait for the user.`
-      room.botRounds = (room.botRounds ?? 0) + 1
-      await rt.save()
+      // No cap on rounds a Bot starts here between the user's lines (#557, owner decision 2026-10-21):
+      // it silently blocked owner-set scheduled runs. MAX_HOPS above still ends Bot-to-Bot chains.
       const reportBack = args.report_back === true
       try {
         await rt.postToRoom(room, sender, text, { hop: info?.hop ?? 0, origin: rt.agentOrigin?.(exec.agent) ?? 'other', ...(reportBack ? { reportBack: true } : {}) })

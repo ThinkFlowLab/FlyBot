@@ -55,8 +55,6 @@ export const TEAM_TOOLS = [
   'list_capabilities', 'save_capability', 'delete_capability',
   'attach_capability', 'detach_capability',
 ]
-// Rounds Bots may start in one group by posting, before the user speaks there again.
-export const ROOM_BOT_ROUNDS = 3
 // Answers a group gives to what members post after the round moved on (their finished
 // work, mostly), before the user speaks there again.
 export const ROOM_LATE_ROUNDS = 10
