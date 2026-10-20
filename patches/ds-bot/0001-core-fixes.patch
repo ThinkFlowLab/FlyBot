@@ -2197,12 +2197,14 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,11 +331,18 @@ export function install(rt) {
+@@ -331,11 +331,20 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
 +            ...(source.notice ? { notice: true } : {}),
 +            ...(source.human ? { human: source.human } : {}),
++            // Shown (and logged) by the round that was running when it arrived (groups.js, #455).
++            ...(source.shown === true ? { shown: true } : {}),
 +            ...(source.plain ? { plain: true } : {}),
 +            ...(source.everyone ? { everyone: true } : {}),
 +            ...(Array.isArray(source.callIds) && source.callIds.length > 0 ? { callIds: source.callIds.filter(id => typeof id === 'string') } : {}),

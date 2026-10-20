@@ -532,6 +532,8 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
   function triggerBody() {
     // A friend's message in its remote chat: the reply below shows it (remote-chat.js).
     if (source.form === 'remote-chat') return null
+    // A line that arrived while a round was running is that round's bubble already (#455).
+    if (source.shown === true) return null
     if (source.remote?.handle) {
       const message = h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
       return source.remote.firstContact === true ? h(Fragment, null, h(FirstContact, { source, roster, sessionId }), message) : message
