@@ -11,7 +11,7 @@ import { reducedMotion } from './activity-row.js'
 import { Shimmer, workPhrase } from './cells.js'
 import { springEasing, SPRING_SHAPE } from './motion.js'
 import { hostText, t } from './i18n.js'
-import { cleanPeerName, ownerNameOf, remoteBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
+import { friendBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
 import { showsDshRow } from './dsh-offer.js'
 import { InboxRow } from './inbox.js'
 
@@ -66,14 +66,11 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     actions.openMenu({ kind: 'bot', id, x: event.clientX, y: event.clientY })
   }
   const pinned = bot.pinned === true && !tile
-  const remoteRecord = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null
-  const shown = remoteRecord ? remoteBotTitle(remoteRecord) : bot.name
-  // A friend's Bot row (#384): its name, then its owner, on one line like every other row; the
-  // second line is the preview, or "Friend's Bot" before the first message. The full title is on hover.
-  const rowName = remoteRecord ? cleanPeerName(bot.name, shown) : shown
-  // A plain per-Bot identity (@alice.bot) names no owner: its handle tells two "Helper" rows apart.
-  const owner = remoteRecord ? ownerNameOf(remoteRecord) || cleanPeerName(bot.remote.handle) : ''
-  const secondLine = awayLine || preview || (remoteRecord ? t("Friend's Bot") : '')
+  const remote = Boolean(bot.remote)
+  // A friend's Bot row (#384, #498): "Chief (SelfB1233)" on one line, as its header and the @ menu
+  // say it; the second line is the preview, or "Friend's Bot" before the first message.
+  const shown = remote ? friendBotTitle(bot) : bot.name
+  const secondLine = awayLine || preview || (remote ? t("Friend's Bot") : '')
   const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
   if (tile && wide) {
     return h('div', { className: 'bt-tile-wrap' }, h('button', {
@@ -91,14 +88,13 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const row = h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
     // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
-    'data-bot-id': id, title: remoteRecord ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide), onClick: () => actions.openSession(id), onContextMenu,
+    'data-bot-id': id, title: remote ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide), onClick: () => actions.openSession(id), onContextMenu,
   },
   h(BotAvatar, { bot, size: 36, state, main }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
     h('span', { className: 'bt-row-name' },
-      h('span', { className: 'bt-row-title' }, rowName),
-      owner ? h('span', { className: 'bt-row-owner' }, owner) : null,
+      h('span', { className: 'bt-row-title' }, shown),
       bot.remote ? h(RemoteMark, { remote: bot.remote }) : null, pinned ? h(PinMark) : null),
     secondLine ? h('span', { className: 'bt-row-preview' }, secondLine) : null) : null,
   unreadMark)

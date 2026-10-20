@@ -2,7 +2,7 @@
 // Paths stay here so tests can import them without React.
 
 import { isAutoFaceTitle } from '../shared/face-title.js'
-import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 
 export const FLYBOT_WING = 'M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z'
 export const FLYBOT_WING_LOW = 'M150 318 C 104 300, 62 306, 54 322 C 48 338, 84 352, 150 352 Z'
@@ -32,12 +32,7 @@ export function sessionTabLabel(roster, sessionId) {
   const bot = roster.byId?.[sessionId]
   const room = roster.roomsById?.[sessionId]
   if (bot?.remote) {
-    return remoteBotTitle({
-      displayName: bot.name,
-      ownerName: bot.remote.homeName || bot.remote.owner,
-      handle: bot.remote.handle,
-      isChief: bot.remote.isChief,
-    })
+    return friendBotTitle(bot)
   }
   // An ended face-to-face room (closed, or someone left) no longer lists people who are not in it (#250).
   // A name the user chose is kept.

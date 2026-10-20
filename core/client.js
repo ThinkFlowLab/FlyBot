@@ -671,6 +671,8 @@ var ZH = {
   "Working out a plan": "理一下思路",
   "Sorting out the details": "梳理细节",
   "On it": "在做了",
+  "Using {tool}": "使用 {tool}",
+  "{action}: {detail}": "{action}：{detail}",
   "Busy with it": "正在处理",
   "Moving ahead": "推进中",
   "Taking care of it": "处理中",
@@ -698,7 +700,6 @@ var ZH = {
   "Looking back through the chat": "翻看聊天记录",
   "{name} looked up its own chat": "{name} 查看了自己的对话",
   "{name} looked up its own chat for “{text}”": "{name} 在自己的对话里查找「{text}」",
-  "{name} is typing…": "{name} 正在输入…",
   "{name} didn't answer in time": "{name} 没有及时回应",
   "{name} paused for your approval": "{name} 停下来等你批准",
   "{name} started on it": "{name} 开始做了",
@@ -1467,6 +1468,21 @@ function remoteBotTitle(record) {
 function remoteOwnerBadge(record) {
   return ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
 }
+function friendRecord(bot) {
+  const remote = bot?.remote && typeof bot.remote === "object" ? bot.remote : {};
+  return {
+    displayName: remote.displayName || remote.name || bot?.name,
+    ownerName: remote.ownerName || remote.owner || remote.homeName,
+    handle: remote.handle ?? bot?.handle,
+    isChief: remote.isChief
+  };
+}
+function friendBotTitle(bot) {
+  return remoteBotTitle(friendRecord(bot));
+}
+function friendBotOwner(bot) {
+  return remoteOwnerBadge(friendRecord(bot));
+}
 function sharedRoomTitle(inviterName) {
   return `Shared room from ${cleanPeerName(inviterName, "a friend")}`;
 }
@@ -2143,6 +2159,7 @@ function registry2() {
   globalThis.__flybot__.BotMark ??= BotMark;
   globalThis.__flybot__.BotAvatar ??= BotAvatar;
   globalThis.__flybot__.lookOf ??= lookOf;
+  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner };
   return slots;
 }
 var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
@@ -2258,12 +2275,7 @@ var chatOf = (approval, roster) => approval.request?.meta?.roomId ?? approval.re
 function recipientName(approval, roster) {
   const handle = handleOf(approval.request?.to);
   const bot = friendChatOf(approval, roster);
-  if (bot) {
-    const owner = bot.remote.owner || bot.remote.homeName;
-    if (owner) return `${bot.name} (${owner})`;
-    return bot.name;
-  }
-  return approval.recipientName ?? approval.targetName ?? handle ?? String(approval.request?.to ?? "");
+  return approval.recipientName || (bot ? friendBotOwner(bot) : "") || approval.targetName || handle || String(approval.request?.to ?? "");
 }
 function FlyBotApprovals({ useRoster, actions } = {}) {
   const entries2 = useSlot("flybot.approvals");
@@ -3214,7 +3226,6 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
 .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
 .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-row-owner{flex:0 100 auto;min-width:24px;font-size:13px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
 .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3908,7 +3919,6 @@ var CONVERSATION_CSS = `
 .bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
 [class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
-.bt-activity{display:flex;align-items:center;gap:10px;margin:8px 0 4px 2px;font-size:14px;color:var(--bt-ink-2)}
 .bt-group-replies{display:contents}
 /* A Bot chat is flat in every work-details mode, without changing the user's mode
    (it is a DSH-wide setting): step groups lose their header and stay open, and what a
@@ -4245,12 +4255,7 @@ function sessionTabLabel(roster, sessionId) {
   const bot = roster.byId?.[sessionId];
   const room2 = roster.roomsById?.[sessionId];
   if (bot?.remote) {
-    return remoteBotTitle({
-      displayName: bot.name,
-      ownerName: bot.remote.homeName || bot.remote.owner,
-      handle: bot.remote.handle,
-      isChief: bot.remote.isChief
-    });
+    return friendBotTitle(bot);
   }
   if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
   if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
@@ -5415,8 +5420,8 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
 }
 function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   const bot = roster.byId[sessionId];
-  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to && isListedRemoteChat(item));
-  const toName = chat ? remoteBotTitle({ displayName: chat.name, ownerName: chat.remote.homeName || chat.remote.owner, handle: chat.remote.handle, isChief: chat.remote.isChief }) : held.toOwner || held.to || t("a friend");
+  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to);
+  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
   return (0, import_react8.createElement)(
     "div",
     { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
@@ -5996,7 +6001,10 @@ function toolActivity(name, arg, findBot, self) {
 }
 function workPhrase(tool) {
   if (!tool) return t("Thinking about it");
-  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("On it");
+  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("Using {tool}", { tool });
+}
+function workText(tool, step) {
+  return step ? t("{action}: {detail}", { action: workPhrase(tool), detail: step }) : `${workPhrase(tool)}…`;
 }
 function useLiveNote(actions, sessionId, id, entry) {
   const key = entry ? JSON.stringify(entry) : "";
@@ -6006,8 +6014,8 @@ function useLiveNote(actions, sessionId, id, entry) {
     return () => actions.noteLive(sessionId, id, null);
   }, [sessionId, id, key]);
 }
-function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, useWork }) {
-  const [live, setLive] = (0, import_react8.useState)({ replies: [], speaking: null });
+function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
+  const [live, setLive] = (0, import_react8.useState)({ replies: [] });
   (0, import_react8.useEffect)(() => {
     if (done) return void 0;
     let stop = false;
@@ -6017,10 +6025,10 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       const result = await actions.roomProgress(sessionId);
       if (stop) return;
       const entry = (result ?? []).find((item) => item.callId === callId) ?? (result ?? [])[0];
-      const key = entry ? JSON.stringify([entry.replies, entry.speaking]) : "";
+      const key = entry ? JSON.stringify(entry.replies) : "";
       if (entry && key !== seen) {
         seen = key;
-        setLive({ replies: entry.replies ?? [], speaking: entry.speaking ?? null });
+        setLive({ replies: entry.replies ?? [] });
       }
       timer = setTimeout(tick, document.hidden ? 5e3 : 1e3);
     };
@@ -6038,9 +6046,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       replies = [];
     }
   }
-  const pending = done || !live.speaking ? [] : [live.speaking];
-  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
-  if (replies.length === 0 && pending.length === 0) return null;
+  if (replies.length === 0) return null;
   const room2 = roster.roomsById[sessionId];
   return (0, import_react8.createElement)(
     "div",
@@ -6120,16 +6126,6 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
         });
       }
       return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
-    }),
-    pending.map((id) => {
-      const bot = roster.byId[id];
-      if (!bot) return null;
-      return (0, import_react8.createElement)(
-        "div",
-        { key: `pending-${id}`, className: "bt-activity" },
-        (0, import_react8.createElement)(BotMark, { bot, size: 22, state: speakerTool ? toolState(speakerTool) : "thinking" }),
-        (0, import_react8.createElement)(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t("{name} is typing…", { name: bot.name }))
-      );
     })
   );
 }
@@ -6157,7 +6153,7 @@ function useShownCards(actions, sessionId, callIds) {
     return () => actions.noteCards(sessionId, ids, -1);
   }, [sessionId, key]);
 }
-function renderCall(call4, { sessionId, roster, actions, useUi, useWork, findBot }) {
+function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
   const tool = toolName(call4);
   const done = call4.kind === "tool-result";
   const { text: arg, value: argValue } = toolArgs(call4);
@@ -6183,7 +6179,7 @@ function renderCall(call4, { sessionId, roster, actions, useUi, useWork, findBot
       return done && target ? (0, import_react8.createElement)(EventLine, { prefix: t("Updated"), bots: [target], onOpen: (bot) => actions.openSession(bot.id) }) : null;
     }
     case "group_relay":
-      return (0, import_react8.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi, useWork });
+      return (0, import_react8.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi });
     case "create_group":
     case "update_group":
     case "delete_group":
@@ -6234,7 +6230,7 @@ function renderCall(call4, { sessionId, roster, actions, useUi, useWork, findBot
       return null;
   }
 }
-function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
+function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   const roster = useRoster((value) => value);
   const root = node.data.root;
   const turn = node.location?.turn?.turn ?? root.turn;
@@ -6247,7 +6243,7 @@ function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
   useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
   useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
   if (drawn.length === 0) return null;
-  const env = { sessionId, roster, actions, useUi, useWork, findBot };
+  const env = { sessionId, roster, actions, useUi, findBot };
   return (0, import_react8.createElement)(import_react8.Fragment, null, drawn.map((call4, index) => (0, import_react8.createElement)(import_react8.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
 }
 
@@ -6990,11 +6986,9 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
   };
   const pinned = bot.pinned === true && !tile;
-  const remoteRecord2 = bot.remote ? { displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief } : null;
-  const shown = remoteRecord2 ? remoteBotTitle(remoteRecord2) : bot.name;
-  const rowName = remoteRecord2 ? cleanPeerName(bot.name, shown) : shown;
-  const owner = remoteRecord2 ? ownerNameOf(remoteRecord2) || cleanPeerName(bot.remote.handle) : "";
-  const secondLine = awayLine || preview || (remoteRecord2 ? t("Friend's Bot") : "");
+  const remote = Boolean(bot.remote);
+  const shown = remote ? friendBotTitle(bot) : bot.name;
+  const secondLine = awayLine || preview || (remote ? t("Friend's Bot") : "");
   const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
     return (0, import_react12.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react12.createElement)(
@@ -7026,7 +7020,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       "aria-current": active ? "page" : void 0,
       // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
       "data-bot-id": id,
-      title: remoteRecord2 ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
+      title: remote ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
       onClick: () => actions.openSession(id),
       onContextMenu
     },
@@ -7038,8 +7032,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       (0, import_react12.createElement)(
         "span",
         { className: "bt-row-name" },
-        (0, import_react12.createElement)("span", { className: "bt-row-title" }, rowName),
-        owner ? (0, import_react12.createElement)("span", { className: "bt-row-owner" }, owner) : null,
+        (0, import_react12.createElement)("span", { className: "bt-row-title" }, shown),
         bot.remote ? (0, import_react12.createElement)(RemoteMark, { remote: bot.remote }) : null,
         pinned ? (0, import_react12.createElement)(PinMark) : null
       ),
@@ -7910,7 +7903,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   const bot = roster.byId[sessionId];
   const room2 = roster.roomsById[sessionId];
   const detailsOpen = useUi((state) => state.details === sessionId);
-  const name = bot?.remote ? remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
+  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
   const useNews = useMemoryNews ?? noNews;
   const memoryIds = bot ? [bot.id] : room2?.members ?? [];
   const notice = useMemoryNotice(memoryIds, useNews);
@@ -8410,8 +8403,9 @@ function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot();
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384).
-        name: row.bot?.remote && !face ? remoteBotTitle(remoteRecord(row.bot)) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
+        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
+        name: row.bot?.remote && !face ? row.bot.kind === "bot" ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
         ...row.bot?.role && !face ? { description: row.bot.role } : {},
         ...row.remote ? { description: row.remote.handle } : {},
         ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
@@ -14312,12 +14306,16 @@ function migrateStorage(storage = globalThis.localStorage) {
 var import_react35 = require("react");
 var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
 var ROWS_MAX = 4;
+var stepIn = (work, botId, roomId, tool) => {
+  const own = work.bots?.[botId];
+  return own?.roomId === roomId && own.tool === tool ? own.step : void 0;
+};
 function memberWork(room2, work = NO_WORK) {
   const here = work.rooms?.[room2.id] ?? [];
   return room2.members.map((id) => {
     const approvals = (work.approvals ?? []).filter((entry) => entry.botId === id);
     const local = here.find((entry) => entry.botId === id);
-    const doing = local ? { ...local, roomId: room2.id } : work.bots?.[id];
+    const doing = local ? { ...local, roomId: room2.id, step: stepIn(work, id, room2.id, local.tool) } : work.bots?.[id];
     return { id, approvals, doing, here: local !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
   });
 }
@@ -14326,15 +14324,15 @@ function busyMembers(room2, work, roster) {
   return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
 }
 function splitBusy(busy) {
-  const speaking = (entry) => entry.state === "work" && entry.here && entry.doing.speaking === true;
-  const rows = busy.filter((entry) => entry.state === "work" && entry.here && !speaking(entry)).slice(0, ROWS_MAX);
-  return { rows, rest: busy.filter((entry) => !rows.includes(entry) && !speaking(entry)) };
+  const here = busy.filter((entry) => entry.state === "work" && entry.here);
+  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
+  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
 }
 function botGroupWork(botId, work, roster) {
   return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
     const entry = entries2.find((item) => item.botId === botId);
     const room2 = roster.roomsById[roomId];
-    return entry && room2 ? [{ room: room2, tool: entry.tool, since: entry.since }] : [];
+    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
   });
 }
 function summaryText(busy) {
@@ -14343,7 +14341,7 @@ function summaryText(busy) {
   const names = asks.slice(0, 2).map((entry) => entry.bot.name);
   const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
   const first = workers[0];
-  const doing = first ? `${first.bot.name} · ${workPhrase(first.doing.tool)}…${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
+  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
   return { waiting, doing };
 }
 function Face({ entry, size }) {
@@ -14353,9 +14351,10 @@ function Face({ entry, size }) {
     (0, import_react35.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
   );
 }
-function WorkRow({ bot, tool, label, at, now, onOpen }) {
-  const text = `${label} · ${workPhrase(tool)}…`;
-  const elapsed = typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
+var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
+function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
+  const text = `${label} · ${workText(tool, step)}`;
+  const elapsed = elapsedSince(now, at);
   return (0, import_react35.createElement)(
     "button",
     { type: "button", className: "bt-mw-row", "aria-label": [text, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
@@ -14364,19 +14363,21 @@ function WorkRow({ bot, tool, label, at, now, onOpen }) {
     elapsed ? (0, import_react35.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
   );
 }
-function SummaryLine({ busy, onOpen }) {
+function SummaryLine({ busy, now, onOpen }) {
   const { waiting, doing } = summaryText(busy);
+  const elapsed = doing ? elapsedSince(now, busy.find((entry) => entry.state === "work")?.doing.since) : "";
   return (0, import_react35.createElement)(
-    "div",
-    { className: "bt-event bt-mw-dock" },
+    "button",
+    { type: "button", className: "bt-mw-row bt-mw-line", "aria-label": [waiting, doing, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
+    (0, import_react35.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react35.createElement)(Face, { key: entry.id, entry, size: 16 }))),
     (0, import_react35.createElement)(
-      "button",
-      { type: "button", className: "bt-event-whole bt-mw-line", "aria-label": [waiting, doing].filter(Boolean).join(" · "), onClick: onOpen },
-      (0, import_react35.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react35.createElement)(Face, { key: entry.id, entry, size: 16 }))),
+      "span",
+      { className: "bt-mw-row-text" },
       waiting ? (0, import_react35.createElement)("span", { className: "bt-mw-ask" }, waiting) : null,
-      waiting && doing ? (0, import_react35.createElement)("span", { "aria-hidden": true }, "·") : null,
-      doing ? (0, import_react35.createElement)("span", { className: "bt-event-name" }, (0, import_react35.createElement)(Shimmer, null, doing)) : null
-    )
+      waiting && doing ? " · " : null,
+      doing ? (0, import_react35.createElement)(Shimmer, null, doing) : null
+    ),
+    elapsed ? (0, import_react35.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
   );
 }
 function MemberDock({ sessionId, useRoster, useWork, actions }) {
@@ -14398,14 +14399,15 @@ function MemberDock({ sessionId, useRoster, useWork, actions }) {
     return (0, import_react35.createElement)(
       "div",
       { ref, className: "bt-mw-dock-stack" },
-      rows.map((entry) => (0, import_react35.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
-      rest.length > 0 ? (0, import_react35.createElement)(SummaryLine, { busy: rest, onOpen: open }) : null
+      rows.map((entry) => (0, import_react35.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
+      rest.length > 0 ? (0, import_react35.createElement)(SummaryLine, { busy: rest, now, onOpen: open }) : null
     );
   }
   return (0, import_react35.createElement)("div", { ref, className: "bt-mw-dock-stack" }, groups.slice(0, ROWS_MAX).map((item) => (0, import_react35.createElement)(WorkRow, {
     key: item.room.id,
     bot,
     tool: item.tool,
+    step: item.step,
     label: t("in {name}", { name: item.room.name }),
     at: item.since,
     now,
@@ -14486,7 +14488,7 @@ function MemberWork({ entry, bot, room: room2, roster, actions, now }) {
     (0, import_react35.createElement)(
       "div",
       { className: "bt-mw-state bt-mw-work" },
-      (0, import_react35.createElement)("span", null, (0, import_react35.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
+      (0, import_react35.createElement)("span", null, (0, import_react35.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), where ? ` ${where}` : "", since(now, entry.doing.since)),
       entry.here ? (0, import_react35.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
     )
   );
@@ -14499,7 +14501,6 @@ function useMemberWork(room2, useWork) {
 }
 var MEMBER_CSS = `
 .bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
-.bt-mw-dock-stack>.bt-event.bt-mw-dock{align-self:stretch;margin:0}
 .bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
 .bt-mw-row:hover{background:var(--bt-hover)}
 .bt-mw-row>.bt-mark{flex:none}
@@ -14509,9 +14510,7 @@ var MEMBER_CSS = `
 .bt-mw-stop{flex:none;height:22px;padding:0 10px;border:1px solid var(--bt-line,rgba(0,0,0,.12));border-radius:11px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer}
 .bt-mw-stop:hover{background:var(--bt-hover)}
 .bt-mw-stop:disabled{opacity:.5;cursor:default}
-.bt-event.bt-mw-dock{margin:0 0 6px;pointer-events:none}
-.bt-mw-dock>button{pointer-events:auto;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards}
-.bt-mw-line{gap:6px!important}
+.bt-mw-line{gap:8px}
 .bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
 .bt-mw-stack>*+*{margin-left:-4px}
 .bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
@@ -14530,7 +14529,7 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 .bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
 .bt-mw-actions>button:disabled{opacity:.5;cursor:default}
 @keyframes bt-mw-in{from{opacity:0;transform:translateY(4px)}}
-@media (prefers-reduced-motion:reduce){.bt-mw-dock>button,.bt-mw-row{animation:none}}
+@media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
 `;
 
 // src/client/details-drawer.js
@@ -16629,7 +16628,7 @@ function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
   const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
   const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
   const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
-  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })));
+  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: friendBotTitle(bot) })));
 }
 function faceMentionables(room2, roster, fromFriend) {
   const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));

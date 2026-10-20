@@ -99,10 +99,18 @@ test('after the decision the reply says Sent or Not sent in place, and they diff
   assert.equal(find(auto, n => n.type === 'button').length, 0)
 })
 
-test('a friend\'s Bot with a listed chat is named as the chat list names it; no held reply, no wrapper', () => {
-  const friend = { id: 'f1', name: 'Chief', remote: { handle: '@chief.selfb1238.home', owner: 'SelfB1238' } }
-  const drawn = draw(chief([held('pending', { toOwner: undefined })], [friend]))
-  assert.ok(strings(wrapper(drawn)).includes('Chief → Chief (SelfB1238)'))
+test('#498: the card names the person who gets the reply, the same with or without the friend\'s chat; no held reply, no wrapper', () => {
+  const friend = { id: 'f1', name: 'Chief', remote: { handle: '@chief.selfb1238.home', homeName: 'SelfB1238' } }
+  // The stored recipient wins over the friend's chat, so a reload (which lists the chat) reads the same.
+  const live = strings(wrapper(draw(chief([held('pending')]))))
+  const reloaded = strings(wrapper(draw(chief([held('pending')], [friend]))))
+  assert.ok(live.includes('Chief → SelfB1238'))
+  assert.ok(reloaded.includes('Chief → SelfB1238'))
+  assert.equal(reloaded.some(line => line.includes('Chief (SelfB1238)')), false, 'never two Bot names side by side')
+  // A hold from before the recipient was stored: the owner of the friend's chat, still a person.
+  assert.ok(strings(wrapper(draw(chief([held('pending', { toOwner: undefined })], [friend])))).includes('Chief → SelfB1238'))
+  // No chat and no stored person: the owner from the handle, not the handle.
+  assert.ok(strings(wrapper(draw(chief([held('pending', { toOwner: undefined })])))).includes('Chief → selfb1238'))
   assert.equal(wrapper(draw(chief())), undefined)
   assert.equal(wrapper(draw(chief([held('pending', { turn: 4 })]))), undefined, 'another turn')
 })

@@ -4,7 +4,7 @@ import { mentionSpans } from '../shared/mentions.js'
 import { BotMark, PersonMark } from './mark.js'
 import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
-import { cleanPeerName, faceAliases, remoteBotTitle } from '../shared/remote-label.js'
+import { cleanPeerName, faceAliases, friendBotTitle, remoteBotTitle } from '../shared/remote-label.js'
 import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
 
 // -------------------------------------------------------------------------
@@ -43,7 +43,7 @@ export function mentionableBots(roster, sessionId, { fromFriend = false } = {}) 
   const remotes = (room?.participants ?? []).filter(p => p.remote && p.leftSeq === undefined)
     .map(p => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }))
   return bots.concat(humans, remotes, bots.filter(bot => typeof bot?.remote?.handle === 'string')
-    .map(bot => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ''), mentionLabel: remoteBotTitle({ displayName: bot.name, ownerName: bot.remote.homeName || bot.remote.owner, handle: bot.remote.handle, isChief: bot.remote.isChief }) })))
+    .map(bot => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ''), mentionLabel: friendBotTitle(bot) })))
 }
 
 // A face-to-face line was typed on either home, so a Bot is matched by every name the room
