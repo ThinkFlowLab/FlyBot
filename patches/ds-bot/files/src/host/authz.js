@@ -225,6 +225,13 @@ export function install(rt) {
     const requireRoom = id => (roomOwnedBy(actor, id) ? ALLOW : deny('bot/forbidden', 'You do not own that room'))
     const requireSession = id => (sessionOwnedBy(actor, id) ? ALLOW : deny('bot/forbidden', 'You do not own that session'))
 
+    // A group's standing grant belongs to the owner who gave it, a Bot's to the Bot's owner (#540).
+    if (ep === 'standing-approval-remove') {
+      if (body?.scope !== 'room') return requireBot(body?.id)
+      const grant = (state.rooms?.[String(body?.id ?? '')]?.standingApprovals ?? []).find(entry => entry.kind === String(body?.kind ?? ''))
+      return grant !== undefined && grant.ownerId === actor.memberId ? ALLOW : deny('bot/forbidden', 'You did not give that approval')
+    }
+
     if (BOT_TARGETED.has(ep)) {
       if (ep === 'schedules' || ep.startsWith('schedule-')) {
         // The create endpoint keys off `body.target` (Bot or room id); `sessionId` is
@@ -336,6 +343,8 @@ export function install(rt) {
         // room, and those decide — never a caller-chosen sessionId next to it.
         const approval = (rt.approvalsView?.() ?? []).find(entry => entry.id === String(body?.id ?? ''))
         if (approval === undefined) return deny('bot/forbidden', 'You do not own that approval')
+        // A standing grant outlives this one request: only the Bot's own owner gives it (#540).
+        if (String(body?.choice ?? '').startsWith('always')) return botOwnedBy(actor, approval.botId) ? ALLOW : deny('bot/forbidden', 'Only the Bot\'s owner can always allow')
         return botOwnedBy(actor, approval.botId) || roomOwnedBy(actor, approval.roomId) ? ALLOW : deny('bot/forbidden', 'You do not own that approval')
       }
       return requireSession(body?.sessionId)

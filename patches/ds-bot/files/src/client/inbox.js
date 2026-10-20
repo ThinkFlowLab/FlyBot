@@ -12,6 +12,7 @@ import { CloseIcon } from './icons.js'
 import { workPhrase } from './cells.js'
 import { elapsedLabel } from './activity-row.js'
 import { useEscape } from './overlay-hooks.js'
+import { alwaysChoices } from './member-status.js'
 import { currentPart, previewOf, relativeShort } from './text.js'
 import { hostText, t } from './i18n.js'
 
@@ -270,6 +271,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
     h('span', { className: 'bt-inbox-actions' },
       answerable ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'reject') }, t('Reject')) : null,
       answerable ? h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'allow') }, t('Allow once')) : null,
+      ...(answerable ? alwaysChoices(card.approval, card.bot) : []).map(([choice, label]) => h('button', { key: choice, type: 'button', className: 'bt-soft bt-soft-sm', 'data-choice': choice, disabled: busy, onClick: () => onAnswer(card, choice) }, t(label))),
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-label': who ? t('Open {name}', { name: card.room?.name ?? who }) : t('Open'), onClick: () => onOpen(card) }, t('Open'))))
 }
 
@@ -308,7 +310,9 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
       .then(() => {
         setAnswered(value => ({ ...value, [card.id]: choice }))
         const name = card.bot?.name ?? ''
-        setFeedback(choice === 'allow' ? t('Allowed once for {name}', { name }) : t('Rejected for {name}', { name }))
+        setFeedback(choice === 'allow' ? t('Allowed once for {name}', { name })
+          : choice === 'always-bot' ? t('Always allowed for {name}', { name })
+            : choice === 'always-room' ? t('Always allowed in this group') : t('Rejected for {name}', { name }))
       }, failure => setErrors(value => ({ ...value, [card.id]: hostText(failure?.message ?? String(failure)) })))
       .finally(() => setBusy(''))
   }
