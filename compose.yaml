@@ -1,0 +1,22 @@
+# FlyBot, one instance per person (#352). Guide: docs/docker.md (中文: docs/docker.zh.md).
+#   docker compose up -d --build                 build this checkout and start
+#   docker compose logs flybot | grep token=     the sign-in link
+# More instances on one machine: a project name and a port each, for example
+#   FLYBOT_PORT=3081 docker compose -p alice up -d --build
+services:
+  flybot:
+    build: .
+    image: flybot:${FLYBOT_TAG:-local}
+    restart: unless-stopped
+    ports:
+      # Host loopback only. For remote access use your own HTTPS proxy or an SSH tunnel;
+      # never publish this port on a public address.
+      - "127.0.0.1:${FLYBOT_PORT:-3080}:3080"
+    environment:
+      # Passed only when set in your shell or in .env next to this file; otherwise save the
+      # key in the app (it is kept on the data volume).
+      - DEEPSEEK_API_KEY
+    volumes:
+      - data:/data
+volumes:
+  data:

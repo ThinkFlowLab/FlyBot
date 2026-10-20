@@ -129,6 +129,8 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
 
 打开打印出的 `http://127.0.0.1:3080/?token=…`。第一次打开 Chief 时选择模型。
 
+想在一直开着的 Linux 服务器上运行（每人一个实例），可以用容器：[用 Docker 运行 FlyBot](docs/docker.zh.md)。
+
 ### 4. 自建 Bot Social（好友功能需要）
 
 `@flybot/social` **依赖**你自己部署的 [Bot Social](https://github.com/Birfy/bot-social)，仓库里不附带服务器。按 Bot Social 的 README 部署，并设置对外地址：
