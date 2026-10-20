@@ -709,6 +709,9 @@ var ZH = {
   "{name} is waiting for your approval": "{name} 等你批准",
   "{name} finished": "{name} 已完成",
   "{name} failed: {reason}": "{name} 失败：{reason}",
+  "{name} has waited {n} min for your approval": "{name} 已经等你批准 {n} 分钟了",
+  "{count} updates": "{count} 条更新",
+  "Once more if it still waits after 15 min.": "等了 15 分钟还没批准时再提醒一次。",
   Notifications: "通知",
   "When your Bots finish, fail, or wait for your approval while you are in another chat or app.": "你的 Bot 完成、失败或等你批准时提醒你（你在别的对话或应用里时）。",
   "{first} and {second} are waiting for your approval": "{first}、{second} 等你批准",
@@ -13725,6 +13728,11 @@ function SetRow({ label, hint, children }) {
     children ? (0, import_react33.createElement)("div", { className: "bt-set-control" }, children) : null
   );
 }
+var NOTIFY_KINDS = [
+  ["approval", "Waiting for approval", "Once more if it still waits after 15 min."],
+  ["finished", "Finished"],
+  ["failed", "Failed"]
+];
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {};
   const themes = allThemes();
@@ -13775,7 +13783,7 @@ function GeneralPage({ roster, actions, run }) {
         )
       )
     ),
-    // One switch for every system notification: approvals waiting, Bots finished or failed (#353).
+    // One switch for every system notification (#353), then one per kind (#469).
     (0, import_react33.createElement)(
       SetSection,
       { key: "notify", title: t("Notifications") },
@@ -13785,7 +13793,15 @@ function GeneralPage({ roster, actions, run }) {
         hint: t("When your Bots finish, fail, or wait for your approval while you are in another chat or app."),
         on: prefs.notifications !== false,
         onChange: (on) => run(actions.setPrefs({ notifications: on }))
-      })
+      }),
+      NOTIFY_KINDS.map(([kind, label, hint]) => (0, import_react33.createElement)(SwitchRow, {
+        key: kind,
+        label: t(label),
+        hint: hint ? t(hint) : void 0,
+        disabled: prefs.notifications === false,
+        on: prefs.notify?.[kind] !== false,
+        onChange: (on) => run(actions.setPrefs({ notify: { [kind]: on } }))
+      }))
     )
   ];
 }
@@ -16646,46 +16662,71 @@ var USER_MESSAGE_CSS = `
 `;
 
 // src/client/approval-notices.js
-function noticeApprovals({ work, roster, shownSession, openSession, since: since2 = Date.now() }) {
+var WAITING_TOO_LONG = 15 * 60 * 1e3;
+function noticeApprovals({ work, roster, shownSession, openSession, since: since2 = Date.now(), now = () => Date.now(), timers = globalThis }) {
   const told = /* @__PURE__ */ new Set();
+  const unseen = /* @__PURE__ */ new Map();
+  let timer;
   const notify = () => {
+    timers.clearTimeout?.(timer);
+    timer = void 0;
     const { approvals = [], ended = [] } = work.getSnapshot();
+    const at = now();
+    const lateAt = (entry) => Math.max(entry.at ?? 0, since2) + WAITING_TOO_LONG;
     const events = [
-      ...approvals.map((entry) => ({ entry, kind: "approval" })),
-      ...ended.map((entry) => ({ entry, kind: entry.failed === void 0 ? "finished" : "failed" }))
+      ...approvals.map((entry) => ({ entry, kind: "approval", key: `approval-${entry.id}`, when: entry.at ?? 0 })),
+      ...approvals.filter((entry) => lateAt(entry) <= at).map((entry) => ({ entry, kind: "late", key: `late-${entry.id}`, when: lateAt(entry) })),
+      ...ended.map((entry) => ({ entry, kind: entry.failed === void 0 ? "finished" : "failed", key: `turn-${entry.id}`, when: entry.at ?? 0 }))
     ];
-    const key = ({ entry, kind }) => `${kind === "approval" ? "approval" : "turn"}-${entry.id}`;
-    const current = new Set(events.map(key));
+    const current = new Set(events.map((event) => event.key));
     for (const id of told) {
       if (!current.has(id)) told.delete(id);
     }
+    const next = Math.min(...approvals.map(lateAt).filter((due) => due > at));
+    if (Number.isFinite(next)) timer = timers.setTimeout?.(notify, next - at);
     if (typeof Notification !== "function" || Notification.permission !== "granted") return;
     const { byId, roomsById, prefs } = roster.getSnapshot();
     const on = prefs?.notifications !== false;
+    const kinds = prefs?.notify ?? {};
+    const visible = document.visibilityState === "visible";
+    const shown = shownSession();
+    if (visible) unseen.delete(shown);
+    const fresh = /* @__PURE__ */ new Map();
     for (const event of events) {
-      const id = key(event);
-      if (told.has(id)) continue;
-      told.add(id);
+      if (told.has(event.key)) continue;
+      told.add(event.key);
       const { entry, kind } = event;
-      if (!on || (entry.at ?? 0) < since2) continue;
+      if (!on || kinds[kind === "late" ? "approval" : kind] === false) continue;
+      if (kind !== "late" && (entry.at ?? 0) < since2) continue;
       const place = entry.roomId ?? entry.sessionId;
-      if (document.visibilityState === "visible" && shownSession() === place) continue;
+      if (visible && shown === place) continue;
+      fresh.set(place, [...fresh.get(place) ?? [], event]);
+    }
+    for (const [place, list] of fresh) {
+      const { entry, kind } = list.reduce((last, event) => event.when >= last.when ? event : last);
+      const count = (unseen.get(place) ?? 0) + list.filter((event) => event.kind !== "late").length;
+      unseen.set(place, count);
       const room2 = entry.roomId ? roomsById[entry.roomId] : void 0;
       const name = byId[entry.botId]?.name ?? t("A Bot");
-      const title = kind === "approval" ? t("{name} is waiting for your approval", { name }) : kind === "finished" ? t("{name} finished", { name }) : t("{name} failed: {reason}", { name, reason: entry.failed });
+      const title = kind === "approval" ? t("{name} is waiting for your approval", { name }) : kind === "late" ? t("{name} has waited {n} min for your approval", { name, n: Math.max(15, Math.floor((at - (entry.at ?? at)) / 6e4)) }) : kind === "finished" ? t("{name} finished", { name }) : t("{name} failed: {reason}", { name, reason: entry.failed });
       const note = new Notification(title, {
-        body: [room2?.name, kind === "approval" ? entry.tool : void 0].filter(Boolean).join(" · "),
-        tag: `ds-bot-${id}`
+        body: [room2?.name, kind === "approval" || kind === "late" ? entry.tool : void 0, count > 1 ? t("{count} updates", { count }) : void 0].filter(Boolean).join(" · "),
+        tag: `ds-bot-${place}`
       });
       note.onclick = () => {
         window.focus();
+        unseen.delete(place);
         openSession(entry.roomId ?? entry.botId);
         note.close();
       };
     }
   };
   notify();
-  return work.subscribe(notify);
+  const off = work.subscribe(notify);
+  return () => {
+    off();
+    timers.clearTimeout?.(timer);
+  };
 }
 
 // src/client/stats-dock.js

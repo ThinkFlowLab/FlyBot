@@ -386,12 +386,15 @@ diff --git a/client.js b/client.js
    "Stopped by": "叫停者：",
    "{count} messages with": "{count} 条消息，来自",
    "Routine started": "例行任务开始",
-@@ -506,9 +506,16 @@ var ZH = {
+@@ -506,9 +506,19 @@ var ZH = {
    "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
    "A Bot": "一个 Bot",
    "{name} is waiting for your approval": "{name} 等你批准",
 +  "{name} finished": "{name} 已完成",
 +  "{name} failed: {reason}": "{name} 失败：{reason}",
++  "{name} has waited {n} min for your approval": "{name} 已经等你批准 {n} 分钟了",
++  "{count} updates": "{count} 条更新",
++  "Once more if it still waits after 15 min.": "等了 15 分钟还没批准时再提醒一次。",
 +  Notifications: "通知",
 +  "When your Bots finish, fail, or wait for your approval while you are in another chat or app.": "你的 Bot 完成、失败或等你批准时提醒你（你在别的对话或应用里时）。",
    "{first} and {second} are waiting for your approval": "{first}、{second} 等你批准",
@@ -1030,6 +1033,7 @@ diff --git a/client.js b/client.js
 -      value = resolved;
 -      for (const listener of [...listeners2]) listener();
 -    }
+-  };
 +// src/client/mark.js
 +var import_react = require("react");
 +var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -1066,7 +1070,21 @@ diff --git a/client.js b/client.js
 +      document.documentElement.removeEventListener("pointerleave", onLeave);
 +    };
 +  }, [enabled]);
-+}
+ }
+-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+-var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
+-function indexRoster(value) {
+-  const byId = {};
+-  for (const bot of value.bots) {
+-    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+-  }
+-  const roomsById = {};
+-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+-  const agentsById = {};
+-  const agentOf = {};
+-  for (const agent of value.agents ?? []) {
+-    agentsById[agent.id] = agent;
+-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -1092,30 +1110,35 @@ diff --git a/client.js b/client.js
 +    onAnimationEnd: poked ? (event) => {
 +      if (/^bt-poke/.test(event.animationName)) setPoked(false);
 +    } : void 0
-   };
++  };
 +  if (look.image) return (0, import_react.createElement)("span", common, (0, import_react.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
 +  if (look.emoji) {
 +    return (0, import_react.createElement)("span", common, (0, import_react.createElement)("span", {
 +      className: "bt-mark-emoji",
 +      style: { fontSize: Math.max(12, Math.round(size * 0.62)), lineHeight: 1 }
 +    }, look.emoji));
-+  }
+   }
+-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 +  const box = shapeOf(look.shape).size;
 +  return (0, import_react.createElement)("span", common, (0, import_react.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
  }
--var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
--var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
--function indexRoster(value) {
--  const byId = {};
--  for (const bot of value.bots) {
--    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
+-function isAgentSession(roster, cache, sessionId) {
+-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+-  return cache.has(sessionId);
 +function StarIcon({ size = 8 }) {
 +  return (0, import_react.createElement)(
 +    "svg",
 +    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
 +    (0, import_react.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  );
-+}
+ }
+-function countCards(state, sessionId, callIds, delta) {
+-  const own = { ...state[sessionId] };
+-  for (const callId of callIds) {
+-    const count = (own[callId] ?? 0) + delta;
+-    if (count > 0) own[callId] = count;
+-    else delete own[callId];
 +var personInitial = (name) => (Array.from(String(name ?? "").trim())[0] ?? "").toUpperCase();
 +var personColor = (name) => defaultColor(`person:${String(name ?? "").trim().toLowerCase()}`);
 +function PersonMark({ size = 22, name }) {
@@ -1128,13 +1151,7 @@ diff --git a/client.js b/client.js
 +      "aria-hidden": true
 +    }, initial);
    }
--  const roomsById = {};
--  for (const room2 of value.rooms) roomsById[room2.id] = room2;
--  const agentsById = {};
--  const agentOf = {};
--  for (const agent of value.agents ?? []) {
--    agentsById[agent.id] = agent;
--    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
+-  return { ...state, [sessionId]: own };
 +  return (0, import_react.createElement)(
 +    "span",
 +    { className: "bt-person-mark", style: { width: size, height: size }, "aria-hidden": true },
@@ -1145,10 +1162,93 @@ diff --git a/client.js b/client.js
 +      (0, import_react.createElement)("path", { d: "M3.5 21c0-4.7 3.8-7.6 8.5-7.6s8.5 2.9 8.5 7.6z" })
 +    )
 +  );
-+}
+ }
+-
+-// src/client/themes.js
+-var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
+-var THEMES = {
+-  deepseek: {
+-    label: "DeepSeek",
+-    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
+-    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
+-  },
+-  mono: {
+-    label: "Mono",
+-    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
+-    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
+-  },
+-  paper: {
+-    label: "Paper",
+-    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
+-    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
+-  },
+-  moonlight: {
+-    label: "Moonlight",
+-    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
+-    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
+-  }
+-};
+-var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
+-function themeVars(mode, dark, accent = mode.accent) {
+-  return {
+-    "--bt-ink": mode.text,
+-    "--bt-ink-2": rgba(mode.text, 0.6),
+-    "--bt-ink-3": rgba(mode.text, 0.36),
+-    "--bt-bubble": mode.bubble,
+-    "--bt-sidebar": mode.sidebar,
+-    "--bt-main": mode.bg,
+-    "--bt-card": mode.card,
+-    "--bt-line": rgba(mode.text, 0.08),
+-    "--bt-line-2": rgba(mode.text, 0.15),
+-    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
+-    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
+-    "--bt-accent": accent,
+-    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
+-    "--bt-user": mode.user,
+-    "--bt-user-ink": mode.userText,
+-    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
+-    "--bt-tag-ink": rgba(mode.text, 0.58)
+-  };
 +function AdminStar() {
 +  return (0, import_react.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react.createElement)(StarIcon, { size: 7 }));
-+}
+ }
+-var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+-var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
+-html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
+-${theme.css ?? ""}`;
+-var shellTokens = ({ light, dark }) => ({
+-  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
+-  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
+-  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
+-  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
+-  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
+-  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
+-});
+-var customThemes = {};
+-var registry = createSource(0);
+-var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+-function registerShape(id, shape) {
+-  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
+-  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
+-  const at = shape.eyes?.at;
+-  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
+-  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
+-  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
+-  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
+-  const previous = SHAPES[id];
+-  SHAPES[id] = {
+-    label: String(shape.label ?? id),
+-    size,
+-    body: shape.body,
+-    eyes,
+-    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
+-  };
+-  const refresh = () => {
+-    markupCache.clear();
+-    maskCache.delete(id);
+-    registry.set((value) => value + 1);
+-  };
+-  refresh();
 +function MainStar() {
 +  return (0, import_react.createElement)(
 +    "svg",
@@ -1194,15 +1294,10 @@ diff --git a/client.js b/client.js
 +    const size = frame * 5 / 9;
 +    const rest = frame - size;
 +    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
-   }
--  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
++  }
 +  const half = frame / 2;
 +  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
- }
--function isAgentSession(roster, cache, sessionId) {
--  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
--  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
--  return cache.has(sessionId);
++}
 +function roomAvatarPeople(room2, roster) {
 +  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
 +  const seen = new Set(members.map((bot) => bot.id));
@@ -1235,13 +1330,7 @@ diff --git a/client.js b/client.js
 +  }
 +  if (members.length === 1 && remotes.length === 0) return [members[0], null];
 +  return [...members, ...remotes];
- }
--function countCards(state, sessionId, callIds, delta) {
--  const own = { ...state[sessionId] };
--  for (const callId of callIds) {
--    const count = (own[callId] ?? 0) + delta;
--    if (count > 0) own[callId] = count;
--    else delete own[callId];
++}
 +function RoomAvatar({ room: room2, roster, size = 36 }) {
 +  const people2 = roomAvatarPeople(room2, roster);
 +  const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
@@ -1253,8 +1342,7 @@ diff --git a/client.js b/client.js
 +      people2.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 +      people2.length > 3 ? (0, import_react.createElement)("span", { className: "bt-stack-more" }, `+${people2.length - 3}`) : null
 +    );
-   }
--  return { ...state, [sessionId]: own };
++  }
 +  const seats = clusterSeats(Math.min(people2.length, 4), size);
 +  const overflow = people2.length > 4 ? people2.length - 3 : 0;
 +  const gap = size / 14;
@@ -1273,97 +1361,15 @@ diff --git a/client.js b/client.js
 +      return (0, import_react.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 +    })
 +  );
- }
- 
--// src/client/themes.js
--var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
--var THEMES = {
--  deepseek: {
--    label: "DeepSeek",
--    light: { bg: "#fcfcfc", sidebar: "#f7f7f7", bubble: "#eeeeee", card: "#ffffff", text: "#141414", user: "#070707", userText: "#fcfcfc", accent: "#4d6bfe" },
--    dark: { bg: "#141414", sidebar: "#1b1b1b", bubble: "#262626", card: "#1f1f1f", text: "#f2f2f2", user: "#f2f2f2", userText: "#141414", accent: "#5b7bff" }
--  },
--  mono: {
--    label: "Mono",
--    light: { bg: "#ffffff", sidebar: "#f9f9f9", bubble: "#f0f0f0", card: "#ffffff", text: "#0d0d0d", user: "#0d0d0d", userText: "#ffffff", accent: "#0d0d0d" },
--    dark: { bg: "#0f0f0f", sidebar: "#171717", bubble: "#242424", card: "#1c1c1c", text: "#f4f4f4", user: "#f4f4f4", userText: "#0f0f0f", accent: "#f4f4f4" }
--  },
--  paper: {
--    label: "Paper",
--    light: { bg: "#faf9f5", sidebar: "#f3f0e8", bubble: "#ebe7dc", card: "#ffffff", text: "#1f1e1b", user: "#2b2a26", userText: "#faf9f5", accent: "#d97757" },
--    dark: { bg: "#1f1e1b", sidebar: "#262521", bubble: "#34322d", card: "#2a2925", text: "#f3f0e8", user: "#f3f0e8", userText: "#1f1e1b", accent: "#e08a6d" }
--  },
--  moonlight: {
--    label: "Moonlight",
--    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
--    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
--  }
++}
++
 +// src/client/approval-claims.js
 +var claims = /* @__PURE__ */ new Map();
 +var claimListeners = /* @__PURE__ */ new Set();
 +var openChats = /* @__PURE__ */ new Map();
 +var changed = () => {
 +  for (const fn of [...claimListeners]) fn();
- };
--var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
--function themeVars(mode, dark, accent = mode.accent) {
--  return {
--    "--bt-ink": mode.text,
--    "--bt-ink-2": rgba(mode.text, 0.6),
--    "--bt-ink-3": rgba(mode.text, 0.36),
--    "--bt-bubble": mode.bubble,
--    "--bt-sidebar": mode.sidebar,
--    "--bt-main": mode.bg,
--    "--bt-card": mode.card,
--    "--bt-line": rgba(mode.text, 0.08),
--    "--bt-line-2": rgba(mode.text, 0.15),
--    "--bt-hover": dark ? "rgba(160,160,160,.12)" : "rgba(119,119,119,.09)",
--    "--bt-active": dark ? "rgba(160,160,160,.2)" : "rgba(119,119,119,.17)",
--    "--bt-accent": accent,
--    "--bt-accent-ink": luminance(accent) > 0.45 ? "#141414" : "#ffffff",
--    "--bt-user": mode.user,
--    "--bt-user-ink": mode.userText,
--    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
--    "--bt-tag-ink": rgba(mode.text, 0.58)
--  };
--}
--var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
--var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
--html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
--${theme.css ?? ""}`;
--var shellTokens = ({ light, dark }) => ({
--  "--dsw-alias-bg-base": { light: light.bg, dark: dark.bg },
--  "--dsw-specific-sidebar-fill": { light: light.sidebar, dark: dark.sidebar },
--  "--dsw-specific-input-major": { light: light.bg, dark: dark.sidebar },
--  "--dsw-alias-label-primary": { light: light.text, dark: dark.text },
--  "--dsw-alias-label-secondary": { light: rgba(light.text, 0.74), dark: rgba(dark.text, 0.74) },
--  "--dsw-alias-label-tertiary": { light: rgba(light.text, 0.6), dark: rgba(dark.text, 0.6) }
--});
--var customThemes = {};
--var registry = createSource(0);
--var isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
--function registerShape(id, shape) {
--  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Shape ids are lowercase words");
--  if (typeof shape?.body !== "function" || typeof shape.body("#000") !== "string") throw new Error("A shape needs body(paint) returning SVG markup");
--  const at = shape.eyes?.at;
--  if (!Array.isArray(at) || at.length !== 2 || !at.every(isPoint)) throw new Error("A shape needs eyes.at: two [x, y] points");
--  const size = Number.isFinite(shape.size) && shape.size > 0 ? shape.size : 100;
--  const pick2 = (key, fallback) => Number.isFinite(shape.eyes[key]) ? shape.eyes[key] : fallback;
--  const eyes = at.map(([x, y]) => [x, y, pick2("w", size * 0.1), pick2("h", size * 0.23), pick2("tilt", -27)]);
--  const previous = SHAPES[id];
--  SHAPES[id] = {
--    label: String(shape.label ?? id),
--    size,
--    body: shape.body,
--    eyes,
--    ...typeof shape.wrap === "string" ? { wrap: shape.wrap } : {}
--  };
--  const refresh = () => {
--    markupCache.clear();
--    maskCache.delete(id);
--    registry.set((value) => value + 1);
--  };
--  refresh();
++};
 +function chatOpened(sessionId, delta) {
 +  const count = (openChats.get(sessionId) ?? 0) + delta;
 +  if (count > 0) openChats.set(sessionId, count);
@@ -1550,7 +1556,7 @@ diff --git a/client.js b/client.js
 +  const inOpenChat = (approval) => {
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
-   };
++  };
 +  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
@@ -1574,7 +1580,7 @@ diff --git a/client.js b/client.js
 +      setBusy("");
 +      await refresh();
 +    }
-+  };
+   };
 +  const byChat = /* @__PURE__ */ new Map();
 +  for (const approval of pointers) {
 +    const key = chatOf(approval, roster) ?? approval.id;
@@ -1668,13 +1674,10 @@ diff --git a/client.js b/client.js
  
  // src/shared/mentions.js
  var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
-@@ -1443,7 +1443,28 @@ function mentionSpans(text, bots, { references = [] } = {}) {
-     spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
-     at = end - 1;
+@@ -1445,6 +1445,27 @@ function mentionSpans(text, bots, { references = [] } = {}) {
    }
--  return spans;
-+  return spans;
-+}
+   return spans;
+ }
 +function unmatchedMentions(text, bots, { references = [] } = {}) {
 +  const value = String(text ?? "");
 +  const skip = [
@@ -1695,9 +1698,10 @@ diff --git a/client.js b/client.js
 +    if (word) missing.push(`@${word}`);
 +  }
 +  return missing;
- }
++}
  
  // src/client/text.js
+ var MENTION_ORIGIN = "https://bots.local/";
 @@ -1463,6 +1463,19 @@ function mentionTarget(event) {
    const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
    return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
@@ -1786,11 +1790,35 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1597,14 +1597,21 @@ function commRunOf(order, peers, turn, hiddenTurns = []) {
+@@ -1573,60 +1573,246 @@ function relaysBefore(contexts, steps, step) {
+       break;
+     }
    }
-   return { count, peerIds };
- }
--function previewOf(list, id, hiddenTurns = []) {
+-  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
++  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
++}
++function commRunOf(order, peers, turn, hiddenTurns = []) {
++  const turns = [];
++  for (const entry of order) {
++    const peer = peers[entry];
++    const hidden = hiddenTurns.includes(entry);
++    if (hidden && peer === void 0) continue;
++    turns.push({ turn: entry, peer, hidden });
++  }
++  const at = turns.findIndex((entry) => entry.turn === turn);
++  if (at === -1 || turns[at].peer === void 0) return null;
++  const previous = turns[at - 1];
++  if (previous?.peer !== void 0 && previous.hidden) return "folded";
++  let count = 0;
++  const peerIds = [];
++  for (let index = at; index < turns.length; index += 1) {
++    const entry = turns[index];
++    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
++    count += entry.hidden ? 2 : 1;
++    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
++  }
++  return { count, peerIds };
++}
 +function heldReplyOf(bot, sessionId, turn) {
 +  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : [];
 +  let found;
@@ -1799,22 +1827,32 @@ diff --git a/client.js b/client.js
 +}
 +var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
 +function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
-   const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
-   if (!Array.isArray(outline)) return "";
-   for (let index = outline.length - 1; index >= 0; index -= 1) {
-     const entry = outline[index];
-     if (hiddenTurns.includes(entry.turn)) continue;
--    const text = entry.response || entry.prompt || "";
--    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
++  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
++  if (!Array.isArray(outline)) return "";
++  for (let index = outline.length - 1; index >= 0; index -= 1) {
++    const entry = outline[index];
++    if (hiddenTurns.includes(entry.turn)) continue;
 +    const text = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
 +    if (text !== "") return stripTrace(stripHeader(text)).replace(/\s+/g, " ").trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, "");
-   }
-   return "";
- }
-@@ -1624,9 +1624,188 @@ function usageOf(list, ids) {
-   const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
-   return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
- }
++  }
++  return "";
++}
++var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
++function usageOf(list, ids) {
++  let input = 0;
++  let cacheRead = 0;
++  let output = 0;
++  for (const id of ids) {
++    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
++    if (!usage) continue;
++    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
++    cacheRead += usage.cacheReadTokens ?? 0;
++    output += usage.outputTokens ?? 0;
++  }
++  if (input + output === 0) return "";
++  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
++  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
++}
 +function faceRowTitle(title) {
 +  const text = String(title ?? "");
 +  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
@@ -1874,7 +1912,26 @@ diff --git a/client.js b/client.js
 +    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
 +  }
 +  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
-+}
+ }
+-function commRunOf(order, peers, turn, hiddenTurns = []) {
+-  const turns = [];
+-  for (const entry of order) {
+-    const peer = peers[entry];
+-    const hidden = hiddenTurns.includes(entry);
+-    if (hidden && peer === void 0) continue;
+-    turns.push({ turn: entry, peer, hidden });
+-  }
+-  const at = turns.findIndex((entry) => entry.turn === turn);
+-  if (at === -1 || turns[at].peer === void 0) return null;
+-  const previous = turns[at - 1];
+-  if (previous?.peer !== void 0 && previous.hidden) return "folded";
+-  let count = 0;
+-  const peerIds = [];
+-  for (let index = at; index < turns.length; index += 1) {
+-    const entry = turns[index];
+-    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
+-    count += entry.hidden ? 2 : 1;
+-    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
@@ -1886,9 +1943,18 @@ diff --git a/client.js b/client.js
 +    const count = (own[callId] ?? 0) + delta;
 +    if (count > 0) own[callId] = count;
 +    else delete own[callId];
-+  }
+   }
+-  return { count, peerIds };
 +  return { ...state, [sessionId]: own };
-+}
+ }
+-function previewOf(list, id, hiddenTurns = []) {
+-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-  if (!Array.isArray(outline)) return "";
+-  for (let index = outline.length - 1; index >= 0; index -= 1) {
+-    const entry = outline[index];
+-    if (hiddenTurns.includes(entry.turn)) continue;
+-    const text = entry.response || entry.prompt || "";
+-    if (text !== "") return stripHeader(text).replace(/\s+/g, " ").trim();
 +
 +// src/client/themes.js
 +var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
@@ -1912,7 +1978,8 @@ diff --git a/client.js b/client.js
 +    label: "Moonlight",
 +    light: { bg: "#f7f9fc", sidebar: "#eef2f8", bubble: "#e5ebf5", card: "#ffffff", text: "#121826", user: "#1e3a8a", userText: "#ffffff", accent: "#1e86ff" },
 +    dark: { bg: "#0b1020", sidebar: "#10172a", bubble: "#1a2340", card: "#141c33", text: "#e8edf7", user: "#3b6fd8", userText: "#ffffff", accent: "#4f9dff" }
-+  }
+   }
+-  return "";
 +};
 +var rgba = (hex, alpha) => `rgba(${[1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)).join(",")},${alpha})`;
 +function themeVars(mode, dark, accent = mode.accent) {
@@ -1935,7 +2002,18 @@ diff --git a/client.js b/client.js
 +    "--bt-tag-bg": rgba(mode.text, dark ? 0.09 : 0.06),
 +    "--bt-tag-ink": rgba(mode.text, 0.58)
 +  };
-+}
+ }
+-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+-function usageOf(list, ids) {
+-  let input = 0;
+-  let cacheRead = 0;
+-  let output = 0;
+-  for (const id of ids) {
+-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+-    if (!usage) continue;
+-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+-    cacheRead += usage.cacheReadTokens ?? 0;
+-    output += usage.outputTokens ?? 0;
 +var declarations = (vars) => Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
 +var themeCss = (theme, accent) => `html body{${declarations(themeVars(theme.light, false, accent ?? theme.light.accent))}}
 +html body[data-ds-dark-theme]{${declarations(themeVars(theme.dark, true, accent ?? theme.dark.accent))}}
@@ -1983,7 +2061,10 @@ diff --git a/client.js b/client.js
 +  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 +  for (const mode of ["light", "dark"]) {
 +    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
-+  }
+   }
+-  if (input + output === 0) return "";
+-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
 +  const previous = customThemes[id];
 +  customThemes[id] = { label: String(theme.label ?? id), light: theme.light, dark: theme.dark, css: typeof theme.css === "string" ? theme.css : "" };
 +  registry3.set((value) => value + 1);
@@ -1992,7 +2073,7 @@ diff --git a/client.js b/client.js
 +    else delete customThemes[id];
 +    registry3.set((value) => value + 1);
 +  };
-+}
+ }
 +var allThemes = () => ({ ...THEMES, ...customThemes });
  
  // src/client/motion.js
@@ -2329,10 +2410,17 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2852,229 +2852,211 @@ function installCompiledStyles(text, tag) {
-     document.removeEventListener("load", onLoad, true);
-     clearTimeout(timer);
-     style.remove();
+@@ -2845,236 +2845,218 @@ function installCompiledStyles(text, tag) {
+     if (event.target instanceof HTMLLinkElement) schedule();
+   };
+   const observer = new MutationObserver(schedule);
+-  observer.observe(document.head, { childList: true });
+-  document.addEventListener("load", onLoad, true);
+-  return () => {
+-    observer.disconnect();
+-    document.removeEventListener("load", onLoad, true);
+-    clearTimeout(timer);
+-    style.remove();
 -  };
 -}
 -
@@ -2419,8 +2507,7 @@ diff --git a/client.js b/client.js
 -    { viewBox: "0 0 20 20", "aria-hidden": true },
 -    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
 -  );
-+  };
- }
+-}
 -function useSettled(state) {
 -  const prev = (0, import_react2.useRef)(state);
 -  const [settled, setSettled] = (0, import_react2.useState)(false);
@@ -2437,6 +2524,28 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [state]);
 -  return settled;
++  observer.observe(document.head, { childList: true });
++  document.addEventListener("load", onLoad, true);
++  return () => {
++    observer.disconnect();
++    document.removeEventListener("load", onLoad, true);
++    clearTimeout(timer);
++    style.remove();
++  };
+ }
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
+-  );
 +
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -2469,19 +2578,13 @@ diff --git a/client.js b/client.js
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2491,7 +2594,9 @@ diff --git a/client.js b/client.js
 +    if (!owner || seen.has(key)) continue;
 +    seen.add(key);
 +    out.push(owner);
-+  }
+   }
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +  out.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 +  return out.slice(0, 3);
 +}
@@ -2516,13 +2621,18 @@ diff --git a/client.js b/client.js
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
  }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2550,24 +2660,28 @@ diff --git a/client.js b/client.js
 +      isChief: bot.remote.isChief
 +    });
    }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
+-  const seats = clusterSeats(Math.min(people.length, 4), size);
+-  const overflow = people.length > 4 ? people.length - 3 : 0;
+-  const gap = size / 14;
+-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-cluster", style: { width: size, height: size } },
+-    seats.map(([x, y, s], index) => {
+-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+-      const style = { left: x, top: y, width: s, height: s };
+-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+-      if (overflow > 0 && index === 3) {
+-        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+-      }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+-    })
+-  );
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
- }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
++}
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2597,25 +2711,7 @@ diff --git a/client.js b/client.js
 +    link.rel = "icon";
 +    link.type = "image/svg+xml";
 +    document.head.appendChild(link);
-   }
--  const seats = clusterSeats(Math.min(people.length, 4), size);
--  const overflow = people.length > 4 ? people.length - 3 : 0;
--  const gap = size / 14;
--  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-cluster", style: { width: size, height: size } },
--    seats.map(([x, y, s], index) => {
--      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
--      const style = { left: x, top: y, width: s, height: s };
--      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
--      if (overflow > 0 && index === 3) {
--        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
--      }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
--    })
--  );
++  }
 +  link.href = href;
 +  const retitle = () => {
 +    const next = brandTitle(document.title);
@@ -3849,7 +3945,8 @@ diff --git a/client.js b/client.js
      { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
 -    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
 +    (0, import_react8.createElement)(BotMark, { bot, size: 22 })
-+  );
+   );
+-  return (0, import_react6.createElement)(
 +  const name = (0, import_react8.createElement)(
 +    "span",
 +    { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
@@ -3944,8 +4041,7 @@ diff --git a/client.js b/client.js
 +    { width: 10, height: 10, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react8.createElement)("circle", { cx: 12, cy: 12, r: 9 }),
 +    (0, import_react8.createElement)("path", { d: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" })
-   );
--  return (0, import_react6.createElement)(
++  );
 +}
 +function RemoteFiles({ files, plugin, botId }) {
 +  const [busy, setBusy] = (0, import_react8.useState)("");
@@ -4372,8 +4468,7 @@ diff --git a/client.js b/client.js
        if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-       }
--      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
++      }
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
@@ -4390,7 +4485,8 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      return (0, import_react6.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
 +      return (0, import_react8.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
      }),
      pending.map((id) => {
@@ -9818,13 +9914,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react28.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: people2.length }) },
 +      people2.map((person) => (0, import_react28.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react28.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react28.createElement)(
 +        "div",
@@ -11362,7 +11458,7 @@ diff --git a/client.js b/client.js
  .bt-about-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
  .bt-about-name{font-size:16px;line-height:22px;font-weight:600}
  .bt-about-version{font-size:12px;line-height:16px;color:var(--bt-ink-2);font-variant-numeric:tabular-nums}
-@@ -10569,54 +10569,54 @@ body:not([data-bt-motion=quiet]) .bt-about-mark:hover .bt-mark[data-live][data-s
+@@ -10569,54 +10569,59 @@ body:not([data-bt-motion=quiet]) .bt-about-mark:hover .bt-mark[data-live][data-s
  `;
  
  // src/client/settings.js
@@ -11387,6 +11483,11 @@ diff --git a/client.js b/client.js
 +    children ? (0, import_react33.createElement)("div", { className: "bt-set-control" }, children) : null
    );
  }
++var NOTIFY_KINDS = [
++  ["approval", "Waiting for approval", "Once more if it still waits after 15 min."],
++  ["finished", "Finished"],
++  ["failed", "Failed"]
++];
  function GeneralPage({ roster, actions, run }) {
    const prefs = roster.prefs ?? {};
    const themes = allThemes();
@@ -11434,7 +11535,7 @@ diff --git a/client.js b/client.js
              key: ink,
              type: "button",
              className: "bt-swatch",
-@@ -10626,75 +10626,79 @@ function GeneralPage({ roster, actions, run }) {
+@@ -10626,75 +10626,87 @@ function GeneralPage({ roster, actions, run }) {
              style: { background: INKS[ink][0] },
              onClick: () => run(actions.setPrefs({ accent: INKS[ink][0] }))
            })),
@@ -11449,7 +11550,7 @@ diff --git a/client.js b/client.js
        )
      ),
 -    (0, import_react28.createElement)(
-+    // One switch for every system notification: approvals waiting, Bots finished or failed (#353).
++    // One switch for every system notification (#353), then one per kind (#469).
 +    (0, import_react33.createElement)(
        SetSection,
 -      { key: "mode", title: t("Mode") },
@@ -11465,7 +11566,15 @@ diff --git a/client.js b/client.js
 +        hint: t("When your Bots finish, fail, or wait for your approval while you are in another chat or app."),
 +        on: prefs.notifications !== false,
 +        onChange: (on) => run(actions.setPrefs({ notifications: on }))
-+      })
++      }),
++      NOTIFY_KINDS.map(([kind, label, hint]) => (0, import_react33.createElement)(SwitchRow, {
++        key: kind,
++        label: t(label),
++        hint: hint ? t(hint) : void 0,
++        disabled: prefs.notifications === false,
++        on: prefs.notify?.[kind] !== false,
++        onChange: (on) => run(actions.setPrefs({ notify: { [kind]: on } }))
++      }))
      )
    ];
  }
@@ -13357,22 +13466,35 @@ diff --git a/client.js b/client.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
-@@ -13219,22 +13219,33 @@ var USER_MESSAGE_CSS = `
- function noticeApprovals({ work, roster, shownSession, openSession, since: since2 = Date.now() }) {
+@@ -13216,42 +13216,112 @@ var USER_MESSAGE_CSS = `
+ `;
+ 
+ // src/client/approval-notices.js
+-function noticeApprovals({ work, roster, shownSession, openSession, since: since2 = Date.now() }) {
++var WAITING_TOO_LONG = 15 * 60 * 1e3;
++function noticeApprovals({ work, roster, shownSession, openSession, since: since2 = Date.now(), now = () => Date.now(), timers = globalThis }) {
    const told = /* @__PURE__ */ new Set();
++  const unseen = /* @__PURE__ */ new Map();
++  let timer;
    const notify = () => {
 -    const approvals = work.getSnapshot().approvals ?? [];
++    timers.clearTimeout?.(timer);
++    timer = void 0;
 +    const { approvals = [], ended = [] } = work.getSnapshot();
++    const at = now();
++    const lateAt = (entry) => Math.max(entry.at ?? 0, since2) + WAITING_TOO_LONG;
 +    const events = [
-+      ...approvals.map((entry) => ({ entry, kind: "approval" })),
-+      ...ended.map((entry) => ({ entry, kind: entry.failed === void 0 ? "finished" : "failed" }))
++      ...approvals.map((entry) => ({ entry, kind: "approval", key: `approval-${entry.id}`, when: entry.at ?? 0 })),
++      ...approvals.filter((entry) => lateAt(entry) <= at).map((entry) => ({ entry, kind: "late", key: `late-${entry.id}`, when: lateAt(entry) })),
++      ...ended.map((entry) => ({ entry, kind: entry.failed === void 0 ? "finished" : "failed", key: `turn-${entry.id}`, when: entry.at ?? 0 }))
 +    ];
-+    const key = ({ entry, kind }) => `${kind === "approval" ? "approval" : "turn"}-${entry.id}`;
-+    const current = new Set(events.map(key));
++    const current = new Set(events.map((event) => event.key));
      for (const id of told) {
 -      if (!approvals.some((entry) => entry.id === id)) told.delete(id);
 +      if (!current.has(id)) told.delete(id);
      }
++    const next = Math.min(...approvals.map(lateAt).filter((due) => due > at));
++    if (Number.isFinite(next)) timer = timers.setTimeout?.(notify, next - at);
      if (typeof Notification !== "function" || Notification.permission !== "granted") return;
 -    for (const entry of approvals) {
 -      if (told.has(entry.id)) continue;
@@ -13380,31 +13502,54 @@ diff --git a/client.js b/client.js
 -      if ((entry.at ?? 0) < since2) continue;
 +    const { byId, roomsById, prefs } = roster.getSnapshot();
 +    const on = prefs?.notifications !== false;
++    const kinds = prefs?.notify ?? {};
++    const visible = document.visibilityState === "visible";
++    const shown = shownSession();
++    if (visible) unseen.delete(shown);
++    const fresh = /* @__PURE__ */ new Map();
 +    for (const event of events) {
-+      const id = key(event);
-+      if (told.has(id)) continue;
-+      told.add(id);
++      if (told.has(event.key)) continue;
++      told.add(event.key);
 +      const { entry, kind } = event;
-+      if (!on || (entry.at ?? 0) < since2) continue;
++      if (!on || kinds[kind === "late" ? "approval" : kind] === false) continue;
++      if (kind !== "late" && (entry.at ?? 0) < since2) continue;
        const place = entry.roomId ?? entry.sessionId;
-       if (document.visibilityState === "visible" && shownSession() === place) continue;
+-      if (document.visibilityState === "visible" && shownSession() === place) continue;
 -      const { byId, roomsById } = roster.getSnapshot();
++      if (visible && shown === place) continue;
++      fresh.set(place, [...fresh.get(place) ?? [], event]);
++    }
++    for (const [place, list] of fresh) {
++      const { entry, kind } = list.reduce((last, event) => event.when >= last.when ? event : last);
++      const count = (unseen.get(place) ?? 0) + list.filter((event) => event.kind !== "late").length;
++      unseen.set(place, count);
        const room2 = entry.roomId ? roomsById[entry.roomId] : void 0;
 -      const note = new Notification(t("{name} is waiting for your approval", { name: byId[entry.botId]?.name ?? t("A Bot") }), {
 -        body: [room2?.name, entry.tool].filter(Boolean).join(" · "),
 -        tag: `ds-bot-approval-${entry.id}`
 +      const name = byId[entry.botId]?.name ?? t("A Bot");
-+      const title = kind === "approval" ? t("{name} is waiting for your approval", { name }) : kind === "finished" ? t("{name} finished", { name }) : t("{name} failed: {reason}", { name, reason: entry.failed });
++      const title = kind === "approval" ? t("{name} is waiting for your approval", { name }) : kind === "late" ? t("{name} has waited {n} min for your approval", { name, n: Math.max(15, Math.floor((at - (entry.at ?? at)) / 6e4)) }) : kind === "finished" ? t("{name} finished", { name }) : t("{name} failed: {reason}", { name, reason: entry.failed });
 +      const note = new Notification(title, {
-+        body: [room2?.name, kind === "approval" ? entry.tool : void 0].filter(Boolean).join(" · "),
-+        tag: `ds-bot-${id}`
++        body: [room2?.name, kind === "approval" || kind === "late" ? entry.tool : void 0, count > 1 ? t("{count} updates", { count }) : void 0].filter(Boolean).join(" · "),
++        tag: `ds-bot-${place}`
        });
        note.onclick = () => {
          window.focus();
-@@ -13247,11 +13247,45 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
-   return work.subscribe(notify);
- }
- 
++        unseen.delete(place);
+         openSession(entry.roomId ?? entry.botId);
+         note.close();
+       };
+     }
+   };
+   notify();
+-  return work.subscribe(notify);
++  const off = work.subscribe(notify);
++  return () => {
++    off();
++    timers.clearTimeout?.(timer);
++  };
++}
++
 +// src/client/stats-dock.js
 +var import_react41 = require("react");
 +var STATS_DOCK = "conversation.composer.dock";
@@ -13427,8 +13572,8 @@ diff --git a/client.js b/client.js
 +    return (0, import_react41.createElement)(entry.component, { ...props, t: t2 });
 +  }
 +  return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
-+}
-+
+ }
+ 
  // src/client/index.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
  function apply(ctx) {

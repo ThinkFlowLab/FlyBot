@@ -36,6 +36,12 @@ function SetRow({ label, hint, children }) {
     children ? h('div', { className: 'bt-set-control' }, children) : null)
 }
 
+// The notification kinds with a switch of their own (#469).
+const NOTIFY_KINDS = [
+  ['approval', 'Waiting for approval', 'Once more if it still waits after 15 min.'],
+  ['finished', 'Finished'],
+  ['failed', 'Failed'],
+]
 // General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {}
@@ -63,13 +69,17 @@ function GeneralPage({ roster, actions, run }) {
           })),
           h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
             h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
-    // One switch for every system notification: approvals waiting, Bots finished or failed (#353).
+    // One switch for every system notification (#353), then one per kind (#469).
     h(SetSection, { key: 'notify', title: t('Notifications') },
       h(SwitchRow, {
         label: t('Notifications'), showLabel: false,
         hint: t('When your Bots finish, fail, or wait for your approval while you are in another chat or app.'),
         on: prefs.notifications !== false, onChange: on => run(actions.setPrefs({ notifications: on })),
-      })),
+      }),
+      NOTIFY_KINDS.map(([kind, label, hint]) => h(SwitchRow, {
+        key: kind, label: t(label), hint: hint ? t(hint) : undefined, disabled: prefs.notifications === false,
+        on: prefs.notify?.[kind] !== false, onChange: on => run(actions.setPrefs({ notify: { [kind]: on } })),
+      }))),
   ]
 }
 
