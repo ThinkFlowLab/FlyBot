@@ -1152,3 +1152,27 @@ test('a review out of a cross-owner room keeps entries out of the team memory', 
   assert.equal(existsSync(join(home, 'memory', 'team', 'MEMORY.md')), false, 'no team write from another owner\'s room')
   assert.match(readFileSync(join(home, 'memory', 'bots', 'b3', 'MEMORY.md'), 'utf8'), /The launch stays on Friday/)
 })
+
+test('recall semantic ranks entries by meaning, not only by exact words', async (t) => {
+  const { tool, stop } = start()
+  t.after(() => stop())
+  await tool('remember', { text: 'The user prefers window seats on long flights' }, 'b2')
+  await tool('remember', { text: 'The user ships releases on Friday' }, 'b2')
+  const out = await tool('recall', { query: 'flight seat', semantic: 'true' }, 'b2')
+  assert.match(out, /^Entries closest in meaning to "flight seat" in your memory and the team memory:/)
+  assert.match(out.split('\n')[1], /window seats/, 'the worded-differently entry is the top hit')
+  assert.doesNotMatch(out, /Friday/, 'an entry that shares no meaning is left out')
+  // The default path is unchanged: exact words still drive it.
+  assert.match(await tool('recall', { query: 'window' }, 'b2'), /^Entries with "window"/)
+})
+
+test('recall related lists what a topic links to', async (t) => {
+  const { tool, stop } = start()
+  t.after(() => stop())
+  await tool('remember', { text: 'Trip plan to Hangzhou', topic: 'travel' }, 'b2')
+  await tool('remember', { text: 'See [[travel]] for the whole trip' }, 'b2')
+  const out = await tool('recall', { related: 'travel' }, 'b2')
+  assert.match(out, /^Near \[\[travel\]\] in your memory and the team memory:/)
+  assert.match(out, /- \[\[memory\]\] — linked/)
+  assert.match(await tool('recall', { related: 'nothinghere' }, 'b2'), /Nothing in your memory and the team memory links "nothinghere"/)
+})
