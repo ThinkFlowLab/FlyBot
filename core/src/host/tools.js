@@ -8,6 +8,7 @@ import { isListedRemoteChat } from '../shared/remote-label.js'
 import { currentParticipants } from './room-membership.js'
 import { questionReply, replyText } from './parts.js'
 import { OTHER, settled } from './turn-origin.js'
+import { cleanName } from './delivery.js'
 
 export const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] }
 export const GROUP_REF = { type: 'string', required: true, description: 'Exact group chat name from list_bots' }
@@ -622,7 +623,7 @@ export function install(rt) {
       throw error
     }
     await rt.save()
-    const who = typeof actor?.displayName === 'string' && actor.displayName.trim() !== '' ? actor.displayName.trim() : 'You'
+    const who = cleanName(actor?.displayName, 'You')
     const given = JSON.parse(reply.text).answers[0]
     const values = [...given.selected, ...(given.custom ? [given.custom] : [])].join(', ').replace(/\s+/g, ' ').slice(0, 300)
     void rt.postToRoom?.(room, { id: 'face-notice', name: 'Room' }, `${who} answered ${bot.name}: ${question.question} → ${values}`, { quiet: true, notice: true })
