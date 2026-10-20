@@ -365,6 +365,7 @@ export const SOCIAL_UI_ENDPOINTS = [
   'social/face-auto', 'social/face-lead',
   'social/hide-remote',
   'social/access', 'social/revoke-grant',
+  'social/share-friends', 'social/share-with-friend',
 ]
 
 export function registerUnavailable(service, reason) {
@@ -1845,7 +1846,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return client.callTool(tool, { ...args, confirm_code: first.confirm_code })
   }
   const homeArgs = () => (home ? { bot_id: home.id } : config.botId ? { bot_id: config.botId } : {})
-  const peerView = item => ({ relationshipId: item.relationship_id, status: item.status, handle: item.peer?.handle ? norm(item.peer.handle) : undefined, name: cleanText(item.peer?.display_name), owner: cleanText(item.peer?.owner_display_name), message: item.message ?? null, requestedAt: item.requested_at, expiresAt: item.expires_at })
+  const peerView = item => ({ relationshipId: item.relationship_id, status: item.status, handle: item.peer?.handle ? norm(item.peer.handle) : undefined, name: cleanText(item.peer?.display_name), owner: cleanText(item.peer?.owner_display_name), ...(item.peer?.owner_id || item.friend_owner_id || item.owner_id ? { ownerId: String(item.peer?.owner_id || item.friend_owner_id || item.owner_id) } : {}), message: item.message ?? null, requestedAt: item.requested_at, expiresAt: item.expires_at })
   // A friendship may hang on the home or on one member (a per-Bot invite, #420), so the home and every
   // member identity are asked, as setAutoAccept does; one relationship is listed once. A member that
   // cannot be read costs only its own rows; the home's answer still decides whether this fails.
@@ -2146,6 +2147,123 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }
   }
+
+  // #500: friends who do not yet have this Bot — for Sharing → "Share with a friend".
+  // Uses the active friendships (list_friends) so a friend we invited (and who has not
+  // shared anything back) still appears. Homes already in People with access are omitted.
+  async function shareFriendsForBot(botId) {
+    if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
+    const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
+    if (!bot) throw new Error('Choose one of your Bots to share')
+    const member = activeMember(bot.id)
+    if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
+    await syncOutgoingGrants({ only: bot.id }).catch(error => warn('grants not synced for share list', error))
+    const listed = typeof api.listGrants === 'function'
+      ? await api.listGrants({ botId: member.bot_id }).catch(error => { warn('grants not listed for share', error); return [] })
+      : []
+    const grantedHomes = new Set()
+    for (const grant of listed) {
+      if (isTalkThroughGrant(member, grant)) continue
+      const view = grantPersonView(grant)
+      const key = norm(view.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : ''))
+      if (key) grantedHomes.add(key)
+    }
+    const overview = await friendsOverview()
+    const friends = []
+    const seen = new Set()
+    for (const item of overview.friends ?? []) {
+      const homeKey = personHomeOf(item.handle) || norm(item.handle)
+      if (!homeKey || homeKey === '@' || seen.has(homeKey) || grantedHomes.has(homeKey)) continue
+      if (home && homeKey === norm(home.handle)) continue
+      seen.add(homeKey)
+      const label = cleanText(item.owner || item.name)
+        || String(homeKey).replace(/^@/, '').replace(/\.home$/i, '')
+        || homeKey
+      friends.push({
+        home: homeKey,
+        name: label,
+        ...(item.ownerId ? { ownerId: item.ownerId } : {}),
+        ...(item.relationshipId ? { relationshipId: item.relationshipId } : {}),
+      })
+    }
+    friends.sort((a, b) => String(a.name).localeCompare(String(b.name)) || String(a.home).localeCompare(String(b.home)))
+    return { botId: bot.id, botName: bot.name, friends }
+  }
+  disposers.push(flybot.api.handle('social/share-friends', async ({ botId } = {}) => shareFriendsForBot(botId), { read: true }))
+
+  function mapShareFriendError(error) {
+    const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
+    const blob = `${raw} ${error?.code ?? ''}`
+    if (error?.unavailable || /unavailable/i.test(blob)) {
+      return Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
+    }
+    if (/not_friends|no_relationship|no active relationship|not friends/i.test(blob)) {
+      return new Error('You are not friends with them yet. Add them from + Add friend.')
+    }
+    if (/already_granted|idempotent|unchanged/i.test(blob)) {
+      return null
+    }
+    if (/bot_not_found|not your bot/i.test(blob)) {
+      return new Error('Choose one of your Bots to share.')
+    }
+    if (/friend_not_found|no such friend|unknown friend/i.test(blob)) {
+      return new Error('That friend is not on this server.')
+    }
+    if (/not connected|no token|no server URL/i.test(blob)) {
+      return new Error('Bot Social is disconnected. Reconnect under Settings → Bot Social.')
+    }
+    const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
+    return new Error(body || 'Could not share with that friend. Try again.')
+  }
+
+  // #500: grant this Bot to an existing friend (Bot Social grant_bot_to_friend). Does not
+  // replace invite links. After a successful share, People with access re-syncs this Bot.
+  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId } = {}) => {
+    if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
+    const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
+    if (!bot) throw new Error('Choose one of your Bots to share')
+    const member = await register(bot, { forInvite: true })
+    if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
+    const homeKey = norm(friendHome)
+    const oid = friendOwnerId || ownerId
+    if (!homeKey && !oid) throw new Error('Choose a friend to share with')
+    if (typeof api.grantBotToFriend !== 'function') {
+      throw Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
+    }
+    let result
+    try {
+      result = await api.grantBotToFriend({ botId: member.bot_id, friendOwnerId: oid, friendHome: homeKey || undefined })
+    } catch (error) {
+      const mapped = mapShareFriendError(error)
+      if (mapped) throw mapped
+      result = { status: 'unchanged' }
+    }
+    if (result?.unavailable) {
+      throw Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
+    }
+    await syncOutgoingGrants({ only: bot.id }).catch(error => warn('grants not synced after share', error))
+    const grants = typeof api.listGrants === 'function'
+      ? await api.listGrants({ botId: member.bot_id }).catch(() => [])
+      : []
+    const access = {
+      botId: bot.id,
+      botName: bot.name,
+      grants: accessRows(bot.id, grants),
+      rooms: (flybot.rooms?.list?.() ?? []).filter(room => (room.bots ?? []).some(id => id === bot.id)).map(room => ({ id: room.id, name: room.name, origin: room.origin })),
+    }
+    const who = cleanText(result?.friend?.owner_display_name || result?.friend?.display_name || result?.grantee?.owner_display_name)
+      || (homeKey ? (String(homeKey).replace(/^@/, '').replace(/\.home$/i, '') || homeKey) : 'your friend')
+    return {
+      botId: bot.id,
+      botName: bot.name,
+      home: homeKey || undefined,
+      status: result?.status || 'active',
+      grantId: result?.grant_id || result?.grantId,
+      message: `Shared ${bot.name} with ${who}. They can decline; you can Revoke in People with access.`,
+      access,
+    }
+  }))
+
   // Each Bot carries its owner, so a picker can name it "Coder (Bob)" (#384).
   disposers.push(flybot.api.handle('social/friends', async payload => (await remoteBots({ fresh: payload?.fresh === true })).homes.flatMap(entry => entry.bots.map(bot => ({ ...bot, ...(entry.owner ? { owner: entry.owner } : {}), ...(entry.name ? { homeName: entry.name } : {}) }))), { read: true }))
   disposers.push(flybot.api.handle('social/auto-approve', async ({ botId, home: friendHome, on }) => {
