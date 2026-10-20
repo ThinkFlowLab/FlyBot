@@ -4842,7 +4842,7 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4624,156 +4624,845 @@ function useRowEntrances(replacing) {
+@@ -4624,156 +4624,864 @@ function useRowEntrances(replacing) {
      const observer = new MutationObserver(() => {
        if (!frame) frame = requestAnimationFrame(scan);
      });
@@ -5394,6 +5394,25 @@ diff --git a/client.js b/client.js
 +      ...people(roster, bot.id)
 +    });
 +  }
++  for (const [key, question] of Object.entries(roster.questions ?? {})) {
++    const room2 = roster.roomsById?.[key];
++    const bot = ownBot(roster, question?.botId);
++    if (room2 === void 0 || bot === void 0) continue;
++    waitingAt.add(`${bot.id}|${room2.id}`);
++    needs.push({
++      id: `question:${question.id ?? key}`,
++      kind: "question",
++      status: "input",
++      bot,
++      room: room2,
++      at: question.askedAt,
++      title: question.question ?? "",
++      reason: question.detail ?? "",
++      place: placeOf(roster, key),
++      chat: key,
++      ...people(roster, bot.id)
++    });
++  }
 +  const held = (chat, count, extra) => needs.push({
 +    id: `held:${chat}`,
 +    kind: "held",
@@ -5795,7 +5814,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4785,38 +4785,104 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
+@@ -4785,55 +4785,128 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
          onClick: () => actions.openSession(id),
          onContextMenu
        },
@@ -5913,7 +5932,10 @@ diff --git a/client.js b/client.js
    const active = useSessionRetainInfo(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
    const unread = useSessionStatus((map) => map.get(id)?.completionUnread === true) || marked && !active;
    useMarkedUnread(id, active, marked, actions);
-@@ -4826,14 +4826,19 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus,
+   const approval = useApproval(useWork, (entry) => entry.roomId === id);
++  const question = roster.questions?.[id] !== void 0;
+   const members = workKeys(useGroupWork(useWork, (rooms) => (rooms[id] ?? []).map((entry) => `${entry.botId}|${entry.tool ?? ""}`)));
+   const first = roster.byId[members[0]?.id];
    const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null;
    if (room2.hidden && !active) return null;
    const pinned = room2.pinned === true;
@@ -5921,8 +5943,9 @@ diff --git a/client.js b/client.js
 -  return (0, import_react8.createElement)(
 +  const title = room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name);
 +  const waiting = approval || (room2.pendingCount ?? 0) > 0;
++  const alert = question || waiting;
 +  const face = room2.origin === "face-to-face";
-+  const label = [title, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : ""].filter(Boolean).join(", ");
++  const label = [title, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : ""].filter(Boolean).join(", ");
 +  return (0, import_react13.createElement)(
      "button",
      {
@@ -5953,7 +5976,7 @@ diff --git a/client.js b/client.js
 +      workingLine ? (0, import_react13.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react13.createElement)("span", { className: "bt-row-preview" }, preview) : null
      ) : null,
 -    wide && approval && !active ? (0, import_react8.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react8.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
-+    wide && waiting && !active ? (0, import_react13.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react13.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
++    wide && alert && !active ? (0, import_react13.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react13.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
    );
  }
  function AgentSessionRow({ session, agent, actions, renaming, index }) {

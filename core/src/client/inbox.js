@@ -139,6 +139,19 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
       chat: approval.roomId ?? bot.id, approval, ...people(roster, bot.id),
     })
   }
+  // A question a Bot asks about work handed out from a group sits in that group's composer
+  // dock (#550), so its answer is given there; it needs me like an approval does (#552).
+  for (const [key, question] of Object.entries(roster.questions ?? {})) {
+    const room = roster.roomsById?.[key]
+    const bot = ownBot(roster, question?.botId)
+    if (room === undefined || bot === undefined) continue
+    waitingAt.add(`${bot.id}|${room.id}`)
+    needs.push({
+      id: `question:${question.id ?? key}`, kind: 'question', status: 'input', bot, room, at: question.askedAt,
+      title: question.question ?? '', reason: question.detail ?? '',
+      place: placeOf(roster, key), chat: key, ...people(roster, bot.id),
+    })
+  }
   // Messages a Bot wants to send wait for me in their chat; they are approved there (#349 decision).
   const held = (chat, count, extra) => needs.push({
     id: `held:${chat}`, kind: 'held', status: 'held', chat, at: undefined,

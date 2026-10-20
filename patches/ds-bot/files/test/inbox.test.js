@@ -334,3 +334,37 @@ test('each card has a one-line latest activity that never repeats its title or r
     }
   }
 })
+
+test('a question asked about work handed out from a group is a Needs you card that opens the group (#552)', () => {
+  const asked = {
+    ...roster,
+    questions: {
+      // The group's own card, as tools.js stores it (state.questions[room.id]).
+      r1: { id: 'q1', header: 'Flint', question: 'Which branch?', detail: 'Two branches look the same', options: [{ label: 'main' }], askedAt: NOW - 1000, botId: 'b2' },
+      // A card in a Bot's own chat is answered there and stays out of the inbox.
+      s1: { id: 'q2', question: 'Own card', options: [{ label: 'Yes' }], askedAt: NOW, botId: 'b1' },
+      // Someone else's Bot and a deleted group leave no card.
+      r9: { id: 'q3', question: 'Gone', askedAt: NOW, botId: 'b3' },
+      r1x: { id: 'q4', question: 'No group', askedAt: NOW, botId: 'b2' },
+    },
+  }
+  const withQuestion = inboxModel({ roster: asked, work, tasks, sessions, now: NOW })
+  const card = withQuestion.needs.find(entry => entry.id === 'question:q1')
+  assert.ok(card)
+  assert.equal(card.kind, 'question')
+  assert.equal(card.status, 'input')
+  assert.equal(card.title, 'Which branch?')
+  assert.equal(card.reason, 'Two branches look the same')
+  assert.equal(card.chat, 'r1')
+  assert.equal(card.place, 'in Ops')
+  assert.equal(card.bot.id, 'b2')
+  // It needs me, counted like an approval, and "Open" opens the group.
+  assert.ok(needsCount(asked, work, tasks) > needsCount(roster, work, tasks))
+  const rows = byClass(draw(card), 'bt-inbox-card')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].props['data-status'], 'input')
+  assert.equal(textOf(draw(card)).includes('Which branch?'), true)
+  assert.equal(withQuestion.needs.some(entry => entry.id === 'question:q2'), false)
+  assert.equal(withQuestion.needs.some(entry => entry.id === 'question:q3'), false)
+  assert.equal(withQuestion.needs.some(entry => entry.id === 'question:q4'), false)
+})

@@ -153,6 +153,9 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const unread = useSessionStatus(map => map.get(id)?.completionUnread === true) || (marked && !active)
   useMarkedUnread(id, active, marked, actions)
   const approval = useApproval(useWork, entry => entry.roomId === id)
+  // A question asked about work handed out from this group sits in the group's card (#550);
+  // the row says it waits for me, as a Bot row does for a card in its own chat (#552).
+  const question = roster.questions?.[id] !== undefined
   const members = workKeys(useGroupWork(useWork, rooms => (rooms[id] ?? []).map(entry => `${entry.botId}|${entry.tool ?? ''}`)))
   const first = roster.byId[members[0]?.id]
   const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null
@@ -160,8 +163,9 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const pinned = room.pinned === true
   const title = room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name)
   const waiting = approval || (room.pendingCount ?? 0) > 0
+  const alert = question || waiting
   const face = room.origin === 'face-to-face'
-  const label = [title, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : ''].filter(Boolean).join(', ')
+  const label = [title, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : ''].filter(Boolean).join(', ')
   return h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
     // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
@@ -174,7 +178,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   wide ? h('span', { className: 'bt-row-body' },
     h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag' }, t('Shared')) : null, pinned ? h(PinMark) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
-  wide && waiting && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
+  wide && alert && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
 }
 

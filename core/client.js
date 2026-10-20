@@ -6923,6 +6923,25 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
       ...people(roster, bot.id)
     });
   }
+  for (const [key, question] of Object.entries(roster.questions ?? {})) {
+    const room2 = roster.roomsById?.[key];
+    const bot = ownBot(roster, question?.botId);
+    if (room2 === void 0 || bot === void 0) continue;
+    waitingAt.add(`${bot.id}|${room2.id}`);
+    needs.push({
+      id: `question:${question.id ?? key}`,
+      kind: "question",
+      status: "input",
+      bot,
+      room: room2,
+      at: question.askedAt,
+      title: question.question ?? "",
+      reason: question.detail ?? "",
+      place: placeOf(roster, key),
+      chat: key,
+      ...people(roster, bot.id)
+    });
+  }
   const held = (chat, count, extra) => needs.push({
     id: `held:${chat}`,
     kind: "held",
@@ -7371,6 +7390,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
   const unread = useSessionStatus((map) => map.get(id)?.completionUnread === true) || marked && !active;
   useMarkedUnread(id, active, marked, actions);
   const approval = useApproval(useWork, (entry) => entry.roomId === id);
+  const question = roster.questions?.[id] !== void 0;
   const members = workKeys(useGroupWork(useWork, (rooms) => (rooms[id] ?? []).map((entry) => `${entry.botId}|${entry.tool ?? ""}`)));
   const first = roster.byId[members[0]?.id];
   const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null;
@@ -7378,8 +7398,9 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
   const pinned = room2.pinned === true;
   const title = room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name);
   const waiting = approval || (room2.pendingCount ?? 0) > 0;
+  const alert = question || waiting;
   const face = room2.origin === "face-to-face";
-  const label = [title, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : ""].filter(Boolean).join(", ");
+  const label = [title, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : ""].filter(Boolean).join(", ");
   return (0, import_react13.createElement)(
     "button",
     {
@@ -7404,7 +7425,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
       (0, import_react13.createElement)("span", { className: "bt-row-name" }, (0, import_react13.createElement)("span", { className: "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react13.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react13.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react13.createElement)(PinMark) : null),
       workingLine ? (0, import_react13.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react13.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
-    wide && waiting && !active ? (0, import_react13.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react13.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
+    wide && alert && !active ? (0, import_react13.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react13.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
   );
 }
 function AgentSessionRow({ session, agent, actions, renaming, index }) {
