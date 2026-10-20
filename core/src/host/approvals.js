@@ -84,7 +84,7 @@ export function install(rt) {
       await rt.save()
     }
     // Other cards the new grant already covers stop waiting too.
-    for (const other of [...pending.values()]) {
+    for (const other of pending.values()) {
       if (other.id !== entry.id && other.answer !== undefined && standingGrant(other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
     }
   }
