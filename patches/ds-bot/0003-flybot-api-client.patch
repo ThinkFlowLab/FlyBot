@@ -1202,13 +1202,15 @@ diff --git a/src/client/index.js b/src/client/index.js
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {
-@@ -539,15 +539,21 @@ export function apply(ctx) {
+@@ -539,15 +539,23 @@ export function apply(ctx) {
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
 -    connectorConnect: (id, token) => after(call('connector-connect', { id, token })),
 +    connectorConnect: (id, token, apps) => after(call('connector-connect', { id, token, ...(apps !== undefined ? { apps } : {}) })),
 +    connectorApps: (id, apps) => after(call('connector-apps', { id, apps })),
++    connectorAppSearch: (id, query, token) => call('connector-app-search', { id, query, ...(token ? { token } : {}) }),
++    connectorAppStatus: id => call('connector-app-status', { id }),
      connectorDisconnect: id => after(call('connector-disconnect', { id })),
      connectorRetry: id => after(call('connector-retry', { id })),
      saveCapability: capability => after(call('capability-save', capability)),
@@ -2281,7 +2283,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
     its layout, and not rendered. */
  .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-@@ -490,7 +490,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -490,8 +490,17 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-connector-form-row{display:flex;align-items:center;gap:6px}
@@ -2291,8 +2293,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 +.bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 +.bt-connector-others{padding-left:20px}
  .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
++.bt-connector-app-list{list-style:none;margin:0;padding:0 0 0 48px;display:flex;flex-direction:column;gap:2px}
++.bt-connector-app{display:flex;gap:8px;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
++.bt-connector-app-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-app-status{color:var(--bt-ink-3)}
++[data-status=sign-in]>.bt-app-status{color:#c46a00}
  
  /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
+    shell offers them and CSS-module name suffixes elsewhere. */
 @@ -609,7 +609,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}

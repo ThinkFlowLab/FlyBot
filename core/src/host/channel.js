@@ -338,6 +338,8 @@ export function install(rt) {
           return ok(await rt.secretEndpoint(endpoint, body))
         case 'connector-connect':
         case 'connector-apps':
+        case 'connector-app-search':
+        case 'connector-app-status':
         case 'connector-disconnect':
         case 'connector-retry':
           await rt.load()

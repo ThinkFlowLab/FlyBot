@@ -257,8 +257,15 @@ var ZH = {
   "Connected: {apps}": "已连接：{apps}",
   "Composio API key": "Composio API key",
   "Get a Composio API key": "去 Composio 获取 API key",
-  "More apps": "更多应用",
-  "More apps: type Composio app names, separated by commas": "更多应用：输入 Composio 应用名，用逗号隔开",
+  "Search apps": "搜索应用",
+  "Search Composio apps": "搜索 Composio 应用",
+  "Could not search Composio: {error}": "无法搜索 Composio：{error}",
+  "No apps match": "没有匹配的应用",
+  "Picked apps": "已选应用",
+  "Apps to add": "可添加的应用",
+  "Remove {app}": "移除 {app}",
+  "App status": "应用状态",
+  "Needs sign-in": "需要登录",
   "Choose apps": "选择应用",
   "Pick at least one app": "至少选一个应用",
   'An app name has only lowercase letters, digits, "_" and "-"': "应用名只能含小写字母、数字、“_”和“-”",
@@ -3553,6 +3560,11 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 .bt-connector-others{padding-left:20px}
 .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
+.bt-connector-app-list{list-style:none;margin:0;padding:0 0 0 48px;display:flex;flex-direction:column;gap:2px}
+.bt-connector-app{display:flex;gap:8px;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
+.bt-connector-app-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-app-status{color:var(--bt-ink-3)}
+[data-status=sign-in]>.bt-app-status{color:#c46a00}
 
 /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
    shell offers them and CSS-module name suffixes elsewhere. */
@@ -13101,7 +13113,6 @@ var APPS = [
   ["twitter", "X (Twitter)"],
   ["youtube", "YouTube"]
 ];
-var KNOWN = new Set(APPS.map(([slug]) => slug));
 var appName = (slug) => APPS.find(([id]) => id === slug)?.[1] ?? slug;
 var GitHubMark = () => (0, import_react30.createElement)(
   "svg",
@@ -13120,21 +13131,69 @@ function statusText2(connector) {
   if (connector.state === "ready") return connector.account ? t("Connected as {account}", { account: connector.account }) : t("Connected");
   return ABOUT[connector.id]?.() ?? "";
 }
-function AppPicker({ apps, onChange }) {
-  const [more, setMore] = (0, import_react30.useState)(() => apps.filter((app) => !KNOWN.has(app)).join(", "));
+var APP_STATUS = { ready: () => t("Ready"), "sign-in": () => t("Needs sign-in") };
+function AppChip({ name, status, onRemove }) {
+  const label = APP_STATUS[status]?.();
+  return (0, import_react30.createElement)(
+    "button",
+    { type: "button", className: "bt-state bt-app-chip", "aria-pressed": true, "data-status": status ?? "unknown", title: t("Remove {app}", { app: name }), onClick: onRemove },
+    name,
+    label ? (0, import_react30.createElement)("span", { className: "bt-app-status" }, ` · ${label}`) : null
+  );
+}
+function AppPicker({ apps, onChange, search, statuses = {} }) {
+  const [query, setQuery] = (0, import_react30.useState)("");
+  const [found, setFound] = (0, import_react30.useState)(null);
+  const [failed, setFailed] = (0, import_react30.useState)(null);
+  const names = (0, import_react30.useRef)(new Map(APPS));
+  const asked = (0, import_react30.useRef)(0);
+  (0, import_react30.useEffect)(() => {
+    const text = query.trim();
+    if (text === "" || search === void 0) {
+      setFound(null);
+      setFailed(null);
+      return void 0;
+    }
+    const ask = ++asked.current;
+    const timer = setTimeout(() => {
+      search(text).then((list) => {
+        if (ask !== asked.current) return;
+        for (const app of list) names.current.set(app.slug, app.name);
+        setFound(list);
+        setFailed(null);
+      }, (failure) => {
+        if (ask !== asked.current) return;
+        setFound(null);
+        setFailed(failure?.message ?? String(failure));
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, search]);
+  const nameOf = (slug) => names.current.get(slug) ?? appName(slug);
   const picked = new Set(apps);
-  const toggle = (slug) => onChange(picked.has(slug) ? apps.filter((app) => app !== slug) : [...apps, slug]);
-  const typed = (text) => {
-    setMore(text);
-    const extra = text.split(/[\s,]+/).map((app) => app.trim().toLowerCase()).filter((app) => app !== "" && !KNOWN.has(app));
-    onChange([.../* @__PURE__ */ new Set([...apps.filter((app) => KNOWN.has(app)), ...extra])]);
-  };
+  const needle = query.trim().toLowerCase();
+  const local = APPS.filter(([slug, name]) => needle === "" || slug.includes(needle) || name.toLowerCase().includes(needle)).map(([slug, name]) => ({ slug, name }));
+  const results = (found ?? local).filter((app) => !picked.has(app.slug));
   return (0, import_react30.createElement)(
     "div",
     { className: "bt-connector-apps" },
-    (0, import_react30.createElement)("div", { className: "bt-states" }, APPS.map(([slug, name]) => (0, import_react30.createElement)("button", { key: slug, type: "button", className: "bt-state", "aria-pressed": picked.has(slug), onClick: () => toggle(slug) }, name))),
-    (0, import_react30.createElement)("input", { className: "bt-input", value: more, spellCheck: false, "aria-label": t("More apps"), placeholder: t("More apps: type Composio app names, separated by commas"), onChange: (event) => typed(event.target.value) })
+    apps.length > 0 ? (0, import_react30.createElement)("div", { className: "bt-states", "aria-label": t("Picked apps") }, apps.map((slug) => (0, import_react30.createElement)(AppChip, { key: slug, name: nameOf(slug), status: statuses[slug], onRemove: () => onChange(apps.filter((app) => app !== slug)) }))) : null,
+    (0, import_react30.createElement)("input", { className: "bt-input", type: "search", value: query, spellCheck: false, "aria-label": t("Search apps"), placeholder: t("Search Composio apps"), onChange: (event) => setQuery(event.target.value) }),
+    failed ? (0, import_react30.createElement)("span", { className: "bt-set-hint" }, t("Could not search Composio: {error}", { error: failed })) : null,
+    (0, import_react30.createElement)("div", { className: "bt-states", "aria-label": t("Apps to add") }, results.length === 0 ? (0, import_react30.createElement)("span", { className: "bt-set-hint" }, t("No apps match")) : results.map((app) => (0, import_react30.createElement)("button", { key: app.slug, type: "button", className: "bt-state", "aria-pressed": false, onClick: () => {
+      names.current.set(app.slug, app.name);
+      onChange([...apps, app.slug]);
+    } }, app.name)))
   );
+}
+function AppStatusList({ apps, statuses }) {
+  if (apps.length === 0 || Object.keys(statuses).length === 0) return null;
+  return (0, import_react30.createElement)("ul", { className: "bt-connector-app-list", "aria-label": t("App status") }, apps.map((slug) => (0, import_react30.createElement)(
+    "li",
+    { key: slug, className: "bt-connector-app", "data-status": statuses[slug] ?? "unknown" },
+    (0, import_react30.createElement)("span", { className: "bt-connector-app-name" }, appName(slug)),
+    (0, import_react30.createElement)("span", { className: "bt-app-status" }, APP_STATUS[statuses[slug]]?.() ?? "")
+  )));
 }
 function ConnectorRow({ connector, roster, actions }) {
   const [form, setForm] = (0, import_react30.useState)(false);
@@ -13152,6 +13211,24 @@ function ConnectorRow({ connector, roster, actions }) {
     }, (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
   };
   const gateway = connector.id === "composio";
+  const [statuses, setStatuses] = (0, import_react30.useState)({});
+  const appsKey = (connector.apps ?? []).join(",");
+  (0, import_react30.useEffect)(() => {
+    if (!gateway || connector.state !== "ready" || appsKey === "" || actions.connectorAppStatus === void 0) {
+      setStatuses({});
+      return void 0;
+    }
+    let live = true;
+    actions.connectorAppStatus(connector.id).then((value) => {
+      if (live) setStatuses(value ?? {});
+    }, () => {
+      if (live) setStatuses({});
+    });
+    return () => {
+      live = false;
+    };
+  }, [gateway, connector.state, appsKey, picking]);
+  const search = (0, import_react30.useCallback)((query) => actions.connectorAppSearch(connector.id, query, connector.state === "off" ? token : void 0), [connector.id, connector.state, token]);
   const connect = () => {
     if (busy || token.trim() === "") return;
     if (gateway && apps.length === 0) {
@@ -13200,13 +13277,14 @@ function ConnectorRow({ connector, roster, actions }) {
         on ? (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t("Disconnect")) : form ? null : (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setForm(true) }, t("Connect"))
       )
     ),
+    on && gateway && !picking ? (0, import_react30.createElement)(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
     on ? (0, import_react30.createElement)("span", { className: "bt-connector-uses" }, usageText(roster, connector.id)) : null,
     on && bots ? (0, import_react30.createElement)(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
     !on && form ? (0, import_react30.createElement)(
       "div",
       { className: "bt-connector-form" },
       (0, import_react30.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react30.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t("Composio API key") : t("GitHub token"), autoFocus: true })),
-      gateway ? (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps }) : null,
+      gateway ? (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps, search: token.trim() === "" ? void 0 : search }) : null,
       (0, import_react30.createElement)(
         "div",
         { className: "bt-connector-form-row" },
@@ -13222,7 +13300,7 @@ function ConnectorRow({ connector, roster, actions }) {
     on && gateway && picking ? (0, import_react30.createElement)(
       "div",
       { className: "bt-connector-form" },
-      (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps }),
+      (0, import_react30.createElement)(AppPicker, { apps, onChange: setApps, search, statuses }),
       (0, import_react30.createElement)("span", { className: "bt-set-hint" }, t("The first time a Bot uses an app, it shows a sign-in link in the chat.")),
       (0, import_react30.createElement)(
         "div",
@@ -17193,6 +17271,8 @@ function apply(ctx) {
     secretDelete: (name) => after(call("secret-delete", { name })),
     connectorConnect: (id, token, apps) => after(call("connector-connect", { id, token, ...apps !== void 0 ? { apps } : {} })),
     connectorApps: (id, apps) => after(call("connector-apps", { id, apps })),
+    connectorAppSearch: (id, query, token) => call("connector-app-search", { id, query, ...token ? { token } : {} }),
+    connectorAppStatus: (id) => call("connector-app-status", { id }),
     connectorDisconnect: (id) => after(call("connector-disconnect", { id })),
     connectorRetry: (id) => after(call("connector-retry", { id })),
     saveCapability: (capability) => after(call("capability-save", capability)),
