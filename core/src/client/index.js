@@ -609,6 +609,7 @@ export function apply(ctx) {
     scheduleUpdate: task => call('schedule-update', task),
     schedulePause: (sessionId, id) => call('schedule-pause', { sessionId, id }),
     scheduleResume: (sessionId, id) => call('schedule-resume', { sessionId, id }),
+    scheduleRetry: (sessionId, id) => call('schedule-retry', { sessionId, id }),
     scheduleDelete: (sessionId, id) => call('schedule-delete', { sessionId, id }),
     exchange: (a, b) => call('exchange', { a, b }).catch(() => []),
     roomProgress: roomId => call('room-progress', { roomId }).catch(() => []),

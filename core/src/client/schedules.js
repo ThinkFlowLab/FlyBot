@@ -1,7 +1,8 @@
 // Scheduled tasks: Settings → Scheduled tasks, a Bot's card in its settings, and the
 // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
 // sends its prompt to the Bot's chat when it is due. A row edits its task in the same
-// form that creates one, and pauses or resumes it (#354).
+// form that creates one, and pauses or resumes it (#354). Each row says how its last run
+// went, and a failed run has Retry, which runs the task once now (#473).
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 import { BotAvatar, RoomAvatar } from './mark.js'
 import { ClockIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
@@ -73,6 +74,18 @@ export function timingText(task) {
 const nextText = task => (task.status === 'paused' ? t('Paused')
   : task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished'))
 
+// The last run, in one line: when, and how it went (src/host/schedules.js).
+export function lastRunText(run) {
+  if (run === undefined || !Number.isFinite(run.at)) return ''
+  const time = dayAndTime(run.at)
+  switch (run.result) {
+    case 'running': return t('Running since {time}', { time })
+    case 'stopped': return t('Last run {time} · Stopped', { time })
+    case 'failed': return t('Last run {time} · Failed: {reason}', { time, reason: hostText(run.reason || 'Unknown error') })
+    default: return t('Last run {time}', { time })
+  }
+}
+
 function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -91,15 +104,26 @@ function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
     const step = task.status === 'paused' ? actions.scheduleResume : actions.schedulePause
     void step(task.sessionId, task.id).then((next) => { setBusy(false); onView(next) }, () => setBusy(false))
   }
+  const [retryError, setRetryError] = useState('')
+  const retry = () => {
+    setBusy(true)
+    setRetryError('')
+    void actions.scheduleRetry(task.sessionId, task.id).then((next) => { setBusy(false); onView(next) }, (error) => { setBusy(false); setRetryError(hostText(error?.message ?? String(error))) })
+  }
   const room = task.roomId ? roster.roomsById[task.roomId] : undefined
   const stoppable = task.status === 'active' || task.status === 'paused'
+  const failed = task.lastRun?.result === 'failed'
+  const last = lastRunText(task.lastRun)
   return h('div', { className: 'bt-set-row bt-task', 'data-done': stoppable ? undefined : '', 'data-paused': task.status === 'paused' || undefined, 'data-busy': busy || undefined },
     showBot ? h(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
     h('span', { className: 'bt-set-copy' },
       h('span', { className: 'bt-task-title' }, task.title),
       h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
-      task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null),
+      task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null,
+      last ? h('span', { className: 'bt-task-last', 'data-failed': failed || undefined }, last) : null,
+      retryError ? h('span', { className: 'bt-task-last', 'data-failed': '', role: 'alert' }, retryError) : null),
     h('span', { className: 'bt-task-next' }, nextText(task)),
+    failed && task.status !== 'paused' && actions.scheduleRetry ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t('Retry')) : null,
     onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
     stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,
     h('button', {
@@ -303,6 +327,8 @@ export const SCHEDULE_CSS = `
 .bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
 .bt-task-tool svg{width:14px;height:14px}
 .bt-task-pause{height:26px;color:var(--bt-ink-2)}
+.bt-task-last{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-task-last[data-failed]{color:#c21d2e}
 .bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
 .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
 .bt-task-head{display:flex;align-items:center;gap:6px}

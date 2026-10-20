@@ -1174,7 +1174,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        for (const post of posts.filter(item => item.failed)) {
          const bot = rt.botOf(post.botId)
          const { code, status, message } = post.failed
-@@ -450,6 +450,12 @@ export function install(rt) {
+@@ -450,17 +450,25 @@ export function install(rt) {
          appendRoom(room, { who: name, botId: post.botId, kind, text: '' })
          round.replies.push({ kind, botId: post.botId, name, color: bot?.color, time: Date.now() })
        }
@@ -1187,7 +1187,12 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        if (posts.some(post => post.resumed || post.stopped)) await rt.save()
        rt.roomProgress.set(exec.callId, round)
        try {
-@@ -460,7 +460,7 @@ export function install(rt) {
+         await runRound(room, round, exec.signal, exec.agent)
++        // A scheduled task's run in this group fails with its members' failed turns (#473).
++        if (round.failed.length > 0) rt.scheduleRoundFailed?.(room.id, round.failed)
+       } catch (error) {
+         rt.warn('ds-bot: group round in %s stopped: %s', room.name, error)
+       } finally {
          rt.roomProgress.delete(exec.callId)
        }
        if (exec.signal?.aborted) {
