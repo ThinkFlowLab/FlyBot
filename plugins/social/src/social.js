@@ -439,6 +439,34 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       throw mapFaceAutoError(error)
     }
   }
+  // Auto-send in face rooms is one switch per Bot of mine (#457, owner decision: option a), kept
+  // here by local Bot id (`settings.faceAutoSend`), off unless the owner turns it on. A Bot whose
+  // switch is on has its clean room line approved by this host right after Bot Social holds it,
+  // as the owner's own lines are (#179); a line Bot Social flagged still waits on its card.
+  // Bot Social's older account-wide setting covers every Bot, so while it is on every switch reads on;
+  // the first per-Bot change keeps the others on here and turns the account-wide one off.
+  const faceAutoOf = botId => settings.faceAutoSend?.[botId] === true
+  async function faceAutoView({ fresh = false } = {}) {
+    const all = await faceAutoApprove({ fresh }).catch(() => false)
+    const bots = Object.fromEntries(flybot.bot.list().map(bot => [bot.id, all || faceAutoOf(bot.id)]))
+    return { autoApproveFaceRooms: all, bots }
+  }
+  async function setFaceAutoSend(botId, on) {
+    const bot = flybot.bot.list().find(entry => entry.id === botId)
+    if (!bot) throw new Error('Choose which of your Bots Auto-send is for.')
+    if (await faceAutoApprove({ fresh: true }).catch(() => false)) {
+      const kept = { ...(settings.faceAutoSend ?? {}) }
+      for (const each of flybot.bot.list()) kept[each.id] = true
+      await setFaceAutoApprove(false)
+      settings.faceAutoSend = kept
+    }
+    const next = { ...(settings.faceAutoSend ?? {}) }
+    if (on) next[bot.id] = true
+    else delete next[bot.id]
+    settings.faceAutoSend = next
+    saveSettings()
+    return { ...(await faceAutoView()), botId: bot.id, botName: bot.name, on: faceAutoOf(bot.id) }
+  }
   const maxFileBytes = config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
   const filesDir = config.filesDir ?? join(config.credentialsPath ? dirname(config.credentialsPath) : tmpdir(), 'flybot-social-files')
   const ensureDir = (dir) => { mkdirSync(dir, { recursive: true, mode: 0o700 }); return dir }
@@ -1853,6 +1881,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       pendingApprovals: approvals.length,
       approvals,
       autoApproveFaceRooms,
+      // Each Bot's face-room Auto-send (#457).
+      faceAutoSend: Object.fromEntries(flybot.bot.list().map(bot => [bot.id, autoApproveFaceRooms || faceAutoOf(bot.id)])),
       shareRequests: shareRequests(),
     }
   }
@@ -2432,9 +2462,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // different hold. A hold no Bot of mine wrote turns nothing on.
   async function enableAutoSendForItem(item) {
     if (!item) return undefined
+    // A face-room line turns on Auto-send for the Bot that wrote it only (#457).
     if (item.kind === 'face_room_message') {
-      await setFaceAutoApprove(true)
-      return { from: item.from || 'Bot', to: item.toName || 'the room', scope: 'face' }
+      const writer = item.botId ? flybot.bot.list().find(entry => memberOf(entry.id)?.bot_id === item.botId) : undefined
+      if (!writer) return undefined
+      const view = await setFaceAutoSend(writer.id, true)
+      return { from: item.from || view.botName, to: item.toName || 'the room', botId: view.botId, botName: view.botName, scope: 'face' }
     }
     const bot = item.botId ? flybot.bot.list().find(entry => memberOf(entry.id)?.bot_id === item.botId) : undefined
     const home = bot ? await friendHomeOfApproval(item) : ''
@@ -2976,6 +3009,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
               .catch(error => warn('face-room owner line not approved', error))
           }
           pendingCache.at = 0
+          // A Bot whose Auto-send is on (#457): its clean line goes out now, approved by the owner's switch.
+          if (!outbound.human && sent.approvalId && await autoSendFaceLine(outbound.botId, String(sent.approvalId))) return undefined
           // A Bot's held line lives on its card until the owner decides; the room draws no bubble for it (#456).
           if (!outbound.human && sent.approvalId) return { held: true, approvalId: String(sent.approvalId) }
         }
@@ -2984,6 +3019,23 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         throw error
       }
     }))
+  }
+  // Approves a held room line of a Bot whose Auto-send is on (#457), only when Bot Social held it
+  // for no finding of its own (no DLP category on the hold); anything else stays on its card.
+  async function autoSendFaceLine(serverBotId, approvalId) {
+    const local = bringable().find(bot => bot.botId === serverBotId)
+    if (!local || !faceAutoOf(local.id)) return false
+    try {
+      const held = (await pendingApprovals({ fresh: true })).find(item => item.id === approvalId)
+      if (!held || held.reasons.length > 0) return false
+      await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
+      setPending(pendingCache.items.filter(item => item.id !== approvalId))
+      pendingCache.at = 0
+      return true
+    } catch (error) {
+      warn('face-room Auto-send did not approve the line', error)
+      return false
+    }
   }
   function hostedFaceRoom(faceRoomId, roomId) {
     if (faceRoomId) {
@@ -3036,9 +3088,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     return { rooms, bots: localFaceBots(), autoApproveFaceRooms: await faceAutoApprove().catch(() => false) }
   }, { read: true }))
-  disposers.push(flybot.api.handle('social/face-auto', async ({ on } = {}) => {
-    if (on === undefined) return { autoApproveFaceRooms: await faceAutoApprove({ fresh: true }) }
-    return setFaceAutoApprove(on !== false)
+  // `{}` reads every Bot's switch; `{ botId, on }` sets that Bot's (#457). There is no home-wide switch.
+  disposers.push(flybot.api.handle('social/face-auto', async ({ on, botId } = {}) => {
+    if (on === undefined) return faceAutoView({ fresh: true })
+    if (typeof botId !== 'string' || !botId) throw new Error('Choose which of your Bots Auto-send is for.')
+    return setFaceAutoSend(botId, on !== false)
   }))
   disposers.push(flybot.api.handle('social/face-leave', async (payload) => leaveFaceRoom(payload)))
   disposers.push(flybot.api.handle('social/face-start', async (payload) => startFaceRoom(payload)))

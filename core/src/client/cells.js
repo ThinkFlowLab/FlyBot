@@ -9,7 +9,8 @@ import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
 import { remoteMessageText } from './flybot-registry.js'
-import { isListedRemoteChat, remoteBotTitle } from '../shared/remote-label.js'
+import { isListedRemoteChat, normRemoteHandle, remoteBotTitle } from '../shared/remote-label.js'
+import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 import { fileSize } from './flybot-slots.js'
 import { HeldReplyActions } from './held-reply.js'
 import { call } from './api.js'
@@ -279,7 +280,8 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq }) 
   if (held === 'held' || isHeldLine(room, text, bot)) return null
   const lead = h('button', { type: 'button', className: 'bt-lead', 'aria-label': t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
     h(BotMark, { bot, size: 22 }))
-  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
+  // In a face room my Bot reads as everyone's does, "Chief (Ann)" (#457).
+  const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, faceBotLabel(room, roster, bot) ?? bot.name,
     room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
   return h('div', { className: 'bt-group-msg' }, name,
     h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
@@ -292,10 +294,16 @@ export function remoteSpeaker(source, roster, sessionId) {
   const handle = source.remote.handle
   const member = (roster.remoteBots ?? []).find(bot => bot.handle === handle)
   const chat = (roster.bots ?? []).find(bot => bot.remote?.handle === handle)
+  const room = roster.roomsById?.[sessionId]
   // In a face-to-face room the Bot's seat carries its owner's look (Bot Social members[]): the
   // bubble draws that look, as the Members panel and the waiting tiles do (#182).
-  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle)
-  const name = remoteBotTitle({
+  const seat = faceSeatLook(room, handle)
+  // ...and its name, as Members and the @ menu name it: "Chief (Bob)", never a stored label plus a
+  // lowercase id from its handle (#457). A seat that left still names it.
+  const faceSeat = room?.origin === 'face-to-face'
+    ? faceSeats(room, roster, { left: true }).find(item => !item.mine && normRemoteHandle(item.record?.handle) === normRemoteHandle(handle))
+    : undefined
+  const name = faceSeat ? faceSeatLabel(faceSeat) : remoteBotTitle({
     displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
     ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
     handle,
@@ -327,6 +335,8 @@ function faceSeatLook(room, handle) {
 const cleanCarrier = value => (typeof value === 'string' && value.trim() && !/[@()]/.test(value) ? value.trim() : '')
 
 export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
+  const room = roster.roomsById?.[sessionId]
+  const face = room?.origin === 'face-to-face'
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId)
   const files = Array.isArray(source.attachments) ? source.attachments : []
   // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
@@ -345,8 +355,11 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
     ? h('button', { type: 'button', className: 'bt-lead', title: handle, 'aria-label': t("Open {name}'s chat", { name }), onClick: () => actions.openSession(chatId) }, mark)
     : h('span', { className: 'bt-lead', title: handle }, mark)
   return h('div', { className: 'bt-group-msg bt-remote-msg', 'data-remote': handle },
-    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
-      h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
+    // A face room's header is the one name alone; the handle is on hover only (#457).
+    face
+      ? h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) }, title: handle }, name)
+      : h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
+        h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
     h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
     files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 }
@@ -846,10 +859,12 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
         if (reply.other) {
           return h(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
         }
+        // My own line in a face room has my person mark too, as everyone else's (#457).
         return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
           who ? h('span', { className: 'bt-uauthor' }, who) : null,
           h('div', { className: 'bt-ububble' },
-          h(MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: 'compact' })))
+          h(MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: 'compact' })),
+          room?.origin === 'face-to-face' ? h('span', { className: 'bt-lead', title: who || undefined }, h(PersonMark, { name: who || undefined })) : null)
       }
       if (reply.kind === 'failed') {
         return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event bt-event-error', role: 'status' },

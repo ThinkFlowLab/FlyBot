@@ -166,7 +166,7 @@ window.__ModuleLoader__.load({
 .fs-past-head{display:flex;align-items:center;gap:6px;width:100%;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:12px;line-height:16px;font-weight:500;text-align:left;cursor:pointer}
 .fs-past-head:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-past-head .fs-chev[data-closed]{transform:rotate(-90deg)}
-.fs-face-auto-wrap{display:inline-flex;align-items:center;gap:2px;padding:0}
+.fs-face-auto-wrap{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:0}
 .fs-face-auto{white-space:nowrap;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-face-note{padding:0;display:none}
 .fs-chat-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
@@ -355,10 +355,8 @@ window.__ModuleLoader__.load({
 
     function FaceTile({ bot, name, owner, member, handle, mine, pick, selected, onToggle } = {}) {
       const parts = member ? faceTileParts(member) : { name: name || 'Bot', owner: owner || '' }
-      // My own seat reads "Chief (you)", as Members and the @ menu say it (#384).
-      const title = mine && member
-        ? `${parts.name} (you)`
-        : parts.owner && parts.owner.toLowerCase() !== parts.name.toLowerCase() ? `${parts.name} (${parts.owner})` : parts.name
+      // One name per Bot (#384, #457): "Chief (Ann)", mine the same way; "(you)" is only on a person.
+      const title = parts.owner && parts.owner.toLowerCase() !== parts.name.toLowerCase() ? `${parts.name} (${parts.owner})` : parts.name
       const mark = h('span', { className: 'fs-tile-mark' },
         h(FaceAvatar, { bot, size: 48 }),
         mine
@@ -367,16 +365,10 @@ window.__ModuleLoader__.load({
         pick && selected
           ? h('span', { className: 'fs-tile-check', 'data-flybot': 'face-pick-check', 'aria-hidden': true }, '✓')
           : null)
-      // A joined member leads with the person, so two Chiefs are told apart at a glance (#229).
-      const caption = member && parts.owner
-        ? [
-          h('span', { key: 'o', className: 'fs-tile-name', 'data-flybot': 'face-owner', title }, parts.owner),
-          h('span', { key: 'n', className: 'fs-tile-sub', 'data-flybot': 'face-bot', title }, parts.name),
-        ]
-        : [
-          h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
-          parts.owner ? h('span', { key: 'o', className: 'fs-tile-sub', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
-        ]
+      const caption = [
+        h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
+        parts.owner ? h('span', { key: 'o', className: 'fs-tile-sub', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
+      ]
       if (pick) {
         return h('li', { className: selected ? 'fs-tile fs-tile-on' : 'fs-tile' },
           h('label', { className: 'fs-tile-hit' },
@@ -399,20 +391,69 @@ window.__ModuleLoader__.load({
       }, mark, caption)
     }
 
+    // Who has joined, person-first (#457): one entry per person, mine first, each with the Bots they
+    // brought. People are told apart by home (the handle's "<person>.home"), not by display name.
+    function faceMemberHandle(member) {
+      return typeof member?.handle === 'object' && member.handle ? String(member.handle.handle ?? '') : String(member?.handle ?? '')
+    }
+    function facePersonKey(member, mine) {
+      if (mine) return ':you'
+      const parts = faceMemberHandle(member).trim().toLowerCase().replace(/^@+/, '').split('.')
+      if (parts.length >= 3 && parts.at(-1) === 'home') return `home:${parts.slice(-2).join('.')}`
+      const owner = String(member?.ownerName ?? member?.owner_name ?? '').trim().toLowerCase()
+      return owner ? `name:${owner}` : `bot:${faceMemberHandle(member) || member?.id || ''}`
+    }
+    function facePeople(members, isMine) {
+      const people = []
+      for (const member of Array.isArray(members) ? members : []) {
+        const mine = Boolean(isMine(member))
+        const key = facePersonKey(member, mine)
+        const owner = String(member?.ownerName ?? member?.owner_name ?? '').trim()
+        const known = people.find(person => person.key === key)
+        if (known) {
+          known.members.push(member)
+          if (!known.name && owner) known.name = owner
+          continue
+        }
+        people.push({ key, name: owner, mine, members: [member] })
+      }
+      return [...people.filter(person => person.mine), ...people.filter(person => !person.mine)]
+    }
+
+    // One tile per person (#457): "Ann (you)" over "Chief, Researcher". The mark is the first Bot the
+    // person brought, so the grid keeps each Bot's own look; the tooltip names every Bot.
+    function FacePersonTile({ person, look } = {}) {
+      const bots = person.members.map(member => faceTileParts(member).name)
+      const who = person.name || (person.mine ? 'You' : 'Someone')
+      const label = person.mine && person.name ? `${person.name} (you)` : who
+      const handles = person.members.map(faceMemberHandle).filter(Boolean)
+      return h('li', {
+        className: 'fs-tile',
+        'data-flybot': 'face-member',
+        'data-mine': person.mine || undefined,
+        'data-handle': handles[0],
+        'data-handles': handles.join(' ') || undefined,
+        title: `${label} · ${bots.join(', ')}`,
+      },
+        h('span', { className: 'fs-tile-mark' },
+          h(FaceAvatar, { bot: look(person.members[0]), size: 48 }),
+          person.mine ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: 'mine', 'aria-label': 'mine' }) : null),
+        h('span', { className: 'fs-tile-name', 'data-flybot': 'face-owner', title: label }, label),
+        h('span', { className: 'fs-tile-sub', 'data-flybot': 'face-bot', title: bots.join(', ') }, bots.join(', ')))
+    }
+
     const AUTO_SEND_NOTE = "Don't ask each time."
 
-    function FaceAutoSend({ on, busy, onChange, error, bot } = {}) {
-      return h('div', { className: 'fs-face-auto-wrap', 'data-flybot': 'face-auto-send' },
-        h('label', { className: 'fs-auto fs-face-auto', title: AUTO_SEND_NOTE },
-          h('input', {
-            type: 'checkbox',
-            checked: on === true,
-            disabled: !!busy,
-            'aria-label': "Auto-send my Bot's room messages",
-            onChange: e => onChange?.(e.target.checked),
-          }),
-          bot ? `Auto-send ${bot} → room` : 'Auto-send'),
-        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
+    function FaceAutoSend({ on, busy, onChange, bot } = {}) {
+      return h('label', { className: 'fs-auto fs-face-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'face-auto-bot' },
+        h('input', {
+          type: 'checkbox',
+          checked: on === true,
+          disabled: !!busy,
+          'aria-label': `Auto-send ${bot || 'my Bot'}'s room messages`,
+          onChange: e => onChange?.(e.target.checked),
+        }),
+        `Auto-send ${bot || 'my Bot'} → room`)
     }
 
     // Leave asks once (#182): leaving ends my part in the room for good.
@@ -425,23 +466,29 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-no', onClick: () => setAsk(false) }, 'Stay'))
     }
 
-    function FaceAutoSendControl({ bot } = {}) {
-      const [on, setOn] = useState(false)
-      const [busy, setBusy] = useState(false)
+    // Auto-send is one switch per Bot of mine in the room (#457, owner decision: option a), each
+    // naming its pair, "Auto-send Chief → room"; a Bot of mine whose switch is off still asks.
+    function FaceAutoSendControl({ bots = [] } = {}) {
+      const [on, setOn] = useState({})
+      const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
+      const ids = bots.map(bot => bot.id).join(',')
       useEffect(() => {
-        call('social/status', {}).then(value => setOn(value?.autoApproveFaceRooms === true), () => {})
-      }, [])
-      const toggle = async (next) => {
-        setBusy(true)
+        call('social/status', {}).then(value => setOn(value?.faceAutoSend && typeof value.faceAutoSend === 'object' ? value.faceAutoSend : {}), () => {})
+      }, [ids])
+      if (!bots.length) return null
+      const toggle = async (bot, next) => {
+        setBusy(bot.id)
         setError('')
         try {
-          const result = await call('social/face-auto', { on: next })
-          setOn(result?.autoApproveFaceRooms === true)
+          const result = await call('social/face-auto', { botId: bot.id, on: next })
+          setOn(result?.bots && typeof result.bots === 'object' ? result.bots : (list => ({ ...list, [bot.id]: next })))
         } catch (e) { setError(errorText(e)) }
-        finally { setBusy(false) }
+        finally { setBusy('') }
       }
-      return h(FaceAutoSend, { on, busy, onChange: toggle, error, bot })
+      return h('div', { className: 'fs-face-auto-wrap', 'data-flybot': 'face-auto-send' },
+        bots.map(bot => h(FaceAutoSend, { key: bot.id, bot: bot.name, on: on[bot.id] === true, busy: busy === bot.id, onChange: next => toggle(bot, next) })),
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
     const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
@@ -728,12 +775,10 @@ window.__ModuleLoader__.load({
               : 'The room is open. The number is no longer valid.'),
             h('div', { className: 'fs-wait-body' },
               h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
-                members.map(member => h(FaceTile, {
-                  key: member.handle || member.id,
-                  bot: faceLook({ roster, remoteChats, bots, member, mine: room.mineBots }),
-                  member,
-                  handle: member.handle,
-                  mine: memberIsMine(member, bots, room),
+                facePeople(members, member => memberIsMine(member, bots, room)).map(person => h(FacePersonTile, {
+                  key: person.key,
+                  person,
+                  look: member => faceLook({ roster, remoteChats, bots, member, mine: room.mineBots }),
                 }))),
               members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
               failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
@@ -1215,9 +1260,12 @@ window.__ModuleLoader__.load({
           if (item.source === 'local') {
             await call('decide', { id: item.id, decision: mapped })
             if (always) {
+              // A face-room line turns on Auto-send for the Bot that wrote it only (#457).
               if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') {
-                await call('social/face-auto', { on: true })
-                autoSend = { ...holdParties(item), scope: 'face' }
+                if (item.fromId) {
+                  await call('social/face-auto', { botId: item.fromId, on: true })
+                  autoSend = { ...holdParties(item), scope: 'face' }
+                }
               } else autoSend = await autoSendPair(call, item.id)
             }
           } else {
@@ -1427,15 +1475,13 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
             expiresAt ? countdown(expiresAt) : 'Anyone with the number can still join.'),
           h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
-            members.map(member => h(FaceTile, {
-              key: member.handle || member.id,
+            facePeople(members, mineMember).map(person => h(FacePersonTile, {
+              key: person.key,
+              person,
               // My own Bot looks as the roster draws it, as in the dialog (#306).
-              bot: mineMember(member) && roster?.byId?.[member.id]
+              look: member => (mineMember(member) && roster?.byId?.[member.id]
                 ? faceLook({ roster, local: roster.byId[member.id] })
-                : faceLook({ roster, member }),
-              member,
-              handle: member.handle,
-              mine: mineMember(member),
+                : faceLook({ roster, member })),
             }))),
           members.length === 0 ? h('div', { className: 'fs-hint' }, 'Waiting for others to join…') : null,
           h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
@@ -1456,7 +1502,14 @@ window.__ModuleLoader__.load({
             }, 'Enter chat')),
           note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
       }
-      const mineNames = members.filter(mineMember).map(member => member.displayName || member.name).filter(Boolean)
+      // Each Bot of mine in the room, once, for its own Auto-send switch (#457).
+      const mineBots = []
+      for (const member of members.filter(mineMember)) {
+        const local = member.id ? roster?.byId?.[member.id] : undefined
+        const id = local?.id || member.id
+        if (!id || mineBots.some(bot => bot.id === id)) continue
+        mineBots.push({ id, name: local?.name || member.displayName || member.name || 'Bot' })
+      }
       const statusRoom = { status: snapshot?.status || face?.status || 'open', expiresAt: snapshot?.expiresAt || face?.expiresAt }
       if (statusRoom.status === 'left' || statusRoom.status === 'closed') {
         // A past room is read-only: its chip only, no Auto-send and no Leave (#304).
@@ -1477,7 +1530,7 @@ window.__ModuleLoader__.load({
                 openMainBot(roster, actions)
               }),
             }))),
-        h(FaceAutoSendControl, { bot: mineNames[0] }),
+        h(FaceAutoSendControl, { bots: mineBots }),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 

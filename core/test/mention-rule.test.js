@@ -129,7 +129,7 @@ test('#305: a face-room mention chips on both homes under one name, and a typed 
   const partsA = userTextParts(sent, mentionableBots(onA, 'r', { fromFriend: true }))
   assert.equal(partsA[0].bot.id, 'a1')
   assert.equal(partsA[0].label, "SelfA's Chief")
-  assert.equal(partsA[0].bot.mentionLabel, 'Chief (you)')
+  assert.equal(partsA[0].bot.mentionLabel, 'Chief (SelfA)')
   // A friend's bare "@Chief" is the friend's own Chief, not mine.
   assert.equal(userTextParts('@Chief hi', mentionableBots(onA, 'r', { fromFriend: true }))[0].bot.id, '@chief.selfb.home')
   // A friend's Bot that is not in this room is not offered here.

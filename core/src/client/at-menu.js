@@ -33,14 +33,14 @@ export function mentionRows(roster, sessionId, query = '') {
   const bots = here.room
     ? [
         ...here.room.members.map(id => roster.byId[id]).filter(Boolean)
-          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot)),
+          .map(bot => (face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name) } : bot)),
         ...live.filter(p => p.kind === 'human')
           .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role })),
         // A remote seat already listed under its handle (a duplicate participant record) is offered once.
         ...uniqueBy(live.filter(p => p.remote), p => p.handle || p.id)
           .map(p => ({
             id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, handle: p.handle,
-            ...(face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot'), false) } : {}),
+            ...(face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot')) } : {}),
           })),
       ]
     : listedChatBots(roster).filter(bot => bot.id !== here.self.id)
@@ -71,6 +71,7 @@ export function mentionRows(roster, sessionId, query = '') {
 
 const isFaceRoom = room => room?.origin === 'face-to-face'
 const memberCount = count => t(count === 1 ? '{count} member' : '{count} members', { count })
+const botCount = count => (count === 1 ? t('1 Bot') : t('{count} Bots', { count }))
 const normHandle = handle => String(handle ?? '').trim().replace(/^@+/, '').toLowerCase()
 // A friend's Bot chat in the roster: its remote record (the Bot itself in older rosters).
 export const remoteRecord = bot => (bot?.remote ? (bot.remote === true ? bot : bot.remote) : null)
@@ -88,14 +89,10 @@ const uniqueBy = (list, key) => {
     return true
   })
 }
-// In a face-to-face room a Bot is named as the Members panel names it: "Chief (Ann)",
-// "Chief (you)" (#229, #305, #384). Only the label changes; the inserted "@Name" stays the
-// one the room routes on.
-const faceLabel = (person, bot, mine) => {
-  if (mine) return t('{bot} (you)', { bot })
-  if (!person) return bot
-  return `${bot} (${person})`
-}
+// In a face-to-face room a Bot is named as the Members panel names it, mine and a friend's
+// alike: "Chief (Ann)", "Chief (Bob)" (#229, #305, #384, #457); "(you)" is for a person, never a
+// Bot. Only the label changes; the inserted "@Name" stays the one the room routes on.
+const faceLabel = (person, bot) => (person ? `${bot} (${person})` : bot)
 
 // The chats a message here can reference: every other Bot's chat, then the latest
 // conversations outside the team. Group chats stay out: a group's Session holds only
@@ -146,8 +143,8 @@ export function atSources({ roster, sessions, launched, iconFor }) {
         ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
         ...(row.remote ? { description: row.remote.handle } : {}),
         ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),
-        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-        ...(row.room ? { description: face ? t('Every Bot in this room') : memberCount(row.count) } : {}),
+        // A face room counts the Bots in it, mine and everyone else's (#305, #457).
+        ...(row.room ? { description: face ? botCount(row.count) : memberCount(row.count) } : {}),
         icon: iconFor(row),
         section: t('Bots'),
         value: row.text,

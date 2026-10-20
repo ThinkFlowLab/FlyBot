@@ -1,12 +1,12 @@
 import { createElement as h, useEffect, useState } from 'react'
 import { isMainOf } from './sources.js'
 import { PlusIcon, ChevronRightIcon } from './icons.js'
-import { AdminStar, BotAvatar, BotMark, RoomAvatar, lookBotForRemote } from './mark.js'
+import { AdminStar, BotAvatar, BotMark, PersonMark, RoomAvatar, lookBotForRemote } from './mark.js'
 import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
-import { ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
+import { remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
   ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
@@ -16,28 +16,34 @@ export const ROOM_MODES = [
 // Without an admin the host answers as everyone, whatever the stored mode says.
 export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
 
-// faceSeats and faceSeatLabel live in face-seats.js so the chat bubble can name a mention the same way.
-import { faceSeats, faceSeatLabel } from './face-seats.js'
+// faceSeats, faceSeatLabel and facePeople live in face-seats.js so the chat bubble can name a mention the same way.
+import { faceSeats, faceSeatLabel, facePeople, facePersonLabel } from './face-seats.js'
 
-export { faceSeats, faceSeatLabel }
-
-const personKey = (seat) => {
-  const record = seat.record ?? {}
-  const home = String(record.ownerHome || record.home || '').trim().toLowerCase()
-  if (home) return `home:${home}`
-  const parts = String(record.handle || '').trim().toLowerCase().replace(/^@+/, '').split('.')
-  if (parts.length >= 3 && parts.at(-1) === 'home') return `home:${parts.slice(-2).join('.')}`
-  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`
-}
+export { faceSeats, faceSeatLabel, facePeople }
 
 // A face room says what it counts, people and Bots, not an ambiguous "2 members" (#306).
 export function faceRoomCount(room, roster) {
-  const seats = faceSeats(room, roster)
-  // People are told apart by home, not by display name: two owners may both be "Alex".
-  const people = new Set(seats.map(seat => (seat.mine ? ':you' : personKey(seat))))
-  const persons = people.size === 1 ? t('1 person') : t('{count} people', { count: people.size })
-  const bots = seats.length === 1 ? t('1 Bot') : t('{count} Bots', { count: seats.length })
+  const people = facePeople(room, roster).length
+  const seats = faceSeats(room, roster).length
+  const persons = people === 1 ? t('1 person') : t('{count} people', { count: people })
+  const bots = seats === 1 ? t('1 Bot') : t('{count} Bots', { count: seats })
   return `${persons} · ${bots}`
+}
+
+// One row per person (#457): "Ann (you) · Chief, Researcher", my own Bots each opening its chat.
+export function FacePersonRow({ person, onOpenBot, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
+  const bots = person.seats.flatMap((seat, index) => {
+    const name = seat.local && onOpenBot
+      ? h('button', { key: seat.key, type: 'button', className: 'bt-face-bot', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot)
+      : h('span', { key: seat.key, className: 'bt-face-bot' }, seat.bot)
+    return index === 0 ? [name] : [h('span', { key: `${seat.key}-sep` }, t(', ')), name]
+  })
+  return h('div', { className, role: 'listitem', 'data-flybot': 'face-person', 'data-mine': person.mine || undefined },
+    h('span', { className: 'bt-gs-who bt-face-person' },
+      h(PersonMark, { size, name: person.name }),
+      h('span', { className: 'bt-face-person-text' },
+        h('span', { className: 'bt-row-title' }, facePersonLabel(person)),
+        h('span', { className: 'bt-face-bots' }, bots))))
 }
 
 export function roomSubtitle(room, roster) {
@@ -62,7 +68,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
   const remotes = live.filter(p => p.remote && p.leftSeq === undefined)
   const members = room.members.map(id => roster.byId[id]).filter(Boolean)
   const face = room.origin === 'face-to-face'
-  const seats = face ? faceSeats(room, roster) : []
+  const people = face ? facePeople(room, roster) : []
   const shared = humans.length > 1
   const chiefs = new Set((roster.humans ?? []).map(person => person.designatedChiefId).filter(Boolean))
   const outside = roster.bots.filter((bot) => {
@@ -105,11 +111,8 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
       h('div', { className: 'bt-set-row bt-bs-row' },
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
         h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
-    face ? h(Card, { title: t('Members · {count}', { count: seats.length }) },
-      seats.map(seat => h('div', { key: seat.key, className: 'bt-set-row bt-bs-row bt-gs-member', 'data-flybot': 'face-seat' },
-        h('span', { className: 'bt-gs-who' },
-          h(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false }),
-          h('span', { className: 'bt-row-title' }, faceSeatLabel(seat)))))) : null,
+    face ? h(Card, { title: t('Members · {count}', { count: people.length }) },
+      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))) : null,
     face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
       humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
         h('span', { className: 'bt-gs-who' },
@@ -226,6 +229,13 @@ export const GROUP_SETTINGS_CSS = `
 .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-gs-who:hover .bt-row-title{text-decoration:underline;text-underline-offset:2px}
 .bt-gs-add{gap:8px;color:var(--bt-ink-2)}
+.bt-face-person{cursor:default}
+.bt-face-person:hover .bt-row-title{text-decoration:none}
+.bt-face-person-text{display:flex;flex-direction:column;min-width:0}
+.bt-face-bots{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-face-bot{padding:0;border:0;background:none;color:inherit;font:inherit}
+button.bt-face-bot{cursor:pointer}
+button.bt-face-bot:hover{color:var(--bt-ink);text-decoration:underline;text-underline-offset:2px}
 .bt-gs-pick{gap:10px;animation:bt-rise .16s ease-out}
 .bt-bs-stack .bt-seg{align-self:stretch}
 @media (prefers-reduced-motion:reduce){.bt-gs-pick{animation:none}}

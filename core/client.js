@@ -315,11 +315,10 @@ var ZH = {
   "Admin leads": "管理员主持",
   "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
   Everyone: "所有人",
-  "Every Bot in this room": "房间里的所有 Bot",
   "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
   "Members · {count}": "成员 · {count}",
   "{name} (you)": "{name}（你）",
-  "{bot} (you)": "{bot}（你的）",
+  Someone: "某人",
   "Leave the group without an admin": "让群聊不设管理员",
   Unset: "取消",
   "Make admin": "设为管理员",
@@ -3990,6 +3989,7 @@ div:has(> nav [class*="_marks"]){display:none!important}
 .bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
 .bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
 .bt-urow{display:flex;justify-content:flex-end}
+.bt-urow>.bt-lead{align-self:flex-end;margin-left:6px}
 .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
 .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
 .bt-ububble p{margin:0;line-height:22px}
@@ -4979,6 +4979,65 @@ var SECRET_CSS = `
 @media (prefers-reduced-motion:reduce){.bt-secret-glide{transition:none}.bt-secret-check,.bt-secret-done,.bt-secret-ok,.bt-secret-edit{animation:none}}
 `;
 
+// src/client/face-seats.js
+function faceSeats(room2, roster, { left = false } = {}) {
+  const records = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human");
+  const seat = (p) => {
+    const local = p.remote ? void 0 : roster.byId[p.id];
+    return {
+      key: p.handle || p.id,
+      local,
+      record: p,
+      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, "") : ownerNameOf(p),
+      bot: local ? local.name : cleanPeerName(p.displayName || p.name, "Bot"),
+      mine: Boolean(local)
+    };
+  };
+  const seats = records.filter((p) => p.leftSeq === void 0).map(seat);
+  for (const id of room2.members ?? []) {
+    const bot = roster.byId[id];
+    if (!bot || seats.some((item) => item.local?.id === id)) continue;
+    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ""), bot: bot.name, mine: true });
+  }
+  if (!left) return seats;
+  const gone = records.filter((p) => p.leftSeq !== void 0 && !seats.some((item) => item.key === (p.handle || p.id))).map((item) => ({ ...seat(item), left: true }));
+  return [...seats, ...gone];
+}
+function faceSeatLabel(seat) {
+  if (!seat.person) return seat.bot;
+  return `${seat.bot} (${seat.person})`;
+}
+function faceBotLabel(room2, roster, bot) {
+  if (room2?.origin !== "face-to-face" || !bot) return bot?.name;
+  const seat = faceSeats(room2, roster, { left: true }).find((item) => item.local?.id === bot.id || item.record?.id !== void 0 && item.record.id === bot.id);
+  return seat ? faceSeatLabel(seat) : bot.name;
+}
+function facePersonKey(seat) {
+  if (seat.mine) return ":you";
+  const record = seat.record ?? {};
+  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
+  if (home) return `home:${home}`;
+  const parts = String(record.handle || "").trim().toLowerCase().replace(/^@+/, "").split(".");
+  if (parts.length >= 3 && parts.at(-1) === "home") return `home:${parts.slice(-2).join(".")}`;
+  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`;
+}
+function facePeople(room2, roster) {
+  const people = [];
+  for (const seat of faceSeats(room2, roster)) {
+    const key = facePersonKey(seat);
+    const known = people.find((person) => person.key === key);
+    if (known) {
+      known.seats.push(seat);
+      continue;
+    }
+    people.push({ key, name: seat.person || (seat.mine ? cleanPeerName(roster.self?.displayName, "") : "") || t("Someone"), mine: seat.mine, seats: [seat] });
+  }
+  return [...people.filter((person) => person.mine), ...people.filter((person) => !person.mine)];
+}
+function facePersonLabel(person) {
+  return person.mine ? t("{name} (you)", { name: person.name }) : person.name;
+}
+
 // src/client/held-reply.js
 var import_react7 = require("react");
 var call3 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -5351,7 +5410,7 @@ function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi, 
   const name = (0, import_react8.createElement)(
     "span",
     { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
-    bot.name,
+    faceBotLabel(room2, roster, bot) ?? bot.name,
     room2?.admin === bot.id ? (0, import_react8.createElement)("span", { className: "bt-group-role" }, t("Admin")) : null
   );
   return (0, import_react8.createElement)(
@@ -5365,8 +5424,10 @@ function remoteSpeaker(source, roster, sessionId) {
   const handle = source.remote.handle;
   const member = (roster.remoteBots ?? []).find((bot2) => bot2.handle === handle);
   const chat = (roster.bots ?? []).find((bot2) => bot2.remote?.handle === handle);
-  const seat = faceSeatLook(roster.roomsById?.[sessionId], handle);
-  const name = remoteBotTitle({
+  const room2 = roster.roomsById?.[sessionId];
+  const seat = faceSeatLook(room2, handle);
+  const faceSeat = room2?.origin === "face-to-face" ? faceSeats(room2, roster, { left: true }).find((item) => !item.mine && normRemoteHandle(item.record?.handle) === normRemoteHandle(handle)) : void 0;
+  const name = faceSeat ? faceSeatLabel(faceSeat) : remoteBotTitle({
     displayName: chat?.name ?? member?.name ?? source.senderName ?? handle,
     ownerName: member?.homeName || member?.owner || chat?.remote?.homeName || chat?.remote?.owner,
     handle,
@@ -5392,6 +5453,8 @@ function faceSeatLook(room2, handle) {
 }
 var cleanCarrier = (value) => typeof value === "string" && value.trim() && !/[@()]/.test(value) ? value.trim() : "";
 function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
+  const room2 = roster.roomsById?.[sessionId];
+  const face = room2?.origin === "face-to-face";
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
   const files = Array.isArray(source.attachments) ? source.attachments : [];
   const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
@@ -5415,7 +5478,8 @@ function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi
   return (0, import_react8.createElement)(
     "div",
     { className: "bt-group-msg bt-remote-msg", "data-remote": handle },
-    (0, import_react8.createElement)(
+    // A face room's header is the one name alone; the handle is on hover only (#457).
+    face ? (0, import_react8.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) }, title: handle }, name) : (0, import_react8.createElement)(
       "span",
       { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } },
       name,
@@ -5902,7 +5966,8 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
             "div",
             { className: "bt-ububble" },
             (0, import_react8.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: "compact" })
-          )
+          ),
+          room2?.origin === "face-to-face" ? (0, import_react8.createElement)("span", { className: "bt-lead", title: who || void 0 }, (0, import_react8.createElement)(PersonMark, { name: who || void 0 })) : null
         );
       }
       if (reply.kind === "failed") {
@@ -7742,7 +7807,7 @@ function mentionRows(roster, sessionId, query = "") {
   const face = isFaceRoom(here.room);
   const live = (here.room?.participants ?? []).filter((p) => p.leftSeq === void 0);
   const bots = here.room ? [
-    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name, true) } : bot),
+    ...here.room.members.map((id) => roster.byId[id]).filter(Boolean).map((bot) => face ? { ...bot, label: faceLabel(myOwnerName(roster, live, bot), bot.name) } : bot),
     ...live.filter((p) => p.kind === "human").map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role })),
     // A remote seat already listed under its handle (a duplicate participant record) is offered once.
     ...uniqueBy(live.filter((p) => p.remote), (p) => p.handle || p.id).map((p) => ({
@@ -7751,7 +7816,7 @@ function mentionRows(roster, sessionId, query = "") {
       kind: "bot",
       remote: p,
       handle: p.handle,
-      ...face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot"), false) } : {}
+      ...face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot")) } : {}
     }))
   ] : listedChatBots(roster).filter((bot) => bot.id !== here.self.id);
   const needle = query.trim().toLowerCase();
@@ -7771,6 +7836,7 @@ function mentionRows(roster, sessionId, query = "") {
 }
 var isFaceRoom = (room2) => room2?.origin === "face-to-face";
 var memberCount = (count) => t(count === 1 ? "{count} member" : "{count} members", { count });
+var botCount = (count) => count === 1 ? t("1 Bot") : t("{count} Bots", { count });
 var normHandle = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
 var remoteRecord = (bot) => bot?.remote ? bot.remote === true ? bot : bot.remote : null;
 var myOwnerName = (roster, live, bot) => {
@@ -7786,11 +7852,7 @@ var uniqueBy = (list, key) => {
     return true;
   });
 };
-var faceLabel = (person, bot, mine) => {
-  if (mine) return t("{bot} (you)", { bot });
-  if (!person) return bot;
-  return `${bot} (${person})`;
-};
+var faceLabel = (person, bot) => person ? `${bot} (${person})` : bot;
 function chatRows(roster, list, sessionId) {
   const here = conversationOf(roster, sessionId);
   if (here === null) return [];
@@ -7827,8 +7889,8 @@ function atSources({ roster, sessions, launched, iconFor }) {
         ...row.bot?.role && !face ? { description: row.bot.role } : {},
         ...row.remote ? { description: row.remote.handle } : {},
         ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
-        // A face room's local member list holds only this home's Bots, so a count would be wrong (#305).
-        ...row.room ? { description: face ? t("Every Bot in this room") : memberCount(row.count) } : {},
+        // A face room counts the Bots in it, mine and everyone else's (#305, #457).
+        ...row.room ? { description: face ? botCount(row.count) : memberCount(row.count) } : {},
         icon: iconFor(row),
         section: t("Bots"),
         value: row.text
@@ -11189,33 +11251,6 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
   );
 }
 
-// src/client/face-seats.js
-function faceSeats(room2, roster) {
-  const live = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human" && p.leftSeq === void 0);
-  const seats = live.map((p) => {
-    const local = p.remote ? void 0 : roster.byId[p.id];
-    return {
-      key: p.handle || p.id,
-      local,
-      record: p,
-      person: local ? cleanPeerName(p.ownerName || roster.self?.displayName, "") : ownerNameOf(p),
-      bot: local ? local.name : cleanPeerName(p.displayName || p.name, "Bot"),
-      mine: Boolean(local)
-    };
-  });
-  for (const id of room2.members ?? []) {
-    const bot = roster.byId[id];
-    if (!bot || seats.some((seat) => seat.local?.id === id)) continue;
-    seats.push({ key: id, local: bot, record: { id }, person: cleanPeerName(roster.self?.displayName, ""), bot: bot.name, mine: true });
-  }
-  return seats;
-}
-function faceSeatLabel(seat) {
-  if (seat.mine) return t("{bot} (you)", { bot: seat.bot });
-  if (!seat.person) return seat.bot;
-  return `${seat.bot} (${seat.person})`;
-}
-
 // src/client/group-settings.js
 var import_react27 = require("react");
 var ROOM_MODES = [
@@ -11223,20 +11258,33 @@ var ROOM_MODES = [
   ["everyone", "Everyone", "Every member answers in turn, admin first."]
 ];
 var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
-var personKey = (seat) => {
-  const record = seat.record ?? {};
-  const home = String(record.ownerHome || record.home || "").trim().toLowerCase();
-  if (home) return `home:${home}`;
-  const parts = String(record.handle || "").trim().toLowerCase().replace(/^@+/, "").split(".");
-  if (parts.length >= 3 && parts.at(-1) === "home") return `home:${parts.slice(-2).join(".")}`;
-  return `name:${(ownerNameOf(record) || seat.person || seat.key).toLowerCase()}`;
-};
 function faceRoomCount(room2, roster) {
-  const seats = faceSeats(room2, roster);
-  const people = new Set(seats.map((seat) => seat.mine ? ":you" : personKey(seat)));
-  const persons = people.size === 1 ? t("1 person") : t("{count} people", { count: people.size });
-  const bots = seats.length === 1 ? t("1 Bot") : t("{count} Bots", { count: seats.length });
+  const people = facePeople(room2, roster).length;
+  const seats = faceSeats(room2, roster).length;
+  const persons = people === 1 ? t("1 person") : t("{count} people", { count: people });
+  const bots = seats === 1 ? t("1 Bot") : t("{count} Bots", { count: seats });
   return `${persons} · ${bots}`;
+}
+function FacePersonRow({ person, onOpenBot, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
+  const bots = person.seats.flatMap((seat, index) => {
+    const name = seat.local && onOpenBot ? (0, import_react27.createElement)("button", { key: seat.key, type: "button", className: "bt-face-bot", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot) : (0, import_react27.createElement)("span", { key: seat.key, className: "bt-face-bot" }, seat.bot);
+    return index === 0 ? [name] : [(0, import_react27.createElement)("span", { key: `${seat.key}-sep` }, t(", ")), name];
+  });
+  return (0, import_react27.createElement)(
+    "div",
+    { className, role: "listitem", "data-flybot": "face-person", "data-mine": person.mine || void 0 },
+    (0, import_react27.createElement)(
+      "span",
+      { className: "bt-gs-who bt-face-person" },
+      (0, import_react27.createElement)(PersonMark, { size, name: person.name }),
+      (0, import_react27.createElement)(
+        "span",
+        { className: "bt-face-person-text" },
+        (0, import_react27.createElement)("span", { className: "bt-row-title" }, facePersonLabel(person)),
+        (0, import_react27.createElement)("span", { className: "bt-face-bots" }, bots)
+      )
+    )
+  );
 }
 function roomSubtitle(room2, roster) {
   if (room2.origin === "face-to-face") return faceRoomCount(room2, roster);
@@ -11256,7 +11304,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
   const remotes = live.filter((p) => p.remote && p.leftSeq === void 0);
   const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
   const face = room2.origin === "face-to-face";
-  const seats = face ? faceSeats(room2, roster) : [];
+  const people = face ? facePeople(room2, roster) : [];
   const shared2 = humans.length > 1;
   const chiefs = new Set((roster.humans ?? []).map((person) => person.designatedChiefId).filter(Boolean));
   const outside = roster.bots.filter((bot) => {
@@ -11343,17 +11391,8 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
     ),
     face ? (0, import_react27.createElement)(
       Card,
-      { title: t("Members · {count}", { count: seats.length }) },
-      seats.map((seat) => (0, import_react27.createElement)(
-        "div",
-        { key: seat.key, className: "bt-set-row bt-bs-row bt-gs-member", "data-flybot": "face-seat" },
-        (0, import_react27.createElement)(
-          "span",
-          { className: "bt-gs-who" },
-          (0, import_react27.createElement)(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false }),
-          (0, import_react27.createElement)("span", { className: "bt-row-title" }, faceSeatLabel(seat))
-        )
-      ))
+      { title: t("Members · {count}", { count: people.length }) },
+      people.map((person) => (0, import_react27.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot }))
     ) : null,
     face ? null : (0, import_react27.createElement)(
       Card,
@@ -11543,6 +11582,13 @@ var GROUP_SETTINGS_CSS = `
 .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-gs-who:hover .bt-row-title{text-decoration:underline;text-underline-offset:2px}
 .bt-gs-add{gap:8px;color:var(--bt-ink-2)}
+.bt-face-person{cursor:default}
+.bt-face-person:hover .bt-row-title{text-decoration:none}
+.bt-face-person-text{display:flex;flex-direction:column;min-width:0}
+.bt-face-bots{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-face-bot{padding:0;border:0;background:none;color:inherit;font:inherit}
+button.bt-face-bot{cursor:pointer}
+button.bt-face-bot:hover{color:var(--bt-ink);text-decoration:underline;text-underline-offset:2px}
 .bt-gs-pick{gap:10px;animation:bt-rise .16s ease-out}
 .bt-bs-stack .bt-seg{align-self:stretch}
 @media (prefers-reduced-motion:reduce){.bt-gs-pick{animation:none}}
@@ -13922,20 +13968,17 @@ function SharedRoomApprovals({ room: room2 }) {
   );
 }
 function FaceMembers({ room: room2, roster, actions }) {
-  const seats = faceSeats(room2, roster);
+  const people = facePeople(room2, roster);
   return (0, import_react35.createElement)(
     "div",
     null,
-    (0, import_react35.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: seats.length })),
-    (0, import_react35.createElement)("div", { className: "bt-members", role: "list" }, seats.map((seat) => {
-      const label = faceSeatLabel(seat);
-      const avatar = (0, import_react35.createElement)(BotAvatar, { bot: seat.local ?? lookBotForRemote(seat.record, roster), size: 26, badge: false, live: false });
-      return (0, import_react35.createElement)(
-        "div",
-        { key: seat.key, role: "listitem", "data-flybot": "face-seat", "data-mine": seat.mine || void 0 },
-        (0, import_react35.createElement)("div", { className: "bt-member" }, seat.local ? (0, import_react35.createElement)("button", { type: "button", className: "bt-member-name", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => actions.openSession(seat.local.id) }, avatar, (0, import_react35.createElement)("span", null, label)) : (0, import_react35.createElement)("span", { className: "bt-member-name" }, avatar, (0, import_react35.createElement)("span", null, label)))
-      );
-    }))
+    (0, import_react35.createElement)("div", { className: "bt-section-title" }, t("Members · {count}", { count: people.length })),
+    (0, import_react35.createElement)("div", { className: "bt-members", role: "list" }, people.map((person) => (0, import_react35.createElement)(FacePersonRow, {
+      key: person.key,
+      person,
+      className: "bt-member",
+      onOpenBot: (id) => actions.openSession(id)
+    })))
   );
 }
 function GroupOverview({ room: room2, roster, actions, usage, useWork, openSettings }) {
@@ -15822,8 +15865,9 @@ function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
 }
 function faceMentionables(room2, roster, fromFriend) {
   const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
-  const seats = faceSeats(room2, roster);
-  const ordered = [...seats.filter((seat) => seat.mine !== fromFriend), ...seats.filter((seat) => seat.mine === fromFriend)];
+  const all = faceSeats(room2, roster, { left: true });
+  const seats = all.filter((seat) => !seat.left);
+  const ordered = [...seats.filter((seat) => seat.mine !== fromFriend), ...seats.filter((seat) => seat.mine === fromFriend), ...all.filter((seat) => seat.left)];
   const bots = ordered.flatMap((seat) => {
     const target = seat.local ?? { id: seat.key, name: seat.bot, kind: "bot", remote: seat.record };
     const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person };
@@ -15907,22 +15951,24 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
   const multiHuman = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).length > 1;
   const incoming = author && !author.mine;
   const person = incoming && author.authorKind === "human" && !author.ownerName;
-  const held = Boolean(room2 && room2.origin === "face-to-face" && !incoming && (room2.pendingCount ?? 0) > 0);
+  const faceMine = Boolean(room2?.origin === "face-to-face" && !incoming);
+  const myName = faceMine ? facePeople(room2, roster).find((entry) => entry.mine)?.name || cleanPeerName(roster.self?.displayName, "") || author?.name || "" : "";
   return (0, import_react39.createElement)(
     "div",
     {
       className: incoming ? "bt-umsg bt-umsg-other" : "bt-umsg",
       "data-steering": steering || void 0,
-      "data-held": held || void 0,
+      "data-face-mine": faceMine || void 0,
       "data-author": author?.authorId,
       "data-author-kind": author?.authorKind,
       "data-author-name": author?.name
     },
     person ? (0, import_react39.createElement)("span", { className: "bt-lead", title: author.name }, (0, import_react39.createElement)(PersonMark, { name: author.name })) : null,
+    faceMine ? (0, import_react39.createElement)("span", { className: "bt-lead", title: myName || void 0 }, (0, import_react39.createElement)(PersonMark, { name: myName || void 0 })) : null,
     (0, import_react39.createElement)(
       "div",
       { className: "bt-ustack" },
-      author && (incoming || multiHuman) ? (0, import_react39.createElement)("span", { className: "bt-uauthor" }, author.name, author.ownerName ? (0, import_react39.createElement)("span", { className: "bt-chip" }, t("Friend's Bot")) : null) : null,
+      faceMine && myName ? (0, import_react39.createElement)("span", { className: "bt-uauthor" }, myName) : author && (incoming || multiHuman) ? (0, import_react39.createElement)("span", { className: "bt-uauthor" }, author.name, author.ownerName ? (0, import_react39.createElement)("span", { className: "bt-chip" }, t("Friend's Bot")) : null) : null,
       attachments.length > 0 ? (0, import_react39.createElement)(Attachments, { attachments, renderMessageImages }) : null,
       text !== "" || rest.length > 0 ? (0, import_react39.createElement)(
         "div",
@@ -15945,7 +15991,7 @@ var USER_MESSAGE_CSS = `
 .bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
 .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
-.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
+.bt-umsg[data-face-mine]>.bt-lead{align-self:flex-end;margin-left:4px}
 .bt-ubody a{color:inherit}
 .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
 .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}

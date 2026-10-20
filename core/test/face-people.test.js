@@ -80,7 +80,7 @@ test('a face room lists people, each with the Bot they brought, named one way', 
     ],
   }
   const seats = faceSeats(room, roster)
-  assert.deepEqual(seats.map(faceSeatLabel), ['Chief (you)', 'Chief (SelfA0333)'])
+  assert.deepEqual(seats.map(faceSeatLabel), ['Chief (SelfB0333)', 'Chief (SelfA0333)'])
   assert.deepEqual(seats.map(seat => seat.mine), [true, false])
 })
 

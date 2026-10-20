@@ -115,7 +115,7 @@ test('#305: a face room offers each of its Bots once, named Bot (Person), and no
   })
   const rows = mentionRows(face, 'face')
   assert.equal(rows.filter(row => row.remote).length, 0, 'no published-friend rows in a face room')
-  assert.deepEqual(rows.map(row => row.bot?.label ?? 'everyone'), ['Chief (you)', 'Chief (SelfA)', 'everyone'])
+  assert.deepEqual(rows.map(row => row.bot?.label ?? 'everyone'), ['Chief (SelfB)', 'Chief (SelfA)', 'everyone'])
   // What is inserted is still the name the room routes on, never a handle.
   assert.deepEqual(rows.map(row => row.text), ['@Chief ', '@Chief (SelfA) ', '@Everyone '])
   assert.ok(rows.every(row => !/@[\w-]+\.[\w-]+\.home/.test(row.text)))
@@ -129,13 +129,14 @@ test('#305: a face room offers each of its Bots once, named Bot (Person), and no
   })
   const listed = await bots.candidates({ sessionId: 'face' }, { query: '' })
   assert.deepEqual(listed.map(row => [row.name, row.description]), [
-    ['Chief (you)', undefined],
+    // "(you)" is a person's, never a Bot's; Everyone counts the room's Bots, mine and theirs (#457).
+    ['Chief (SelfB)', undefined],
     ['Chief (SelfA)', undefined],
-    ['Everyone', 'Every Bot in this room'],
+    ['Everyone', '2 Bots'],
   ])
   // Without a member-session actor (roster.self is null) the seat's own owner name is used, as Members does.
   const legacy = indexRoster({ ...face, self: null, rooms: [{ ...face.rooms[0], participants: [{ ...face.rooms[0].participants[0], ownerName: 'SelfB' }, ...face.rooms[0].participants.slice(1)] }] })
-  assert.equal(mentionRows(legacy, 'face')[0].bot.label, 'Chief (you)')
+  assert.equal(mentionRows(legacy, 'face')[0].bot.label, 'Chief (SelfB)')
   // Outside a face room the published friends' Bots still join the menu.
   const group = indexRoster({ ...face, rooms: [{ ...face.rooms[0], origin: undefined }] })
   // A friend's Bot already seated in the group is offered once, by its seat (#384).

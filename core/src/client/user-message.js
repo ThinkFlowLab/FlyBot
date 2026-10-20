@@ -4,8 +4,8 @@ import { mentionSpans } from '../shared/mentions.js'
 import { BotMark, PersonMark } from './mark.js'
 import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
-import { faceAliases, remoteBotTitle } from '../shared/remote-label.js'
-import { faceSeatLabel, faceSeats } from './face-seats.js'
+import { cleanPeerName, faceAliases, remoteBotTitle } from '../shared/remote-label.js'
+import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
 
 // -------------------------------------------------------------------------
 // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -54,8 +54,11 @@ export function mentionableBots(roster, sessionId, { fromFriend = false } = {}) 
 function faceMentionables(room, roster, fromFriend) {
   const humans = (room.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
     .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
-  const seats = faceSeats(room, roster)
-  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend)]
+  // The seats of people who left come last: a line sent before the leave still names the Bot it
+  // named, "@Chief (Bob)" stays Bob's Chief and never turns into mine (#457).
+  const all = faceSeats(room, roster, { left: true })
+  const seats = all.filter(seat => !seat.left)
+  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend), ...all.filter(seat => seat.left)]
   const bots = ordered.flatMap((seat) => {
     const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
     const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
@@ -144,18 +147,24 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
   // A person in this home (the host stamps the signed-in member as the author); a friend's Bot
   // keeps its own label, so the person mark is never drawn from message text (#229).
   const person = incoming && author.authorKind === 'human' && !author.ownerName
-  const held = Boolean(room && room.origin === 'face-to-face' && !incoming && (room.pendingCount ?? 0) > 0)
+  // In a face-to-face room my own line is a person's line like everyone else's: my name and my
+  // person mark beside it, in the sent colour always. Typing it is the approval (#179), so it is
+  // never drawn as held, whatever else in the room waits for approval (#457).
+  const faceMine = Boolean(room?.origin === 'face-to-face' && !incoming)
+  const myName = faceMine ? (facePeople(room, roster).find(entry => entry.mine)?.name || cleanPeerName(roster.self?.displayName, '') || author?.name || '') : ''
   return h('div', {
     className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
     'data-steering': steering || undefined,
-    'data-held': held || undefined,
+    'data-face-mine': faceMine || undefined,
     'data-author': author?.authorId,
     'data-author-kind': author?.authorKind,
     'data-author-name': author?.name,
   },
     person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
+    faceMine ? h('span', { className: 'bt-lead', title: myName || undefined }, h(PersonMark, { name: myName || undefined })) : null,
     h('div', { className: 'bt-ustack' },
-      author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
+      faceMine && myName ? h('span', { className: 'bt-uauthor' }, myName)
+        : author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
       attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
       text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
         h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
@@ -174,7 +183,7 @@ export const USER_MESSAGE_CSS = `
 .bt-composer-as{font-size:12px;line-height:16px;color:var(--bt-ink-3);padding:0 8px;align-self:center;white-space:nowrap}
 .bt-ustack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702),82%);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .bt-ubody{max-width:100%;box-sizing:border-box;background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);white-space:pre-wrap;word-break:break-word}
-.bt-umsg[data-held] .bt-ubody{background:color-mix(in srgb,var(--bt-user) 28%,var(--bt-card,#fff));color:var(--bt-ink);border:.5px dashed var(--bt-line-2,rgba(20,20,20,.22));opacity:.88}
+.bt-umsg[data-face-mine]>.bt-lead{align-self:flex-end;margin-left:4px}
 .bt-ubody a{color:inherit}
 .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
 .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
