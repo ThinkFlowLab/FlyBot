@@ -14,6 +14,7 @@ import { BotConnectorsCard } from './connector-bots.js'
 import { useMemoryCount } from './memory-panel.js'
 import { SPRING_SHAPE, SPRING_TAP, spring, useGlide } from './motion.js'
 import { t } from './i18n.js'
+import { StandingApprovalsCard } from './standing-approvals.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
@@ -243,6 +244,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
     h(BotConnectorsCard, { bot, roster, actions, run, Card, SwitchRow }),
     roster.memory === false ? null : h(MemoryCard, { bot, actions }),
     h(BotSchedules, { bot, roster, actions }),
+    h(StandingApprovalsCard, { scope: 'bot', target: bot, roster, actions, run, Card }),
     h(Card, { title: t('Main Bot') },
       onlyMain
         ? h('div', { className: 'bt-set-row bt-bs-row' },

@@ -791,7 +791,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -450,9 +450,19 @@ const ZH = {
+@@ -450,12 +450,30 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -811,6 +811,17 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in its own chat': '在自己的对话里',
    Reject: '拒绝',
    'Allow once': '允许一次',
++  'Always allow for this Bot': '此 Bot 始终允许',
++  'Always allow for this group': '本群始终允许',
++  'Always allowed for {name}': '已为 {name} 始终允许',
++  'Always allowed in this group': '已在本群始终允许',
++  'Always allowed': '始终允许',
++  'Your Bots in this group do these without asking.': '你在本群的 Bot 做这些时不再询问。',
++  'This Bot does these without asking.': '此 Bot 做这些时不再询问。',
++  'Remove always allow for {kind}': '移除 {kind} 的始终允许',
+   "Couldn't message {name}": '没能给 {name} 发消息',
+   Messaged: '已发消息给',
+   "Couldn't stop {name}": '没能叫停 {name}',
 @@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
@@ -957,6 +968,33 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  Object.assign(ZH, HOST_ZH)
  
+diff --git a/src/client/member-status.js b/src/client/member-status.js
+--- a/src/client/member-status.js
++++ b/src/client/member-status.js
+@@ -148,6 +148,13 @@ function useNow(active) {
+ 
+ const since = (now, at) => (typeof at === 'number' && now - at >= 60000 ? ` · ${elapsedLabel(now - at)}` : '')
+ 
++// "Always allow" is the owner's standing grant (#540): only on their own Bot's card,
++// and the group option only when the request comes from a group.
++export const alwaysChoices = (approval, bot) => (bot?.remote ? [] : [
++  ['always-bot', 'Always allow for this Bot'],
++  ...(approval.roomId ? [['always-room', 'Always allow for this group']] : []),
++])
++
+ function ApprovalCard({ approval, bot, actions }) {
+   const [busy, setBusy] = useState(false)
+   const answer = (choice) => {
+@@ -164,7 +164,8 @@ function ApprovalCard({ approval, bot, actions }) {
+     approval.answerable
+       ? h('div', { className: 'bt-mw-actions' },
+         h('button', { type: 'button', className: 'bt-q-btn', disabled: busy, onClick: () => answer('reject') }, t('Reject')),
+-        h('button', { type: 'button', className: 'bt-q-submit', disabled: busy, onClick: () => answer('allow') }, t('Allow once')))
++        h('button', { type: 'button', className: 'bt-q-submit', disabled: busy, onClick: () => answer('allow') }, t('Allow once')),
++        ...alwaysChoices(approval, bot).map(([choice, label]) => h('button', { key: choice, type: 'button', className: 'bt-q-btn', 'data-choice': choice, disabled: busy, onClick: () => answer(choice) }, t(label))))
+       : h('div', { className: 'bt-mw-actions' },
+         h('button', { type: 'button', className: 'bt-q-btn', onClick: () => actions.openSession(bot.id) }, t("Open {name}'s chat", { name: bot.name }))))
+ }
 diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 --- a/src/client/memory-panel.js
 +++ b/src/client/memory-panel.js
@@ -1586,6 +1624,105 @@ diff --git a/src/host/agents.js b/src/host/agents.js
        throw error
      }
      return agent
+diff --git a/src/host/approvals.js b/src/host/approvals.js
+--- a/src/host/approvals.js
++++ b/src/host/approvals.js
+@@ -4,7 +4,19 @@
+ // the team view can say who is waiting.
+ import { randomUUID } from 'node:crypto'
+ 
+-const OUTCOMES = { allow: 'allowed-once', reject: 'rejected' }
++const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
++
++// DSH has no standing grant (its outcomes are one-shot, #540), so the owner's "Always
++// allow" lives here: on the Bot or on the group, keyed by the kind of permission asked.
++// A sandbox escalation names its mode in DSH's reason; any other ask is keyed by tool.
++export function approvalKind(tool, reason) {
++  const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
++  return mode ? `${tool}:escalate:${mode}` : String(tool)
++}
++const kindLabel = (tool, reason) => {
++  const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
++  return mode ? `${tool} · ${mode}` : String(tool)
++}
+ 
+ export function install(rt) {
+   const { ctx } = rt
+@@ -17,6 +17,7 @@ export function install(rt) {
+     const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
+     const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
+     if (botId === undefined) return next()
++    if (standingGrant(botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
+     const id = randomUUID()
+     const entry = {
+       id,
+@@ -47,14 +47,58 @@ export function install(rt) {
+     })
+   }, { prepend: true })
+ 
++  // A group grant covers the owner's Bots working in that group: the Bot it was granted
++  // from and any other Bot of the same owner (one owner on a single-human host).
++  function standingGrant(botId, roomId, kind) {
++    const bot = rt.botOf(botId)
++    if (bot === undefined || bot.remote !== undefined) return false
++    if ((bot.standingApprovals ?? []).some(grant => grant.kind === kind)) return true
++    const room = roomId === undefined ? undefined : rt.roomOf(roomId)
++    return (room?.standingApprovals ?? []).some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)
++  }
++
++  async function grantStanding(entry, scope) {
++    await rt.load()
++    const bot = rt.botOf(entry.botId)
++    const target = scope === 'room' ? rt.roomOf(entry.roomId) : bot
++    if (bot === undefined || bot.remote !== undefined) throw Object.assign(new Error('Only your own Bot can be given a standing approval'), { code: 'bot/forbidden' })
++    if (target === undefined) throw Object.assign(new Error('This approval did not come from a group'), { code: 'bot/invalid' })
++    const kind = approvalKind(entry.tool, entry.reason)
++    const grants = target.standingApprovals ?? []
++    if (!grants.some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)) {
++      const grant = { kind, label: kindLabel(entry.tool, entry.reason), at: Date.now(), ...(bot.ownerId === undefined ? {} : { ownerId: bot.ownerId }) }
++      target.standingApprovals = [...grants, grant]
++      await rt.save()
++    }
++    // Other cards the new grant already covers stop waiting too.
++    for (const other of [...pending.values()]) {
++      if (other.id !== entry.id && other.answer !== undefined && standingGrant(other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
++    }
++  }
++  const approvalKindOf = entry => approvalKind(entry.tool, entry.reason)
++
++  async function removeStandingApproval(scope, id, kind) {
++    await rt.load()
++    const target = scope === 'room' ? rt.roomOf(String(id ?? '')) : rt.botOf(String(id ?? ''))
++    if (target === undefined) throw Object.assign(new Error('Not found'), { code: 'bot/not-found' })
++    const before = target.standingApprovals ?? []
++    const after = before.filter(grant => grant.kind !== String(kind ?? ''))
++    if (after.length === before.length) return false
++    if (after.length === 0) delete target.standingApprovals
++    else target.standingApprovals = after
++    await rt.save()
++    return true
++  }
++
+   const approvalsView = () => [...pending.values()].map(({ answer, ...entry }) => ({ ...entry, answerable: answer !== undefined }))
+   const waitsForApproval = sessionId => [...pending.values()].some(entry => entry.sessionId === sessionId)
+ 
+-  function answerApproval(id, choice) {
++  async function answerApproval(id, choice) {
+     const entry = pending.get(String(id ?? ''))
+     if (entry?.answer === undefined) throw Object.assign(new Error('This approval is no longer open'), { code: 'bot/stale' })
+     const outcome = OUTCOMES[choice]
+     if (outcome === undefined) throw Object.assign(new Error('Choose allow or reject'), { code: 'bot/invalid' })
++    if (choice === 'always-bot' || choice === 'always-room') await grantStanding(entry, choice === 'always-room' ? 'room' : 'bot')
+     entry.answer(outcome)
+   }
+ 
+@@ -65,5 +65,5 @@ export function install(rt) {
+     }
+   }
+ 
+-  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals })
++  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals, removeStandingApproval })
+ }
 diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
@@ -4214,6 +4351,87 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  assert.equal(github.ok, false)
 +  assert.match(github.error.message, /no apps to pick/)
 +})
+diff --git a/test/group-status.test.js b/test/group-status.test.js
+--- a/test/group-status.test.js
++++ b/test/group-status.test.js
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict'
+-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+@@ -73,7 +73,7 @@ async function start() {
+   const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
+   const stop = async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) }
+   await tool('list_bots', {}, 'a')
+-  return { agentOf, emit, tool, call, askApproval, stop, archived }
++  return { agentOf, emit, tool, call, askApproval, stop, archived, home }
+ }
+ 
+ // Waits on real I/O (state writes) without timers, which some tests mock.
+@@ -294,3 +294,61 @@ test('an approval asked inside a PTC program shows what that call does', async (
+   assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
+   assert.equal(value.work.bots.b.tool, 'pwsh')
+ })
++
++// #540: "Always allow" on the card is a standing grant, per Bot or per group, kept on
++// the record and revocable; DSH only knows one-shot outcomes.
++test('Always allow for this Bot answers later matching asks itself, survives in the store, and Remove asks again', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  const reason = 'escalate sandbox to danger-full-access: read AGENTS.md'
++  const first = host.askApproval('gb', { toolName: 'bash', reason })
++  const [approval] = (await host.call('state', {})).value.work.approvals
++  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-bot' })).ok, true)
++  assert.equal(await first, 'allowed-once')
++
++  const bot = (await host.call('state', {})).value.bots.find(entry => entry.id === 'b')
++  assert.deepEqual(bot.standingApprovals.map(grant => [grant.kind, grant.label]), [['bash:escalate:danger-full-access', 'bash · danger-full-access']])
++  assert.deepEqual(JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).bots.b.standingApprovals.map(grant => grant.kind), ['bash:escalate:danger-full-access'])
++  // The same kind from the Bot's own chat is covered too; another kind still asks.
++  assert.equal(await host.askApproval('gb', { toolName: 'bash', reason: 'escalate sandbox to danger-full-access: again' }), 'allowed-once')
++  assert.equal(await host.askApproval('b', { toolName: 'bash', reason }, () => 'from-dsh'), 'allowed-once')
++  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: 'escalate sandbox to workspace-write: x' }, () => 'from-dsh'), 'from-dsh')
++  assert.deepEqual((await host.call('state', {})).value.work.approvals, [])
++
++  assert.equal((await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: 'bash:escalate:danger-full-access' })).value, true)
++  assert.equal(await host.askApproval('b', { toolName: 'bash', reason }, () => 'from-dsh'), 'from-dsh')
++})
++
++test('Always allow for this group covers that group only', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  const reason = 'escalate sandbox to danger-full-access: grep'
++  const first = host.askApproval('gb', { toolName: 'bash', reason })
++  const [approval] = (await host.call('state', {})).value.work.approvals
++  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-room' })).ok, true)
++  assert.equal(await first, 'allowed-once')
++  const room = (await host.call('state', {})).value.rooms.find(entry => entry.id === 'r1')
++  assert.deepEqual(room.standingApprovals.map(grant => grant.kind), ['bash:escalate:danger-full-access'])
++  assert.equal(await host.askApproval('gb', { toolName: 'bash', reason }), 'allowed-once')
++  // Not the Bot's own chat: the grant was for work in the group.
++  assert.equal(await host.askApproval('b', { toolName: 'bash', reason }, () => 'from-dsh'), 'from-dsh')
++  assert.equal((await host.call('standing-approval-remove', { scope: 'room', id: 'r1', kind: 'bash:escalate:danger-full-access' })).value, true)
++  const again = host.askApproval('gb', { toolName: 'bash', reason })
++  const [open] = (await host.call('state', {})).value.work.approvals
++  assert.equal(open.answerable, true)
++  assert.equal((await host.call('approval-answer', { id: open.id, choice: 'reject' })).ok, true)
++  assert.equal(await again, 'rejected')
++})
++
++test('Always allow for this group is refused for an ask that did not come from a group', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  // An own chat's ask is DSH's to answer, so it has no card to give a group grant from.
++  let release
++  const outcome = host.askApproval('a', { toolName: 'bash' }, () => new Promise((resolve) => { release = resolve }))
++  const [approval] = (await host.call('state', {})).value.work.approvals
++  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-room' })).ok, false)
++  release('rejected')
++  assert.equal(await outcome, 'rejected')
++  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'a').standingApprovals, undefined)
++})
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
@@ -4283,6 +4501,38 @@ diff --git a/test/install.test.js b/test/install.test.js
    // A refusal from the team code keeps its message for the user.
    assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
    // Off the Desktop profile there are no Bot browsers.
+diff --git a/test/member-status.test.js b/test/member-status.test.js
+--- a/test/member-status.test.js
++++ b/test/member-status.test.js
+@@ -22,7 +22,7 @@ runInNewContext(bundle.outputFiles[0].text, {
+     return platform[name]
+   },
+ })
+-const { busyMembers, summaryText, splitBusy, MemberDock } = module.exports
++const { busyMembers, summaryText, splitBusy, MemberDock, MemberWork } = module.exports
+ // Values from the bundle's realm compare by content only.
+ const plain = value => JSON.parse(JSON.stringify(value))
+ // Renders the dock's own parts of an element tree, and lists its rows' labels.
+@@ -82,3 +82,19 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
+   assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
+   assert.equal(dock('b', away), null)
+ })
++
++// #540: the approval card offers a standing grant next to Reject / Allow once.
++const cardButtons = (approval, bot) => {
++  const tree = MemberWork({ entry: { state: 'ask', approvals: [approval] }, bot, room: { id: 'r1' }, roster: team, actions: {}, now: 0 })
++  const card = tree.children.find(node => node?.type?.name === 'ApprovalCard')
++  const walk = node => (node === null || typeof node !== 'object' ? [] : [...(node.type === 'button' ? [[node.props['data-choice'] ?? '', node.children.join('')]] : []), ...node.children.flatMap(walk)])
++  return plain(walk(card.type(card.props)))
++}
++
++test('the approval card offers Always allow for this Bot, and for this group when the ask came from one', () => {
++  const ask = { id: 'p1', tool: 'bash', reason: 'escalate sandbox to danger-full-access: grep', answerable: true }
++  assert.deepEqual(cardButtons({ ...ask, roomId: 'r1' }, { id: 'a', name: 'Anvil' }), [['', 'Reject'], ['', 'Allow once'], ['always-bot', 'Always allow for this Bot'], ['always-room', 'Always allow for this group']])
++  assert.deepEqual(cardButtons(ask, { id: 'a', name: 'Anvil' }).map(([choice]) => choice), ['', '', 'always-bot'])
++  // A friend's Bot is not the viewer's to give a standing grant to.
++  assert.deepEqual(cardButtons({ ...ask, roomId: 'r1' }, { id: 'x', name: 'X', remote: { handle: '@x' } }).map(([choice]) => choice), ['', ''])
++})
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
 +++ b/test/memory.test.js

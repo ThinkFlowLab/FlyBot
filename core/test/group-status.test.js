@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -73,7 +73,7 @@ async function start() {
   const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
   const stop = async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) }
   await tool('list_bots', {}, 'a')
-  return { agentOf, emit, tool, call, askApproval, stop, archived }
+  return { agentOf, emit, tool, call, askApproval, stop, archived, home }
 }
 
 // Waits on real I/O (state writes) without timers, which some tests mock.
@@ -293,4 +293,62 @@ test('an approval asked inside a PTC program shows what that call does', async (
   const [approval] = value.work.approvals
   assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
   assert.equal(value.work.bots.b.tool, 'pwsh')
+})
+
+// #540: "Always allow" on the card is a standing grant, per Bot or per group, kept on
+// the record and revocable; DSH only knows one-shot outcomes.
+test('Always allow for this Bot answers later matching asks itself, survives in the store, and Remove asks again', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  const reason = 'escalate sandbox to danger-full-access: read AGENTS.md'
+  const first = host.askApproval('gb', { toolName: 'bash', reason })
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-bot' })).ok, true)
+  assert.equal(await first, 'allowed-once')
+
+  const bot = (await host.call('state', {})).value.bots.find(entry => entry.id === 'b')
+  assert.deepEqual(bot.standingApprovals.map(grant => [grant.kind, grant.label]), [['bash:escalate:danger-full-access', 'bash · danger-full-access']])
+  assert.deepEqual(JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).bots.b.standingApprovals.map(grant => grant.kind), ['bash:escalate:danger-full-access'])
+  // The same kind from the Bot's own chat is covered too; another kind still asks.
+  assert.equal(await host.askApproval('gb', { toolName: 'bash', reason: 'escalate sandbox to danger-full-access: again' }), 'allowed-once')
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason }, () => 'from-dsh'), 'allowed-once')
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: 'escalate sandbox to workspace-write: x' }, () => 'from-dsh'), 'from-dsh')
+  assert.deepEqual((await host.call('state', {})).value.work.approvals, [])
+
+  assert.equal((await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: 'bash:escalate:danger-full-access' })).value, true)
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason }, () => 'from-dsh'), 'from-dsh')
+})
+
+test('Always allow for this group covers that group only', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  const reason = 'escalate sandbox to danger-full-access: grep'
+  const first = host.askApproval('gb', { toolName: 'bash', reason })
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-room' })).ok, true)
+  assert.equal(await first, 'allowed-once')
+  const room = (await host.call('state', {})).value.rooms.find(entry => entry.id === 'r1')
+  assert.deepEqual(room.standingApprovals.map(grant => grant.kind), ['bash:escalate:danger-full-access'])
+  assert.equal(await host.askApproval('gb', { toolName: 'bash', reason }), 'allowed-once')
+  // Not the Bot's own chat: the grant was for work in the group.
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason }, () => 'from-dsh'), 'from-dsh')
+  assert.equal((await host.call('standing-approval-remove', { scope: 'room', id: 'r1', kind: 'bash:escalate:danger-full-access' })).value, true)
+  const again = host.askApproval('gb', { toolName: 'bash', reason })
+  const [open] = (await host.call('state', {})).value.work.approvals
+  assert.equal(open.answerable, true)
+  assert.equal((await host.call('approval-answer', { id: open.id, choice: 'reject' })).ok, true)
+  assert.equal(await again, 'rejected')
+})
+
+test('Always allow for this group is refused for an ask that did not come from a group', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  // An own chat's ask is DSH's to answer, so it has no card to give a group grant from.
+  let release
+  const outcome = host.askApproval('a', { toolName: 'bash' }, () => new Promise((resolve) => { release = resolve }))
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'always-room' })).ok, false)
+  release('rejected')
+  assert.equal(await outcome, 'rejected')
+  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'a').standingApprovals, undefined)
 })

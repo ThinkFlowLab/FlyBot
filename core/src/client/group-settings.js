@@ -6,6 +6,7 @@ import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
+import { StandingApprovalsCard } from './standing-approvals.js'
 import { remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
@@ -209,6 +210,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
           : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
             : t('No admin yet. An admin can call members with @Name, change the group, and post here.')))),
+    h(StandingApprovalsCard, { scope: 'room', target: room, roster, actions, run, Card }),
     h(Card, { title: t('Sidebar') },
       h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: room.pinned === true, onChange: pinned => run(actions.setFlags(room.id, { pinned })) }),
       h(SwitchRow, { label: t('Hide from sidebar'), hint: t('Search still finds it.'), on: room.hidden === true, onChange: hidden => run(actions.setFlags(room.id, { hidden })) })),

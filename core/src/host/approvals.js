@@ -4,7 +4,19 @@
 // the team view can say who is waiting.
 import { randomUUID } from 'node:crypto'
 
-const OUTCOMES = { allow: 'allowed-once', reject: 'rejected' }
+const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
+
+// DSH has no standing grant (its outcomes are one-shot, #540), so the owner's "Always
+// allow" lives here: on the Bot or on the group, keyed by the kind of permission asked.
+// A sandbox escalation names its mode in DSH's reason; any other ask is keyed by tool.
+export function approvalKind(tool, reason) {
+  const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
+  return mode ? `${tool}:escalate:${mode}` : String(tool)
+}
+const kindLabel = (tool, reason) => {
+  const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
+  return mode ? `${tool} · ${mode}` : String(tool)
+}
 
 export function install(rt) {
   const { ctx } = rt
@@ -17,6 +29,7 @@ export function install(rt) {
     const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
     const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
     if (botId === undefined) return next()
+    if (standingGrant(botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
     const id = randomUUID()
     const entry = {
       id,
@@ -47,14 +60,58 @@ export function install(rt) {
     })
   }, { prepend: true })
 
+  // A group grant covers the owner's Bots working in that group: the Bot it was granted
+  // from and any other Bot of the same owner (one owner on a single-human host).
+  function standingGrant(botId, roomId, kind) {
+    const bot = rt.botOf(botId)
+    if (bot === undefined || bot.remote !== undefined) return false
+    if ((bot.standingApprovals ?? []).some(grant => grant.kind === kind)) return true
+    const room = roomId === undefined ? undefined : rt.roomOf(roomId)
+    return (room?.standingApprovals ?? []).some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)
+  }
+
+  async function grantStanding(entry, scope) {
+    await rt.load()
+    const bot = rt.botOf(entry.botId)
+    const target = scope === 'room' ? rt.roomOf(entry.roomId) : bot
+    if (bot === undefined || bot.remote !== undefined) throw Object.assign(new Error('Only your own Bot can be given a standing approval'), { code: 'bot/forbidden' })
+    if (target === undefined) throw Object.assign(new Error('This approval did not come from a group'), { code: 'bot/invalid' })
+    const kind = approvalKind(entry.tool, entry.reason)
+    const grants = target.standingApprovals ?? []
+    if (!grants.some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)) {
+      const grant = { kind, label: kindLabel(entry.tool, entry.reason), at: Date.now(), ...(bot.ownerId === undefined ? {} : { ownerId: bot.ownerId }) }
+      target.standingApprovals = [...grants, grant]
+      await rt.save()
+    }
+    // Other cards the new grant already covers stop waiting too.
+    for (const other of [...pending.values()]) {
+      if (other.id !== entry.id && other.answer !== undefined && standingGrant(other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
+    }
+  }
+  const approvalKindOf = entry => approvalKind(entry.tool, entry.reason)
+
+  async function removeStandingApproval(scope, id, kind) {
+    await rt.load()
+    const target = scope === 'room' ? rt.roomOf(String(id ?? '')) : rt.botOf(String(id ?? ''))
+    if (target === undefined) throw Object.assign(new Error('Not found'), { code: 'bot/not-found' })
+    const before = target.standingApprovals ?? []
+    const after = before.filter(grant => grant.kind !== String(kind ?? ''))
+    if (after.length === before.length) return false
+    if (after.length === 0) delete target.standingApprovals
+    else target.standingApprovals = after
+    await rt.save()
+    return true
+  }
+
   const approvalsView = () => [...pending.values()].map(({ answer, ...entry }) => ({ ...entry, answerable: answer !== undefined }))
   const waitsForApproval = sessionId => [...pending.values()].some(entry => entry.sessionId === sessionId)
 
-  function answerApproval(id, choice) {
+  async function answerApproval(id, choice) {
     const entry = pending.get(String(id ?? ''))
     if (entry?.answer === undefined) throw Object.assign(new Error('This approval is no longer open'), { code: 'bot/stale' })
     const outcome = OUTCOMES[choice]
     if (outcome === undefined) throw Object.assign(new Error('Choose allow or reject'), { code: 'bot/invalid' })
+    if (choice === 'always-bot' || choice === 'always-room') await grantStanding(entry, choice === 'always-room' ? 'room' : 'bot')
     entry.answer(outcome)
   }
 
@@ -65,5 +122,5 @@ export function install(rt) {
     }
   }
 
-  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals })
+  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals, removeStandingApproval })
 }
