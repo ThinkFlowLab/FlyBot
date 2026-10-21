@@ -117,9 +117,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const fakeGh = ({ comments, reviews = [], labels = [] }) => (...args) => {
+const fakeGh = ({ comments, reviews = [], labels = [], files = [] }) => (...args) => {
   const path = args[args.length - 1]
   const pull = { head: { sha: HEAD }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })) }
+  if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
   if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
   if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
   if (/\/pulls\/\d+$/.test(path)) return JSON.stringify(pull)
@@ -213,4 +214,24 @@ test('#639: the pull_request entry point reports without a head_ref and does not
   assert.equal(result.ok, true, 'the report passes even when the entry would be refused')
   assert.equal(result.mode, 'report')
   assert.match(result.reasons.join('; '), /INC/)
+})
+
+// ---- #640 INC point 2: T0/T1 and the daily release PR need no PASS (AGENTS.md 6).
+test('#640: a T0 or T1 pull request is not refused for lacking a PASS', () => {
+  const t1 = judgeAt({ labels: ['risk:T1'], reports: [] })
+  assert.equal(t1.ok, true)
+  assert.equal(t1.exempt, true)
+  assert.equal(judgeAt({ labels: ['risk:T0'], reports: [] }).ok, true)
+  assert.equal(judgeAt({ labels: ['risk:T2'], reports: [] }).ok, false, 'T2 still needs a PASS')
+  assert.equal(judgeAt({ labels: [], reports: [] }).ok, false)
+  // hold is not waived by a tier
+  assert.equal(judgeAt({ labels: ['risk:T1', 'hold'], reports: [] }).ok, false)
+})
+
+test('#640: a mechanical release PR passes on its files alone, and only on those', () => {
+  const release = ['CHANGELOG.md', 'changelog.d/123-x.fixed.md', 'core/package.json', 'core/package-lock.json', 'patches/ds-bot/0007-version-and-tooling.patch']
+  assert.equal(judgeAt({ files: release, reports: [] }).ok, true)
+  assert.equal(judgeAt({ files: release, reports: [] }).exempt, true)
+  assert.equal(judgeAt({ files: [...release, 'core/src/host/secrets.js'], reports: [] }).ok, false, 'one file outside the list needs a PASS')
+  assert.equal(judgeAt({ files: [], reports: [] }).ok, false, 'no files is not a release PR')
 })

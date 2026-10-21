@@ -38,11 +38,24 @@ export function prFromHeadRef(ref) {
 }
 
 const names = (labels) => (labels ?? []).map((l) => String(typeof l === 'string' ? l : l?.name ?? '').toLowerCase())
+
+// A pull request that may merge without a PASS (AGENTS.md 6): T0/T1, whose tier the controller
+// labels, and a mechanical release PR, whose standing approval is limited to these files.
+const NO_PASS_TIERS = new Set(['risk:t0', 'risk:t1'])
+const RELEASE_FILES = [
+  /^CHANGELOG\.md$/,
+  /^changelog\.d\//,
+  /^core\/package\.json$/,
+  /^core\/package-lock\.json$/,
+  /^patches\/ds-bot\/0007-version-and-tooling\.patch$/,
+]
+export const isMechanicalRelease = (files) => (files ?? []).length > 0 && files.every((f) => RELEASE_FILES.some((re) => re.test(String(f))))
+export const exemptFromPass = ({ labels, files }) => names(labels).some((n) => NO_PASS_TIERS.has(n)) || isMechanicalRelease(files)
 const short = (s) => String(s ?? '').slice(0, SHORT)
 
 // labels: the pull request's labels. head: its current head sha. queuedSha: the sha in head_ref, the
 // one the queue merges. reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, head, author, reports, policy, queuedSha, mode = 'queue' }) {
+export function judge({ labels, files, head, author, reports, policy, queuedSha, mode = 'queue' }) {
   const reasons = []
   const target = String(queuedSha ?? head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -53,13 +66,16 @@ export function judge({ labels, head, author, reports, policy, queuedSha, mode =
   if (queuedSha && head && !String(head).toLowerCase().startsWith(target)) {
     reasons.push(`the pull request head moved to ${short(head)} after this entry was built at ${short(target)}`)
   }
-  const verdict = decide({ head: target, author, reports, policy })
+  // T0/T1 and the daily release PR need no PASS, so the gate must not refuse them for lacking one
+  // (#640, INC point 2): a refusal here would stop every routine fix and every release.
+  const exempt = exemptFromPass({ labels, files })
+  const verdict = exempt ? { ok: true, verdict: null, by: null, exempt: true } : decide({ head: target, author, reports, policy })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
   // comment starts no run of its own (#639).
   const report = mode === 'report'
-  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, reasons, mode }
+  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, exempt, reasons, mode }
 }
 
 export function render(result, { pr, labels } = {}) {
@@ -73,6 +89,8 @@ export function render(result, { pr, labels } = {}) {
       ? result.reasons.length
         ? `A queue entry for this head would be refused: ${result.reasons.join('; ')}. This report never fails.`
         : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+      : result.ok && result.exempt
+        ? `Queue entry for #${pr} may merge without a PASS: ${result.reasons.length ? 'no \`hold\`' : 'a T0/T1 tier or a mechanical release PR (AGENTS.md 6)'}.`
       : result.ok
         ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
         : `Queue entry for #${pr} must not merge: ${result.reasons.join('; ')}.`,
@@ -119,7 +137,8 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`
   // reports (#639). MODE (or `--report`) is there for a hand run and for the tests.
   const mode = (env.MODE || (process.argv.includes('--report') ? 'report' : 'queue')) === 'report' ? 'report' : 'queue'
-  const result = judge({ labels, head, author, reports, policy: loadPolicy(policyPath), queuedSha: fromRef?.sha || arg('--sha'), mode })
+  const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`).map((f) => f.filename).filter(Boolean)
+  const result = judge({ labels, files, head, author, reports, policy: loadPolicy(policyPath), queuedSha: fromRef?.sha || arg('--sha'), mode })
   console.log(`merge-gate: PR #${pr} head ${short(head)}${fromRef ? `, queue entry ${short(fromRef.sha)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)
   console.log(mode === 'report'
