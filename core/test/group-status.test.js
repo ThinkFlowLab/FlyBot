@@ -363,12 +363,24 @@ test('#608: an own-chat turn that carries no verdict still honours the Bot grant
   assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
   host.emit('b', 'turn/end', { reason: { kind: 'completed' } })
   host.emit('b', 'turn/start', { turn: 3 })
-  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'note' }], source: { kind: 'ds-bot', role: 'mention' } })
+  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'note' }], source: { kind: 'bot', form: 'relay', role: 'mention' } })
   assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
   // Someone else's turn in that chat still asks, and says once why the grant was not used.
   host.emit('b', 'turn/end', { reason: { kind: 'completed' } })
   host.emit('b', 'turn/start', { turn: 4 })
   host.emit('b', 'user/message', { content: [{ type: 'text', text: 'hi' }], source: { kind: 'bot', remote: { handle: '@friend' }, form: 'remote-chat' } })
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+})
+
+// #620: the own-chat widening the own-chat widening in standingCovers is for a turn nobody's request is in, not for a
+// source kind the host cannot read. An unrecognised kind fails closed, so the grant does not apply.
+test('#620: an unrecognised source kind in the Bot’s own chat still asks', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-bot')
+  host.emit('b', 'turn/start', { turn: 2 })
+  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'from a future source' }], source: { kind: 'some-future-kind' } })
   assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
 })
 

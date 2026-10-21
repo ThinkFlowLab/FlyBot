@@ -29,6 +29,11 @@ test('each kind of message has one verdict, and a stamp the host did not write i
   for (const source of [{ kind: 'tool' }, { kind: 'system-prompt' }, { kind: 'plan-mode' }, { kind: 'user-approval' }, relay({ role: 'mention' }), relay({ role: 'handoff', handoff: true })]) {
     assert.equal(originOfSource(source, bot), undefined, JSON.stringify(source))
   }
+  // #620: a source kind this version does not recognise is not a no-request message: the host
+  // cannot vouch for who is behind it, so it fails closed.
+  assert.equal(originOfSource({ kind: 'some-future-kind' }, bot), OTHER, 'an unrecognised kind is other')
+  assert.equal(originOfSource({ kind: 'some-future-kind', authorId: 'me' }, bot), OTHER, 'even one that claims an author')
+  assert.equal(originOfSource({ kind: '' }, bot), OTHER)
   // A handoff that goes on with a stopped turn is that turn's request, so it carries the turn's stamp.
   assert.equal(originOfSource(relay({ role: 'handoff', handoff: true, resume: true, origin: 'owner' }), bot), OWNER)
   assert.equal(originOfSource(relay({ role: 'handoff', handoff: true, resume: true }), bot), OTHER)

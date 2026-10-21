@@ -11,7 +11,8 @@
 //   'other'      everything else that carries someone's words: a friend's message, a line in a room
 //                with other people in it, a Bot of another owner, a relay nobody vouched for;
 //   (nothing)    a message that carries no one's request (DSH's own notices, a handoff note, a
-//                receipt): it neither grants nor takes away.
+//                receipt): it neither grants nor takes away. A source kind this version does not
+//                recognise is 'other', not nothing (#620).
 //
 // A turn's verdict is the strictest of its messages ('other' beats everything and sticks for the
 // rest of the turn), and a turn that took in no message with a verdict has none. The caller treats
@@ -23,6 +24,9 @@ export const OTHER = 'other'
 export const SCHEDULED = 'scheduled'
 
 // The verdict of one message `source` (DSH's `user/message` event) to a Bot.
+// DSH's own notices: a turn that took in only these carries nobody's request.
+const NOTICE_KINDS = new Set(['tool', 'system-prompt', 'plan-mode', 'user-approval'])
+
 export function originOfSource(source, bot) {
   if (source === undefined || source === null || typeof source !== 'object') return OTHER
   switch (source.kind) {
@@ -41,7 +45,11 @@ export function originOfSource(source, bot) {
       if (source.handoff === true && source.resume !== true) return undefined
       return source.origin === OWNER || source.origin === SCHEDULED ? source.origin : OTHER
     default:
-      return undefined
+      if (NOTICE_KINDS.has(source.kind)) return undefined
+      // A kind this version does not recognise is not "nobody's request": the host cannot vouch for
+      // who is behind it, so it fails closed as 'other' (#620). Only the two documented no-request
+      // cases above may return undefined.
+      return OTHER
   }
 }
 
