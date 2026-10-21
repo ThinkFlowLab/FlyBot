@@ -59,3 +59,28 @@ test('#396: with the flag off the tool is not registered and nothing is written'
   assert.equal(ctx.registeredTools.get('record_decision'), undefined)
   assert.equal(existsSync(join(home, 'decisions.jsonl')), false)
 })
+
+test('#603: record trims the log on disk, keeping the newest entries', async (t) => {
+  const { home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  for (let i = 0; i <= 2_000; i++) await tool('record_decision', { option: `decision ${i}`, choice: 'used' })
+  const text = readFileSync(join(home, 'decisions.jsonl'), 'utf8')
+  const log = text.trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(log.length, 2_000)
+  assert.equal(log[0].option, 'decision 1')
+  assert.equal(log.at(-1).option, 'decision 2000')
+  assert.ok(Buffer.byteLength(text) < 1_000_000, `file is ${Buffer.byteLength(text)} bytes`)
+})
+
+test('#603: a byte cap bounds an oversized log left by an older build', async (t) => {
+  const { home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const big = 'x'.repeat(700_000)
+  writeFileSync(join(home, 'decisions.jsonl'), `${JSON.stringify({ option: big })}\n${JSON.stringify({ option: big })}\n`)
+  await tool('record_decision', { option: 'after the byte cap', choice: 'used' })
+  const text = readFileSync(join(home, 'decisions.jsonl'), 'utf8')
+  assert.ok(Buffer.byteLength(text) <= 1_000_000, `file is ${Buffer.byteLength(text)} bytes`)
+  const log = text.trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(log.at(-1).option, 'after the byte cap')
+  assert.equal(log.length, 2)
+})

@@ -8,7 +8,7 @@
 // default install behaves exactly as before. The log is local text, one JSON line per entry; the
 // same entry is fired on the activity feed as `decision` so a consumer (Timeline, an audit view)
 // can show it without reading the file.
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { looksSecret } from './memory.js'
@@ -18,6 +18,9 @@ const OPTION_MAX = 200
 const WHY_MAX = 300
 const CHOICES = new Set(['used', 'rejected'])
 const KEPT = 2_000
+// The log is bounded on disk as well as in the answer: next to the line cap there is a byte cap,
+// so a burst of long entries cannot make the file (and every read) expensive.
+const MAX_BYTES = 1_000_000
 const NAME_SAFE = /^[\w-]{1,128}$/
 
 const oneLine = (text, max) => String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
@@ -32,16 +35,63 @@ export function install(rt) {
   // One append at a time, and a failure is a warning, never a turn failure (the log is a side
   // record, not part of the Bot's work).
   let writing = Promise.resolve()
+  // Lines on disk after the last append/trim, so a record does not re-read the file every time
+  // (null until the first record counts once).
+  let linesOnDisk = null
+  const countLines = async () => (await readFile(path, 'utf8')).split('\n').filter(Boolean).length
+  // Keep the file bounded in place: the newest entries under both caps, written through a temp
+  // file so a reader never sees a half-trimmed log. The Bot side stays append-only; this is the
+  // host's own housekeeping.
+  async function trim() {
+    let text
+    try { text = await readFile(path, 'utf8') } catch (error) { if (error?.code === 'ENOENT') return 0; throw error }
+    const lines = text.split('\n').filter(Boolean)
+    const kept = []
+    let bytes = 0
+    for (let i = lines.length - 1; i >= 0 && kept.length < KEPT; i--) {
+      const size = Buffer.byteLength(lines[i], 'utf8') + 1
+      if (kept.length > 0 && bytes + size > MAX_BYTES) break
+      kept.push(lines[i])
+      bytes += size
+    }
+    kept.reverse()
+    const next = kept.length > 0 ? `${kept.join('\n')}\n` : ''
+    if (next !== text) {
+      const tmp = `${path}.tmp`
+      await writeFile(tmp, next, 'utf8')
+      await rename(tmp, path)
+    }
+    return kept.length
+  }
   function record(entry) {
     const line = `${JSON.stringify(entry)}\n`
-    writing = writing.then(() => mkdir(dirname(path), { recursive: true }).then(() => appendFile(path, line, 'utf8')))
-      .catch(error => rt.warn('ds-bot: a decision was not written: %s', error))
+    writing = writing.then(async () => {
+      await mkdir(dirname(path), { recursive: true })
+      await appendFile(path, line, 'utf8')
+      linesOnDisk = linesOnDisk === null ? await countLines() : linesOnDisk + 1
+      const { size } = await stat(path)
+      if (linesOnDisk > KEPT || size > MAX_BYTES) linesOnDisk = await trim()
+    }).catch(error => rt.warn('ds-bot: a decision was not written: %s', error))
     return writing
   }
-  // The entries, oldest first, capped to the newest `KEPT` lines. Reads only.
+  // The entries, oldest first, capped to the newest `KEPT` lines and `MAX_BYTES`. A read takes at
+  // most the byte cap from the end, so it does not grow with a file an older build left oversized.
   async function list() {
     try {
-      const text = await readFile(path, 'utf8')
+      let text
+      const { size } = await stat(path)
+      if (size > MAX_BYTES) {
+        const handle = await open(path, 'r')
+        try {
+          const buffer = Buffer.alloc(MAX_BYTES)
+          const { bytesRead } = await handle.read(buffer, 0, MAX_BYTES, size - MAX_BYTES)
+          text = buffer.toString('utf8', 0, bytesRead)
+          const firstNewline = text.indexOf('\n')
+          text = firstNewline === -1 ? '' : text.slice(firstNewline + 1)
+        } finally { await handle.close() }
+      } else {
+        text = await readFile(path, 'utf8')
+      }
       return text.split('\n').filter(Boolean).slice(-KEPT).map(line => { try { return JSON.parse(line) } catch { return undefined } }).filter(Boolean)
     } catch (error) {
       if (error?.code !== 'ENOENT') rt.warn('ds-bot: decisions could not be read: %s', error)

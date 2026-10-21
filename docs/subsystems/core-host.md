@@ -83,7 +83,7 @@ external backend or task-specific session mapping; see the
 
 ### Decisions a Bot records (#396)
 
-- `src/host/decisions.js` gives a Bot one small tool, `record_decision({ option, choice, why })` (`choice` is `used` or `rejected`), so a "considered and rejected" choice a reviewer cannot otherwise see is written down. The host appends one JSON line per decision to `<home>/decisions.jsonl` (capped at 2000 lines, one at a time; a write failure is a warning, never a turn failure) and fires the entry on the activity feed as `decision`. A Bot has no tool to edit or delete a past entry.
+- `src/host/decisions.js` gives a Bot one small tool, `record_decision({ option, choice, why })` (`choice` is `used` or `rejected`), so a "considered and rejected" choice a reviewer cannot otherwise see is written down. The host appends one JSON line per decision to `<home>/decisions.jsonl` (bounded on disk at the newest 2000 lines and 1 MB, trimmed by the host as it appends; a read parses at most 1 MB; one write at a time; a write failure is a warning, never a turn failure) and fires the entry on the activity feed as `decision`. A Bot has no tool to edit or delete a past entry.
 - **Opt-in** (`config.decisions`): with the flag off the tool is not registered, nothing is written and no event is fired, so a default install is unchanged. A key, token or password in the text is refused (`looksSecret`), so the log needs no secret. Tests: `core/test/decisions.test.js`.
 
 ### Tasks

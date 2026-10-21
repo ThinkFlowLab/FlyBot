@@ -1,0 +1,1 @@
+The decision log (`decisions.jsonl`) is now bounded on disk: the host trims it to the newest 2000 entries and at most 1 MB as it appends, and a read parses at most that byte cap instead of the whole file, so the log no longer grows without bound ([#603](https://github.com/ThinkFlowLab/FlyBot/issues/603)).
