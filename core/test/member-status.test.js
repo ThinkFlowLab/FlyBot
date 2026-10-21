@@ -22,7 +22,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { busyMembers, summaryText, splitBusy, MemberDock, MemberWork } = module.exports
+const { busyMembers, summaryText, splitBusy, MemberDock, MemberWork, MEMBER_CSS } = module.exports
 // Values from the bundle's realm compare by content only.
 const plain = value => JSON.parse(JSON.stringify(value))
 // Renders the dock's own parts of an element tree, and lists its rows' labels.
@@ -196,4 +196,14 @@ test('work handed out from this room with message_bot shows here with its step, 
   const asking = { ...work, approvals: [{ id: 'p1', botId: 'h', tool: 'pwsh', answerable: false }] }
   assert.deepEqual(plain(busyMembers(room, asking, rooms).map(item => [item.id, item.state])), [['h', 'ask']])
   assert.equal(busyMembers(rooms.roomsById.ship, asking, rooms).length, 0)
+})
+
+// The approval card is four buttons wide since the two `Always allow` choices (#540); in the
+// narrow group details panel the row has to wrap instead of overflowing off the left edge, where
+// 拒绝 and half of 允许一次 were unreachable (#593).
+test('the approval card action row wraps and stays right-aligned', () => {
+  const rule = MEMBER_CSS.match(/(?:^|\n)\.bt-mw-actions\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(rule, /display:flex/)
+  assert.match(rule, /flex-wrap:wrap/, 'the four-button row wraps rather than overflowing to the left')
+  assert.match(rule, /justify-content:flex-end/, 'each wrapped line stays right-aligned')
 })

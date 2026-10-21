@@ -1,0 +1,1 @@
+The approval card in a group's details panel wraps its buttons, so **拒绝** and **允许一次** stay reachable at common desktop widths instead of overflowing off the left edge of the panel ([#593](https://github.com/ThinkFlowLab/FlyBot/issues/593)).

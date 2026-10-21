@@ -5233,7 +5233,7 @@ diff --git a/client.js b/client.js
 +.bt-mw-text{color:var(--bt-ink);overflow-wrap:anywhere}
 +.bt-mw-reason{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 +.bt-mw-code{display:block;font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-+.bt-mw-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:4px}
++.bt-mw-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:4px}
 +.bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
 +.bt-mw-actions>button:disabled{opacity:.5;cursor:default}
 +@keyframes bt-mw-in{from{opacity:0;transform:translateY(4px)}}
@@ -10467,13 +10467,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react30.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: people2.length }) },
 +      people2.map((person) => (0, import_react30.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react30.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react30.createElement)(
 +        "div",
@@ -12527,7 +12527,7 @@ diff --git a/client.js b/client.js
      const box = ref.current?.getBoundingClientRect();
      if (!box) return;
      setPlace({ left: Math.max(8, Math.min(menu.x, window.innerWidth - box.width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - box.height - 8)) });
-@@ -10952,14 +10952,14 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -10952,319 +10952,95 @@ function AgentMenu({ menu, roster, actions, leaving }) {
        [t("Archive"), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true]
      ]
    ];
@@ -12547,10 +12547,10 @@ diff --git a/client.js b/client.js
          key: label,
          type: "button",
          role: "menuitem",
-@@ -10967,304 +10967,80 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+         className: danger ? "bt-danger" : void 0,
          onClick: () => {
            actions.closeMenu();
-           void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
+-          void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
 -        }
 -      }, (0, import_react29.createElement)(Icon), label))
 -    ))
@@ -12803,6 +12803,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react30.createElement)("span", null, (0, import_react30.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
 -      entry.here ? (0, import_react30.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
 -    )
++          void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
 +        }
 +      }, (0, import_react36.createElement)(Icon), label))
 +    ))

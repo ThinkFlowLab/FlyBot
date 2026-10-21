@@ -1237,7 +1237,12 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  .bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
  .bt-mw-stack>*+*{margin-left:-4px}
  .bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
-@@ -234,5 +234,5 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
+@@ -230,9 +230,9 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
+ .bt-mw-text{color:var(--bt-ink);overflow-wrap:anywhere}
+ .bt-mw-reason{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+ .bt-mw-code{display:block;font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+-.bt-mw-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:4px}
++.bt-mw-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:4px}
  .bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
  .bt-mw-actions>button:disabled{opacity:.5;cursor:default}
  @keyframes bt-mw-in{from{opacity:0;transform:translateY(4px)}}
@@ -5322,7 +5327,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
    },
  })
 -const { busyMembers, summaryText, splitBusy, MemberDock } = module.exports
-+const { busyMembers, summaryText, splitBusy, MemberDock, MemberWork } = module.exports
++const { busyMembers, summaryText, splitBusy, MemberDock, MemberWork, MEMBER_CSS } = module.exports
  // Values from the bundle's realm compare by content only.
  const plain = value => JSON.parse(JSON.stringify(value))
  // Renders the dock's own parts of an element tree, and lists its rows' labels.
@@ -5364,7 +5369,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
  })
  
  test('a Bot\'s own chat shows the groups it is at work in, unless its own chat runs', () => {
-@@ -82,3 +82,118 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
+@@ -82,3 +82,128 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
    assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
    assert.equal(dock('b', away), null)
  })
@@ -5482,6 +5487,16 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 +  const asking = { ...work, approvals: [{ id: 'p1', botId: 'h', tool: 'pwsh', answerable: false }] }
 +  assert.deepEqual(plain(busyMembers(room, asking, rooms).map(item => [item.id, item.state])), [['h', 'ask']])
 +  assert.equal(busyMembers(rooms.roomsById.ship, asking, rooms).length, 0)
++})
++
++// The approval card is four buttons wide since the two `Always allow` choices (#540); in the
++// narrow group details panel the row has to wrap instead of overflowing off the left edge, where
++// 拒绝 and half of 允许一次 were unreachable (#593).
++test('the approval card action row wraps and stays right-aligned', () => {
++  const rule = MEMBER_CSS.match(/(?:^|\n)\.bt-mw-actions\{([^}]*)\}/)?.[1] ?? ''
++  assert.match(rule, /display:flex/)
++  assert.match(rule, /flex-wrap:wrap/, 'the four-button row wraps rather than overflowing to the left')
++  assert.match(rule, /justify-content:flex-end/, 'each wrapped line stays right-aligned')
 +})
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
