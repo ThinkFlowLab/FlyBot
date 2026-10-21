@@ -276,7 +276,7 @@ test('a key saved for no Bot by the old default is moved to all Bots once; an ex
   const kept = fresh()
   const picked = fresh()
   const at = { createdAt: 1, updatedAt: 1, requestedBy: null, purpose: '' }
-  const bench = start({ secrets: [
+  const bench = await seeded({ secrets: [
     { name: 'GITHUB_TOKEN', value: github, scope: [], ...at, purpose: 'GitHub connector' },
     { name: 'NOBODY_KEY', value: kept, scope: [], scopeSet: true, ...at },
     { name: 'WRITER_KEY', value: picked, scope: ['b2'], ...at },
@@ -313,7 +313,7 @@ test('a key for all Bots stays out of a shared Bot\'s shell when the turn is not
   t.after(bench.stop)
   await bench.call('secret-set', { name: 'GITHUB_TOKEN', value })
   assert.deepEqual(bench.env('b2'), { DSH_SECRET_GITHUB_TOKEN: value })
-  assert.deepEqual(bench.env('c3'), {})
+  assert.deepEqual(bench.env('c3'), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:unknown-turn' })
 })
 
 test('tool results and model requests lose the values', async (t) => {
@@ -350,4 +350,80 @@ test('tool results and model requests lose the values', async (t) => {
   assert.equal(passed.length, 1)
   stream({ ...options, system: 'clean', messages: [] }, next)
   assert.equal(passed.length, 2)
+})
+
+// #651: a shell says which key was withheld and why, never the value. Before this, `resolveEnv`
+// returned `{}` and "the owner did not configure it" and "it was withheld" looked the same.
+const SHARED = { ...TEAM, grants: { b2: [{ grantee: '@bob.home', name: 'Bob' }] } }
+const saved = scope => [{ name: 'GITHUB_TOKEN', value: 'ghp_testvalue_123', scope, purpose: 'GitHub' }]
+// The seed is read asynchronously, so one state read settles it before the shell is asked.
+const seeded = async options => { const bench = start(options); await bench.view(); return bench }
+
+test('#651: the owner’s own turn gets the key and says nothing about withholding', async (t) => {
+  const bench = await seeded({ secrets: saved('all') })
+  t.after(bench.stop)
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'user' } } })
+  const env = bench.env('b2')
+  assert.deepEqual(env, { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
+  assert.equal(env.DSH_SECRETS_WITHHELD, undefined)
+})
+
+test('#651: someone else’s turn names the key and the reason, and carries no value', async (t) => {
+  const bench = await seeded({ secrets: saved('all') })
+  t.after(bench.stop)
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'user', authorId: 'ann' } } })
+  const env = bench.env('b2')
+  assert.deepEqual(env, { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:turn-not-owner' })
+  assert.ok(!JSON.stringify(env).includes('ghp_testvalue_123'), 'no value anywhere in the shell env')
+})
+
+test('#651: a friend’s Bot says remote-bot, and a host with no key says nothing at all', async (t) => {
+  const friend = {
+    ...TEAM,
+    bots: { ...TEAM.bots, f9: { id: 'f9', sessionId: 'f9', name: 'Pal', role: '友', instructions: '', createdAt: 9, remote: { handle: '@pal.ann.home' } } },
+  }
+  const bench = await seeded({ secrets: saved('all'), team: friend })
+  t.after(bench.stop)
+  const env = bench.env('f9')
+  assert.deepEqual(env, { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:remote-bot' })
+  assert.ok(!JSON.stringify(env).includes('ghp_testvalue_123'))
+
+  // Nothing saved: the same `{}` as before, and the tool says so in those words (#651).
+  const empty = start()
+  t.after(empty.stop)
+  assert.deepEqual(empty.env('b2'), {})
+  const listed = await empty.tool('list_secrets', {}, 'b2')
+  assert.match(listed.text, /No keys are saved yet/)
+  assert.ok(!listed.text.includes('withheld'))
+})
+
+test('#651: a shared Bot’s scheduled turn withholds scope "all" and keeps it for the Bot it names', async (t) => {
+  const sharedAll = await seeded({ secrets: saved('all'), team: SHARED })
+  t.after(sharedAll.stop)
+  sharedAll.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
+  sharedAll.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
+  assert.deepEqual(sharedAll.env('b2'), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:shared-bot-scheduled' })
+
+  // The owner said which Bot may use this key, so that Bot's own scheduled turn still has it.
+  const sharedThis = await seeded({ secrets: saved(['b2']), team: SHARED })
+  t.after(sharedThis.stop)
+  sharedThis.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
+  sharedThis.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
+  assert.deepEqual(sharedThis.env('b2'), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
+})
+
+test('#651: list_secrets and request_secret give the same reason, and never a value', async (t) => {
+  const bench = await seeded({ secrets: saved('all') })
+  t.after(bench.stop)
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'user', authorId: 'ann' } } })
+  const listed = await bench.tool('list_secrets', {}, 'b2')
+  assert.match(listed.text, /GITHUB_TOKEN/)
+  assert.match(listed.text, /withheld this turn: turn-not-owner/)
+  assert.ok(!listed.text.includes('ghp_testvalue_123'))
+  const asked = await bench.tool('request_secret', { name: 'GITHUB_TOKEN', purpose: 'GitHub' }, 'b2')
+  assert.match(asked.text, /withheld this turn: turn-not-owner/)
+  assert.ok(!asked.text.includes('ghp_testvalue_123'))
 })

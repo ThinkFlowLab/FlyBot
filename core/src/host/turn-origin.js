@@ -105,6 +105,13 @@ export function combine(a, b) {
   return a === SCHEDULED || b === SCHEDULED ? SCHEDULED : OWNER
 }
 
+// The verdict the running turn recorded, before `settled` narrows it. `scheduled` is the one a caller
+// cannot get anywhere else: on a shared Bot it is 'other' as a permission, and still 'scheduled' as
+// a fact, which is what a caller needs to say why a turn is not the owner's (#651).
+export function turnOrigin(rt, sessionId, entry = rt.live?.get(sessionId)) {
+  return entry?.turn === undefined ? undefined : entry.origin
+}
+
 // The verdict that holds right now for the turn a Session is running: 'owner', 'other', or
 // undefined when the Session runs no turn or no message of it carried a verdict. `entry` is the
 // Session's `rt.live` record; the checks here read the team as it is at this moment, so a person
