@@ -1851,7 +1851,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return client.callTool(tool, { ...args, confirm_code: first.confirm_code })
   }
   const homeArgs = () => (home ? { bot_id: home.id } : config.botId ? { bot_id: config.botId } : {})
-  const peerView = item => ({ relationshipId: item.relationship_id, status: item.status, handle: item.peer?.handle ? norm(item.peer.handle) : undefined, name: cleanText(item.peer?.display_name), owner: cleanText(item.peer?.owner_display_name), ...(item.peer?.owner_id || item.friend_owner_id || item.owner_id ? { ownerId: String(item.peer?.owner_id || item.friend_owner_id || item.owner_id) } : {}), message: item.message ?? null, requestedAt: item.requested_at, expiresAt: item.expires_at })
+  const peerView = item => ({ relationshipId: item.relationship_id, status: item.status, handle: item.peer?.handle ? norm(item.peer.handle) : undefined, name: cleanText(item.peer?.display_name), owner: cleanText(item.peer?.owner_display_name), ...(item.peer?.bot_id ? { peerBotId: String(item.peer.bot_id) } : {}), ...(item.peer?.owner_id || item.friend_owner_id || item.owner_id ? { ownerId: String(item.peer?.owner_id || item.friend_owner_id || item.owner_id) } : {}), message: item.message ?? null, requestedAt: item.requested_at, expiresAt: item.expires_at })
   // A friendship may hang on the home or on one member (a per-Bot invite, #420), so the home and every
   // member identity are asked, as setAutoAccept does; one relationship is listed once. A member that
   // cannot be read costs only its own rows; the home's answer still decides whether this fails.
@@ -2223,6 +2223,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       friends.push({
         home: homeKey,
         name: label,
+        ...(item.peerBotId ? { peerBotId: item.peerBotId } : {}),
         ...(item.ownerId ? { ownerId: item.ownerId } : {}),
         ...(item.relationshipId ? { relationshipId: item.relationshipId } : {}),
       })
@@ -2253,13 +2254,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (/not connected|no token|no server URL/i.test(blob)) {
       return new Error('Bot Social is disconnected. Reconnect under Settings → Bot Social.')
     }
+    // The server has the tool but refused our arguments (an older or newer contract, #592): a plain
+    // line, never the raw JSON-RPC validation text.
+    if (/(invalid input|invalid arguments|expected string|received undefined|-32602)/i.test(blob) && !/not found|no such tool|unknown tool/i.test(blob)) {
+      return new Error('Bot Social did not accept that share request. Its server may need an update; invite links still work.')
+    }
     const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
+    if (/^(MCP error|JSON-RPC|error:)/i.test(body) || /^-?\d+ /.test(body)) {
+      return new Error('Could not share with that friend. Try again, or use an invite link.')
+    }
     return new Error(body || 'Could not share with that friend. Try again.')
   }
 
   // #500: grant this Bot to an existing friend (Bot Social grant_bot_to_friend). Does not
   // replace invite links. After a successful share, People with access re-syncs this Bot.
-  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId } = {}) => {
+  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId, friendBotId, peerBotId } = {}) => {
     if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots to share')
@@ -2267,13 +2276,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
     const homeKey = norm(friendHome)
     const oid = friendOwnerId || ownerId
-    if (!homeKey && !oid) throw new Error('Choose a friend to share with')
+    // #592: the friend's Bot id, not an owner id, is what the server can resolve; owner ids are
+    // never listed for a friend.
+    const peerId = friendBotId || peerBotId
+    if (!homeKey && !oid && !peerId) throw new Error('Choose a friend to share with')
     if (typeof api.grantBotToFriend !== 'function') {
       throw Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
     }
     let result
     try {
-      result = await api.grantBotToFriend({ botId: member.bot_id, friendOwnerId: oid, friendHome: homeKey || undefined })
+      result = await api.grantBotToFriend({ botId: member.bot_id, friendBotId: peerId, friendOwnerId: oid, friendHome: homeKey || undefined })
     } catch (error) {
       const mapped = mapShareFriendError(error)
       if (mapped) throw mapped

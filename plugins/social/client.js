@@ -2130,6 +2130,7 @@ window.__ModuleLoader__.load({
           const result = await call('social/share-with-friend', {
             botId: bot.id,
             home: friend.home,
+            ...(friend.peerBotId ? { friendBotId: friend.peerBotId } : {}),
             ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
           })
           setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })

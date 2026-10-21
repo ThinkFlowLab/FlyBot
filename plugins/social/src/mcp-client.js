@@ -433,21 +433,24 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
 
   // Owner grants one of THEIR bots to an existing friend (Birfy/bot-social#34 / FlyBot #500).
   // Same per-Bot grant an accepted invite creates; no invite code. Idempotent when a live grant
-  // already exists. Prefer MCP grant_bot_to_friend; REST POST …/grants/to-friend is the fallback.
-  // friend_owner_id is the companion's preferred key; friend_home is what FlyBot always has.
-  async function grantBotToFriend({ botId, friendOwnerId, friendHome } = {}) {
+  // already exists. Prefer MCP grant_bot_to_friend; REST POST …/grants is the fallback.
+  // friend_bot_id is the peer's bot_id from list_friends (#592) and is what the server resolves the
+  // friend owner from; friend_owner_id is kept for a server that only knows it.
+  async function grantBotToFriend({ botId, friendOwnerId, friendHome, friendBotId } = {}) {
     if (!botId) throw new BotSocialError('Bot Social grant_bot_to_friend: which Bot?', 'invalid')
-    if (!friendOwnerId && !friendHome) {
+    if (!friendOwnerId && !friendHome && !friendBotId) {
       throw new BotSocialError('Bot Social grant_bot_to_friend: which friend?', 'invalid')
     }
     const args = {
       bot_id: botId,
+      ...(friendBotId ? { friend_bot_id: friendBotId } : {}),
       ...(friendOwnerId ? { friend_owner_id: friendOwnerId } : {}),
       ...(friendHome ? { friend_home: friendHome } : {}),
     }
+    // The server takes these two only; friend_home is a FlyBot-side name for the same friend.
     const body = {
+      ...(friendBotId ? { friend_bot_id: friendBotId } : {}),
       ...(friendOwnerId ? { friend_owner_id: friendOwnerId } : {}),
-      ...(friendHome ? { friend_home: friendHome } : {}),
     }
     const viaRest = async (error) => {
       if (!base) {
@@ -455,7 +458,7 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
         throw error ?? new BotSocialError('Bot Social grant_bot_to_friend: no server URL', 'no_server')
       }
       try {
-        return await rest('POST', `/v1/bots/${encodeURIComponent(botId)}/grants/to-friend`, body)
+        return await rest('POST', `/v1/bots/${encodeURIComponent(botId)}/grants`, body)
       } catch (restErr) {
         if (isUnknownTool(restErr) || isMissingEndpoint(restErr)) return { unavailable: true }
         throw restErr

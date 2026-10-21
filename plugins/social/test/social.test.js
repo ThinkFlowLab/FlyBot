@@ -105,8 +105,8 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
       calls.push({ url, name: 'REST PATCH /v1/bots/profile', args: init.body ? JSON.parse(init.body) : {} })
       return new Response(JSON.stringify({ error: { code: 'not_found', message: 'no such route' } }), { status: 404 })
     }
-    if (/\/v1\/bots\/[^/]+\/grants\/to-friend/.test(String(url)) && init.method === 'POST') {
-      calls.push({ url, name: 'REST POST /v1/bots/grants/to-friend', args: init.body ? JSON.parse(init.body) : {} })
+    if (/\/v1\/bots\/[^/]+\/grants$/.test(String(url)) && init.method === 'POST') {
+      calls.push({ url, name: 'REST POST /v1/bots/grants', args: init.body ? JSON.parse(init.body) : {} })
       return new Response(JSON.stringify({ error: { code: 'not_found', message: 'no such route' } }), { status: 404 })
     }
     if (String(url).includes('/v1/me')) {
@@ -8297,27 +8297,27 @@ test('#500: createSocialApi grantBotToFriend prefers MCP and falls back to REST 
       return { grant_id: 'gr_share', status: 'active', bot_id: a.bot_id, friend_home: a.friend_home }
     }
     const api = createSocialApi({ server: 'https://s', token: 'owner-token', fetch: server.fetch })
-    const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home', friendOwnerId: 'o-bob' })
+    const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home', friendOwnerId: 'o-bob', friendBotId: 'x1' })
     assert.equal(result.grant_id, 'gr_share')
-    assert.deepEqual(granted[0], { bot_id: 'm1', friend_owner_id: 'o-bob', friend_home: '@bob.home' })
+    assert.deepEqual(granted[0], { bot_id: 'm1', friend_bot_id: 'x1', friend_owner_id: 'o-bob', friend_home: '@bob.home' })
   }
   {
     const server = mockServer()
     const posts = []
     const baseFetch = server.fetch
     server.fetch = async (url, init) => {
-      if (/\/v1\/bots\/[^/]+\/grants\/to-friend/.test(String(url)) && init.method === 'POST') {
+      if (/\/v1\/bots\/[^/]+\/grants$/.test(String(url)) && init.method === 'POST') {
         posts.push({ url, body: init.body ? JSON.parse(init.body) : {} })
         return new Response(JSON.stringify({ grant_id: 'gr_rest', status: 'active' }), { status: 201 })
       }
       return baseFetch(url, init)
     }
     const api = createSocialApi({ server: 'https://s', token: 'owner-token', fetch: server.fetch })
-    const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home' })
+    const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home', friendBotId: 'x1' })
     assert.equal(result.grant_id, 'gr_rest')
     assert.equal(posts.length, 1)
-    assert.match(posts[0].url, /\/v1\/bots\/m1\/grants\/to-friend/)
-    assert.deepEqual(posts[0].body, { friend_home: '@bob.home' })
+    assert.match(posts[0].url, /\/v1\/bots\/m1\/grants$/)
+    assert.deepEqual(posts[0].body, { friend_bot_id: 'x1' }, 'the real route takes the Bot id, not the home')
   }
   {
     const server = mockServer()
@@ -8332,11 +8332,12 @@ test('#500: social/share-friends lists friends without this Bot; share-with-frie
   t.after(stop)
   const server = mockServer()
   const grants = []
+  // The real list_friends peer carries bot_id and never an owner_id (#592).
   server.tools.list_friends = () => ({
     bot: { handle: '@danyang.home' },
     friends: [
-      { relationship_id: 'r-bob', status: 'active', peer: { handle: '@bob.home', display_name: 'BobHome', owner_display_name: 'Bob', owner_id: 'o-bob' } },
-      { relationship_id: 'r-eve', status: 'active', peer: { handle: '@eve.home', display_name: 'EveHome', owner_display_name: 'Eve', owner_id: 'o-eve' } },
+      { relationship_id: 'r-bob', status: 'active', peer: { bot_id: 'pb-bob', handle: '@bob.home', display_name: 'BobHome', owner_display_name: 'Bob' } },
+      { relationship_id: 'r-eve', status: 'active', peer: { bot_id: 'pb-eve', handle: '@eve.home', display_name: 'EveHome', owner_display_name: 'Eve' } },
     ],
     pending_incoming: [],
     pending_outgoing: [],
@@ -8348,10 +8349,16 @@ test('#500: social/share-friends lists friends without this Bot; share-with-frie
       relationship_id: g.rid, reply_only: false, side: 'inviter',
     })),
   })
+  // Like the server since #592: the friend is named by friend_bot_id (or the older friend_owner_id);
+  // a call with neither is refused the way the real tool refuses it.
   server.tools.grant_bot_to_friend = (a) => {
+    if (!a.friend_bot_id && !a.friend_owner_id) {
+      throw Object.assign(new Error('MCP error -32602: Input validation error: Invalid arguments for tool grant_bot_to_friend: Invalid input: expected string, received undefined at friend_owner_id'), { code: 'mcp' })
+    }
     const id = `gr_${grants.length + 1}`
-    grants.push({ id, for_bot: a.bot_id, grantee: a.friend_home, name: a.friend_home === '@bob.home' ? 'Bob' : 'Eve', rid: 'r-new' })
-    return { grant_id: id, status: 'active', friend: { handle: a.friend_home, owner_display_name: a.friend_home === '@bob.home' ? 'Bob' : 'Eve' } }
+    const who = a.friend_bot_id === 'pb-bob' || a.friend_owner_id === 'o-bob' ? 'Bob' : 'Eve'
+    grants.push({ id, for_bot: a.bot_id, grantee: who === 'Bob' ? '@bob.home' : '@eve.home', name: who, rid: 'r-new' })
+    return { grant_id: id, status: 'active', friend: { handle: who === 'Bob' ? '@bob.home' : '@eve.home', owner_display_name: who } }
   }
   const social = await startSocial(ctx.flybot, {
     server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
@@ -8368,17 +8375,18 @@ test('#500: social/share-friends lists friends without this Bot; share-with-frie
   const emptyGrant = (await call('flybot/social/share-friends', { botId: chief.id })).value
   assert.equal(emptyGrant.botId, chief.id)
   assert.deepEqual(emptyGrant.friends.map(f => f.home).sort(), ['@bob.home', '@eve.home'])
-  assert.equal(emptyGrant.friends.find(f => f.home === '@bob.home').ownerId, 'o-bob')
+  assert.equal(emptyGrant.friends.find(f => f.home === '@bob.home').peerBotId, 'pb-bob')
+  assert.equal(emptyGrant.friends.find(f => f.home === '@bob.home').ownerId, undefined, 'a friend never carries an owner id')
 
   // Bob already has this Bot → omitted from the share list.
   grants.push({ id: 'gr_existing', for_bot: member.bot_id, grantee: '@bob.home', name: 'Bob', rid: 'r-bob' })
   const filtered = (await call('flybot/social/share-friends', { botId: chief.id })).value
   assert.deepEqual(filtered.friends.map(f => f.home), ['@eve.home'])
 
-  const shared = (await call('flybot/social/share-with-friend', { botId: chief.id, home: '@eve.home', ownerId: 'o-eve' })).value
+  const shared = (await call('flybot/social/share-with-friend', { botId: chief.id, home: '@eve.home', peerBotId: 'pb-eve' })).value
   assert.equal(shared.status, 'active')
   assert.match(shared.message, /Shared .* with Eve/)
-  assert.ok(server.calls.some(c => c.name === 'grant_bot_to_friend' && c.args.bot_id === member.bot_id && c.args.friend_home === '@eve.home' && c.args.friend_owner_id === 'o-eve'))
+  assert.ok(server.calls.some(c => c.name === 'grant_bot_to_friend' && c.args.bot_id === member.bot_id && c.args.friend_bot_id === 'pb-eve' && c.args.friend_owner_id === undefined))
   assert.ok(shared.access.grants.some(g => g.home === '@eve.home' || g.grantee === '@eve.home' || /Eve/i.test(g.name || '')))
 
   const after = (await call('flybot/social/share-friends', { botId: chief.id })).value
@@ -8430,7 +8438,7 @@ test('#563: production "Tool <name> not found" (-32602) is unknown-tool and degr
     const api = createSocialApi({ server: 'https://s', token: 'owner-token', fetch: server.fetch })
     const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home' })
     assert.equal(result.unavailable, true)
-    assert.equal(server.calls.some(c => c.name === 'REST POST /v1/bots/grants/to-friend'), true, 'the REST fallback runs before giving up')
+    assert.equal(server.calls.some(c => c.name === 'REST POST /v1/bots/grants'), true, 'the REST fallback runs before giving up')
   }
   {
     // The handler: the user sees the actionable message, never the raw MCP string.
@@ -8467,9 +8475,35 @@ test('#563: production "Tool <name> not found" (-32602) is unknown-tool and degr
   }
 })
 
+test('#592: a share refused as invalid input reads as a plain line, never the raw JSON-RPC text', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_friends = () => ({
+    friends: [{ relationship_id: 'r1', status: 'active', peer: { bot_id: 'pb-bob', handle: '@bob.home', owner_display_name: 'Bob' } }],
+    pending_incoming: [], pending_outgoing: [],
+  })
+  server.tools.grant_bot_to_friend = () => {
+    throw Object.assign(new Error('MCP error -32602: Input validation error: Invalid arguments for tool grant_bot_to_friend: Invalid input: expected string, received undefined at friend_owner_id'), { code: 'mcp' })
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const result = await call('flybot/social/share-with-friend', { botId: chief.id, home: '@bob.home', peerBotId: 'pb-bob' })
+  assert.equal(result.ok, false)
+  const text = String(result.error?.message || result.error)
+  assert.match(text, /did not accept that share request|server may need an update/i)
+  assert.doesNotMatch(text, /-32602|MCP error|expected string|friend_owner_id|invalid input/i)
+})
+
 test('#500: Share with a friend lists candidates and shares on click', async () => {
   const calls = []
-  const friends = [{ home: '@bob.home', name: 'Bob', ownerId: 'o-bob' }]
+  const friends = [{ home: '@bob.home', name: 'Bob', peerBotId: 'pb-bob' }]
   // Seed friends list directly (clientPlugin skips useEffect).
   const { plugin: p2, all: all2, text: text2 } = clientPlugin([friends, '', null], {
     call: async (endpoint, payload) => {
@@ -8490,5 +8524,5 @@ test('#500: Share with a friend lists candidates and shares on click', async () 
   assert.equal(btn.props['aria-label'], 'Share Writer with Bob')
   await btn.props.onClick()
   await new Promise(r => setTimeout(r, 0))
-  assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.botId === 'b' && payload.home === '@bob.home' && payload.ownerId === 'o-bob'))
+  assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.botId === 'b' && payload.home === '@bob.home' && payload.friendBotId === 'pb-bob'))
 })
