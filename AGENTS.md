@@ -155,6 +155,8 @@ The Bot team:
 
 **One command, from the repo root:** `npm run verify` runs what CI runs, in CI's order: core lint (oxlint + `arch-docs`), plugin lint, `build-client.mjs --check`, `ds-bot-patches.mjs check`, the core suite and both plugin suites. It needs the one-time setup below (`npm ci` and `npm run harness` in `core/`). It does not run the pack check, typecheck or actionlint of the CI `package` job, and not the smoke test.
 
+**Sandbox preflight (#607).** A session that starts on `workspace-write` on a host without a usable sandbox backend refuses every `bash` call with `SANDBOX_UNAVAILABLE` and looks merely stuck. Run `node .github/scripts/sandbox-preflight.mjs` once at the start (exit 0 usable, 3 blocked): if it is blocked, report one line (`blocked: no usable sandbox backend` plus the unlock it prints) and do not retry shell calls. File tools and the GitHub API still work, so code and PR work can continue; the policy tiers and their failure modes are in [docs/sandbox.md](docs/sandbox.md).
+
 The rest of this section runs in `core/`. The unit tests and the linter load the `@deepseek-ai/*` packages from `dev/harness/`, which `npm run harness` installs from npm at the DSH version in `dev/harness/package.json`. `DSH_HARNESS` points them at another install or at a DeepSeek Harness checkout instead. The test bench needs a checkout at `../deepseek-harness` (or `DSH_HARNESS`), at the DSH version in the README.
 
 ```sh

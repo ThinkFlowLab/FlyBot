@@ -18,6 +18,7 @@ One issue per branch, one worktree per issue. The loop: establish the facts → 
 - `git worktree add /tmp/flybot-<issue> -b fix-<issue>-<slug> origin/main`.
 - `npm ci` in `core/` (build tool only). Unit tests load `@deepseek-ai/*` from `DSH_HARNESS` or `core/dev/harness/node_modules`; a fresh worktree has neither, and the resolver's git fallback can land on a repo-root harness checkout that misses packages — `at-menu`/`time-context` failures mean this, not your diff. Symlink an installed `dev/harness/node_modules` or set `DSH_HARNESS`.
 - `git push` over HTTPS may time out while `gh api` works; push via the SSH URL (`git push git@github.com:ThinkFlowLab/FlyBot.git <branch>`).
+- If the first `bash` call fails with `SANDBOX_UNAVAILABLE` ("no sandbox backend is usable on this host") the session is on `workspace-write` without a backend: run `node .github/scripts/sandbox-preflight.mjs` **once**, report `blocked: no usable sandbox backend` in one line with the unlock it prints, and do not retry shell calls into the same wall. Tiers: [docs/sandbox.md](../../../docs/sandbox.md).
 
 ## 2. Implement (fail without change)
 

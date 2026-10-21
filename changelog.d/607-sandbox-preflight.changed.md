@@ -1,0 +1,1 @@
+A Bot session on `workspace-write` without a usable sandbox backend now has a one-command preflight (`node .github/scripts/sandbox-preflight.mjs`) that names the missing backend and prints the unlock in one line, and the agent instructions say to report the block once instead of retrying every shell call ([#607](https://github.com/ThinkFlowLab/FlyBot/issues/607)).
