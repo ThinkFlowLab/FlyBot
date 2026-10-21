@@ -44,24 +44,31 @@ export function parseReport(body) {
     out.verdict = first[1].toUpperCase()
     out.tip = first[2].toLowerCase()
   }
-  // #643: once the first line is the conclusion, the loop below must not write `out.verdict` again.
-  // A body quotes older verdicts at the same tip (`Verdict: PASS at <sha>` inside a comparison), and
-  // letting one of those overwrite the first line turned an INC into a PASS at the same tip.
+  // #643, #640: once the first line is the conclusion, the loop below must write neither field again.
+  // A body quotes older reports (a `Tip SHA: <sha>` block with an older `Verdict: PASS`), and letting
+  // either field through turned an INC at this tip into a PASS, or into a conclusion about some other
+  // tip that `decide` then dropped while the PASS it refused came back to life. Both fail open.
+  let ranSeen = false
   const firstIsVerdict = first !== null
-  const from = start < 0 ? 0 : start
+  // With the first line as the conclusion the evidence is below it, so scan from the top; a
+  // legacy body is judged by its last block.
+  const from = firstIsVerdict || start < 0 ? 0 : start
   for (let i = from; i < lines.length; i++) {
     const line = lines[i].trim()
-    let m = /^Tip SHA\s*:\s*(.+)$/i.exec(line)
-    if (m) {
-      const hex = /[0-9a-f]{7,40}/i.exec(m[1])
+    const tipLine = /^Tip SHA\s*:\s*(.+)$/i.exec(line)
+    if (tipLine && !firstIsVerdict) {
+      const hex = /[0-9a-f]{7,40}/i.exec(tipLine[1])
       out.tip = hex ? hex[0].toLowerCase() : null
     }
-    m = /^Verdict\s*:\s*(PASS|FAIL|INC|REQUEST_CHANGES)\b/i.exec(line)
-    if (m && !firstIsVerdict) out.verdict = m[1].toUpperCase()
-    m = /^Ran\s*:\s*(.*)$/i.exec(line)
-    if (m) {
+    const verdictLine = /^Verdict\s*:\s*(PASS|FAIL|INC|REQUEST_CHANGES)\b/i.exec(line)
+    if (verdictLine && !firstIsVerdict) out.verdict = verdictLine[1].toUpperCase()
+    const ranLine = /^Ran\s*:\s*(.*)$/i.exec(line)
+    // With the first line as the conclusion, its own `Ran:` is the evidence; a quoted block's
+    // `Ran:` below it must not replace it. Without one, the last block wins as it always has.
+    if (ranLine && !(firstIsVerdict && ranSeen)) {
+      ranSeen = true
       out.ran = []
-      if (m[1].trim() && m[1].trim() !== '-') out.ran.push(m[1].trim())
+      if (ranLine[1].trim() && ranLine[1].trim() !== '-') out.ran.push(ranLine[1].trim())
       for (let j = i + 1; j < lines.length; j++) {
         const next = lines[j].trim()
         if (/^[-•]\s*\S/.test(next)) out.ran.push(next)

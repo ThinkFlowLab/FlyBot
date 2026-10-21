@@ -132,8 +132,10 @@ To switch the report off: disable the workflow in the Actions tab, or delete `.g
 A merge decision needs a check it can read, not a report in a chat. `.github/scripts/review-gate.mjs`
 answers one question for a pull request: **does the current head carry a Verifier PASS?**
 AGENTS.md step 6 is the rule it serves. A PASS is required for **T2 and T3** (at the tip, with green CI);
-**T0 and T1 need no PASS** and merge on green CI. The agent that gated the PR then enqueues it itself
-(owner decision 2026-10-21). This report is the evidence of a PASS; it never merges anything.
+**T0 and T1 need no PASS** and merge on green CI; the merge gate computes that tier itself from the
+changed files with the base copy of `risk-gate.mjs` and `risk-rules.json`, never from the `risk:T*`
+labels (#640: a shared account makes a label a claim, not a fact). The agent that gated the PR then
+enqueues it itself (owner decision 2026-10-21). This report is the evidence of a PASS; it never merges anything.
 
 What counts as a reviewed tip, all of it:
 

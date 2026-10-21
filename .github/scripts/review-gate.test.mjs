@@ -226,3 +226,43 @@ test('#643: a quoted verdict later in the body does not overwrite the first line
   const legacy = ['Tip SHA: 1234567890abcdef', 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: INC'].join('\n')
   assert.equal(parseReport(legacy).verdict, 'INC')
 })
+
+// #640 INC point 1: the same hole in `out.tip`. A first line that names this tip, plus an older
+// report quoted in the body, used to move the tip, so `decide` dropped the INC as "about another
+// tip" and the PASS it refused stayed in force.
+test('#640: a quoted Tip SHA later in the body does not move the first line to another tip', () => {
+  const body = [
+    'Verdict: INC at 1234567890abcdef',
+    'Written by: Reviewer',
+    '',
+    'Ran: node --test .github/scripts/review-gate.test.mjs → 43 pass',
+    'Not run: smoke',
+    '',
+    'For comparison, the report this replaces said:',
+    'Tip SHA: 99887766554433221100ffeeddccbbaa99887766',
+    'Ran:',
+    '  - npm test → pass',
+    'Not run:',
+    '  - smoke',
+    'Verdict: PASS',
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.verdict, 'INC')
+  assert.equal(parsed.tip, '1234567890abcdef', 'the first line names the tip being judged')
+  assert.deepEqual(parsed.ran, ['node --test .github/scripts/review-gate.test.mjs → 43 pass'])
+  assert.equal(parsed.hasNotRun, true)
+
+  // And the whole point: the INC is not dropped, so it still refuses the merge.
+  const head = '1234567890abcdef000000000000000000000000'
+  const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', body: report, at: when })
+  const policy = { reviewers: ['reviewer-agent'], selfReview: [] }
+  const pass = ['Tip SHA: ' + head, 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: PASS'].join('\n')
+  const result = decide({
+    head,
+    author: 'opener',
+    reports: [at(pass, '2026-10-21T10:00:00Z'), at(body, '2026-10-21T11:00:00Z')],
+    policy,
+  })
+  assert.equal(result.ok, false, 'the newer INC at this tip refuses')
+  assert.equal(result.verdict, 'INC')
+})

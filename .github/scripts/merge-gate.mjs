@@ -25,6 +25,7 @@ import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { decide, loadPolicy } from './review-gate.mjs'
+import { createGate, loadRules } from './risk-gate.mjs'
 
 const SHORT = 12
 const HOLD = 'hold'
@@ -39,9 +40,20 @@ export function prFromHeadRef(ref) {
 
 const names = (labels) => (labels ?? []).map((l) => String(typeof l === 'string' ? l : l?.name ?? '').toLowerCase())
 
-// A pull request that may merge without a PASS (AGENTS.md 6): T0/T1, whose tier the controller
-// labels, and a mechanical release PR, whose standing approval is limited to these files.
-const NO_PASS_TIERS = new Set(['risk:t0', 'risk:t1'])
+// The changed files as `GET /pulls/{n}/files` returns them; a bare name is enough for the path rules,
+// which is what a hand run and the tests pass.
+const fileList = (files) => (files ?? []).map((f) => (typeof f === 'string' ? { filename: f } : f)).filter((f) => f?.filename)
+const fileNames = (files) => fileList(files).map((f) => f.filename)
+
+// A pull request that may merge without a PASS (AGENTS.md 6): T0/T1, and a mechanical release PR,
+// whose standing approval is limited to these files.
+//
+// The tier is computed from the diff by the base copy of `risk-gate.mjs` and
+// `.github/agent/risk-rules.json` (the workflow checks this script out from the base commit, so a pull
+// request cannot change the rules that judge it). It is deliberately not read from `risk:t0`/`risk:t1`
+// labels: every Bot shares one account and a label carries no signature (#627), so whoever can label
+// could turn a T3 into "no review needed" — which is the whole gate.
+const NO_PASS_TIERS = new Set(['T0', 'T1'])
 const RELEASE_FILES = [
   /^CHANGELOG\.md$/,
   /^changelog\.d\//,
@@ -50,7 +62,18 @@ const RELEASE_FILES = [
   /^patches\/ds-bot\/0007-version-and-tooling\.patch$/,
 ]
 export const isMechanicalRelease = (files) => (files ?? []).length > 0 && files.every((f) => RELEASE_FILES.some((re) => re.test(String(f))))
-export const exemptFromPass = ({ labels, files }) => names(labels).some((n) => NO_PASS_TIERS.has(n)) || isMechanicalRelease(files)
+const RISK_RULES = fileURLToPath(new URL('../agent/risk-rules.json', import.meta.url))
+let riskGate = null
+export const computedTier = (files) => {
+  riskGate ??= createGate(loadRules(RISK_RULES))
+  return riskGate.judge(fileList(files)).tier
+}
+// No files is not an exemption: an empty list would otherwise compute T0 and let anything through.
+export const exemptFromPass = ({ tier, files }) => {
+  const list = fileList(files)
+  if (!list.length) return false
+  return NO_PASS_TIERS.has(tier ?? computedTier(list)) || isMechanicalRelease(fileNames(list))
+}
 const short = (s) => String(s ?? '').slice(0, SHORT)
 
 // labels: the pull request's labels. head: its current head sha. queuedSha: the sha in head_ref, the
@@ -68,14 +91,15 @@ export function judge({ labels, files, head, author, reports, policy, queuedSha,
   }
   // T0/T1 and the daily release PR need no PASS, so the gate must not refuse them for lacking one
   // (#640, INC point 2): a refusal here would stop every routine fix and every release.
-  const exempt = exemptFromPass({ labels, files })
+  const tier = fileList(files).length ? computedTier(files) : null
+  const exempt = exemptFromPass({ tier, files })
   const verdict = exempt ? { ok: true, verdict: null, by: null, exempt: true } : decide({ head: target, author, reports, policy })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
   // comment starts no run of its own (#639).
   const report = mode === 'report'
-  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, exempt, reasons, mode }
+  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, exempt, tier, reasons, mode }
 }
 
 export function render(result, { pr, labels } = {}) {
@@ -90,7 +114,7 @@ export function render(result, { pr, labels } = {}) {
         ? `A queue entry for this head would be refused: ${result.reasons.join('; ')}. This report never fails.`
         : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS names ${short(result.head)}.`
       : result.ok && result.exempt
-        ? `Queue entry for #${pr} may merge without a PASS: ${result.reasons.length ? 'no \`hold\`' : 'a T0/T1 tier or a mechanical release PR (AGENTS.md 6)'}.`
+        ? `Queue entry for #${pr} may merge without a PASS: ${result.reasons.length ? 'no \`hold\`' : `${result.tier ? 'a ' + result.tier : 'a T0/T1'} tier or a mechanical release PR (AGENTS.md 6), computed from the changed files`}.`
       : result.ok
         ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
         : `Queue entry for #${pr} must not merge: ${result.reasons.join('; ')}.`,
@@ -137,7 +161,9 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`
   // reports (#639). MODE (or `--report`) is there for a hand run and for the tests.
   const mode = (env.MODE || (process.argv.includes('--report') ? 'report' : 'queue')) === 'report' ? 'report' : 'queue'
-  const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`).map((f) => f.filename).filter(Boolean)
+  // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the
+  // base copy of risk-gate.mjs (see exemptFromPass).
+  const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
   const result = judge({ labels, files, head, author, reports, policy: loadPolicy(policyPath), queuedSha: fromRef?.sha || arg('--sha'), mode })
   console.log(`merge-gate: PR #${pr} head ${short(head)}${fromRef ? `, queue entry ${short(fromRef.sha)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)

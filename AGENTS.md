@@ -130,6 +130,8 @@ Four rules decide whether a pull request may enter the queue. The mechanical one
 
 A review's `state` is not what is read: the account cannot approve its own pull requests, so its reviews stay `COMMENTED` even for an INC, and the INC on #610 was a comment rather than a review.
 
+**The T0/T1 exemption is computed, never labelled.** `merge-gate.mjs` runs the base copy of [`risk-gate.mjs`](.github/scripts/risk-gate.mjs) over the changed files and `.github/agent/risk-rules.json` to get the tier; a `risk:T0`/`risk:T1` label does nothing. Every Bot shares one account and a label carries no signature (#627), so a label-based exemption would let whoever can label turn a T3 into "no review needed" — the gate itself. A mechanical release PR is recognised by its files as before, and `hold` still refuses whatever the tier.
+
 The standing "file no new issues" rule covers design proposals only: a reproducible code defect is still filed as an issue, with its reproduction.
 
 ### Hard rules for agents

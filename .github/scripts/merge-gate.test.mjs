@@ -217,15 +217,26 @@ test('#639: the pull_request entry point reports without a head_ref and does not
 })
 
 // ---- #640 INC point 2: T0/T1 and the daily release PR need no PASS (AGENTS.md 6).
-test('#640: a T0 or T1 pull request is not refused for lacking a PASS', () => {
-  const t1 = judgeAt({ labels: ['risk:T1'], reports: [] })
+test('#640: the tier comes from the changed files, and a label never exempts', () => {
+  const t1 = judgeAt({ files: ['core/src/client/panel.js'], reports: [] })
   assert.equal(t1.ok, true)
   assert.equal(t1.exempt, true)
-  assert.equal(judgeAt({ labels: ['risk:T0'], reports: [] }).ok, true)
-  assert.equal(judgeAt({ labels: ['risk:T2'], reports: [] }).ok, false, 'T2 still needs a PASS')
-  assert.equal(judgeAt({ labels: [], reports: [] }).ok, false)
-  // hold is not waived by a tier
-  assert.equal(judgeAt({ labels: ['risk:T1', 'hold'], reports: [] }).ok, false)
+  assert.equal(t1.tier, 'T1')
+  const t0 = judgeAt({ files: ['docs/subsystems/core-host.md'], reports: [] })
+  assert.equal(t0.ok, true)
+  assert.equal(t0.tier, 'T0')
+  assert.equal(judgeAt({ files: ['core/src/host/turns.js'], reports: [] }).ok, false, 'T2 still needs a PASS')
+  assert.equal(judgeAt({ files: [], reports: [] }).ok, false, 'no files is no exemption')
+
+  // A label is a claim, not a fact: every Bot shares one account and a label carries no signature
+  // (#627), so `risk:T1` on a T3 diff must still refuse. The tier is computed by the base copy of
+  // risk-gate.mjs and its rules, never read off the label.
+  const claimed = judgeAt({ files: ['core/src/host/secrets.js'], labels: ['risk:T1'], reports: [] })
+  assert.equal(claimed.exempt, false, 'a risk label does not exempt')
+  assert.equal(claimed.tier, 'T3')
+  assert.equal(claimed.ok, false)
+  // hold is not waived by a computed tier either
+  assert.equal(judgeAt({ files: ['core/src/client/panel.js'], labels: ['hold'], reports: [] }).ok, false)
 })
 
 test('#640: a mechanical release PR passes on its files alone, and only on those', () => {
