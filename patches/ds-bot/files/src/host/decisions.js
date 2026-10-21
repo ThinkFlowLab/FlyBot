@@ -98,7 +98,7 @@ export function install(rt) {
       const choice = String(args.choice ?? '').trim().toLowerCase()
       if (option === '') return 'Write the option you considered.'
       if (!CHOICES.has(choice)) return 'choice must be "used" or "rejected".'
-      if (looksSecret(option) || looksSecret(why)) return 'return A decision never holds a key, token or password; record the choice without it.'
+      if (looksSecret(option) || looksSecret(why)) return 'A decision never holds a key, token or password; record the choice without it.'
       const safeName = NAME_SAFE.test(botId) ? botId : 'bot'
       const entry = { time: Date.now(), bot: safeName, botName: oneLine(bot.name, 40), option, choice, ...(why ? { why } : {}) }
       await record(entry)
