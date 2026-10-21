@@ -8,7 +8,7 @@
 // default install behaves exactly as before. The log is local text, one JSON line per entry; the
 // same entry is fired on the activity feed as `decision` so a consumer (Timeline, an audit view)
 // can show it without reading the file.
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { looksSecret } from './memory.js'
@@ -18,6 +18,9 @@ const OPTION_MAX = 200
 const WHY_MAX = 300
 const CHOICES = new Set(['used', 'rejected'])
 const KEPT = 2_000
+// One line can be ~600 bytes, so a line cap alone would still let the file grow; the byte cap
+// bounds it even when every entry is the longest allowed (#603).
+const MAX_BYTES = 1_000_000
 const NAME_SAFE = /^[\w-]{1,128}$/
 
 const oneLine = (text, max) => String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
@@ -29,16 +32,41 @@ export function install(rt) {
   }
   const { home } = rt
   const path = join(home, 'decisions.jsonl')
+
+  // The file is bounded on disk, not only in the answer (#603): trim before each append, so a
+  // reader never pays for a file that only ever grew. The rewrite is atomic (temp file + rename),
+  // so a crash cannot leave half a log, and it is one more append step, never a Bot-side action.
+  async function trim() {
+    let text
+    try {
+      text = await readFile(path, 'utf8')
+    } catch (error) {
+      if (error?.code === 'ENOENT') return
+      throw error
+    }
+    const lines = text.split('\n').filter(Boolean)
+    if (lines.length < KEPT && Buffer.byteLength(text) <= MAX_BYTES) return
+    const asText = list => (list.length === 0 ? '' : `${list.join('\n')}\n`)
+    // One slot is left for the line about to be appended, so the file ends at KEPT, not KEPT + 1.
+    let kept = lines.slice(-(KEPT - 1))
+    // An entry too big to keep at all is dropped rather than kept and over the cap: the cap wins.
+    while (kept.length > 0 && Buffer.byteLength(asText(kept)) > MAX_BYTES) kept = kept.slice(1)
+    const tmp = `${path}.trim`
+    await writeFile(tmp, asText(kept), 'utf8')
+    await rename(tmp, path)
+  }
+
   // One append at a time, and a failure is a warning, never a turn failure (the log is a side
   // record, not part of the Bot's work).
   let writing = Promise.resolve()
   function record(entry) {
     const line = `${JSON.stringify(entry)}\n`
-    writing = writing.then(() => mkdir(dirname(path), { recursive: true }).then(() => appendFile(path, line, 'utf8')))
+    writing = writing.then(() => mkdir(dirname(path), { recursive: true }).then(() => trim()).then(() => appendFile(path, line, 'utf8')))
       .catch(error => rt.warn('ds-bot: a decision was not written: %s', error))
     return writing
   }
-  // The entries, oldest first, capped to the newest `KEPT` lines. Reads only.
+  // The entries, oldest first, capped to the newest `KEPT` lines. Reads only; with the file trimmed
+  // on write this is O(KEPT), not O(file).
   async function list() {
     try {
       const text = await readFile(path, 'utf8')
