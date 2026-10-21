@@ -24,17 +24,18 @@ The refusal is a structured `SANDBOX_UNAVAILABLE` error, not a command failure: 
 `workspace-write` on a host with no usable backend is a session-level block: the session looks idle while every `bash` call is refused. Run the preflight once at session start, or on the first `SANDBOX_UNAVAILABLE`:
 
 ```sh
-node .github/scripts/sandbox-preflight.mjs          # one line; exit 0 usable, 3 blocked, 2 usage
-node .github/scripts/sandbox-preflight.mjs --json   # { mode, platform, usable, backends, unlock }
+node .github/scripts/sandbox-preflight.mjs --mode workspace-write        # one line; exit 0 usable, 3 blocked, 4 unknown, 2 usage
+node .github/scripts/sandbox-preflight.mjs --mode danger-full-access     # needs no sandbox: exit 0
+node .github/scripts/sandbox-preflight.mjs --json --mode workspace-write # { mode, platform, usable, unknown, backends, unlock }
 ```
 
-On a blocked host it print one line naming the missing backend and the unlock options, for example:
+`--mode` (or `FLYBOT_SANDBOX_MODE`) answers for the session's real file policy only: a `danger-full-access` session is usable without probing, and with no mode the wording is conditional. On a blocked host it prints one line naming the missing backend and the unlock options, for example:
 
 ```text
 sandbox-preflight: workspace-write is UNAVAILABLE: no usable sandbox backend (bubblewrap missing or not runnable; Landlock not enabled). Every shell call will be refused with SANDBOX_UNAVAILABLE. Unlock: approve danger-full-access for this turn (or the Bot); install bubblewrap on the host; run a Landlock-enforcing kernel; change the session file policy to danger-full-access.
 ```
 
-Detection mirrors DSH's local runner chain: Linux probes `bwrap` with the real read-only profile and then checks Landlock in `/sys/kernel/security/lsm` (the Windows ACL runner cannot be probed from inside a Bot shell and reports unavailable).
+Detection mirrors DSH's local runner chain: Linux probes `bwrap` with the real read-only profile and then checks Landlock in `/sys/kernel/security/lsm`. The Windows ACL runner cannot be probed from inside a Bot shell and reports **unknown** (`unknown: true`, exit 4) — do not stop shell work on unknown; only a proven block (exit 3) means the sandbox is unavailable.
 
 ## What a blocked Bot does
 
