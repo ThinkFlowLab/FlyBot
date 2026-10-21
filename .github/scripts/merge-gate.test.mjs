@@ -103,7 +103,10 @@ test('workflow: merge_group judges, pull_request reports, read-only, judges the 
   assert.match(wf, /HEAD_REF: \$\{\{ github\.event\.merge_group\.head_ref \}\}/)
   assert.match(wf, /PR: \$\{\{ github\.event\.pull_request\.number \}\}/, 'a pull_request run has no head_ref, so it passes the number')
   assert.match(wf, /run: node base\/\.github\/scripts\/merge-gate\.mjs/)
-  assert.doesNotMatch(wf, /continue-on-error: true/, 'a refusal must fail the job, not report it like review-gate.yml does')
+  assert.doesNotMatch(wf, /continue-on-error: true/, 'a refusal must fail the queue entry')
+  // The pull_request run is the exception: the script comes from the base commit, which may predate
+  // report mode and refuse for lack of a conclusion — that must not fail the check (#639).
+  assert.match(wf, /continue-on-error: \$\{\{ github\.event_name == 'pull_request' \}\}/, 'only the report run tolerates the base copy refusing')
   assert.doesNotMatch(wf, /gh pr merge|--approve|reviewDecision|GH_TOKEN: \$\{\{ secrets\./, 'no merge, no approval, no secret')
 })
 

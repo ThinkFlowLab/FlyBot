@@ -52,7 +52,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 24
+      # The script and the policy come from the base commit, so a pull request cannot weaken the gate
+      # that judges it. On `pull_request` that also means the base copy may be older than this
+      # workflow and refuse for lack of a conclusion — never fail the check over that: the report is
+      # informational, and the queue entry re-reads with the code it will actually merge.
       - name: Judge the queue entry, or report on the pull request
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
