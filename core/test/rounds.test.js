@@ -1369,3 +1369,42 @@ test('a Bot may post into a group any number of times without the user speaking 
   await answer(second.sessionId, second.message.source.exchangeId, 'two', 2)
   JSON.parse(await running)
 })
+
+test('#595: this home\'s own Bot\'s ordinary line mid-turn shows in the running round, never raw in the Session queue', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'local')
+  // The group's Session is in a turn: without the fix this line waits in DSH's composer queue, where the
+  // person reads the internal "[Group post from …]" header and can steer it as if they had typed it.
+  const queued = []
+  let busy = true
+  let markIdle
+  const idle = new Promise(resolve => { markIdle = resolve })
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async sessionId => sessionId !== hosted.id ? resolve(sessionId) : ({
+    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: message => queued.push(message) },
+  })
+  sent.length = 0
+  await emit(hosted.id, userMessage('Draft the release notes, please.'))
+  const running = relay(hosted.id, 'r595')
+  const turn = await turnFor(sent)
+  assert.ok(turn, 'a member answers the line')
+
+  const line = 'Frontend 看过了：登录页在 web/pages/LoginPage.vue，两天能交。'
+  await rt.postToRoom(hosted, { id: writer, name: 'Writer' }, line, { late: true, origin: 'other' })
+  assert.equal(queued.length, 0, 'nothing waits raw in the composer queue')
+  const live = structuredClone([...rt.roomProgress.values()].find(entry => entry.roomId === hosted.id)?.replies ?? [])
+  assert.deepEqual(live.filter(reply => reply.name === 'Writer').map(({ kind, text }) => ({ kind, text })), [{ kind: undefined, text: line }])
+  assert.equal(hosted.log.filter(entry => entry.text === line).length, 1, 'logged once, so the Bots still to speak see it')
+
+  busy = false
+  markIdle()
+  await waitFor(() => (queued.length === 1 ? true : undefined))
+  assert.deepEqual(queued.map(message => [message.source.role, message.source.shown]), [['post', true]])
+  assert.match(queued[0].content[0].text, /^\[Group post from Writer\]\n/, 'the header stays internal to the Session')
+
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'Thanks, ship it.', 1)
+  const done = JSON.parse(await running)
+  assert.equal(done.replies.filter(reply => reply.name === 'Writer' && reply.text === line).length, 1, 'no second bubble')
+})

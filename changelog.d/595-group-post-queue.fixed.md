@@ -1,0 +1,1 @@
+A group member Bot's line that arrives while the group's turn is still running no longer shows up in the message bar above the composer with the internal `[Group post from …]` header; it appears at once as that Bot's own bubble, and the round still gets it when the turn ends ([#595](https://github.com/ThinkFlowLab/FlyBot/issues/595)).
