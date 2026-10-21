@@ -46,6 +46,7 @@ node scripts/ds-bot-patches.mjs generate && node scripts/ds-bot-patches.mjs chec
 - Subject: imperative; the reason in the body; `Fixes #N` on its own line.
 - A Verification section per Verifier honesty: tip SHA, each gate with **real numbers**, Not run with reasons.
 - A reviewer note for environment traps (e.g. the worktree harness symlink above).
+- **One PR per issue:** if the issue already has a pull request, push to that branch (re-base, `update-branch`, or a commit on its head) instead of opening another, and put the new tests there. Only a branch that cannot be pushed (maintainer edits off, author gone and the branch unusable) justifies a new PR — and the issue then says why.
 
 ## 5. Independent review loop
 

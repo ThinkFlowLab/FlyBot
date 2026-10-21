@@ -43,6 +43,7 @@ When you report status on a change:
   - **T2/T3:** a **PASS** at the **same tip SHA** (a self-PASS by the owner's reviewer Bot/agent counts; no independent reviewer required). With green required checks and a mergeable branch, the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate (AGENTS.md, owner decision 2026-10-21, "the Bot gates and merges its own PRs"), not a click in the UI.
   - Required checks in CONTRIBUTING (`npm test`, client `--check`, `npm run lint`; smoke when host changes) are green or honestly listed as not run with a maintainer waiver.
 - Any new commit voids a PASS: re-run the Verifier on the new tip. Never admin-merge or bypass a gate.
+- **One pull request per issue.** An issue that already has a PR keeps it: re-base the branch, use `update-branch`, or push to its head, and put new tests there. Never open a second PR and close the first — including on a contributor's fork while maintainer edits are allowed. A branch that cannot be pushed is the only exception, and the issue must say why.
 
 ## Architecture docs and owned paths
 

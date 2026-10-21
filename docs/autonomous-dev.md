@@ -18,7 +18,9 @@ Decisions by the maintainer, and what follows from them:
    maintenance routine after triage (the routine runs as the maintainer account `Birfy`, so the controller sees a
    maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
 4. **Merge by tier** (owner decisions 2026-10-19, revised 2026-10-21): **T0 and T1** merge through the merge queue once CI is green, the PR is
-   mergeable and it conforms to the design rules, with no PASS. **T2 and T3** need a PASS at the tip (a **self-PASS counts**, below) with green CI, and then the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate, not a click in the UI (owner decision 2026-10-21, AGENTS.md). The gate is the review: green `tests-ok` at the tip, a PASS at that same tip, and a test that fails when the change is reverted. Work that meets neither the defect nor the routine-need bar gets no PR at all (AGENTS.md).
+   mergeable and it conforms to the design rules, with no PASS. **T2 and T3** need a PASS at the tip (a **self-PASS counts**, below) with green CI, and then the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate, not a click in the UI (owner decision 2026-10-21, AGENTS.md). The gate is the review: green `tests-ok` at the tip, a PASS at that same tip, and a test that fails when the change is reverted. Work that meets neither the defect nor the routine-need bar gets no PR at all (AGENTS.md). An issue that already has a
+   pull request keeps it: update that branch (re-base, `update-branch`, or a commit on its head) rather than opening a
+   second PR; a branch that cannot be pushed is the only exception, and the reason goes on the issue.
 5. Budget is not set. Every cost cap will live in one config file (open PRs, attempts per PR,
    PRs per day, minutes per attempt) so it can be changed without code.
 

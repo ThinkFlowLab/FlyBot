@@ -45,6 +45,8 @@ On 2026-10-21 the owner replaced the earlier "only a merge click in the UI is th
 
 Such a PR needs `tests-ok` green at the tip **and** a test that fails when the source change is reverted. A new commit at the tip voids the PASS and the review is repeated.
 
+**One PR per issue.** When an issue already has a pull request, keep working in that one: re-base its branch, use `update-branch`, or push a new commit to its head, and add the tests there too. Never open a second PR and close the first — that is what produced a trail of superseded PRs. A contributor's fork is treated the same way while it allows maintainer edits. The only exception is a branch that cannot be pushed (maintainer edits off, or the author is gone and the branch is unusable): then a new PR is allowed **and the reason goes on the issue** — never a silent swap.
+
 Anything else is not opened, not queued and not reviewed: pure UX polish, new configuration keys, design proposals. Leave them in `needs-human`, or close them with the reason written down, and report them in one batch instead of one at a time.
 
 **Still report to the Chief first** (who asks the owner): a vague scope, a change on the security surface (secrets, permissions, sharing), or a policy change the owner can feel. The routines keep their own bottom lines: no production deploy without consent, no touching the owner's own machine, never print a secret, never open an issue on someone else's upstream, never remove a PR the owner put in the merge queue.
