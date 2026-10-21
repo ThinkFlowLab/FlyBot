@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { OTHER, OWNER, SCHEDULED, combine, originOfSource, settled } from '../src/host/turn-origin.js'
 import { othersInRoom, sharedWith } from '../src/host/reach.js'
@@ -31,10 +32,33 @@ test('each kind of message has one verdict, and a stamp the host did not write i
   }
   // #626: the contexts the host and DSH inject into ordinary owner turns carry nobody's request
   // either, so they must not flip a turn to `other` (that dropped the standing grant of #608).
-  for (const kind of ['ds-bot-time-context', 'time-context', 'session-reference', 'agent-instructions']) {
+  for (const kind of [
+    'ds-bot-time-context',
+    'time-context',
+    'session-reference',
+    'agent-instructions',
+    'model-selection',
+    'working-directory',
+    'ptc-mode',
+    'cordis-host-runner',
+    'subagent-settled',
+    'compact-checkpoint',
+    'skill-invocation',
+  ]) {
     assert.equal(originOfSource({ kind }, bot), undefined, kind)
     assert.equal(originOfSource({ kind, form: 'snapshot' }, bot), undefined, `${kind} snapshot`)
   }
+  // #626: `form` alone cannot decide this. A webhook declares `form: 'notice'` but is an outside
+  // delivery, and an agent's relay or a team message carries somebody's words.
+  for (const source of [
+    { kind: 'webhook', form: 'notice', summary: 'push to main' },
+    { kind: 'agent-message', form: 'relay' },
+    { kind: 'team-message' },
+  ]) {
+    assert.equal(originOfSource(source, bot), OTHER, JSON.stringify(source))
+  }
+  // #626: a goal round continues a goal this Session already has, like a due task.
+  assert.equal(originOfSource({ kind: 'goal', goalId: 'g1', revision: 1, round: 2 }, bot), SCHEDULED)
   // #620: a source kind this version does not recognise is not a no-request message: the host
   // cannot vouch for who is behind it, so it fails closed.
   assert.equal(originOfSource({ kind: 'some-future-kind' }, bot), OTHER, 'an unrecognised kind is other')
@@ -103,4 +127,13 @@ test('settled: the verdict that holds now, from the team as it is now', () => {
   state.rooms.room.participants.push({ kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob' })
   assert.equal(settled(rt, 'room-session'), OTHER)
   assert.equal(settled({ ...rt, roomOf: () => undefined }, 'room-session'), OTHER, 'a room that cannot be found')
+})
+
+// #626: the no-request list is derived from DSH's `MessageSourceMap`. A new DSH version can add a
+// kind, and a kind nobody listed silently takes the connector tools away mid-turn — so a bump fails
+// here, where the fix is to re-read the map, instead of showing up months later as a lost tool.
+test('#626: the no-request kind list is derived from the DSH version the tests run against', () => {
+  const harness = new URL('../dev/harness/package.json', import.meta.url)
+  const pinned = JSON.parse(readFileSync(harness, 'utf8')).dependencies['@deepseek-ai/dsh']
+  assert.equal(pinned, '0.2.0-rc.2', 'DSH moved: re-read MessageSourceMap and update NOTICE_KINDS in src/host/turn-origin.js')
 })

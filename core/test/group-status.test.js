@@ -447,6 +447,21 @@ test('a running Bot\'s work names its current step, in one short line, until the
   assert.equal((await bots()).b, undefined)
 })
 
+// #626: the shape a Bot actually hits — the owner asks for work, the turn calls `subagent`, and the
+// child settles while that same turn is still running. The notice is an account of work the owner
+// already asked for, not a new request, so the connector tools stay.
+test('#626: a subagent settling mid-turn does not take the connection away', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-bot')
+  host.emit('b', 'turn/start', { turn: 2 })
+  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'read the repo and report' }], source: { kind: 'user' } })
+  host.emit('b', 'tool/call', { callId: 's1', name: 'subagent', arguments: JSON.stringify({ prompt: 'summarise the README' }) })
+  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'Subagent finished: summarised the README.' }], source: { kind: 'subagent-settled', form: 'notice', summary: 'summarised the README', senderSessionId: 'child-1' } })
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
+})
+
 // #626: the host and DSH inject context into ordinary owner turns — this host's clock snapshot
 // (`ds-bot-time-context`), DSH's own clock and cited-conversation snapshots, and the AGENTS.md
 // baseline. None of them carries a request, so a turn that took one in still honours the owner's

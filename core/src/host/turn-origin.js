@@ -23,22 +23,44 @@ export const OWNER = 'owner'
 export const OTHER = 'other'
 export const SCHEDULED = 'scheduled'
 
-// The verdict of one message `source` (DSH's `user/message` event) to a Bot.
-// The messages that carry nobody's request, by source kind: DSH's own notices; the clock snapshots
-// this host injects (`ds-bot-time-context`, time-context.js `SOURCE`) and DSH injects
-// (`time-context`); the snapshot of a cited conversation DSH logs after the message that cites it
-// (`session-reference`, constants.js `REFERENCE_KIND`); and the AGENTS.md baseline and changes DSH
-// injects as a user message (`agent-instructions`, @deepseek-ai/dsh-agent-instructions). Every
-// other kind fails closed (#620, #626).
+// The messages that carry nobody's request, by source kind — one list, because everything else
+// fails closed as 'other' (#620): a kind missing here takes the connector tools away in the middle
+// of a turn the owner started (#626), and a kind wrongly added here would hand them out.
+// Derived from `MessageSourceMap` in @deepseek-ai/dsh-llm (0.2.0-rc.2, the version
+// core/dev/harness/package.json pins). A kind is not recognisable by its `form` alone: the kinds
+// below that declare no `form` at all (`working-directory`, `ptc-mode`, `cordis-host-runner`) would
+// read as opaque content, and `webhook` declares `form: 'notice'` while being an outside delivery
+// (see `originOfSource`). Bumping the DSH pin means re-reading that map: the test
+// `#626: the no-request kind list is derived from the DSH version the tests run against` fails
+// until this list has been looked at again.
 const NOTICE_KINDS = new Set([
+  // Sources the host writes for itself, never a user turn.
   'tool',
   'system-prompt',
-  'plan-mode',
-  'user-approval',
+  'plan-mode', // @deepseek-ai/dsh-plan-mode, ContextFormed
+  'user-approval', // @deepseek-ai/dsh-user-approval, ContextFormed
+  // Context appended as role 'user' while a turn runs: the clock this host injects
+  // (`ds-bot-time-context`, time-context.js `SOURCE`) and DSH injects (`time-context`); the
+  // AGENTS.md baseline and changes (`agent-instructions`, @deepseek-ai/dsh-agent-instructions); a
+  // cited conversation's snapshot (`session-reference`, constants.js `REFERENCE_KIND`); the model
+  // and working directory a Session switched to (@deepseek-ai/dsh-agent `model-selection`,
+  // `working-directory`); the PTC toggle (`ptc-mode`); the plugin host runner
+  // (`cordis-host-runner`).
   'ds-bot-time-context',
   'time-context',
   REFERENCE_KIND,
   'agent-instructions',
+  'model-selection',
+  'working-directory',
+  'ptc-mode',
+  'cordis-host-runner',
+  // One-off accounts of what just happened, `form: 'notice'`: a subagent settling, which steers
+  // the turn that is running (@deepseek-ai/dsh-subagent); a compaction checkpoint, the summary
+  // that replaces the log (@deepseek-ai/dsh-compaction); and a skill's own instructions, injected
+  // with `form: 'instructions'` when it is invoked (@deepseek-ai/dsh-skill).
+  'subagent-settled',
+  'compact-checkpoint',
+  'skill-invocation',
 ])
 
 export function originOfSource(source, bot) {
@@ -52,6 +74,11 @@ export function originOfSource(source, bot) {
       return OWNER
     case 'schedule':
       return SCHEDULED
+    case 'goal':
+      // A goal round continues a goal that was created in this Session: by the owner, or by the Bot
+      // on a request that reached it. It is not a request arriving now, so it reads like a due task
+      // — the owner's while the Bot is not shared (`settled` turns it into 'other' when it is).
+      return SCHEDULED
     case SOURCE_KIND:
       if (source.remote !== undefined || source.form === 'remote-chat') return OTHER
       // A host notice about what the user did, and the note a Bot's own part switch hands on.
@@ -62,7 +89,10 @@ export function originOfSource(source, bot) {
       if (NOTICE_KINDS.has(source.kind)) return undefined
       // A kind this version does not recognise is not "nobody's request": the host cannot vouch for
       // who is behind it, so it fails closed as 'other' (#620). Only the two documented no-request
-      // cases above may return undefined.
+      // cases above may return undefined. Three DSH kinds stay here on purpose: `webhook` carries
+      // an outside delivery (`form: 'notice'`, but a provider's event is somebody's request, so
+      // reading `form` alone would let it through); `agent-message` (`form: 'relay'`) and
+      // `team-message` carry another agent's words.
       return OTHER
   }
 }
