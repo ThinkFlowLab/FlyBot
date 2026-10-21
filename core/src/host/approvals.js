@@ -73,9 +73,26 @@ export function install(rt) {
     return (room?.standingApprovals ?? []).some(grant => grant.kind === kind && sameOwner(grant))
   }
 
-  // The grant is the owner's: it answers only a turn the owner started (turn-origin.js). A
-  // friend's message, a room with other people in it, or a turn with no verdict still asks.
-  const standingCovers = (sessionId, botId, roomId, kind) => settled(rt, sessionId) === OWNER && standingGrant(botId, roomId, kind)
+  // The grant is the owner's: it answers a turn the owner started (turn-origin.js), and one that
+  // carries no verdict at all in the Bot's own chat (#608) — DSH opens such a turn for its own
+  // retry after the owner's answer, and nobody's request is in it, so the owner's grant stands. A
+  // friend's message, another member's line or a room with other people in it still asks.
+  const ownChat = (sessionId, botId) => rt.chatOwners?.get(sessionId) === botId
+  const skipped = new Set()
+  const standingCovers = (sessionId, botId, roomId, kind) => {
+    const verdict = settled(rt, sessionId)
+    if (verdict !== OWNER && (verdict !== undefined || !ownChat(sessionId, botId))) {
+      // A deliberate skip is said once, never silent: the owner sees the card, the log says why.
+      const key = `${sessionId}:${kind}`
+      if (standingGrant(botId, roomId, kind) && !skipped.has(key)) {
+        if (skipped.size > 200) skipped.clear()
+        skipped.add(key)
+        rt.warn?.('ds-bot: the standing approval for %s was not used: the turn is %s', kind, verdict === undefined ? 'not the owner\'s' : `"${verdict}"`)
+      }
+      return false
+    }
+    return standingGrant(botId, roomId, kind)
+  }
 
   async function grantStanding(entry, scope) {
     await rt.load()

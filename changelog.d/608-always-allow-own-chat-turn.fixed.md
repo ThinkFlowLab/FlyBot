@@ -1,0 +1,1 @@
+"Always allow" now keeps working when DSH opens its own retry turn after the owner answered: a turn with no message verdict in a Bot's own chat uses the Bot's standing approval instead of showing the same card again, and a grant that a turn cannot use says why once in the log ([#608](https://github.com/ThinkFlowLab/FlyBot/issues/608)).

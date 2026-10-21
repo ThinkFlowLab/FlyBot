@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -24,9 +24,8 @@ const seed = () => ({
   revision: 0,
 })
 
-async function start() {
-  const home = mkdtempSync(join(tmpdir(), 'ds-bot-status-'))
-  writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
+async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-status-'))) {
+  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
   const ctx = fakeContext()
   const agents = new Map()
   const agentOf = (sessionId) => {
@@ -71,7 +70,8 @@ async function start() {
   const tool = (name, args, sessionId, exec = {}) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId }, ...exec })
   const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
   const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
-  const stop = async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) }
+  // A restart test reopens the same home, so removal is the caller's choice.
+  const stop = async ({ keepHome = false } = {}) => { await ctx.dispose(); if (!keepHome) rmSync(home, { recursive: true, force: true, maxRetries: 5 }) }
   await tool('list_bots', {}, 'a')
   return { agentOf, emit, tool, call, askApproval, stop, archived, home }
 }
@@ -348,6 +348,42 @@ test('a standing grant never answers a turn someone other than the owner started
   assert.equal(await host2.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
   // No turn at all: fail closed.
   assert.equal(await host2.askApproval('a', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+})
+
+// #608: the owner answered "Always allow for this Bot" and the same card came back. DSH opens a
+// retry turn of its own after an answer; that turn carries no message verdict, so the grant was
+// skipped. Nobody's request is in such a turn in the Bot's own chat, so the owner's grant stands.
+test('#608: an own-chat turn that carries no verdict still honours the Bot grant', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-bot')
+  // A turn DSH starts for itself: no message, or only a host notice, so turn-origin has no verdict.
+  host.emit('b', 'turn/start', { turn: 2 })
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
+  host.emit('b', 'turn/end', { reason: { kind: 'completed' } })
+  host.emit('b', 'turn/start', { turn: 3 })
+  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'note' }], source: { kind: 'ds-bot', role: 'mention' } })
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
+  // Someone else's turn in that chat still asks, and says once why the grant was not used.
+  host.emit('b', 'turn/end', { reason: { kind: 'completed' } })
+  host.emit('b', 'turn/start', { turn: 4 })
+  host.emit('b', 'user/message', { content: [{ type: 'text', text: 'hi' }], source: { kind: 'bot', remote: { handle: '@friend' }, form: 'remote-chat' } })
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'from-dsh')
+})
+
+test('#608: a grant survives a restart and answers the same ask again', async (t) => {
+  const first = await start()
+  t.after(() => rmSync(first.home, { recursive: true, force: true, maxRetries: 5 }))
+  await openTurn(t, first)
+  await grantFromGroup(first, 'always-bot')
+  await first.stop({ keepHome: true })
+  const second = await start(first.home)
+  t.after(second.stop)
+  // Same store, a session the runtime has to pick up again: the grant is still there.
+  second.emit('b', 'turn/start', { turn: 1 })
+  second.emit('b', 'user/message', { content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } })
+  assert.equal(await second.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
 })
 
 test('Always allow for this group covers that group only', async (t) => {
