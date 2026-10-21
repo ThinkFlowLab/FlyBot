@@ -139,7 +139,7 @@ The standing "file no new issues" rule covers design proposals only: a reproduci
 3. A routine PR is merged by the Bot that gated it (owner decision 2026-10-21, [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). A typed chat reply is still not an approval for anything else, and an owner-only decision (scope, security surface, policy) still waits for the owner's word through the normal path (#349).
 4. Connector tools are on by default for the owner's Bots and off by default for other people's, until the owner opts in (#359).
 5. Bot Social has no keyword commitment scan.
-6. A schedule is per session, not per Bot: an empty `schedule_list` is not evidence that a schedule does not exist, and no schedule is deleted, updated or recreated on the strength of one (see [A schedule is per session](#a-schedule-is-per-session-not-per-bot-628)).
+6. A schedule is per session, not per Bot: an empty `schedule_list` is not evidence that a schedule does not exist; never delete or recreate a schedule from it, and never report "no timers" as a finding (see [A schedule is per session](#a-schedule-is-per-session-not-per-bot-628)).
 
 ## What this project is
 
