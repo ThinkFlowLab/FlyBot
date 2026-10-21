@@ -36,6 +36,11 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   }
   const childrenOf = (nodes, id) => Object.values(nodes).filter(n => n.parent === id)
   const depthOf = (nodes, id) => { let d = 0; for (let x = id, seen = new Set(); x && nodes[x] && !seen.has(x); x = nodes[x].parent) { seen.add(x); d++ } return d }
+  // Height of the subtree rooted at id: 0 for a leaf.
+  const heightOf = (nodes, id) => {
+    const kids = childrenOf(nodes, id)
+    return kids.length ? 1 + Math.max(...kids.map(k => heightOf(nodes, k))) : 0
+  }
   const traceOf = (nodes, id) => { const p = []; for (let x = id; x && nodes[x] && p.length < 64; x = nodes[x].parent) p.unshift(nodes[x].name); return p.join(' → ') }
 
   const promptFor = (id, nodes = snapshot()) => {
@@ -203,6 +208,50 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     return { id, name: clean, depth: depthOf(nodes, parentId) + 1 }
   }
 
+  /** Resolves a bot by id or name (trimmed, case-insensitive). Throws when missing or ambiguous. */
+  function findBotByName(ref) {
+    const raw = String(ref ?? '').trim()
+    if (!raw) throw new Error('bot name required')
+    const byId = fb.listBots().find(b => b.id === raw)
+    if (byId) return byId
+    const clean = raw.toLowerCase()
+    const hits = fb.listBots().filter(b => String(b.name ?? '').trim().toLowerCase() === clean)
+    if (hits.length === 0) throw new Error(`no bot named "${raw}"`)
+    if (hits.length > 1) throw new Error(`more than one bot is named "${raw}"`)
+    return hits[0]
+  }
+
+  /**
+   * Moves an existing bot (with its subtree) under a new parent — the model-facing counterpart of
+   * deletion, which already re-attaches children upwards. Refused on a cycle, maxChildren overflow,
+   * duplicate sibling name, or a subtree that would end deeper than maxDepth. The new parent, the old
+   * parent and the moved subtree get a fresh prompt (their trace changed).
+   */
+  function moveBot(botRef, parentRef) {
+    const nodes = snapshot()
+    const bot = findBotByName(botRef)
+    const parent = findBotByName(parentRef)
+    if (!nodes[bot.id]) throw new Error(`${bot.name} is not part of the tree`)
+    if (!nodes[parent.id]) throw new Error(`${parent.name} is not part of the tree`)
+    if (bot.id === parent.id) throw new Error('a bot cannot be its own parent')
+    const from = parentOf(bot.id) ?? null
+    if (from === parent.id) throw new Error(`${bot.name} is already a child of ${parent.name}`)
+    for (let at = parent.id, seen = new Set(); at != null && nodes[at] && !seen.has(at); at = nodes[at].parent) {
+      seen.add(at)
+      if (at === bot.id) throw new Error(`cannot move ${bot.name} under its own descendant ${parent.name}`)
+    }
+    const siblings = childrenOf(nodes, parent.id).filter(s => s.id !== bot.id)
+    if (siblings.length >= limits.maxChildren) throw new Error(`limit reached: ${parent.name} already has ${siblings.length} children (maxChildren=${limits.maxChildren})`)
+    if (siblings.some(s => String(s.name).trim().toLowerCase() === String(bot.name).trim().toLowerCase())) {
+      throw new Error(`a child named "${bot.name}" already exists under ${parent.name}`)
+    }
+    const bottom = depthOf(nodes, parent.id) + 1 + heightOf(nodes, bot.id)
+    if (bottom > limits.maxDepth) throw new Error(`limit reached: ${bot.name} would end at depth ${bottom} (maxDepth=${limits.maxDepth})`)
+    fb.setField(bot.id, 'parent', parent.id)
+    refreshAll()
+    return { moved: bot.id, name: bot.name, from, to: parent.id }
+  }
+
   // A tree member has treeRole (or parent; the root's parent is null/absent).
   const isMember = id => typeof id === 'string' && (fb.getField(id, 'treeRole') !== undefined || fb.getField(id, 'parent') !== undefined)
   const parentOf = id => fb.getField(id, 'parent') ?? null
@@ -251,5 +300,5 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   const noteTurnStart = id => load.start(id)
   const noteTurnEnd = id => load.end(id)
   const loadOf = id => load.of(id)
-  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
+  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, heightOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, moveBot, findBotByName, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
 }

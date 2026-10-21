@@ -1458,3 +1458,54 @@ test('#450: a merge carries the archived Bot\'s own memory into the kept Bot', a
   assert.ok(moved, JSON.stringify(kept))
   assert.equal(moved.meta.source, 'merged')
 })
+
+test('#635: move_bot moves a bot with its subtree and refreshes the prompts', async () => {
+  const m = await setup()
+  const a = await make(m, m.root, 'A')
+  const b = await make(m, m.root, 'B')
+  const c = await make(m, a, 'C')
+  const r = await m.call(m.root, 'move_bot', { bot: 'C', parent: 'B' })
+  assert.equal(r.error, undefined, JSON.stringify(r))
+  assert.equal(f(m, c, 'parent'), b)
+  assert.match(sp(m, c), /Your position: Chief → B → C/)
+  assert.match(sp(m, b), /- C: C stuff/)
+  assert.match(sp(m, a), /You have no children/)
+})
+
+test('#635: move_bot refuses cycles, overflow, duplicates and a too deep subtree', async () => {
+  const m = await setup({ maxChildren: 2 })
+  const a = await make(m, m.root, 'A')
+  const b = await make(m, m.root, 'B')
+  await make(m, a, 'C')
+  assert.match((await m.call(m.root, 'move_bot', { bot: 'A', parent: 'C' })).error, /descendant/)
+  assert.match((await m.call(m.root, 'move_bot', { bot: 'A', parent: 'A' })).error, /its own parent/)
+  assert.match((await m.call(m.root, 'move_bot', { bot: 'A', parent: 'Chief' })).error, /already a child/)
+  const x1 = await make(m, a, 'X')
+  const x2 = await make(m, b, 'X')
+  assert.ok(x1 && x2)
+  assert.match((await m.call(m.root, 'move_bot', { bot: 'X', parent: 'B' })).error, /more than one bot/)
+  assert.match((await m.call(m.root, 'move_bot', { bot: x1, parent: b })).error, /already exists/)
+})
+
+test('#635: move_bot refuses an overflowing parent and refreshes the subtree', async () => {
+  const m = await setup({ maxChildren: 2 })
+  const a = await make(m, m.root, 'A')
+  const b = await make(m, m.root, 'B')
+  const c = await make(m, a, 'C')
+  const d = await make(m, c, 'D')
+  assert.match((await m.call(m.root, 'move_bot', { bot: 'C', parent: 'Chief' })).error, /maxChildren=2/)
+  const ok = await m.call(m.root, 'move_bot', { bot: 'C', parent: 'B' })
+  assert.equal(ok.error, undefined, JSON.stringify(ok))
+  assert.equal(ok.name, 'C')
+  assert.equal(ok.to, b)
+  assert.equal(f(m, d, 'parent'), c)
+  assert.match(sp(m, d), /Your position: Chief → B → C → D/)
+})
+
+test('#635: move_bot is visible to the root only', async () => {
+  const m = await setup()
+  const a = await make(m, m.root, 'A')
+  await assert.rejects(m.call(a, 'move_bot', { bot: 'A', parent: m.root }), /not visible/)
+})
+
+

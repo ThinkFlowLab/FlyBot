@@ -25,7 +25,7 @@ export function systemPrompt({ name, role, trace, children, root = false, notes 
   const head = root
     ? [`Bot tree: you (${name}) are also the ROOT of a recursive bot tree of child bots. For tasks you delegate into the tree, follow these tree rules.`, `Your position: ${trace}`]
     : [`You are ${name}, a bot in a recursive bot tree. Your role: ${role || '(general)'}`, `Your position: ${trace}`]
-  const tools = 'Tree tools: list_children() shows your current direct children (it may be newer than this prompt). find_bots(query) searches your whole branch (name, role, parent, depth, path). create_child_bot(name, role_description, parent?) creates one Bot under you or under one of your descendants. create_team(team, members, parent?) creates "<team> Lead" with the members under it.'
+  const tools = `Tree tools: list_children() shows your current direct children (it may be newer than this prompt). find_bots(query) searches your whole branch (name, role, parent, depth, path). create_child_bot(name, role_description, parent?) creates one Bot under you or under one of your descendants. create_team(team, members, parent?) creates "<team> Lead" with the members under it.${root ? ' move_bot(bot, parent) moves an existing Bot (with its subtree) under another parent; the root only.' : ''}`
   // #446: create_bot is a Main Bot tool; the tree places what it makes by role, under the same limits.
   const limitRule = 'The tree limits (maxChildren, maxDepth) apply to every way of creating a bot. Do not use create_bot to get around them: a bot made with create_bot is placed in this tree by its role, and when a level is full the tree regroups related bots under a lead (e.g. "FlyBot Lead") by itself.'
   if (!children.length) {

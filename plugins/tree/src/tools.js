@@ -47,6 +47,15 @@ export const FIND_BOTS_SCHEMA = Object.freeze({
   },
   additionalProperties: false,
 })
+export const MOVE_BOT_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    bot: { type: 'string', minLength: 1, maxLength: MAX_NAME_LENGTH, description: 'Id or name of the Bot to move (with its subtree)' },
+    parent: { type: 'string', minLength: 1, maxLength: MAX_NAME_LENGTH, description: 'Id or name of the Bot that becomes the new parent' },
+  },
+  required: ['bot', 'parent'],
+  additionalProperties: false,
+})
 export const CREATE_TEAM_SCHEMA = Object.freeze({
   type: 'object',
   properties: {
@@ -107,6 +116,17 @@ export function registerTreeTools(fb, tree) {
         const bad = validateArgs(CREATE_TEAM_SCHEMA, args)
         if (bad) return fail(bad)
         try { return await tree.createTeam(botId, { team: args.team, members: args.members, parent: args.parent }) } catch (e) { return fail(e) }
+      },
+    }),
+    fb.registerTool({
+      name: 'move_bot',
+      description: 'Root only. Move an existing Bot with its subtree under another parent. Refused when it would create a cycle, exceed maxChildren or maxDepth, or duplicate a sibling name.',
+      parameters: MOVE_BOT_SCHEMA,
+      visibleTo: botId => inTree(botId) && tree.isRoot(botId),
+      async execute(args, { botId }) {
+        const bad = validateArgs(MOVE_BOT_SCHEMA, args)
+        if (bad) return fail(bad)
+        try { return tree.moveBot(args.bot, args.parent) } catch (e) { return fail(e) }
       },
     }),
   ]
