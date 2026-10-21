@@ -44,6 +44,10 @@ export function parseReport(body) {
     out.verdict = first[1].toUpperCase()
     out.tip = first[2].toLowerCase()
   }
+  // #643: once the first line is the conclusion, the loop below must not write `out.verdict` again.
+  // A body quotes older verdicts at the same tip (`Verdict: PASS at <sha>` inside a comparison), and
+  // letting one of those overwrite the first line turned an INC into a PASS at the same tip.
+  const firstIsVerdict = first !== null
   const from = start < 0 ? 0 : start
   for (let i = from; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -53,7 +57,7 @@ export function parseReport(body) {
       out.tip = hex ? hex[0].toLowerCase() : null
     }
     m = /^Verdict\s*:\s*(PASS|FAIL|INC|REQUEST_CHANGES)\b/i.exec(line)
-    if (m) out.verdict = m[1].toUpperCase()
+    if (m && !firstIsVerdict) out.verdict = m[1].toUpperCase()
     m = /^Ran\s*:\s*(.*)$/i.exec(line)
     if (m) {
       out.ran = []

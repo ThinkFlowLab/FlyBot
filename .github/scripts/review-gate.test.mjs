@@ -202,3 +202,27 @@ test('#637: a verdict that is not the first line is not a conclusion', () => {
   assert.equal(result.ok, false)
   assert.equal(result.verdict, null)
 })
+
+// #643: a body that quotes an older verdict at the same tip must not overwrite the first line. Seen
+// with an INC whose evidence quoted the PASS it replaced, at the same sha: it parsed as PASS.
+test('#643: a quoted verdict later in the body does not overwrite the first line', () => {
+  const body = [
+    'Verdict: INC at 1234567890abcdef',
+    'Written by: Reviewer',
+    '',
+    'Ran: node --test .github/scripts/review-gate.test.mjs → 40 pass',
+    'Not run: smoke',
+    '',
+    'Earlier, at the same tip, I wrote:',
+    'Verdict: PASS at 1234567890abcdef',
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.verdict, 'INC', 'the first line is the conclusion')
+  assert.equal(parsed.tip, '1234567890abcdef')
+  assert.deepEqual(parsed.ran, ['node --test .github/scripts/review-gate.test.mjs → 40 pass'])
+  assert.equal(parsed.hasNotRun, true)
+
+  // The old block still parses, and there the last verdict in the block is the one that counts.
+  const legacy = ['Tip SHA: 1234567890abcdef', 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: INC'].join('\n')
+  assert.equal(parseReport(legacy).verdict, 'INC')
+})
