@@ -8406,6 +8406,67 @@ test('#500: share-with-friend surfaces a clear error when Bot Social lacks grant
   assert.match(String(result.error?.message || result.error), /needs an update to share with a friend|Invite links still work/i)
 })
 
+test('#563: production "Tool <name> not found" (-32602) is unknown-tool and degrades to the unavailable message', async (t) => {
+  // The production Bot Social answers a missing tool with JSON-RPC -32602 and
+  // "Tool <name> not found"; the #500 fallback only knew "unknown tool"/"no tool".
+  assert.equal(isUnknownTool(Object.assign(new Error('MCP error -32602: Tool grant_bot_to_friend not found'), { code: 'mcp' })), true)
+  assert.equal(isUnknownTool(new Error('Tool list_x not found')), true)
+  assert.equal(isUnknownTool(new Error('MCP error -32602: relationship not found')), false, 'invalid params that are not a missing tool stay an error')
+  {
+    // The API: the MCP call reports the production wording, so the REST fallback must run and,
+    // when the route is absent as well (the mock answers 404), report `unavailable`.
+    const server = mockServer()
+    const baseFetch = server.fetch
+    server.fetch = async (url, init) => {
+      const body = init.body ? JSON.parse(init.body) : {}
+      if (body?.params?.name === 'grant_bot_to_friend') {
+        return new Response(JSON.stringify({
+          jsonrpc: '2.0', id: body.id,
+          result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'mcp', message: 'MCP error -32602: Tool grant_bot_to_friend not found' }) }] },
+        }), { status: 200 })
+      }
+      return baseFetch(url, init)
+    }
+    const api = createSocialApi({ server: 'https://s', token: 'owner-token', fetch: server.fetch })
+    const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home' })
+    assert.equal(result.unavailable, true)
+    assert.equal(server.calls.some(c => c.name === 'REST POST /v1/bots/grants/to-friend'), true, 'the REST fallback runs before giving up')
+  }
+  {
+    // The handler: the user sees the actionable message, never the raw MCP string.
+    const { ctx, home, call, stop } = await team()
+    t.after(stop)
+    const server = mockServer()
+    server.tools.list_friends = () => ({
+      friends: [{ relationship_id: 'r1', status: 'active', peer: { handle: '@bob.home', owner_display_name: 'Bob' } }],
+      pending_incoming: [], pending_outgoing: [],
+    })
+    const baseFetch = server.fetch
+    server.fetch = async (url, init) => {
+      const body = init.body ? JSON.parse(init.body) : {}
+      if (body?.params?.name === 'grant_bot_to_friend') {
+        return new Response(JSON.stringify({
+          jsonrpc: '2.0', id: body.id,
+          result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'mcp', message: 'MCP error -32602: Tool grant_bot_to_friend not found' }) }] },
+        }), { status: 200 })
+      }
+      return baseFetch(url, init)
+    }
+    const social = await startSocial(ctx.flybot, {
+      server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+      fetch: server.fetch, inboxPollMs: 0,
+    })
+    t.after(() => social.dispose())
+    await settle()
+    const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+    await call('flybot/social/create-invite', { botId: chief.id })
+    const result = await call('flybot/social/share-with-friend', { botId: chief.id, home: '@bob.home' })
+    assert.equal(result.ok, false)
+    assert.match(String(result.error?.message || result.error), /needs an update to share with a friend|Invite links still work/i)
+    assert.doesNotMatch(String(result.error?.message || result.error), /-32602|MCP error/i)
+  }
+})
+
 test('#500: Share with a friend lists candidates and shares on click', async () => {
   const calls = []
   const friends = [{ home: '@bob.home', name: 'Bob', ownerId: 'o-bob' }]

@@ -157,7 +157,12 @@ export function isUnknownTool(error) {
   const code = String(error?.code ?? '')
   const blob = `${code} ${text}`
   if (/grant_not_found/i.test(blob)) return false
-  return code === 'unknown' || /unknown tool|no tool|method not found|unrecognized tool/i.test(text)
+  if (code === 'unknown' || /unknown tool|no tool|method not found|unrecognized tool|no such tool/i.test(text)) return true
+  // #563: the production Bot Social answers a missing tool with JSON-RPC -32602 and
+  // "Tool <name> not found". Without this the raw MCP string reaches the UI and the REST
+  // fallback never runs.
+  if (/tool\s+['`"]?[\w.-]+['`"]?\s+(?:is\s+)?not found/i.test(text)) return true
+  return /-32602\b/.test(text) && /\btool\b/i.test(text) && /not found|no such/i.test(text)
 }
 
 export function isGrantNotFound(error) {
