@@ -8,6 +8,40 @@ import { apply } from '../index.js'
 import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
 
+// A test's temp home can still be written by a background save that outlives dispose(), so a
+// plain rmSync sometimes raced and failed the whole run with ENOTEMPTY (a flaky verify/CI). Settle
+// and retry; if it is still racing, leave the temp dir — the test's assertions already passed.
+async function cleanHome(home, remove = rmSync) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      remove(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
+      return
+    } catch (error) {
+      if (error?.code !== 'ENOTEMPTY' && error?.code !== 'EBUSY' && error?.code !== 'ENOENT') throw error
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+  }
+}
+
+// #532: the cleanup itself is what has to be stable, so pin its contract — a racing save is waited
+// out, a directory that never settles is left behind instead of failing the run, and any other
+// error still surfaces.
+test('the cleanup waits out a racing save and leaves a directory that never settles', async () => {
+  const tries = []
+  await cleanHome('ignored', () => {
+    tries.push(1)
+    if (tries.length < 3) throw Object.assign(new Error('directory not empty'), { code: 'ENOTEMPTY' })
+  })
+  assert.equal(tries.length, 3, 'it settles after the third try')
+  tries.length = 0
+  await cleanHome('ignored', () => {
+    tries.push(1)
+    throw Object.assign(new Error('still racing'), { code: 'EBUSY' })
+  })
+  assert.equal(tries.length, 5, 'it gives up quietly after five tries')
+  await assert.rejects(cleanHome('ignored', () => { throw Object.assign(new Error('denied'), { code: 'EACCES' }) }), /denied/)
+})
+
 const fresh = () => `ghp_${randomBytes(16).toString('hex')}`
 const answer = (status, body) => ({ status, ok: status >= 200 && status < 300, body, json: async () => body })
 
@@ -82,7 +116,7 @@ test('connecting saves the token for all of the owner\'s Bots (#545) and mounts 
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async () => answer(200, { login: 'octo' })
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const token = fresh()
 
   const before = await call(ctx, 'state', {})
@@ -115,7 +149,7 @@ test('a token GitHub refuses is not saved', async (t) => {
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async () => answer(401, {})
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
   assert.equal(result.ok, false)
   assert.match(result.error.message, /did not accept/)
@@ -128,7 +162,7 @@ test('a failed MCP connection shows the error without the token, and Try again m
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async () => answer(200, { login: 'octo' })
   const { ctx, home, mounts } = setup({ fail: true })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const token = fresh()
   const result = await call(ctx, 'connector-connect', { id: 'github', token })
   const github = result.value.find(entry => entry.id === 'github')
@@ -144,7 +178,7 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async () => answer(200, { login: 'octo' })
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
   await call(ctx, 'secret-delete', { name: 'GITHUB_TOKEN' })
   const state = await call(ctx, 'state', {})
@@ -157,13 +191,13 @@ test('github: false and composio: false hide the connectors', async (t) => {
   const ctx = fakeContext()
   capture(ctx)
   apply(ctx, { home, github: false })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   assert.deepEqual((await call(ctx, 'state', {})).value.connectors.map(entry => entry.id), ['composio'])
   const other = teamHome()
   const second = fakeContext()
   capture(second)
   apply(second, { home: other, github: false, composio: false })
-  t.after(async () => { await second.dispose(); rmSync(other, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await second.dispose(); await cleanHome(other) })
   assert.deepEqual((await call(second, 'state', {})).value.connectors, [])
 })
 
@@ -173,7 +207,7 @@ test('a GitHub address without https refuses to send the token', async (t) => {
   let asked = false
   globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
   const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const refused = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
   assert.equal(refused.ok, false)
   assert.match(refused.error.message, /https/)
@@ -256,7 +290,7 @@ test('connecting Composio saves the key for all of the owner\'s Bots (#545), kee
   const sent = fakeComposio()
   globalThis.fetch = sent.fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const key = composioKey()
 
   const before = (await call(ctx, 'state', {})).value.connectors.find(entry => entry.id === 'composio')
@@ -307,7 +341,7 @@ test('Choose apps mounts again with the new list and needs no key; an unknown ap
   const sent = fakeComposio(() => refuse ? answer(400, { error: { message: 'Unknown toolkit nope' } }) : answer(201, SESSION))
   globalThis.fetch = sent.fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const early = await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail'] })
   assert.equal(early.ok, false)
   assert.match(early.error.message, /Connect Composio first/)
@@ -336,7 +370,7 @@ test('a key Composio refuses is not saved', async (t) => {
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = fakeComposio(() => answer(401, {})).fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const result = await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
   assert.equal(result.ok, false)
   assert.match(result.error.message, /did not accept/)
@@ -349,7 +383,7 @@ test('a failed Composio MCP connection shows an error without the key, and Try a
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = fakeComposio().fetch
   const { ctx, home, mounts } = setup({ fail: true })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const key = composioKey()
   const result = await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
   const composio = result.value.find(entry => entry.id === 'composio')
@@ -364,7 +398,7 @@ test('deleting COMPOSIO_API_KEY on the Secrets page unmounts Composio, and GitHu
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async (url, init) => url.startsWith('https://gh.test') ? answer(200, { login: 'octo' }) : fakeComposio().fetch(url, init)
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
   await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
   assert.deepEqual(mounts.map(mount => mount.config.serverName), ['github', 'composio'])
@@ -381,7 +415,7 @@ test('a Composio address without https refuses to send the key', async (t) => {
   let asked = false
   globalThis.fetch = async () => { asked = true; return answer(201, SESSION) }
   const { ctx, home, mounts } = setup({ composio: { api: 'http://composio.test/api/v3.1' } })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const refused = await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
   assert.equal(refused.ok, false)
   assert.match(refused.error.message, /https/)
@@ -430,7 +464,7 @@ test('Composio makes one session per connect, keeps it (never the key) in state,
   const sent = fakeComposio(numbered())
   globalThis.fetch = sent.fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const key = composioKey()
   await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
   assert.equal(sent.posts.length, 1, 'the key check and the mount share one session')
@@ -462,7 +496,7 @@ test('a session Composio no longer has is made again on Try again, and the new o
   const sent = fakeComposio(numbered())
   globalThis.fetch = sent.fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
   sent.live.clear()
   const retried = await call(ctx, 'connector-retry', { id: 'composio' })
@@ -480,7 +514,7 @@ test('Choose apps deletes the superseded session after the new one is kept; a re
   const sent = fakeComposio(() => refuse ? answer(400, { error: { message: 'Unknown toolkit nope' } }) : make())
   globalThis.fetch = sent.fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const key = composioKey()
   await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
   const changed = await call(ctx, 'connector-apps', { id: 'composio', apps: ['gmail', 'notion'] })
@@ -506,7 +540,7 @@ test('Disconnect deletes the session with the key it was made with, drops it fro
   let breakDelete = false
   globalThis.fetch = (url, init) => breakDelete && init.method === 'DELETE' ? Promise.reject(new Error('boom')) : sent.fetch(url, init)
   const { ctx, home } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const key = composioKey()
   await call(ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
   const userId = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).connectors.composio.userId
@@ -534,7 +568,7 @@ test('a new key makes its own session and deletes the old key\'s session with th
   const sent = fakeComposio(numbered())
   globalThis.fetch = sent.fetch
   const { ctx, home } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const first = composioKey()
   const second = composioKey()
   await call(ctx, 'connector-connect', { id: 'composio', token: first, apps: ['gmail'] })
@@ -584,7 +618,7 @@ test('an address saved by an older version is dropped from state.json at start, 
   globalThis.fetch = sent.fetch
   const first = setup()
   const { home } = first
-  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  t.after(() => cleanHome(home))
   const key = composioKey()
   await call(first.ctx, 'connector-connect', { id: 'composio', token: key, apps: ['gmail'] })
   await first.ctx.dispose()
@@ -613,7 +647,7 @@ test('a session whose answer names no address on Composio\'s host is made again,
   const sent = fakeComposio(numbered())
   globalThis.fetch = sent.fetch
   const { ctx, home, mounts } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
   sent.addresses.set('trs_1', 'https://evil.test/mcp')
   const retried = await call(ctx, 'connector-retry', { id: 'composio' })
@@ -628,7 +662,7 @@ test('a mount error that quotes the session address shows it as [session address
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = fakeComposio(numbered()).fetch
   const { ctx, home } = setup({ fail: 'url' })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const result = await call(ctx, 'connector-connect', { id: 'composio', token: composioKey(), apps: ['gmail'] })
   const composio = result.value.find(entry => entry.id === 'composio')
   assert.equal(composio.state, 'error')
@@ -709,7 +743,7 @@ test('the Connectors page searches apps with the pasted key before connecting (n
     return sent.fetch(url, init)
   }
   const { ctx, home } = setup()
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const key = composioKey()
 
   const keyless = await call(ctx, 'connector-app-search', { id: 'composio', query: 'not' })
