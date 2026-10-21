@@ -87,7 +87,7 @@ test('#607: an enabled Landlock LSM counts as a usable backend', (t) => {
 
 // #610: a danger-full-access session runs commands whatever the host probes say. Reporting it
 // blocked made the preflight call off sessions that could shell out (this host, 2026-10-21).
-test('#610: danger-full-access is never reported blocked, even with no backend at all', (t) => {
+test('#615: danger-full-access is never reported blocked, even with no backend at all', (t) => {
   const dir = scratch(t)
   const result = detect({ mode: 'danger-full-access', platform: 'linux', env: { PATH: dir }, lsmFile: join(dir, 'no-lsm') })
   assert.equal(result.status, 'usable')
@@ -99,13 +99,13 @@ test('#610: danger-full-access is never reported blocked, even with no backend a
   assert.ok(!line.includes('will be refused'))
 })
 
-test('#610: the CLI exits 0 in a danger-full-access session on a host with no backend', (t) => {
+test('#615: the CLI exits 0 in a danger-full-access session on a host with no backend', (t) => {
   const { status, stdout } = cli(t, ['--mode', 'danger-full-access'])
   assert.equal(status, 0)
   assert.match(stdout, /needs no sandbox backend/)
 })
 
-test('#610: danger-full-access from the environment variable is honored like the flag', (t) => {
+test('#615: danger-full-access from the environment variable is honored like the flag', (t) => {
   const dir = scratch(t)
   const result = detect({ ...resolveMode([], { [MODE_ENV]: 'danger-full-access' }), platform: 'linux', env: { PATH: dir }, lsmFile: join(dir, 'no-lsm') })
   assert.equal(result.mode, 'danger-full-access')
@@ -114,7 +114,7 @@ test('#610: danger-full-access from the environment variable is honored like the
   assert.equal(status, 0)
 })
 
-test('#610: the flag wins over the environment variable, and a typo is a usage error', (t) => {
+test('#615: the flag wins over the environment variable, and a typo is a usage error', (t) => {
   assert.deepEqual(resolveMode(['--mode', 'danger-full-access'], { [MODE_ENV]: 'workspace-write' }), { mode: 'danger-full-access', source: 'flag' })
   assert.deepEqual(resolveMode([], { [MODE_ENV]: 'workspace-write' }), { mode: 'workspace-write', source: MODE_ENV })
   assert.equal(resolveMode([], {}).mode, undefined)
@@ -124,7 +124,7 @@ test('#610: the flag wins over the environment variable, and a typo is a usage e
 
 // #610: the Windows ACL runner cannot be probed from a Bot shell. It reported false, which made
 // every Windows session look blocked.
-test('#610: the Windows ACL runner is unknown, so a Windows session is not called blocked', (t) => {
+test('#615: the Windows ACL runner is unknown, so a Windows session is not called blocked', (t) => {
   const dir = scratch(t)
   const result = detect({ mode: 'workspace-write', platform: 'win32', env: { PATH: dir } })
   assert.deepEqual(result.backends, { 'acl-runner': UNKNOWN })
@@ -137,7 +137,7 @@ test('#610: the Windows ACL runner is unknown, so a Windows session is not calle
   assert.ok(!line.includes('is UNAVAILABLE'))
 })
 
-test('#610: with no policy given the CLI says it cannot tell and exits 4', (t) => {
+test('#615: with no policy given the CLI says it cannot tell and exits 4', (t) => {
   const { status, stdout } = cli(t, [])
   assert.equal(status, EXIT_UNKNOWN)
   assert.match(stdout, /cannot tell/)
@@ -150,13 +150,13 @@ test('#610: with no policy given the CLI says it cannot tell and exits 4', (t) =
   assert.equal(result.mode, null)
 })
 
-test('#610: describe() prints the unlock list the result carries', () => {
+test('#615: describe() prints the unlock list the result carries', () => {
   const result = { ...detect({ mode: 'workspace-write', platform: 'linux', env: { PATH: '/nonexistent' }, lsmFile: join(tmpdir(), 'flybot-preflight-no-lsm-file') }), unlock: ['ask the owner for danger-full-access'] }
   assert.equal(result.status, BLOCKED)
   assert.match(describe(result), /Unlock: ask the owner for danger-full-access\./)
 })
 
-test('#610: a directory named bwrap on PATH is not taken for the binary', (t) => {
+test('#615: a directory named bwrap on PATH is not taken for the binary', (t) => {
   const dir = scratch(t)
   mkdirSync(join(dir, 'bwrap'))
   assert.equal(resolveOnPath('bwrap', { PATH: dir }), undefined)
