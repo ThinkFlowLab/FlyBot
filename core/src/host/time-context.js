@@ -1,7 +1,9 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
-const SOURCE = 'ds-bot-time-context'
-const isClock = source => source?.kind === SOURCE || source?.kind === 'time-context'
+export const SOURCE = 'ds-bot-time-context'
+// The host injects `SOURCE`; DSH injects 'time-context'. One home for both (#626).
+export const CLOCK_KINDS = [SOURCE, 'time-context']
+const isClock = source => CLOCK_KINDS.includes(source?.kind)
 
 export function install(rt) {
   const { ctx, config } = rt

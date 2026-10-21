@@ -10,6 +10,7 @@
 // Remote chat Bots are not team members: findBot, the team tools, flybot.bot.list() and
 // memory skip them, and the tree never adopts them.
 import { randomUUID } from 'node:crypto'
+import { CLOCK_KINDS } from './time-context.js'
 import { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { SOURCE_KIND } from './constants.js'
 import { cleanName, fenceUntrusted } from './delivery.js'
@@ -73,7 +74,7 @@ export function notSentLine(error) {
 // time context), the AGENTS.md baseline (form 'instructions') and notices (plan mode, tool
 // reminders). Matched by form, not by a whitelist of senders, so a new notice kind is skipped too.
 const CONTEXT_FORMS = new Set(['snapshot', 'instructions', 'notice'])
-const isContextSnapshot = source => CONTEXT_FORMS.has(source?.form) || source?.kind === 'agent-instructions' || source?.kind === 'ds-bot-time-context' || source?.kind === 'time-context'
+const isContextSnapshot = source => CONTEXT_FORMS.has(source?.form) || source?.kind === 'agent-instructions' || CLOCK_KINDS.includes(source?.kind)
 
 export function remoteTurn(messages) {
   // Context the host appends as user messages (the time context, refreshed every few minutes;

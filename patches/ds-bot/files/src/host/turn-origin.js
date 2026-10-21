@@ -18,6 +18,7 @@
 // rest of the turn), and a turn that took in no message with a verdict has none. The caller treats
 // "none" as 'other' (fail closed).
 import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
+import { CLOCK_KINDS } from './time-context.js'
 
 export const OWNER = 'owner'
 export const OTHER = 'other'
@@ -46,8 +47,7 @@ const NOTICE_KINDS = new Set([
   // and working directory a Session switched to (@deepseek-ai/dsh-agent `model-selection`,
   // `working-directory`); the PTC toggle (`ptc-mode`); the plugin host runner
   // (`cordis-host-runner`).
-  'ds-bot-time-context',
-  'time-context',
+  ...CLOCK_KINDS,
   REFERENCE_KIND,
   'agent-instructions',
   'model-selection',

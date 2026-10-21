@@ -3622,6 +3622,18 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
+@@ -1,7 +1,9 @@
+ import { createUserMessage } from '@deepseek-ai/dsh-llm'
+ 
+-const SOURCE = 'ds-bot-time-context'
+-const isClock = source => source?.kind === SOURCE || source?.kind === 'time-context'
++export const SOURCE = 'ds-bot-time-context'
++// The host injects `SOURCE`; DSH injects 'time-context'. One home for both (#626).
++export const CLOCK_KINDS = [SOURCE, 'time-context']
++const isClock = source => CLOCK_KINDS.includes(source?.kind)
+ 
+ export function install(rt) {
+   const { ctx, config } = rt
 @@ -20,6 +20,8 @@ export function install(rt) {
      if (decision.kind === 'reject' || signal.aborted) return decision
      await rt.load()
@@ -5034,7 +5046,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
-@@ -24,9 +24,8 @@
+@@ -24,9 +24,8 @@ const seed = () => ({
    revision: 0,
  })
  
@@ -5046,7 +5058,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    const ctx = fakeContext()
    const agents = new Map()
    const agentOf = (sessionId) => {
-@@ -71,9 +70,10 @@
+@@ -71,9 +71,10 @@ async function start() {
    const tool = (name, args, sessionId, exec = {}) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId }, ...exec })
    const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
    const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
@@ -5059,7 +5071,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  }
  
  // Waits on real I/O (state writes) without timers, which some tests mock.
-@@ -294,3 +294,186 @@
+@@ -294,3 +294,186 @@ test('an approval asked inside a PTC program shows what that call does', async (
    assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
    assert.equal(value.work.bots.b.tool, 'pwsh')
  })
