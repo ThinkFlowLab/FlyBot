@@ -13,6 +13,10 @@ DeepSeek endpoint. Commands, budgets and the evidence rules are in
 [the suite README](../../dev/live-e2e/README.md); the adapter contract is in
 [docs/interop/live-e2e-adapter.md](../interop/live-e2e-adapter.md).
 
+Which user journeys this suite is meant to cover, and what covers each one today, is the
+[user-scenario matrix](../testing/user-scenarios.md) (#358). The matrix is the map; this
+suite is one of its columns, not the map's owner.
+
 ## Owns
 
 - `dev/live-e2e/`: the fixture and scenario/assertion modules, the FlyBot web adapter,
