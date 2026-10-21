@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -58,4 +58,34 @@ test('#396: with the flag off the tool is not registered and nothing is written'
   t.after(stop)
   assert.equal(ctx.registeredTools.get('record_decision'), undefined)
   assert.equal(existsSync(join(home, 'decisions.jsonl')), false)
+})
+
+// The cap `src/host/decisions.js` documents. Kept as literals so this test fails when the
+// implementation drops the bound, rather than following it wherever it goes.
+const KEPT = 2_000
+const MAX_BYTES = 1_000_000
+
+const seeded = (count) => Array.from({ length: count }, (_, index) => JSON.stringify({
+  time: index, bot: 'a', botName: 'Chief', option: `old ${index}`, choice: 'used',
+})).join('\n')
+
+test('#603: the log is trimmed on disk, so it cannot grow without bound', async (t) => {
+  const { home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const path = join(home, 'decisions.jsonl')
+  writeFileSync(path, `${seeded(KEPT)}\n`)
+  await tool('record_decision', { option: 'newest', choice: 'rejected' })
+  const lines = readFileSync(path, 'utf8').trim().split('\n')
+  assert.ok(lines.length <= KEPT, `decisions.jsonl holds ${lines.length} lines; the cap is ${KEPT}`)
+  assert.equal(JSON.parse(lines.at(-1)).option, 'newest')
+  assert.notEqual(JSON.parse(lines[0]).option, 'old 0', 'the oldest entry should have been trimmed')
+})
+
+test('#603: one huge entry cannot blow the byte cap', async (t) => {
+  const { home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const path = join(home, 'decisions.jsonl')
+  writeFileSync(path, `${JSON.stringify({ time: 1, bot: 'a', botName: 'Chief', option: 'x'.repeat(1_100_000), choice: 'used' })}\n`)
+  await tool('record_decision', { option: 'after the huge entry', choice: 'used' })
+  assert.ok(statSync(path).size <= MAX_BYTES, `decisions.jsonl is ${statSync(path).size} bytes; the cap is ${MAX_BYTES}`)
 })
