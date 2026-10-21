@@ -7,9 +7,10 @@ review, not in a quiet edit.
 
 Two things this page deliberately does **not** decide:
 
-- **`Nightly target` is the owner's call.** Every cell reads `待用户定` with the proposal
-  from [#358](https://github.com/ThinkFlowLab/FlyBot/issues/358) in parentheses, so the
-  column can be signed off in one pass instead of reading a decision this PR invented.
+- **`Nightly target` is the owner's call.** Every cell reads `TBD (owner decides)`, with
+  the proposal from [#358](https://github.com/ThinkFlowLab/FlyBot/issues/358) in
+  parentheses where the issue made one, so the column can be signed off in one pass
+  instead of reading a decision this PR invented.
 - **Which journeys are in scope at all** is still the proposal in the issue body. A row is
   added or dropped by that discussion, not here.
 
@@ -19,21 +20,21 @@ Rules for the `Today` column: it must point at something concrete — a test fil
 
 | ID | Scenario | Persona | Surfaces | Plugins | Today | Nightly target | Blocked by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P1 | Cold start → first message sendable | personal solo | local Desktop, local web | core | none | 待用户定（提议：perf, #357） | #356, #357 |
-| P2 | Single Bot chat with one tool call | personal solo | local web | core | `.github/workflows/live-e2e.yml`, `core/test/rounds.test.js` | 待用户定（提议：live E2E + E2E mock） | — |
-| P3 | Tree run: Chief → children → one combined answer | personal solo | local web | core, tree | `core/dev/eval/specs.mjs` (`P3-tree-split`), `core/test/bot-tree.test.js` | 待用户定（提议：live E2E） | — |
-| P4 | Invite a friend, message their Bot, approve the held reply | personal + friend | local web | social | `core/dev/eval/specs.mjs` (`P4-invite-approve`), `core/test/held-reply.test.js` | 待用户定（提议：live E2E） | — |
-| P5 | Face-to-face room: join, @Bot, leave | personal + friend | local web | social (face rooms) | `core/test/face-people.test.js` | 待用户定 | — |
-| P6 | Timeline: read swimlanes after a multi-Bot run | personal solo | local web | timeline | `core/dev/eval/specs.mjs` (`P6-timeline`) | 待用户定（提议：live E2E + perf） | — |
-| P7 | Long session: 500+ messages, scroll and reopen | personal solo | local web | core | none | 待用户定（提议：perf, #356/#357） | #356, #357 |
-| P8 | Background tab hidden 5 min, then return | personal solo | local web | core | none | 待用户定 | #259 |
-| X1 | Slow or failing model API: waiting, timeout and retry are clear | any | local web | core | none | 待用户定（提议：E2E mock） | — |
-| X2 | Permission denied / no grant | team member | deployed instance (#352) | social, grants | `core/test/authz.test.js` | 待用户定 | #51, #352 |
-| T1 | Assign a task, the owner sees Needs you, approves | team | deployed instance (#352) | inbox, social | none | 待用户定 | #349, #149, #352 |
-| T2 | Approval latency across two instances | team | deployed instance (#352) | social | none | 待用户定 | #352 |
-| T3 | Reminder: an approval waits too long | personal, team | local web | reminders (#353) | none | 待用户定 | #353 |
-| T4 | Scheduled morning summary arrives | personal | local web | reminders (#354) | none | 待用户定 | #354 |
-| T5 | Reminder while the desktop app is closed (24/7) | personal | external channel (#355) | reminders, #352 | none | 待用户定 | #355, #352 |
+| P1 | Cold start → first message sendable | personal solo | local Desktop, local web | core | none | TBD (owner decides); proposal: perf, #357 | #356, #357 |
+| P2 | Single Bot chat with one tool call | personal solo | local web | core | `.github/workflows/live-e2e.yml`, `core/test/rounds.test.js` | TBD (owner decides); proposal: live E2E + E2E mock | — |
+| P3 | Tree run: Chief → children → one combined answer | personal solo | local web | core, tree | `core/dev/eval/specs.mjs` (`P3-tree-split`), `core/test/bot-tree.test.js` | TBD (owner decides); proposal: live E2E | — |
+| P4 | Invite a friend, message their Bot, approve the held reply | personal + friend | local web | social | `core/dev/eval/specs.mjs` (`P4-invite-approve`), `core/test/held-reply.test.js` | TBD (owner decides); proposal: live E2E | — |
+| P5 | Face-to-face room: join, @Bot, leave | personal + friend | local web | social (face rooms) | `core/test/face-people.test.js` | TBD (owner decides) | — |
+| P6 | Timeline: read swimlanes after a multi-Bot run | personal solo | local web | timeline | `core/dev/eval/specs.mjs` (`P6-timeline`) | TBD (owner decides); proposal: live E2E + perf | — |
+| P7 | Long session: 500+ messages, scroll and reopen | personal solo | local web | core | none | TBD (owner decides); proposal: perf, #356/#357 | #356, #357 |
+| P8 | Background tab hidden 5 min, then return | personal solo | local web | core | none | TBD (owner decides) | #259 |
+| X1 | Slow or failing model API: waiting, timeout and retry are clear | any | local web | core | none | TBD (owner decides); proposal: E2E mock | — |
+| X2 | Permission denied / no grant | team member | deployed instance (#352) | social, grants | `core/test/authz.test.js` | TBD (owner decides) | #51, #352 |
+| T1 | Assign a task, the owner sees Needs you, approves | team | deployed instance (#352) | inbox, social | none | TBD (owner decides) | #349, #149, #352 |
+| T2 | Approval latency across two instances | team | deployed instance (#352) | social | none | TBD (owner decides) | #352 |
+| T3 | Reminder: an approval waits too long | personal, team | local web | reminders (#353) | none | TBD (owner decides) | #353 |
+| T4 | Scheduled morning summary arrives | personal | local web | reminders (#354) | none | TBD (owner decides) | #354 |
+| T5 | Reminder while the desktop app is closed (24/7) | personal | external channel (#355) | reminders, #352 | none | TBD (owner decides) | #355, #352 |
 
 ## How to use it
 
