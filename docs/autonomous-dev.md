@@ -19,7 +19,7 @@ Decisions by the maintainer, and what follows from them:
    maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
 4. **Merge by tier** (owner decisions 2026-10-19): **T0 and T1** merge through the merge queue once CI is green, the PR is
    mergeable and it conforms to the design rules, with no PASS and no human approval. **T2 and T3** need the maintainer's
-   approval through GitHub (a human, never auto-merged) **and** a PASS at the tip, and a **self-PASS counts** (below).
+   approval through GitHub (a human, never auto-merged) **and** a PASS at the tip, and a **self-PASS counts** (below). Because the Bot and the owner share the `Birfy` account, GitHub will not accept an `APPROVED` review on its own PRs: the owner's own merge click in the UI is the approval (owner decision 2026-10-21, AGENTS.md).
 5. Budget is not set. Every cost cap will live in one config file (open PRs, attempts per PR,
    PRs per day, minutes per attempt) so it can be changed without code.
 
