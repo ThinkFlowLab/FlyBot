@@ -1442,3 +1442,19 @@ test('#507: a child\'s running turns show as load in the coordinator\'s stored p
   assert.equal(m.tree.loadOf(work), 0)
   assert.match(sp(m, m.root), /Child load right now — Work: idle/)
 })
+
+test('#450: a merge carries the archived Bot\'s own memory into the kept Bot', async () => {
+  const DAY = 24 * 60 * 60 * 1000
+  let clock = Date.UTC(2026, 9, 19, 12)
+  const { m, tree, kids } = await fullChief(8, ['Cooking', 'Shopping', 'Grocery', 'Editor', 'Budget'], { now: () => clock })
+  const dup = await m.flybot.bot.create({ name: 'editor' })
+  m.setMemory(dup, [{ text: 'The user drafts in Markdown', meta: { added: '2026-10-01' } }])
+  await tree.tidy() // merge grace
+  clock += 2 * DAY
+  await tree.tidy()
+  assert.equal(f(m, dup, 'archived').reason, 'merged')
+  const kept = m.memories.get(kids.Editor) ?? []
+  const moved = kept.find(entry => entry.text === 'The user drafts in Markdown')
+  assert.ok(moved, JSON.stringify(kept))
+  assert.equal(moved.meta.source, 'merged')
+})

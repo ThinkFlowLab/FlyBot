@@ -97,6 +97,12 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 - **Capped and safe.** Input and system length, output tokens and calls-per-minute are bounded (`MODEL_LIMITS`); the call streams through the host's own model selection and returns `{ ok: true, text }` or `{ ok: false, code }` — a short token, never provider text (a provider may echo a key). It refuses on a read-only host. It answers with text only: it creates or changes no Bot, room or memory, so a plugin's model call has no side effect the owner cannot see.
 - Tests: `core/test/plugin-model.test.js` (limits, allow-list, rate, error mapping) and the `flybot.model` case in `core/test/flybot.test.js`.
 
+### A plugin's memory access (#450 item 1)
+
+- `flybot.memory.read(botId)` returns a Bot's own saved entries (`{ text, meta }`, capped), and `flybot.memory.append(botId, text, meta?)` writes one through the ordinary memory path (secret-scanned, size-capped, journaled). It is the seam the tree uses to carry a merged Bot's memory into the one that keeps it.
+- **Off unless named.** The host config `flybot.memoryPlugins` is an allow-list; an unnamed plugin's `read` returns `[]` and its `append` resolves `{ ok: false, code: 'not-allowed' }`. The list is empty by default.
+- Bounded and safe: at most 200 entries are read; an entry with a secret or over the entry size is refused; `append` never throws into the caller (it resolves a short `code`). A read-only host refuses the write. Tests: the `flybot.memory` case in `core/test/flybot.test.js`.
+
 ## Tests
 
 `core/test/flybot.test.js`, `core/test/flybot-client.test.js`, `core/test/plugin-model.test.js` via `npm test`.

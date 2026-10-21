@@ -2938,6 +2938,36 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
+@@ -1378,8 +1378,29 @@ export function install(rt) {
+     throw new Error(`Unknown endpoint ${endpoint}`)
+   }
+ 
++  // The plugin memory seam (#450 item 1): a plugin the host allows may read a Bot's own entries
++  // (capped) and append one through the ordinary path (secret-scanned, size-capped, journaled).
++  // hooks.js gates and exposes this as flybot.memory; a plugin never writes a scope it may not.
++  function botMemoryRead(botId) {
++    if (rt.botOf(botId) === undefined) return []
++    return allEntries(loadScope(ownScope(botId))).slice(0, 200).map(entry => ({ text: entry.text, meta: entry.meta ?? {} }))
++  }
++  function botMemoryAppend(botId, text, meta) {
++    const bot = rt.botOf(botId)
++    if (bot === undefined) throw Object.assign(new Error('that Bot is gone'), { code: GONE })
++    const clean = cleanEntry(text)
++    const problem = entryProblem(clean)
++    if (problem !== undefined) throw Object.assign(new Error(problem), { code: 'denied' })
++    return addEntry({
++      scope: ownScope(botId), text: clean,
++      meta: { ...(meta && typeof meta === 'object' ? meta : {}), added: today() },
++      actor: { id: botId, name: bot.name }, label: 'your memory',
++    })
++  }
++
+   Object.assign(rt, {
+     memoryEnabled: true, renewMemory, archiveBotMemory, memoryEndpoint, memoryReviews,
+     memoryNews: () => Object.fromEntries(news),
++    botMemoryRead, botMemoryAppend,
+   })
+ }
 diff --git a/src/host/models.js b/src/host/models.js
 --- a/src/host/models.js
 +++ b/src/host/models.js

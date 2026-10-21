@@ -77,6 +77,10 @@ external backend or task-specific session mapping; see the
   - Hybrid ranking: `termsOf`/`buildIndex`/`searchIndex` build a sparse TF-IDF vector per entry over words, word character trigrams (4+ letters, so a shared stem matches across endings) and CJK uni/bi-grams, and rank by cosine. `recall` uses it only when called with `semantic: "true"`; the default exact-word path is unchanged, so an existing call scores and prints exactly as before.
   - Graph: `buildGraph`/`relatedOf` turn `[[topic]]` references into topic→topic edges and a `by:` metadata value into file→Bot edges; `recall` with `related` walks them (undirected, up to two hops) and lists what is near a topic or Bot. Tests: `core/test/memory-search.test.js` (pure) and the two `recall` cases in `core/test/memory.test.js`.
 
+### Plugin memory seam (#450 item 1)
+
+- `memory.js` exposes `rt.botMemoryRead(botId)` (a Bot's own entries, capped at 200) and `rt.botMemoryAppend(botId, text, meta)` (one entry through the ordinary path — secret-scanned, size-capped, journaled). `hooks.js` gates them as `flybot.memory` for a plugin the host names in `flybot.memoryPlugins` (empty by default). The tree uses it to carry a merged Bot's memory into the kept Bot. Tests: the `flybot.memory` case in `core/test/flybot.test.js`.
+
 ### Tasks
 
 The requester may also cancel a `result-ready` task before acceptance (#202).

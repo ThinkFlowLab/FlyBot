@@ -32,6 +32,19 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   const cfg = { ...DEFAULT_TIDY, ...Object.fromEntries(Object.entries(tidyConfig).filter(([, v]) => Number.isFinite(v) && v >= 0)) }
   const get = (id, key) => fb.getField(id, key)
   const set = (id, key, value) => fb.setField(id, key, value)
+  // A merge carries the archived Bot's own memory into the kept Bot, so nothing is lost (#450
+  // item 1). Best effort: without the memory seam, or when the kept Bot's memory is full, the
+  // merge still stands. At most 20 entries, oldest first.
+  async function handoffMemory(fromId, toId) {
+    if (typeof fb.memoryRead !== 'function' || typeof fb.memoryAppend !== 'function') return
+    let entries
+    try { entries = fb.memoryRead(fromId) ?? [] } catch { return }
+    for (const entry of entries.slice(0, 20)) {
+      let result
+      try { result = await fb.memoryAppend(toId, entry.text, { ...entry.meta, source: 'merged' }) } catch { return }
+      if (result?.ok !== true) return
+    }
+  }
   // Hide / unhide in the core sidebar (bot.hidden). Optional on older hosts without bot.update.
   const hideBot = (id, hidden) => {
     if (typeof fb.updateBot !== 'function') return
@@ -453,6 +466,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
         if (archive(run, dup, 'merged', { into: keep, intoName: nodes[keep].name })) {
           set(keep, 'mergedFrom', [...(get(keep, 'mergedFrom') ?? []), { id: dup, name: nodes[dup].name, at: t }].slice(-10))
           merged.add(dup)
+          await handoffMemory(dup, keep)
         }
       }
     }

@@ -795,3 +795,15 @@ test('#450: flybot.model.ask is refused unless the host allow-lists the plugin',
   // Named, but this host serves no model: the gate opened, the call found none.
   assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'hi' }), { ok: false, code: 'no-model' })
 })
+
+test('#450: flybot.memory reads and writes a Bot only for an allow-listed plugin', async (t) => {
+  const { fb, stop } = await start({ flybot: { memoryPlugins: ['probe'] } })
+  t.after(stop)
+  // Not named in config.flybot.memoryPlugins: no read, no write.
+  assert.deepEqual(fb.scope('stranger').memory.read('a'), [])
+  assert.deepEqual(await fb.scope('stranger').memory.append('a', 'x'), { ok: false, code: 'not-allowed' })
+  // Named: a write goes through the ordinary path and a read sees it.
+  const listed = fb.scope('probe')
+  assert.deepEqual(await listed.memory.append('a', 'The user prefers tea'), { ok: true })
+  assert.ok(listed.memory.read('a').some(entry => entry.text === 'The user prefers tea'))
+})

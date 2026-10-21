@@ -318,6 +318,13 @@ export interface FlyBotTool {
   execute(args: any, exec: { botId: BotId; agent?: { id: string }; [key: string]: unknown }): unknown | Promise<unknown>
 }
 
+export interface MemoryEntry {
+  /** One saved fact, as stored. */
+  text: string
+  /** The entry's metadata (source, added, by, …). */
+  meta: Record<string, string>
+}
+
 export interface ModelAsk {
   /** One prompt, up to a host-capped length. */
   prompt: string
@@ -340,6 +347,16 @@ export interface FlyBot {
   ready(): Promise<void>
   /** True while another dsh holds the team: no polling, no writes. */
   readOnly(): boolean
+  /**
+   * A Bot's own memory, for a plugin the host allows (#450 item 1). Off unless the host names the
+   * plugin in config.flybot.memoryPlugins: `read` returns `[]` otherwise, and `append` resolves
+   * `{ ok: false, code }`. `read` carries entries (capped); `append` writes one through the
+   * ordinary memory path (secret-scanned, size-capped) and never throws into the caller.
+   */
+  memory: {
+    read(botId: BotId): MemoryEntry[]
+    append(botId: BotId, text: string, meta?: Record<string, string>): Promise<{ ok: boolean; code?: string }>
+  }
   /**
    * A sanctioned, capped model call for this plugin (#450). Off unless the host names the
    * plugin in config.flybot.modelPlugins; text only (no side effect), capped input/output and

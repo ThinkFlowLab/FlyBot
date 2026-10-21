@@ -100,6 +100,8 @@ export function install(rt) {
   const { ctx, state, config } = rt
   // config.flybot.bypass: { <middleware that asks>: [<middleware names it may skip>] }
   const bypassGrants = config?.flybot?.bypass ?? {}
+  // Plugins the host allows to read and write a Bot's own memory (#450 item 1). Empty by default.
+  const memoryPlugins = new Set(config?.flybot?.memoryPlugins ?? [])
   // A sanctioned, capped model call for a named plugin (#450). Empty allow-list by default.
   const modelAsk = createPluginModel(rt, { allow: config?.flybot?.modelPlugins ?? [] })
   const warn = (...args) => rt.warn?.(...args)
@@ -963,6 +965,18 @@ export function install(rt) {
     fields,
     // True while another dsh holds the team: plugins then only read (no polling, no writes).
     readOnly: () => rt.readOnly() !== undefined,
+    // A Bot's own memory, for a plugin the host allows (#450 item 1): read returns its entries
+    // (empty when not allowed); append writes one through the ordinary path and never throws.
+    memory: {
+      read: id => (memoryPlugins.has(plugin) && typeof rt.botMemoryRead === 'function' ? rt.botMemoryRead(id) : []),
+      append: (id, text, meta) => {
+        if (!memoryPlugins.has(plugin)) return Promise.resolve({ ok: false, code: 'not-allowed' })
+        if (rt.readOnly?.() !== undefined) return Promise.resolve({ ok: false, code: 'read-only' })
+        if (typeof rt.botMemoryAppend !== 'function') return Promise.resolve({ ok: false, code: 'no-api' })
+        return Promise.resolve(rt.botMemoryAppend(id, text, meta)).then(() => ({ ok: true }))
+          .catch(error => ({ ok: false, code: String(error?.code ?? 'failed').slice(0, 40) }))
+      },
+    },
     // A sanctioned, capped model call for THIS plugin (#450): allow-listed by config, text only,
     // no side effect. Resolves `{ ok: true, text }` or `{ ok: false, code }`.
     model: { ask: input => modelAsk(plugin, input) },
