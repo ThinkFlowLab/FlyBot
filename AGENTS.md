@@ -113,6 +113,19 @@ Otherwise label `needs-human` or `needs-info` and name the blocking conflict or 
 - Any new commit voids a PASS. CI green, the merge queue and the no-bypass rule apply to every tier.
 - Agents never bypass a gate and never admin-merge (the routines run as the maintainer account `Birfy`, but use it only for the actions above, never for admin merge, bypass or changing protection rules). The merge queue squashes the PR title and body, so a `Docs-not-needed:` line goes in the PR **body** and also in a branch commit message (`npm run arch-docs` reads only the branch's commits). Run `verify` with `TZ=UTC`.
 
+### Merge gates
+
+Four rules decide whether a pull request may enter the queue. The mechanical one runs where the merge actually happens: [`merge-gate.yml`](.github/workflows/merge-gate.yml) fails the `merge-gate` job on a `merge_group` entry, and [`merge-gate.mjs`](.github/scripts/merge-gate.mjs) does the judging.
+
+1. **`hold` blocks mechanically.** A pull request labelled `hold` fails `merge-gate` on its queue entry. The label is only a marker; the job is the gate. It blocks the queue once `merge-gate` is listed among the required checks of the `main merge queue` ruleset — a ruleset change for the maintainer, never an agent; until then the job reports without blocking.
+2. **Labelling a pull request `hold` means adding a record.** Add the label **and** post a new comment saying **Record only — do not merge / 仅记录、禁止入队**. The pair is what holds it. Add that comment; never edit or delete an earlier PASS report to change what it said — the history is the record, and rewriting it is the thing that reads as an incident afterwards.
+3. **An authorisation is not a queue permit.** The owner or the Chief saying "let it through", "claim it" or "handle it along with the rest" licenses no specific pull request for the queue. Entering the queue is an explicit action on that one pull request, after its own gate passed, while it carries no `hold`. #566 is the case this exists for: "handle it along with the rest" was read as a permit, the tip was PASSed at 09:48:18Z, enqueued at 09:48:28Z and merged at 09:50:40Z as `abaf938b`.
+4. **The newest conclusion at the head being merged decides.** Read the pull request's comments and review bodies, live, for the exact head SHA being merged, and take the newest text that carries `Verdict:` or a `## Review —` heading: INC or REQUEST_CHANGES refuses, PASS allows, no conclusion refuses too. A result from `pull_request` time never stands in — on #610 the tip report ran at 10:31:08Z and the INC landed at 11:24:37Z, 54 minutes later. The gating agent checks this before enqueueing; `merge-gate.yml` checks it again at `merge_group`, and the stricter answer wins.
+
+A review's `state` is not what is read: the account cannot approve its own pull requests, so its reviews stay `COMMENTED` even for an INC, and the INC on #610 was a comment rather than a review.
+
+The standing "file no new issues" rule covers design proposals only: a reproducible code defect is still filed as an issue, with its reproduction.
+
 ### Hard rules for agents
 
 1. The self-test routine files issues only; the maintenance routine opens PRs; the release routine owns `CHANGELOG.md` and the version.

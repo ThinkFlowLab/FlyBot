@@ -1,0 +1,50 @@
+name: Merge gate
+
+# The mechanical half of the merge gates in AGENTS.md (section "Merge gates"): a queue entry is
+# refused when its pull request carries `hold`, or when the newest conclusive text at the head about
+# to be merged is INC / REQUEST_CHANGES. `.github/scripts/merge-gate.mjs` does the judging.
+#
+# `merge_group`, not `pull_request`: `review-gate.yml` judges a tip when it changes, and #610 shows why
+# that is not a gate. Its report ran at 10:31:08Z; the INC landed at 11:24:37Z, 54 minutes later. A
+# result from before the verdict says nothing about the merge, so the judgement happens at the moment
+# that is audited — the queue entry — against the head SHA the queue is about to merge, re-read live.
+#
+# A `merge_group` event carries no pull request, no labels and no reviews. Only `head_ref`
+# (`gh-readonly-queue/main/pr-<N>-<sha>`) points at them, so the script parses N back out and asks the
+# API. Reading a review's `state` never works: the account cannot approve its own pull requests, so its
+# reviews stay `COMMENTED` even for an INC — the INC on #610 was a comment, not a review.
+#
+# Read-only: no secrets, nothing written, and the script and the review policy are taken from the base
+# commit of the group, never from the pull request's own code.
+on:
+  merge_group:
+
+concurrency:
+  group: merge-gate-${{ github.event.merge_group.head_sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  merge-gate:
+    name: merge-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.merge_group.base_sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      - name: Judge the queue entry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: node base/.github/scripts/merge-gate.mjs
