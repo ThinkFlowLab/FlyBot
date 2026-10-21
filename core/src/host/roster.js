@@ -500,6 +500,10 @@ export function install(rt) {
     } else if (replace !== undefined && replace !== id) {
       const at = others.indexOf(replace)
       if (at === -1) throw new Error('Only a Main Bot can be replaced')
+      // The Main list is deployment-wide, so a swap is only within one owner: taking another
+      // member's Main Bot's place demotes it for them (#613). authz.js refuses the endpoint for
+      // the same reason; this keeps the state invariant for every caller.
+      if ((rt.botOf(replace)?.ownerId ?? null) !== (bot.ownerId ?? null)) throw new Error('Only a Bot of the same owner can take a Main Bot’s place')
       next = others.with(at, id)
     } else if (primary) {
       next = [id, ...others]

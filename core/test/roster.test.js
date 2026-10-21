@@ -593,3 +593,34 @@ test('a failed Main Bot create does not leave a dangling designated Chief', asyn
   assert.equal(saved.members['owner-1'].designatedChiefId, null)
   assert.equal(Object.keys(saved.bots || {}).length, 0)
 })
+
+// #613: `setMain` is the layer that writes `mainBotIds`, so the same-owner rule is enforced here
+// too, not only at the endpoint: a `replace` across owners would demote another member's Bot.
+test('#613: a Main Bot’s place is only taken by a Bot of the same owner', async (t) => {
+  const { call, stop, home } = start({
+    version: 2,
+    revision: 1,
+    members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'chief-a' }, 'owner-2': { id: 'owner-2', createdAt: 2, designatedChiefId: 'chief-b' } },
+    rooms: {},
+    exchanges: [],
+    exchangeTurns: {},
+    questions: {},
+    prefs: {},
+    mainBotIds: ['chief-a'],
+    bots: {
+      'chief-a': { id: 'chief-a', name: 'Alice Chief', ownerId: 'owner-1' },
+      'chief-b': { id: 'chief-b', name: 'Bob Chief', ownerId: 'owner-2' },
+      'helper-b': { id: 'helper-b', name: 'Bob Helper', ownerId: 'owner-2' },
+    },
+  })
+  t.after(stop)
+  const refused = await call('set-main', { id: 'chief-b', main: true, replace: 'chief-a' })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /same owner/)
+  assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).mainBotIds, ['chief-a'])
+  // A swap within Bob's own team still works.
+  await call('set-main', { id: 'chief-b', main: true })
+  const swapped = await call('set-main', { id: 'helper-b', main: true, replace: 'chief-b' })
+  assert.equal(swapped.ok, true)
+  assert.deepEqual(swapped.value.mainBotIds, ['chief-a', 'helper-b'])
+})

@@ -257,7 +257,16 @@ export function install(rt) {
         return requireSession(body?.sessionId)
       }
       if (ep === 'usage') return body?.botId === undefined ? ALLOW : requireBot(body.botId)
-      if (ep === 'set-main') return requireBot(body?.id)
+      if (ep === 'set-main') {
+        // `replace` names the Main Bot whose place the target takes, and the Main list is
+        // deployment-wide: checking only `body.id` let a member swap another owner's Main Bot
+        // for their own and demote it (#613).
+        if (typeof body?.replace === 'string' && body.replace !== '' && body.replace !== body?.id) {
+          const replaceGate = requireBot(body.replace)
+          if (!replaceGate.ok) return replaceGate
+        }
+        return requireBot(body?.id)
+      }
       if (ep === 'set-flags') {
         const id = body?.id ?? body?.botId
         if (botOwnedBy(actor, id) || roomOwnedBy(actor, id) || roomMemberOf(actor, id)) return ALLOW

@@ -1,0 +1,1 @@
+`set-main` no longer lets a member take another owner's Main Bot's place: the endpoint checks the Bot named in `replace` too, and `setMain` refuses a `replace` across owners, so a member cannot demote another owner's Main Bot or promote their own Bot over it ([#613](https://github.com/ThinkFlowLab/FlyBot/issues/613)).
