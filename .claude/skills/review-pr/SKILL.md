@@ -34,14 +34,18 @@ Use for local or PR tip reviews on `ThinkFlowLab/FlyBot`. Produce a Verifier rep
 Always include:
 
 ```text
-Tip SHA: <full or 12+ hex>
+Verdict: PASS | FAIL | INC at <full or 12+ hex>
+Written by: Reviewer. Posted by: <who actually posted it>.
+
 Ran:
   - <command> → pass|fail
   - …
 Not run:
   - <check> — reason
-Verdict: PASS | FAIL | INC
 ```
+
+The first line is the whole conclusion (#637): nothing may come before it, because the gates read the
+first line and treat any other shape as no conclusion.
 
 Honesty rules:
 
@@ -104,7 +108,7 @@ Do not fill contributor checkboxes or flip draft status unless asked.
 Post the report as a **pull request comment** (or the review body) only when a human asks for it, and
 only from the reviewer's own login: `.github/scripts/review-gate.mjs` reads the newest Verifier block
 that names the head, from a login in `.github/agent/review-policy.json`. The pull request's own
-author counts only when listed in the policy's `selfReview` (the owner's Bot/agent, `Birfy`, may PASS its own PR). Keep the block intact — `Tip SHA:`, `Ran:`, `Not run:`, `Verdict:` — because a
+author counts only when listed in the policy's `selfReview` (the owner's Bot/agent, `Birfy`, may PASS its own PR). Keep the block intact — the `Verdict: … at <sha>` first line, the attribution line, `Ran:`, `Not run:` — because a
 missing `Ran:` command or `Not run:` line is reported as incomplete evidence, and a PASS at an older
 sha stops counting the moment the tip moves. Posting it is not merge authority: see AGENTS.md step 6.
 T0/T1 need no PASS; T2/T3 need a PASS at the tip, and the agent that gated the PR then enqueues it itself (owner decision 2026-10-21).

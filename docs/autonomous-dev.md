@@ -142,9 +142,8 @@ What counts as a reviewed tip, all of it:
    Owner decision 2026-10-19: a PR opened by the owner's Bot/agent may be PASSed by the owner's own reviewer
    Bot/agent, so no independent reviewer is required. Any other author still needs someone else. A self-PASS does not
    replace green CI, and a new commit voids it.
-3. The Verifier block `review-pr` already writes: `Tip SHA:`, `Ran:` with at least one command,
-   `Not run:` (a gap named, not hidden), and `Verdict: PASS`.
-4. The `Tip SHA:` **is the head being judged**. A later commit moves the tip and the old PASS stops
+3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written by: Reviewer. Posted by: Chief (proxy…).`), then the evidence — `Ran:` with at least one command and `Not run:` with the gap named, not hidden. A body whose first line is not the verdict is no conclusion.
+4. The sha on that first line **is the head being judged**. A later commit moves the tip and the old PASS stops
    counting; that report is then listed as "not counted", with the sha it named.
 5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
    earlier PASS, and a later PASS at the same tip replaces a FAIL.

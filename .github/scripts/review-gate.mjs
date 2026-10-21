@@ -30,11 +30,20 @@ const SHORT = 12
 // one replaced, and only the last block is the verdict the reviewer stands behind.
 export function parseReport(body) {
   const lines = String(body ?? '').replace(/[*`]/g, '').split('\n')
+  const out = { tip: null, verdict: null, ran: [], hasNotRun: false }
+  // The fixed format (#637): the first non-empty line is the whole conclusion,
+  // `Verdict: PASS at <sha>` (or INC / REQUEST_CHANGES). The attribution line and the evidence go
+  // below it, so a verdict Chief posts for a Reviewer with no write channel parses the same way.
+  const firstLine = lines.find((line) => line.trim() !== '') ?? ''
+  const first = /^Verdict\s*:\s*(PASS|INC|REQUEST_CHANGES|FAIL)\s+(?:at\s+)?([0-9a-f]{7,40})\s*$/i.exec(firstLine.trim())
   let start = -1
   for (let i = 0; i < lines.length; i++) {
     if (/^Tip SHA\s*:/i.test(lines[i].trim())) start = i
   }
-  const out = { tip: null, verdict: null, ran: [], hasNotRun: false }
+  if (first) {
+    out.verdict = first[1].toUpperCase()
+    out.tip = first[2].toLowerCase()
+  }
   const from = start < 0 ? 0 : start
   for (let i = from; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -43,7 +52,7 @@ export function parseReport(body) {
       const hex = /[0-9a-f]{7,40}/i.exec(m[1])
       out.tip = hex ? hex[0].toLowerCase() : null
     }
-    m = /^Verdict\s*:\s*(PASS|FAIL|INC)\b/i.exec(line)
+    m = /^Verdict\s*:\s*(PASS|FAIL|INC|REQUEST_CHANGES)\b/i.exec(line)
     if (m) out.verdict = m[1].toUpperCase()
     m = /^Ran\s*:\s*(.*)$/i.exec(line)
     if (m) {

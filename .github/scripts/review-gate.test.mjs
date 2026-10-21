@@ -177,3 +177,28 @@ test('workflow: pull_request, read-only, not required, acts on nothing', () => {
   assert.doesNotMatch(wf, /gh pr merge|--approve|reviewDecision|gh api .*-X (POST|PATCH|DELETE)/)
   assert.doesNotMatch(testYml, /review-gate/, 'it is not a required check or part of tests-ok')
 })
+
+// #637: the fixed format. The first line is the whole conclusion, so a verdict Chief posts for a
+// Reviewer who cannot post (the required proxy case) parses exactly like the Reviewer's own.
+test('#637: a first-line verdict carries its own tip and its evidence below parses the same', () => {
+  const body = [
+    `Verdict: PASS at ${HEAD}`,
+    'Written by: Reviewer. Posted by: Chief (proxy — the Reviewer has no write channel).',
+    '',
+    'Ran: npm run verify → pass',
+    'Not run: smoke — host code unchanged',
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.tip, HEAD)
+  assert.equal(parsed.verdict, 'PASS')
+  assert.deepEqual(parsed.ran, ['npm run verify → pass'])
+  assert.equal(parsed.hasNotRun, true)
+  assert.equal(decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', body)], policy }).ok, true)
+})
+
+test('#637: a verdict that is not the first line is not a conclusion', () => {
+  const body = ['Verdict (written by Reviewer, posted by Chief)', '', `Verdict: PASS at ${HEAD}`, 'Ran: npm test'].join('\n')
+  const result = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', body)], policy })
+  assert.equal(result.ok, false)
+  assert.equal(result.verdict, null)
+})

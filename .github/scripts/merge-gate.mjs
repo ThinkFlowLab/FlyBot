@@ -69,24 +69,26 @@ export function render(result, { pr, labels } = {}) {
   return out.join('\n')
 }
 
-const gh = (...a) => execFileSync('gh', a, { encoding: 'utf8', maxBuffer: 256 << 20 })
-const list = (path) => gh('api', '--paginate', '--jq', '.[]', path).split('\n').filter(Boolean).map((l) => JSON.parse(l))
+const realGh = (...a) => execFileSync('gh', a, { encoding: 'utf8', maxBuffer: 256 << 20 })
 
 function arg(name) {
   const i = process.argv.indexOf(name)
   return i > 0 ? process.argv[i + 1] : undefined
 }
 
-function main() {
-  const repo = process.env.GH_REPO || arg('--repo')
+// The entry point the workflow runs. `gh` and `env` are injectable so a test can drive the whole
+// judgement without the network (and without a PATH shim): the rules above are exercised end to end.
+export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prOption, headRef: headRefOption } = {}) {
+  const list = (path) => gh('api', '--paginate', '--jq', '.[]', path).split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  const repo = repoOption || env.GH_REPO || arg('--repo')
   if (!repo) throw new Error('set GH_REPO or pass --repo owner/name')
-  const headRef = arg('--head-ref') || process.env.HEAD_REF
+  const headRef = headRefOption ?? (arg('--head-ref') || env.HEAD_REF)
   const fromRef = headRef ? prFromHeadRef(headRef) : null
   if (headRef && !fromRef) throw new Error(`cannot read a pull request from head_ref "${headRef}" (expected gh-readonly-queue/<base>/pr-<N>-<sha>)`)
-  const pr = arg('--pr') || process.env.PR || fromRef?.pr
+  const pr = prOption || arg('--pr') || env.PR || fromRef?.pr
   if (!pr) throw new Error('set HEAD_REF, PR or pass --pr N')
 
-  const policyPath = arg('--policy') || process.env.REVIEW_POLICY || fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
+  const policyPath = arg('--policy') || env.REVIEW_POLICY || fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
   const pull = JSON.parse(gh('api', `repos/${repo}/pulls/${pr}`))
   const head = pull.head?.sha
   const author = pull.user?.login
@@ -103,11 +105,11 @@ function main() {
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)
   console.log(`merge-gate: ${result.ok ? 'PASS' : `REFUSE — ${result.reasons.join('; ')}`}`)
   const text = render(result, { pr, labels })
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')
+  if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, text + '\n')
   else console.log('\n' + text)
-  process.exit(result.ok ? 0 : 1)
+  return result
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  try { main() } catch (e) { console.error(`merge-gate: ${e.message}`); process.exit(1) }
+  try { const result = main(); process.exit(result.ok ? 0 : 1) } catch (e) { console.error(`merge-gate: ${e.message}`); process.exit(1) }
 }

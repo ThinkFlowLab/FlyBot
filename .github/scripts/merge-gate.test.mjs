@@ -101,3 +101,74 @@ test('workflow: merge_group only, read-only, judges the base copy, acts on nothi
   assert.doesNotMatch(wf, /continue-on-error: true/, 'a refusal must fail the job, not report it like review-gate.yml does')
   assert.doesNotMatch(wf, /gh pr merge|--approve|reviewDecision|GH_TOKEN: \$\{\{ secrets\./, 'no merge, no approval, no secret')
 })
+
+// ---- through the entry point the queue uses (#637): main() itself, with the API replaced by a
+// fake `gh`, so the whole judgement is exercised without the network.
+import { main } from './merge-gate.mjs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const fakeGh = ({ comments, reviews = [], labels = [] }) => (...args) => {
+  const path = args[args.length - 1]
+  const pull = { head: { sha: HEAD }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })) }
+  if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
+  if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
+  if (/\/pulls\/\d+$/.test(path)) return JSON.stringify(pull)
+  throw new Error('fake gh: unexpected ' + path)
+}
+
+const runGate = (fixture) => {
+  const policy = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  return main({
+  gh: fakeGh(fixture),
+  env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policy },
+  repo: 'ThinkFlowLab/FlyBot',
+  pr: 637,
+  headRef: ENTRY,
+  })
+}
+
+const apiComment = (body, at) => ({ user: { login: 'reviewer-agent' }, body, created_at: at })
+const apiReview = (body, at) => ({ user: { login: 'reviewer-agent' }, body, submitted_at: at })
+
+const firstLine = (verdict, tip = HEAD) => [
+  `Verdict: ${verdict} at ${tip}`,
+  'Written by: Reviewer. Posted by: Chief (proxy).',
+  '',
+  'Ran: npm run verify → pass',
+  'Not run: smoke',
+].join('\n')
+
+test('#637: the queue entry refuses the newest conclusion INC, through main()', () => {
+  const result = runGate({ comments: [apiComment(firstLine('PASS'), '2026-10-21T12:40:00Z'), apiComment(firstLine('INC'), '2026-10-21T12:49:00Z')] })
+  assert.equal(result.ok, false)
+  assert.match(result.reasons.join('; '), /INC/)
+})
+
+test('#637: a verdict Chief posts for the Reviewer parses like the Reviewer wrote it', () => {
+  const result = runGate({ comments: [apiComment(firstLine('PASS'), '2026-10-21T12:40:00Z')] })
+  assert.equal(result.ok, true)
+  assert.equal(result.verdict.by, 'reviewer-agent')
+})
+
+test('#637: a body that does not start with the verdict is no conclusion, so the entry is refused', () => {
+  const prefixed = ['Verdict (written by Reviewer, posted by Chief)', '', firstLine('PASS')].join('\n')
+  const result = runGate({ comments: [apiComment(prefixed, '2026-10-21T12:49:00Z')] })
+  assert.equal(result.ok, false)
+  assert.match(result.reasons.join('; '), /no Verifier report names the tip|no Tip SHA/)
+  assert.equal(result.verdict.verdict, null, 'a verdict that is not the first line is not a conclusion')
+})
+
+test('#637: hold still refuses through main()', () => {
+  const result = runGate({ labels: ['hold'], comments: [apiComment(firstLine('PASS'), '2026-10-21T12:40:00Z')] })
+  assert.equal(result.ok, false)
+  assert.equal(result.held, true)
+})
+
+test('#637: a review body in the fixed format is judged the same as a comment', () => {
+  const result = runGate({ comments: [], reviews: [apiReview(firstLine('PASS'), '2026-10-21T12:40:00Z')] })
+  assert.equal(result.ok, true)
+  assert.equal(result.verdict.by, 'reviewer-agent')
+})
