@@ -446,3 +446,19 @@ test('a running Bot\'s work names its current step, in one short line, until the
   host.emit('gb', 'turn/end', { reason: { kind: 'error', error: new Error('boom') } })
   assert.equal((await bots()).b, undefined)
 })
+
+// #626: the host and DSH inject context into ordinary owner turns — this host's clock snapshot
+// (`ds-bot-time-context`), DSH's own clock and cited-conversation snapshots, and the AGENTS.md
+// baseline. None of them carries a request, so a turn that took one in still honours the owner's
+// standing grant; treating one as `other` is what made the #608 card come back.
+for (const kind of ['ds-bot-time-context', 'time-context', 'session-reference', 'agent-instructions']) {
+  test(`#626: a turn that took in a ${kind} message still honours the Bot grant`, async (t) => {
+    const host = await start()
+    t.after(host.stop)
+    await openTurn(t, host)
+    await grantFromGroup(host, 'always-bot')
+    host.emit('b', 'turn/start', { turn: 2 })
+    host.emit('b', 'user/message', { content: [{ type: 'text', text: 'context' }], source: { kind, form: 'snapshot' } })
+    assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
+  })
+}

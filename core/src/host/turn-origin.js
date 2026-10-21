@@ -17,15 +17,29 @@
 // A turn's verdict is the strictest of its messages ('other' beats everything and sticks for the
 // rest of the turn), and a turn that took in no message with a verdict has none. The caller treats
 // "none" as 'other' (fail closed).
-import { REPLY_KIND, SOURCE_KIND } from './constants.js'
+import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
 
 export const OWNER = 'owner'
 export const OTHER = 'other'
 export const SCHEDULED = 'scheduled'
 
 // The verdict of one message `source` (DSH's `user/message` event) to a Bot.
-// DSH's own notices: a turn that took in only these carries nobody's request.
-const NOTICE_KINDS = new Set(['tool', 'system-prompt', 'plan-mode', 'user-approval'])
+// The messages that carry nobody's request, by source kind: DSH's own notices; the clock snapshots
+// this host injects (`ds-bot-time-context`, time-context.js `SOURCE`) and DSH injects
+// (`time-context`); the snapshot of a cited conversation DSH logs after the message that cites it
+// (`session-reference`, constants.js `REFERENCE_KIND`); and the AGENTS.md baseline and changes DSH
+// injects as a user message (`agent-instructions`, @deepseek-ai/dsh-agent-instructions). Every
+// other kind fails closed (#620, #626).
+const NOTICE_KINDS = new Set([
+  'tool',
+  'system-prompt',
+  'plan-mode',
+  'user-approval',
+  'ds-bot-time-context',
+  'time-context',
+  REFERENCE_KIND,
+  'agent-instructions',
+])
 
 export function originOfSource(source, bot) {
   if (source === undefined || source === null || typeof source !== 'object') return OTHER

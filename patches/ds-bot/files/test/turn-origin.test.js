@@ -29,6 +29,12 @@ test('each kind of message has one verdict, and a stamp the host did not write i
   for (const source of [{ kind: 'tool' }, { kind: 'system-prompt' }, { kind: 'plan-mode' }, { kind: 'user-approval' }, relay({ role: 'mention' }), relay({ role: 'handoff', handoff: true })]) {
     assert.equal(originOfSource(source, bot), undefined, JSON.stringify(source))
   }
+  // #626: the contexts the host and DSH inject into ordinary owner turns carry nobody's request
+  // either, so they must not flip a turn to `other` (that dropped the standing grant of #608).
+  for (const kind of ['ds-bot-time-context', 'time-context', 'session-reference', 'agent-instructions']) {
+    assert.equal(originOfSource({ kind }, bot), undefined, kind)
+    assert.equal(originOfSource({ kind, form: 'snapshot' }, bot), undefined, `${kind} snapshot`)
+  }
   // #620: a source kind this version does not recognise is not a no-request message: the host
   // cannot vouch for who is behind it, so it fails closed.
   assert.equal(originOfSource({ kind: 'some-future-kind' }, bot), OTHER, 'an unrecognised kind is other')
