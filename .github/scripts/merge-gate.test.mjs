@@ -85,18 +85,23 @@ test('no head sha refuses instead of passing', () => {
   assert.match(r.reasons.join('; '), /no head sha/)
 })
 
-test('workflow: merge_group only, read-only, judges the base copy, acts on nothing', () => {
+test('workflow: merge_group judges, pull_request reports, read-only, judges the base copy', () => {
   const wf = readFileSync(new URL('../workflows/merge-gate.yml', import.meta.url), 'utf8')
   const triggers = wf.slice(wf.indexOf('\non:\n'), wf.indexOf('\nconcurrency:'))
   const perms = wf.slice(wf.indexOf('\npermissions:\n'), wf.indexOf('\njobs:'))
-  assert.match(triggers, /^ {2}merge_group:\s*$/m, 'the gate runs on the queue entry, not on the pull request')
+  assert.match(triggers, /^ {2}merge_group:\s*$/m, 'the queue entry is where the judgement happens')
+  // #639: a required check that only runs on merge_group leaves every pull request waiting for a
+  // status that never comes, so the same job also reports on the pull request head.
+  assert.match(triggers, /^ {2}pull_request:\s*$/m, 'the same check reports on the pull request head')
   assert.doesNotMatch(triggers, /pull_request_target/, 'never a write token on pull request code')
-  assert.doesNotMatch(triggers, /pull_request:|push:|schedule/, 'a review written later is only visible at the queue entry')
+  assert.doesNotMatch(triggers, /push:|schedule/, 'neither a merge nor a push runs this')
+  assert.match(wf, /MODE: \$\{\{ github\.event_name == 'pull_request' && 'report' \|\| 'queue' \}\}/, 'the pull_request run is the reporting one')
   assert.match(perms, /^permissions:\n(?: {2}[\w-]+: read\n)+$/m)
   assert.doesNotMatch(perms, /: write/, 'the gate never writes')
   assert.match(wf, /^ {4}name: merge-gate$/m, 'the job name is what a required-check list matches')
-  assert.match(wf, /ref: \$\{\{ github\.event\.merge_group\.base_sha \}\}/, 'the script and the policy come from the base commit')
+  assert.match(wf, /ref: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.event\.pull_request\.base\.sha \}\}/, 'the script and the policy come from the base commit, never from the pull request')
   assert.match(wf, /HEAD_REF: \$\{\{ github\.event\.merge_group\.head_ref \}\}/)
+  assert.match(wf, /PR: \$\{\{ github\.event\.pull_request\.number \}\}/, 'a pull_request run has no head_ref, so it passes the number')
   assert.match(wf, /run: node base\/\.github\/scripts\/merge-gate\.mjs/)
   assert.doesNotMatch(wf, /continue-on-error: true/, 'a refusal must fail the job, not report it like review-gate.yml does')
   assert.doesNotMatch(wf, /gh pr merge|--approve|reviewDecision|GH_TOKEN: \$\{\{ secrets\./, 'no merge, no approval, no secret')
@@ -171,4 +176,38 @@ test('#637: a review body in the fixed format is judged the same as a comment', 
   const result = runGate({ comments: [], reviews: [apiReview(firstLine('PASS'), '2026-10-21T12:40:00Z')] })
   assert.equal(result.ok, true)
   assert.equal(result.verdict.by, 'reviewer-agent')
+})
+
+// ---- #639: the pull_request run reports and never fails; the queue entry still refuses.
+test('#639: a report names what the entry would refuse and still passes', () => {
+  const noVerdict = judgeAt({ mode: 'report', reports: [] })
+  assert.equal(noVerdict.ok, true, 'a report never fails')
+  assert.match(noVerdict.reasons.join('; '), /no Verifier report names the tip/)
+  assert.equal(noVerdict.mode, 'report')
+
+  const held = judgeAt({ mode: 'report', labels: ['hold'] })
+  assert.equal(held.ok, true)
+  assert.match(held.reasons.join('; '), /`hold` label/)
+
+  const inc = judgeAt({ mode: 'report', reports: [say(report({ verdict: 'INC' }))] })
+  assert.equal(inc.ok, true)
+  assert.match(inc.reasons.join('; '), /INC/)
+
+  // The same inputs at the queue entry keep their old meaning: no conclusion refuses.
+  assert.equal(judgeAt({ mode: 'queue', reports: [] }).ok, false)
+  assert.equal(judgeAt({ mode: 'queue', labels: ['hold'] }).ok, false)
+  assert.equal(judgeAt({ mode: 'queue', reports: [say(report({ verdict: 'INC' }))] }).ok, false)
+})
+
+test('#639: the pull_request entry point reports without a head_ref and does not throw', () => {
+  const policy = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  const result = main({
+    gh: fakeGh({ comments: [apiComment(report({ verdict: 'INC' }), '2026-10-21T12:49:00Z')] }),
+    env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policy, MODE: 'report', PR: '639' },
+    repo: 'ThinkFlowLab/FlyBot',
+  })
+  assert.equal(result.ok, true, 'the report passes even when the entry would be refused')
+  assert.equal(result.mode, 'report')
+  assert.match(result.reasons.join('; '), /INC/)
 })

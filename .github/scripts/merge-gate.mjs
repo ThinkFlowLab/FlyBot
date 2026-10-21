@@ -3,7 +3,12 @@
 //   GH_REPO=owner/repo GH_TOKEN=... HEAD_REF=gh-readonly-queue/main/pr-566-<sha> node merge-gate.mjs
 //   node merge-gate.mjs --pr 566 [--sha <head>] [--repo owner/repo]     # by hand
 //
-// It answers one question at the only moment that is audited: may this queue entry merge?
+// It runs twice, and the two runs answer different questions. On `merge_group` — the only moment at
+// which a merge is audited — it asks "may this entry merge?" and fails the job when the answer is no.
+// On `pull_request` it reports: a required check must produce a result on the pull request head too,
+// or every pull request reads "Expected — waiting for status" and cannot even enter the queue (#639).
+// That run never fails, because a verdict arrives as a comment, which starts no `pull_request` run:
+// a failure there would outlive its own reason until the next push.
 //   - `hold` on the pull request refuses the entry;
 //   - the newest conclusive text at the head being merged must be a PASS. That judgement is
 //     review-gate.mjs's `decide`, reused rather than rewritten, so "what counts as a review" has one
@@ -37,7 +42,7 @@ const short = (s) => String(s ?? '').slice(0, SHORT)
 
 // labels: the pull request's labels. head: its current head sha. queuedSha: the sha in head_ref, the
 // one the queue merges. reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, head, author, reports, policy, queuedSha }) {
+export function judge({ labels, head, author, reports, policy, queuedSha, mode = 'queue' }) {
   const reasons = []
   const target = String(queuedSha ?? head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -50,16 +55,27 @@ export function judge({ labels, head, author, reports, policy, queuedSha }) {
   }
   const verdict = decide({ head: target, author, reports, policy })
   if (!verdict.ok) reasons.push(verdict.reason)
-  return { ok: reasons.length === 0, head: target, held, verdict, reasons }
+  // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
+  // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
+  // comment starts no run of its own (#639).
+  const report = mode === 'report'
+  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, reasons, mode }
 }
 
 export function render(result, { pr, labels } = {}) {
+  const report = result.mode === 'report'
   const out = [
-    `### Merge gate: ${result.ok ? `PASS at ${short(result.head)}` : 'REFUSE'}`,
+    report
+      ? `### Merge gate: report for #${pr} at ${short(result.head)} — ${result.reasons.length ? 'the queue entry would refuse' : 'the queue entry would pass'}`
+      : `### Merge gate: ${result.ok ? `PASS at ${short(result.head)}` : 'REFUSE'}`,
     '',
-    result.ok
-      ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
-      : `Queue entry for #${pr} must not merge: ${result.reasons.join('; ')}.`,
+    report
+      ? result.reasons.length
+        ? `A queue entry for this head would be refused: ${result.reasons.join('; ')}. This report never fails.`
+        : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+      : result.ok
+        ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+        : `Queue entry for #${pr} must not merge: ${result.reasons.join('; ')}.`,
     '',
     `Pull request #${pr}, head \`${result.head}\`, labels: ${(labels ?? []).join(', ') || '(none)'}.`,
   ]
@@ -100,10 +116,15 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
       .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at })),
   ]
 
-  const result = judge({ labels, head, author, reports, policy: loadPolicy(policyPath), queuedSha: fromRef?.sha || arg('--sha') })
-  console.log(`merge-gate: PR #${pr} head ${short(head)}${fromRef ? `, queue entry ${short(fromRef.sha)}` : ''}, labels [${labels.join(', ')}]`)
+  // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`
+  // reports (#639). MODE (or `--report`) is there for a hand run and for the tests.
+  const mode = (env.MODE || (process.argv.includes('--report') ? 'report' : 'queue')) === 'report' ? 'report' : 'queue'
+  const result = judge({ labels, head, author, reports, policy: loadPolicy(policyPath), queuedSha: fromRef?.sha || arg('--sha'), mode })
+  console.log(`merge-gate: PR #${pr} head ${short(head)}${fromRef ? `, queue entry ${short(fromRef.sha)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)
-  console.log(`merge-gate: ${result.ok ? 'PASS' : `REFUSE — ${result.reasons.join('; ')}`}`)
+  console.log(mode === 'report'
+    ? `merge-gate: report — ${result.reasons.length ? `the queue entry would refuse: ${result.reasons.join('; ')}` : 'the queue entry would pass'}`
+    : `merge-gate: ${result.ok ? 'PASS' : `REFUSE — ${result.reasons.join('; ')}`}`)
   const text = render(result, { pr, labels })
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, text + '\n')
   else console.log('\n' + text)
