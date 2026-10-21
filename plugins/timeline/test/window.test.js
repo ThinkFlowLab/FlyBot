@@ -274,3 +274,27 @@ test('outcomes: per-Bot turn endings and the recent failures (#357/#471)', () =>
   assert.deepEqual(win.outcomes.find(entry => entry.lane === 'b').aborted, 1)
   assert.deepEqual(win.failures.map(f => [f.id, f.bot, f.outcome, f.code]), [['b#1', 'b', 'aborted', undefined], ['a#2', 'a', 'error', 'RATE_LIMIT']])
 })
+
+test('stuck: open requests are listed worst-first (#469)', () => {
+  const win = build()
+  assert.ok(win.stuck.length >= 1)
+  assert.ok(win.stuck.some(entry => entry.id === 'x3'), JSON.stringify(win.stuck))
+  assert.ok(win.stuck.every(entry => entry.waitedMs >= 0))
+  for (let i = 1; i < win.stuck.length; i += 1) assert.ok(win.stuck[i - 1].waitedMs >= win.stuck[i].waitedMs)
+})
+
+test('toolUse: which tools a Bot used, and how often they failed (#357/#359)', () => {
+  const recs = [
+    { r: 'ts', t: at(1000), id: 'a#1', pl: 'chat', bot: 'a' },
+    { r: 'ks', t: at(1100), id: 'c1', tid: 'a#1', nm: 'web_search', bot: 'a' },
+    { r: 'ke', t: at(1200), id: 'c1', tid: 'a#1', ok: true },
+    { r: 'ks', t: at(1300), id: 'c2', tid: 'a#1', nm: 'mcp__github__search', bot: 'a' },
+    { r: 'ke', t: at(1400), id: 'c2', tid: 'a#1', ok: false },
+    { r: 'te', t: at(2000), id: 'a#1', o: 'completed' },
+  ]
+  const win = buildWindow(recs, { now: at(10_000), bots, rooms })
+  const a = win.toolUse.find(entry => entry.lane === 'a')
+  const byName = Object.fromEntries(a.tools.map(tool => [tool.name, [tool.calls, tool.failed]]))
+  assert.deepEqual(byName.web_search, [1, 0])
+  assert.deepEqual(byName['mcp__github__search'], [1, 1])
+})

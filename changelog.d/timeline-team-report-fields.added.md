@@ -1,0 +1,1 @@
+The timeline window now also reports the open requests waiting longest (#469) and the tools each Bot used with their failures (#359), and `timeline/health` reduces the same window to per-Bot health signals and flags (#357).

@@ -3,9 +3,11 @@ import { createRecorder } from './recorder.js'
 import { openTrace, TraceLocked } from './store.js'
 import { buildWindow, clampWindow } from './window.js'
 import { createExporter, otlpPayload, spansFrom } from './otel.js'
+import { buildHealth } from './health.js'
 
 export const ENDPOINT = 'timeline/window'
 export const EXPORT_ENDPOINT = 'timeline/export'
+export const HEALTH_ENDPOINT = 'timeline/health'
 
 export function createTimeline(adapter, { dir, persist = true, now = Date.now, exporter, ...limits } = {}) {
   let trace
@@ -49,12 +51,16 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   // sends another home's names by accident.
   const exportWindow = (body = {}) => otlpPayload(spansFrom(trace.records(), { names: body?.names === true ? trace.names() : {} }), { serviceName: body?.serviceName })
   const offExport = adapter.handle(EXPORT_ENDPOINT, exportWindow)
+  // Team health (#357): the same window, reduced to per-Bot signals and flags. Read-only.
+  const health = (body = {}) => buildHealth(window(body))
+  const offHealth = adapter.handle(HEALTH_ENDPOINT, health)
   return {
-    trace, recorder, window, exportNow, exportWindow,
+    trace, recorder, window, exportNow, exportWindow, health,
     dispose() {
       if (exportTimer !== undefined) clearInterval(exportTimer)
       offEndpoint()
       offExport()
+      offHealth()
       off()
       trace.close()
     },
