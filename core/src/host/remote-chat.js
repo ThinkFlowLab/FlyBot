@@ -247,8 +247,16 @@ export function install(rt) {
       if (wasGone !== gone) {
         bot.remote = { ...bot.remote, ...(gone ? { gone: true } : {}) }
         if (!gone) delete bot.remote.gone
-        if (gone) bot.hidden = true
-        else delete bot.hidden
+        if (gone) {
+          // Remember when *we* hide the chat because the Bot left the published list: on `hidden`
+          // alone that is indistinguishable from a hide the user set, so the return below would
+          // drop the user's own hide too (#631).
+          if (bot.hidden !== true) bot.remote.hiddenByGone = true
+          bot.hidden = true
+        } else if (bot.remote.hiddenByGone === true) {
+          delete bot.hidden
+          delete bot.remote.hiddenByGone
+        }
         changed = true
       }
     }
