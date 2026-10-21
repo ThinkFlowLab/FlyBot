@@ -81,6 +81,12 @@ Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled 
 | Repo maintenance | every 2 h, FlyBot and Bot Social separately | The **only** routine that opens fix PRs. Each run: review open PRs against the design rules; triage every open issue (fixed, duplicate or obsolete: close with a comment; still valid: readiness check below); label every open issue and PR; develop only `agent-ready` issues; merge ready PRs through the merge queue within the gates below. Never deploys. Never edits `CHANGELOG.md` or a version number. |
 | Daily release | about 02:00 Asia/Shanghai | Publishes a real semver GitHub release (tag = `core/package.json` version, patch bump per day, skipped when there are no changelog fragments) through a mechanical release PR. It owns `CHANGELOG.md` and the version. The files and the approval are in [Standing approval](#standing-approval-mechanical-release-prs). |
 
+#### A schedule is per session, not per Bot (#628)
+
+`schedule_list` answers for **the session the call runs in**, not for the Bot. A schedule the owner created in another session of the same Bot is simply absent from the answer, and nothing in the response says which session it answered for — so `[]` is indistinguishable from "nothing is scheduled". This cost two wrong conclusions on 2026-10-21: a Bot reported "0 timers" and the team concluded a live schedule had never existed, and another run came close to deleting and recreating a schedule that was running.
+
+**Never infer "this Bot has no scheduled work" from an empty `schedule_list`, and never delete, update or recreate a schedule on the strength of one.** The owner's UI shows the real list; ask the owner instead of the tool when the run depends on it. `schedule_delete` and `schedule_update` share the same scope, so a Bot can otherwise "clean up" a schedule it cannot see. The DSH-side fix is tracked in #628.
+
 ### Issue labels
 
 - **Type** (exactly one): `bug`, `enhancement`, `documentation`, `accessibility`.
@@ -120,6 +126,7 @@ Otherwise label `needs-human` or `needs-info` and name the blocking conflict or 
 3. A routine PR is merged by the Bot that gated it (owner decision 2026-10-21, [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). A typed chat reply is still not an approval for anything else, and an owner-only decision (scope, security surface, policy) still waits for the owner's word through the normal path (#349).
 4. Connector tools are on by default for the owner's Bots and off by default for other people's, until the owner opts in (#359).
 5. Bot Social has no keyword commitment scan.
+6. A schedule is per session, not per Bot: an empty `schedule_list` is not evidence that a schedule does not exist, and no schedule is deleted, updated or recreated on the strength of one (see [A schedule is per session](#a-schedule-is-per-session-not-per-bot-628)).
 
 ## What this project is
 
