@@ -17,9 +17,8 @@ Decisions by the maintainer, and what follows from them:
 3. **Agents act only on issues labeled `agent-ready`**. That label is set by a maintainer, or by the owner's
    maintenance routine after triage (the routine runs as the maintainer account `Birfy`, so the controller sees a
    maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
-4. **Merge by tier** (owner decisions 2026-10-19): **T0 and T1** merge through the merge queue once CI is green, the PR is
-   mergeable and it conforms to the design rules, with no PASS and no human approval. **T2 and T3** need the maintainer's
-   approval through GitHub (a human, never auto-merged) **and** a PASS at the tip, and a **self-PASS counts** (below). Because the Bot and the owner share the `Birfy` account, GitHub will not accept an `APPROVED` review on its own PRs: the owner's own merge click in the UI is the approval (owner decision 2026-10-21, AGENTS.md).
+4. **Merge by tier** (owner decisions 2026-10-19, revised 2026-10-21): **T0 and T1** merge through the merge queue once CI is green, the PR is
+   mergeable and it conforms to the design rules, with no PASS. **T2 and T3** need a PASS at the tip (a **self-PASS counts**, below) with green CI, and then the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate, not a click in the UI (owner decision 2026-10-21, AGENTS.md). The gate is the review: green `tests-ok` at the tip, a PASS at that same tip, and a test that fails when the change is reverted. Work that meets neither the defect nor the routine-need bar gets no PR at all (AGENTS.md).
 5. Budget is not set. Every cost cap will live in one config file (open PRs, attempts per PR,
    PRs per day, minutes per attempt) so it can be changed without code.
 
@@ -66,7 +65,7 @@ with that login (a merge goes only through the merge queue). A narrower credenti
 **CODEOWNERS is not added.** GitHub requests a review from every owner on every PR that touches an
 owned path. Seven in ten of the last 30 merged PRs touch a T3 path, so it would notify both maintainers on most
 PRs while enforcing nothing. Add it together with the "require review from code owners" rule when
-approval is enforced (Phase 2).
+the tier is enforced (Phase 2).
 
 ### Label flow
 
@@ -94,8 +93,8 @@ Generated files (`core/client.js`, `patches/**`) are not read or counted; `patch
 
 | Tier | Rule (owner decisions 2026-10-19) | Examples |
 | --- | --- | --- |
-| T3 | the maintainer's approval (a human) and a PASS at the tip (self-PASS counts); never auto-merged | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
-| T2 | the maintainer's approval and a PASS at the tip (self-PASS counts) | other `core/src/host/**`, `plugins/**`, unknown paths |
+| T3 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself through the queue (owner decision 2026-10-21) | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
+| T2 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself | other `core/src/host/**`, `plugins/**`, unknown paths |
 | T1 | merge queue on green CI; no PASS, no approval | `core/src/client/**`, tests, generated files |
 | T0 | merge queue on green CI; no PASS, no approval | `docs/**` (except policy docs), READMEs |
 
@@ -130,8 +129,9 @@ To switch the report off: disable the workflow in the Actions tab, or delete `.g
 
 A merge decision needs a check it can read, not a report in a chat. `.github/scripts/review-gate.mjs`
 answers one question for a pull request: **does the current head carry a Verifier PASS?**
-AGENTS.md step 6 is the rule it serves. A PASS is required for **T2 and T3** (together with the maintainer's
-approval); **T0 and T1 need no PASS** and merge on green CI. This report is the evidence of a PASS; it never merges anything.
+AGENTS.md step 6 is the rule it serves. A PASS is required for **T2 and T3** (at the tip, with green CI);
+**T0 and T1 need no PASS** and merge on green CI. The agent that gated the PR then enqueues it itself
+(owner decision 2026-10-21). This report is the evidence of a PASS; it never merges anything.
 
 What counts as a reviewed tip, all of it:
 
@@ -139,7 +139,7 @@ What counts as a reviewed tip, all of it:
 2. Not the pull request's **own author**, **unless** that author is listed in the policy's `selfReview` (today: `Birfy`).
    Owner decision 2026-10-19: a PR opened by the owner's Bot/agent may be PASSed by the owner's own reviewer
    Bot/agent, so no independent reviewer is required. Any other author still needs someone else. A self-PASS does not
-   replace the maintainer's approval of a T2/T3 PR or green CI, and a new commit voids it.
+   replace green CI, and a new commit voids it.
 3. The Verifier block `review-pr` already writes: `Tip SHA:`, `Ran:` with at least one command,
    `Not run:` (a gap named, not hidden), and `Verdict: PASS`.
 4. The `Tip SHA:` **is the head being judged**. A later commit moves the tip and the old PASS stops
@@ -167,7 +167,7 @@ pull request cannot change the rules that judge it. The one exception is the pul
 the script: the base has none, so that run falls back to the PR's copy under the same read-only
 token. It is **not** a required check and must stay out of branch protection and out of `tests-ok`'s
 `needs` (a test checks the `needs` half; branch protection is a live setting), so a pull request
-without a PASS can still merge on the maintainer's approval.
+without a PASS still needs its own review before the gating agent merges it.
 
 **Why report-only.** The owner's reviewer Bot/agent acts as `Birfy`, which is in the policy (and in `selfReview`), so
 its report can satisfy the gate, including on its own PRs. Nothing here blocks or merges: it is evidence a human or
@@ -237,8 +237,8 @@ independent public reports say the same for `gh pr merge --auto` run with `GITHU
    auto-merge enabled with `GITHUB_TOKEN` (needs a scratch base branch). Conflict-proofing for generated files is a separate PR (patch format, changelog fragments, split core pages).
 2. **Controller, label-only** (`schedule` plus `workflow_dispatch`, `GITHUB_TOKEN`): demote `agent-ready` after a
    non-maintainer edit, set `agent-pr` and `risk:T*`, expire stale claims, a pause variable and a kill-switch drill.
-   Enforce the tier with a required check and CODEOWNERS for T3 approval.
+   Enforce the tier with a required check and CODEOWNERS for the T3 reviewer-tip check.
 3. **Agents on a dedicated credential**, one open PR at a time, with the cost caps in one config file.
    Add any new reviewer's login to `.github/agent/review-policy.json` in the same change: until it is
    listed, its report cannot satisfy the reviewed-tip gate.
-4. **Auto-merge T0/T1** on green CI (no PASS needed, owner decision 2026-10-19); T2/T3 stay behind the maintainer's approval and a PASS. Then edge releases, a red-`main` watchdog, and T2 behind a smoke gate.
+4. **Auto-merge T0/T1** on green CI (no PASS needed, owner decision 2026-10-19); T2/T3 stay behind a PASS at the tip, which the gating agent then merges itself (owner decision 2026-10-21). Then edge releases, a red-`main` watchdog, and T2 behind a smoke gate.

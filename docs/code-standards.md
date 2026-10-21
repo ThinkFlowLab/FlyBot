@@ -39,8 +39,8 @@ When you report status on a change:
 ## Merge only a reviewed tip
 
 - By tier (owner decisions 2026-10-19; see AGENTS.md step 6):
-  - **T0/T1:** merge through the queue when required checks are green, the PR is mergeable and design-conformant. No PASS and no human approval needed.
-  - **T2/T3:** a **PASS** at the **same tip SHA** (a self-PASS by the owner's reviewer Bot/agent counts; no independent reviewer required) **and** the maintainer's approval through GitHub (the owner's own merge click in the UI counts: AGENTS.md, owner decision 2026-10-21, "the merge click is the approval").
+  - **T0/T1:** merge through the queue when required checks are green, the PR is mergeable and design-conformant. No PASS needed.
+  - **T2/T3:** a **PASS** at the **same tip SHA** (a self-PASS by the owner's reviewer Bot/agent counts; no independent reviewer required). With green required checks and a mergeable branch, the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate (AGENTS.md, owner decision 2026-10-21, "the Bot gates and merges its own PRs"), not a click in the UI.
   - Required checks in CONTRIBUTING (`npm test`, client `--check`, `npm run lint`; smoke when host changes) are green or honestly listed as not run with a maintainer waiver.
 - Any new commit voids a PASS: re-run the Verifier on the new tip. Never admin-merge or bypass a gate.
 

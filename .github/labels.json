@@ -3,7 +3,7 @@
   {"name": "agent-ready", "color": "0E8A16", "description": "Triaged spec: an agent may take it. Set by a maintainer or the maintenance routine, not a template"},
   {"name": "agent-working", "color": "1D76DB", "description": "An agent has claimed this issue (the claim comment names the branch)"},
   {"name": "agent-pr", "color": "5319E7", "description": "Pull request opened by an agent"},
-  {"name": "awaiting-approval", "color": "FBCA04", "description": "PR is green and waits for the maintainer's approval (T2/T3) or a review PASS at its tip"},
+  {"name": "awaiting-approval", "color": "FBCA04", "description": "Legacy: a PR a person must decide on; routine T2/T3 PRs no longer wait for a click"},
   {"name": "self-test", "color": "C5DEF5", "description": "Filed by the product self-test routine (issues only)"},
   {"name": "needs-info", "color": "D4C5F9", "description": "Waiting for the reporter or a maintainer decision"},
   {"name": "needs-human", "color": "B60205", "description": "The agent loop stopped; a person must decide (reason in the last comment)"},
@@ -11,5 +11,5 @@
   {"name": "risk:T0", "color": "C2E0C6", "description": "Risk tier T0 (docs only), set by the controller from the diff; never by hand"},
   {"name": "risk:T1", "color": "BFD4F2", "description": "Risk tier T1 (client, tests, generated files), set by the controller from the diff"},
   {"name": "risk:T2", "color": "FBCA04", "description": "Risk tier T2 (host/plugin code or an unnamed path), set by the controller from the diff"},
-  {"name": "risk:T3", "color": "D93F0B", "description": "Risk tier T3 (needs a human approval), set by the controller from the diff"}
+  {"name": "risk:T3", "color": "D93F0B", "description": "Risk tier T3 (a PASS at the tip and green CI), set by the controller from the diff"}
 ]

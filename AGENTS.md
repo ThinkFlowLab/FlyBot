@@ -19,7 +19,7 @@ Grok Bot is the single entry point for humans; it schedules OpenCode (implements
 3. **Verify locally:** `npm run verify` at the repo root (Node 22+, see Commands).
 4. **PR** to `main`. Imperative English title, `Fixes #N` in the body, and what you ran and did **not** run at the tip SHA. A user-visible change adds one fragment `changelog.d/<issue-or-slug>.<kind>.md` ([changelog.d/README.md](changelog.d/README.md)); never edit `CHANGELOG.md` in a feature PR. Squash is the only merge method; the PR title and body become the commit message, so keep the body short.
 5. **CI.** The required check is `tests-ok`. It is green only when `test`, `plugins (tree)`, `plugins (social)` and `package` all pass. Never merge around a red check.
-6. **Review and merge.** Merge by tier ([`risk-gate.mjs`](.github/scripts/risk-gate.mjs): `node .github/scripts/risk-gate.mjs --pr <n>`). **T0 and T1** (owner decision 2026-10-19 11:45): an agent may enqueue the PR once `tests-ok` is green at its tip, it is mergeable, and it conforms to the design rules. No PASS and no human approval is needed. **T2 and T3** need the maintainer's approval through GitHub (a human; the owner's own merge click counts, see [the merge click](#owner-decision-the-merge-click-is-the-approval-2026-10-21)) **and** a PASS at the tip SHA from [`review-pr`](.claude/skills/review-pr/SKILL.md) (PASS / FAIL / INC), with green checks. **Self-review counts** (owner decision 2026-10-19 11:43): a PR opened by the owner's Bot/agent (the `Birfy` account) may be PASSed by the owner's own reviewer Bot/agent; no independent reviewer is required. A tip move (any new commit) voids the PASS. The self-PASS never replaces the maintainer's approval or green CI. Enqueue with `gh pr merge --auto --squash --match-head-commit <sha>`. `main` requires a merge queue: that command enqueues the PR (gh may answer `The merge strategy for main is set by the merge queue` or `already queued`), the queue performs the squash merge, and a plain `--squash` merge is refused; do not retry ([merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge)). Never admin-merge and never bypass a gate. Exception: a mechanical release PR under the [standing approval](#standing-approval-mechanical-release-prs) below. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
+6. **Review and merge.** Merge by tier ([`risk-gate.mjs`](.github/scripts/risk-gate.mjs): `node .github/scripts/risk-gate.mjs --pr <n>`). **T0 and T1** (owner decision 2026-10-19 11:45): an agent may enqueue the PR once `tests-ok` is green at its tip, it is mergeable, and it conforms to the design rules. No PASS is needed. **T2 and T3** need a PASS at the tip SHA from [`review-pr`](.claude/skills/review-pr/SKILL.md) (PASS / FAIL / INC) with green checks, and then **the agent that gated the PR enqueues it itself**: since 2026-10-21 the owner's authorisation is the [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized), not a click in the UI. **Self-review counts** (owner decision 2026-10-19 11:43): a PR opened by the owner's Bot/agent (the `Birfy` account) may be PASSed by the owner's own reviewer Bot/agent; no independent reviewer is required. A tip move (any new commit) voids the PASS. Neither the PASS nor the self-PASS replaces green CI. Enqueue with `gh pr merge --auto --squash --match-head-commit <sha>`. `main` requires a merge queue: that command enqueues the PR (gh may answer `The merge strategy for main is set by the merge queue` or `already queued`), the queue performs the squash merge, and a plain `--squash` merge is refused; do not retry ([merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge)). Never admin-merge and never bypass a gate. Exception: a mechanical release PR under the [standing approval](#standing-approval-mechanical-release-prs) below. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
 7. **Stop** and hand over to the maintainer on a security-sensitive change, an unresolved maintainer decision, or when you cannot get a green tip.
 
 When a class of bug repeats, date a lesson in LESSONS.md (`Seen N×`); after **≥3 days** promote the durable rule into `docs/code-standards.md` / CONTRIBUTING.
@@ -32,16 +32,22 @@ On 2026-10-19 07:02 (Asia/Shanghai) the maintainer, Danyang (GitHub `Birfy`), de
 - `core/package.json` and `core/package-lock.json`
 - `patches/ds-bot/0007-version-and-tooling.patch`
 
-It does not waive the checks: the PR still needs green required checks (`tests-ok`) at its tip SHA and the daily preflight (no release for that version yet, the latest `Test` on `main` green, at least one changelog fragment). Anything beyond those files needs the maintainer's fresh approval.
+It does not waive the checks: the PR still needs green required checks (`tests-ok`) at its tip SHA and the daily preflight (no release for that version yet, the latest `Test` on `main` green, at least one changelog fragment). Anything beyond those files needs a fresh review (a PASS at the tip) like any other PR.
 
-### Owner decision: the merge click is the approval (2026-10-21)
+### Owner decision: the Bot gates and merges its own PRs (2026-10-21, owner-authorized)
 
-The Bot that opens PRs and the owner share one GitHub account (`Birfy`), and GitHub does not let an account approve a pull request it opened. So no PR this pipeline opens can ever carry an `APPROVED` review: "the maintainer's approval through GitHub (a human)" in item 6 is the owner's own action in the GitHub UI.
+On 2026-10-21 the owner replaced the earlier "only a merge click in the UI is the approval" rule: a Bot that gates a PR itself may merge it into `main` itself, **including T2 and T3**. The gate is the review, not a person's click — `tests-ok` green at the tip, a PASS at that same tip, mergeable and design-conformant, through the merge queue, as the `Birfy` account. It never admin-merges, never force-pushes `main`, never bypasses a check, and never removes a PR the owner put in the merge queue.
 
-- The owner pressing **Merge** / **Add to merge queue** in the GitHub UI on a T2/T3 PR **is** that approval, as long as the merge matches a PASS at the tip SHA and green `tests-ok`.
-- The Bot never presses that button for the owner: it does not enqueue or merge a T2/T3 PR on its own. A sentence in chat ("this one can go in") still does not count; only the owner's click in the UI does.
-- T0/T1 are unchanged: an agent may enqueue them itself once `tests-ok` is green, the PR is mergeable and it conforms to the design rules (item 6).
-- A reviewer Bot's PASS (self-PASS included) records what was checked; it is never the approval, and it never replaces the owner's click or green CI.
+**Admission line — only two kinds of work get a PR at all:**
+
+1. a fix for a reproducible real defect (with a minimal reproduction or an equivalent test), or
+2. something the routine work itself needs.
+
+Such a PR needs `tests-ok` green at the tip **and** a test that fails when the source change is reverted. A new commit at the tip voids the PASS and the review is repeated.
+
+Anything else is not opened, not queued and not reviewed: pure UX polish, new configuration keys, design proposals. Leave them in `needs-human`, or close them with the reason written down, and report them in one batch instead of one at a time.
+
+**Still report to the Chief first** (who asks the owner): a vague scope, a change on the security surface (secrets, permissions, sharing), or a policy change the owner can feel. The routines keep their own bottom lines: no production deploy without consent, no touching the owner's own machine, never print a secret, never open an issue on someone else's upstream, never remove a PR the owner put in the merge queue.
 
 ### Conflict recipe (generated files)
 
@@ -78,7 +84,7 @@ Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled 
 - **Type** (exactly one): `bug`, `enhancement`, `documentation`, `accessibility`.
 - **Area** (one or more): `area:social`, `area:ui`, `area:automation`, `area:release`, `area:security`, `area:docs`.
 - **Source:** `self-test`.
-- **State:** `needs-info` (spec unclear), `needs-human` (needs a design decision from the owner; the comment says what), `awaiting-approval` (T2/T3 PR is green and waits for the maintainer's approval or a PASS at its tip), `agent-ready`, `agent-working`, `agent-pr`, `hold`.
+- **State:** `needs-info` (spec unclear), `needs-human` (needs a design decision from the owner; the comment says what), `awaiting-approval` (legacy: a PR a person must decide on; routine T2/T3 PRs no longer wait for a click), `agent-ready`, `agent-working`, `agent-pr`, `hold`.
 - **Controller-managed, never set by hand:** `risk:T0` to `risk:T3`, `agent-task`, `status:done`.
 - `hold` means automation leaves the item alone.
 
@@ -100,16 +106,16 @@ Otherwise label `needs-human` or `needs-info` and name the blocking conflict or 
 
 ### Gates
 
-- **T0 / T1:** merge through the merge queue once `tests-ok` is green at the tip, the PR is mergeable and design-conformant. No PASS and no human approval is required.
-- **T2 / T3:** the maintainer's approval through GitHub (a human) **and** a PASS at the head commit from a reviewer in [`.github/agent/review-policy.json`](.github/agent/review-policy.json), with green CI. **Self-PASS counts:** a PR opened by the owner's Bot/agent (`Birfy`) may be PASSed by the owner's own reviewer Bot/agent (the policy's `selfReview` list); an independent reviewer is no longer required. The self-PASS never replaces the maintainer's approval.
-- Any new commit voids a PASS (and a stale approval). CI green, the merge queue and the no-bypass rule apply to every tier.
+- **T0 / T1:** merge through the merge queue once `tests-ok` is green at the tip, the PR is mergeable and design-conformant. No PASS is required.
+- **T2 / T3:** a PASS at the head commit from a reviewer in [`.github/agent/review-policy.json`](.github/agent/review-policy.json), with green CI, and the agent that gated it then enqueues it itself ([self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). **Self-PASS counts:** a PR opened by the owner's Bot/agent (`Birfy`) may be PASSed by the owner's own reviewer Bot/agent (the policy's `selfReview` list); an independent reviewer is no longer required. Neither the PASS nor the self-PASS replaces green CI.
+- Any new commit voids a PASS. CI green, the merge queue and the no-bypass rule apply to every tier.
 - Agents never bypass a gate and never admin-merge (the routines run as the maintainer account `Birfy`, but use it only for the actions above, never for admin merge, bypass or changing protection rules). The merge queue squashes the PR title and body, so a `Docs-not-needed:` line goes in the PR **body** and also in a branch commit message (`npm run arch-docs` reads only the branch's commits). Run `verify` with `TZ=UTC`.
 
 ### Hard rules for agents
 
 1. The self-test routine files issues only; the maintenance routine opens PRs; the release routine owns `CHANGELOG.md` and the version.
 2. No deploy of production Bot Social, and no change to the owner's local instances, without the owner's explicit yes.
-3. An approval is given only through an explicit UI control, never by a typed chat reply (#349).
+3. A routine PR is merged by the Bot that gated it (owner decision 2026-10-21, [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). A typed chat reply is still not an approval for anything else, and an owner-only decision (scope, security surface, policy) still waits for the owner's word through the normal path (#349).
 4. Connector tools are on by default for the owner's Bots and off by default for other people's, until the owner opts in (#359).
 5. Bot Social has no keyword commitment scan.
 

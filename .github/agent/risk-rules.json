@@ -3,7 +3,7 @@
   "note": "Phase 0: these rules only REPORT a tier (see docs/autonomous-dev.md). Nothing reads them to block or merge. Editing this file is itself T3.",
   "tiers": {
     "T3": {
-      "meaning": "high risk: the maintainer's approval (a human, via GitHub) at the current head and a PASS at the tip (self-PASS counts); never auto-merged",
+      "meaning": "high risk: a PASS at the current head (self-PASS counts) and green CI; the gating agent then merges it itself through the merge queue (owner decision 2026-10-21)",
       "paths": [
         ".github/**", ".claude/**", ".agents/**", "scripts/**", "core/scripts/**",
         "AGENTS.md", "CONTRIBUTING.md", "LESSONS.md", "docs/code-standards.md", "docs/autonomous-dev.md",
@@ -26,7 +26,7 @@
       "topics": ["create_child_bot"]
     },
     "T2": {
-      "meaning": "medium risk: host/plugin code, and any path no rule names (never silently T0/T1); the maintainer's approval and a PASS at the tip (self-PASS counts)",
+      "meaning": "medium risk: host/plugin code, and any path no rule names (never silently T0/T1); a PASS at the tip (self-PASS counts) and green CI",
       "paths": ["core/index.js", "core/src/host/**", "core/types/**", "plugins/**"]
     },
     "T1": {

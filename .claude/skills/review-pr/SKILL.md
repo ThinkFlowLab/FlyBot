@@ -107,4 +107,4 @@ that names the head, from a login in `.github/agent/review-policy.json`. The pul
 author counts only when listed in the policy's `selfReview` (the owner's Bot/agent, `Birfy`, may PASS its own PR). Keep the block intact — `Tip SHA:`, `Ran:`, `Not run:`, `Verdict:` — because a
 missing `Ran:` command or `Not run:` line is reported as incomplete evidence, and a PASS at an older
 sha stops counting the moment the tip moves. Posting it is not merge authority: see AGENTS.md step 6.
-T0/T1 need no PASS; T2/T3 need the maintainer's approval and a PASS at the tip.
+T0/T1 need no PASS; T2/T3 need a PASS at the tip, and the agent that gated the PR then enqueues it itself (owner decision 2026-10-21).
