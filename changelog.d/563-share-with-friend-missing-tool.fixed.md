@@ -1,1 +1,0 @@
-Sharing a Bot with a friend on a Bot Social server that lacks `grant_bot_to_friend` now tries the REST route and, when that is missing too, says *Bot Social needs an update to share with a friend. Invite links still work.* instead of showing the raw `MCP error -32602: Tool grant_bot_to_friend not found` ([#563](https://github.com/ThinkFlowLab/FlyBot/issues/563)).

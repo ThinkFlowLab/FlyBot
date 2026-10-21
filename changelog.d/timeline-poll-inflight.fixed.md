@@ -1,1 +1,0 @@
-The timeline panel no longer issues a duplicate request when a window change supersedes a poll in flight and the tab is looked at again: a superseded answer no longer clears the in-flight guard of the request that replaced it.

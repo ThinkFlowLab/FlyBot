@@ -1,1 +1,0 @@
-The Timeline window now reports how each Bot's turns ended — completed, aborted, error or lost — and lists its recent failed or aborted turns with their error code, so the panel or a tool can see a Bot's reliability at a glance. It is read-only and part of the existing `timeline/window` answer, so nothing new needs configuring.

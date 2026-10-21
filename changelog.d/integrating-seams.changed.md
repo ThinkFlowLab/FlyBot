@@ -1,1 +1,0 @@
-The integration guide now names the two plugin seams — `flybot.model.ask` and `flybot.memory` — with the host config that enables each (`flybot.modelPlugins` / `flybot.memoryPlugins`), so a plugin author finds them without reading the host source.

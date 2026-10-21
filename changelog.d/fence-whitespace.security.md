@@ -1,1 +1,0 @@
-Untrusted-content fences are neutralized more strictly: a marker written with whitespace inside the tag (`< / untrusted-message>`) is now stripped too, since a parser that ignores whitespace reads the same closing marker. Text from friends' Bots and other untrusted sources stays data, never instructions.

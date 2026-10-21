@@ -1,1 +1,0 @@
-A hold on a send now blocks the task that was started last even when two tasks were started in the same millisecond: task order uses a strictly increasing stamp instead of the bare clock, so which task an untagged hold blocks no longer depends on timing.

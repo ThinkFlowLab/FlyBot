@@ -1,1 +1,0 @@
-The team-health view no longer calls a Bot idle while it is busy in one long turn that began before the window, and its failure rate is never reported as more failures than turns; a Bot busy through the window is flagged busy.

@@ -1,1 +1,0 @@
-The Timeline window now reports the token spend per Bot — how many model calls, and the input, output and cached tokens they used, when the adapter reports them — so where the team's model quota goes is visible next to the turns it ran. Read-only, counts only (never message text), and part of the existing `timeline/window` answer.

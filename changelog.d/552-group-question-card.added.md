@@ -1,1 +1,0 @@
-A question a Bot asks about work handed out from a group now shows in that group's sidebar row (waiting dot and "Waiting for your answer") and in the Agent inbox as a **Needs your answer** card whose **Open** takes you to the group, where the card takes the answer ([#552](https://github.com/ThinkFlowLab/FlyBot/issues/552)).

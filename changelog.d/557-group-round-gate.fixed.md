@@ -1,1 +1,0 @@
-Scheduled tasks no longer stop overnight in a group chat: the limit that let Bots start only three rounds there until you spoke again is turned off, because it blocked owner-set recurring runs without showing anything. Bot-to-Bot chain and per-round limits still apply ([#557](https://github.com/ThinkFlowLab/FlyBot/issues/557)).

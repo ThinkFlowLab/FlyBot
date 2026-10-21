@@ -1,1 +1,0 @@
-When someone has signed in, the one DSH Agent (and its Sessions: new session, adopt, rename, archive, remove) stays usable to that member while the team is alone, instead of every call being refused before it runs; with more than one member it follows the same shared-resource rule as adding the Agent.

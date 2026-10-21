@@ -1,1 +1,0 @@
-After switching the Bot Social server, the stopped social layer can no longer restart its poll from a face poll that was still in flight, so the old server is not polled (and does not deliver messages) after the switch.

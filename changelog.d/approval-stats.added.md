@@ -1,1 +1,0 @@
-The `flybot` service can now report approval activity: `flybot.approvals.stats()` returns, read-only, how many of each Bot's outbound sends were held and how many were approved, rejected or went stale, plus a team total. A plugin or a settings view can show it; nothing is changed by reading it.

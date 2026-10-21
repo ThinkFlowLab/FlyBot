@@ -1,1 +1,0 @@
-A Bot's own failure, stop or resume notice that lands while its group chat is still in a round no longer flashes FlyBot's internal `[Group post from …]` routing header in the queued-message bar above the composer; it waits until the round is done and the round still shows it as that event ([#595](https://github.com/ThinkFlowLab/FlyBot/issues/595)).
