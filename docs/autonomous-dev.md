@@ -187,7 +187,7 @@ agent reads, and the record a later enforcement step is checked against.
 `main` requires a **merge queue** (repository ruleset `main merge queue`, active since 2026-10-17). `test.yml` has a
 `merge_group:` trigger, so every queue entry runs `Test`.
 
-**The gates themselves** — `hold`, the newest-conclusion rule, and the `merge-gate` job that enforces both on a queue
+**The gates themselves** — `hold`, the newest-conclusion rule, the T2/T3 approve, and the `merge-gate` job that enforces them on a queue
 entry — are in [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates). This section is only the plumbing.
 
 **How to merge.** A direct `gh pr merge <n> --squash` is refused with `! The merge strategy for main is set by the merge

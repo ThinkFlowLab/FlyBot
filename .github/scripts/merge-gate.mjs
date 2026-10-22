@@ -17,10 +17,17 @@
 // A `pull_request`-time result is never reused: on #610 the tip report ran at 10:31:08Z and the INC
 // landed at 11:24:37Z, 54 minutes later, so the verdict is re-read here, live, for this head.
 //
-// A review's `state` is deliberately not read. The account cannot approve its own pull requests, so
-// its reviews stay `COMMENTED` even when it says INC, and the INC on #610 was a comment, not a review.
-// A body that carries only a `## Review —` heading and no `Verdict:` line is "no conclusion", which
-// refuses: the refusal direction never depends on reading more of the text than `decide` does.
+// A review's `state` is deliberately not read *as a verdict*. The account cannot approve its own pull
+// requests, so its reviews stay `COMMENTED` even when it says INC, and the INC on #610 was a comment,
+// not a review. A body that carries only a `## Review —` heading and no `Verdict:` line is "no
+// conclusion", which refuses: the refusal direction never depends on reading more of the text than
+// `decide` does.
+//
+// `state` is read for the other half of a T2/T3 entry — the maintainer's approve (#691). Until it was
+// read, that half was enforced by nobody: #675, #676, #682, #684, #685 and #686 merged on 2026-10-22
+// on a green `merge_group` run with zero reviews of any kind. An approval is a review, and the API
+// says everything the rule needs: `state`, `commit_id`, the author and its `user.type`, plus the
+// account's repository `permission`, which the caller resolves and never guesses from an association.
 import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -66,6 +73,11 @@ const fileNames = (files) => fileList(files).map((f) => f.filename)
 // labels: every Bot shares one account and a label carries no signature (#627), so whoever can label
 // could turn a T3 into "no review needed" — which is the whole gate.
 const NO_PASS_TIERS = new Set(['T0', 'T1'])
+// #691: the tiers whose entry also needs one approved review. The exempt path (#640) covers T0/T1 and
+// the mechanical release PR, which carries a standing approval of its own, so neither is listed here.
+const APPROVAL_TIERS = new Set(['T2', 'T3'])
+const APPROVED = 'APPROVED'
+const APPROVER_PERMISSIONS = new Set(['admin', 'write', 'maintain'])
 const RELEASE_FILES = [
   /^CHANGELOG\.md$/,
   /^changelog\.d\//,
@@ -88,11 +100,39 @@ export const exemptFromPass = ({ tier, files }) => {
 }
 const short = (s) => String(s ?? '').slice(0, SHORT)
 
+// The one approval that counts for an entry, or null (#691). Every clause refuses rather than passes:
+//   - only a review whose `state` is `APPROVED`; a dismissed approval comes back `DISMISSED`;
+//   - its `commit_id` must name the head being merged — an approval at an older tip is not this head,
+//     the same rule a PASS gets;
+//   - a `Bot` account approves nothing: the rule exists for a person, and the API says which is which;
+//   - the account needs repository write access. `permission` is resolved by the caller from
+//     `GET /repos/{o}/{r}/collaborators/{login}/permission`, never inferred from an association:
+//     `CONTRIBUTOR` on a fork review is not write access;
+//   - never the pull request's own author. `Birfy` authors every agent pull request, and GitHub
+//     already refuses a self-approval; this keeps the queue's answer identical to GitHub's.
+export const approvalAt = (approvals, { head, author } = {}) => {
+  const target = String(head ?? '').toLowerCase()
+  if (!target) return null
+  const own = String(author ?? '').toLowerCase()
+  for (const a of approvals ?? []) {
+    if (String(a?.state ?? '').toUpperCase() !== APPROVED) continue
+    const commit = String(a?.commit_id ?? '').toLowerCase()
+    if (!commit || !commit.startsWith(target)) continue
+    if (String(a?.type ?? '').toLowerCase() === 'bot') continue
+    if (!APPROVER_PERMISSIONS.has(String(a?.permission ?? '').toLowerCase())) continue
+    if (!a?.login || String(a.login).toLowerCase() === own) continue
+    return a
+  }
+  return null
+}
+
 // labels: the pull request's labels. head: its current head sha, the one judged in both modes.
 // expectedHead: optional, a head the caller insists on (`--sha` on a hand run); a different live head
 // refuses. The queue's base sha is never a head: a merge_group entry passes none here (see
 // prFromHeadRef). reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue' }) {
+// approvals: its reviews, as the API returns them (`{ login, state, commit_id, type, permission }`,
+// #691) — injected like the labels, so the rule stays pure and a test drives it without the network.
+export function judge({ labels, files, head, author, reports, approvals = [], policy, expectedHead, mode = 'queue' }) {
   const reasons = []
   const target = String(head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -111,11 +151,17 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   const exempt = exemptFromPass({ tier, files })
   const verdict = exempt ? { ok: true, verdict: null, by: null, exempt: true } : decide({ head: target, author, reports, policy })
   if (!verdict.ok) reasons.push(verdict.reason)
+  // #691: the human half of a T2/T3 entry, which nothing enforced before this: six pull requests
+  // merged on 2026-10-22 with zero reviews. The exemption is shared with the PASS on purpose — a T0/T1
+  // routine fix and the standing-approval release PR must not start waiting for a click.
+  const needsApproval = !exempt && APPROVAL_TIERS.has(tier)
+  const approval = needsApproval ? approvalAt(approvals, { head: target, author }) : null
+  if (needsApproval && !approval) reasons.push(`${tier} entry has no approved review`)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
   // comment starts no run of its own (#639).
   const report = mode === 'report'
-  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, exempt, tier, reasons, mode }
+  return { ok: report ? true : reasons.length === 0, head: target, held, verdict, exempt, tier, needsApproval, approval, reasons, mode }
 }
 
 export function render(result, { pr, labels } = {}) {
@@ -134,11 +180,16 @@ export function render(result, { pr, labels } = {}) {
       : result.ok && result.exempt
         ? `Queue entry for #${pr} may merge without a PASS: ${result.reasons.length ? 'no \`hold\`' : `${result.tier ? 'a ' + result.tier : 'a T0/T1'} tier or a mechanical release PR (AGENTS.md 6), computed from the changed files`}.`
       : result.ok
-        ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+        ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}${result.approval ? `, approved by ${result.approval.login}` : ''}.`
         : `Queue entry for #${pr} must not merge: ${result.reasons.join('; ')}.`,
     '',
     `Pull request #${pr}, head \`${result.head}\`, labels: ${(labels ?? []).join(', ') || '(none)'}.`,
   ]
+  if (result.needsApproval) {
+    out.push('', result.approval
+      ? `Approval at this head: ${result.approval.login} (\`${result.approval.permission}\`) approved \`${short(result.approval.commit_id)}\`.`
+      : `No approved review at this head: a ${result.tier} entry needs one, from an account that is not the author, is not a Bot, and has write access.`)
+  }
   const seen = (result.verdict?.judged ?? []).filter((e) => e.counts || e.verdict)
   if (seen.length) out.push('', 'Conclusive texts read (newest last):', ...seen.slice(-5).map((e) => `- ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${short(e.tip ?? 'no tip')}${e.counts ? '' : ' (not counted)'}`))
   out.push('', '_Rules: [`AGENTS.md` → Merge gates](../../AGENTS.md#merge-gates). This check refuses the entry; it never labels, comments, approves or merges._')
@@ -169,12 +220,38 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const head = pull.head?.sha
   const author = pull.user?.login
   const labels = (pull.labels ?? []).map((l) => l.name)
+  // One read serves both halves: a review body may carry the PASS/INC (`decide`), and a review's
+  // `state` is the approval (#691). Filtering the bodies out of the reports, as before, keeps
+  // `decide` judging exactly what it judged until now.
+  const reviews = list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
   const reports = [
     ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at, association: c.author_association })),
-    ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
+    ...reviews
       .filter((v) => (v.body ?? '').trim())
       .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association })),
   ]
+  // Only an `APPROVED` review can be an approval, so only those cost a permission lookup; the
+  // endpoint answers 404 for an account with no access to the repository, which is a "no write
+  // access" answer and not a reason to fail the whole judgement. One lookup per login.
+  const permissions = new Map()
+  const permissionOf = (login) => {
+    if (!login) return null
+    if (!permissions.has(login)) {
+      let permission = null
+      try {
+        permission = JSON.parse(gh('api', `repos/${repo}/collaborators/${login}/permission`))?.permission ?? null
+      } catch { permission = null }
+      permissions.set(login, permission)
+    }
+    return permissions.get(login)
+  }
+  const approvals = reviews.map((v) => ({
+    login: v.user?.login,
+    state: v.state,
+    commit_id: v.commit_id,
+    type: v.user?.type,
+    permission: String(v.state ?? '').toUpperCase() === APPROVED ? permissionOf(v.user?.login) : null,
+  }))
 
   // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`
   // reports (#639). MODE (or `--report`) is there for a hand run and for the tests.
@@ -182,12 +259,15 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the
   // base copy of risk-gate.mjs (see exemptFromPass).
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
-  const result = judge({ labels, files, head, author, reports, policy: loadPolicy(policyPath), expectedHead: arg('--sha'), mode })
+  const result = judge({ labels, files, head, author, reports, approvals, policy: loadPolicy(policyPath), expectedHead: arg('--sha'), mode })
   // The entry's own commit and its base are logged, never judged: neither is a head a Verifier names.
   const base = env.BASE_SHA || fromRef?.base
   const entry = env.ENTRY_SHA || (fromRef ? env.GITHUB_SHA : '')
   console.log(`merge-gate: PR #${pr} head ${short(head)}${base ? `, queue base ${short(base)}` : ''}${entry ? `, entry ${short(entry)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)
+  if (result.needsApproval) {
+    console.log(`merge-gate: approved review at ${short(result.head)} — ${result.approval ? `${result.approval.login} (${result.approval.permission})` : 'none'}`)
+  }
   console.log(mode === 'report'
     ? `merge-gate: report — ${result.reasons.length ? `the queue entry would refuse: ${result.reasons.join('; ')}` : 'the queue entry would pass'}`
     : `merge-gate: ${result.ok ? 'PASS' : `REFUSE — ${result.reasons.join('; ')}`}`)

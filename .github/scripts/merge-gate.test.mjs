@@ -130,12 +130,20 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const fakeGh = ({ comments, reviews = [], labels = [], files = [], head = HEAD }) => (...args) => {
+const fakeGh = ({ comments, reviews = [], approvals = [], labels = [], files = [], head = HEAD }) => (...args) => {
   const path = args[args.length - 1]
+  // #691: the permission of an approver is resolved through the API, never read off the review, and
+  // an account with no access answers 404 — which is `execFileSync` throwing here.
+  const who = /\/collaborators\/([^/]+)\/permission$/.exec(path)
+  if (who) {
+    const known = [...approvals].flat().find((entry) => entry.user?.login === who[1] && entry.permission)
+    if (!known) throw new Error(`fake gh: 404 for the permission of ${who[1]}`)
+    return JSON.stringify({ permission: known.permission })
+  }
   const pull = { head: { sha: head }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })) }
   if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
   if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
-  if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
+  if (path.includes('/reviews')) return [...[...reviews].flat(), ...[...approvals].flat()].map((entry) => JSON.stringify(entry)).join('\n')
   if (/\/pulls\/\d+$/.test(path)) return JSON.stringify(pull)
   throw new Error('fake gh: unexpected ' + path)
 }
@@ -154,6 +162,22 @@ const runGate = (fixture) => {
 
 const apiComment = (body, at) => ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 const apiReview = (body, at) => ({ user: { login: 'reviewer-agent' }, body, submitted_at: at, author_association: 'MEMBER' })
+// #691: the approve a queue entry needs. `permission` is not part of the API's review object — it
+// comes from `GET /repos/{o}/{r}/collaborators/{login}/permission`, which the fake resolves by login,
+// so a test that forgets the endpoint fails the way the real run would.
+const apiApproval = ({ head = HEAD, login = 'hsliuustc0106', permission = 'admin', state = 'APPROVED', type = 'User', commit = head } = {}) => ({
+  user: { login, type },
+  state,
+  commit_id: commit,
+  submitted_at: '2026-10-22T06:00:00Z',
+  body: '',
+  permission,
+})
+// The shape `judge()` takes: the workflow flattens the API review into these five fields.
+const flatApproval = (over = {}) => {
+  const a = apiApproval(over)
+  return { login: a.user.login, state: a.state, commit_id: a.commit_id, type: a.user.type, permission: a.permission }
+}
 
 const firstLine = (verdict, tip = HEAD) => [
   `Verdict: ${verdict} at ${tip}`,
@@ -276,7 +300,7 @@ const runQueue = (fixture) => {
   writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
   // Exactly what merge-gate.yml hands the script on a merge_group run, and no PR number.
   return main({
-    gh: fakeGh({ head: RUN_HEAD, files: RUN_FILES, ...fixture }),
+    gh: fakeGh({ head: RUN_HEAD, files: RUN_FILES, approvals: [apiApproval({ head: RUN_HEAD })], ...fixture }),
     env: {
       GITHUB_STEP_SUMMARY: '',
       REVIEW_POLICY: policyFile,
@@ -348,7 +372,8 @@ const queueReal = (fx, body = fx.comment.body) => main({
     const path = args[args.length - 1]
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
     if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
-    if (path.includes('/reviews')) return ''
+    if (/\/collaborators\/[^/]+\/permission$/.test(path)) return JSON.stringify({ permission: 'admin' })
+    if (path.includes('/reviews')) return JSON.stringify({ user: { login: 'hsliuustc0106', type: 'User' }, state: 'APPROVED', commit_id: fx.head, submitted_at: '2026-10-22T06:00:00Z', body: '' })
     if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head }, user: { login: fx.author }, labels: [] })
     throw new Error('fake gh: unexpected ' + path)
   },
@@ -400,4 +425,71 @@ test('#660-#663: the fenced Ran block is evidence only with a $ command, and a T
   const r = queueReal(fx, noCommand)
   assert.equal(r.ok, false)
   assert.match(r.reasons.join('; '), /lists no command it ran/)
+})
+
+// ---- #691: the human half of a T2/T3 entry. Six pull requests (#675, #676, #682, #684, #685, #686)
+// merged on 2026-10-22 on a green `merge_group` run with zero reviews of any kind, so before this rule
+// "T2/T3 need a maintainer approve at the tip plus a PASS" was enforced by nobody.
+const passed = (tip = RUN_HEAD) => apiComment(firstLine('PASS', tip), '2026-10-22T00:30:00Z')
+// #654's own diff is T2 (core/src/host/**); a change to a T3 host file is what names the T3 refusal.
+const T3_FILES = ['core/src/host/channel.js', 'changelog.d/691-approval.fixed.md']
+
+test('#691: a T3 entry with a PASS and no approved review refuses', () => {
+  const r = runQueue({ files: T3_FILES, comments: [passed()], approvals: [] })
+  assert.equal(r.ok, false)
+  assert.equal(r.tier, 'T3')
+  assert.equal(r.needsApproval, true)
+  assert.equal(r.approval, null)
+  assert.match(r.reasons.join('; '), /T3 entry has no approved review/)
+  assert.equal(r.verdict.verdict, 'PASS', 'the PASS half is unchanged: this refusal is the new one')
+})
+
+test('#691: one approved review at the head, from a non-author account with write access, lets it through', () => {
+  const r = runQueue({ comments: [passed()], approvals: [apiApproval({ head: RUN_HEAD })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.approval.login, 'hsliuustc0106')
+  assert.equal(r.approval.commit_id, RUN_HEAD)
+})
+
+test('#691: a T0 file set still needs no approval, and the report run still never fails', () => {
+  const t0 = judgeAt({ files: ['docs/subsystems/core-host.md'], reports: [], approvals: [] })
+  assert.equal(t0.ok, true, 'the exempt path is unchanged (#640)')
+  assert.equal(t0.needsApproval, false)
+  assert.equal(t0.approval, null)
+  assert.equal(t0.tier, 'T0')
+  // The release PR is exempt for the same reason: it carries a standing approval.
+  const release = ['CHANGELOG.md', 'changelog.d/691-x.fixed.md', 'core/package.json']
+  assert.equal(judgeAt({ files: release, reports: [], approvals: [] }).needsApproval, false)
+  // A `pull_request` run reports the refusal and still passes, as it does for every other refusal.
+  const report = judgeAt({ files: ['core/src/host/turns.js'], reports: [say()], approvals: [], mode: 'report' })
+  assert.equal(report.ok, true, 'the report never fails')
+  assert.equal(report.needsApproval, true, 'it still says an approval is owed')
+  assert.equal(report.approval, null)
+})
+
+test('#691: an approval that does not count — older tip, the author, a Bot, read access, dismissed', () => {
+  const atHead = { files: T3_FILES, comments: [passed()] }
+  const withApproval = (a) => runQueue({ ...atHead, approvals: [a] })
+  const refuses = (r, why) => {
+    assert.equal(r.ok, false, why)
+    assert.match(r.reasons.join('; '), /T3 entry has no approved review/, why)
+  }
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, commit: 'f'.repeat(40) })), 'an approval at an older tip is not this head')
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, login: 'opener' })), 'the author approves nothing')
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, type: 'Bot' })), 'a Bot is not the human the rule exists for')
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, permission: 'read' })), 'read access is not write access')
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, permission: null })), 'no permission resolved is no write access')
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, state: 'DISMISSED' })), 'a dismissed approval does not count')
+  refuses(withApproval(apiApproval({ head: RUN_HEAD, state: 'COMMENTED' })), 'a comment is not an approval')
+  assert.equal(withApproval(apiApproval({ head: RUN_HEAD, permission: 'write' })).ok, true, 'write is enough')
+  assert.equal(withApproval(apiApproval({ head: RUN_HEAD, permission: 'maintain' })).ok, true, 'maintain is enough')
+})
+
+test('#691: a T2 entry needs the approval too, and only the queue entry refuses', () => {
+  const t2 = { files: ['core/src/host/turns.js'], reports: [say()], approvals: [] }
+  const report = judgeAt({ ...t2, mode: 'report' })
+  assert.equal(report.ok, true)
+  assert.match(report.reasons.join('; '), /T2 entry has no approved review/)
+  assert.equal(judgeAt({ ...t2, mode: 'queue' }).ok, false)
+  assert.equal(judgeAt({ ...t2, mode: 'queue', approvals: [flatApproval({ head: HEAD })] }).ok, true, 'judge() takes the shape the workflow hands it')
 })
