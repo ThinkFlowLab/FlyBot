@@ -1,0 +1,1 @@
+Renaming a Bot (or editing its role) now reaches the tree prompts on the next turn: a coordinator no longer calls a child by its old name, and a renamed Bot sees its new name in its own prompt, instead of waiting for a restart.

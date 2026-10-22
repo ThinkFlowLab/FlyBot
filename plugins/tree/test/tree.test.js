@@ -81,6 +81,21 @@ test('removing a former root re-attaches its children to the current root', asyn
   assert.deepEqual((await m.call(chief2, 'list_children')).children.map(c => c.name).sort(), ['Life', 'Work'])
 })
 
+test('a rename made in the core reaches the tree prompts on the next turn', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  assert.match(sp(m, m.root), /- Work: Work stuff/)
+  assert.match(sp(m, work), /You are Work, a bot in a recursive bot tree/)
+  await m.flybot.bot.update(work, { name: 'Trips' })
+  // A coordinator reads its children from its prompt: the next turn must carry the new name.
+  m.feed('turn.start', { botId: m.root, place: 'chat', sessionId: 's', turnId: 'r1', turn: 1, time: 1 })
+  assert.match(sp(m, m.root), /- Trips: Work stuff/)
+  assert.doesNotMatch(sp(m, m.root), /- Work: Work stuff/)
+  // The renamed Bot reads its own name from its prompt too.
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 'w1', turn: 1, time: 2 })
+  assert.match(sp(m, work), /You are Trips, a bot in a recursive bot tree/)
+})
+
 test('tools: configurable limits and hidden from non-tree bots', async () => {
   const m = await setup({ maxDepth: 2, maxChildren: 1 })
   const a = await make(m, m.root, 'A')

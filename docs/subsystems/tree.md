@@ -82,7 +82,7 @@ The tree organizes itself by role instead of leaving Bots outside it or a parent
 A coordinator can see which of its children are busy right now, so it sends a new part to a free one instead of stacking work on a busy one.
 
 - `src/load.js` (pure) counts the open turns per Bot from the core activity feed (`turn.start` / `turn.end`, ids and times only). `index.js` subscribes both events; nothing is persisted (a restart starts from zero). A removed Bot's turns can never end, so `onBotRemoved` calls `clear(id)` and the count for that id reads 0 again, while a live Bot keeps its own records (#732).
-- The coordinator's prompt gains one line — `Child load right now — Work: busy (2 running), Travel: idle.` — and `list_children` carries a `load` count per child. A child's turn boundary rewrites its parent's prompt through `refreshPrompt` (the marked block only, and `writeBlock` skips an unchanged block), so the line stays current; `list_children` reads the tracker live.
+- The coordinator's prompt gains one line — `Child load right now — Work: busy (2 running), Travel: idle.` — and `list_children` carries a `load` count per child. A child's turn boundary rewrites its parent's prompt through `refreshPrompt` (the marked block only, and `writeBlock` skips an unchanged block), so the line stays current; `list_children` reads the tracker live. The same boundary (`turn.start` / `turn.end`) rewrites the running Bot's own prompt too, so a rename or role edit made in the core reaches its own prompt and, through the parent refresh, its coordinator's child list on the next turn instead of only after a restart.
 
 #### How long a turn has been open (#624)
 
