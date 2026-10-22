@@ -413,9 +413,13 @@ export function install(rt) {
 
   // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
   // earlier part), or a group chat it speaks in (now, or an earlier part).
-  const placeOf = (sessionId) => {
+  const placeOf = (sessionId, botId) => {
     const chat = rt.chatOwners.get(sessionId)
     if (chat !== undefined) return { botId: chat, place: sessionId === rt.chatOf(chat) ? 'own chat' : 'own chat, earlier part' }
+    // A group chat's own Session (its id is the room id): the tasks the owner set for the
+    // group itself. Only a member is told about them.
+    const room = rt.roomOf(sessionId)
+    if (room !== undefined) return room.members?.includes(botId) === true ? { botId, place: room.name === undefined ? 'this group chat' : `group chat "${room.name}"` } : undefined
     const live = rt.groupOwners.get(sessionId)
     const past = rt.pastOwners.get(sessionId)
     const owner = live ?? past
@@ -433,7 +437,7 @@ export function install(rt) {
   // answers for the Bot instead, from the host-wide catalog.
   ctx.tools.register(defineTool({
     name: 'bot_schedules',
-    description: "List every scheduled task this Bot has, in every Session of its own — its own chat, the earlier parts of it, and the group chats it speaks in — with id, title, next run, state and owning Session. DSH's own `schedule_list` answers for one Session only; this one answers for the Bot.",
+    description: "List every scheduled task this Bot has, in every Session of its own — its own chat, the earlier parts of it, the group chats it speaks in, and the tasks set for those group chats themselves — with id, title, next run, state and owning Session. DSH's own `schedule_list` answers for one Session only; this one answers for the Bot.",
     parameters: {},
     output,
     async execute(_args, exec) {
@@ -445,7 +449,7 @@ export function install(rt) {
       if (service === null) return `${head}\nnone — Automation tasks are off in DSH, so no scheduled task is visible.`
       const rows = []
       const add = (entry, status, when) => {
-        const at = placeOf(entry.sessionId)
+        const at = placeOf(entry.sessionId, botId)
         if (at?.botId !== botId) return
         rows.push({
           at: when ?? '',
