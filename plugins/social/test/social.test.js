@@ -4164,6 +4164,67 @@ test('#90: hide a friend\'s Bot updates the list, leaves rooms, and does not unf
   assert.equal(again.homes[0].bots.some(b => b.handle === '@coder.bob.home'), false, 'still hidden after refresh')
 })
 
+// A friendship can be removed outside this plugin (the agent's `remove_friend` tool, the Bot Social
+// console). The cached roster used to keep that Bot for up to 30 s, so a send in that window was
+// accepted and held, and approving it lost the line: Bot Social answered `no active relationship`
+// (#666). The send policy asks Bot Social about the friendship before it asks the owner.
+test('#666: a send after the friendship is removed is denied, not held, and the row goes with it', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let clock = 1_000_000
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+    now: () => clock,
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(listed.homes[0].bots.some(bot => bot.handle === '@coder.bob.home'), true)
+  // Removed on Bot Social's side only: this home's roster cache still names Bob for another 30 s.
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  server.tools.list_friends = () => ({ friends: [] })
+  server.tools.send_as_member = () => { throw Object.assign(new Error('Bot Social send_as_member: no active relationship between these bots'), { code: 'no_active_relationship' }) }
+  clock += 2_000
+  const sent = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'still there?' })
+  assert.equal(sent.value.action, 'deny', 'a line that cannot leave must not become an approval card')
+  assert.match(sent.value.reason, /is not a Bot a friend shared with you/)
+  assert.equal(ctx.flybot.approvals.list().length, 0, 'no card for a message Bot Social would refuse')
+  assert.equal(server.calls.some(entry => entry.name === 'send_as_member'), false, 'nothing was sent')
+  // The stale row goes with the deny: the list stops offering a Bot this home no longer has.
+  const after = (await call('flybot/social/remote-bots')).value
+  assert.equal((after.homes ?? []).some(entry => entry.bots.some(bot => bot.handle === '@coder.bob.home')), false)
+})
+
+// Same defect, other half: once Bot Social reports the removal, the cached roster must not keep
+// serving the friend for the rest of its TTL.
+test('#666: a relationship removal event drops the cached roster instead of serving the removed friend', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let clock = 1_000_000
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+    now: () => clock,
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(listed.homes.length, 1)
+  server.tools.list_remote_bots = () => ({ homes: [] })
+  server.tools.list_friends = () => ({ friends: [] })
+  const memberA = ctx.flybot.scope('social').fields.get('a', 'member').bot_id
+  server.events.set(memberA, [{ event_id: 'evt-revoked', cursor: 5, event_type: 'relationship.changed', relationship_id: 'r1', status: 'revoked' }])
+  clock += 2_000
+  assert.equal(await social.pollInbox(), 0)
+  const after = (await call('flybot/social/remote-bots')).value
+  assert.deepEqual(after.homes, [], 'the next read asks the server instead of the roster the event invalidated')
+})
+
 test('#90: hide-remote returns the filtered roster without waiting for a refresh', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
