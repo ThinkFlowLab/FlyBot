@@ -105,11 +105,13 @@ export function createMcpClient({ server, token, fetch: fetchImpl = socialFetch,
   if (!token) throw new Error('flybot-social: owner connector token is required')
   const url = `${server.replace(/\/+$/, '')}/mcp`
   let seq = 0
-  async function callTool(name, args = {}) {
+  // `timeoutMs` in the third argument narrows the deadline for one call: a probe on the send path
+  // gets a second or two, so a server that is down cannot add the full deadline to a message (#666).
+  async function callTool(name, args = {}, { timeoutMs: callTimeoutMs = timeoutMs } = {}) {
     // Every call has a deadline: a hung server is an error, never a stall.
     // Stateless tools/call only: Bot Social's owner MCP does not need initialize, and
     // this client is created once per plugin start (not per Friends' Bots refresh).
-    const signal = AbortSignal.timeout(timeoutMs)
+    const signal = AbortSignal.timeout(callTimeoutMs)
     let response
     let body
     try {
@@ -127,7 +129,7 @@ export function createMcpClient({ server, token, fetch: fetchImpl = socialFetch,
       body = parseBody(await response.text(), response.headers?.get?.('content-type') ?? '')
     } catch (error) {
       if (error instanceof BotSocialError) throw error
-      if (signal.aborted || error?.name === 'TimeoutError' || error?.name === 'AbortError') throw new BotSocialError(`Bot Social ${name}: no answer in ${Math.round(timeoutMs / 1000)}s`, 'timeout')
+      if (signal.aborted || error?.name === 'TimeoutError' || error?.name === 'AbortError') throw new BotSocialError(`Bot Social ${name}: no answer in ${Math.round(callTimeoutMs / 1000)}s`, 'timeout')
       throw error
     }
     if (body.error) throw new BotSocialError(`Bot Social ${name}: ${body.error.message}`, 'rpc')
@@ -502,7 +504,7 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
   }
 
   return {
-    callTool: (name, args) => mcp.callTool(name, args),
+    callTool: (name, args, options) => mcp.callTool(name, args, options),
     rest,
     listRemoteBots: args => mcp.callTool('list_remote_bots', args),
     listFriends: args => mcp.callTool('list_friends', args ?? {}),

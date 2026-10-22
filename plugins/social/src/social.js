@@ -1032,7 +1032,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // relationship` (#666). The send policy therefore asks Bot Social about the friendship itself
   // before it asks the owner, and two seconds of cache keep a burst of lines at one call per friend.
   const FRIEND_CHECK_MS = 2_000
+  // A probe is a send-path call, so it gets its own deadline instead of the client's 30 s one: a Bot
+  // Social that is down must not add half a minute to every line to a friend.
+  const FRIEND_CALL_MS = 1_500
   const friendStatus = new Map()
+  // An answer we can act on, or nothing. A removal, or a friendship that changed at all, makes every
+  // cached answer stale: the roster is dropped for the same reason, one line below it.
+  function forgetFriendStatus(homeKey) {
+    if (homeKey === undefined) { friendStatus.clear(); return }
+    const prefix = `${norm(homeKey)}|`
+    for (const entry of [...friendStatus.keys()]) if (entry.startsWith(prefix)) friendStatus.delete(entry)
+  }
   function noteFriendStatus(key, active) {
     friendStatus.delete(key)
     friendStatus.set(key, { at: now(), active })
@@ -1043,6 +1053,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   function forgetFriendHome(homeKey) {
     const key = norm(homeKey)
     if (!key) return
+    forgetFriendStatus(key)
     const before = remote.homes.length + serverRoster.length
     remote = { homes: remote.homes.filter(entry => entry.home !== key) }
     serverRoster = serverRoster.filter(entry => entry.home !== key)
@@ -1051,21 +1062,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // `list_friends` lists the active friendships of one identity: the home, and each member Bot that
   // has its own (a per-Bot invite, #420). No answer at all (an older server, a link that is down)
   // keeps the roster's verdict: this check catches a removal, it does not invent one.
-  async function friendshipActive(friendHome, fromBotId) {
+  async function friendshipActive(friendHome, fromBotId, { fresh = false } = {}) {
     const homeKey = norm(friendHome)
     if (!homeKey) return true
     const cacheKey = `${homeKey}|${typeof fromBotId === 'string' ? fromBotId : ''}`
     const cached = friendStatus.get(cacheKey)
-    if (cached && now() - cached.at < FRIEND_CHECK_MS) return cached.active
+    if (!fresh && cached && now() - cached.at < FRIEND_CHECK_MS) return cached.active
     const member = typeof fromBotId === 'string' ? activeMember(fromBotId) : undefined
     const ids = [...new Set([home?.id, config.botId, member?.bot_id].filter(Boolean))]
     let answered = false
     for (const botId of ids) {
       let answer
-      try { answer = await client.callTool('list_friends', { bot_id: botId }) }
+      try { answer = await client.callTool('list_friends', { bot_id: botId }, { timeoutMs: FRIEND_CALL_MS }) }
       catch (error) { warn('friendship not checked', error); continue }
+      // A reply without a friends list is not evidence of a removal: an answer we cannot read keeps
+      // the roster's verdict, or one server that changed shape would unfriend everyone (#666 INC).
+      if (!Array.isArray(answer?.friends)) continue
       answered = true
-      const listed = (answer?.friends ?? []).some(item => (item?.status === undefined || item.status === 'active') && norm(item.peer?.handle) && homeOfPeer(item.peer.handle) === homeKey)
+      const listed = answer.friends.some(item => (item?.status === undefined || item.status === 'active') && norm(item.peer?.handle) && homeOfPeer(item.peer.handle) === homeKey)
       if (listed) { noteFriendStatus(cacheKey, true); return true }
     }
     if (!answered) return true
@@ -1419,6 +1433,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           const name = flybot.bot.get(msg.from)?.name ?? 'This Bot'
           throw new Error(`${name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${name} with them in its settings → Sharing.`)
         }
+        // The card was held before the friendship changed (#666): an approved line must not be handed
+        // to a server that will refuse it with `no active relationship`. Room lines are the room's
+        // consent, not this pair's, so they are left alone.
+        // Asked fresh, not from the two-second cache: the answer that matters is the one at the
+        // moment the owner approves, and the card may have waited far longer than that cache.
+        if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share' && !(await friendshipActive(bot.home, msg.from, { fresh: true }))) {
+          throw new Error(`${bot.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.`)
+        }
         const attachments = await uploadAll(msg.attachments, member.bot_id)
         const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}) })
           .catch((error) => { if (isPaused(error)) notePaused(bot.handle, error); throw error })
@@ -1705,6 +1727,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // comes before the friend's first message in this Bot's queue: record the grant now, so that message
         // is judged with it. A failed sync leaves it to the retry below.
         if ((event.event_type === 'relationship.changed' && event.status === 'active') || (event.event_type === 'grant.changed' && event.status === 'granted')) {
+          if (event.event_type === 'relationship.changed') forgetFriendStatus()
           if (!seen.has(event.event_id)) await syncOutgoingGrants({ only: local.id }).catch(error => warn('grants not synced', error))
           done()
           continue
@@ -1714,6 +1737,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // let the next read ask the server, rather than serve a friend this home no longer has.
         if (event.event_type === 'relationship.changed' && event.status !== 'active') {
           fetchedAt = 0
+          // The roster is one half; the friendship answers are the other. Without this a send in the
+          // two-second cache window still read "still friends" and was held (#666 INC).
+          forgetFriendStatus()
           done()
           continue
         }

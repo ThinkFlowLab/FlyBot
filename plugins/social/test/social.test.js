@@ -4167,8 +4167,9 @@ test('#90: hide a friend\'s Bot updates the list, leaves rooms, and does not unf
 // A friendship can be removed outside this plugin (the agent's `remove_friend` tool, the Bot Social
 // console). The cached roster used to keep that Bot for up to 30 s, so a send in that window was
 // accepted and held, and approving it lost the line: Bot Social answered `no active relationship`
-// (#666). The send policy asks Bot Social about the friendship before it asks the owner.
-test('#666: a send after the friendship is removed is denied, not held, and the row goes with it', async (t) => {
+// (#666). The send policy asks Bot Social about the friendship before it asks the owner, and the
+// answer is dropped the moment Bot Social reports the relationship changed (#666 INC).
+test('#666: a removal event drops the friendship answer, so a send in the same millisecond is denied', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
   const server = mockServer()
@@ -4183,19 +4184,96 @@ test('#666: a send after the friendship is removed is denied, not held, and the 
   await social.registerAll()
   const listed = (await call('flybot/social/remote-bots', { fresh: true })).value
   assert.equal(listed.homes[0].bots.some(bot => bot.handle === '@coder.bob.home'), true)
-  // Removed on Bot Social's side only: this home's roster cache still names Bob for another 30 s.
-  server.tools.list_remote_bots = () => ({ homes: [] })
+  // A first line makes the policy ask Bot Social once and cache "still friends" for two seconds.
+  const primed = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'still there?' })
+  assert.equal(primed.value.action, 'hold', 'the friendship is real, so this line asks the owner')
+  // Removed on Bot Social's side, and reported as such. No clock moves: the send below is the same
+  // millisecond the old cache would still have answered "friends".
   server.tools.list_friends = () => ({ friends: [] })
-  server.tools.send_as_member = () => { throw Object.assign(new Error('Bot Social send_as_member: no active relationship between these bots'), { code: 'no_active_relationship' }) }
-  clock += 2_000
-  const sent = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'still there?' })
+  const memberA = ctx.flybot.scope('social').fields.get('a', 'member').bot_id
+  server.events.set(memberA, [{ event_id: 'evt-revoked', cursor: 5, event_type: 'relationship.changed', relationship_id: 'r1', status: 'revoked' }])
+  assert.equal(await social.pollInbox(), 0)
+  const sent = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'one more' })
   assert.equal(sent.value.action, 'deny', 'a line that cannot leave must not become an approval card')
   assert.match(sent.value.reason, /is not a Bot a friend shared with you/)
-  assert.equal(ctx.flybot.approvals.list().length, 0, 'no card for a message Bot Social would refuse')
+  assert.equal(ctx.flybot.approvals.list().length, 1, 'only the line sent while the friendship stood was held')
   assert.equal(server.calls.some(entry => entry.name === 'send_as_member'), false, 'nothing was sent')
   // The stale row goes with the deny: the list stops offering a Bot this home no longer has.
   const after = (await call('flybot/social/remote-bots')).value
   assert.equal((after.homes ?? []).some(entry => entry.bots.some(bot => bot.handle === '@coder.bob.home')), false)
+})
+
+test('#666: the same removal 500 ms after the event is still denied', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let clock = 1_000_000
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+    now: () => clock,
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'still there?' })
+  server.tools.list_friends = () => ({ friends: [] })
+  const memberA = ctx.flybot.scope('social').fields.get('a', 'member').bot_id
+  server.events.set(memberA, [{ event_id: 'evt-revoked', cursor: 5, event_type: 'relationship.changed', relationship_id: 'r1', status: 'revoked' }])
+  assert.equal(await social.pollInbox(), 0)
+  clock += 500
+  const sent = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'half a second later' })
+  assert.equal(sent.value.action, 'deny', '500 ms is inside the old two-second cache and must not change the answer')
+})
+
+test('#666: approving a card held before the removal is refused before Bot Social is asked', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let clock = 1_000_000
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+    now: () => clock,
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const held = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'held while we were friends' })
+  assert.equal(held.value.action, 'hold')
+  const [pending] = ctx.flybot.approvals.list()
+  // The friendship is gone by the time the owner answers the card, and no event reached this host:
+  // the roster still names Bob, so the release path is the only place that can catch it.
+  server.tools.list_friends = () => ({ friends: [] })
+  clock += 30_000
+  const failed = await ctx.flybot.approvals.decide(pending.id, 'approve')
+  assert.equal(failed.status, 'failed', 'the card fails with a reason instead of losing the line')
+  assert.match(failed.error, /is not a Bot a friend shared with you/)
+  assert.equal(server.calls.some(entry => entry.name === 'send_as_member'), false, 'Bot Social is not asked for a send it will refuse')
+})
+
+test('#666: an answer without a friends list is not a removal', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  // A server that answers something else — an error envelope, an older shape — is not evidence that
+  // the friendship is gone: it keeps the roster's verdict instead of unfriending a real friend.
+  server.tools.list_friends = () => ({ ok: true })
+  const sent = await call('flybot/social/send', { from: 'a', to: '@coder.bob.home', text: 'hello' })
+  assert.equal(sent.value.action, 'hold', 'an unreadable answer is not a deny')
+  assert.equal((sent.value.reason ?? '').includes('not a Bot a friend shared'), false)
+  const after = (await call('flybot/social/remote-bots')).value
+  assert.equal(after.homes[0].bots.some(bot => bot.handle === '@coder.bob.home'), true, 'the friend is still listed')
 })
 
 // Same defect, other half: once Bot Social reports the removal, the cached roster must not keep
