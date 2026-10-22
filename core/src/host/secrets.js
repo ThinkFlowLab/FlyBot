@@ -577,7 +577,12 @@ export function install(rt) {
       try {
         unregister = sub.shellEnv.register({
           name: 'ds-bot-secrets',
-          variables: Object.fromEntries(list.map(secret => [envName(secret.name), { description: `FlyBot secret ${secret.name}${secret.purpose ? `: ${secret.purpose}` : ''}` }])),
+          // DSH refuses a key the contribution did not declare and fails the whole bash call, so the
+          // withheld-reason variable resolveEnv may return is declared with the keys.
+          variables: {
+            ...Object.fromEntries(list.map(secret => [envName(secret.name), { description: `FlyBot secret ${secret.name}${secret.purpose ? `: ${secret.purpose}` : ''}` }])),
+            [WITHHELD_VAR]: { description: 'FlyBot saved keys withheld from this shell this turn, as NAME:reason pairs; names and reasons, never a value' },
+          },
           resolve: resolveEnv,
         })
       } catch (error) {

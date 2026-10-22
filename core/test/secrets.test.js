@@ -120,7 +120,19 @@ function start({ secrets, team = TEAM } = {}) {
     assert.equal(result.ok, true, JSON.stringify(result.error))
     return result.value
   }
-  const env = (agentId, command = '') => contributors.filter(entry => entry.live).at(-1)?.resolve({ agent: { id: agentId, session: { header: { id: agentId } } }, arguments: { command } }) ?? {}
+  // The same contract as DSH's `ShellEnvRegistry.collect` (@deepseek-ai/dsh-shell-env 0.2.0-rc.2,
+  // packages/shell/shell-env/src/index.ts): a key the contributor did not declare throws, and the
+  // bash tool call fails with it. A mock that let it through hid exactly that.
+  const env = (agentId, command = '') => {
+    const entry = contributors.filter(item => item.live).at(-1)
+    if (entry === undefined) return {}
+    const resolved = entry.resolve({ agent: { id: agentId, session: { header: { id: agentId } } }, arguments: { command } })
+    for (const [key, value] of Object.entries(resolved)) {
+      if (!Object.hasOwn(entry.variables, key)) throw new Error(`bash env contributor "${entry.name}" returned undeclared key "${key}"`)
+      if (typeof value !== 'string') throw new Error(`bash env contributor "${entry.name}" returned a non-string value for "${key}"`)
+    }
+    return resolved
+  }
   const stop = async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) }
   return { ctx, home, call, tool, view, env, listeners, delivered, streamed, contributors, stop }
 }
@@ -173,7 +185,7 @@ test('a card saves a key the Bot never sees, and the shell gets it', async (t) =
   assert.deepEqual(bench.env('not-a-bot'), {})
   const live = bench.contributors.filter(entry => entry.live)
   assert.equal(live.length, 1)
-  assert.deepEqual(Object.keys(live[0].variables), ['DSH_SECRET_DEMO_TOKEN'])
+  assert.deepEqual(Object.keys(live[0].variables), ['DSH_SECRET_DEMO_TOKEN', 'DSH_SECRETS_WITHHELD'])
   assert.equal(live[0].variables.DSH_SECRET_DEMO_TOKEN.description, 'FlyBot secret DEMO_TOKEN: 测试')
 
   // Asking again only names the variable.
@@ -426,4 +438,18 @@ test('#651: list_secrets and request_secret give the same reason, and never a va
   const asked = await bench.tool('request_secret', { name: 'GITHUB_TOKEN', purpose: 'GitHub' }, 'b2')
   assert.match(asked.text, /withheld this turn: turn-not-owner/)
   assert.ok(!asked.text.includes('ghp_testvalue_123'))
+})
+
+// A withheld key's reason (#651) is a variable of its own, so it is declared with the keys: DSH's
+// shell-env registry throws on an undeclared key, which failed every bash call of a turn that
+// withheld one instead of saying why.
+test('the withheld-reason variable is declared, so a turn that withholds a key still runs its shell', async (t) => {
+  const bench = await seeded({ secrets: saved('all'), team: SHARED })
+  t.after(bench.stop)
+  const [entry] = bench.contributors.filter(item => item.live)
+  assert.ok(Object.hasOwn(entry.variables, 'DSH_SECRETS_WITHHELD'))
+  assert.match(entry.variables.DSH_SECRETS_WITHHELD.description, /never a value/)
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
+  assert.deepEqual(bench.env('b2'), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:shared-bot-scheduled' })
 })
