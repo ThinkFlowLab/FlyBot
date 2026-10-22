@@ -71,7 +71,7 @@ If `topics.json` conflicts, keep both sides' entries (one patch per edited upstr
 
 ## Agent operating model
 
-Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled routines run on the Grok Bot box, each with one job. A routine does only its own job.
+Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled routines run on the Grok Bot box, each with one job. A routine does only its own job. Every write a routine makes carries the `Written-by:` line ([rule](#every-state-changing-write-says-who-wrote-it-627)).
 
 ### Routines
 
@@ -110,11 +110,21 @@ Label `agent-ready`, with a triage comment, only when all three hold:
 
 Otherwise label `needs-human` or `needs-info` and name the blocking conflict or question in a comment. Agents develop **only** `agent-ready` issues.
 
+While checking labels and state, a write that carries no `Written-by:` line gets one comment naming it; the audit never repairs someone else's text by editing it ([rule](#every-state-changing-write-says-who-wrote-it-627)).
+
 ### Claim, PR, release of a claim
 
 - Before work: skip the issue if someone else is assigned. Otherwise assign it to `Birfy`, add `agent-working`, and post a claim comment that names the branch.
 - Stopping without a PR: unassign, remove `agent-working`, and comment why.
 - The PR says `Fixes #N`, is assigned to `Birfy` and labeled `agent-pr`.
+
+### Every state-changing write says who wrote it (#627)
+
+The owner kept one shared GitHub identity for every Bot (2026-10-21), so attribution is text and only text. Every state-changing write — an issue comment, a PR body, an issue body, a merge-queue note — carries **`Written-by: <Bot name>`** as its first line, e.g. `Written-by: Reviewer`. A **conclusion** is the one exception, because [`parseReport`](.github/scripts/review-gate.mjs) reads the first non-empty line as the verdict (#637): its first line is `Verdict: … at <sha>`, `Written-by: <Bot>` is the second line, and a relay adds `Posted-by: <Bot>` third without changing anything else. A scheduled routine quotes this rule and does not restate it.
+
+The gate refuses what it can check, and fails closed. [`review-gate.mjs`](.github/scripts/review-gate.mjs) — and [`merge-gate.mjs`](.github/scripts/merge-gate.mjs), which imports its `decide`, so a queue entry is judged by the same rule — refuses a report that carries **no** `Written-by:` line, and refuses one whose name is **not** in the policy's `writers` list. Two separate refusals, so the log says which defect fired. Triage names a write that carries no such line in one comment and never repairs it by editing someone else's text.
+
+What this buys is presence and a name from a closed list, not truth: with one shared identity the line is a self-report that can be left out (refused) and can name the wrong Bot (undetectable here). The write layer knowing the writer is the DSH-side half, #633.
 
 ### Gates
 
@@ -130,7 +140,7 @@ Four rules decide whether a pull request may enter the queue. The mechanical one
 1. **`hold` blocks mechanically.** A pull request labelled `hold` fails `merge-gate` on its queue entry. The label is only a marker; the job is the gate. It blocks the queue once `merge-gate` is listed among the required checks of the `main merge queue` ruleset — a ruleset change for the maintainer, never an agent; until then the job reports without blocking.
 2. **Labelling a pull request `hold` means adding a record.** Add the label **and** post a new comment saying **Record only — do not merge / 仅记录、禁止入队**. The pair is what holds it. Add that comment; never edit or delete an earlier PASS report to change what it said — the history is the record, and rewriting it is the thing that reads as an incident afterwards.
 3. **An authorisation is not a queue permit.** The owner or the Chief saying "let it through", "claim it" or "handle it along with the rest" licenses no specific pull request for the queue. Entering the queue is an explicit action on that one pull request, after its own gate passed, while it carries no `hold`. #566 is the case this exists for: "handle it along with the rest" was read as a permit, the tip was PASSed at 09:48:18Z, enqueued at 09:48:28Z and merged at 09:50:40Z as `abaf938b`.
-4. **The newest conclusion at the head being merged decides.** Read the pull request's comments and review bodies, live, for the exact head SHA being merged — the pull request's own head, on a queue entry too (the `<sha>` in `gh-readonly-queue/main/pr-<N>-<sha>` is the entry's base, not its head; #654) — and take the newest text that carries `Verdict:` or a `## Review —` heading: INC or REQUEST_CHANGES refuses, PASS allows, no conclusion refuses too. Since #637 the format is fixed: the **first line** of the conclusion is exactly `Verdict: PASS at <sha>` / `Verdict: INC at <sha>` / `Verdict: REQUEST_CHANGES at <sha>`, with the attribution on the second line (`Written by: Reviewer. Posted by: Chief (proxy…).`) and the evidence below it — a body that carries a verdict anywhere else is no conclusion, and no conclusion refuses. A result from `pull_request` time never stands in — on #610 the tip report ran at 10:31:08Z and the INC landed at 11:24:37Z, 54 minutes later. The gating agent checks this before enqueueing; `merge-gate.yml` checks it again at `merge_group`, and the stricter answer wins. That job runs on two events: at `merge_group` it judges and a refusal fails it, and at `pull_request` it only reports what the queue entry would refuse — a required check that never reports on the pull request head leaves every pull request waiting for a status that never comes and unable to enter the queue at all (#639). The required status check is the job name `merge-gate`; the workflow name `Merge gate` is not a context any run produces.
+4. **The newest conclusion at the head being merged decides.** Read the pull request's comments and review bodies, live, for the exact head SHA being merged — the pull request's own head, on a queue entry too (the `<sha>` in `gh-readonly-queue/main/pr-<N>-<sha>` is the entry's base, not its head; #654) — and take the newest text that carries `Verdict:` or a `## Review —` heading: INC or REQUEST_CHANGES refuses, PASS allows, no conclusion refuses too, and so does a report with no `Written-by:` line or one that names a writer the policy does not list (#627). Since #637 the format is fixed: the **first line** of the conclusion is exactly `Verdict: PASS at <sha>` / `Verdict: INC at <sha>` / `Verdict: REQUEST_CHANGES at <sha>`, with the attribution on the second line (`Written-by: Reviewer`, and a relay adds `Posted-by: Chief (proxy…)`; the older prose `Written by: …` reads the same way) and the evidence below it — a body that carries a verdict anywhere else is no conclusion, and no conclusion refuses. A result from `pull_request` time never stands in — on #610 the tip report ran at 10:31:08Z and the INC landed at 11:24:37Z, 54 minutes later. The gating agent checks this before enqueueing; `merge-gate.yml` checks it again at `merge_group`, and the stricter answer wins. That job runs on two events: at `merge_group` it judges and a refusal fails it, and at `pull_request` it only reports what the queue entry would refuse — a required check that never reports on the pull request head leaves every pull request waiting for a status that never comes and unable to enter the queue at all (#639). The required status check is the job name `merge-gate`; the workflow name `Merge gate` is not a context any run produces.
 
 A review's `state` is not what is read: the account cannot approve its own pull requests, so its reviews stay `COMMENTED` even for an INC, and the INC on #610 was a comment rather than a review.
 

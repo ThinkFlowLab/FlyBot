@@ -1,6 +1,19 @@
 {
   "version": 1,
-  "note": "Who may record a PASS that counts, for the `reviewed tip` report (Phase 1: report only; see docs/autonomous-dev.md). A login listed here is not a merge right: the report is read when a tip is judged, and a PASS is required only for T2/T3 (at the tip, with green CI); T0/T1 merge on green CI without one (AGENTS.md step 6). A pull request's own author does not count unless the author is listed in `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, which acts as Birfy, may PASS its own pull requests). A self-PASS never replaces green CI: the agent that gated a T2/T3 pull request merges it itself once a PASS sits at its tip (owner decision 2026-10-21). Editing this file is itself T3.",
+  "note": "Who may record a PASS that counts, for the `reviewed tip` report (Phase 1: report only; see docs/autonomous-dev.md). A login listed here is not a merge right: the report is read when a tip is judged, and a PASS is required only for T2/T3 (at the tip, with green CI); T0/T1 merge on green CI without one (AGENTS.md step 6). A pull request's own author does not count unless the author is listed in `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, which acts as Birfy, may PASS its own pull requests). A self-PASS never replaces green CI: the agent that gated a T2/T3 pull request merges it itself once a PASS sits at its tip (owner decision 2026-10-21). Editing this file is itself T3. `writers` lists the names a report's `Written-by:` line may carry (#627): every Bot shares one GitHub identity, so that line is a claim, and the gate refuses a write whose line is missing or names something outside this list.",
   "reviewers": ["hsliuustc0106", "Birfy"],
-  "selfReview": ["Birfy"]
+  "selfReview": ["Birfy"],
+  "writers": [
+    "Chief",
+    "Triage",
+    "Reviewer",
+    "Release",
+    "SelfTest",
+    "Maintainer",
+    "Dev",
+    "Dev2",
+    "Dev3",
+    "Dev4",
+    "Birfy"
+  ]
 }

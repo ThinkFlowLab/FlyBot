@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url'
 const HEAD = 'abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
 const ENTRY = `gh-readonly-queue/main/pr-566-${HEAD}`
-const policy = { reviewers: ['reviewer-agent'], selfReview: [] }
+const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }
 
 const report = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
-  [`Tip SHA: ${tip}`, 'Ran:', '  - npm run verify → pass', 'Not run:', '  - smoke — host code unchanged', `Verdict: ${verdict}`].join('\n')
+  [`Tip SHA: ${tip}`, 'Written-by: Reviewer', 'Ran:', '  - npm run verify → pass', 'Not run:', '  - smoke — host code unchanged', `Verdict: ${verdict}`].join('\n')
 
 const say = (body = report(), at = '2026-10-21T10:31:00Z', kind = 'comment') => ({ login: 'reviewer-agent', body, at, kind })
 
@@ -142,7 +142,7 @@ const fakeGh = ({ comments, reviews = [], labels = [], files = [], head = HEAD }
 
 const runGate = (fixture) => {
   const policy = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
-  writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
   return main({
   gh: fakeGh(fixture),
   env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policy },
@@ -218,7 +218,7 @@ test('#639: a report names what the entry would refuse and still passes', () => 
 
 test('#639: the pull_request entry point reports without a head_ref and does not throw', () => {
   const policy = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
-  writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
   const result = main({
     gh: fakeGh({ comments: [apiComment(report({ verdict: 'INC' }), '2026-10-21T12:49:00Z')] }),
     env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policy, MODE: 'report', PR: '639' },
@@ -273,7 +273,7 @@ const RUN_FILES = ['core/src/host/turns.js', 'changelog.d/651.fixed.md']
 
 const runQueue = (fixture) => {
   const policyFile = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
-  writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
   // Exactly what merge-gate.yml hands the script on a merge_group run, and no PR number.
   return main({
     gh: fakeGh({ head: RUN_HEAD, files: RUN_FILES, ...fixture }),
@@ -324,7 +324,7 @@ test('#654: a T1 queue entry passes without a PASS, as the pull_request report s
   assert.equal(queue.ok, true, queue.reasons.join('; '))
   assert.equal(queue.tier, 'T1')
   const policyFile = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
-  writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
   const report = main({ gh: fakeGh({ head: RUN_HEAD, files, comments: [] }), env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policyFile, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '654', MODE: 'report' } })
   assert.deepEqual(report.reasons, queue.reasons, 'both events judge the same head the same way')
   assert.equal(report.head, queue.head)

@@ -6,11 +6,12 @@ import { decide, loadPolicy, parseReport, render } from './review-gate.mjs'
 
 const HEAD = 'a4d506a1b2c3d4e5f60718293a4b5c6d7e8f9012'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
-const policy = { reviewers: ['reviewer-agent', 'hsliuustc0106'] }
+const policy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], writers: ['Reviewer', 'Chief'] }
 
 const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → pass'], notRun = true } = {}) =>
   [
     `Tip SHA: ${tip}`,
+    'Written-by: Reviewer',
     'Ran:',
     ...ran,
     ...(notRun ? ['Not run:', '  - smoke — host code unchanged'] : []),
@@ -46,7 +47,7 @@ test('the pull request author does not review their own tip unless listed in sel
 })
 
 test('self-review: a listed author may PASS their own pull request at the tip (owner decision 2026-10-19)', () => {
-  const selfPolicy = { reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'] }
+  const selfPolicy = { reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }
   const r = decide({ head: HEAD, author: 'Birfy', reports: [comment('Birfy')], policy: selfPolicy })
   assert.equal(r.ok, true)
   assert.equal(r.by, 'Birfy')
@@ -54,7 +55,7 @@ test('self-review: a listed author may PASS their own pull request at the tip (o
 })
 
 test('self-review keeps every other rule: tip, evidence, listed reviewer, newest wins', () => {
-  const selfPolicy = { reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'] }
+  const selfPolicy = { reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }
   const own = (body, at) => comment('Birfy', body, at)
   const run = (reports, policy = selfPolicy) => decide({ head: HEAD, author: 'Birfy', reports, policy })
   assert.equal(run([own(report({ tip: OLD }))]).ok, false, 'a new commit voids the self-PASS')
@@ -62,7 +63,7 @@ test('self-review keeps every other rule: tip, evidence, listed reviewer, newest
   assert.equal(run([own(report({ notRun: false }))]).ok, true, 'no Not run: line is no longer checked (owner decision 2026-10-22)')
   assert.equal(run([own(report({ verdict: 'FAIL' }))]).verdict, 'FAIL')
   assert.equal(run([own(report(), '2026-10-18T01:00:00Z'), own(report({ verdict: 'FAIL' }), '2026-10-18T02:00:00Z')]).ok, false, 'a later FAIL vetoes a self-PASS')
-  assert.equal(run([own(report())], { reviewers: ['reviewer-agent'], selfReview: ['Birfy'] }).ok, false, 'selfReview does not make an unlisted login a reviewer')
+  assert.equal(run([own(report())], { reviewers: ['reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }).ok, false, 'selfReview does not make an unlisted login a reviewer')
   assert.equal(run([comment('reviewer-agent')]).ok, true, 'another listed reviewer still counts on that pull request')
 })
 
@@ -258,7 +259,7 @@ test('#640: a quoted Tip SHA later in the body does not move the first line to a
   // And the whole point: the INC is not dropped, so it still refuses the merge.
   const head = '1234567890abcdef000000000000000000000000'
   const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', body: report, at: when })
-  const policy = { reviewers: ['reviewer-agent'], selfReview: [] }
+  const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }
   const pass = ['Tip SHA: ' + head, 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: PASS'].join('\n')
   const result = decide({
     head,
@@ -320,4 +321,58 @@ test('#640 still holds with the heading form: a quoted Ran block below does not 
 
 test('a Not run heading with words before its colon counts as the Not run section', () => {
   assert.equal(parseReport([`Verdict: PASS at ${HEAD}`, 'Ran: npm test', 'Not run at this tip: smoke'].join('\n')).hasNotRun, true)
+})
+
+// ---- #627: every state-changing write says who wrote it. The gate buys presence and a name from a
+// closed list (the shared identity means the line is a self-report, not proof — #633), and it refuses
+// on two separate grounds so the log says which defect fired.
+const unattributed = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
+  [`Tip SHA: ${tip}`, 'Ran:', '  - npm run verify → pass', 'Not run:', '  - smoke', `Verdict: ${verdict}`].join('\n')
+
+test('#627: a report with no Written-by line is refused, and the refusal says so', () => {
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', unattributed())], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /no Written-by line naming its writer/)
+})
+
+test('#627: a Written-by naming a writer outside the policy is refused on its own ground', () => {
+  const body = [unattributed().split('\n')[0], 'Written-by: Some Other Agent', ...unattributed().split('\n').slice(1)].join('\n')
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', body)], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /Written-by names "Some Other Agent", who is not in the writers list/)
+  assert.doesNotMatch(r.reason, /no Written-by line/, 'the two refusals do not collapse into one another')
+})
+
+test('#627: the line the relayed conclusion format uses parses to the writer, not to the relay', () => {
+  const body = [
+    `Verdict: PASS at ${HEAD}`,
+    'Written-by: Reviewer',
+    'Posted-by: Chief (verbatim relay; Reviewer has no write channel this turn)',
+    '',
+    'Ran: npm run verify → pass',
+    'Not run: smoke',
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.writer, 'Reviewer')
+  assert.equal(decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', body)], policy }).ok, true)
+
+  // The older prose the repository wrote until #627 reads the same way.
+  assert.equal(parseReport(['Verdict: INC at ' + HEAD, 'Written by: Reviewer. Posted by: Chief (proxy).'].join('\n')).writer, 'Reviewer')
+  assert.equal(parseReport(['Written-by: reviewer'].join('\n')).writer, 'reviewer', 'the name is returned as written; decide compares case-insensitively')
+  assert.equal(decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', [`Tip SHA: ${HEAD}`, 'written-by: reviewer', 'Ran:', '- npm test', 'Verdict: PASS'].join('\n'))], policy }).ok, true)
+})
+
+test('#627: a writer named further down does not attribute this report', () => {
+  const body = [
+    `Verdict: PASS at ${HEAD}`,
+    'Ran: npm test → pass',
+    'Not run: smoke',
+    '',
+    'For comparison, the report this replaces began:',
+    'Written-by: Reviewer',
+  ].join('\n')
+  assert.equal(parseReport(body).writer, null)
+  const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', body)], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /no Written-by line/)
 })

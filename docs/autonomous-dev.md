@@ -144,17 +144,23 @@ What counts as a reviewed tip, all of it:
    Owner decision 2026-10-19: a PR opened by the owner's Bot/agent may be PASSed by the owner's own reviewer
    Bot/agent, so no independent reviewer is required. Any other author still needs someone else. A self-PASS does not
    replace green CI, and a new commit voids it.
-3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written by: Reviewer. Posted by: Chief (proxy…).`), then the evidence — `Ran:` (or a `Ran …:` heading over a fenced block of `$ ` commands, #660–#663) with at least one command; `Not run:` naming any gap is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai). A body whose first line is not the verdict is no conclusion.
+3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written-by: Reviewer`; a relay adds `Posted-by: Chief (proxy…)` on the third line, and the older prose `Written by: …` reads the same way), then the evidence — `Ran:` (or a `Ran …:` heading over a fenced block of `$ ` commands, #660–#663) with at least one command; `Not run:` naming any gap is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai). A body whose first line is not the verdict is no conclusion.
 4. The sha on that first line **is the head being judged**. A later commit moves the tip and the old PASS stops
    counting; that report is then listed as "not counted", with the sha it named.
 5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
    earlier PASS, and a later PASS at the same tip replaces a FAIL.
 
+**Attribution (#627).** Every state-changing write says who wrote it: `Written-by: <Bot>` is its first
+line, and a conclusion puts it on the second, under the fixed verdict line. `decide` refuses a report
+with no such line and, separately, one whose name is not in the policy's `writers`; Triage reports a
+write without one instead of editing it. The rule itself lives in AGENTS.md — one shared GitHub identity
+makes the line a self-report, so the gate guarantees presence, not truth (#633).
+
 | File | Purpose |
 | --- | --- |
-| `.github/agent/review-policy.json` | the logins whose PASS counts, and `selfReview`, the authors who may PASS their own PR; editing it is T3 |
+| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627); editing it is T3 |
 | `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
-| `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author), unlisted login, FAIL after PASS, missing `Ran:` (a missing `Not run:` no longer refuses), and the workflow's shape |
+| `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author), unlisted login, FAIL after PASS, missing `Ran:` (a missing `Not run:` no longer refuses), a missing `Written-by:` line and one naming an unlisted writer (#627), and the workflow's shape |
 | `.github/workflows/review-gate.yml` | reports it in the job summary; `continue-on-error`, never required |
 
 Run it by hand (read-only API calls with your `gh` login):

@@ -35,7 +35,8 @@ Always include:
 
 ```text
 Verdict: PASS | FAIL | INC at <full or 12+ hex>
-Written by: Reviewer. Posted by: <who actually posted it>.
+Written-by: Reviewer
+Posted-by: <who actually posted it, when the writer could not post it themselves>
 
 Ran:
   - <command> → pass|fail
@@ -45,7 +46,9 @@ Not run:
 ```
 
 The first line is the whole conclusion (#637): nothing may come before it, because the gates read the
-first line and treat any other shape as no conclusion.
+first line and treat any other shape as no conclusion. The `Written-by:` line is the attribution every write carries (#627): it names a Bot from the policy's
+`writers`, the gates refuse a report without it, and it is a self-report, not proof — see
+[AGENTS.md](../../../AGENTS.md#every-state-changing-write-says-who-wrote-it-627), which is the single source.
 
 What the gates read as evidence (`review-gate.mjs` `parseReport`; #660–#663 refused at the queue for
 the first point):
