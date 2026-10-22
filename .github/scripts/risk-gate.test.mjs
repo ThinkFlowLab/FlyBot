@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { globToRe, createGate, render, loadRules } from './risk-gate.mjs'
+import { globToRe, createGate, render, summaryLine, loadRules } from './risk-gate.mjs'
 
 const rules = loadRules(new URL('../agent/risk-rules.json', import.meta.url))
 const gate = createGate(rules)
@@ -115,6 +115,27 @@ test('render: names the tier, the reasons, and says it is report only', () => {
   assert.match(text, /Risk tier: T3/)
   assert.match(text, /path AGENTS\.md/)
   assert.match(text, /does not block, label or merge/)
+})
+
+test('summaryLine: one machine-readable line with the tier and the paths that set it', () => {
+  const r = gate.judge([file('AGENTS.md'), file('plugins/social/src/social.js')])
+  assert.equal(summaryLine(r), 'risk-tier: T3; basis: AGENTS.md=T3, plugins/social/src/social.js=T3')
+})
+
+test('summaryLine: highest tier first, and a long basis is capped', () => {
+  const files = Array.from({ length: 12 }, (_, i) => file(`plugins/social/src/p${i}.js`))
+  const line = summaryLine(gate.judge([...files, file('docs/x.md')]))
+  assert.match(line, /^risk-tier: T3; basis: /)
+  assert.match(line, /\+3 more$/)
+})
+
+test('summaryLine: no changed files says so instead of listing nothing', () => {
+  assert.equal(summaryLine(gate.judge([])), 'risk-tier: T0; basis: none (no changed files)')
+})
+
+test('render: the machine-readable line is the last line of the report', () => {
+  const r = gate.judge([file('AGENTS.md'), file('core/src/host/groups.js')])
+  assert.equal(render(r, meaning).trimEnd().split('\n').at(-1), summaryLine(r))
 })
 
 test('rules file is consistent', () => {

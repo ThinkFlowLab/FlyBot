@@ -1,15 +1,67 @@
 [
-  {"name": "agent-task", "color": "5319E7", "description": "Written with the agent-task form; not approval for agents (that is agent-ready)"},
-  {"name": "agent-ready", "color": "0E8A16", "description": "Triaged spec: an agent may take it. Set by a maintainer or the maintenance routine, not a template"},
-  {"name": "agent-working", "color": "1D76DB", "description": "An agent has claimed this issue (the claim comment names the branch)"},
-  {"name": "agent-pr", "color": "5319E7", "description": "Pull request opened by an agent"},
-  {"name": "awaiting-approval", "color": "FBCA04", "description": "Legacy: a PR a person must decide on; routine T2/T3 PRs no longer wait for a click"},
-  {"name": "self-test", "color": "C5DEF5", "description": "Filed by the product self-test routine (issues only)"},
-  {"name": "needs-info", "color": "D4C5F9", "description": "Waiting for the reporter or a maintainer decision"},
-  {"name": "needs-human", "color": "B60205", "description": "The agent loop stopped; a person must decide (reason in the last comment)"},
-  {"name": "hold", "color": "000000", "description": "A person froze this issue or PR; agents and automation leave it alone"},
-  {"name": "risk:T0", "color": "C2E0C6", "description": "T0 (docs only). Never by hand; advisory, the merge gate recomputes it"},
-  {"name": "risk:T1", "color": "BFD4F2", "description": "T1 (client, tests, generated files). Advisory; the merge gate recomputes it"},
-  {"name": "risk:T2", "color": "FBCA04", "description": "T2 (host/plugin code or an unnamed path). Advisory; the merge gate recomputes it"},
-  {"name": "risk:T3", "color": "D93F0B", "description": "T3 (a PASS at the tip and green CI). Advisory; the merge gate recomputes it"}
+  {
+    "name": "agent-task",
+    "color": "5319E7",
+    "description": "Written with the agent-task form; not approval for agents (that is agent-ready)"
+  },
+  {
+    "name": "agent-ready",
+    "color": "0E8A16",
+    "description": "Triaged spec: an agent may take it. Set by a maintainer or the maintenance routine, not a template"
+  },
+  {
+    "name": "agent-working",
+    "color": "1D76DB",
+    "description": "An agent has claimed this issue (the claim comment names the branch)"
+  },
+  {
+    "name": "agent-pr",
+    "color": "5319E7",
+    "description": "Pull request opened by an agent"
+  },
+  {
+    "name": "awaiting-approval",
+    "color": "FBCA04",
+    "description": "Legacy: a PR a person must decide on; routine T2/T3 PRs no longer wait for a click"
+  },
+  {
+    "name": "self-test",
+    "color": "C5DEF5",
+    "description": "Filed by the product self-test routine (issues only)"
+  },
+  {
+    "name": "needs-info",
+    "color": "D4C5F9",
+    "description": "Waiting for the reporter or a maintainer decision"
+  },
+  {
+    "name": "needs-human",
+    "color": "B60205",
+    "description": "The agent loop stopped; a person must decide (reason in the last comment)"
+  },
+  {
+    "name": "hold",
+    "color": "000000",
+    "description": "A person froze this issue or PR; agents and automation leave it alone"
+  },
+  {
+    "name": "risk:T0",
+    "color": "C2E0C6",
+    "description": "T0 (docs only). Advisory; the controller labels it, the merge gate recomputes it"
+  },
+  {
+    "name": "risk:T1",
+    "color": "BFD4F2",
+    "description": "T1 (client, tests, generated). Advisory; the controller labels it, the merge gate recomputes it"
+  },
+  {
+    "name": "risk:T2",
+    "color": "FBCA04",
+    "description": "T2 (host/plugin code or unknown). Advisory; the controller labels it, the merge gate recomputes it"
+  },
+  {
+    "name": "risk:T3",
+    "color": "D93F0B",
+    "description": "T3 (PASS at the tip, green CI). Advisory; the controller labels it, the merge gate recomputes it"
+  }
 ]

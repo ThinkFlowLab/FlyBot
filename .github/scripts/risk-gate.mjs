@@ -61,10 +61,14 @@ export function createGate(rules) {
       if (ORDER.indexOf(t) > ORDER.indexOf(tier)) tier = t
       if (reason) why.push(reason)
     }
+    // Every path the rules were asked about, with the tier it got: the machine-readable line at
+    // the end of the report is built from this, not from a second walk over the rules.
+    const basis = []
     if (truncated || files.length >= MAX_FILES) bump('T3', `file list may be incomplete (${files.length} files)`)
     for (const f of files) {
       for (const name of [f.filename, f.previous_filename].filter(Boolean)) {
         const t = tierOf(name)
+        basis.push([name, t])
         bump(t, t === 'T3' ? `path ${name}` : null)
       }
       if (isGenerated(f.filename)) continue // generated files are verified by `patches check`, not read here
@@ -81,13 +85,28 @@ export function createGate(rules) {
     if (lim && (lines > lim.lines || real.length > lim.files)) {
       bump('T3', `size ${lines} lines / ${real.length} files > ${lim.lines} / ${lim.files} allowed for ${tier}`)
     }
-    return { tier, why: [...new Set(why)], lines, files: real.length, generated: files.length - real.length }
+    const seen = new Map()
+    for (const [path, t] of basis) if (!seen.has(path)) seen.set(path, t)
+    const ordered = [...seen].map(([path, t]) => ({ path, tier: t }))
+      .sort((a, b) => ORDER.indexOf(b.tier) - ORDER.indexOf(a.tier) || a.path.localeCompare(b.path))
+    return { tier, why: [...new Set(why)], lines, files: real.length, generated: files.length - real.length, basis: ordered }
   }
 
   return { tierOf, judge }
 }
 
-export function render({ tier, why, lines, files, generated }, meaning) {
+// The one machine-readable line the job summary ends with (#609): the tier and the paths that
+// set it, from the same judge() result the human-readable report is built from, so a reviewer can
+// quote a tier instead of guessing one.
+export const SUMMARY_LIMIT = 10
+export function summaryLine({ tier, basis = [] }) {
+  const shown = basis.slice(0, SUMMARY_LIMIT).map((b) => `${b.path}=${b.tier}`)
+  const rest = basis.length > SUMMARY_LIMIT ? `, +${basis.length - SUMMARY_LIMIT} more` : ''
+  return basis.length === 0 ? `risk-tier: ${tier}; basis: none (no changed files)` : `risk-tier: ${tier}; basis: ${shown.join(', ')}${rest}`
+}
+
+export function render(result, meaning) {
+  const { tier, why, lines, files, generated } = result
   const out = [
     `### Risk tier: ${tier}`,
     '',
@@ -99,7 +118,7 @@ export function render({ tier, why, lines, files, generated }, meaning) {
     out.push('', 'Why:', ...why.slice(0, 20).map((w) => `- ${w}`))
     if (why.length > 20) out.push(`- ... and ${why.length - 20} more`)
   }
-  out.push('', '_Report only (Phase 0): this does not block, label or merge anything. Rules: `.github/agent/risk-rules.json`; see `docs/autonomous-dev.md`._')
+  out.push('', '_Report only (Phase 0): this does not block, label or merge anything. Rules: `.github/agent/risk-rules.json`; see `docs/autonomous-dev.md`._', '', summaryLine(result))
   return out.join('\n')
 }
 

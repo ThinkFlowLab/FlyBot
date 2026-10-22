@@ -62,6 +62,7 @@ The script and `controller.json` come from the default branch (`checkout` of `de
 - Events caused by `GITHUB_TOKEN` start no workflows, so nothing chains from its labels; it runs on the schedule.
 - GitHub stops scheduled workflows of a public repository after 60 days without repository activity.
 - **A missing `risk:T*` is not a tier.** GitHub runs scheduled workflows late under load: the 30-minute cron produced runs 2.5–6 hours apart on this repository (48 runs, all `success`, none skipped — #629), so a label may arrive hours after the PR is opened, and a PR opened and merged between two runs gets none at all. A fork PR cannot be labelled by its own `pull_request` run either (read-only `GITHUB_TOKEN`), which is why the external ones (#611, #619) lack it by construction. Nothing depends on the label: `merge-gate` recomputes the tier from the diff with the base copy of `risk-gate.mjs`, and `risk-tier.yml` reports the same tier on every PR, forks included. Read an absent label as "the poll has not seen this PR yet" — never as T0/T1 and never as a reason to block.
+  The tier is still auditable without the label: `risk-tier.yml` ends its job summary with one machine-readable line, `risk-tier: T3; basis: <path>=<tier>, …`, computed by the same `judge()` that prints the prose report (#609), and `merge-gate` recomputes the same tier from the diff at queue time.
 - 50 PRs and 50 issues per label per run (`controller.json`); about 3 API calls per PR per run.
 
 ## Try it by hand (read-only)

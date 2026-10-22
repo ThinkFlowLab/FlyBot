@@ -1,7 +1,8 @@
 name: Risk tier (report only)
 
 # Phase 0 of docs/autonomous-dev.md. Computes the risk tier (T0-T3) of a pull request and writes
-# it to the job summary. It is NOT a required check, never blocks, labels, comments or merges.
+# it to the job summary, ending with one machine-readable line (`risk-tier: T2; basis: <path>=<tier>, …`)
+# that a review can quote (#609). It is NOT a required check, never blocks, labels, comments or merges.
 # Keep it out of the branch protection's required checks and out of the `tests-ok` needs list.
 #
 # Safety: `pull_request` (not pull_request_target), read-only token, no secrets. The script and
