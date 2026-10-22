@@ -8,6 +8,9 @@
 //
 //   - OFF unless the host names the plugin. config.flybot.modelPlugins is an allow-list;
 //     an unnamed plugin gets `not-allowed`, so nothing calls a model by default.
+//   - One default per plugin, if the host wants it. config.flybot.modelFor maps a plugin to the
+//     model its calls use when the call does not name one, so a host can keep a cheap plugin cheap
+//     while the rest of the team stays on the team default (#579).
 //   - Capped. A call carries one prompt and one optional system line; input length,
 //     output tokens and calls-per-minute are all bounded, so a plugin cannot spend the
 //     owner's quota without limit.
@@ -30,10 +33,16 @@ const clamp = (value, low, high, fallback) => (Number.isFinite(value) ? Math.min
 /**
  * Builds the `ask(plugin, input)` the host exposes as `flybot.model.ask`.
  * `allow` is the allow-list from config; an empty list refuses every plugin.
+ * `models` is the per-plugin default map (config.flybot.modelFor): a plugin's call uses its entry
+ * unless the call names a model, and an unnamed plugin falls back to the team default (#579).
  */
-export function createPluginModel(rt, { allow = [], now = Date.now, limits = {} } = {}) {
+export function createPluginModel(rt, { allow = [], models = {}, now = Date.now, limits = {} } = {}) {
   const caps = { ...MODEL_LIMITS, ...limits }
   const allowed = new Set(Array.isArray(allow) ? allow : [])
+  const perPlugin = models && typeof models === 'object' ? models : {}
+  // A model name the host can use: a non-empty string. Anything else (missing, empty, not a string)
+  // counts as not set, so it falls through to the next step instead of being passed to splitRef.
+  const modelName = (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined)
   /** @type {Map<string, number[]>} recent call times per plugin */
   const calls = new Map()
 
@@ -54,7 +63,7 @@ export function createPluginModel(rt, { allow = [], now = Date.now, limits = {} 
     if (prompt.length > caps.maxPromptChars) return { ok: false, code: 'prompt-too-long' }
     const system = input?.system === undefined ? undefined : String(input.system).slice(0, caps.maxSystemChars)
     const maxTokens = clamp(input?.maxTokens, 1, caps.maxTokens, caps.defaultTokens)
-    const route = splitRef(input?.model ?? (await rt.defaultModel()))
+    const route = splitRef(modelName(input?.model) ?? modelName(perPlugin[plugin]) ?? (await rt.defaultModel()))
     if (route === undefined) return { ok: false, code: 'no-model' }
     if (!withinRate(plugin)) return { ok: false, code: 'rate-limited' }
     const messages = [{ role: 'user', content: [{ type: 'text', text: prompt }] }]

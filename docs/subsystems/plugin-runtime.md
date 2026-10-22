@@ -94,8 +94,9 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 - `flybot.model.ask({ prompt, system?, maxTokens?, model? })` is the one pattern for a plugin to make a short model call (a classification, a title, a one-line summary). `src/host/plugin-model.js` builds it; `hooks.js` exposes it per scope as `model.ask`.
 - **Off unless named.** The host config `flybot.modelPlugins` is an allow-list; an unnamed plugin gets `{ ok: false, code: 'not-allowed' }`, and the list is empty by default, so nothing calls a model unless the deployment opts in.
+- **A per-plugin default.** The host config `flybot.modelFor` (`{ '<plugin>': '<provider/model>' }`) picks the model that plugin's calls use when the call does not name one (#579): the order is `input.model`, then `modelFor[plugin]`, then the team default. A plugin the host did not name still runs on the team default, a truthy model in the call always wins, and an entry that is not a non-empty string is ignored rather than passed through, so `modelFor: { tree: '' }` does not turn a working call into `no-model`. The team default is not asked for a plugin that has its own entry.
 - **Capped and safe.** Input and system length, output tokens and calls-per-minute are bounded (`MODEL_LIMITS`); the call streams through the host's own model selection and returns `{ ok: true, text }` or `{ ok: false, code }` — a short token, never provider text (a provider may echo a key). It refuses on a read-only host. It answers with text only: it creates or changes no Bot, room or memory, so a plugin's model call has no side effect the owner cannot see.
-- Tests: `core/test/plugin-model.test.js` (limits, allow-list, rate, error mapping) and the `flybot.model` case in `core/test/flybot.test.js`.
+- Tests: `core/test/plugin-model.test.js` (limits, allow-list, rate, error mapping, and the three-step model precedence of #579) and the `flybot.model` case in `core/test/flybot.test.js`.
 
 ### A plugin's memory access (#450 item 1)
 

@@ -4,9 +4,13 @@ import { MODEL_LIMITS, createPluginModel } from '../src/host/plugin-model.js'
 
 function fakeRt({ reply = 'An answer', finish = { kind: 'stop' }, fail, readOnly = false, model = 'deepseek/v4' } = {}) {
   const requests = []
+  let defaultCalls = 0
   const rt = {
     readOnly: () => (readOnly ? 'another host holds the team' : undefined),
-    defaultModel: async () => model,
+    defaultModel: async () => {
+      defaultCalls += 1
+      return model
+    },
     ctx: {
       llm: {
         async* stream(request) {
@@ -18,7 +22,7 @@ function fakeRt({ reply = 'An answer', finish = { kind: 'stop' }, fail, readOnly
       },
     },
   }
-  return { rt, requests }
+  return { rt, requests, defaults: () => defaultCalls }
 }
 
 test('a plugin that is not allow-listed is refused, and the allow-list is the only key', async () => {
@@ -45,6 +49,32 @@ test('an allowed plugin gets text only, with the output clamped to the host ceil
   assert.equal(requests[0].maxTokens, MODEL_LIMITS.maxTokens, 'maxTokens is clamped')
   assert.equal(requests[0].provider, 'deepseek')
   assert.equal(requests[0].model, 'v4')
+})
+
+test('#579: a per-plugin default model is used by that plugin, after the model a call names', async () => {
+  const { rt, requests, defaults } = fakeRt()
+  const ask = createPluginModel(rt, { allow: ['cheap', 'other'], models: { cheap: 'deepseek/v4-flash' } })
+  assert.deepEqual(await ask('cheap', { prompt: 'hi' }), { ok: true, text: 'An answer' })
+  assert.deepEqual([requests[0].provider, requests[0].model], ['deepseek', 'v4-flash'], 'the plugin default is used')
+  assert.equal(defaults(), 0, 'the team default is not asked when the plugin has one')
+  await ask('cheap', { prompt: 'hi', model: 'openai/gpt-5' })
+  assert.deepEqual([requests[1].provider, requests[1].model], ['openai', 'gpt-5'], 'a model the call names still wins')
+  await ask('other', { prompt: 'hi' })
+  assert.deepEqual([requests[2].provider, requests[2].model], ['deepseek', 'v4'], 'a plugin the host did not name keeps the team default')
+  assert.equal(defaults(), 1, 'only the unnamed plugin falls back')
+})
+
+test('#579: a per-plugin entry that is not a usable name is ignored, never passed through', async () => {
+  for (const models of [{ p: '' }, { p: '   ' }, { p: 42 }, { p: null }, {}]) {
+    const { rt, requests } = fakeRt()
+    const ask = createPluginModel(rt, { allow: ['p'], models })
+    assert.deepEqual(await ask('p', { prompt: 'hi' }), { ok: true, text: 'An answer' })
+    assert.deepEqual([requests[0].provider, requests[0].model], ['deepseek', 'v4'], 'an unusable entry falls back to the team default')
+  }
+  const { rt, requests } = fakeRt()
+  const ask = createPluginModel(rt, { allow: ['p'], models: { p: 'cheap/x' } })
+  await ask('p', { prompt: 'hi', model: '' })
+  assert.deepEqual([requests[0].provider, requests[0].model], ['cheap', 'x'], 'an empty model in the call falls through to the plugin default')
 })
 
 test('a provider error is a short code, never the provider message', async () => {
