@@ -291,6 +291,10 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
    * descendants get a fresh prompt (their trace no longer names the deleted bot).
    */
   function onBotRemoved({ botId, parent }) {
+    // A removed Bot's open turns can never end, so its load records go with it (#732). This runs before
+    // the tree guard below: the tracker is fed from the core activity feed, so a Bot outside the tree
+    // (never placed, or created straight through core) has records too.
+    load.clear(botId)
     if (parent === undefined) return // not a tree bot
     const kids = childrenOf(snapshot(), botId)
     // Removing a root must not leave its children with `parent: null`, which isRoot reads as a

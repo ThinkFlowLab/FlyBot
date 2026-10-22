@@ -308,12 +308,35 @@ test('client builds the tree from ctx.flybot.bots() and fields', async () => {
   assert.equal(mod.buildForest(nodes)[0].children[0].name, 'Work')
 })
 
-test('bot.removed for a non-tree bot is ignored', async () => {
+// #732: the tracker's invariant is that every record belongs to a live Bot. Removal re-attaches the
+// children but used to leave the deleted Bot's open turns counted forever.
+test('#732: a removed Bot leaves no open-turn record behind, and a live one keeps its own', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work'); const dev = await make(m, m.root, 'Dev')
+  m.feed('turn.start', { botId: work, turnId: 'work-1' })
+  m.feed('turn.start', { botId: work, turnId: 'work-2' })
+  m.feed('turn.start', { botId: dev, turnId: 'dev-1' })
+  assert.equal(m.tree.loadOf(work), 2, 'both turns are open before the removal')
+  m.removeBot(work)
+  assert.equal(m.tree.loadOf(work), 0, 'the removed Bot is no longer counted')
+  assert.equal(m.tree.openForOf(work), 0, 'and has no open turn left to age')
+  assert.equal(m.tree.loadOf(dev), 1, 'a live Bot keeps its record')
+  m.feed('turn.end', { botId: dev, turnId: 'dev-1' })
+  assert.equal(m.tree.loadOf(dev), 0)
+})
+
+test('bot.removed for a non-tree bot is ignored, and still drops its load records', async () => {
   const m = await setup()
   const a = await make(m, m.root, 'A')
   const o = await outsider(m)
+  // A Bot the tree never held still runs turns, and the feed records them: the tree guard must not
+  // skip the cleanup for it (#732).
+  m.feed('turn.start', { botId: o, turnId: 'o-1' })
+  assert.equal(m.tree.loadOf(o), 1, 'a tracked Bot outside the tree')
   m.removeBot(o)
   assert.equal(f(m, a, 'parent'), m.root)
+  assert.equal(m.tree.loadOf(o), 0, 'a removed non-tree Bot is no longer counted')
+  assert.equal(m.tree.openForOf(o), 0, 'and has no open turn left to age')
 })
 
 test('adapter requires flybot.scope', () => {

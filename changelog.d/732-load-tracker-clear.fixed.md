@@ -1,0 +1,1 @@
+Deleting a Bot now drops its open-turn records from the tree's load tracker. The tracker used to keep counting the deleted Bot forever, so a coordinator could read a Bot that no longer exists as busy ([#732](https://github.com/ThinkFlowLab/FlyBot/issues/732)).

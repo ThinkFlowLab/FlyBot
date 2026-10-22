@@ -79,3 +79,22 @@ test('#696: an end closes its own turn, not just the oldest open one', () => {
   load.end('a', 's#4')
   assert.equal(load.of('a'), 0, 'the named turn is closed and nothing is left')
 })
+
+// #732: a removed Bot's turns can never end, so a removal drops its records instead of leaving the
+// tracker counting a Bot that no longer exists.
+test('#732: clear drops one Bot\'s records and leaves the others alone', () => {
+  const load = createLoadTracker()
+  load.start('a'); load.start('a'); load.start('b')
+  load.clear('a')
+  assert.deepEqual(load.snapshot(), { b: 1 }, 'only b is left')
+  assert.equal(load.of('a'), 0)
+  assert.equal(load.openFor('a'), 0, 'a gone Bot has no open turn to age')
+  // An unknown id, or a second clear, changes nothing.
+  load.clear('nope')
+  load.clear('a')
+  load.clear('')
+  assert.deepEqual(load.snapshot(), { b: 1 })
+  // The remaining Bot keeps counting normally.
+  load.end('b')
+  assert.deepEqual(load.snapshot(), {})
+})

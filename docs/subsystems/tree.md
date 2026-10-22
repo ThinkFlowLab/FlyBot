@@ -26,7 +26,7 @@ Everything in `plugins/tree/` (entry `plugins/tree/index.js` and any helpers).
 | `plugins/tree/src/organize.js` | Self-organization (#446): placement by role, role groups and leads, repair (over-full parents, orphans), daily tidy (merge, idle, archive), journal and undo. Exposes the shared primitives (`shared`) allocation uses. |
 | `plugins/tree/src/allocate.js` | Forward allocation (#447): `find_bots`, reuse before create, `create_child_bot(parent?)` placement, `create_team` (lead plus children), on `organize.js`'s shared primitives. |
 | `plugins/tree/src/roles.js` | Role profiles and similarity (name, role label, description, own prompt, recent tools; deterministic, `classify` hook; reads a stored `modelDomain`). |
-| `plugins/tree/src/load.js` | Runtime load (#507) and how long a turn has been open (#624): pure `createLoadTracker`/`loadWord`/`loadLine` for the open turns each Bot runs, fed from the activity feed. |
+| `plugins/tree/src/load.js` | Runtime load (#507) and how long a turn has been open (#624): pure `createLoadTracker`/`loadWord`/`loadLine` for the open turns each Bot runs, fed from the activity feed. A deletion drops the removed Bot's records (`clear(id)`, #732), so every record belongs to a live Bot. |
 | `plugins/tree/src/classify-model.js` | Model-based clustering (#450 item 2): opt-in classification through the sanctioned plugin model call (#518). |
 
 ## Entry points
@@ -81,7 +81,7 @@ The tree organizes itself by role instead of leaving Bots outside it or a parent
 
 A coordinator can see which of its children are busy right now, so it sends a new part to a free one instead of stacking work on a busy one.
 
-- `src/load.js` (pure) counts the open turns per Bot from the core activity feed (`turn.start` / `turn.end`, ids and times only). `index.js` subscribes both events; nothing is persisted (a restart starts from zero).
+- `src/load.js` (pure) counts the open turns per Bot from the core activity feed (`turn.start` / `turn.end`, ids and times only). `index.js` subscribes both events; nothing is persisted (a restart starts from zero). A removed Bot's turns can never end, so `onBotRemoved` calls `clear(id)` and the count for that id reads 0 again, while a live Bot keeps its own records (#732).
 - The coordinator's prompt gains one line — `Child load right now — Work: busy (2 running), Travel: idle.` — and `list_children` carries a `load` count per child. A child's turn boundary rewrites its parent's prompt through `refreshPrompt` (the marked block only, and `writeBlock` skips an unchanged block), so the line stays current; `list_children` reads the tracker live.
 
 #### How long a turn has been open (#624)

@@ -39,6 +39,14 @@ export function createLoadTracker({ now = Date.now } = {}) {
       if (turns.length === 0) open.delete(id)
       else open.set(id, turns)
     },
+    /**
+     * Drop every open turn of one Bot (#732). A removed Bot's turns can never end, so the records go
+     * with it; an id never seen is a no-op.
+     */
+    clear(id) {
+      if (typeof id !== 'string' || id === '') return
+      open.delete(id)
+    },
     of(id) {
       return turnsOf(id).length
     },
