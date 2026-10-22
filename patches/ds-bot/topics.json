@@ -48,7 +48,10 @@
     "src/client/browser-pane.js",
     "src/client/pane-width.js",
     "src/client/panes.js",
-    "test/follow-through.test.js"
+    "test/follow-through.test.js",
+    "src/host/images.js",
+    "test/images.test.js",
+    "test/session-identity.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",

@@ -2,7 +2,7 @@
 // reaches a model that cannot read them, each image becomes text from a vision model.
 // Texts are kept per attachment, so later requests repeat the same words and the
 // prompt cache still hits.
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
@@ -25,6 +25,56 @@ export function offloadTargets(session, beforeSeq) {
     if (imageIndexes.length > 0) targets.push({ seq, imageIndexes })
   }
   return targets
+}
+
+const IMAGE_ID = /^sha256:([0-9a-f]{64})$/
+
+// Where one chat image is stored: <home>/attachments/v1/objects/<first two>/<sha256>, the layout the
+// local attachment store writes (#779). Only a content-addressed image id can be turned into it.
+export function attachmentObjectPath(home, attachmentId) {
+  const match = IMAGE_ID.exec(String(attachmentId ?? ''))
+  return match === null ? undefined : join(home, 'attachments', 'v1', 'objects', match[1].slice(0, 2), match[1])
+}
+
+/**
+ * The path a Bot's own file tools can open for one image, or undefined. The attachment store's host
+ * path goes through the file sandbox's mapping (what `dsh-spill-policy` does for spooled tool output),
+ * because a host path the execution world cannot read is worse than no path at all; the local object
+ * layout above is the fallback when the store or the mapping is not there. Either way the file must
+ * exist: a placeholder that names a missing file sends a Bot after nothing.
+ */
+export async function attachmentFilePath(attachment, { home, attachments, fs } = {}) {
+  const readable = async path => {
+    if (typeof path !== 'string' || path === '') return undefined
+    try { return (await stat(path)).isFile() ? path : undefined } catch { return undefined }
+  }
+  const hostPath = attachments?.imageHostPath?.(attachment)
+  if (hostPath !== undefined) {
+    const mapped = fs?.processPathFromHostPath?.(hostPath)
+    const viaStore = await readable(mapped)
+    if (viaStore !== undefined) return viaStore
+  }
+  return readable(attachmentObjectPath(home, attachment?.attachmentId))
+}
+
+const imageLabel = attachment => (attachment?.name
+  ? `"${attachment.name}"`
+  : `sha256:${String(attachment?.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)}`)
+
+const imageFacts = attachment => {
+  const facts = []
+  if (typeof attachment?.mediaType === 'string') facts.push(attachment.mediaType)
+  if (Number.isFinite(attachment?.width) && Number.isFinite(attachment?.height)) facts.push(`${attachment.width}x${attachment.height}`)
+  if (Number.isFinite(attachment?.bytes)) facts.push(`${attachment.bytes} bytes`)
+  return facts.length === 0 ? '' : ` (${facts.join(', ')})`
+}
+
+// One placeholder for both places an unread image becomes text: a Bot chat (`imageAsText`) and the
+// group relay (`imagesForGroup`). It names the bytes only when `path` is a file this Bot can open.
+export function imagePlaceholder(attachment, { path, group = false } = {}) {
+  const where = path === undefined ? '' : ` The file is at "${path}"; your own file tools can open it.`
+  const cannot = group ? '' : 'you cannot see images and '
+  return `[Image ${imageLabel(attachment)}${imageFacts(attachment)}: ${cannot}it could not be read right now.${where} Ask the user what it shows if it matters.]`
 }
 
 export function install(rt) {
@@ -128,16 +178,18 @@ export function install(rt) {
     return ocrPending.get(id)
   }
 
-  const imageLabel = attachment => (attachment.name
-    ? `"${attachment.name}"`
-    : `sha256:${String(attachment.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)}`)
+  // The store and the file sandbox, read once per call: either can be absent (a deployment without
+  // attachments, a test), and `attachmentFilePath` then falls back to the local object layout.
+  const attachmentServices = () => ({ home, attachments: ctx.get('attachments'), fs: ctx.get('fs') })
 
-  function imageAsText(attachment, reading) {
+  // `path` is set only when the reading failed and the bytes really are on disk: the placeholder then
+  // tells the Bot where to find them, which is the point of #779.
+  function imageAsText(attachment, reading, path) {
     const label = imageLabel(attachment)
     return {
       type: 'text',
       text: reading === null
-        ? `[Image ${label}: you cannot see images and it could not be read right now. Ask the user what it shows if it matters.]`
+        ? imagePlaceholder(attachment, { path })
         : `[Image ${label}. You cannot see images, so ${reading.model} read it for you:]\n${reading.text}\n[End of image ${label}]`,
     }
   }
@@ -150,7 +202,7 @@ export function install(rt) {
       const reading = await imageReading(attachment, sessionId)
       const label = imageLabel(attachment)
       return reading === null
-        ? `[Image ${label}: it could not be read right now. Ask the user what it shows if it matters.]`
+        ? imagePlaceholder(attachment, { path: await attachmentFilePath(attachment, attachmentServices()), group: true })
         : `[Image ${label}, read by ${reading.model}:]\n${reading.text}\n[End of image ${label}]`
     }))
   }
@@ -164,13 +216,20 @@ export function install(rt) {
         if (block?.type === 'image' && !block.offloaded) images.set(String(block.attachment.attachmentId), block.attachment)
       }
     }
-    const readings = new Map(await Promise.all([...images].map(async ([id, attachment]) => [id, await imageReading(attachment, sessionId)])))
+    const resolved = new Map(await Promise.all([...images].map(async ([id, attachment]) => {
+      const reading = await imageReading(attachment, sessionId)
+      // The path is worth looking up only when the reading failed; readable text needs none.
+      const path = reading === null ? await attachmentFilePath(attachment, attachmentServices()) : undefined
+      return [id, { reading, path }]
+    })))
     return messages.map(message => (liveImages(message)
       ? {
           ...message,
-          content: message.content.map(block => (block?.type === 'image' && !block.offloaded
-            ? imageAsText(block.attachment, readings.get(String(block.attachment.attachmentId)))
-            : block)),
+          content: message.content.map(block => {
+            if (block?.type !== 'image' || block.offloaded) return block
+            const { reading, path } = resolved.get(String(block.attachment.attachmentId))
+            return imageAsText(block.attachment, reading, path)
+          }),
         }
       : message))
   }

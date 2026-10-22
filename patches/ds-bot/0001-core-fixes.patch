@@ -3,7 +3,7 @@ FlyBot patch 0001-core-fixes on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Generate
 diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
-@@ -27,6 +27,7 @@ Tested with dsh `0.2.0-rc.2` (Web and Desktop) on Linux.
+@@ -27,6 +27,7 @@
  - **Bot browser (dsh Desktop only)**: see [Bot browser](#bot-browser).
  - **Images**: for a model that cannot read images, a vision model first turns the image into text.
  - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
@@ -11,7 +11,7 @@ diff --git a/README.md b/README.md
  - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
  - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
  
-@@ -71,9 +71,12 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+@@ -71,9 +72,12 @@
      memory: true                    # false turns memory off: no memory tools, section or panel
      memoryReview: true              # false leaves memory to the Bots' own remember calls
      diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
@@ -24,7 +24,7 @@ diff --git a/README.md b/README.md
  ```
  
  **Updates**: when a window opens, DS Bot asks where it was installed from for a newer release: the npm registry (the one the DSH plugin manager installs from, then its fallbacks), or the latest GitHub release for a `github:…#vX.Y.Z` install. A newer version shows a cloud button at the top right of the sidebar; **Update** reinstalls DS Bot through the DSH plugin manager, and the new version runs from the next DSH start. A linked or local checkout is never offered an update. Settings → About DS Bot shows the same state, with **Check for updates** to ask again at once.
-@@ -82,7 +82,7 @@ The same card can carry DSH itself: a DS Bot release may name the DSH release it
+@@ -82,10 +86,11 @@
  
  ## Models
  
@@ -33,6 +33,10 @@ diff --git a/README.md b/README.md
  
  - Give every model a `contextWindow`. DS Bot takes its lines from it: the usable window is the window minus the reply reserve (`maxTokens`), the hard line is 95% of that, and the check line is `checkRatio` of it. A model without `contextWindow` gets the adapter's default (262,144 tokens for `llm-pi-ai`), which may be wrong for that model; a model that reports no window at all counts as 500,000.
  - To send images, the provider needs `defaultInput: [ text, image ]`.
++- An image is read before it reaches a model that cannot see it: FlyBot sends it to a model that declares image input (the configured `ocrModel` first) and gives the text to the Bot. A team with no such model still gets the picture as text, and that placeholder then names the file itself (`<home>/attachments/v1/objects/<first two>/<sha256>`) when the bytes are still on disk, so a Bot can open it with its own file tools. Readings are cached in `ocr.json`.
+ - Keep API keys out of the repository. Use dsh's own key storage or environment variables.
+ 
+ ## Memory
 diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
 --- a/src/client/approval-notices.js
 +++ b/src/client/approval-notices.js
@@ -2789,6 +2793,133 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 +    await rt.loadSecrets?.().catch(() => { /* without stored secrets the log is still built, redacting what it can */ })
      const list = await entries()
      return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
+   }
+diff --git a/src/host/images.js b/src/host/images.js
+--- a/src/host/images.js
++++ b/src/host/images.js
+@@ -2,7 +2,7 @@
+ // reaches a model that cannot read them, each image becomes text from a vision model.
+ // Texts are kept per attachment, so later requests repeat the same words and the
+ // prompt cache still hits.
+-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
++import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+ import { join } from 'node:path'
+ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+ import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
+@@ -27,6 +27,56 @@
+   return targets
+ }
+ 
++const IMAGE_ID = /^sha256:([0-9a-f]{64})$/
++
++// Where one chat image is stored: <home>/attachments/v1/objects/<first two>/<sha256>, the layout the
++// local attachment store writes (#779). Only a content-addressed image id can be turned into it.
++export function attachmentObjectPath(home, attachmentId) {
++  const match = IMAGE_ID.exec(String(attachmentId ?? ''))
++  return match === null ? undefined : join(home, 'attachments', 'v1', 'objects', match[1].slice(0, 2), match[1])
++}
++
++/**
++ * The path a Bot's own file tools can open for one image, or undefined. The attachment store's host
++ * path goes through the file sandbox's mapping (what `dsh-spill-policy` does for spooled tool output),
++ * because a host path the execution world cannot read is worse than no path at all; the local object
++ * layout above is the fallback when the store or the mapping is not there. Either way the file must
++ * exist: a placeholder that names a missing file sends a Bot after nothing.
++ */
++export async function attachmentFilePath(attachment, { home, attachments, fs } = {}) {
++  const readable = async path => {
++    if (typeof path !== 'string' || path === '') return undefined
++    try { return (await stat(path)).isFile() ? path : undefined } catch { return undefined }
++  }
++  const hostPath = attachments?.imageHostPath?.(attachment)
++  if (hostPath !== undefined) {
++    const mapped = fs?.processPathFromHostPath?.(hostPath)
++    const viaStore = await readable(mapped)
++    if (viaStore !== undefined) return viaStore
++  }
++  return readable(attachmentObjectPath(home, attachment?.attachmentId))
++}
++
++const imageLabel = attachment => (attachment?.name
++  ? `"${attachment.name}"`
++  : `sha256:${String(attachment?.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)}`)
++
++const imageFacts = attachment => {
++  const facts = []
++  if (typeof attachment?.mediaType === 'string') facts.push(attachment.mediaType)
++  if (Number.isFinite(attachment?.width) && Number.isFinite(attachment?.height)) facts.push(`${attachment.width}x${attachment.height}`)
++  if (Number.isFinite(attachment?.bytes)) facts.push(`${attachment.bytes} bytes`)
++  return facts.length === 0 ? '' : ` (${facts.join(', ')})`
++}
++
++// One placeholder for both places an unread image becomes text: a Bot chat (`imageAsText`) and the
++// group relay (`imagesForGroup`). It names the bytes only when `path` is a file this Bot can open.
++export function imagePlaceholder(attachment, { path, group = false } = {}) {
++  const where = path === undefined ? '' : ` The file is at "${path}"; your own file tools can open it.`
++  const cannot = group ? '' : 'you cannot see images and '
++  return `[Image ${imageLabel(attachment)}${imageFacts(attachment)}: ${cannot}it could not be read right now.${where} Ask the user what it shows if it matters.]`
++}
++
+ export function install(rt) {
+   const { ctx, config, home } = rt
+ 
+@@ -128,16 +178,18 @@
+     return ocrPending.get(id)
+   }
+ 
+-  const imageLabel = attachment => (attachment.name
+-    ? `"${attachment.name}"`
+-    : `sha256:${String(attachment.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)}`)
++  // The store and the file sandbox, read once per call: either can be absent (a deployment without
++  // attachments, a test), and `attachmentFilePath` then falls back to the local object layout.
++  const attachmentServices = () => ({ home, attachments: ctx.get('attachments'), fs: ctx.get('fs') })
+ 
+-  function imageAsText(attachment, reading) {
++  // `path` is set only when the reading failed and the bytes really are on disk: the placeholder then
++  // tells the Bot where to find them, which is the point of #779.
++  function imageAsText(attachment, reading, path) {
+     const label = imageLabel(attachment)
+     return {
+       type: 'text',
+       text: reading === null
+-        ? `[Image ${label}: you cannot see images and it could not be read right now. Ask the user what it shows if it matters.]`
++        ? imagePlaceholder(attachment, { path })
+         : `[Image ${label}. You cannot see images, so ${reading.model} read it for you:]\n${reading.text}\n[End of image ${label}]`,
+     }
+   }
+@@ -150,7 +202,7 @@
+       const reading = await imageReading(attachment, sessionId)
+       const label = imageLabel(attachment)
+       return reading === null
+-        ? `[Image ${label}: it could not be read right now. Ask the user what it shows if it matters.]`
++        ? imagePlaceholder(attachment, { path: await attachmentFilePath(attachment, attachmentServices()), group: true })
+         : `[Image ${label}, read by ${reading.model}:]\n${reading.text}\n[End of image ${label}]`
+     }))
+   }
+@@ -164,13 +216,20 @@
+         if (block?.type === 'image' && !block.offloaded) images.set(String(block.attachment.attachmentId), block.attachment)
+       }
+     }
+-    const readings = new Map(await Promise.all([...images].map(async ([id, attachment]) => [id, await imageReading(attachment, sessionId)])))
++    const resolved = new Map(await Promise.all([...images].map(async ([id, attachment]) => {
++      const reading = await imageReading(attachment, sessionId)
++      // The path is worth looking up only when the reading failed; readable text needs none.
++      const path = reading === null ? await attachmentFilePath(attachment, attachmentServices()) : undefined
++      return [id, { reading, path }]
++    })))
+     return messages.map(message => (liveImages(message)
+       ? {
+           ...message,
+-          content: message.content.map(block => (block?.type === 'image' && !block.offloaded
+-            ? imageAsText(block.attachment, readings.get(String(block.attachment.attachmentId)))
+-            : block)),
++          content: message.content.map(block => {
++            if (block?.type !== 'image' || block.offloaded) return block
++            const { reading, path } = resolved.get(String(block.attachment.attachmentId))
++            return imageAsText(block.attachment, reading, path)
++          }),
+         }
+       : message))
    }
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
@@ -6140,6 +6271,104 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 +  fb.remote.publish([{ handle: '@a.b.home', name: 'A' }])
 +  assert.deepEqual(fb.remote.list(), [])
 +})
+diff --git a/test/images.test.js b/test/images.test.js
+--- a/test/images.test.js
++++ b/test/images.test.js
+@@ -1,6 +1,9 @@
+ import assert from 'node:assert/strict'
++import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
+ import { test } from 'node:test'
+-import { offloadTargets } from '../src/host/images.js'
++import { attachmentFilePath, attachmentObjectPath, imagePlaceholder, offloadTargets } from '../src/host/images.js'
+ 
+ test('offloadTargets selects live images from prior user and tool messages', () => {
+   const events = [
+@@ -32,3 +35,83 @@
+     { seq: 2, imageIndexes: [0] },
+   ])
+ })
++
++// #779: an image the host cannot read is placeholder text, and the placeholder has to say where the
++// bytes are — a path the Bot's own file tools can open. Everything below is about that sentence.
++
++const SHA = 'bdc77c709327f813556c2c685d907f351f16a624da9173ed90a06c698b9082df'
++const id = `sha256:${SHA}`
++const attachment = { attachmentId: id, name: 'IMG_2431.jpeg', mediaType: 'image/jpeg', width: 1080, height: 1596, bytes: 213569 }
++
++function homeWith(file) {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-images-'))
++  if (file !== undefined) {
++    const path = join(home, 'attachments', 'v1', 'objects', SHA.slice(0, 2), SHA)
++    mkdirSync(join(home, 'attachments', 'v1', 'objects', SHA.slice(0, 2)), { recursive: true })
++    writeFileSync(path, 'jpeg-bytes')
++  }
++  return home
++}
++
++test('#779: the object path is the store layout, and only a content-addressed image id has one', () => {
++  assert.equal(attachmentObjectPath('/h', id), join('/h', 'attachments', 'v1', 'objects', 'bd', SHA))
++  for (const bad of ['attachment_01', 'sha256:xyz', 'sha256:' + 'a'.repeat(63), undefined, null, '']) {
++    assert.equal(attachmentObjectPath('/h', bad), undefined, `no path for ${String(bad)}`)
++  }
++})
++
++test('#779: a file the Bot can open is named, and one that is not there is never invented', async (t) => {
++  const home = homeWith('object')
++  t.after(() => rmSync(home, { recursive: true, force: true }))
++  assert.equal(await attachmentFilePath(attachment, { home }), join(home, 'attachments', 'v1', 'objects', 'bd', SHA), 'the local object layout, when the file is there')
++
++  const empty = homeWith(undefined)
++  t.after(() => rmSync(empty, { recursive: true, force: true }))
++  assert.equal(await attachmentFilePath(attachment, { home: empty }), undefined, 'no path for a file that is not on disk')
++  assert.equal(await attachmentFilePath({ attachmentId: 'attachment_01' }, { home }), undefined, 'no path for an id that is not content-addressed')
++
++  // A directory where the object should be is not a file a Bot can read.
++  const dir = homeWith(undefined)
++  t.after(() => rmSync(dir, { recursive: true, force: true }))
++  mkdirSync(join(dir, 'attachments', 'v1', 'objects', 'bd', SHA), { recursive: true })
++  assert.equal(await attachmentFilePath(attachment, { home: dir }), undefined)
++})
++
++test('#779: the attachment store\'s path wins when the file sandbox can map it', async (t) => {
++  const home = homeWith(undefined)
++  t.after(() => rmSync(home, { recursive: true, force: true }))
++  const hostPath = join(home, 'elsewhere.jpg')
++  writeFileSync(hostPath, 'mapped-bytes')
++  const attachments = { imageHostPath: () => hostPath }
++  assert.equal(await attachmentFilePath(attachment, { home, attachments, fs: { processPathFromHostPath: path => path } }), hostPath)
++  // An unmapped host path is not offered: the Bot's tools could not open it.
++  assert.equal(await attachmentFilePath(attachment, { home, attachments }), undefined, 'no host path without a mapping')
++  assert.equal(await attachmentFilePath(attachment, { home, attachments, fs: {} }), undefined, 'no host path without a mapping function')
++  // The mapping answering a path that is not a file falls back to the object store.
++  assert.equal(await attachmentFilePath(attachment, { home, attachments, fs: { processPathFromHostPath: () => join(home, 'gone.jpg') } }), undefined)
++  const withObject = homeWith('object')
++  t.after(() => rmSync(withObject, { recursive: true, force: true }))
++  assert.equal(
++    await attachmentFilePath(attachment, { home: withObject, attachments, fs: { processPathFromHostPath: () => join(withObject, 'gone.jpg') } }),
++    join(withObject, 'attachments', 'v1', 'objects', 'bd', SHA),
++  )
++})
++
++test('#779: the placeholder names the file, its size and its type; without a path it stays as it was', () => {
++  const named = imagePlaceholder(attachment, { path: '/workspace/.dsh/objects/bd/x' })
++  assert.match(named, /^\[Image "IMG_2431\.jpeg" \(image\/jpeg, 1080x1596, 213569 bytes\): you cannot see images and it could not be read right now\./)
++  assert.match(named, /The file is at "\/workspace\/\.dsh\/objects\/bd\/x"; your own file tools can open it\./)
++  assert.match(named, /Ask the user what it shows if it matters\.\]$/)
++
++  const none = imagePlaceholder(attachment)
++  assert.doesNotMatch(none, /The file is at/, 'no path is invented when the bytes cannot be named')
++  assert.match(none, /could not be read right now\. Ask the user/)
++
++  // The group relay says the same thing, without the "you cannot see images" half.
++  const group = imagePlaceholder(attachment, { path: '/p/x', group: true })
++  assert.match(group, /\[Image "IMG_2431\.jpeg" \(image\/jpeg, 1080x1596, 213569 bytes\): it could not be read right now\./)
++  assert.doesNotMatch(group, /you cannot see images/)
++
++  // An unnamed image keeps the sha prefix the host has always shown.
++  assert.match(imagePlaceholder({ attachmentId: id }), /\[Image sha256:bdc77c70:/)
++})
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
@@ -7282,6 +7511,87 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
 +  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
 +  assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
++})
+diff --git a/test/session-identity.test.js b/test/session-identity.test.js
+--- a/test/session-identity.test.js
++++ b/test/session-identity.test.js
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict'
+-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+@@ -41,7 +41,7 @@
+ // `ctx.llm.stream` runs the plugin's `llm/stream` listeners in order, as DSH does,
+ // and then a route that turns down a request without a Session. `respond` gives the
+ // text of each answer the route lets through.
+-function start() {
++function start({ config = {} } = {}) {
+   const home = mkdtempSync(join(tmpdir(), 'ds-bot-session-identity-'))
+   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+   const bench = { tokens: 0, compacted: 0, respond: () => '', requests: [] }
+@@ -95,7 +95,7 @@
+     sessions: { messageProjections: [] },
+     workspaceRegistry: { archiveSession: async () => {} },
+   })
+-  const rt = createRuntime(ctx, { home })
++  const rt = createRuntime(ctx, { home, ...config })
+   const hook = pattern => ctx.listeners.get('llm/stream').find(listener => pattern.test(String(listener)))
+   const stop = async () => {
+     await ctx.dispose()
+@@ -105,7 +105,7 @@
+     }
+     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+   }
+-  return { ctx, rt, bench, hook, stop }
++  return { ctx, rt, bench, hook, home, stop }
+ }
+ 
+ for (const sessionId of ['b2', 'g3']) {
+@@ -172,3 +172,43 @@
+   assert.equal(images(own('b2', picture), pass), passed)
+   assert.notEqual(images(round('b2', picture), pass), passed)
+ })
++
++// #779: with no vision model a picture cannot be read, and the placeholder then names the bytes on
++// disk so a Bot can pick them up with its own file tools. Both paths that turn an image into text
++// for a text-only model share that placeholder: the group relay and a Bot chat.
++test('an unread image names its bytes in a group and in a chat alike', async (t) => {
++  const { ctx, rt, bench, home, stop } = start({ config: { textOnlyModels: ['deepseek/vision'] } })
++  t.after(stop)
++  const id = 'b'.repeat(64)
++  const objectPath = join(home, 'attachments', 'v1', 'objects', id.slice(0, 2), id)
++  mkdirSync(join(home, 'attachments', 'v1', 'objects', id.slice(0, 2)), { recursive: true })
++  writeFileSync(objectPath, 'not really a png')
++  const picture = { attachmentId: `sha256:${id}`, name: 'chart.png', mediaType: 'image/png', bytes: 16 }
++
++  const [line] = await rt.imagesForGroup([picture], 'r1')
++  assert.match(line, /it could not be read right now\. The file is at /)
++  assert.ok(line.includes(`"${objectPath}"`), line)
++
++  bench.respond = () => 'It is a chart.'
++  const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', attachment: picture }, { type: 'text', text: 'What is this?' }] }
++  const chunks = await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
++  assert.equal(chunks.at(-1).reason.kind, 'stop')
++  // No vision request went out: there is no model to send it to.
++  assert.deepEqual(bench.requests.map(request => request.model), ['v4'])
++  assert.ok(bench.requests[0].messages[0].content[0].text.includes(`"${objectPath}"`), bench.requests[0].messages[0].content[0].text)
++})
++
++test('an unread image whose bytes are gone keeps the placeholder short', async (t) => {
++  const { ctx, rt, bench, home, stop } = start({ config: { textOnlyModels: ['deepseek/vision'] } })
++  t.after(stop)
++  const id = 'c'.repeat(64)
++  const picture = { attachmentId: `sha256:${id}`, name: 'gone.png' }
++  const [line] = await rt.imagesForGroup([picture], 'r1')
++  assert.match(line, /it could not be read right now\. Ask the user/)
++  assert.ok(!line.includes(home), line)
++
++  bench.respond = () => 'It is a chart.'
++  const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', attachment: picture }, { type: 'text', text: 'What is this?' }] }
++  await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
++  assert.ok(!bench.requests[0].messages[0].content[0].text.includes(home), bench.requests[0].messages[0].content[0].text)
 +})
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js

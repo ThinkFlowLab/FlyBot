@@ -132,7 +132,7 @@ The first line is the FlyBot core (package `ds-bot`). The plugins are optional b
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
 ```
 
-Open the printed `http://127.0.0.1:3080/?token=…` link. The first time you open Chief, pick a model (or open **Models and providers…**).
+Open the printed `http://127.0.0.1:3080/?token=…` link. The first time you open Chief, pick a model (or open **Models and providers…**). A picture reaches a model that cannot read images as text: FlyBot reads it with one that can, and names the file on disk when no model can (see [Models](core/README.md#models)).
 
 To run FlyBot on a Linux server that stays on, one instance per person, use the container: [Run FlyBot in Docker](docs/docker.md).
 
