@@ -144,7 +144,7 @@ What counts as a reviewed tip, all of it:
    Owner decision 2026-10-19: a PR opened by the owner's Bot/agent may be PASSed by the owner's own reviewer
    Bot/agent, so no independent reviewer is required. Any other author still needs someone else. A self-PASS does not
    replace green CI, and a new commit voids it.
-3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written by: Reviewer. Posted by: Chief (proxy…).`), then the evidence — `Ran:` (or a `Ran …:` heading over a fenced block of `$ ` commands, #660–#663) with at least one command and `Not run:` with the gap named, not hidden; `Not run:` is mandatory in every PASS. A body whose first line is not the verdict is no conclusion.
+3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written by: Reviewer. Posted by: Chief (proxy…).`), then the evidence — `Ran:` (or a `Ran …:` heading over a fenced block of `$ ` commands, #660–#663) with at least one command; `Not run:` naming any gap is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai). A body whose first line is not the verdict is no conclusion.
 4. The sha on that first line **is the head being judged**. A later commit moves the tip and the old PASS stops
    counting; that report is then listed as "not counted", with the sha it named.
 5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
@@ -154,7 +154,7 @@ What counts as a reviewed tip, all of it:
 | --- | --- |
 | `.github/agent/review-policy.json` | the logins whose PASS counts, and `selfReview`, the authors who may PASS their own PR; editing it is T3 |
 | `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
-| `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author), unlisted login, FAIL after PASS, missing `Ran:` / `Not run:`, and the workflow's shape |
+| `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author), unlisted login, FAIL after PASS, missing `Ran:` (a missing `Not run:` no longer refuses), and the workflow's shape |
 | `.github/workflows/review-gate.yml` | reports it in the job summary; `continue-on-error`, never required |
 
 Run it by hand (read-only API calls with your `gh` login):

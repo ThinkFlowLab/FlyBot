@@ -10,7 +10,7 @@ When you report status on a change:
 
 1. **Tip SHA** — name the exact commit under review (`git rev-parse HEAD`).
 2. **Ran** — list each command you personally ran at that tip, and pass/fail.
-3. **Not run** — list material checks you did **not** run (smoke, Desktop, real-model steward, etc.). Missing evidence is a gap, not PASS.
+3. **Not run** — recommended: list material checks you did **not** run (smoke, Desktop, real-model steward, etc.). Missing evidence is a gap, not PASS. The gates do not check for a `Not run:` line (owner decision 2026-10-22 09:57 Asia/Shanghai); a PASS still needs at least one `Ran` command.
 4. **No borrowed credit** — author claims and stale CI on another SHA are not your Verifier result.
 5. **PASS wording** — say only what the Verifier supports (e.g. “unit + lint green at `abc1234`; smoke not run”).
 

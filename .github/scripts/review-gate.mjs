@@ -13,9 +13,10 @@
 //     its own pull requests; any other author still needs someone else);
 //   - it carries the Verifier block review-pr already writes, with a `Tip SHA:` that is the
 //     head being judged and a `Verdict:`;
-//   - the verdict is PASS, the report lists a command it `Ran:` (a `- ` bullet, or a `$ ` line in a
-//     fenced block under a `Ran …:` heading), and it says what was `Not run:` (a report that was not
-//     run is not evidence).
+//   - the verdict is PASS and the report lists a command it `Ran:` (a `- ` bullet, or a `$ ` line in a
+//     fenced block under a `Ran …:` heading): a report that ran nothing is not evidence.
+//   - `Not run:` is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai, #667):
+//     `hasNotRun` is still parsed for the summary, and a PASS without it is not refused.
 // The newest qualifying report that names this tip decides, so a later FAIL at the same tip
 // vetoes an earlier PASS. A tip that moves past the report is not reviewed: the old tip is
 // not a prefix of the new head and stops counting.
@@ -151,9 +152,6 @@ export function decide({ head, author, reports, policy }) {
   const { parsed } = last
   if (last.verdict === 'PASS' && !parsed.ran.length) {
     return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS lists no command it ran`, judged }
-  }
-  if (last.verdict === 'PASS' && !parsed.hasNotRun) {
-    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS has no "Not run:" line`, judged }
   }
   if (last.verdict !== 'PASS') {
     return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged }

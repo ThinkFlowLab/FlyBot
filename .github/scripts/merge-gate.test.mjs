@@ -342,7 +342,6 @@ test('#654: the workflow hands the script the merge_group base and entry shas', 
 // `Ran at this tip (…):`, and only a bare `Ran:` was read. The policy is the real review-policy.json.
 const REAL = JSON.parse(readFileSync(new URL('./fixtures/review-reports-660-663.json', import.meta.url), 'utf8')).reports
 const REAL_POLICY = fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
-const NOT_RUN = '\n\nNot run: smoke and the full `npm run verify` — CI covers them at this tip.'
 
 const queueReal = (fx, body = fx.comment.body) => main({
   gh: (...args) => {
@@ -374,13 +373,24 @@ test('#660: the real PASS, which names what it did not run, passes the queue ent
   assert.equal(result.verdict.by, 'Birfy')
 })
 
-test('#661-#663: a PASS that says nothing about what it did not run still refuses; with a Not run line it passes', () => {
-  for (const fx of REAL.filter((f) => f.pr !== 660)) {
-    const as = queueReal(fx)
-    assert.equal(as.ok, false, `#${fx.pr}: "Not run" stays mandatory (docs/code-standards.md, Verifier honesty)`)
-    assert.match(as.reasons.join('; '), /has no "Not run:" line/)
-    const fixed = queueReal(fx, fx.comment.body + NOT_RUN)
-    assert.equal(fixed.ok, true, `#${fx.pr}: ${fixed.reasons.join('; ')}`)
+// Owner decision 2026-10-22 09:57 Asia/Shanghai (#667): "Not run:" is no longer checked, so the three
+// reports without one pass as they were written.
+test('#660-#663: all four real PASS reports pass the queue entry end to end, as written', () => {
+  for (const fx of REAL) {
+    const result = queueReal(fx)
+    assert.equal(result.ok, true, `#${fx.pr}: ${result.reasons.join('; ')}`)
+    assert.equal(result.verdict.by, 'Birfy')
+    assert.equal(result.head, fx.head)
+  }
+  assert.equal(REAL.filter((fx) => !/^Not run\b/m.test(fx.comment.body)).length, 3, '#661-#663 carry no Not run line')
+})
+
+test('#660-#663: the real reports still refuse at the queue on a wrong tip, an INC after them, or hold', () => {
+  for (const fx of REAL) {
+    const wrongTip = queueReal({ ...fx, head: 'f'.repeat(40) })
+    assert.equal(wrongTip.ok, false, `#${fx.pr}: a PASS at another sha is not this head`)
+    const inc = fx.comment.body.replace(/^Verdict: PASS at/, 'Verdict: INC at')
+    assert.equal(queueReal(fx, inc).ok, false, `#${fx.pr}: INC refuses`)
   }
 })
 
