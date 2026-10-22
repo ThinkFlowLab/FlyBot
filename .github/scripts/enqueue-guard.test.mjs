@@ -29,7 +29,7 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [] } = {}) =>
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
-const fakeGh = ({ comments = [], reviews = [], labels = [], files = [], head = HEAD, author = 'opener' } = {}) => {
+const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener' } = {}) => {
   const calls = []
   const gh = (...args) => {
     const path = args[args.length - 1]
@@ -37,7 +37,7 @@ const fakeGh = ({ comments = [], reviews = [], labels = [], files = [], head = H
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head }, user: { login: author }, labels: labels.map((name) => ({ name })) })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head }, user: { login: author }, body, labels: labels.map((name) => ({ name })) })
     // Anything else — `gh pr merge` above all — is the guard doing more than checking.
     throw new Error('fake gh: unexpected ' + path)
   }
@@ -53,7 +53,7 @@ const run = (fixture = {}) => main({
 })
 
 test('#602: a held pull request is not enqueued, whatever a PASS at its tip says', () => {
-  const r = run({ labels: ['hold'], comments: [comment()] })
+  const r = run({ labels: ['hold', 'agent-pr'], comments: [comment()] })
   assert.equal(r.ok, false)
   assert.equal(r.held, true)
   assert.match(r.reasons.join('; '), /`hold` label/)
@@ -150,7 +150,7 @@ test('#602: a T0/T1 pull request still needs no PASS', () => {
 })
 
 test('#602: hold refuses a T0/T1 pull request too', () => {
-  const r = run({ files: [TEST_FILE], labels: ['hold'], comments: [] })
+  const r = run({ files: [TEST_FILE], labels: ['hold', 'agent-pr'], comments: [] })
   assert.equal(r.ok, false)
   assert.equal(r.held, true)
 })
@@ -167,6 +167,36 @@ test('#602: the self-gate case (author Birfy, PASS by Birfy) is allowed', () => 
     pr: 566,
   })
   assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// #718: a pull request with no issue behind it, or with no `agent-pr` label, is refused before the
+// queue: #711/#712/#713 arrived with neither and the guard said nothing, because it only read `hold`,
+// the conclusions and the diff. The release PR is the one exception — it has neither by design.
+test('#718: a body that names no issue is not enqueued', () => {
+  const r = run({ body: '## Summary\n\nTidy up the dock.', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /no issue reference in the pull request body: add "Fixes #<n>"/)
+  assert.match(r.message, /^do not enqueue #566: /)
+})
+
+test('#718: a pull request without the agent-pr label is not enqueued', () => {
+  const r = run({ body: 'Fixes #566\n\nthe detail', labels: [], comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('missing label: agent-pr'), r.reasons.join('; '))
+})
+
+test('#718: a Closes reference and the agent-pr label let it through', () => {
+  const gh = fakeGh({ body: 'Closes #714\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.command, `gh pr merge 566 --auto --squash --match-head-commit ${HEAD}`)
+})
+
+test('#718: a mechanical release pull request needs neither an issue nor the label', () => {
+  const r = run({ body: 'Version 0.2.1', labels: [], files: ['changelog.d/999-x.changed.md'], comments: [] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.exempt, true)
+  assert.equal(r.mechanicalRelease, true)
 })
 
 // The guard is only in the path if the instructions that tell an agent to enqueue name it; otherwise
