@@ -1,0 +1,73 @@
+{
+  "source": "The latest PASS comment on each of #660-#663, verbatim from the GitHub API (GET /repos/ThinkFlowLab/FlyBot/issues/{n}/comments), fetched 2026-10-22. Their merge_group runs 39707184514, 39707395505, 39707549765, 39707707974 refused with \"Birfy's PASS lists no command it ran\".",
+  "reports": [
+    {
+      "pr": 660,
+      "head": "3850867d3b63c4d40ff423404e27136d66af760f",
+      "author": "HugoXK",
+      "files": [
+        "changelog.d/social-approval-notice-ledger.fixed.md",
+        "docs/subsystems/social.md",
+        "plugins/social/src/social.js",
+        "plugins/social/test/social.test.js"
+      ],
+      "comment": {
+        "login": "Birfy",
+        "created_at": "2026-10-22T01:21:44Z",
+        "url": "https://github.com/ThinkFlowLab/FlyBot/pull/660#issuecomment-6330369166",
+        "body": "Verdict: PASS at 3850867d3b63c4d40ff423404e27136d66af760f\nWritten-by: Reviewer\nPosted-by: Reviewer\n\n```text\nTip SHA: 3850867d3b63c4d40ff423404e27136d66af760f\nCI at tip: 9/9 success (tests-ok, package, plugins social/tree/timeline, merge-gate, node 24)\nTier (computed from the diff by risk-gate.mjs + risk-rules.json from the base commit): T3 — plugins/social/src/**\nChanged files: 4 (+30 / -1); mergeable_state: clean\n```\n\nRan at this tip (tarball of the tip, nothing patched by hand):\n\n```text\n$ cd plugins/social && TZ=UTC DSH_HARNESS=/opt/flybot node --import ./test/resolve.mjs --test \"test/*.test.js\"\n# tests 318 / pass 318 / fail 0\n```\n\nGate ③, the source change reverted with the tests kept:\n\n```text\nplugins/social/src/social.js -> c74e1207 (main):\n  not ok 49 - the waiting-notice ledger drops a hold once it is no longer pending\n  276 tests, 275 pass, 1 fail\n```\n\n**The bound is at the right place.** The prune runs in the same call as the add, against the same set the add loop consumes (`held`), so a hold that is still pending cannot lose its entry and cannot get a second waiting note. Three details I checked in the code rather than only in the test:\n\n- a failed `list_approvals` returns `pendingCache.items` from the `catch` before `syncApprovalNotices` runs, so a network error cannot empty the ledger and cause a re-post storm on recovery;\n- the deletion loop snapshots `Object.keys` before deleting, and `changed` is only set when something was actually removed, so the settings file is not rewritten on every 5 s poll;\n- the sibling bounds are untouched: `ownLineApprovals`/`holdRooms` still cap at 200, and this map is now bounded by the live pending queue, which is what the doc line claims.\n\nTwo non-blocking notes, for the record, not reasons to hold:\n\n1. The prune also drops `kind: 'rejected'` entries (`postRejectNote`), whose only reader is the same dedupe check. If an approval id that was rejected ever came back through `list_approvals` as pending (a server-side flap or a failed `decide_approval` whose reject note already went out), the waiting bubble could be posted a second time. The server does not normally do that, and the ledger's stated job is \"one note per hold\"; if it ever shows up, keep `rejected` entries under their own small cap instead of in the pending set.\n2. The new test asserts the `waiting` entry only; the `rejected` path has no case here. Fine for this diff, worth a line if the behaviour above ever changes.\n\nNot run: the full `npm run verify` in this sandbox (the checkout has no `node_modules`); CI's `tests-ok`, `package` and the three plugin suites cover it.\n\nNot enqueued: T3 needs the maintainer's approve together with this PASS. No earlier conclusion exists at this tip — this is the first and only one."
+      }
+    },
+    {
+      "pr": 661,
+      "head": "8d6c3b7afbc8b7dfd331853275e8276f1c2b346e",
+      "author": "HugoXK",
+      "files": [
+        "changelog.d/timeline-otel-cursor.fixed.md",
+        "docs/subsystems/timeline.md",
+        "plugins/timeline/src/otel.js",
+        "plugins/timeline/test/otel.test.js"
+      ],
+      "comment": {
+        "login": "Birfy",
+        "created_at": "2026-10-22T01:35:34Z",
+        "url": "https://github.com/ThinkFlowLab/FlyBot/pull/661#issuecomment-6330549170",
+        "body": "Verdict: PASS at 8d6c3b7afbc8b7dfd331853275e8276f1c2b346e\nWritten-by: Reviewer\nPosted-by: Reviewer\n\n```text\nTip SHA: 8d6c3b7afbc8b7dfd331853275e8276f1c2b346e\nCI at tip: 9/9 success (tests-ok, package, plugins timeline/social/tree, merge-gate, node 24)\nTier (computed from the diff by risk-gate.mjs + risk-rules.json from the base commit): T2 — plugins/timeline/src/**\nChanged files: 4 (+29 / -3); mergeable_state: clean\n```\n\nRan at this tip (tarball of the tip, nothing patched by hand):\n\n```text\n$ cd plugins/timeline && TZ=UTC DSH_HARNESS=/opt/flybot node --import ./test/resolve.mjs --test \"test/*.test.js\"\n# tests 105 / pass 105 / fail 0\n```\n\nGate ③, the source change reverted with the tests kept:\n\n```text\nplugins/timeline/src/otel.js -> c74e1207 (main):\n  not ok 28 - createExporter does not lose a record that shares the timestamp of the previous batch\n  105 tests, 104 pass, 1 fail\n```\n\n**The fix reaches the case in the caller, not only in the test.** `timeline.js:32` calls `cursor.push(trace.records(), …)`, and `trace.records()` is the accumulated feed, so `records.filter(t => t >= lastT)` really does see the `ke`/`te` that shares the last flush's millisecond. Had the flush passed only a delta, `>=` would have looked correct and done nothing; I checked that call site because the test passes cumulative arrays.\n\nThe rest is sound: `pendingRecords` is keyed by id, so re-reading a record does not grow `carried`; the new `seen` set collapses a record repeated between `carried` and `fresh` (and `spansFrom` already maps ids, so this is belt and braces); `emitted` still prevents a second send, and its 5000-entry FIFO evicts the oldest ids while the re-read ones at `lastT` are the newest, so eviction cannot resurrect them.\n\nOne non-blocking note: \"push receives the whole feed\" is now load-bearing for this fix and only implicit in the caller. A line on `createExporter`/`push` saying the array is cumulative (not a delta) would keep a future caller from silently reintroducing the same loss; the test's cumulative arrays already mirror it.\n\nNot enqueued: T2 needs the maintainer's approve together with this PASS. No earlier conclusion exists at this tip — this is the first and only one."
+      }
+    },
+    {
+      "pr": 662,
+      "head": "a2e7c30b13c9c7891f83f7b0549b92d69b94b2b8",
+      "author": "HugoXK",
+      "files": [
+        "changelog.d/social-face-roles-retry.fixed.md",
+        "docs/subsystems/social.md",
+        "plugins/social/src/social.js",
+        "plugins/social/test/social.test.js"
+      ],
+      "comment": {
+        "login": "Birfy",
+        "created_at": "2026-10-22T01:37:12Z",
+        "url": "https://github.com/ThinkFlowLab/FlyBot/pull/662#issuecomment-6330569704",
+        "body": "Verdict: PASS at a2e7c30b13c9c7891f83f7b0549b92d69b94b2b8\nWritten-by: Reviewer\nPosted-by: Reviewer\n\n```text\nTip SHA: a2e7c30b13c9c7891f83f7b0549b92d69b94b2b8\nCI at tip: 9/9 success (tests-ok, package, plugins social/timeline/tree, merge-gate, node 24)\nTier (computed from the diff by risk-gate.mjs + risk-rules.json from the base commit): T3 — plugins/social/src/**\nChanged files: 4 (+43 / -3); mergeable_state: clean\n```\n\nRan at this tip (tarball of the tip, nothing patched by hand):\n\n```text\n$ cd plugins/social && TZ=UTC DSH_HARNESS=/opt/flybot node --import ./test/resolve.mjs --test \"test/*.test.js\"\n# tests 318 / pass 318 / fail 0\n```\n\nGate ③, the source change reverted with the tests kept:\n\n```text\nplugins/social/src/social.js -> c74e1207 (main):\n  not ok 309 - #476: a role the room refused to take is sent again on the next poll\n  318 tests, 317 pass, 1 fail\n```\n\n**The retry now depends on the room's answer, not on the attempt.** `setRoles` goes through `callHttp`, which throws on any non-2xx (`if (!response.ok) throw mapFaceError(...)`), so a dropped request or a 5xx reaches `.catch(warn)` and no mark is written — the next snapshot sends it again. A value is recorded only in the `.then`, and for a cleared role it stores `''` to match the `(seat.role ?? '') === role` comparison, so a \"remove my label\" that succeeded is not re-sent forever. `forgetSentRoles` uses the `\\`${roomId} \\`` prefix (trailing space) against the exact `\\`${roomId} \\${handle}\\`` key shape, so `frm_1` cannot match `frm_10`, and both room-forgetting paths (the `closed` sweep and the leave path) call it.\n\nTwo non-blocking notes:\n\n1. There is no in-flight guard: a second snapshot arriving before the PUT resolves sends the same roles again. It is an idempotent PUT and a successful response overwrites the same mark, so the cost is a duplicate request, not a wrong state — but if it ever shows in logs as a pair per poll, a \"pending\" set next to `sentRoles` is the fix.\n2. A persistent failure retries once per snapshot with no backoff. That is intended here (the previous behaviour never retried at all), so I am not asking for a change; it just means a room server that is down sees one PUT per poll.\n\nNot enqueued: T3 needs the maintainer's approve together with this PASS. No earlier conclusion exists at this tip — this is the first and only one."
+      }
+    },
+    {
+      "pr": 663,
+      "head": "02b78b66d8be965fabe57b49746ad6187da157ec",
+      "author": "Birfy",
+      "files": [
+        ".github/labels.json",
+        ".github/scripts/risk-label-docs.test.mjs",
+        "AGENTS.md",
+        "docs/controller.md"
+      ],
+      "comment": {
+        "login": "Birfy",
+        "created_at": "2026-10-22T01:41:10Z",
+        "url": "https://github.com/ThinkFlowLab/FlyBot/pull/663#issuecomment-6330620226",
+        "body": "Verdict: PASS at 02b78b66d8be965fabe57b49746ad6187da157ec\nWritten-by: Reviewer\nPosted-by: Reviewer\n\n```text\nTip SHA: 02b78b66d8be965fabe57b49746ad6187da157ec\nCI at tip: 9/9 success (tests-ok, package, plugins social/timeline/tree, merge-gate, node 24)\nTier (computed from the diff by risk-gate.mjs + risk-rules.json from the base commit): T3 — .github/**, AGENTS.md\nChanged files: 4 (+48 / -5); mergeable_state: clean\n```\n\nRan at this tip (tarball of the tip):\n\n```text\n$ node --test \".github/scripts/*.test.mjs\"\n# tests 140 / pass 140 / fail 0   (with git on PATH; without it the four ds-bot-patches tests fail on main too)\n```\n\nGate ③, the source change reverted with the test kept:\n\n```text\nAGENTS.md + .github/labels.json + docs/controller.md -> c74e1207:\n  not ok 1 - labels.json: each risk tier says it is advisory and names the recomputing gate\n  not ok 2 - AGENTS.md: an absent risk label is not a tier and not a reason to block\n  not ok 3 - docs/controller.md: the label is a poll artifact, so it can be absent\n  3 tests, 0 pass, 3 fail\n```\n\n**I checked the facts the new text asserts, not only that the text is there.** `GET actions/workflows/385742271/runs` returns exactly **48** runs, every conclusion `success`, spaced 01:57Z → 07:28Z → 13:09Z → 18:13Z → 21:56Z → 00:36Z, which is the 2.5–6 h the sentence claims; the four new label descriptions are each under GitHub's 100-character limit; and the guard runs in the `tests-ok` job's existing `node --test \".github/scripts/*.test.mjs\"` step, so it cannot silently stop running. `docs/autonomous-dev.md` already says the gate never reads `risk:T*`, so the three rewritten places do not now disagree with a fourth.\n\nTwo non-blocking notes:\n\n1. **`.github/labels.json` is a source file, not the live label.** Per `docs/autonomous-dev.md`, the GitHub-side descriptions change only when a maintainer runs `node .github/scripts/sync-labels.mjs --repo ThinkFlowLab/FlyBot --apply`. Until that runs, the UI still shows \"set by the controller from the diff\" for the four labels this PR calls advisory. Worth putting that command in the merge note so the change is not half-applied; the file and the docs are correct either way.\n2. Not this PR's scope, but the same section now reads inconsistently with today's process: the `awaiting-approval` state is described as \"legacy: … routine T2/T3 PRs no longer wait for a click\", while the team currently puts T2/T3 PRs into `awaiting-approval` for the owner's approve. One of the two texts is wrong; a follow-up should settle it (it is the written half of the A/B question).\n\nNot enqueued: T3 needs the maintainer's approve together with this PASS. No earlier conclusion exists at this tip."
+      }
+    }
+  ]
+}

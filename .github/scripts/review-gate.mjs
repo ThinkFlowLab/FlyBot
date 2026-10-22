@@ -13,8 +13,9 @@
 //     its own pull requests; any other author still needs someone else);
 //   - it carries the Verifier block review-pr already writes, with a `Tip SHA:` that is the
 //     head being judged and a `Verdict:`;
-//   - the verdict is PASS, the report lists a command it `Ran:`, and it says what was
-//     `Not run:` (a report that was not run is not evidence).
+//   - the verdict is PASS, the report lists a command it `Ran:` (a `- ` bullet, or a `$ ` line in a
+//     fenced block under a `Ran …:` heading), and it says what was `Not run:` (a report that was not
+//     run is not evidence).
 // The newest qualifying report that names this tip decides, so a later FAIL at the same tip
 // vetoes an earlier PASS. A tip that moves past the report is not reviewed: the old tip is
 // not a prefix of the new head and stops counting.
@@ -29,7 +30,10 @@ const SHORT = 12
 // The last Verifier block in one body: a comment may hold an earlier review that a later
 // one replaced, and only the last block is the verdict the reviewer stands behind.
 export function parseReport(body) {
-  const lines = String(body ?? '').replace(/[*`]/g, '').split('\n')
+  // `raw` keeps the backticks so a fenced block can be found; `lines` is the same text without the
+  // markdown emphasis, line for line, for everything else.
+  const raw = String(body ?? '').split('\n')
+  const lines = raw.map((line) => line.replace(/[*`]/g, ''))
   const out = { tip: null, verdict: null, ran: [], hasNotRun: false }
   // The fixed format (#637): the first non-empty line is the whole conclusion,
   // `Verdict: PASS at <sha>` (or INC / REQUEST_CHANGES). The attribution line and the evidence go
@@ -62,23 +66,45 @@ export function parseReport(body) {
     }
     const verdictLine = /^Verdict\s*:\s*(PASS|FAIL|INC|REQUEST_CHANGES)\b/i.exec(line)
     if (verdictLine && !firstIsVerdict) out.verdict = verdictLine[1].toUpperCase()
-    const ranLine = /^Ran\s*:\s*(.*)$/i.exec(line)
+    // `Ran: <command>`, or a heading such as `Ran at this tip (tarball of the tip):` — the shape the
+    // reviewer actually writes (#660-#663: every one of those PASSes refused as "lists no command"
+    // because only a bare `Ran:` was read). A longer heading is only a heading: words after its colon
+    // are not a command, so prose like "Ran into a problem: …" proves nothing.
+    const ranLine = /^Ran\b([^:\n]*):\s*(.*)$/i.exec(line)
     // With the first line as the conclusion, its own `Ran:` is the evidence; a quoted block's
     // `Ran:` below it must not replace it. Without one, the last block wins as it always has.
     if (ranLine && !(firstIsVerdict && ranSeen)) {
       ranSeen = true
-      out.ran = []
-      if (ranLine[1].trim() && ranLine[1].trim() !== '-') out.ran.push(ranLine[1].trim())
-      for (let j = i + 1; j < lines.length; j++) {
-        const next = lines[j].trim()
-        if (/^[-•]\s*\S/.test(next)) out.ran.push(next)
-        else if (next === '' && out.ran.length) break
-        else if (next !== '') break
-      }
+      out.ran = ranCommands(raw, lines, i, ranLine[1].trim() === '' ? ranLine[2].trim() : '')
     }
-    if (/^Not run\s*:/i.test(line)) out.hasNotRun = true
+    if (/^Not run\b[^:\n]*:/i.test(line)) out.hasNotRun = true
   }
   return out
+}
+
+// The commands under a `Ran` heading at line `at`: the inline text of a bare `Ran: <command>` (never
+// an empty one or `-`), then either the `- ` bullets that follow, or the `$ ` lines of the fenced
+// block that follows. Output lines in the block are not commands, so a block with no `$ ` line, or
+// `$` alone, lists nothing and the PASS refuses as before.
+function ranCommands(raw, lines, at, inline) {
+  const ran = inline && inline !== '-' ? [inline] : []
+  let j = at + 1
+  // Blank in the raw text: a bare ``` fence line is empty once the backticks are stripped.
+  while (j < raw.length && raw[j].trim() === '') j++
+  if (j < raw.length && /^\s*(```|~~~)/.test(raw[j])) {
+    const fence = /^\s*(```|~~~)/.exec(raw[j])[1]
+    for (j += 1; j < raw.length && !raw[j].trim().startsWith(fence); j++) {
+      const cmd = /^\$\s+(\S.*)$/.exec(raw[j].trim())
+      if (cmd) ran.push(cmd[1].trim())
+    }
+    return ran
+  }
+  for (; j < lines.length; j++) {
+    const next = lines[j].trim()
+    if (/^[-•]\s*\S/.test(next) && next !== '-') ran.push(next)
+    else break
+  }
+  return ran
 }
 
 const login = (r) => String(r.login ?? '').toLowerCase()

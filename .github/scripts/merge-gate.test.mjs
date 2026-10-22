@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { judge, prFromHeadRef } from './merge-gate.mjs'
+import { fileURLToPath } from 'node:url'
 
 const HEAD = 'abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
@@ -333,4 +334,60 @@ test('#654: the workflow hands the script the merge_group base and entry shas', 
   const wf = readFileSync(new URL('../workflows/merge-gate.yml', import.meta.url), 'utf8')
   assert.match(wf, /BASE_SHA: \$\{\{ github\.event\.merge_group\.base_sha \}\}/)
   assert.match(wf, /ENTRY_SHA: \$\{\{ github\.event\.merge_group\.head_sha \}\}/)
+})
+
+// ---- #660-#663: the reviewer's real PASS reports, verbatim, through the queue's entry point. Their
+// merge_group runs (39707184514, 39707395505, 39707549765, 39707707974) all refused with "Birfy's PASS
+// lists no command it ran": the commands sit as `$ ` lines in a fenced block under a heading
+// `Ran at this tip (…):`, and only a bare `Ran:` was read. The policy is the real review-policy.json.
+const REAL = JSON.parse(readFileSync(new URL('./fixtures/review-reports-660-663.json', import.meta.url), 'utf8')).reports
+const REAL_POLICY = fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
+const NOT_RUN = '\n\nNot run: smoke and the full `npm run verify` — CI covers them at this tip.'
+
+const queueReal = (fx, body = fx.comment.body) => main({
+  gh: (...args) => {
+    const path = args[args.length - 1]
+    if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
+    if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at })
+    if (path.includes('/reviews')) return ''
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head }, user: { login: fx.author }, labels: [] })
+    throw new Error('fake gh: unexpected ' + path)
+  },
+  env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: REAL_POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', HEAD_REF: `refs/heads/gh-readonly-queue/main/pr-${fx.pr}-c74e1207${'0'.repeat(32)}`, MODE: 'queue' },
+})
+
+test('#660-#663: every real PASS lists the command it ran, through main()', () => {
+  assert.equal(REAL.length, 4)
+  for (const fx of REAL) {
+    const result = queueReal(fx)
+    assert.equal(result.head, fx.head)
+    assert.equal(result.exempt, false, `#${fx.pr} is T2/T3: its PASS is what decides`)
+    assert.equal(result.verdict.verdict, 'PASS', `#${fx.pr}`)
+    assert.doesNotMatch(result.reasons.join('; '), /lists no command it ran/, `#${fx.pr}`)
+    assert.ok(result.verdict.judged.at(-1).parsed.ran.some((c) => /node .*--test/.test(c)), `#${fx.pr}: the $ line is the command`)
+  }
+})
+
+test('#660: the real PASS, which names what it did not run, passes the queue entry end to end', () => {
+  const result = queueReal(REAL.find((fx) => fx.pr === 660))
+  assert.equal(result.ok, true, result.reasons.join('; '))
+  assert.equal(result.verdict.by, 'Birfy')
+})
+
+test('#661-#663: a PASS that says nothing about what it did not run still refuses; with a Not run line it passes', () => {
+  for (const fx of REAL.filter((f) => f.pr !== 660)) {
+    const as = queueReal(fx)
+    assert.equal(as.ok, false, `#${fx.pr}: "Not run" stays mandatory (docs/code-standards.md, Verifier honesty)`)
+    assert.match(as.reasons.join('; '), /has no "Not run:" line/)
+    const fixed = queueReal(fx, fx.comment.body + NOT_RUN)
+    assert.equal(fixed.ok, true, `#${fx.pr}: ${fixed.reasons.join('; ')}`)
+  }
+})
+
+test('#660-#663: the fenced Ran block is evidence only with a $ command, and a T2/T3 PASS still needs one', () => {
+  const fx = REAL.find((f) => f.pr === 660)
+  const noCommand = fx.comment.body.replace(/^\$ .*$/m, '# (command omitted)')
+  const r = queueReal(fx, noCommand)
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /lists no command it ran/)
 })

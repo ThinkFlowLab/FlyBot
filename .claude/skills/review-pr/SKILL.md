@@ -47,6 +47,19 @@ Not run:
 The first line is the whole conclusion (#637): nothing may come before it, because the gates read the
 first line and treat any other shape as no conclusion.
 
+What the gates read as evidence (`review-gate.mjs` `parseReport`; #660–#663 refused at the queue for
+the first point):
+
+- **Ran** — a line starting with `Ran` and ending its heading with a colon (`Ran:`, or
+  `Ran at this tip (tarball of the tip):`), followed by either `- <command>` bullets or a fenced block
+  whose commands start with `$ ` (output lines below them are not commands). At least one command; an
+  empty `Ran:`, `Ran: -`, or a block with only output refuses the PASS.
+- **Not run** — a `Not run:` line is **mandatory in every PASS**, even when nothing material was
+  skipped: write `Not run: nothing material — <why>`. A PASS without it is incomplete evidence and the
+  queue entry refuses ("has no "Not run:" line"). This is Verifier honesty
+  ([docs/code-standards.md](../../../docs/code-standards.md#verifier-honesty) 3), not a formatting
+  preference.
+
 Honesty rules:
 
 - List what **you** ran at this tip. Stale CI on another SHA is not “Ran”.

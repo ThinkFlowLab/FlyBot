@@ -266,3 +266,55 @@ test('#640: a quoted Tip SHA later in the body does not move the first line to a
   assert.equal(result.ok, false, 'the newer INC at this tip refuses')
   assert.equal(result.verdict, 'INC')
 })
+
+// ---- #660-#663: the `Ran` heading the reviewer writes, and the fenced `$ ` lines under it.
+test('a Ran heading with words before its colon takes the $ lines of the fenced block below it', () => {
+  const body = [
+    `Verdict: PASS at ${HEAD}`,
+    'Written-by: Reviewer',
+    '',
+    'Ran at this tip (tarball of the tip, nothing patched by hand):',
+    '',
+    '```text',
+    '$ cd plugins/social && node --test "test/*.test.js"',
+    '# tests 318 / pass 318 / fail 0',
+    '$ npm run lint',
+    '```',
+    '',
+    'Not run: smoke',
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.deepEqual(parsed.ran, ['cd plugins/social && node --test "test/*.test.js"', 'npm run lint'])
+  assert.equal(parsed.hasNotRun, true)
+  assert.equal(decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', body)], policy }).ok, true)
+})
+
+test('the Ran heading still refuses when it shows no command', () => {
+  const at = (...rest) => parseReport([`Verdict: PASS at ${HEAD}`, ...rest, 'Not run: smoke'].join('\n')).ran
+  assert.deepEqual(at('Ran:', ''), [], 'an empty Ran:')
+  assert.deepEqual(at('Ran: -'), [], 'Ran: -')
+  assert.deepEqual(at('Ran at this tip:', '```text', '# tests 1 / pass 1', '```'), [], 'output with no $ line')
+  assert.deepEqual(at('Ran at this tip:', '```', '$', '```'), [], 'a bare $')
+  assert.deepEqual(at('Ran into a problem: the suite hangs'), [], 'words after a longer heading are not a command')
+  assert.deepEqual(at('Ran at this tip:', '- npm test → pass'), ['- npm test → pass'], 'bullets still count under a heading')
+  assert.deepEqual(at('Rank: high'), [], '`Ran` must be a whole word')
+})
+
+test('#640 still holds with the heading form: a quoted Ran block below does not replace the first one', () => {
+  const body = [
+    `Verdict: PASS at ${HEAD}`,
+    'Written-by: Reviewer',
+    'Ran at this tip:',
+    '```text',
+    '```',
+    'Not run: smoke',
+    '',
+    '> Earlier report:',
+    'Ran: npm test → pass',
+  ].join('\n')
+  assert.deepEqual(parseReport(body).ran, [], 'the conclusion showed no command; a quoted one does not lend it one')
+})
+
+test('a Not run heading with words before its colon counts as the Not run section', () => {
+  assert.equal(parseReport([`Verdict: PASS at ${HEAD}`, 'Ran: npm test', 'Not run at this tip: smoke'].join('\n')).hasNotRun, true)
+})
