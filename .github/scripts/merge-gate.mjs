@@ -33,8 +33,14 @@ const HOLD = 'hold'
 // A `merge_group` event carries no pull request, no labels and no reviews. The only pointer to them
 // is `merge_group.head_ref`, the queue branch the entry was built on:
 // `gh-readonly-queue/<base>/pr-<N>-<sha>`, where <sha> is the head the queue is about to merge.
+//
+// It arrives fully qualified: every real queue entry so far passed `refs/heads/gh-readonly-queue/...`
+// (runs 39602546475, 39602806953, 39653640861, 39694988559, 39696278650 — all five failed with
+// "cannot read a pull request from head_ref" before this prefix was accepted, so the gate never once
+// judged a queue entry). Accept both spellings rather than depend on which one the event carries.
 export function prFromHeadRef(ref) {
-  const m = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-([0-9a-f]{7,40})$/i.exec(String(ref ?? '').trim())
+  const branch = String(ref ?? '').trim().replace(/^refs\/heads\//i, '')
+  const m = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-([0-9a-f]{7,40})$/i.exec(branch)
   return m ? { pr: Number(m[1]), sha: m[2].toLowerCase() } : null
 }
 

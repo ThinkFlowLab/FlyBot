@@ -19,7 +19,8 @@ name: Merge gate
 # A ruleset that lists `Merge gate` requires a context no run ever produces.
 #
 # A `merge_group` event carries no pull request, no labels and no reviews. Only `head_ref`
-# (`gh-readonly-queue/main/pr-<N>-<sha>`) points at them, so the script parses N back out and asks the
+# (`gh-readonly-queue/main/pr-<N>-<sha>`, passed fully qualified as `refs/heads/...`) points at them,
+# so the script parses N back out and asks the
 # API. Reading a review's `state` never works: the account cannot approve its own pull requests, so its
 # reviews stay `COMMENTED` even for an INC — the INC on #610 was a comment, not a review.
 #

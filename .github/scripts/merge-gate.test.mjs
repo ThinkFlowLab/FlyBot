@@ -24,6 +24,17 @@ test('the queue branch is the only pointer to the pull request', () => {
   assert.equal(prFromHeadRef(undefined), null)
 })
 
+// The real event payload, verbatim from run 39694988559 (the #626 queue entry): GitHub passes the
+// queue branch fully qualified. Without this, every entry failed before judging anything.
+test('#652 follow-up: a head_ref that carries refs/heads/ still names the queue entry', () => {
+  assert.deepEqual(prFromHeadRef(`refs/heads/${ENTRY}`), { pr: 566, sha: HEAD })
+  assert.deepEqual(prFromHeadRef('refs/heads/gh-readonly-queue/main/pr-652-020490044ccad1551f769f0ee141da218f71c1fd'), {
+    pr: 652,
+    sha: '020490044ccad1551f769f0ee141da218f71c1fd',
+  })
+  assert.equal(prFromHeadRef('refs/tags/gh-readonly-queue/main/pr-566-' + HEAD), null, 'only a branch ref is a queue entry')
+})
+
 test('a PASS at the merged head lets the entry through', () => {
   const r = judgeAt()
   assert.equal(r.ok, true)
