@@ -4276,7 +4276,7 @@ diff --git a/client.js b/client.js
 -      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react6.createElement)(EarlierParts, { sessionId, roster, actions });
 -      if (source.role === "kickoff" || source.role === "room") return null;
 +      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react8.createElement)(EarlierParts, { sessionId, roster, actions });
-+      if (source.role === "room") return null;
++      if (source.role === "room" || source.role === "kickoff") return null;
 +      if (source.role === "mention") return (0, import_react8.createElement)("div", { className: "bt-event" }, (0, import_react8.createElement)("span", null, contentText(data.content)));
        if (source.role === "secret" || deferred) return null;
        if (source.role === "post") {
@@ -6321,7 +6321,8 @@ diff --git a/client.js b/client.js
 -  const button = (0, import_react8.useRef)(null);
 -  const [box, setBox] = (0, import_react8.useState)(null);
 -  (0, import_react8.useEffect)(() => () => clearTimeout(timer.current), []);
--  if (!wide) return null;
++function ConnectApps({ wide, actions }) {
+   if (!wide) return null;
 -  const show = () => {
 -    clearTimeout(timer.current);
 -    timer.current = setTimeout(() => {
@@ -6361,8 +6362,6 @@ diff --git a/client.js b/client.js
 -      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
 -      t("Plugin compatibility is not fully verified.")
 -    ), document.body) : null
-+function ConnectApps({ wide, actions }) {
-+  if (!wide) return null;
 +  return (0, import_react13.createElement)(
 +    "span",
 +    { className: "bt-connect-wrap" },
@@ -7977,14 +7976,15 @@ diff --git a/client.js b/client.js
      });
      load();
      return () => {
-@@ -6893,14 +6893,28 @@ function timingText(task) {
-     case "cron":
-       return `${t("On the schedule {expression}", { expression: task.expression })}${zone}`;
-     default:
--      return "";
-+      return "";
-+  }
-+}
+@@ -6896,11 +6896,25 @@ function timingText(task) {
+       return "";
+   }
+ }
+-var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
+-function TaskRow({ task, actions, onView, showBot, roster }) {
+-  const [confirming, setConfirming] = (0, import_react15.useState)(false);
+-  const [busy, setBusy] = (0, import_react15.useState)(false);
+-  (0, import_react15.useEffect)(() => {
 +var nextText = (task) => task.status === "paused" ? t("Paused") : task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
 +function lastRunText(run) {
 +  if (run === void 0 || !Number.isFinite(run.at)) return "";
@@ -7998,13 +7998,8 @@ diff --git a/client.js b/client.js
 +      return t("Last run {time} · Failed: {reason}", { time, reason: hostText(run.reason || "Unknown error") });
 +    default:
 +      return t("Last run {time}", { time });
-   }
- }
--var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
--function TaskRow({ task, actions, onView, showBot, roster }) {
--  const [confirming, setConfirming] = (0, import_react15.useState)(false);
--  const [busy, setBusy] = (0, import_react15.useState)(false);
--  (0, import_react15.useEffect)(() => {
++  }
++}
 +function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
 +  const [confirming, setConfirming] = (0, import_react20.useState)(false);
 +  const [busy, setBusy] = (0, import_react20.useState)(false);
@@ -9512,7 +9507,7 @@ diff --git a/client.js b/client.js
  .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
  .bt-bs-input:hover{background:var(--bt-hover)}
  .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
-@@ -8165,36 +8165,37 @@ function freshBotName(roster, base = "New Bot") {
+@@ -8165,36 +8165,48 @@ function freshBotName(roster, base = "New Bot") {
  }
  function startModel(roster) {
    const models = roster.models ?? [];
@@ -9529,6 +9524,17 @@ diff --git a/client.js b/client.js
 -  if (brief) payload.brief = brief;
    return payload;
  }
++async function afterCreate({ id, text, actions }) {
++  actions.openSession(id);
++  actions.showDetails(id, "settings");
++  const line2 = String(text ?? "").trim();
++  if (line2 === "") return;
++  try {
++    await actions.send(id, line2);
++  } catch (failure) {
++    actions.notify?.(failure?.message ?? String(failure));
++  }
++}
  
  // src/client/create-bot.js
 -var import_react19 = require("react");
@@ -9790,18 +9796,14 @@ diff --git a/client.js b/client.js
    const pick2 = (bot) => {
      setPicked((current) => [...current, bot.id]);
      setQuery("");
-@@ -8384,7 +8384,9 @@ function NewChat({ mode, roster, actions }) {
-     setError("");
-     setDraft({ name: query.trim() !== "" && !exact ? query.trim() : "", fromList: true });
+@@ -8386,13 +8386,17 @@ function NewChat({ mode, roster, actions }) {
    };
--  const created = (bot) => {
-+  const created = async (bot) => {
-+    const text = message.trim();
-+    if (text) await actions.send(bot.id, text);
+   const created = (bot) => {
      close();
-     actions.openSession(bot.id);
-     actions.showDetails(bot.id, "settings");
-@@ -8392,7 +8392,12 @@ function NewChat({ mode, roster, actions }) {
+-    actions.openSession(bot.id);
+-    actions.showDetails(bot.id, "settings");
++    return afterCreate({ id: bot.id, text: message, actions });
+   };
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return;
      const text = message.trim();

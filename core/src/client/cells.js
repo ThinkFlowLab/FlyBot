@@ -567,8 +567,9 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     if (source.kind === 'bot') {
       // A part opens with its handoff package, so the earlier parts go right above it.
       if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions })
-      // Group turns belong to the group chat; the member's own chat stays one-to-one.
-      if (source.role === 'room') return null
+      // Group turns belong to the group chat; the member's own chat stays one-to-one. A
+      // kickoff line was a setup prompt, never a message the parent Bot sent (#698).
+      if (source.role === 'room' || source.role === 'kickoff') return null
       // The host's receipt for the user's @ of a friend's Bot in this group (#80):
       // where the message went, or why it did not leave.
       if (source.role === 'mention') return h('div', { className: 'bt-event' }, h('span', null, contentText(data.content)))

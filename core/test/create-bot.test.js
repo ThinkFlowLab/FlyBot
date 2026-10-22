@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createPayload, freshBotName, startModel } from '../src/client/bot-draft.js'
+import { afterCreate, createPayload, freshBotName, startModel } from '../src/client/bot-draft.js'
 
 const models = [
   { ref: 'ollama/ds-flash', name: 'DS Flash', providerName: 'Ollama' },
@@ -44,4 +44,37 @@ test('the suggested name skips taken names', () => {
   assert.equal(freshBotName(roster), 'New Bot 2')
   assert.equal(freshBotName(roster, 'Kimi'), 'Kimi 2')
   assert.equal(freshBotName(roster, 'Writer'), 'Writer')
+})
+
+// #698: the Bot exists once the card reports it, so a first send that fails must leave the
+// user on the new Bot's chat with the failure, not on a card whose Create can only answer
+// "a Bot with that name already exists".
+test('a failed first send still opens the new Bot and shows the failure', async () => {
+  const calls = []
+  const actions = {
+    openSession: id => calls.push(['open', id]),
+    showDetails: (id, tab) => calls.push(['details', id, tab]),
+    send: async (id, text) => { calls.push(['send', id, text]); throw new Error('the turn could not be opened') },
+    notify: text => calls.push(['notify', text]),
+  }
+  await afterCreate({ id: 'writer', text: '  帮我写周报  ', actions })
+  assert.deepEqual(calls, [
+    ['open', 'writer'],
+    ['details', 'writer', 'settings'],
+    ['send', 'writer', '帮我写周报'],
+    ['notify', 'the turn could not be opened'],
+  ])
+  assert.ok(!calls.some(([kind, text]) => kind === 'notify' && String(text).includes('already exists')), 'no duplicate-Bot complaint')
+})
+
+test('the new Bot is opened even when the composer had nothing typed, and a sent line reports nothing', async () => {
+  const opened = []
+  const silent = { openSession: id => opened.push(id), showDetails: () => {}, send: async () => { throw new Error('should not send') }, notify: text => opened.push(`notify:${text}`) }
+  await afterCreate({ id: 'quiet', text: '', actions: silent })
+  await afterCreate({ id: 'quiet', text: '   ', actions: silent })
+  assert.deepEqual(opened, ['quiet', 'quiet'])
+  const sent = []
+  const working = { openSession: () => {}, showDetails: () => {}, send: async (id, text) => sent.push([id, text]), notify: text => sent.push(['notify', text]) }
+  await afterCreate({ id: 'writer', text: 'Review the notes', actions: working })
+  assert.deepEqual(sent, [['writer', 'Review the notes']])
 })

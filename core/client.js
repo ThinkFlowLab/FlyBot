@@ -5806,7 +5806,7 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
     }
     if (source.kind === "bot") {
       if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react8.createElement)(EarlierParts, { sessionId, roster, actions });
-      if (source.role === "room") return null;
+      if (source.role === "room" || source.role === "kickoff") return null;
       if (source.role === "mention") return (0, import_react8.createElement)("div", { className: "bt-event" }, (0, import_react8.createElement)("span", null, contentText(data.content)));
       if (source.role === "secret" || deferred) return null;
       if (source.role === "post") {
@@ -11312,6 +11312,17 @@ function createPayload({ name, look, image, model, effort }) {
   if (effort) payload.effort = effort;
   return payload;
 }
+async function afterCreate({ id, text, actions }) {
+  actions.openSession(id);
+  actions.showDetails(id, "settings");
+  const line2 = String(text ?? "").trim();
+  if (line2 === "") return;
+  try {
+    await actions.send(id, line2);
+  } catch (failure) {
+    actions.notify?.(failure?.message ?? String(failure));
+  }
+}
 
 // src/client/create-bot.js
 var import_react26 = require("react");
@@ -11560,12 +11571,9 @@ function NewChat({ mode, roster, actions }) {
     setError("");
     setDraft({ name: query.trim() !== "" && !exact ? query.trim() : "", fromList: true });
   };
-  const created = async (bot) => {
-    const text = message.trim();
-    if (text) await actions.send(bot.id, text);
+  const created = (bot) => {
     close();
-    actions.openSession(bot.id);
-    actions.showDetails(bot.id, "settings");
+    return afterCreate({ id: bot.id, text: message, actions });
   };
   const makeGroup = async () => {
     if (admin === null || picked.length === 0) return;

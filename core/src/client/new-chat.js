@@ -3,6 +3,7 @@ import { PlusIcon, PeopleIcon, ArrowUpIcon, BotIcon, ChatIcon, TerminalIcon } fr
 import { AdminStar, BotMark } from './mark.js'
 import { useEscape, usePaneLeft } from './overlay-hooks.js'
 import { CreateBot } from './create-bot.js'
+import { afterCreate } from './bot-draft.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
@@ -114,12 +115,9 @@ export function NewChat({ mode, roster, actions }) {
   // instructions (#645): the card is handed no brief, and the line is sent once the Bot
   // exists. Close first: closing the new-chat pane keeps the details panel, while closing
   // nothing would clear it.
-  const created = async (bot) => {
-    const text = message.trim()
-    if (text) await actions.send(bot.id, text)
+  const created = (bot) => {
     close()
-    actions.openSession(bot.id)
-    actions.showDetails(bot.id, 'settings')
+    return afterCreate({ id: bot.id, text: message, actions })
   }
   // The admin and at least one more Bot make a group; a message typed below goes with it,
   // else the admin opens by asking what the group is for.

@@ -191,8 +191,10 @@ test('#645: a line typed in the composer is the new Bot\'s first turn, not its i
   assert.match(src, /h\(CreateBot, \{\n\s*roster, actions, start: draft, canGoBack: draft\.fromList,/)
   assert.doesNotMatch(src, /brief:/)
   assert.doesNotMatch(card, /brief/)
-  // Creating from the composer sends that line to the Bot, the way opening one does.
-  assert.match(src, /const created = async \(bot\) => \{\n\s*const text = message\.trim\(\)\n\s*if \(text\) await actions\.send\(bot\.id, text\)/)
+  // Creating from the composer sends that line to the Bot, the way opening one does; the
+  // helper opens the Bot first, so a failed send still lands on its chat (#698).
+  assert.match(src, /const created = \(bot\) => \{\n\s*close\(\)\n\s*return afterCreate\(\{ id: bot\.id, text: message, actions \}\)/)
+  assert.match(src, /import \{ afterCreate \} from '\.\/bot-draft\.js'/)
   assert.match(src, /onCreated: created/)
   assert.match(card, /await onCreated\(bot\)/)
 })

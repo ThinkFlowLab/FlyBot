@@ -295,7 +295,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 --- a/src/client/bot-draft.js
 +++ b/src/client/bot-draft.js
-@@ -8,17 +8,23 @@ export function freshBotName(roster, base = 'New Bot') {
+@@ -8,17 +8,39 @@ export function freshBotName(roster, base = 'New Bot') {
    return `${base} ${index}`
  }
  
@@ -324,6 +324,22 @@ diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 -  if (brief) payload.brief = brief
    return payload
  }
++
++// What the new-Bot card does once the Bot exists: open its chat and send the line typed in
++// the composer as its first turn. The Bot is already made, so a failed send leaves the user
++// on its chat with the failure, never on a card whose Create can only answer "a Bot with
++// that name already exists" (#698).
++export async function afterCreate({ id, text, actions }) {
++  actions.openSession(id)
++  actions.showDetails(id, 'settings')
++  const line = String(text ?? '').trim()
++  if (line === '') return
++  try {
++    await actions.send(id, line)
++  } catch (failure) {
++    actions.notify?.(failure?.message ?? String(failure))
++  }
++}
 diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 --- a/src/client/bot-settings.js
 +++ b/src/client/bot-settings.js
@@ -731,7 +747,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // A centered event line that names a group chat and opens it.
  function GroupEvent({ prefix, room, name, roster, actions }) {
    return h('div', { className: 'bt-event' },
-@@ -331,17 +331,30 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
+@@ -331,17 +331,31 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
      : body
  
    function triggerBody() {
@@ -746,9 +762,11 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      if (source.kind === 'bot') {
        // A part opens with its handoff package, so the earlier parts go right above it.
        if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions })
-       // Group turns belong to the group chat; the member's own chat stays one-to-one.
+-      // Group turns belong to the group chat; the member's own chat stays one-to-one.
 -      if (source.role === 'kickoff' || source.role === 'room') return null
-+      if (source.role === 'room') return null
++      // Group turns belong to the group chat; the member's own chat stays one-to-one. A
++      // kickoff line was a setup prompt, never a message the parent Bot sent (#698).
++      if (source.role === 'room' || source.role === 'kickoff') return null
 +      // The host's receipt for the user's @ of a friend's Bot in this group (#80):
 +      // where the message went, or why it did not leave.
 +      if (source.role === 'mention') return h('div', { className: 'bt-event' }, h('span', null, contentText(data.content)))
@@ -1515,7 +1533,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -1,21 +1,31 @@
+@@ -1,21 +1,32 @@
  import { createElement as h, useRef, useState } from 'react'
 -import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 -import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
@@ -1523,6 +1541,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
  import { AdminStar, BotMark } from './mark.js'
  import { useEscape, usePaneLeft } from './overlay-hooks.js'
  import { CreateBot } from './create-bot.js'
++import { afterCreate } from './bot-draft.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
  import { t } from './i18n.js'
 +import { newChatActionRows } from './flybot-registry.js'
@@ -1609,7 +1628,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    }
    const pick = (bot) => {
      setPicked(current => [...current, bot.id])
-@@ -59,9 +59,13 @@ export function NewChat({ mode, roster, actions }) {
+@@ -59,19 +59,25 @@ export function NewChat({ mode, roster, actions }) {
      setError('')
      setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
    }
@@ -1618,14 +1637,14 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +  // instructions (#645): the card is handed no brief, and the line is sent once the Bot
 +  // exists. Close first: closing the new-chat pane keeps the details panel, while closing
    // nothing would clear it.
--  const created = (bot) => {
-+  const created = async (bot) => {
-+    const text = message.trim()
-+    if (text) await actions.send(bot.id, text)
+   const created = (bot) => {
      close()
-     actions.openSession(bot.id)
-     actions.showDetails(bot.id, 'settings')
-@@ -71,7 +71,12 @@ export function NewChat({ mode, roster, actions }) {
+-    actions.openSession(bot.id)
+-    actions.showDetails(bot.id, 'settings')
++    return afterCreate({ id: bot.id, text: message, actions })
+   }
+   // The admin and at least one more Bot make a group; a message typed below goes with it,
+   // else the admin opens by asking what the group is for.
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return
      const text = message.trim()
@@ -2723,7 +2742,14 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 --- a/test/create-bot.test.js
 +++ b/test/create-bot.test.js
-@@ -7,18 +7,36 @@ const models = [
+@@ -1,24 +1,42 @@
+ import { test } from 'node:test'
+ import assert from 'node:assert/strict'
+-import { createPayload, freshBotName, startModel } from '../src/client/bot-draft.js'
++import { afterCreate, createPayload, freshBotName, startModel } from '../src/client/bot-draft.js'
+ 
+ const models = [
+   { ref: 'ollama/ds-flash', name: 'DS Flash', providerName: 'Ollama' },
    { ref: 'cloud/qwen-max', name: 'Qwen Max', providerName: 'Cloud' },
  ]
  
@@ -2764,6 +2790,43 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
  })
  
  test('the suggested name skips taken names', () => {
+@@ -27,3 +27,36 @@ test('the suggested name skips taken names', () => {
+   assert.equal(freshBotName(roster, 'Kimi'), 'Kimi 2')
+   assert.equal(freshBotName(roster, 'Writer'), 'Writer')
+ })
++
++// #698: the Bot exists once the card reports it, so a first send that fails must leave the
++// user on the new Bot's chat with the failure, not on a card whose Create can only answer
++// "a Bot with that name already exists".
++test('a failed first send still opens the new Bot and shows the failure', async () => {
++  const calls = []
++  const actions = {
++    openSession: id => calls.push(['open', id]),
++    showDetails: (id, tab) => calls.push(['details', id, tab]),
++    send: async (id, text) => { calls.push(['send', id, text]); throw new Error('the turn could not be opened') },
++    notify: text => calls.push(['notify', text]),
++  }
++  await afterCreate({ id: 'writer', text: '  帮我写周报  ', actions })
++  assert.deepEqual(calls, [
++    ['open', 'writer'],
++    ['details', 'writer', 'settings'],
++    ['send', 'writer', '帮我写周报'],
++    ['notify', 'the turn could not be opened'],
++  ])
++  assert.ok(!calls.some(([kind, text]) => kind === 'notify' && String(text).includes('already exists')), 'no duplicate-Bot complaint')
++})
++
++test('the new Bot is opened even when the composer had nothing typed, and a sent line reports nothing', async () => {
++  const opened = []
++  const silent = { openSession: id => opened.push(id), showDetails: () => {}, send: async () => { throw new Error('should not send') }, notify: text => opened.push(`notify:${text}`) }
++  await afterCreate({ id: 'quiet', text: '', actions: silent })
++  await afterCreate({ id: 'quiet', text: '   ', actions: silent })
++  assert.deepEqual(opened, ['quiet', 'quiet'])
++  const sent = []
++  const working = { openSession: () => {}, showDetails: () => {}, send: async (id, text) => sent.push([id, text]), notify: text => sent.push(['notify', text]) }
++  await afterCreate({ id: 'writer', text: 'Review the notes', actions: working })
++  assert.deepEqual(sent, [['writer', 'Review the notes']])
++})
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js
