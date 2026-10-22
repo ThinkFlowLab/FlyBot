@@ -43,7 +43,8 @@
     "test/group-work.test.js",
     "test/bot-messages.test.js",
     "test/history.test.js",
-    "test/tool-node.test.js"
+    "test/tool-node.test.js",
+    "test/prompt.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",

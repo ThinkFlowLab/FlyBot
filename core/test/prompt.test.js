@@ -43,3 +43,26 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
   assert.doesNotMatch(prompt('room'), /progress|milestone/)
   assert.equal(prompt('outside'), '')
 })
+
+// Part B of #645: the default is idle. The prompt used to describe only an active team (a
+// coordinator that dispatches, children that report and claim), so a team with no work still
+// produced status traffic. Both directions are asserted here: the idle default is present as a
+// quotable rule, and the unprompted work instruction is gone.
+test('a Bot stays idle until it is addressed or given a task (part B of #645)', (t) => {
+  const { ctx, prompt } = start()
+  t.after(() => ctx.dispose())
+  const idle =
+    '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, or your parent Bot gives you a task. Do not start work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when nobody has addressed you.'
+  for (const id of ['main', 'worker']) {
+    const text = prompt(id)
+    assert.ok(text.split('\n').includes(idle), `${id} carries the idle default as its own rule`)
+    assert.equal(text.split(idle).length - 1, 1, `${id} carries the idle rule once`)
+    assert.doesNotMatch(text, /report back/, `${id} no longer tells a Bot to report back unprompted`)
+    assert.doesNotMatch(text, /\bdispatch\b/, `${id} carries no dispatch instruction`)
+  }
+  assert.match(prompt('main'), /A coordinator acts on a user task, not on its own initiative\./)
+  assert.doesNotMatch(prompt('worker'), /coordinator/, 'the coordinator wording belongs to the Main Bot')
+  // A Bot that is addressed answers exactly as before: the reply rule is still there, unchanged.
+  const replyRule = '- When a "[Reply from …]" arrives, tell the user the outcome if it matters to them.'
+  for (const id of ['main', 'worker']) assert.ok(prompt(id).split('\n').includes(replyRule), `${id} still answers a reply`)
+})

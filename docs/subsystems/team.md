@@ -37,6 +37,11 @@ Shipped behavior stays what [core/README.md](../../core/README.md) (roles: You /
 | Approval | A human owner's consent for an action that spends that owner's authority. | Planned. |
 | Team mode | Multi-human operation: several owners in one deployment, cross-owner traffic, per-owner scoping. | **Disabled** (see gate). |
 
+**The default is idle (part B of #645, shipped).** A Bot does nothing until the user addresses it, it is
+@-mentioned in a group, or its parent gives it a task; a coordinator acts on a user task, not on its own
+initiative. That is prompt text in `core/src/host/prompt.js`, not a team-mode setting, and it changes the
+unaddressed default only: a Bot that is addressed answers as before.
+
 ## Schema foundation (landed, #47)
 
 Shipped by the core store (`core/src/host/store.js`, owned by [ds-bot-core](ds-bot-core.md)) as **data records only**. It replaces implicit single-user ownership with explicit stable identities while the product stays single-human:
