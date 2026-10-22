@@ -12,7 +12,7 @@ files of a PR are read through the API and judged by the same rules as the risk 
 
 | Rule | Effect |
 | --- | --- |
-| Every open PR (50 most recently updated, not `hold`) | `risk:T0`..`risk:T3` from the risk gate, replacing a stale `risk:T*`. If the files cannot be read, it changes nothing |
+| Every open PR (50 most recently updated, not `hold`) | `risk:T0`..`risk:T3` from the risk gate, replacing a stale `risk:T*`. If the files cannot be read, it changes nothing. **Advisory only:** a label exists once a run has seen the PR, and no merge decision reads it (see [Limits](#limits)) |
 | An agent's PR | adds `agent-pr`. A PR is an agent's when its author is in `agentAuthors`, or its branch in this repository starts with an `agentBranchPrefixes` entry (`agent/`), or a branch in this repository says `Fixes #N` for an issue that is `agent-ready` or `agent-working`. A fork PR counts by author only. The label is never removed |
 | An issue labeled `agent-ready` or `agent-working` | removes `agent-ready` **and** `agent-working` when the last `agent-ready` was set by someone who is not a maintainer, or when someone who is not a maintainer edited the text or title after it. Re-labeling by a maintainer re-approves it |
 | A claim (`agent-working`) | removes `agent-working` when it is older than `claimTtlHours` (6) and no open PR that says `Fixes #N` has a commit or was opened within that time |
@@ -61,6 +61,7 @@ The script and `controller.json` come from the default branch (`checkout` of `de
 - Labels only: it leaves no comment, so the reason for a removal is in the job summary (the timeline shows `github-actions` removed the label).
 - Events caused by `GITHUB_TOKEN` start no workflows, so nothing chains from its labels; it runs on the schedule.
 - GitHub stops scheduled workflows of a public repository after 60 days without repository activity.
+- **A missing `risk:T*` is not a tier.** GitHub runs scheduled workflows late under load: the 30-minute cron produced runs 2.5–6 hours apart on this repository (48 runs, all `success`, none skipped — #629), so a label may arrive hours after the PR is opened, and a PR opened and merged between two runs gets none at all. A fork PR cannot be labelled by its own `pull_request` run either (read-only `GITHUB_TOKEN`), which is why the external ones (#611, #619) lack it by construction. Nothing depends on the label: `merge-gate` recomputes the tier from the diff with the base copy of `risk-gate.mjs`, and `risk-tier.yml` reports the same tier on every PR, forks included. Read an absent label as "the poll has not seen this PR yet" — never as T0/T1 and never as a reason to block.
 - 50 PRs and 50 issues per label per run (`controller.json`); about 3 API calls per PR per run.
 
 ## Try it by hand (read-only)
