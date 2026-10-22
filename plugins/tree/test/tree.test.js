@@ -1470,6 +1470,32 @@ test('#624: a turn that never ends shows how long it has been open, and load sta
   assert.equal(item.stalled, undefined)
 })
 
+test('#696: two turns open, the later one ends, and the age left is the older turn\'s', async () => {
+  let clock = Date.UTC(2026, 9, 22, 7)
+  const m = await setup({ now: () => clock })
+  const work = await make(m, m.root, 'Work')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 's#1', turn: 1, time: 1 })
+  clock += 10 * 60_000
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 's#2', turn: 2, time: 2 })
+  clock += 2 * 60_000
+  // 12 minutes: the older turn is the oldest open one, so the line names 12 whatever ends next.
+  let item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 2)
+  assert.equal(item.openForMs, 12 * 60_000)
+  // The turn that ends is the newer one: the older turn is still open, so its age must stay.
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 's#2', turn: 2, time: 3 })
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 1, 'only the turn that ended is gone')
+  assert.equal(item.openForMs, 12 * 60_000, 'not the 2 minutes of the turn that ended')
+  assert.equal(item.stalled, true)
+  m.tree.refreshPrompt(m.root)
+  assert.match(sp(m, m.root), /Work: working \(12 min, no turn ended\)/)
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 's#1', turn: 1, time: 4 })
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 0)
+  assert.equal(item.openForMs, undefined)
+})
+
 test('#450: a merge carries the archived Bot\'s own memory into the kept Bot', async () => {
   const DAY = 24 * 60 * 60 * 1000
   let clock = Date.UTC(2026, 9, 19, 12)

@@ -33,8 +33,10 @@ export function apply(ctx, config = {}) {
     // Runtime load: how many turns each Bot runs now, so a coordinator routes to a free child (#507).
     // A change is also written into the child's parent prompt, so the Child-load line a coordinator
     // reads stays current (writeBlock only rewrites the block when the line really changed).
-    fb.onFeed('turn.start', e => { tree.noteTurnStart(e?.botId); refreshParentPrompt(e?.botId) }),
-    fb.onFeed('turn.end', e => { tree.noteTurnEnd(e?.botId); refreshParentPrompt(e?.botId) }),
+    // The feed names the turn it is about (turnId); dropping it made an end close whichever turn was
+    // oldest, so with two open and the later one ending first, openFor reported the newer age (#696).
+    fb.onFeed('turn.start', e => { tree.noteTurnStart(e?.botId, e?.turnId); refreshParentPrompt(e?.botId) }),
+    fb.onFeed('turn.end', e => { tree.noteTurnEnd(e?.botId, e?.turnId); refreshParentPrompt(e?.botId) }),
     // The tree view: what the last reorganization did, one-click undo, dismiss.
     fb.handleApi('tree/reorg', () => tree.overview(), { read: true }),
     fb.handleApi('tree/undo', payload => tree.undo(typeof payload?.runId === 'string' ? payload.runId : undefined)),

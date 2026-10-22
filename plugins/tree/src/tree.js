@@ -309,8 +309,8 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
 
   const { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, idle: settled, repairArchiveNames } = organizer
   const { findBots, createChild: allocateChild, createTeam } = allocator
-  const noteTurnStart = id => load.start(id)
-  const noteTurnEnd = id => load.end(id)
+  const noteTurnStart = (id, turnId) => load.start(id, turnId)
+  const noteTurnEnd = (id, turnId) => load.end(id, turnId)
   const loadOf = id => load.of(id)
   const openForOf = id => load.openFor(id)
   return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, openForOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, heightOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, moveBot, findBotByName, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }

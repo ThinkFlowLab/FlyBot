@@ -5,44 +5,51 @@
 //
 // How long a turn has been open (#624): a count alone cannot tell a long turn from a stuck one —
 // `load: 1` read identically for a 47-minute-old turn that never consumed its queue and for a
-// turn three seconds in. Each open turn's start is kept, so `openFor()` answers the age of the
-// oldest one and a reader can draw its own line. It is a hint for routing, never a gate: this
+// turn three seconds in. Each open turn's start is kept, keyed by the feed's turnId when it has one
+// so an end closes the turn that really ended (#696), and `openFor()` answers the age of the oldest
+// one still open. A reader can draw its own line. It is a hint for routing, never a gate: this
 // plugin cannot see a Bot's inbox, so a legitimately long turn also ages.
 export const STALLED_AFTER_MS = 12 * 60_000
 
 const minutes = ms => Math.max(1, Math.round(ms / 60_000))
 
 export function createLoadTracker({ now = Date.now } = {}) {
-  /** @type {Map<string, number[]>} start times of the open turns per Bot id, oldest first */
+  /** @type {Map<string, { turnId?: string, at: number }[]>} open turns per Bot id, oldest first */
   const open = new Map()
-  const timesOf = id => open.get(id) ?? []
+  const turnsOf = id => open.get(id) ?? []
+  const cleanTurn = value => (typeof value === 'string' && value !== '' ? value : undefined)
   return {
-    start(id) {
+    start(id, turnId) {
       if (typeof id !== 'string' || id === '') return
-      const times = timesOf(id)
-      times.push(now())
-      open.set(id, times)
+      const turns = turnsOf(id)
+      const key = cleanTurn(turnId)
+      turns.push({ ...(key === undefined ? {} : { turnId: key }), at: now() })
+      open.set(id, turns)
     },
-    end(id) {
+    end(id, turnId) {
       if (typeof id !== 'string' || id === '') return
-      const times = timesOf(id)
-      // Oldest first, so an end drops the oldest still-open turn and what remains is the age of the
-      // oldest one left. The end events may arrive in any order; only the count has to stay right.
-      times.shift()
-      if (times.length === 0) open.delete(id)
-      else open.set(id, times)
+      const turns = turnsOf(id)
+      if (turns.length === 0) return
+      // An end that names its turn closes that one, so a later turn ending first no longer closes an
+      // earlier one and leaves the age of the wrong turn behind (#696). With no match — an id never
+      // seen, or none at all — exactly one turn goes, the oldest, so the count still falls by one.
+      const key = cleanTurn(turnId)
+      const at = key === undefined ? -1 : turns.findIndex(turn => turn.turnId === key)
+      turns.splice(at >= 0 ? at : 0, 1)
+      if (turns.length === 0) open.delete(id)
+      else open.set(id, turns)
     },
     of(id) {
-      return timesOf(id).length
+      return turnsOf(id).length
     },
     /** Age in ms of the oldest open turn, 0 when the Bot is idle. */
     openFor(id, at = now()) {
-      const times = timesOf(id)
-      if (times.length === 0) return 0
-      return Math.max(0, at - times[0])
+      const turns = turnsOf(id)
+      if (turns.length === 0) return 0
+      return Math.max(0, at - turns[0].at)
     },
     snapshot() {
-      return Object.fromEntries([...open].map(([id, times]) => [id, times.length]))
+      return Object.fromEntries([...open].map(([id, turns]) => [id, turns.length]))
     },
   }
 }

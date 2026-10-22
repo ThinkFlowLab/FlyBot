@@ -53,3 +53,29 @@ test('#624: loadLine names the age only past the threshold, and never calls a ch
   // The third argument is optional, so a caller with only a count keeps the old line.
   assert.match(loadLine(children, () => 1), /Dev: working\. Send/)
 })
+
+test('#696: an end closes its own turn, not just the oldest open one', () => {
+  let clock = 0
+  const load = createLoadTracker({ now: () => clock })
+  load.start('a', 's#1')
+  clock += 10 * 60_000
+  load.start('a', 's#2')
+  clock += 2 * 60_000
+  assert.equal(load.of('a'), 2)
+  // The later turn is the one that ended, so the age left behind must be the earlier turn's.
+  load.end('a', 's#2')
+  assert.equal(load.of('a'), 1)
+  assert.equal(load.openFor('a'), 12 * 60_000, 'the turn that really ended is gone, the older one stays')
+  // An id we never saw still drops exactly one turn — the oldest — so the count cannot drift.
+  load.start('a', 's#3')
+  clock += 60_000
+  load.end('a', 'never-seen')
+  assert.equal(load.of('a'), 1)
+  assert.equal(load.openFor('a'), 60_000, 'the unknown end dropped the oldest, not the newest')
+  // An end with no id at all is the same fallback.
+  load.start('a', 's#4')
+  load.end('a')
+  assert.equal(load.of('a'), 1)
+  load.end('a', 's#4')
+  assert.equal(load.of('a'), 0, 'the named turn is closed and nothing is left')
+})
