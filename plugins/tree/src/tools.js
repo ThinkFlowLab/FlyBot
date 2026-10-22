@@ -123,7 +123,7 @@ export function registerTreeTools(fb, tree) {
       description: 'Root only. Move an existing Bot with its subtree under another parent. Refused when it would create a cycle, exceed maxChildren or maxDepth, or duplicate a sibling name.',
       parameters: MOVE_BOT_SCHEMA,
       visibleTo: botId => inTree(botId) && tree.isRoot(botId),
-      async execute(args, { botId }) {
+      async execute(args) {
         const bad = validateArgs(MOVE_BOT_SCHEMA, args)
         if (bad) return fail(bad)
         try { return tree.moveBot(args.bot, args.parent) } catch (e) { return fail(e) }

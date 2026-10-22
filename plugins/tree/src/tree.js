@@ -292,6 +292,13 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     organizer.repair()
     refreshAll()
     emit({ botId, key: 'removed' })
+    // The deletion freed a slot: a Bot that stayed outside the tree only because a level was full
+    // joins now, instead of waiting for the next startup (#635).
+    const chief = findChief()
+    if (!chief) return
+    const { adopted, pending } = adoptUnattached(chief.id)
+    for (const at of pending) at.catch(error => warn('flybot-tree: adoption after a deletion failed:', error?.message ?? error))
+    if (adopted.length) refreshAll()
   }
   const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn) }
 

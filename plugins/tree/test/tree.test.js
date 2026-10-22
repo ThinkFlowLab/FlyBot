@@ -1487,6 +1487,18 @@ test('#635: move_bot refuses cycles, overflow, duplicates and a too deep subtree
   assert.match((await m.call(m.root, 'move_bot', { bot: x1, parent: b })).error, /already exists/)
 })
 
+test('#635: a Bot left outside because the tree was full joins when a deletion frees a slot', async () => {
+  const m = await setup({ maxChildren: 1 })
+  const a = await make(m, m.root, 'A')
+  const outside = await outsider(m, 'Wanderer') // root full: stays outside, no tree fields
+  await m.tree.settled()
+  assert.equal(f(m, outside, 'parent'), undefined, 'the full root keeps it out')
+  m.removeBot(a) // frees the slot; no restart, no 'bot.created'
+  await m.tree.settled()
+  assert.equal(f(m, outside, 'parent'), m.root, 'the freed slot is used right away')
+  assert.match(sp(m, outside), /recursive bot tree/i)
+})
+
 test('#635: move_bot refuses an overflowing parent and refreshes the subtree', async () => {
   const m = await setup({ maxChildren: 2 })
   const a = await make(m, m.root, 'A')
