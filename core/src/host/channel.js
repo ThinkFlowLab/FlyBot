@@ -9,6 +9,8 @@ import { unwrapUntrusted } from './delivery.js'
 
 const NOTIFY_KINDS = ['approval', 'finished', 'failed']
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
+// How long a burst of the user's lines is collected before it opens one turn (#642).
+const SETTLE_MS = 1_500
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 // Programming and file system errors are DS Bot's own faults, logged with their stack;
@@ -32,6 +34,53 @@ export function install(rt) {
   let watchedAt = 0
   rt.watched = () => Date.now() - watchedAt < WATCH_MS
   rt.uiLanguage = () => (uiLocale === undefined ? 'English' : LANGUAGES[uiLocale.split('-')[0].toLowerCase()] ?? uiLocale)
+
+  // A burst of the user's own lines (#642): with no turn running, hold them for a moment and open
+  // one turn with every line in arrival order. A line that arrives while a turn runs is not held —
+  // it lands as its own queued item, so a burst never reorders work that is already under way.
+  const settling = new Map()
+  const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
+  const openSettledTurn = async (sessionId, lines) => {
+    try {
+      await rt.ensureCapabilities(sessionId)
+      await ctx.sessionController.prompt({
+        requestId: randomUUID(),
+        sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: lines.join('\n') }],
+      }, AbortSignal.timeout(30_000))
+    } catch (error) {
+      rt.warn?.('ds-bot: held user lines were not delivered: %s', error)
+    }
+  }
+  const flushSettled = sessionId => {
+    const held = settling.get(sessionId)
+    if (held === undefined) return Promise.resolve()
+    settling.delete(sessionId)
+    clearTimeout(held.timer)
+    return openSettledTurn(sessionId, held.lines)
+  }
+  // True when the line was held for the window; false means the caller opens its own turn.
+  const settleLine = async (sessionId, text) => {
+    if (turnRunning(sessionId)) {
+      // A turn began inside the window: the held lines queue ahead of this one, in order.
+      await flushSettled(sessionId)
+      return false
+    }
+    const held = settling.get(sessionId)
+    if (held !== undefined) {
+      held.lines.push(text)
+      return true
+    }
+    const waiting = { lines: [text], timer: setTimeout(() => void flushSettled(sessionId), SETTLE_MS) }
+    waiting.timer?.unref?.()
+    settling.set(sessionId, waiting)
+    return true
+  }
+  ctx.effect(() => () => {
+    for (const held of settling.values()) clearTimeout(held.timer)
+    settling.clear()
+  }, 'ds-bot: settle window')
 
   const ok = value => ({ ok: true, value })
   const fail = (message, code = 'bot/error', details = {}) => ({ ok: false, error: { code, message, details } })
@@ -467,6 +516,9 @@ export function install(rt) {
             await ctx.sessions.flush(agent.session)
             return ok(true)
           }
+          // The Bot's own chat holds a burst into one turn; a group room already joins a mid-round
+          // line to the round it belongs to (#642), so its line must not wait behind a timer.
+          if (room === undefined && await settleLine(sessionId, text)) return ok(true)
           await rt.ensureCapabilities(sessionId)
           await ctx.sessionController.prompt({
             requestId: randomUUID(),

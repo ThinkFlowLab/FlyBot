@@ -5507,7 +5507,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -91,12 +91,22 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,23 @@
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -5527,10 +5527,11 @@ diff --git a/test/install.test.js b/test/install.test.js
 +    'on agent/created',
 +    'on session/event',
 +    'on session/event',
++    'effect ds-bot: settle window',
      'effect ds-bot: api route',
      'route POST /api/bot',
      'effect ds-bot: load state',
-@@ -137,6 +137,17 @@ test('the client channel answers from the saved state', async (t) => {
+@@ -137,6 +137,17 @@
    assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
    assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
    assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })

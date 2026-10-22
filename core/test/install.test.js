@@ -107,6 +107,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'on agent/created',
     'on session/event',
     'on session/event',
+    'effect ds-bot: settle window',
     'effect ds-bot: api route',
     'route POST /api/bot',
     'effect ds-bot: load state',
