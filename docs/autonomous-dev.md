@@ -191,8 +191,11 @@ agent reads, and the record a later enforcement step is checked against.
 entry — are in [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates). This section is only the plumbing.
 
 **How to merge.** A direct `gh pr merge <n> --squash` is refused with `! The merge strategy for main is set by the merge
-queue`; that is not a failure. Enqueue instead: `gh pr merge <n> --auto --squash [--match-head-commit <sha>]` (gh has no
-`--merge-queue` flag). gh may still print the strategy line, or `! Pull request #<n> is already queued to merge`; the PR is
+queue`; that is not a failure. Run `node .github/scripts/enqueue-guard.mjs --pr <n>` first — it re-reads the live head and
+exits 1 on a `hold`, on a newest conclusion that is not a PASS, and on a report marked "record only — do not merge", so a
+PASS is never a queue permit on its own (#602); on success it prints the command and never runs it. Enqueue with
+`gh pr merge <n> --auto --squash --match-head-commit <sha>` (gh has no `--merge-queue` flag). gh may still print the
+strategy line, or `! Pull request #<n> is already queued to merge`; the PR is
 then in the queue (`gh api graphql` → `pullRequest.isInMergeQueue`). The queue, not the agent, performs the squash merge
 once `Test` passes on the `gh-readonly-queue/main/pr-<n>-<sha>` entry; do not retry. The queue waits up to 5 minutes
 to fill a group and builds one entry at a time.
