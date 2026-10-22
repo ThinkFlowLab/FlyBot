@@ -32,7 +32,23 @@ test('formatCount and formatMs read at a glance', () => {
   assert.equal(formatMs(40_000), '40s')
   assert.equal(formatMs(720_000), '12m')
   assert.equal(formatMs(3_900_000), '1h05m')
+  assert.equal(formatMs(3_600_000), '1h00m')
   assert.equal(formatMs(undefined), '0s')
+})
+
+// The carry must never overflow the unit the text prints (#761): rounding the raw milliseconds
+// inside a unit chosen from the raw value printed `60s` for 59.6 s and `1h60m` for 1h59m50s, and a
+// person pasting the report read those numbers in a standup.
+test('#761: a duration rounds once and carries, instead of printing 60s, 60m or 1h60m', () => {
+  assert.equal(formatMs(59_600), '1m')
+  assert.equal(formatMs(3_599_999), '1h00m')
+  assert.equal(formatMs(7_190_000), '2h00m')
+  // The boundaries themselves stay where they were.
+  assert.equal(formatMs(59_400), '59s') // 59.4 s still reads in seconds
+  assert.equal(formatMs(59_999), '1m') // 59.999 s rounds to a minute, never to '60s'
+  assert.equal(formatMs(60_000), '1m')
+  assert.equal(formatMs(3_540_000), '59m')
+  assert.equal(formatMs(86_400_000), '24h00m')
 })
 
 test('#582: per-Bot sections, the team rollup and the longest wait', () => {

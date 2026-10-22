@@ -21,10 +21,13 @@ export function formatCount(value) {
 /** A duration a person reads at a glance: `40s`, `12m`, `1h05m`. */
 export function formatMs(ms) {
   const value = Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : 0
-  if (value < 60_000) return `${Math.round(value / 1000)}s`
-  if (value < 3_600_000) return `${Math.round(value / 60_000)}m`
-  const minutes = Math.round((value % 3_600_000) / 60_000)
-  return `${Math.floor(value / 3_600_000)}h${String(minutes).padStart(2, '0')}m`
+  // Round once and carry into the next unit, so the text never prints a count its own unit cannot
+  // hold (#761): picking the unit from the raw value and rounding inside it printed `60s` for
+  // 59.6 s, `60m` for 59m59.999s and `1h60m` for 1h59m50s.
+  if (Math.round(value / 1000) < 60) return `${Math.round(value / 1000)}s`
+  const minutes = Math.round(value / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
 }
 
 const percent = (part) => `${Math.round(part * 100)}%`
