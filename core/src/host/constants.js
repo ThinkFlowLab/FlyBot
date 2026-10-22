@@ -49,6 +49,7 @@ export const AGENT_SESSION_TITLE_MAX = 80
 // Desktop profile, so a restriction filters this list down to registered names.
 export const TEAM_TOOLS = [
   'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'list_models',
+  'bot_schedules',
   'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user',
   'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
   'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',

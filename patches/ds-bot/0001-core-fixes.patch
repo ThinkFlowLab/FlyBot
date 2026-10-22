@@ -3216,7 +3216,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 diff --git a/src/host/schedules.js b/src/host/schedules.js
 --- a/src/host/schedules.js
 +++ b/src/host/schedules.js
-@@ -5,8 +5,32 @@
+@@ -5,8 +5,34 @@
  // them. A group chat's task lives on the group's own Session, so the reminder reaches
  // the group like a message from the user (see reminderText). DSH 0.2.0 mounts the service only with its Automation tasks bundle on, so
  // the service is optional and every endpoint reports whether it is there.
@@ -3239,7 +3239,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +// A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 +
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
++import { defineTool } from '@deepseek-ai/dsh-tools'
 +import { textOf } from './text.js'
++import { output } from './tools.js'
  
  const MAX_TITLE = 120
 +// How long a due task may stay undelivered while the app runs before it counts as failed.
@@ -3307,7 +3309,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
-@@ -89,36 +89,278 @@ export function install(rt) {
+@@ -89,36 +89,327 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -3563,6 +3565,55 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    }
 +    return schedulesView()
 +  }
++
++  // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
++  // earlier part), or a group chat it speaks in (now, or an earlier part).
++  const placeOf = (sessionId) => {
++    const chat = rt.chatOwners.get(sessionId)
++    if (chat !== undefined) return { botId: chat, place: sessionId === rt.chatOf(chat) ? 'own chat' : 'own chat, earlier part' }
++    const live = rt.groupOwners.get(sessionId)
++    const past = rt.pastOwners.get(sessionId)
++    const owner = live ?? past
++    if (owner === undefined) return undefined
++    // An archived part of a Bot's own chat has no group: it is the same chat, earlier.
++    if (live === undefined && past.roomId === undefined) return { botId: past.botId, place: 'own chat, earlier part' }
++    const name = rt.roomOf(owner.roomId)?.name
++    const place = name === undefined ? 'a group chat' : `group chat "${name}"`
++    return { botId: owner.botId, place: live === undefined ? `${place}, earlier part` : place }
++  }
++
++  // DSH's own `schedule_list` answers for the Session the call runs in, and its empty
++  // answer is indistinguishable from "this Bot has nothing scheduled" (#628): a task the
++  // owner sees in the UI is invisible from another Session of the same Bot. This tool
++  // answers for the Bot instead, from the host-wide catalog.
++  ctx.tools.register(defineTool({
++    name: 'bot_schedules',
++    description: "List every scheduled task this Bot has, in every Session of its own — its own chat, the earlier parts of it, and the group chats it speaks in — with id, title, next run, state and owning Session. DSH's own `schedule_list` answers for one Session only; this one answers for the Bot.",
++    parameters: {},
++    output,
++    async execute(_args, exec) {
++      await rt.load()
++      const botId = rt.selfOf(exec.agent?.id)
++      const bot = rt.botOf(botId)
++      if (bot === undefined) return 'This Session does not belong to a Bot, so there are no Bot-wide scheduled tasks.'
++      const head = `Scheduled tasks of ${bot.name} — every Session of this Bot (DSH's own schedule_list answers for one Session only):`
++      if (service === null) return `${head}\nnone — Automation tasks are off in DSH, so no scheduled task is visible.`
++      const rows = []
++      const add = (entry, status, when) => {
++        const at = placeOf(entry.sessionId)
++        if (at?.botId !== botId) return
++        rows.push({
++          at: when ?? '',
++          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${when === undefined ? 'no next run' : `next ${when}`}, ${status}, ${at.place}, session ${entry.sessionId}`,
++        })
++      }
++      for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
++      for (const entry of Object.values(paused())) add({ ...entry.record, id: entry.id, sessionId: entry.sessionId }, 'paused', undefined)
++      if (rows.length === 0) return `${head}\nnone — no scheduled task in any of its Sessions, so this is the whole list for the Bot.`
++      rows.sort((a, b) => a.at.localeCompare(b.at) || a.line.localeCompare(b.line))
++      return [head, ...rows.map(row => row.line)].join('\n')
++    },
++  }))
 +
    const endpoints = {
      schedules: () => schedulesView(),
@@ -5392,7 +5443,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -91,12 +91,21 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,22 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -5402,6 +5453,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on agent/created',
      'effect ds-bot: capabilities',
 +    'effect ds-bot: missed scheduled runs',
++    'tool bot_schedules',
 +    'effect ds-bot: automation tasks default',
      'effect ds-bot: usage ledger',
      'on llm/stream',
@@ -6137,7 +6189,19 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
        if (tasks.get(id)?.sessionId !== sessionId) return { id, deleted: false, code: 'schedule_not_found' }
        tasks.delete(id)
        return { id, deleted: true }
-@@ -121,3 +121,249 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -44,9 +44,9 @@ function scheduleService() {
+   }
+ }
+ 
+-function setup(services = {}) {
++function setup(services = {}, team = TEAM) {
+   const home = mkdtempSync(join(tmpdir(), 'dsb-schedules-'))
+-  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
++  writeFileSync(join(home, 'state.json'), JSON.stringify(team))
+   const ctx = fakeContext({ services })
+   const register = ctx.connection.fetch.register
+   ctx.connection.fetch.register = (route) => { ctx.route = route; return register(route) }
+@@ -121,3 +121,302 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -6386,6 +6450,59 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  // Delivered after all: the next time is in the future again and the failure stays the last run.
 +  task.record = { ...task.record, scheduledAt: '2030-01-02T01:00:00.000Z' }
 +  assert.deepEqual(await lastRuns(call), [['failed', 'DSH could not deliver it']])
++})
++
++// #628: DSH's own `schedule_list` answers for one Session, so a task the owner sees in the
++// UI is invisible from another Session of the same Bot, and its `[]` reads the same as
++// "nothing scheduled". `bot_schedules` answers for the Bot.
++test('#628: bot_schedules answers for the Bot, never for the Session the call runs in', async (t) => {
++  const schedule = scheduleService()
++  const team = JSON.parse(JSON.stringify(TEAM))
++  team.rooms.g1.sessions = { w1: 'g1-w1', m1: 'g1-m1' }
++  team.rooms.g1.segments = { w1: [{ sessionId: 'g1-w1-old', endedAt: 5 }] }
++  team.pausedSchedules = { 's-paused': { id: 's-paused', sessionId: 'w1', record: { title: 'Paused brief', prompt: 'Sum up' }, pausedAt: 6 } }
++  const { ctx, home } = setup({ schedule }, team)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const add = (sessionId, title, id, status = 'active') => schedule.tasks.set(id, { sessionId, status, record: { id, title, prompt: `${title} prompt`, scheduledAt: '2030-01-01T01:00:00.000Z' } })
++  add('w2', 'Writer current part', 's-w2')
++  add('w1', 'Writer earlier part', 's-w1')
++  add('g1-w1', 'Writer group', 's-g1')
++  add('g1-w1-old', 'Writer group earlier part', 's-g1-old')
++  add('m1', 'Chief own chat', 's-m1')
++  add('g1-m1', 'Chief group session', 's-g1m')
++  const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
++  const answer = await listed('w2')
++  // Every Session of this Bot: its own chat, the earlier part of it, the group chats it speaks in.
++  for (const name of ['Writer current part', 'Writer earlier part', 'Writer group', 'Writer group earlier part', 'Paused brief']) {
++    assert.ok(answer.includes(name), `${name} is the Bot's schedule`)
++  }
++  assert.match(answer, /own chat, earlier part/)
++  assert.match(answer, /group chat "Launch"/)
++  assert.match(answer, /paused/)
++  // The same answer whichever Session of the Bot asks — that is what "Bot-wide" means.
++  assert.equal(await listed('w1'), answer, 'an earlier part gets the same answer')
++  assert.equal(await listed('g1-w1'), answer, 'so does a group Session it speaks in')
++  // Another Bot's tasks stay out, own chat and group alike.
++  assert.ok(!answer.includes('Chief own chat'))
++  assert.ok(!answer.includes('Chief group session'))
++  // The answer names its scope, so an empty one cannot be read as "nothing is scheduled".
++  assert.match(answer, /every Session of this Bot/)
++  assert.match(answer, /schedule_list answers for one Session only/)
++})
++
++test('#628: without the schedule service the Bot-wide answer says why it is empty', async (t) => {
++  const { ctx, home } = setup()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
++  assert.match(answer, /Automation tasks are off in DSH/)
++  assert.match(answer, /every Session of this Bot/)
++})
++
++test('#628: a Bot with no task in any Session gets an answer that is about the Bot', async (t) => {
++  const { ctx, home } = setup({ schedule: scheduleService() })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
++  assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
 +})
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
