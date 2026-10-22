@@ -139,53 +139,58 @@ export function decide({ head, author, reports, policy }) {
   const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
   const writers = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
-  const reasons = []
+  const reasons = [] // reports that do not name this tip at all
   const judged = []
+  const atTip = [] // conclusions that name this tip, valid or not, in the order the API returned them
 
   for (const r of reports ?? []) {
     const parsed = parseReport(r.body)
     if (!parsed.tip && !parsed.verdict) continue // not a Verifier report
-    const entry = { login: r.login, verdict: parsed.verdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false }
+    const entry = { login: r.login, verdict: parsed.verdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
     judged.push(entry)
     if (!parsed.tip) { reasons.push(`${where(r)}: no Tip SHA`); continue }
     if (!headSha.startsWith(parsed.tip)) {
       reasons.push(`${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
       continue
     }
+    if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
+    // #676: a conclusion at this tip belongs to the newest-word question even when it fails a check
+    // below, so it joins `atTip` carrying its reason instead of being dropped. Dropping it made a
+    // newer refusal invisible: an INC with no `Written-by:` line left an older PASS in force, and a
+    // human REQUEST_CHANGES from an unlisted login did the same.
+    atTip.push(entry)
     // #627: a *conclusion* has to say who wrote it, refused on two separate grounds — a report with no
     // attribution line and one that names a writer the policy does not list are different defects, and
     // the log has to say which one fired. Both fail closed. An ordinary comment is not a conclusion, so
     // a missing line is not held against it. With one shared GitHub identity the line is a self-report,
     // so this buys presence and a name from a closed list, not proof (#633).
-    if (parsed.verdict) {
-      if (!parsed.writer) { reasons.push(`${where(r)}: no Written-by line naming its writer`); continue }
-      if (!writers.has(parsed.writer.toLowerCase())) { reasons.push(`${where(r)}: Written-by names "${parsed.writer}", who is not in the writers list of .github/agent/review-policy.json`); continue }
-    }
-    if (login(r) === authorLogin && !selfReview.has(authorLogin)) { reasons.push(`${where(r)}: the pull request's own author is not a reviewer (not in selfReview)`); continue }
-    if (!reviewers.has(login(r))) { reasons.push(`${where(r)}: not a reviewer listed in .github/agent/review-policy.json`); continue }
+    if (!parsed.writer) { entry.why = `${where(r)}: no Written-by line naming its writer`; continue }
+    if (!writers.has(parsed.writer.toLowerCase())) { entry.why = `${where(r)}: Written-by names "${parsed.writer}", who is not in the writers list of .github/agent/review-policy.json`; continue }
+    if (login(r) === authorLogin && !selfReview.has(authorLogin)) { entry.why = `${where(r)}: the pull request's own author is not a reviewer (not in selfReview)`; continue }
+    if (!reviewers.has(login(r))) { entry.why = `${where(r)}: not a reviewer listed in .github/agent/review-policy.json`; continue }
     entry.counts = true
   }
 
-  const counting = judged.filter((e) => e.counts)
-  if (!counting.length) {
-    const reason = reviewers.size
-      ? reasons.length ? reasons.join('; ') : `no Verifier report names the tip ${headSha.slice(0, SHORT)}`
-      : 'no reviewer is listed in .github/agent/review-policy.json'
+  if (!reviewers.size) return { ok: false, verdict: null, by: null, tip: null, reason: 'no reviewer is listed in .github/agent/review-policy.json', judged }
+  if (!atTip.length) {
+    const reason = reasons.length ? reasons.join('; ') : `no Verifier report names the tip ${headSha.slice(0, SHORT)}`
     return { ok: false, verdict: null, by: null, tip: null, reason, judged }
   }
 
-  // Newest first: the reviewer's latest word at this tip decides. Equal timestamps fall back to
-  // the order the API returned them in (oldest first), so the later comment still wins.
-  const last = counting
+  // The newest word at this tip decides, and that includes a conclusion the checks refused: an invalid
+  // PASS is not evidence, and an invalid INC is still someone saying not to merge (#676). Equal
+  // timestamps fall back to the order the API returned them in (oldest first), so the later one wins.
+  const last = atTip
     .map((e, i) => ({ e, i, t: Date.parse(e.at ?? 0) || 0 }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .at(-1).e
+  if (!last.counts) return { ok: false, verdict: last.verdict, by: null, tip: last.tip, reason: last.why, judged }
   const { parsed } = last
-  if (last.verdict === 'PASS' && !parsed.ran.length) {
-    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS lists no command it ran`, judged }
-  }
   if (last.verdict !== 'PASS') {
     return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged }
+  }
+  if (!parsed.ran.length) {
+    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS lists no command it ran`, judged }
   }
   return { ok: true, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS names this tip`, judged }
 }

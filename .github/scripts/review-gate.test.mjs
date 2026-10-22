@@ -396,3 +396,60 @@ test('#627: an ordinary comment is not a conclusion, so a missing Written-by lin
   })
   assert.equal(both.ok, true, both.reason)
 })
+
+// ---- #676: an invalid conclusion at the tip is still the reviewer's word. Dropping it from the
+// newest-word question made a later refusal invisible and left an older PASS in force.
+test('#676: a newer INC with no Written-by line vetoes an earlier PASS instead of being skipped', () => {
+  const inc = [`Verdict: INC at ${HEAD}`, 'Ran: npm run verify → fail', 'Not run: smoke'].join('\n')
+  const r = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), comment('reviewer-agent', inc, '2026-10-18T02:00:00Z')],
+    policy,
+  })
+  assert.equal(r.ok, false, 'the newer INC refuses; the PASS it replaced must not survive')
+  assert.equal(r.verdict, 'INC')
+  assert.match(r.reason, /no Written-by line naming its writer/)
+})
+
+test('#676: a newer REQUEST_CHANGES from a login outside the policy still refuses', () => {
+  const human = [
+    `Verdict: REQUEST_CHANGES at ${HEAD}`,
+    'Written-by: Reviewer',
+    '',
+    'Ran: npm test → pass',
+    'Not run: smoke',
+  ].join('\n')
+  const r = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), comment('outside-login', human, '2026-10-18T02:00:00Z')],
+    policy,
+  })
+  assert.equal(r.ok, false, 'a refusal is not swallowed because its author is not a listed reviewer')
+  assert.equal(r.verdict, 'REQUEST_CHANGES')
+  assert.match(r.reason, /not a reviewer listed/)
+})
+
+test('#676: a fixed format after an older invalid conclusion counts — the newest word decides', () => {
+  const inc = [`Verdict: INC at ${HEAD}`, 'Ran: npm test → fail'].join('\n')
+  const r = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('reviewer-agent', inc, '2026-10-18T01:00:00Z'), comment('reviewer-agent', report(), '2026-10-18T02:00:00Z')],
+    policy,
+  })
+  assert.equal(r.ok, true, r.reason)
+  assert.equal(r.verdict, 'PASS')
+})
+
+test('#676: a newer PASS with no command it ran still refuses over an older good PASS', () => {
+  const r = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), comment('reviewer-agent', report({ ran: [] }), '2026-10-18T02:00:00Z')],
+    policy,
+  })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /lists no command it ran/)
+})
