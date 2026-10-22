@@ -121,6 +121,27 @@ export function install(rt) {
   // Roles recorded as team exchanges.
   const EXCHANGE_ROLES = new Set(['request', 'reply', 'stopped'])
 
+  // A Bot-to-Bot line that arrives again within a minute becomes one turn (#641): a specialist's
+  // conclusion relayed up the chain reached the same Session twice and the queue showed both. The
+  // key is sender + recipient Session + the text with its whitespace collapsed, so two Bots saying
+  // the same thing both arrive; a copy also posted in a group is never suppressed, and routing stays
+  // as it is. A drop is journalled, because a silent one is how a real report goes missing.
+  const DEDUPE_MS = 60_000
+  const DEDUPE_KEPT = 500
+  const deliveredTexts = new Map()
+  const dedupeText = text => String(text ?? '').replace(/\s+/g, ' ').trim()
+  function duplicateDelivery(fromId, sessionId, text) {
+    const at = Date.now()
+    if (deliveredTexts.size >= 64) for (const [key, time] of deliveredTexts) if (at - time >= DEDUPE_MS) deliveredTexts.delete(key)
+    const key = `${fromId}\u0000${sessionId}\u0000${dedupeText(text)}`
+    const seen = deliveredTexts.get(key)
+    if (seen !== undefined && at - seen < DEDUPE_MS) return true
+    deliveredTexts.delete(key)
+    deliveredTexts.set(key, at)
+    while (deliveredTexts.size > DEDUPE_KEPT) deliveredTexts.delete(deliveredTexts.keys().next().value)
+    return false
+  }
+
   // `sessionId` defaults to the recipient's own chat; group turns name its group Session.
   // `deferred`: a request the Bot already read mid-turn, handed back to answer in a
   // turn of its own; its exchange was recorded when it first arrived. `resumed` and
@@ -138,6 +159,13 @@ export function install(rt) {
     // `untrusted` text is fenced so the Bot reads it as data, not instructions.
     const fromName = from?.name ?? (givenName === undefined ? 'You' : untrusted ? cleanName(givenName) : givenName)
     const room = rt.roomOf(roomId)
+    const targetSessionId = sessionId ?? rt.chatOf(toId)
+    // Only a fresh Bot-to-Bot line is judged: deferred / resumed / retried / resent carry on a
+    // message this Session already has, so dropping one would lose it instead of a duplicate.
+    if (fromId !== undefined && !remote?.handle && !deferred && !resumed && !retried && !resent && duplicateDelivery(fromId, targetSessionId, text)) {
+      rt.warn?.('ds-bot: delivery: dedupe %s -> %s', fromId, targetSessionId)
+      return exchangeId
+    }
     const origin = originOf({ from, to, fromId, remote, given: givenOrigin })
     const firstContact = remote?.handle && !deferred && !resumed && !retried && !resent ? noteFriendLine(to, sessionId, roomId, remote.handle) : false
     // Session events reject `undefined` members, so optional fields are omitted instead.
@@ -170,7 +198,6 @@ export function install(rt) {
       state.exchanges.push({ id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) })
       void rt.save().catch(() => {})
     }
-    const targetSessionId = sessionId ?? rt.chatOf(toId)
     await rt.ensureCapabilities(targetSessionId)
     const agent = await resolveAgent(targetSessionId)
     // A steered message cuts into a running turn at its next step; a follow-up

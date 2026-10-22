@@ -373,7 +373,9 @@ test('relays carry whose request they are: the host\'s own and a same-owner Bot 
   await agentFor('chief')
   await agentFor('other')
   const originOf = message => message.source.origin
-  const relay = async (args) => { sent.length = 0; await rt.deliver({ toId: 'writer', text: 'hi', role: 'request', ...args }); return originOf(sent.at(-1)) }
+  // Distinct text per relay: an identical Bot-to-Bot line within a minute is one turn (#641).
+  let said = 0
+  const relay = async (args) => { sent.length = 0; await rt.deliver({ toId: 'writer', text: `hi ${++said}`, role: 'request', ...args }); return originOf(sent.at(-1)) }
 
   // The host's own (the user through the UI, a secret card, a group round): the owner's.
   assert.equal(await relay({ role: 'secret' }), 'owner')
