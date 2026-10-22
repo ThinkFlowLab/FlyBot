@@ -17,8 +17,8 @@ Decisions by the maintainer, and what follows from them:
 3. **Agents act only on issues labeled `agent-ready`**. That label is set by a maintainer, or by the owner's
    maintenance routine after triage (the routine runs as the maintainer account `Birfy`, so the controller sees a
    maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
-4. **Merge by tier** (owner decisions 2026-10-19, revised 2026-10-21): **T0 and T1** merge through the merge queue once CI is green, the PR is
-   mergeable and it conforms to the design rules, with no PASS. **T2 and T3** need a PASS at the tip (a **self-PASS counts**, below) with green CI, and then the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate, not a click in the UI (owner decision 2026-10-21, AGENTS.md). The gate is the review: green `tests-ok` at the tip, a PASS at that same tip, and a test that fails when the change is reverted. Work that meets neither the defect nor the routine-need bar gets no PR at all (AGENTS.md). An issue that already has a
+4. **Merge by tier** (owner decisions 2026-10-19, revised 2026-10-22): **T0 and T1** merge through the merge queue once CI is green, the PR is
+   mergeable and it conforms to the design rules, with no PASS. **T2 and T3** need a PASS at the tip from the Reviewer Bot and green CI, and then the agent that gated the PR enqueues it itself — **T2 and T3 need no maintainer approve** (user decision 2026-10-22; [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)). A self-PASS counts only across Bots: the account is shared, and the implementer never reviews its own pull request. The gate is the review: green `tests-ok` at the tip, a PASS at that same tip, and a test that fails when the change is reverted. Work that meets neither the defect nor the routine-need bar gets no PR at all (AGENTS.md). An issue that already has a
    pull request keeps it: update that branch (re-base, `update-branch`, or a commit on its head) rather than opening a
    second PR; a branch that cannot be pushed is the only exception, and the reason goes on the issue.
 5. Budget is not set. Every cost cap will live in one config file (open PRs, attempts per PR,
@@ -26,7 +26,7 @@ Decisions by the maintainer, and what follows from them:
 
 ```
 issue (agent-task form) --maintainer or maintenance routine adds agent-ready--> agent (outside Actions) --branch + PR-->
-   Actions (GITHUB_TOKEN, no LLM): tests-ok, risk tier --T0/T1--> merge queue --T2/T3--> human approves + PASS
+   Actions (GITHUB_TOKEN, no LLM): tests-ok, risk tier --T0/T1--> merge queue --T2/T3--> PASS at the tip
 ```
 
 | Role | Runs where | Credential | Can do |
@@ -34,7 +34,7 @@ issue (agent-task form) --maintainer or maintenance routine adds agent-ready--> 
 | Controller: tier, labels, enable auto-merge, watchdog | Actions, base-branch code, no PR code run | `GITHUB_TOKEN`, per-job least permissions | label, comment, `gh pr merge --auto --squash` |
 | Agents: implement, review | Grok Bot routines on the box (the owner's maintenance routine runs as `Birfy`) | the maintainer account's own `gh` login; a narrower credential remains the goal | triage and set `agent-ready`, push a branch or fork, open a PR, comment, review, enqueue a PR that may merge |
 | Merge | the required GitHub merge queue on `main` (ruleset `main merge queue`) | none: the queue merges when the required checks pass on its entry | squash only (set by the queue) |
-| Maintainers (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | approve T2/T3 (a human), set `agent-ready`, hold, pause |
+| Maintainers (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | `hold` (human-only), set `agent-ready`, pause; no T2/T3 approve |
 
 The owner's routines run as the maintainer account `Birfy`; that is how things work today, and it is allowed for the
 actions in this document. Agents must **never admin-merge, bypass a gate or branch protection, or change rulesets**
@@ -48,7 +48,7 @@ with that login (a merge goes only through the merge queue). A narrower credenti
 | Events it causes do not start workflows (except `workflow_dispatch` and `repository_dispatch`) | a label, comment, push or PR made by an Action does not trigger other workflows; chains of "label, then workflow" do not work | do the whole decision in one job; poll on `schedule`; chain explicitly with `gh workflow run` (dispatch) |
 | A merge or tag made with it may not start `push` workflows (the `Test` run on `main`, `release.yml`) | documented rule, not tested here (see [Merge plumbing](#merge-plumbing-merge_group-merge-queue-auto-merge)): an auto-merge **enabled** with `GITHUB_TOKEN` is reported to merge silently | enable auto-merge with the agent's own credential, never with `GITHUB_TOKEN`; keep `release.yml` waiting for a green run on the tagged commit, and start `Test` by `workflow_dispatch` on `main` if the push run is missing |
 | Read-only and no secrets on `pull_request` from forks | a `pull_request` job cannot label or enable auto-merge for a fork PR | run writers from `schedule` or `pull_request_target` with **base-branch code that never checks out or runs PR code** and reads the PR through the API only |
-| Cannot approve PRs (`can_approve_pull_request_reviews` is off here) | the controller can never approve T3 | intended: a human approves |
+| Cannot approve PRs (`can_approve_pull_request_reviews` is off here) | the controller can never approve T3 | harmless: T2/T3 need no approve (user decision 2026-10-22) |
 | Cannot change `.github/workflows/**` | an Action cannot edit workflows | intended |
 | About 1,000 API requests per hour per repository | a chatty controller stalls | few calls per tick, filter by label |
 | `schedule` can lag by minutes and public repos' schedules stop after 60 days without activity | polling is not instant | acceptable; `workflow_dispatch` to run now |
@@ -95,10 +95,10 @@ Generated files (`core/client.js`, `patches/**`) are not read or counted; `patch
 
 | Tier | Rule (owner decisions 2026-10-19) | Examples |
 | --- | --- | --- |
-| T3 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself through the queue (owner decision 2026-10-21) | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
-| T2 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself | other `core/src/host/**`, `plugins/**`, unknown paths |
-| T1 | merge queue on green CI; no PASS, no approval | `core/src/client/**`, tests, generated files |
-| T0 | merge queue on green CI; no PASS, no approval | `docs/**` (except policy docs), READMEs |
+| T3 | a PASS at the tip (a self-PASS counts across Bots) and green CI; the gating agent merges it itself through the queue; **no maintainer approve** (user decision 2026-10-22; [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)) | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
+| T2 | a PASS at the tip (a self-PASS counts across Bots) and green CI; the gating agent merges it itself; **no maintainer approve** ([`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)) | other `core/src/host/**`, `plugins/**`, unknown paths |
+| T1 | merge queue on green CI; no PASS | `core/src/client/**`, tests, generated files |
+| T0 | merge queue on green CI; no PASS | `docs/**` (except policy docs), READMEs |
 
 The rules are in `.github/agent/risk-rules.json`; changing them is T3. Tests may quote URLs and fence
 words without a hit; `.skip`/`.only` still count in tests.
@@ -112,8 +112,7 @@ node .github/scripts/risk-gate.mjs --replay 30 --repo ThinkFlowLab/FlyBot   # ti
 
 **Replay when this was written** (last 30 merged PRs, #41 to #96): T0 1, T1 2, T2 2, **T3 25**.
 Of the 25: 14 trust-boundary paths, 7 CI or agent-rule paths, 2 content hits only, 2 size only.
-So for FlyBot's current mix most PRs need the human click; the share that does not grows only if the
-trust-boundary code is split out. Review the tiers by hand before enforcing anything: the four PRs
+So for FlyBot's current mix most PRs are T3 and carry a PASS; no tier needs a human click (user decision 2026-10-22). Review the tiers by hand before enforcing anything: the four PRs
 decided by content or size alone (#60, #63, #74, #76) are the ones to argue about.
 
 ### Security of the report workflow
@@ -142,8 +141,9 @@ What counts as a reviewed tip, all of it:
 1. A pull request **comment or review body** by a login listed in `.github/agent/review-policy.json`.
 2. Not the pull request's **own author**, **unless** that author is listed in the policy's `selfReview` (today: `Birfy`).
    Owner decision 2026-10-19: a PR opened by the owner's Bot/agent may be PASSed by the owner's own reviewer
-   Bot/agent, so no independent reviewer is required. Any other author still needs someone else. A self-PASS does not
-   replace green CI, and a new commit voids it.
+   Bot/agent, so no independent reviewer is required. That is an exception about the shared *account*, not about the
+   Bot: an implementer never reviews its own pull request ([`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)). Any
+   other author still needs someone else. A PASS does not replace green CI, and a new commit voids it.
 3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written-by: Reviewer`; a relay adds `Posted-by: Chief (proxy…)` on the third line, and the older prose `Written by: …` reads the same way), then the evidence — `Ran:` (or a `Ran …:` heading over a fenced block of `$ ` commands, #660–#663) with at least one command; `Not run:` naming any gap is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai). A body whose first line is not the verdict is no conclusion. The comment's `author_association` must be `OWNER`, `MEMBER` or `COLLABORATOR`: a conclusion from anyone else counts for nothing, so it can neither pass a tip nor hold one (#676).
 4. The sha on that first line **is the head being judged**. A later commit moves the tip and the old PASS stops
    counting; that report is then listed as "not counted", with the sha it named.
@@ -179,7 +179,8 @@ token. It is **not** a required check and must stay out of branch protection and
 without a PASS still needs its own review before the gating agent merges it.
 
 **Why report-only.** The owner's reviewer Bot/agent acts as `Birfy`, which is in the policy (and in `selfReview`), so
-its report can satisfy the gate, including on its own PRs. Nothing here blocks or merges: it is evidence a human or
+its report can satisfy the gate on a pull request the same account opened — the review comes from a different Bot than
+the implementer ([`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)). Nothing here blocks or merges: it is evidence an
 agent reads, and the record a later enforcement step is checked against.
 
 ## Merge plumbing: `merge_group`, merge queue, auto-merge
@@ -231,7 +232,8 @@ and the `test` job never report there and the entry waits until the queue's time
 | Repo | public, owned by an Organization |
 | Merge methods | squash only; `delete_branch_on_merge: true`; `allow_auto_merge: true`; `allow_update_branch: true` |
 | Branch protection on `main` | required checks: the `test` job and `tests-ok`; `strict: false`; no required reviews; `enforce_admins: false`; no force pushes |
-| Rulesets | `main merge queue` on `refs/heads/main`, active, no bypass actors: merge queue (squash, build and merge 1 entry at a time, 5 min wait to fill a group, 60 min check timeout, `ALLGREEN`) and required checks `ubuntu-latest · Node 24 · DSH 0.2.0-rc.2` (the `test` job) and `tests-ok`. The organization-level list needs the `admin:org` scope (not read) |
+| Required check on the queue | `merge-gate` is a required check of the `main merge queue` ruleset (user decision 2026-10-22, #639), so it is the mechanical stop for anything that tries to skip the queue: `merge-gate.mjs` re-judges the pull request head on every entry |
+| Rulesets | `main merge queue` on `refs/heads/main`, active, no bypass actors: merge queue (squash, build and merge 1 entry at a time, 5 min wait to fill a group, 60 min check timeout, `ALLGREEN`) and required checks `ubuntu-latest · Node 24 · DSH 0.2.0-rc.2` (the `test` job), `tests-ok` and `merge-gate` (job name, added 2026-10-22). The organization-level list needs the `admin:org` scope (not read) |
 | Org plan | not readable: `plan` is `null` without `admin:org` |
 | Workflow token | default `read`; Actions cannot approve PRs |
 
