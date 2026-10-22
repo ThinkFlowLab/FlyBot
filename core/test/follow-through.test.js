@@ -371,6 +371,37 @@ test('a message a shutdown cancelled is sent again once; one still waiting, take
   assert.equal((await second.call('exchange', { a: 'a', b: 'b' })).value.length, 4)
 })
 
+test('a message sent again is forgotten everywhere once a turn takes it up', async (t) => {
+  const home = freshHome(t)
+  const first = await start(home)
+  await first.tool('message_bot', { to: 'Writer', message: 'Draft the plan', when: 'queue' }, 'a')
+  await settle(() => (notes(home).queued.b ?? []).length === 1)
+  const [plan] = first.agentOf('b').calls
+  const { exchangeId } = plan.source
+  await first.stop()
+
+  // The second start sends the noted message again, under the same exchange.
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const second = await start(home)
+  t.mock.timers.tick(3000)
+  await settle(() => second.agentOf('b').calls.length === 1)
+  const [again] = second.agentOf('b').calls
+  assert.equal(again.source.exchangeId, exchangeId)
+  // The turn takes it up. Nothing of that exchange may stay noted: a second copy on disk made
+  // every later start send the message once more.
+  second.emit('b', 'user/message', { content: again.content, source: again.source })
+  const notedExchange = () => Object.values(notes(home).queued ?? {}).flat().filter(item => item?.args?.exchangeId === exchangeId)
+  await settle(() => notedExchange().length === 0)
+  await second.stop()
+  assert.equal(notedExchange().length, 0, 'the exchange a turn took up is still noted on disk')
+
+  // The third start has nothing to send.
+  const third = await start(home)
+  t.mock.timers.tick(3000)
+  await flushWrites()
+  assert.equal(third.agentOf('b').calls.length, 0, 'the message was sent a third time')
+})
+
 test('a live interrupted end does not drop the note of a turn still owed a pickup', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const home = freshHome(t)

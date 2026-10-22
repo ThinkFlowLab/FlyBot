@@ -89,26 +89,33 @@ export function install(rt) {
     else turns[id] = next
     persist()
   }
+  // Every entry of that exchange: one exchange can be noted under two Sessions while a Session
+  // moves to a new part, and leaving one behind made the next start send the message again.
   const forgetQueued = (exchangeId) => {
+    const rest = {}
+    let dropped = false
     for (const [sessionId, list] of Object.entries(queued)) {
-      const at = list.findIndex(item => item.args.exchangeId === exchangeId)
-      if (at === -1) continue
-      const rest = list.toSpliced(at, 1)
-      queued = { ...queued }
-      if (rest.length === 0) delete queued[sessionId]
-      else queued[sessionId] = rest
-      persist()
-      return
+      const kept = list.filter(item => item.args.exchangeId !== exchangeId)
+      if (kept.length !== list.length) dropped = true
+      if (kept.length > 0) rest[sessionId] = kept
     }
+    if (!dropped) return
+    queued = rest
+    persist()
   }
 
   const deliver = rt.deliver
   rt.deliver = async (args) => {
     const noted = { ...args, exchangeId: args.exchangeId ?? randomUUID() }
     const sessionId = noted.sessionId ?? rt.chatOf(noted.toId)
-    // Noted before it is sent: a turn may take it up before the send returns.
-    queued = { ...queued, [sessionId]: [...(queued[sessionId] ?? []), { at: Date.now(), args: noted }].slice(-QUEUED_MAX) }
-    persist()
+    // Noted before it is sent: a turn may take it up before the send returns. A resend delivers an
+    // exchange the notes already hold, and noting it twice left the second copy on disk after the
+    // turn took it up; that copy was sent again by the next start.
+    const notedAlready = Object.values(queued).some(list => list.some(item => item.args.exchangeId === noted.exchangeId))
+    if (!notedAlready) {
+      queued = { ...queued, [sessionId]: [...(queued[sessionId] ?? []), { at: Date.now(), args: noted }].slice(-QUEUED_MAX) }
+      persist()
+    }
     try {
       return await deliver(noted)
     } catch (error) {
