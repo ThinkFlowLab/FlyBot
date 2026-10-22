@@ -291,7 +291,9 @@ export function createServerController({ base, flybot, start, registerUnavailabl
           const why = cleanLine(failure?.message ?? failure, 200) || 'the server did not accept this FlyBot'
           throw refused(`Could not connect to the new server: ${why} The previous server is back${state === 'connected' ? '' : ', but it did not reconnect either'}.`, 'switch_failed')
         }
-        await endFaceRooms(previousFaceRooms)
+        // A rename on the same server is not a switch (#729): that server still reaches these rooms, so
+        // only a change of address ends them.
+        if (serverKey(previous.server) !== serverKey(address)) await endFaceRooms(previousFaceRooms)
         return view()
       } finally {
         busy = false

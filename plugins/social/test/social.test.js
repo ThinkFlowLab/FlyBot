@@ -7503,6 +7503,8 @@ test('Settings server: status, check and switch with the old credentials kept, t
   await ctx.flybot.scope('social').fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home' })
   // A face-to-face room hosted on server A: the new server cannot reach it, so it must not stay open.
   await ctx.flybot.rooms.upsertFace({ roomId: 'frm_old', localId: 'g-old', status: 'open', name: 'Old room' })
+  // Still forming, not open yet: the same rule applies to it when the server really changes.
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_cand', localId: 'g-cand', status: 'candidate', name: 'Candidate room' })
 
   // Check: nothing is saved, the platform's features are shown; refused addresses never reach the network.
   const before = servers.seen.length
@@ -7527,9 +7529,18 @@ test('Settings server: status, check and switch with the old credentials kept, t
   assert.match(refused.error.message, /HTTP 404/)
   assert.equal(flybot.fields.get('a', 'member').bot_id, 'm1')
 
+  // Renaming this home on the same server is not a switch: that server's rooms keep working.
+  const renamed = await call('flybot/social/server-set', { server: 'https://a.test', displayName: 'Danyang A2', confirm: true })
+  assert.equal(renamed.ok, true, JSON.stringify(renamed))
+  assert.equal(renamed.value.server, 'https://a.test')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_old').face.status, 'open', 'a rename on the same server does not end its rooms')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_cand').face.status, 'candidate', 'nor the room still being formed there')
+  assert.equal((await call('room-post', { roomId: 'g-old', text: 'still here' })).ok, true, 'and a line to it still goes out')
+
   const switched = await call('flybot/social/server-set', { server: 'https://b.test', displayName: 'Danyang B', confirm: true })
   assert.equal(switched.ok, true, JSON.stringify(switched))
   assert.equal(ctx.flybot.rooms.ofFace('frm_old').face.status, 'left', "the previous server's face room is not left open")
+  assert.equal(ctx.flybot.rooms.ofFace('frm_cand').face.status, 'left', 'a room still forming on the previous server is ended too')
   status = switched.value
   assert.equal(status.server, 'https://b.test')
   assert.equal(status.source, 'settings')
@@ -7593,6 +7604,8 @@ test('Settings server: a switch that fails puts the previous server back, with i
   await flybot.grants.set('a', [{ id: 'g1', grantee: '@bob.home' }])
   flybot.fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home' })
   const credentialsA = readFileSync(credentialsPath, 'utf8')
+  // A room on the server that keeps working: a switch that fails must not end it.
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_a', localId: 'g-a', status: 'open', name: 'Room on A' })
 
   const failed = await call('flybot/social/server-set', { server: 'https://closed.test', confirm: true })
   assert.equal(failed.ok, false)
@@ -7609,6 +7622,8 @@ test('Settings server: a switch that fails puts the previous server back, with i
   assert.equal(servers.mock('https://a.test').onboarded(), 1)
   assert.equal((await call('flybot/social/status', {})).ok, true)
   assert.doesNotMatch(warned.join('\n'), /tok-a/)
+  assert.equal(ctx.flybot.rooms.ofFace('frm_a').face.status, 'open', 'a switch that failed ends none of the rooms that still work')
+  assert.equal((await call('room-post', { roomId: 'g-a', text: 'still here' })).ok, true, 'and lines to them still go out')
 })
 
 test('Settings server: nothing configured is unchanged, and a first server can be set from Settings', async (t) => {
