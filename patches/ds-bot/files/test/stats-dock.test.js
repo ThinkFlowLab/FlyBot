@@ -21,7 +21,7 @@ const h = (type, props, ...children) => ({ type, props: { ...props, children } }
 const react = { createElement: h, useMemo: make => make() }
 const module = { exports: {} }
 runInNewContext(outputFiles[0].text, { module, exports: module.exports, require: () => react })
-const { STATS_DOCK, STATS_ID, pluralStats, statsDock } = module.exports
+const { STATS_DOCK, STATS_ID, STATS_IDS, pluralStats, statsDock, statsDocks } = module.exports
 
 const ENGLISH = { 'stats.counts': '{turns} turns {steps} steps', 'stats.cacheHit': 'Cache hit {percent}%' }
 const CHINESE = { 'stats.counts': '{turns} 轮 {steps} 步' }
@@ -62,13 +62,28 @@ test('the footer is the shell\'s own entry, drawn with the plural t and the shel
   assert.equal(dock.component({ t: seat(ENGLISH) }), null)
 })
 
-test('the client registers the footer over the shell\'s "stats" dock entry', () => {
+// 0.2.1-alpha.1 moved the counts from the "stats" footer into an "activity" pill; a wrapper
+// for the id the shell does not publish draws nothing, so one registration list covers both.
+test('the counts pill is wrapped under every id a shell has used for it', () => {
+  const Shell = () => null
+  const ledger = [{ component: Shell, options: { id: 'activity', order: 0 }, inject: () => ({ hooks: {} }) }]
+  const entriesOf = name => (name === STATS_DOCK ? ledger : [])
+  const wrappers = statsDocks(entriesOf)
+  assert.deepEqual(wrappers.map(w => w.id), STATS_IDS)
+  const activity = wrappers.find(w => w.id === 'activity')
+  assert.equal(activity.component({ t: seat(ENGLISH), usePerformanceUsage: () => 'full' }).type, Shell)
+  // The "stats" wrapper finds no shell entry on that shell and draws nothing.
+  assert.equal(wrappers.find(w => w.id === STATS_ID).component({ t: seat(ENGLISH), usePerformanceUsage: () => 'full' }), null)
+})
+
+test('the client registers the footer over the shell\'s run-stats dock entries', () => {
   const index = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
-  assert.match(index, /shadow\(STATS_DOCK, \{ id: STATS_ID, order: 0, priority: -10, locale: 'chat', inject: runStats\.inject \}, runStats\.component\)/)
+  assert.match(index, /const runStats = statsDocks\(/)
+  assert.match(index, /\.\.\.runStats\.map\(entry => shadow\(STATS_DOCK, \{ id: entry\.id, order: 0, priority: -10, locale: 'chat', inject: entry\.inject \}, entry\.component\)\)/)
 })
 
 // The rewrite matches the shell's exact English template and dock id; flag it if DSH changes them.
-test('the harness still writes "{turns} turns {steps} steps" in the "stats" dock entry', (t) => {
+test('the harness still writes "{turns} turns {steps} steps" in a dock entry FlyBot wraps', (t) => {
   const harness = process.env.DSH_HARNESS
   let file
   try {
@@ -80,5 +95,6 @@ test('the harness still writes "{turns} turns {steps} steps" in the "stats" dock
   if (!existsSync(client)) return t.skip('no built dsh-client-ui-chat client')
   const text = readFileSync(client, 'utf8')
   assert.match(text, /"stats\.counts": "\{turns\} turns \{steps\} steps"/)
-  assert.match(text, /name: "conversation\.composer\.dock",\s*id: "stats"/)
+  const ids = [...text.matchAll(/name: "conversation\.composer\.dock",\s*id: "([^"]+)"/g)].map(m => m[1])
+  assert.ok(ids.some(id => STATS_IDS.includes(id)), `the shell draws the run counts in a dock id FlyBot does not wrap: ${ids.join(', ')}; wrapped: ${STATS_IDS.join(', ')}`)
 })

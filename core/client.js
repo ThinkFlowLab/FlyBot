@@ -16935,6 +16935,7 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
 var import_react42 = require("react");
 var STATS_DOCK = "conversation.composer.dock";
 var STATS_ID = "stats";
+var STATS_IDS = [STATS_ID, "activity"];
 var noun = (count, one, many) => `${count} ${Number(count) === 1 ? one : many}`;
 function pluralStats(t2) {
   return (key, params) => {
@@ -16944,8 +16945,8 @@ function pluralStats(t2) {
     return text === `${turns} turns ${steps} steps` ? `${noun(turns, "turn", "turns")} ${noun(steps, "step", "steps")}` : text;
   };
 }
-function statsDock(entriesOf) {
-  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === STATS_ID);
+function statsDock(entriesOf, id = STATS_ID) {
+  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === id);
   function StatsDock(props) {
     const t2 = (0, import_react42.useMemo)(() => typeof props.t === "function" ? pluralStats(props.t) : props.t, [props.t]);
     const entry = shell();
@@ -16954,6 +16955,7 @@ function statsDock(entriesOf) {
   }
   return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
 }
+var statsDocks = (entriesOf) => STATS_IDS.map((id) => ({ id, ...statsDock(entriesOf, id) }));
 
 // src/client/index.js
 var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
@@ -17762,7 +17764,7 @@ function apply(ctx) {
     } };
   };
   const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
-  const runStats = statsDock((name) => ctx.slots.entries?.(name) ?? []);
+  const runStats = statsDocks((name) => ctx.slots.entries?.(name) ?? []);
   let atMenu = null;
   const faceMenus = /* @__PURE__ */ new Map();
   const watchFace = (sessionId) => {
@@ -17869,11 +17871,12 @@ function apply(ctx) {
     shadow("conversation.input.plan", { priority: -10 }, Nothing),
     // The composer carries no model picker; a Bot's model lives in its details panel.
     shadow("conversation.input.model", { priority: -10 }, Nothing),
-    shadow("conversation.composer.dock", { id: "activity", order: 0, priority: -10 }, Nothing),
     shadow("conversation.composer.dock", { id: "usage", order: 1, priority: -10 }, Nothing),
     // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
-    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
-    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: "chat", inject: runStats.inject }, runStats.component),
+    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419). 0.2.1-alpha.1 splits that
+    // footer into "activity" (the counts, same string) and "usage", so the counts pill takes
+    // the same wrapper and both shells show one footer (#659).
+    ...runStats.map((entry) => shadow(STATS_DOCK, { id: entry.id, order: 0, priority: -10, locale: "chat", inject: entry.inject }, entry.component)),
     shadow("conversation.input.left", { id: "bot-plus", order: -100, inject: face }, ComposerPlus),
     shadow("conversation.input.left", { id: "bot-as", order: -90, inject: face }, ComposerIdentity),
     shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),
