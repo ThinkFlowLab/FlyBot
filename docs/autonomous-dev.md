@@ -197,6 +197,12 @@ then in the queue (`gh api graphql` → `pullRequest.isInMergeQueue`). The queue
 once `Test` passes on the `gh-readonly-queue/main/pr-<n>-<sha>` entry; do not retry. The queue waits up to 5 minutes
 to fill a group and builds one entry at a time.
 
+**The patrol that notices a bypass.** `.github/workflows/audit-merges.yml` runs `audit-merges.mjs` against `main` daily
+and on `workflow_dispatch`, read-only. `--since` is the `head_sha` of its own previous successful run, so a merge that
+skipped the queue prints as `bypassed queue:` and fails the run while an older one prints as `earlier bypass:` and does
+not — the watermark lives in the Actions API and nothing is committed. Its first run passes `--baseline`, so the first
+green run is the baseline and only a newer bypass turns it red ([#697](https://github.com/ThinkFlowLab/FlyBot/issues/697)).
+
 **What the trigger does.** A merge queue builds each entry on a `gh-readonly-queue/main/pr-N-<sha>` branch (a merge of
 the PR onto the current `main`, plus the entries ahead of it) and merges only when the required checks pass on that
 commit. Required checks are matched by name on that commit, so `Test` must run on `merge_group`; otherwise `tests-ok`
