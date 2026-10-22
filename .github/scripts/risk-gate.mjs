@@ -43,6 +43,11 @@ export function createGate(rules) {
   const codeExt = new RegExp(t3.codeExt)
   const compile = (list) => (list || []).map((p) => [p, new RegExp(p)])
   const patterns = compile(t3.diffPatterns) // every code file
+  // A topic is a tool name (#679): it counts when an added line registers the tool
+  // (`name: 'create_child_bot'`, the shape in plugins/tree/src/tools.js), not when a prompt
+  // merely names it. A plain substring match made any mention of the tool a T3 PR.
+  const topicName = (name) => new RegExp(`name\\s*:\\s*['"]${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`)
+  const topicRules = (t3.topics || []).map((name) => [name, topicName(name)])
   const prosePatterns = compile(t3.diffPatternsNotInTests) // code files except tests: a test may quote a URL or a fence
   const tests = (t3.testPaths || []).map(globToRe)
   const unknown = rules.unknownPathTier || 'T2'
@@ -77,7 +82,7 @@ export function createGate(rules) {
       const added = (f.patch || '').split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++')).join('\n')
       const active = tests.some((r) => r.test(f.filename)) ? patterns : [...patterns, ...prosePatterns]
       for (const [src, re] of active) if (re.test(added)) bump('T3', `${f.filename}: /${src.slice(0, 60)}/`)
-      for (const w of t3.topics || []) if (added.includes(w)) bump('T3', `${f.filename}: topic ${w}`)
+      for (const [w, re] of topicRules) if (re.test(added)) bump('T3', `${f.filename}: topic ${w}`)
     }
     const real = files.filter((f) => !isGenerated(f.filename))
     const lines = real.reduce((n, f) => n + (f.additions || 0) + (f.deletions || 0), 0)

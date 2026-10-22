@@ -60,11 +60,25 @@ test('judge: content hits in added lines of code raise to T3', () => {
     lint: '+// oxlint-disable-next-line',
     url: "+fetch('https://evil.example.net/x')",
     fence: '+const fenced = sanitizeName(x)',
-    topic: '+tools.create_child_bot()',
+    topic: "+  name: 'create_child_bot',",
   }
   for (const [name, line] of Object.entries(risky)) {
     assert.equal(gate.judge([file('core/src/client/a.js', [line])]).tier, 'T3', name)
   }
+})
+
+test('#679: a topic counts on the registration line, not on a line that names the tool', () => {
+  // #636's shape: prompt.js gains a sentence naming create_child_bot and tree.js changes.
+  const named = gate.judge([
+    file('plugins/tree/src/prompt.js', ["+    'Use create_child_bot to add a child Bot under yourself.',"]),
+    file('plugins/tree/src/tree.js', ['+  adoptUnattached(root)']),
+  ])
+  assert.equal(named.tier, 'T2', 'naming the tool in prose must not raise the tier')
+  assert.doesNotMatch(named.why.join('\n'), /topic create_child_bot/)
+  // The positive control, so the rule is narrowed rather than switched off.
+  const registered = gate.judge([file('plugins/tree/src/tools.js', ["+  name: 'create_child_bot',"])])
+  assert.equal(registered.tier, 'T3')
+  assert.match(registered.why.join('\n'), /plugins\/tree\/src\/tools\.js: topic create_child_bot/)
 })
 
 test('judge: removed lines and prose are not content hits', () => {
