@@ -241,7 +241,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,32 +21,146 @@ export function install(rt) {
+@@ -21,32 +30,146 @@
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -253,7 +253,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +  let watchedAt = 0
 +  rt.watched = () => Date.now() - watchedAt < WATCH_MS
 +  rt.uiLanguage = () => (uiLocale === undefined ? 'English' : LANGUAGES[uiLocale.split('-')[0].toLowerCase()] ?? uiLocale)
-+
+ 
 +  // A burst of the user's own lines (#642): with no turn running, hold them for a moment and open
 +  // one turn with every line in arrival order. A line that arrives while a turn runs is not held —
 +  // it lands as its own queued item, so a burst never reorders work that is already under way.
@@ -327,7 +327,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +    for (const held of settling.values()) clearTimeout(held.timer)
 +    settling.clear()
 +  }, 'ds-bot: settle window')
- 
++
    const ok = value => ({ ok: true, value })
 -  const fail = (message, code = 'bot/error') => ({ ok: false, error: { code, message, details: {} } })
 +  const fail = (message, code = 'bot/error', details = {}) => ({ ok: false, error: { code, message, details } })
@@ -397,7 +397,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
      agents: Object.values(state.agents),
      // Key names and who may use them; values never leave the host.
-@@ -54,7 +54,8 @@ export function install(rt) {
+@@ -54,7 +177,8 @@
      capabilities: rt.capabilityLibraryView(),
      secretRequests: state.secretRequests ?? {},
      colors: [...COLORS, ...EXTRA_COLORS],
@@ -407,7 +407,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,49 @@ export function install(rt) {
+@@ -65,23 +189,50 @@
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -448,7 +448,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 -  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer'])
 +  // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
 +  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
-+
+ 
 +  // A chat reference chip names a Session whose snapshot rides to every recipient of
 +  // the message, so the author must be able to read what they share (#53, #106).
 +  // Actor-authored text that becomes a session user message: send, room-post,
@@ -465,10 +465,11 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +    }
 +    return undefined
 +  }
- 
++
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,57 @@ export function install(rt) {
+       if (typeof body.theme !== 'string' || !/^[a-z][\w-]{0,31}$/.test(body.theme)) throw invalid('Unknown theme')
+@@ -97,28 +248,57 @@
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -530,7 +531,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -141,7 +141,7 @@ export function install(rt) {
+@@ -141,7 +321,7 @@
            return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
          case 'create-bot': {
            await rt.bootstrap()
@@ -539,7 +540,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(bot)
          }
          case 'update-bot':
-@@ -150,18 +150,23 @@ export function install(rt) {
+@@ -150,18 +330,23 @@
          case 'delete-bot':
            await rt.load()
            await rt.deleteBot(body.id)
@@ -567,7 +568,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(room)
          }
          case 'update-room': {
-@@ -175,8 +175,26 @@ export function install(rt) {
+@@ -175,9 +360,29 @@
              add: Array.isArray(body.add) ? body.add : undefined,
              remove: Array.isArray(body.remove) ? body.remove : undefined,
              workDir: body.workDir,
@@ -577,7 +578,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +            removeParticipants: Array.isArray(body.removeParticipants) ? body.removeParticipants : undefined,
 +          }, undefined, actor)
 +          return ok({ room: view(actor).rooms.find(entry => entry.id === room.id), changes })
-+        }
+         }
 +        case 'room-history': {
 +          await rt.load()
 +          return ok(rt.roomHistory(String(body.roomId ?? body.id ?? ''), actor))
@@ -586,6 +587,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +          await rt.load()
 +          const leaked = unshareableReference(actor, body.text)
 +          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
++          const posted = rt.roomOf(String(body.roomId ?? body.id ?? ''))
++          if (posted && isFaceRoom(posted) && (posted.face?.status === 'left' || posted.face?.status === 'closed')) return fail('This room has ended', 'bot/room-ended')
 +          const line = await rt.postRoomMessage(String(body.roomId ?? body.id ?? ''), {
 +            text: body.text,
 +            authorId: body.authorId,
@@ -593,10 +596,11 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +            displayName: body.displayName,
 +          }, actor)
 +          return ok(line)
-         }
++        }
          case 'folders':
          case 'folder-pick':
-@@ -203,17 +203,19 @@ export function install(rt) {
+         case 'folder-list':
+@@ -203,17 +408,19 @@
          case 'remove-agent':
            await rt.load()
            await rt.removeAgent(body.agentId)
@@ -619,7 +623,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'stop-member-work':
            return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
          case 'dismiss-question':
-@@ -231,6 +231,9 @@ export function install(rt) {
+@@ -231,6 +438,9 @@
            await rt.load()
            return ok(await rt.secretEndpoint(endpoint, body))
          case 'connector-connect':
@@ -629,7 +633,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -241,11 +241,22 @@ export function install(rt) {
+@@ -241,11 +451,22 @@
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -653,7 +657,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'memory-view':
          case 'memory-ask':
          case 'memory-forget':
-@@ -258,8 +258,17 @@ export function install(rt) {
+@@ -258,8 +479,17 @@
            const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
            const question = state.questions[sessionId]
            if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
@@ -671,7 +675,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            // Claim the question before queueing so a second answer is refused.
            delete state.questions[sessionId]
            try {
-@@ -278,9 +278,46 @@ export function install(rt) {
+@@ -278,9 +508,49 @@
            const text = String(body.text ?? '').trim()
            if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
            await rt.load()
@@ -683,6 +687,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +          const room = rt.roomOf(sessionId)
 +          if (room && isFaceRoom(room)) {
 +            if (actor && rt.authzEnforced() && !rt.roomMemberOf(actor, room.id)) return fail('You are not a member of that room', 'bot/forbidden')
++            // A room the server no longer reaches (a switched-away server, or a room that left):
++            // refuse instead of appending a line every other home will never see.
++            if (room.face?.status === 'left' || room.face?.status === 'closed') return fail('This room has ended', 'bot/room-ended')
 +            // Face rooms must not go through sessionController.prompt: that starts a local
 +            // bot round (turns/steps) and never fans the line to the other FlyBot instance.
 +            const line = await rt.postRoomMessage(room.id, { text, displayName: actor?.displayName }, actor)
@@ -718,7 +725,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,112 @@ export function install(rt) {
+@@ -319,32 +589,112 @@
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)

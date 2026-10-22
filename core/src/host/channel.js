@@ -373,6 +373,8 @@ export function install(rt) {
           await rt.load()
           const leaked = unshareableReference(actor, body.text)
           if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
+          const posted = rt.roomOf(String(body.roomId ?? body.id ?? ''))
+          if (posted && isFaceRoom(posted) && (posted.face?.status === 'left' || posted.face?.status === 'closed')) return fail('This room has ended', 'bot/room-ended')
           const line = await rt.postRoomMessage(String(body.roomId ?? body.id ?? ''), {
             text: body.text,
             authorId: body.authorId,
@@ -514,6 +516,9 @@ export function install(rt) {
           const room = rt.roomOf(sessionId)
           if (room && isFaceRoom(room)) {
             if (actor && rt.authzEnforced() && !rt.roomMemberOf(actor, room.id)) return fail('You are not a member of that room', 'bot/forbidden')
+            // A room the server no longer reaches (a switched-away server, or a room that left):
+            // refuse instead of appending a line every other home will never see.
+            if (room.face?.status === 'left' || room.face?.status === 'closed') return fail('This room has ended', 'bot/room-ended')
             // Face rooms must not go through sessionController.prompt: that starts a local
             // bot round (turns/steps) and never fans the line to the other FlyBot instance.
             const line = await rt.postRoomMessage(room.id, { text, displayName: actor?.displayName }, actor)

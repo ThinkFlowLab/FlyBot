@@ -1,0 +1,1 @@
+Switching the Bot Social server now turns that server's face-to-face rooms into read-only past rooms instead of leaving them open and accepting lines that can never be delivered, and a line sent to an ended room is refused with a clear message ([#729](https://github.com/ThinkFlowLab/FlyBot/issues/729)).
