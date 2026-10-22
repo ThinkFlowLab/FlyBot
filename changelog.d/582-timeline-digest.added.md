@@ -1,0 +1,1 @@
+A **Copy report** button on the timeline turns the window into a short Markdown run report — per Bot its turns and failures, busy share, tokens, top tools and unanswered requests, then the team rollup and the longest open wait — and copies it with one click, in the same hours the panel shows ([#582](https://github.com/ThinkFlowLab/FlyBot/issues/582)).

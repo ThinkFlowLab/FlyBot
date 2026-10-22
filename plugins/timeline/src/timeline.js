@@ -5,11 +5,13 @@ import { buildWindow, clampWindow } from './window.js'
 import { createExporter, otlpPayload, spansFrom } from './otel.js'
 import { buildHealth } from './health.js'
 import { createAlertTracker } from './alerts.js'
+import { buildDigest } from './digest.js'
 
 export const ENDPOINT = 'timeline/window'
 export const EXPORT_ENDPOINT = 'timeline/export'
 export const HEALTH_ENDPOINT = 'timeline/health'
 export const ALERTS_ENDPOINT = 'timeline/alerts'
+export const DIGEST_ENDPOINT = 'timeline/digest'
 
 export function createTimeline(adapter, { dir, persist = true, now = Date.now, exporter, ...limits } = {}) {
   let trace
@@ -61,14 +63,18 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   const alerts = createAlertTracker()
   const alertView = (body = {}) => alerts.fold(window(body))
   const offAlerts = adapter.handle(ALERTS_ENDPOINT, alertView)
+  // The team run report (#582): the same window, as short Markdown a person can paste. Read-only.
+  const digest = (body = {}) => buildDigest(window(body), { ...(typeof body?.title === 'string' && body.title.trim() ? { title: body.title.trim().slice(0, 80) } : {}), now: now() })
+  const offDigest = adapter.handle(DIGEST_ENDPOINT, digest)
   return {
-    trace, recorder, window, exportNow, exportWindow, health, alerts, alertView,
+    trace, recorder, window, exportNow, exportWindow, health, alerts, alertView, digest,
     dispose() {
       if (exportTimer !== undefined) clearInterval(exportTimer)
       offEndpoint()
       offExport()
       offHealth()
       offAlerts()
+      offDigest()
       off()
       trace.close()
     },
