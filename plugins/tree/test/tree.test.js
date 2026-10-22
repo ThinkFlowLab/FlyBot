@@ -96,6 +96,56 @@ test('a rename made in the core reaches the tree prompts on the next turn', asyn
   assert.match(sp(m, work), /You are Trips, a bot in a recursive bot tree/)
 })
 
+test('a new Main Bot takes the root on the next turn, and the old root is demoted', async () => {
+  const m = await setup()
+  await make(m, m.root, 'Work')
+  const chief2 = m.addBot({ name: 'Chief2', isMain: true })
+  m.bots.get(m.root).isMain = false
+  m.feed('turn.start', { botId: chief2, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 1 })
+  const roots = [...m.bots.values()].filter(bot => bot.fields['flybot-tree']?.treeRole === 'root')
+  assert.deepEqual(roots.map(bot => bot.name), ['Chief2'], 'exactly one root, the current Main')
+  assert.notEqual(f(m, m.root, 'treeRole'), 'root')
+  assert.equal(m.tree.isRoot(m.root), false, 'the previous root is placed like any other Bot')
+})
+
+test('#748: a Main change on a tree that already sits at maxDepth keeps every Bot inside the limits', async () => {
+  const m = createMockFlybot()
+  m.addBot({ name: 'Chief', isMain: true })
+  const { tree } = plugin.apply({ flybot: m.flybot }, {})
+  const root = await tree.ensureRoot()
+  const l1 = await make(m, root, 'L1')
+  const l2 = await make(m, l1, 'L2')
+  const l3 = await make(m, l2, 'L3')
+  const l4 = await make(m, l3, 'L4')
+  assert.equal(f(m, l4, 'parent'), l3, 'the chain reaches maxDepth')
+  const chief2 = m.addBot({ name: 'Chief2', isMain: true })
+  m.bots.get(root).isMain = false
+  m.feed('turn.start', { botId: chief2, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 1 })
+  await tree.settled()
+  const nodes = tree.snapshot()
+  assert.equal(nodes[chief2]?.root, true, 'the new Main is the only root')
+  for (const bot of m.bots.values()) assert.ok(nodes[bot.id], `${bot.name} is still in the tree`)
+  for (const id of Object.keys(nodes)) {
+    assert.ok(tree.depthOf(nodes, id) <= 5, `${nodes[id].name} is at depth ${tree.depthOf(nodes, id)} (maxDepth=5)`)
+    if (id !== chief2) assert.ok(nodes[nodes[id].parent], `${nodes[id].name} has a parent inside the tree`)
+  }
+  // The tree and its own limits agree about the deepest Bot: one more child would be depth 6, not 7.
+  assert.match((await m.call(l4, 'create_child_bot', { name: 'L6', role_description: 'x' })).error, /a child of L4 would be at depth 6 \(maxDepth=5\)/)
+})
+
+test('autoRoot: false is not overridden by a Main Bot change at a turn boundary', async () => {
+  const m = createMockFlybot()
+  const chief = m.addBot({ name: 'Chief', isMain: true })
+  const { tree } = plugin.apply({ flybot: m.flybot }, { autoRoot: false, adoptExisting: false })
+  assert.deepEqual(tree.snapshot(), {}, 'no root at the start')
+  m.feed('turn.start', { botId: chief, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 1 })
+  m.feed('turn.end', { botId: chief, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 2 })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(tree.snapshot(), {}, 'a turn boundary must not create the root the config turned off')
+  assert.equal(f(m, chief, 'treeRole'), undefined)
+  assert.equal(f(m, chief, 'adoptedRoot'), undefined)
+})
+
 test('tools: configurable limits and hidden from non-tree bots', async () => {
   const m = await setup({ maxDepth: 2, maxChildren: 1 })
   const a = await make(m, m.root, 'A')

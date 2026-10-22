@@ -119,13 +119,29 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   function adoptChief() {
     const chief = findChief()
     if (!chief) return undefined
+    // The Main role can move (roster.setMain): the tree marks the root it adopted, so exactly that
+    // one is demoted when the Main changes (a second root another flow created is left alone) and
+    // adoption places it like any other Bot instead of leaving two roots.
+    for (const bot of fb.listBots()) {
+      if (bot.id === chief.id || fb.getField(bot.id, 'adoptedRoot') !== true) continue
+      fb.setField(bot.id, 'adoptedRoot', undefined)
+      fb.setField(bot.id, 'treeRole', undefined)
+      fb.setField(bot.id, 'parent', undefined)
+    }
+    if (fb.getField(chief.id, 'adoptedRoot') !== true) fb.setField(chief.id, 'adoptedRoot', true)
     if (fb.getField(chief.id, 'parent') !== undefined) fb.setField(chief.id, 'parent', null)
     if (fb.getField(chief.id, 'treeRole') !== ROOT_ROLE) fb.setField(chief.id, 'treeRole', ROOT_ROLE)
     migrateLegacyRoots(chief.id)
     if (adoptExisting) adoptUnattached(chief.id)
+    // #748: a demoted root brings its subtree along, and place() no longer squeezes a branch past
+    // maxDepth to fit it in: that first pass leaves the branch out. The repair below re-attaches its
+    // children to the new root, and the second pass then places the demoted root as the leaf it is.
+    // Both passes are needed: dropping either one leaves the old root outside the tree for good
+    // (reconcileRoot stops calling us once the new Main is the root).
+    organizer.repair()
+    if (adoptExisting) adoptUnattached(chief.id)
     // #452: restore 归档-* / Archive-* mis-renames; hide archived from the default sidebar.
     try { const r = organizer.repairArchiveNames(); if (r && typeof r.then === 'function') r.catch(error => warn('flybot-tree: archive-name repair failed:', error?.message ?? error)) } catch (error) { warn('flybot-tree: archive-name repair failed:', error?.message ?? error) }
-    organizer.repair()
     refreshAll()
     return chief.id
   }
