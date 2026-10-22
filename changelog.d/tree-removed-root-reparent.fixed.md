@@ -1,1 +1,0 @@
-Deleting a former Main Bot (after handing the role to another Bot) no longer flattens the team: its children move to the current root (or a fresh Root when there is none), so exactly one root remains and the new Chief's `list_children` and replies keep working ([#725](https://github.com/ThinkFlowLab/FlyBot/issues/725)).

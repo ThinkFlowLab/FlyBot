@@ -1,1 +1,0 @@
-A part switch that fails (a save error, or the fresh Session cannot take the handoff) now leaves the old part current and hands the stopped turn's input on there, instead of opening an empty fresh part with no handoff package and dropping the input ([#740](https://github.com/ThinkFlowLab/FlyBot/issues/740)).

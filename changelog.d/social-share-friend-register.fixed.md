@@ -1,1 +1,0 @@
-Sharing a Bot with an existing friend now works on a Bot that has never been invited or shared: opening Share with a friend registers the Bot's Bot Social identity on demand instead of failing with “has no Bot Social identity yet”.

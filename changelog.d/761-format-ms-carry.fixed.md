@@ -1,1 +1,0 @@
-Durations in the run report no longer overflow their own unit: a wait of 59.6 s reads `1m` instead of `60s`, and 1h59m50s reads `2h00m` instead of `1h60m` ([#761](https://github.com/ThinkFlowLab/FlyBot/issues/761)).

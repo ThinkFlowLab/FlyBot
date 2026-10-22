@@ -1,1 +1,0 @@
-A Bot whose saved key is withheld on a turn can run its shell again: `DSH_SECRETS_WITHHELD` is now declared to the shell environment, so the bash call no longer fails with "undeclared key" ([#653](https://github.com/ThinkFlowLab/FlyBot/issues/653)).

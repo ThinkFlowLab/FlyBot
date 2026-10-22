@@ -1,1 +1,0 @@
-`list_bots` tags a Bot whose outbound message waits on the owner's decision with a count (`Writer (Write, 1 to approve)`), so a coordinator sees who is blocked instead of an idle-looking roster. The tag is a count only — never the held message's text — and clears once the owner decides ([#587](https://github.com/ThinkFlowLab/FlyBot/issues/587)).

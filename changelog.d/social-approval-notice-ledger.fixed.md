@@ -1,1 +1,0 @@
-The Bot Social settings file no longer grows forever with one entry per approval hold ever seen: a decided, rejected or gone hold drops its waiting-notice entry, so the ledger stays as small as the pending queue.

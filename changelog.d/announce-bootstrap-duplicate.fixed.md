@@ -1,1 +1,0 @@
-The first Main Bot created during onboarding, and a duplicated Bot, are now announced to plugins like any other new Bot, so @flybot/tree adopts them immediately instead of only after a restart (or not at all, if the server had been running before the first open).

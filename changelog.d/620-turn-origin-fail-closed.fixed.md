@@ -1,1 +1,0 @@
-`turn-origin` now treats a message source kind it does not recognise as `other` instead of "nobody's request", so an unknown or future source arriving in a Bot's own chat no longer inherits the owner's standing approval: only DSH's own notice kinds and the documented mention/handoff cases carry no verdict ([#620](https://github.com/ThinkFlowLab/FlyBot/issues/620)).

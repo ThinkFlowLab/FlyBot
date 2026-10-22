@@ -1,1 +1,0 @@
-Approving every waiting card now works for Bot Social holds too (the button was missing or skipped them), and a local hold whose send failed reads Not sent with its error and a Retry instead of offering Approve / Reject that silently do nothing.

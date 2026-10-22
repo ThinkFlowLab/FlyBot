@@ -1,1 +1,0 @@
-A restart's pickup no longer loses the work it was about to resume when a delivery fails or the app stops during the pickup: the inflight notes stay until each turn or queued message is handed over successfully ([#747](https://github.com/ThinkFlowLab/FlyBot/issues/747)).
