@@ -36,6 +36,17 @@ test('#652 follow-up: a head_ref that carries refs/heads/ still names the queue 
   assert.equal(prFromHeadRef('refs/tags/gh-readonly-queue/main/pr-566-' + HEAD), null, 'only a branch ref is a queue entry')
 })
 
+test('#655: a queue base that contains slashes still names the pull request', () => {
+  assert.deepEqual(prFromHeadRef('gh-readonly-queue/release/1.0/pr-652-abc1234'), { pr: 652, base: 'abc1234' })
+  assert.deepEqual(prFromHeadRef('refs/heads/gh-readonly-queue/release/1.0/pr-652-abc1234'), {
+    pr: 652,
+    base: 'abc1234',
+  })
+  assert.equal(prFromHeadRef('gh-readonly-queue/release/1.0/pr-652-not-a-sha'), null, 'a multi-segment base does not relax the hex tail')
+  assert.equal(prFromHeadRef('gh-readonly-queue//pr-652-abc1234'), null, 'an empty base names no entry')
+  assert.equal(prFromHeadRef('gh-readonly-queue/release/1.0/pr-abc1234'), null, 'the tail must carry a PR number')
+})
+
 test('a PASS at the merged head lets the entry through', () => {
   const r = judgeAt()
   assert.equal(r.ok, true)
