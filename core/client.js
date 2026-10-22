@@ -2168,7 +2168,7 @@ function onClaims(fn) {
   };
 }
 
-// src/client/approval-waiting.js
+// src/shared/approval-waiting.js
 var WAITING_STATUSES = Object.freeze(["pending", "pending_approval"]);
 function isApprovalWaiting(status) {
   return WAITING_STATUSES.includes(status);
@@ -5449,7 +5449,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
   return (0, import_react8.createElement)(
     "div",
-    { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
+    { className: "bt-held-reply", "data-state": held.status, "data-held": isApprovalWaiting(held.status) ? "" : void 0 },
     children,
     closing ? (0, import_react8.createElement)(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null
   );

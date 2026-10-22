@@ -7,7 +7,7 @@ import { Component, createElement as h, useEffect, useState } from 'react'
 import { call as callHost } from './api.js'
 import { registry } from './flybot-registry.js'
 import { claimApprovals } from './approval-claims.js'
-import { isApprovalWaiting } from './approval-waiting.js'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { t } from './i18n.js'
 
 const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payload)

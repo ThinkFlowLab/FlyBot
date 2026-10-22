@@ -9,6 +9,7 @@ import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
 import { remoteMessageText } from './flybot-registry.js'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { cleanPeerName, friendBotOwner, normRemoteHandle, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
 import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 import { fileSize } from './flybot-slots.js'
@@ -197,7 +198,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   // the same live and after a reload; "Chief → Chief (SelfB1233)" named two Bots and no person.
   const chat = (roster.bots ?? []).find(item => item.remote?.handle === held.to)
   const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t('a friend')
-  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': held.status === 'pending' ? '' : undefined },
+  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': isApprovalWaiting(held.status) ? '' : undefined },
     children,
     closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null)
 }

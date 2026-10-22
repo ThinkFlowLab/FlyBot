@@ -1472,7 +1472,7 @@ diff --git a/client.js b/client.js
 -  for (const mode of ["light", "dark"]) {
 -    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
 +
-+// src/client/approval-waiting.js
++// src/shared/approval-waiting.js
 +var WAITING_STATUSES = Object.freeze(["pending", "pending_approval"]);
 +function isApprovalWaiting(status) {
 +  return WAITING_STATUSES.includes(status);
@@ -3903,7 +3903,7 @@ diff --git a/client.js b/client.js
 +  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
 +  return (0, import_react8.createElement)(
 +    "div",
-+    { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
++    { className: "bt-held-reply", "data-state": held.status, "data-held": isApprovalWaiting(held.status) ? "" : void 0 },
 +    children,
 +    closing ? (0, import_react8.createElement)(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null
 +  );

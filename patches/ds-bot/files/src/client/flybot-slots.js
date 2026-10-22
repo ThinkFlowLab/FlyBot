@@ -36,7 +36,7 @@ import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { t } from './i18n.js'
 import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
-import { isApprovalWaiting, WAITING_STATUSES } from './approval-waiting.js'
+import { isApprovalWaiting, WAITING_STATUSES } from '../shared/approval-waiting.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
 

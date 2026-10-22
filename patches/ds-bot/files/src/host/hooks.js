@@ -11,6 +11,7 @@
 // same API with their own field namespace; the unscoped API uses namespace 'shared'.
 import { createHash, randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
@@ -362,7 +363,7 @@ export function install(rt) {
     const ids = new Set(botIds)
     // Pending, and approved-but-not-yet-dispatched: otherwise a concurrent setMain /
     // deleteBot during release() skips the record (status already `approved`) (#97).
-    const inFlight = a => a.status === 'pending' || (a.status === 'approved' && a.exchangeId === undefined)
+    const inFlight = a => isApprovalWaiting(a.status) || (a.status === 'approved' && a.exchangeId === undefined)
     const hit = Object.values(store()).filter(a => inFlight(a)
       && (ids.has(a.request?.from) && (field === undefined || field === 'from')
         || ids.has(a.request?.to) && field === undefined))
@@ -395,7 +396,7 @@ export function install(rt) {
   const hold = async (msg, verdict) => {
     await rt.load()
     const all = store()
-    if (Object.values(all).filter(a => a.status === 'pending').length >= PENDING_MAX) {
+    if (Object.values(all).filter(a => isApprovalWaiting(a.status)).length >= PENDING_MAX) {
       throw new HoldFull(`${PENDING_MAX} messages already wait for approval; decide those first`)
     }
     const audience = rt.roomOf?.(msg?.meta?.sessionId)?.id
@@ -411,7 +412,7 @@ export function install(rt) {
       ...(ownerId !== null ? { ownerId } : {}),
     }
     all[approval.id] = approval
-    const done = Object.values(all).filter(a => a.status !== 'pending').sort((a, b) => a.createdAt - b.createdAt)
+    const done = Object.values(all).filter(a => !isApprovalWaiting(a.status)).sort((a, b) => a.createdAt - b.createdAt)
     for (const old of done.slice(0, Math.max(0, Object.keys(all).length - APPROVALS_KEPT))) delete all[old.id]
     await rt.save()
     approvalsChanged(approval)
@@ -497,7 +498,7 @@ export function install(rt) {
     .map(a => ({
       id: a.id,
       by: a.by,
-      status: SENT.has(a.status) || a.status === 'pending' || a.status === 'failed' ? a.status : 'rejected',
+      status: SENT.has(a.status) || isApprovalWaiting(a.status) || a.status === 'failed' ? a.status : 'rejected',
       sessionId: a.request.meta.replyIn.sessionId,
       turn: a.request.meta.replyIn.turn,
       to: toRemote(a.request.to)?.handle ?? null,
@@ -564,7 +565,7 @@ export function install(rt) {
         approvalsChanged(approval)
         return clone(approval)
       }
-      if (approval.status !== 'pending') throw Object.assign(new Error(`flybot: approval ${id} is already ${approval.status}`), { code: 'bot/stale' })
+      if (!isApprovalWaiting(approval.status)) throw Object.assign(new Error(`flybot: approval ${id} is already ${approval.status}`), { code: 'bot/stale' })
       if (decision !== 'approve' && decision !== 'reject') throw new Error('flybot: decision is approve or reject')
       approval.status = decision === 'approve' ? 'approved' : 'rejected'
       approval.decidedAt = Date.now()

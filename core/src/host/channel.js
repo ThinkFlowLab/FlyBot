@@ -1,6 +1,7 @@
 // Client channel: the team view the browser renders, and the POST /api/bot endpoints.
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { questionReply } from './parts.js'
 import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 import { isFaceRoom } from './room-membership.js'
@@ -130,7 +131,7 @@ export function install(rt) {
       // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,
       // and a waiting one counts toward the row's wait badge.
       const held = bot.remote || (rt.authzEnforced?.() && actor && bot.ownerId !== actor.memberId) ? [] : rt.heldRepliesOf?.(bot.id) ?? []
-      const waitingReplies = held.filter(reply => reply.status === 'pending').length
+      const waitingReplies = held.filter(reply => isApprovalWaiting(reply.status)).length
       return {
         ...bot,
         granted: rt.hasAnyGrant?.(bot.id) === true,

@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 
-import { isApprovalWaiting, WAITING_STATUSES } from '../src/client/approval-waiting.js'
+import { isApprovalWaiting, WAITING_STATUSES } from '../src/shared/approval-waiting.js'
 
 const live = { inst: null, idx: 0 }
 const reactStub = {
