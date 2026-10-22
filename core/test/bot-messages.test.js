@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 import { install as installTurns } from '../src/host/turns.js'
 import { install as installParts } from '../src/host/parts.js'
@@ -78,7 +78,9 @@ async function start(seed) {
     route = options
     return register(options)
   }
-  apply(ctx, { home })
+  // The runtime itself, so a test can hold a write open at a seam the product has.
+  const rt = createRuntime(ctx, { home })
+  provideFlyBot(ctx, rt.flybot)
   let seq = 0
   const emit = (id, type, data) => {
     for (const listener of ctx.listeners.get('session/event') ?? []) {
@@ -98,7 +100,7 @@ async function start(seed) {
   }
   // Loading once fills the Session-owner indexes turns.js filters events by.
   await tool('list_bots', {}, 'a')
-  return { ctx, agents, agentOf, emit, fire, tool, call, exchanges, home, stop }
+  return { ctx, rt, agents, agentOf, emit, fire, tool, call, exchanges, home, stop }
 }
 
 const textOf = content => content.map(block => block.text ?? '').join('\n')
@@ -507,5 +509,66 @@ test('a request the model keeps turning down moves the Bot on, without its lates
   endedWith('s2', 'INVALID_REQUEST')
   await failTurn('s2', 'INVALID_REQUEST')
   await delay(30)
+  assert.equal(made, 2)
+})
+
+test('a part is committed before its handoff turn can run, so its failure is rescued once', async (t) => {
+  const { ctx, rt, agents, agentOf, emit, fire, stop } = await start(team())
+  t.after(stop)
+  let made = 0
+  ctx.sessionController.create = async () => ({ sessionId: `s${++made}` })
+  const ends = new Map()
+  const endedWith = (id, code) => ends.set(id, { 9: { type: 'turn/end', data: { reason: { kind: 'error', error: { code } } } } })
+  const failTurn = async (id, code) => {
+    const agent = agentOf(id)
+    agent.session.seq = 10
+    agent.session.eventAt = seq => ends.get(id)?.[seq]
+    emit(id, 'turn/start', { turn: 1 })
+    emit(id, 'user/message', { content: textBlock('look at this'), source: { kind: 'user' } })
+    await fire('agent/request-error', { failure: { code }, signal: AbortSignal.timeout(60_000), agent })
+    emit(id, 'turn/end', { turn: 1, reason: { kind: 'error', error: { code } } })
+  }
+  const handoffIn = id => agents.get(id)?.calls.find(([, message]) => message.source?.handoff === true)?.[1]
+  // A bounded wait for what the run has to reach, with a deadline instead of a number of turns.
+  const until = async (check, what) => {
+    const deadline = Date.now() + 10_000
+    while (!check() && Date.now() < deadline) await delay(2)
+    assert.ok(check(), what)
+  }
+  const settle = async (check) => {
+    const deadline = Date.now() + 10_000
+    while (!check() && Date.now() < deadline) await delay(2)
+  }
+
+  await failTurn('b', 'TRANSPORT')
+  await failTurn('b', 'INVALID_REQUEST')
+  assert.equal(made, 0)
+
+  // The fresh part's handoff turn fails while the first part's commit is still being saved. The
+  // part has to be current and marked rescued by then: its failure is rescued once, on that part,
+  // and the part after it leaves the messages out and still carries the note before it.
+  const save = rt.save
+  t.after(() => { rt.save = save })
+  let injected = false
+  rt.save = async () => {
+    const saving = save()
+    if (!injected && rt.botOf('b')?.sessionId === 's1') {
+      injected = true
+      endedWith('s1', 'INVALID_REQUEST')
+      await failTurn('s1', 'INVALID_REQUEST')
+    }
+    return saving
+  }
+  endedWith('b', 'INVALID_REQUEST')
+  await failTurn('b', 'INVALID_REQUEST')
+  await until(() => injected, 'the first part never committed a Session, so its handoff turn could not fail')
+  await settle(() => handoffIn('s2') !== undefined)
+  const second = handoffIn('s2')
+  // A dropped switch has to read as one, not as a wait that ran out.
+  assert.ok(second, 'the second switch was dropped: the fresh part was not current when its handoff turn failed, so the previous part\'s note was lost')
+  const third = textOf(second.content)
+  assert.match(third, /^\[Handoff · part 3\]/, 'the rescued part did not start a part of its own')
+  assert.match(third, /so they are left out this time\. First tell the user/, 'the rescued part lost the note of the part before it')
+  assert.match(third, /## Latest messages[^#]*\(none\)/, 'the rescued part carried the messages it was supposed to leave out')
   assert.equal(made, 2)
 })

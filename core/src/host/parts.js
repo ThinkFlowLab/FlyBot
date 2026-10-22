@@ -785,35 +785,31 @@ export function install(rt) {
       .catch(error => rt.warn('ds-bot: permission for the fresh part of %s not applied: %s', bot.name, error))
     const segment = { sessionId: agent.id, endedAt: Date.now(), ...(tokens !== undefined ? { tokens } : {}), ...noted }
     const resume = job.resume || job.overflow
-    // Send the package to the fresh part BEFORE it becomes current: if that fails, the old part
-    // stays current and the stopped turn's input goes on there. A part that became current with no
-    // package and no transcript would lose the work it was meant to carry.
-    await rt.ensureCapabilities(freshId)
-    const fresh = await rt.resolveAgent(freshId)
-    const cwd = fresh.session.header?.cwd
-    const folder = cwd !== undefined && cwd !== session.header?.cwd ? cwd : undefined
-    // A fresh part that is not where it was made for would move on at every step.
-    if (intended !== undefined && cwd !== undefined && cwd !== intended) {
-      folderRetry.set(freshId, Date.now() + FOLDER_RETRY_MS)
-      rt.warn('ds-bot: the fresh part of %s did not start in %s; it works in %s', bot.name, intended, cwd)
-    }
-    const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
-    try {
-      fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
-      await ctx.sessions.flush(fresh.session)
-      freshParts.set(freshId, estimateTokens(text))
-    } catch (error) {
-      freshParts.delete(freshId)
-      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
-      throw error
-    }
-    // The package is in the fresh part: point the Bot at it, atomically with the save. A failed
-    // save puts the old part back, so the finalizer hands the input on where it was.
+    // Commit the new part before its handoff turn can run: a handoff visible to a failure handler
+    // before the segment is saved would let a second switch lose the previous part's note. A failed
+    // handoff rolls the pointer back below, so the finalizer still hands the input on in the old part.
     const previousSession = bot.sessionId
     const previousSegments = bot.segments === undefined ? undefined : [...bot.segments]
     const previousRoomSessions = room === undefined ? undefined : { ...room.sessions }
     const previousRoomSegments = room?.segments?.[bot.id] === undefined ? undefined : [...room.segments[bot.id]]
     const previousQuestion = state.questions[agent.id]
+    const restore = () => {
+      if (room !== undefined) {
+        if (previousRoomSegments === undefined) delete room.segments[bot.id]
+        else room.segments[bot.id] = previousRoomSegments
+        if (previousRoomSessions === undefined) delete room.sessions[bot.id]
+        else room.sessions = previousRoomSessions
+      } else {
+        if (previousSegments === undefined) delete bot.segments
+        else bot.segments = previousSegments
+        bot.sessionId = previousSession
+        delete state.questions[freshId]
+        if (previousQuestion !== undefined) state.questions[agent.id] = previousQuestion
+      }
+      freshParts.delete(freshId)
+      // The part was never handed over, so it is not a rescued part either.
+      rescued.delete(freshId)
+    }
     if (room !== undefined) {
       room.segments ??= {}
       ;(room.segments[bot.id] ??= []).push(segment)
@@ -829,26 +825,38 @@ export function install(rt) {
         delete state.questions[agent.id]
       }
     }
+    // The rescued mark goes in with the pointer, before the save awaits: a failure handler that
+    // sees this part can never see it uncommitted, and a save that fails drops the mark again.
+    if (job.failed !== undefined) rescued.set(freshId, job.bare ? 'bare' : 'carried')
     try {
       await rt.save()
     } catch (error) {
-      if (room !== undefined) {
-        if (previousRoomSegments === undefined) delete room.segments[bot.id]
-        else room.segments[bot.id] = previousRoomSegments
-        if (previousRoomSessions === undefined) delete room.sessions[bot.id]
-        else room.sessions = previousRoomSessions
-      } else {
-        if (previousSegments === undefined) delete bot.segments
-        else bot.segments = previousSegments
-        bot.sessionId = previousSession
-        delete state.questions[freshId]
-        if (previousQuestion !== undefined) state.questions[agent.id] = previousQuestion
-      }
-      freshParts.delete(freshId)
+      restore()
       await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
       throw error
     }
-    if (job.failed !== undefined) rescued.set(freshId, job.bare ? 'bare' : 'carried')
+    let folder
+    try {
+      await rt.ensureCapabilities(freshId)
+      const fresh = await rt.resolveAgent(freshId)
+      const cwd = fresh.session.header?.cwd
+      folder = cwd !== undefined && cwd !== session.header?.cwd ? cwd : undefined
+      // A fresh part that is not where it was made for would move on at every step.
+      if (intended !== undefined && cwd !== undefined && cwd !== intended) {
+        folderRetry.set(freshId, Date.now() + FOLDER_RETRY_MS)
+        rt.warn('ds-bot: the fresh part of %s did not start in %s; it works in %s', bot.name, intended, cwd)
+      }
+      const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
+      fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
+      await ctx.sessions.flush(fresh.session)
+      freshParts.set(freshId, estimateTokens(text))
+    } catch (error) {
+      // No package: the old part is current again, and the finalizer hands the input on there.
+      restore()
+      await rt.save().catch(() => { /* the in-memory state is the old part; a failed rollback save is the worst case */ })
+      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
+      throw error
+    }
     void rt.moveSchedules(agent.id, freshId)
     // The old part's held input goes on here. Mark the move done only once it was handed on, so a
     // failure lets the finalizer retry it on the part that is now current.
