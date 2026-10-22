@@ -251,7 +251,7 @@ export function install(rt) {
 
   ctx.tools.register(defineTool({
     name: 'create_bot',
-    description: 'Main Bot only. Create a new Bot on the user\'s team. It appears in the sidebar and greets the user.',
+    description: 'Main Bot only. Create a new Bot on the user\'s team. It appears in the sidebar and starts no turn until the user writes to it.',
     parameters: {
       name: { type: 'string', required: true, description: 'Short display name, e.g. "Researcher" or "Editor"' },
       role: { type: 'string', required: true, description: 'Two-to-four character role label shown under the name' },
@@ -269,7 +269,7 @@ export function install(rt) {
         const name = String(args.name ?? '').trim()
         await rt.approveFolder(exec, { path: workDir, who: { en: `the new Bot ${name}`, zh: `新 Bot ${name} ` } })
         const bot = await rt.createBot({ ...args, workDir, createdBy: rt.selfOf(exec.agent.id) })
-        return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It is greeting the user now.`
+        return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It starts no turn until the user writes to it.`
       } catch (error) {
         return `Could not create the Bot: ${error.message}`
       }

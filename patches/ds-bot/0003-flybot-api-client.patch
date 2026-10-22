@@ -295,7 +295,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 --- a/src/client/bot-draft.js
 +++ b/src/client/bot-draft.js
-@@ -8,10 +8,15 @@ export function freshBotName(roster, base = 'New Bot') {
+@@ -8,17 +8,23 @@ export function freshBotName(roster, base = 'New Bot') {
    return `${base} ${index}`
  }
  
@@ -312,7 +312,18 @@ diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 +  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? ''
  }
  
- // The model is always sent: the host fixes it on the Bot at creation.
+-// The model is always sent: the host fixes it on the Bot at creation.
+-export function createPayload({ name, look, image, model, effort, brief }) {
++// The model is always sent: the host fixes it on the Bot at creation. The card never sends a
++// brief: a line typed in the composer is the Bot's first request, and the host takes a brief
++// as instructions only from a Bot that creates another (#645).
++export function createPayload({ name, look, image, model, effort }) {
+   const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } }
+   if (model) payload.model = model
+   if (effort) payload.effort = effort
+-  if (brief) payload.brief = brief
+   return payload
+ }
 diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 --- a/src/client/bot-settings.js
 +++ b/src/client/bot-settings.js
@@ -736,7 +747,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
        // A part opens with its handoff package, so the earlier parts go right above it.
        if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions })
        // Group turns belong to the group chat; the member's own chat stays one-to-one.
-       if (source.role === 'kickoff' || source.role === 'room') return null
+-      if (source.role === 'kickoff' || source.role === 'room') return null
++      if (source.role === 'room') return null
 +      // The host's receipt for the user's @ of a friend's Bot in this group (#80):
 +      // where the message went, or why it did not leave.
 +      if (source.role === 'mention') return h('div', { className: 'bt-event' }, h('span', null, contentText(data.content)))
@@ -1049,6 +1061,26 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 diff --git a/src/client/create-bot.js b/src/client/create-bot.js
 --- a/src/client/create-bot.js
 +++ b/src/client/create-bot.js
+@@ -18,7 +18,7 @@ const randomLook = (avoid = {}) => {
+ 
+ // The new-Bot form: look first, then name and model. Nothing exists until Create.
+ // `inline` drops the pane's header for a form shown inside Settings.
+-export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBack, onCreated, inline = false }) {
++export function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
+   const [look, setLook] = useState(() => randomLook())
+   const [image, setImage] = useState(null)
+   const [name, setName] = useState(start?.name ?? '')
+@@ -40,8 +40,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
+     setError('')
+     setBusy(true)
+     try {
+-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }))
+-      onCreated(bot)
++      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }))
++      await onCreated(bot)
+     } catch (failure) {
+       setError(failure?.message ?? String(failure))
+       setBusy(false)
 @@ -88,7 +88,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
          : t('Add a provider and a model in DeepSeek Harness first, or pick one in the Bot\'s chat later.'))),
      error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null,
@@ -1577,6 +1609,22 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    }
    const pick = (bot) => {
      setPicked(current => [...current, bot.id])
+@@ -59,9 +59,13 @@ export function NewChat({ mode, roster, actions }) {
+     setError('')
+     setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
+   }
+-  // Close first: closing the new-chat pane keeps the details panel, while closing
++  // A line typed in the composer was a request, so it is the new Bot's first turn, not its
++  // instructions (#645): the card is handed no brief, and the line is sent once the Bot
++  // exists. Close first: closing the new-chat pane keeps the details panel, while closing
+   // nothing would clear it.
+-  const created = (bot) => {
++  const created = async (bot) => {
++    const text = message.trim()
++    if (text) await actions.send(bot.id, text)
+     close()
+     actions.openSession(bot.id)
+     actions.showDetails(bot.id, 'settings')
 @@ -71,7 +71,12 @@ export function NewChat({ mode, roster, actions }) {
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return
@@ -1587,7 +1635,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +      ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
 +      ...remotes,
 +    ]
-+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}), ...(text ? {} : { greet: true }) })
++    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
      if (text) await actions.send(room.id, text)
      actions.openSession(room.id)
      close()
@@ -1651,6 +1699,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const active = Math.min(cursor, Math.max(options.length - 1, 0))
    const listed = options.map(option => option.key).join('\n')
    const glide = useGlide(`${active}\n${listed}`, { axis: 'y', ...QUICK_EDGES })
+@@ -114,7 +114,7 @@ export function NewChat({ mode, roster, actions }) {
+   if (draft) {
+     return h('div', { className: 'bt-pane', style: { left: paneLeft } },
+       h(CreateBot, {
+-        roster, actions, start: draft, brief: message.trim(), canGoBack: draft.fromList,
++        roster, actions, start: draft, canGoBack: draft.fromList,
+         onBack: draft.fromList ? () => { setDraft(null); setTimeout(() => inputRef.current?.focus()) } : close,
+         onCreated: created,
+       }))
 @@ -126,9 +126,16 @@ export function NewChat({ mode, roster, actions }) {
      if (picked.length > 0) setPicked(current => current.slice(0, -1))
      else if (admin !== null) setAdmin(null)
@@ -2666,7 +2723,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 --- a/test/create-bot.test.js
 +++ b/test/create-bot.test.js
-@@ -7,7 +7,22 @@ const models = [
+@@ -7,18 +7,36 @@ const models = [
    { ref: 'cloud/qwen-max', name: 'Qwen Max', providerName: 'Cloud' },
  ]
  
@@ -2690,6 +2747,23 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
    assert.equal(startModel({ models, defaultModel: 'cloud/qwen-max' }), 'cloud/qwen-max')
    assert.equal(startModel({ models, defaultModel: 'gone/model' }), 'ollama/ds-flash')
    assert.equal(startModel({ models, defaultModel: null }), 'ollama/ds-flash')
+   assert.equal(startModel({ models: [], defaultModel: 'cloud/qwen-max' }), '')
+ })
+ 
+-test('the payload carries the look, the chosen model, and the brief', () => {
++test('the payload carries the look and the chosen model, and never a brief (#645)', () => {
+   const look = { shape: 'star', color: 'blue' }
+   assert.deepEqual(createPayload({ name: 'A', look, model: 'cloud/qwen-max' }), { name: 'A', color: 'blue', avatar: { shape: 'star' }, model: 'cloud/qwen-max' })
+-  assert.deepEqual(createPayload({ name: 'A', look, model: '', brief: 'hi', image: 'data:image/png;base64,AA' }),
+-    { name: 'A', color: 'blue', avatar: { shape: 'star', image: 'data:image/png;base64,AA' }, brief: 'hi' })
++  // A line typed in the composer is the new Bot's first request, sent as a turn, so the card
++  // sends no `brief` the host would fold into the Bot's instructions.
++  const payload = createPayload({ name: 'A', look, model: '', brief: '帮我写周报', image: 'data:image/png;base64,AA' })
++  assert.deepEqual(payload, { name: 'A', color: 'blue', avatar: { shape: 'star', image: 'data:image/png;base64,AA' } })
++  assert.equal(payload.brief, undefined)
+ })
+ 
+ test('the suggested name skips taken names', () => {
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js

@@ -286,19 +286,26 @@ test('a message with an image or a chat reference waits for its own round, and s
   assert.equal(inboxOf(room.id).nextStep.length, 1)
 })
 
-test('the greeting round leaves a waiting message for its own round', async (t) => {
-  const { call, emit, compose, relay, inboxOf, answer, stop, sent } = start()
+test('creating a team starts no turn, and the user\'s first message opens one round (#645)', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent } = start()
   t.after(stop)
-  const room = await team(call, sent)
+  const chief = (await call('state', {})).value.mainBotId
+  const writer = (await call('create-bot', { name: 'Writer' })).value
+  const editor = (await call('create-bot', { name: 'Editor' })).value
+  const room = (await call('create-room', { name: 'R1', members: [chief, writer.id, editor.id] })).value
+  await settle()
+  // Three Bots and a group cost no model turn.
+  assert.deepEqual(sent, [])
 
-  await emit(room.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'kickoff' }, content: [{ type: 'text', text: '[Group chat created]' }] } })
+  // The user's first message opens the round, and the admin speaks first, once.
+  await emit(room.id, userMessage('Hello team'))
   const running = relay(room.id, 'relay')
   const first = await turnFor(sent)
-  await compose(room.id, 'hello there')
-  await answer(first.sessionId, first.message.source.exchangeId, 'Welcome!', 1)
+  assert.ok(first, 'the admin gets the first turn')
+  assert.equal(sent.length, 1)
+  await answer(first.sessionId, first.message.source.exchangeId, 'Ready.', 1)
   const result = JSON.parse(await running)
   assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief'])
-  assert.equal(inboxOf(room.id).nextTurn.length, 1)
 })
 
 test('a stopped round leaves a waiting message for the next round', async (t) => {

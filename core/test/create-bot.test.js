@@ -29,11 +29,14 @@ test('without a Main Bot the form starts on the DSH default model, else the firs
   assert.equal(startModel({ models: [], defaultModel: 'cloud/qwen-max' }), '')
 })
 
-test('the payload carries the look, the chosen model, and the brief', () => {
+test('the payload carries the look and the chosen model, and never a brief (#645)', () => {
   const look = { shape: 'star', color: 'blue' }
   assert.deepEqual(createPayload({ name: 'A', look, model: 'cloud/qwen-max' }), { name: 'A', color: 'blue', avatar: { shape: 'star' }, model: 'cloud/qwen-max' })
-  assert.deepEqual(createPayload({ name: 'A', look, model: '', brief: 'hi', image: 'data:image/png;base64,AA' }),
-    { name: 'A', color: 'blue', avatar: { shape: 'star', image: 'data:image/png;base64,AA' }, brief: 'hi' })
+  // A line typed in the composer is the new Bot's first request, sent as a turn, so the card
+  // sends no `brief` the host would fold into the Bot's instructions.
+  const payload = createPayload({ name: 'A', look, model: '', brief: '帮我写周报', image: 'data:image/png;base64,AA' })
+  assert.deepEqual(payload, { name: 'A', color: 'blue', avatar: { shape: 'star', image: 'data:image/png;base64,AA' } })
+  assert.equal(payload.brief, undefined)
 })
 
 test('the suggested name skips taken names', () => {

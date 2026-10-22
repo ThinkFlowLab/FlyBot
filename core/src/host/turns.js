@@ -25,7 +25,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
 // A group's own Session never reaches a model, so the snapshot DSH prepared there
 // rides with the user's queued message to the members who answer it.
 export function attachReference(queued, source, text) {
-  const post = queued?.findLast(item => item.botId === undefined && item.kickoff !== true)
+  const post = queued?.findLast(item => item.botId === undefined)
   if (post === undefined || text === '') return
   const labels = (Array.isArray(source?.references) ? source.references : [])
     .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
@@ -78,7 +78,7 @@ export function install(rt) {
   const roomWaiters = new Map()
   /** @type {Map<string, {roomId:string, replies:any[], members:string[], speaking:string|null}>} */
   const roomProgress = new Map()
-  /** @type {Map<string, {text:string, botId?:string, name?:string, reportBack?:boolean, hop?:number, kickoff?:boolean, references?:{labels:string[], text:string}[]}[]>} messages a room's next relay posts */
+  /** @type {Map<string, {text:string, botId?:string, name?:string, reportBack?:boolean, hop?:number, references?:{labels:string[], text:string}[]}[]>} messages a room's next relay posts */
   const roomInbox = new Map()
   const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
   // Member turns of a group round the user stopped: what they end with stays out of the group.
@@ -444,8 +444,6 @@ export function install(rt) {
             // Whose request the post carries on (turn-origin.js): the round's member turns answer it.
             ...(typeof source.origin === 'string' ? { origin: source.origin } : {}),
           })
-        } else if (source?.kind === SOURCE_KIND && source.role === 'kickoff' && rt.roomOf(id)) {
-          queueRoomMessage(id, { text: '', kickoff: true })
         } else if (source?.kind === SOURCE_KIND) {
           if (entry.turn === undefined) entry.pending = source
           else if (!opened) claimTrigger(id, entry, source)
@@ -476,8 +474,6 @@ export function install(rt) {
               ...(source.authorId ? { authorId: source.authorId, authorKind: source.authorKind || 'human', authorName: source.authorName } : {}),
             })
           }
-          const own = rt.chatOwners.get(id)
-          if (own !== undefined) rt.dropKickoff(own)
           // Any user message answers or supersedes the open question card. A group's card waits for
           // its own answer: a line typed in the group goes to its round, not to the Bot that asked (#550).
           if (state.questions[id] !== undefined && !rt.roomOf(id)) {

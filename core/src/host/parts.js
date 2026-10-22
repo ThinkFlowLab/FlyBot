@@ -41,9 +41,9 @@ export function cardText(args) {
 // What one event adds to a Bot's chat history: an answer of the Bot's (its text, or a
 // question card), or a message from the user (`who: 'user'`) or another Bot
 // (`who: 'bot'`) that the answers after it belong to. Context that other plugins append
-// (time, attachments) adds nothing. Setup kickoffs, handoff packages, and, in an own
-// chat, group turns from before group Sessions existed show no text, and drop the
-// answers to them.
+// (time, attachments) adds nothing. Handoff packages, setup kickoffs from a team made
+// before #645, and, in an own chat, group turns from before group Sessions existed show no
+// text, and drop the answers to them.
 // The user's answer to an ask_user card. The message carries the question with the
 // answer, so the answer still makes sense after a checkpoint drops the card.
 export function questionReply(question, answer) {

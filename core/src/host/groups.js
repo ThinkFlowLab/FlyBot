@@ -175,9 +175,6 @@ const adminNote = room => isFaceRoom(room) ? FACE_LEAD_NOTE : [
   '"@all" calls every member. When the user asks, change the group with update_group.',
 ].filter(Boolean).join(' ')
 
-// The opening turn of a group the user just made without a first message.
-const roomKickoff = language => `The user just created this group and has not written yet. Greet the user in one short message and ask what they want this group to work on. Do not call members with @ yet, and do not reply [PASS]. No name prefix. Write in ${language ?? 'the user\'s language if known; otherwise Chinese'}.`
-
 const ROOM_READ_MAX = 30
 
 export function install(rt) {
@@ -251,7 +248,6 @@ export function install(rt) {
     const after = round.slots.length - index - 1
     const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
     const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
-    if (round.kickoff) return [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n')
     const working = workingIn(room).filter(item => item.bot.id !== member.id)
     return [
       members,
@@ -317,8 +313,6 @@ export function install(rt) {
   // Session's inbox, so it does not open another round when this one ends. Returns
   // the number of turns added, which the round's limit allows for.
   function drainRoomInbox(room, round, turns, index, agent) {
-    // The greeting's prompt tells the admin the user has not written yet.
-    if (round.kickoff) return 0
     const lines = waitingLines(agent).filter(line => agent.inbox.remove(line.id))
     if (lines.length === 0) return 0
     const before = round.slots.length
@@ -408,7 +402,7 @@ export function install(rt) {
   // judged (settled() reads the room at the moment of each call).
   const roundOrigins = new WeakMap()
   const postOrigin = (post) => {
-    if (post.kickoff || post.notice || post.failed || post.resumed || post.stopped || post.botId === 'face-notice') return undefined
+    if (post.notice || post.failed || post.resumed || post.stopped || post.botId === 'face-notice') return undefined
     if (post.botId === undefined) return undefined
     const bot = rt.botOf(post.botId)
     if (bot === undefined || bot.remote !== undefined) return OTHER
@@ -537,19 +531,18 @@ export function install(rt) {
       rt.roomInbox.delete(room.id)
       const posts = queued.length > 0 ? queued : [{ text: '' }]
       const startSeq = room.seq + 1
-      // The opening greeting is a cue for the admin, not a line of the group; a member's
-      // late failure, its work picked up after a restart, or its work the user stopped is
-      // an event of the round.
+      // A member's late failure, its work picked up after a restart, or its work the user
+      // stopped is an event of the round.
       const event = item => item.failed || item.resumed || item.stopped || item.notice || item.botId === 'face-notice'
       // A post a running round already showed and logged when it arrived (#455) is not logged again.
-      for (const post of posts.filter(item => !item.kickoff && !event(item) && !item.shown)) {
+      for (const post of posts.filter(item => !event(item) && !item.shown)) {
         // Image readings go into the log only; `@` names are picked from what the user typed.
         const text = post.images === undefined ? post.text : [post.text, ...await rt.imagesForGroup(post.images, room.id)].filter(Boolean).join('\n')
         // A face-room line the send path already logged and sent is not logged or sent again (#287).
         if (!post.botId && takePosted(room.id, post.text)) continue
         logPost(room, post, text)
       }
-      if (posts.some(post => !post.botId && !post.kickoff)) room.lateRounds = 0
+      if (posts.some(post => !post.botId)) room.lateRounds = 0
       await rt.save()
       // An event post never picks the speakers over a message queued with it; a friend's line that asks
       // this home's Bots to answer is a person's line, not an event (#462).
@@ -567,11 +560,9 @@ export function install(rt) {
         ...(route ? { route } : {}),
         startSeq,
         openedSeq: room.seq,
-        ...(opener.kickoff ? { kickoff: true } : {}),
         ...(references.length > 0 ? { references, shown: [] } : {}),
         slots: speakers.map(member => ({
           id: member.id, name: member.name, status: 'waiting',
-          ...(opener.kickoff ? { note: 'the group was just created' } : {}),
           ...(named.includes(member) ? { by: opener.botId } : {}),
         })),
         // One pass: a plain line's speakers do not call each other on (#295), so Bots in two homes cannot loop.
@@ -719,9 +710,9 @@ export function install(rt) {
 
   // Whether this opener is a person's plain line there: the one that starts a single pass over the
   // Bots with no Bot-triggered follow-ups inside it (#295). An @ that names a Bot, a Bot's post, a late
-  // reply and the greeting are not.
+  // reply is not.
   function isPlainFaceLine(room, opener) {
-    if (!isFaceRoom(room) || opener.kickoff || opener.late) return false
+    if (!isFaceRoom(room) || opener.late) return false
     // A friend's attested plain line (or @all) is a person's line too, routed and single like the owner's (#462).
     if (friendLine(opener)) return opener.plain === true
     if (opener.botId !== undefined) return false
@@ -734,7 +725,6 @@ export function install(rt) {
     const everyone = room.members.map(rt.botOf).filter(Boolean)
     const members = everyone.filter(bot => bot.id !== opener.botId)
     const admin = members.find(bot => rt.isAdminOf(room, bot.id))
-    if (opener.kickoff) return admin ? [admin] : []
     // A friend's own typed line that @-calls Bots here (#287): only those Bots answer. The caller
     // resolved the names and only passes lines the server attests as typed by that person.
     if (opener.callIds?.length > 0) return members.filter(bot => opener.callIds.includes(bot.id))
@@ -904,19 +894,6 @@ export function install(rt) {
   }
   rt.lateRoomFailure = lateRoomFailure
 
-  // A group the user just made opens with its admin asking what the group is for.
-  async function greetRoom(roomId) {
-    const room = rt.roomOf(roomId)
-    if (!room?.admin) return
-    const agent = await rt.resolveAgent(room.id)
-    agent.followup(createUserMessage({
-      content: [{ type: 'text', text: '[Group chat created]' }],
-      source: { kind: SOURCE_KIND, form: 'relay', role: 'kickoff', exchangeId: randomUUID(), senderName: 'You', hop: 0, roomId: room.id },
-    }))
-    await ctx.sessions.flush(agent.session)
-  }
-  rt.greetRoom = greetRoom
-
   async function reportRound(room, post, round) {
     const lines = round.replies.filter(reply => reply.kind === undefined).map(reply => `${reply.name}: ${reply.text}`)
     const waiting = round.replies.filter(reply => reply.kind === 'approval').map(reply => reply.name)
@@ -952,7 +929,7 @@ export function install(rt) {
       // message from the user, a scheduled task, or a Bot's post after the last model or
       // tool step starts a relay.
       const opens = message => message.role === 'user'
-        && (message.source?.kind === 'user' || message.source?.kind === 'schedule' || (message.source?.kind === SOURCE_KIND && (message.source.role === 'post' || message.source.role === 'kickoff')))
+        && (message.source?.kind === 'user' || message.source?.kind === 'schedule' || (message.source?.kind === SOURCE_KIND && message.source.role === 'post'))
       const latest = [...options.messages].reverse()
         .find(message => message.role === 'assistant' || message.role === 'tool' || opens(message))
       if (latest?.role !== 'user') {

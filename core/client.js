@@ -5806,7 +5806,7 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
     }
     if (source.kind === "bot") {
       if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react8.createElement)(EarlierParts, { sessionId, roster, actions });
-      if (source.role === "kickoff" || source.role === "room") return null;
+      if (source.role === "room") return null;
       if (source.role === "mention") return (0, import_react8.createElement)("div", { className: "bt-event" }, (0, import_react8.createElement)("span", null, contentText(data.content)));
       if (source.role === "secret" || deferred) return null;
       if (source.role === "post") {
@@ -11306,11 +11306,10 @@ function startModel(roster) {
   const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find((bot) => bot.id === roster.mainBotId);
   return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? "";
 }
-function createPayload({ name, look, image, model, effort, brief }) {
+function createPayload({ name, look, image, model, effort }) {
   const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } };
   if (model) payload.model = model;
   if (effort) payload.effort = effort;
-  if (brief) payload.brief = brief;
   return payload;
 }
 
@@ -11322,7 +11321,7 @@ var randomLook = (avoid = {}) => {
   const colors = DEFAULT_COLORS.filter((color) => color !== avoid.color);
   return { shape: pick(shapes), color: pick(colors) };
 };
-function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCreated, inline = false }) {
+function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
   const [look, setLook] = (0, import_react26.useState)(() => randomLook());
   const [image, setImage] = (0, import_react26.useState)(null);
   const [name, setName] = (0, import_react26.useState)(start?.name ?? "");
@@ -11345,8 +11344,8 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
     setError("");
     setBusy(true);
     try {
-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }));
-      onCreated(bot);
+      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }));
+      await onCreated(bot);
     } catch (failure) {
       setError(failure?.message ?? String(failure));
       setBusy(false);
@@ -11561,7 +11560,9 @@ function NewChat({ mode, roster, actions }) {
     setError("");
     setDraft({ name: query.trim() !== "" && !exact ? query.trim() : "", fromList: true });
   };
-  const created = (bot) => {
+  const created = async (bot) => {
+    const text = message.trim();
+    if (text) await actions.send(bot.id, text);
     close();
     actions.openSession(bot.id);
     actions.showDetails(bot.id, "settings");
@@ -11574,7 +11575,7 @@ function NewChat({ mode, roster, actions }) {
       ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
       ...remotes
     ];
-    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...text ? {} : { greet: true } });
+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {} });
     if (text) await actions.send(room2.id, text);
     actions.openSession(room2.id);
     close();
@@ -11662,7 +11663,6 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
         roster,
         actions,
         start: draft,
-        brief: message.trim(),
         canGoBack: draft.fromList,
         onBack: draft.fromList ? () => {
           setDraft(null);
@@ -12466,7 +12466,7 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
     if (busy || admin === null || members.length === 0) return;
     setBusy(true);
     let room2;
-    const done = await run(actions.createRoom([admin, ...members], { admin, greet: true, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
+    const done = await run(actions.createRoom([admin, ...members], { admin, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
       room2 = value;
     }));
     if (done && room2) onCreated(room2);

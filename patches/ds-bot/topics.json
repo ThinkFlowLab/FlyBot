@@ -40,7 +40,10 @@
     "src/host/approvals.js",
     "test/group-status.test.js",
     "test/member-status.test.js",
-    "test/group-work.test.js"
+    "test/group-work.test.js",
+    "test/bot-messages.test.js",
+    "test/history.test.js",
+    "test/tool-node.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",
@@ -49,7 +52,8 @@
     "src/host/tools.js",
     "src/host/constants.js",
     "src/host/home-lock.js",
-    "test/fake-ctx.js"
+    "test/fake-ctx.js",
+    "test/blocking-question.test.js"
   ],
   "0003-flybot-api-client": [
     "src/client/index.js",

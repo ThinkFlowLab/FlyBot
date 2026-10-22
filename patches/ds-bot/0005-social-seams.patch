@@ -221,7 +221,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
-@@ -3,8 +3,16 @@
+@@ -3,8 +3,16 @@ import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
  import { questionReply } from './parts.js'
  import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
@@ -238,7 +238,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,14 +21,95 @@
+@@ -21,32 +21,146 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -337,14 +337,14 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      revision: state.revision,
      workspaceId: state.workspaceId ?? null,
      // `mainBotId` is the first Main Bot, which the sidebar shows as its tile.
-@@ -36,17 +36,52 @@
+     mainBotId: state.mainBotIds[0] ?? null,
      mainBotIds: state.mainBotIds,
      // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
-     // `waiting`: the Bot holds its greeting until the user picks its model.
+-    // `waiting`: the Bot holds its greeting until the user picks its model.
 -    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => ({
 -      ...bot, sessionId: rt.chatOf(bot.id), parts: (segments ?? []).map(segment => segment.sessionId), ...(kickoff ? { waiting: true } : {}),
 -    })),
-+    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
++    bots: Object.values(state.bots).map(({ segments, ...bot }) => {
 +      // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
 +      const pending = rt.listChatApprovals?.(bot, actor) ?? []
 +      // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,
@@ -360,7 +360,6 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        parts: (segments ?? []).map(segment => segment.sessionId),
 +        pendingCount: pending.length + waitingReplies,
 +        ...(held.length ? { heldReplies: held } : {}),
-+        ...(kickoff ? { waiting: true } : {}),
 +      }
 +    }),
      // `parts`: the members' hidden group Sessions and their earlier segments, for usage.
@@ -395,7 +394,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
      agents: Object.values(state.agents),
      // Key names and who may use them; values never leave the host.
-@@ -54,7 +54,8 @@
+@@ -54,7 +54,8 @@ export function install(rt) {
      capabilities: rt.capabilityLibraryView(),
      secretRequests: state.secretRequests ?? {},
      colors: [...COLORS, ...EXTRA_COLORS],
@@ -405,7 +404,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,49 @@
+@@ -65,22 +65,49 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -466,7 +465,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,57 @@
+@@ -97,28 +97,57 @@ export function install(rt) {
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -528,7 +527,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -141,7 +141,7 @@
+@@ -141,7 +141,7 @@ export function install(rt) {
            return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
          case 'create-bot': {
            await rt.bootstrap()
@@ -537,7 +536,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(bot)
          }
          case 'update-bot':
-@@ -150,17 +150,23 @@
+@@ -150,18 +150,23 @@ export function install(rt) {
          case 'delete-bot':
            await rt.load()
            await rt.deleteBot(body.id)
@@ -554,6 +553,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'create-room': {
            await rt.load()
 -          const room = await rt.createRoom({ members: Array.isArray(body.members) ? body.members : [], name: body.name, ...(typeof body.admin === 'string' ? { admin: body.admin } : {}) })
+-          if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
 +          const room = await rt.createRoom({
 +            members: Array.isArray(body.members) ? body.members : [],
 +            name: body.name,
@@ -561,10 +561,10 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +            ...(typeof body.admin === 'string' ? { admin: body.admin } : {}),
 +            ...(Array.isArray(body.participants) ? { participants: body.participants } : {}),
 +          })
-           if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
            return ok(room)
          }
-@@ -175,8 +175,26 @@
+         case 'update-room': {
+@@ -175,8 +175,26 @@ export function install(rt) {
              add: Array.isArray(body.add) ? body.add : undefined,
              remove: Array.isArray(body.remove) ? body.remove : undefined,
              workDir: body.workDir,
@@ -593,7 +593,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          }
          case 'folders':
          case 'folder-pick':
-@@ -203,17 +203,19 @@
+@@ -203,17 +203,19 @@ export function install(rt) {
          case 'remove-agent':
            await rt.load()
            await rt.removeAgent(body.agentId)
@@ -616,7 +616,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'stop-member-work':
            return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
          case 'dismiss-question':
-@@ -231,6 +231,9 @@
+@@ -231,6 +231,9 @@ export function install(rt) {
            await rt.load()
            return ok(await rt.secretEndpoint(endpoint, body))
          case 'connector-connect':
@@ -626,7 +626,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -241,11 +241,22 @@
+@@ -241,11 +241,22 @@ export function install(rt) {
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -650,7 +650,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'memory-view':
          case 'memory-ask':
          case 'memory-forget':
-@@ -258,8 +258,17 @@
+@@ -258,8 +258,17 @@ export function install(rt) {
            const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
            const question = state.questions[sessionId]
            if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
@@ -668,7 +668,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            // Claim the question before queueing so a second answer is refused.
            delete state.questions[sessionId]
            try {
-@@ -278,9 +278,46 @@
+@@ -278,9 +278,46 @@ export function install(rt) {
            const text = String(body.text ?? '').trim()
            if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
            await rt.load()
@@ -715,7 +715,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,112 @@
+@@ -319,32 +319,112 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -913,7 +913,13 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      if (deferred) return `[Message from ${fromName} · you read it during your last task; answer it now]`
      if (retried && role !== 'room') return '[Your last reply wrote a tool call as text, so nothing ran]'
      if (resumed && role === 'resume') return '[DeepSeek Harness restarted while you were working]'
-@@ -28,9 +28,62 @@ export function install(rt) {
+@@ -22,15 +22,67 @@ export function install(rt) {
+     if (role === 'stopped') return `[Stopped by ${fromName}]`
+     if (role === 'room') return `[Group chat "${roomName}" · ${note}]`
+     if (role === 'report') return `[Group chat "${roomName}" · replies to your post]`
+-    if (role === 'kickoff') return '[Bot team setup]'
+     if (role === 'secret') return '[Secret card]'
+     if (audience === 'user') return `[Message from ${fromName} · the user sees your reply here]`
      return `[Message from ${fromName}]`
    }
  
@@ -1096,6 +1102,40 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
  test('a message with an image or a chat reference waits for its own round, and so does what follows it', async (t) => {
    const { call, emit, userMessage, compose, relay, inboxOf, answer, stop, sent } = start()
    t.after(stop)
+@@ -300,19 +300,26 @@ test('a message with an image or a chat reference waits for its own round, and s
+   assert.equal(inboxOf(room.id).nextStep.length, 1)
+ })
+ 
+-test('the greeting round leaves a waiting message for its own round', async (t) => {
+-  const { call, emit, compose, relay, inboxOf, answer, stop, sent } = start()
++test('creating a team starts no turn, and the user\'s first message opens one round (#645)', async (t) => {
++  const { call, emit, userMessage, relay, answer, stop, sent } = start()
+   t.after(stop)
+-  const room = await team(call, sent)
++  const chief = (await call('state', {})).value.mainBotId
++  const writer = (await call('create-bot', { name: 'Writer' })).value
++  const editor = (await call('create-bot', { name: 'Editor' })).value
++  const room = (await call('create-room', { name: 'R1', members: [chief, writer.id, editor.id] })).value
++  await settle()
++  // Three Bots and a group cost no model turn.
++  assert.deepEqual(sent, [])
+ 
+-  await emit(room.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'kickoff' }, content: [{ type: 'text', text: '[Group chat created]' }] } })
++  // The user's first message opens the round, and the admin speaks first, once.
++  await emit(room.id, userMessage('Hello team'))
+   const running = relay(room.id, 'relay')
+   const first = await turnFor(sent)
+-  await compose(room.id, 'hello there')
+-  await answer(first.sessionId, first.message.source.exchangeId, 'Welcome!', 1)
++  assert.ok(first, 'the admin gets the first turn')
++  assert.equal(sent.length, 1)
++  await answer(first.sessionId, first.message.source.exchangeId, 'Ready.', 1)
+   const result = JSON.parse(await running)
+   assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief'])
+-  assert.equal(inboxOf(room.id).nextTurn.length, 1)
+ })
+ 
+ test('a stopped round leaves a waiting message for the next round', async (t) => {
 @@ -331,6 +331,377 @@ test('a stopped round leaves a waiting message for the next round', async (t) =>
    assert.equal(inboxOf(room.id).nextTurn.length, 1)
  })

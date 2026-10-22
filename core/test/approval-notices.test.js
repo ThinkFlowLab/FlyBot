@@ -219,7 +219,6 @@ function turnsHost({ bots, rooms = {}, groupOwners = new Map(), chatOwners = new
     noteFailure() {},
     warn() {},
     switchJobs: () => [],
-    dropKickoff() {},
     flybotReplyRemote: async () => ({}),
   }
   installTurns(rt)

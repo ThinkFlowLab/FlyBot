@@ -23,7 +23,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const FLYBOT_API_VERSION = 1
 export const SHARED = 'shared'
-// Roles that are one Bot talking to another; group rounds, kickoffs, and notices are not.
+// Roles that are one Bot talking to another; group rounds and notices are not.
 const BOT_TO_BOT_ROLES = new Set(['request', 'reply', 'stopped', 'report'])
 const ACTIONS = new Set(['allow', 'deny', 'hold'])
 const MAX_ATTACHMENTS = 5
@@ -680,7 +680,7 @@ export function install(rt) {
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
     // Everything that is not a first, checked send still carries its sender: resumed, retried,
-    // deferred and re-sent deliveries (and kickoffs, notices) are judged by the owner policy
+    // deferred and re-sent deliveries (and notices) are judged by the owner policy
     // now, since the Bot they name may have had its grant revoked, replaced or removed since.
     if (!gated(args) && !args.flybotChecked && (args.remote?.handle || args.fromId !== undefined)) {
       const owner = ownerPolicy(args)

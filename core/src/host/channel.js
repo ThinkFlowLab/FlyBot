@@ -124,8 +124,7 @@ export function install(rt) {
     mainBotId: state.mainBotIds[0] ?? null,
     mainBotIds: state.mainBotIds,
     // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
-    // `waiting`: the Bot holds its greeting until the user picks its model.
-    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
+    bots: Object.values(state.bots).map(({ segments, ...bot }) => {
       // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
       const pending = rt.listChatApprovals?.(bot, actor) ?? []
       // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,
@@ -141,7 +140,6 @@ export function install(rt) {
         parts: (segments ?? []).map(segment => segment.sessionId),
         pendingCount: pending.length + waitingReplies,
         ...(held.length ? { heldReplies: held } : {}),
-        ...(kickoff ? { waiting: true } : {}),
       }
     }),
     // `parts`: the members' hidden group Sessions and their earlier segments, for usage.
@@ -348,7 +346,6 @@ export function install(rt) {
             ...(typeof body.admin === 'string' ? { admin: body.admin } : {}),
             ...(Array.isArray(body.participants) ? { participants: body.participants } : {}),
           })
-          if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
           return ok(room)
         }
         case 'update-room': {

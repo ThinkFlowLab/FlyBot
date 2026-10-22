@@ -133,18 +133,22 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      state.workspaceId = workspace.id
      await rt.save()
      return workspace.id
-@@ -58,16 +58,33 @@ export function install(rt) {
+@@ -56,18 +56,39 @@ export function install(rt) {
+     return `${stem} ${index}`
+   }
  
-   // `pickModel` leaves the model to the user: the chat opens on a model card, and the
-   // greeting waits until a model is chosen. So does a Bot made when no model is served.
+-  // `pickModel` leaves the model to the user: the chat opens on a model card, and the
+-  // greeting waits until a model is chosen. So does a Bot made when no model is served.
 -  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, copyOf, pickModel = false }) {
-+  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, copyOf, pickModel = false, systemPrompt, fields, remote, ownerId: explicitOwnerId }) {
++  // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
++  // Bot made when no model is served.
++  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, ownerId: explicitOwnerId }) {
      const cleanName = String(botName ?? '').trim().slice(0, 40)
 -    const problem = nameProblem(cleanName)
 -    if (problem !== undefined) throw new Error(problem)
 -    if (rt.findBot(cleanName)) throw new Error(`A Bot named ${cleanName} already exists`)
 +    // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
-+    // team names never clash with it and it gets no greeting.
++    // team names never clash with it and creating it starts no turn.
 +    const isRemote = typeof remote?.handle === 'string'
 +    if (!isRemote) {
 +      const problem = nameProblem(cleanName)
@@ -160,6 +164,10 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +    // model, as applyModel does for the maker), set before its first request, so it never
 +    // tries an unconfigured profile default first. A friend's Bot is never a maker here.
 +    const maker = !model && !pickModel && !isRemote && createdBy ? rt.botOf(createdBy) : undefined
++    // A brief is a parent's context (`create_bot`), so it becomes instructions only when
++    // another Bot made this one. A line the user typed in the new-Bot card is their first
++    // request: the client sends it as a turn, and it is never saved as a standing rule (#645).
++    const parentBrief = !isRemote && createdBy ? rt.botOf(createdBy) : undefined
 +    const inherited = maker && !maker.remote ? await rt.desiredModel(maker) : undefined
 +    const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : inherited ?? await rt.defaultModel()
 +    const inheritedEffort = effort === undefined && inherited !== undefined ? maker.effort : undefined
@@ -173,8 +181,12 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const id = await createSession(cleanName, { dir })
      try {
        state.bots[id] = {
-@@ -83,16 +83,29 @@ export function install(rt) {
-         instructions: String(instructions).trim(),
+@@ -80,45 +80,45 @@ export function install(rt) {
+         ...(modelRef ? { model: modelRef } : {}),
+         ...(effortId ? { effort: effortId } : {}),
+         ...(dir ? { workDir: dir } : {}),
+-        instructions: String(instructions).trim(),
++        instructions: [String(instructions).trim(), parentBrief && brief ? `Why you exist: ${String(brief).trim()}` : ''].filter(Boolean).join('\n\n'),
          createdAt: Date.now(),
          createdBy: createdBy ?? null,
 +        ownerId,
@@ -194,30 +206,43 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +        }
        }
 -      if (main) state.mainBotIds.push(id)
-       const creator = rt.botOf(createdBy)
-       const original = rt.botOf(copyOf)
-       const language = rt.uiLanguage?.()
-       // The kickoff arrives as a user message, so it outranks the Bot's instructions
-       // unless it gives way to them, and it names no tool those instructions may rule out.
-       const kickoff = main
+-      const creator = rt.botOf(createdBy)
+-      const original = rt.botOf(copyOf)
+-      const language = rt.uiLanguage?.()
+-      // The kickoff arrives as a user message, so it outranks the Bot's instructions
+-      // unless it gives way to them, and it names no tool those instructions may rule out.
+-      const kickoff = main
 -        ? `You were just set up as the user's Main Bot. Greet the user in one or two short messages: say you will run their Bot team and that they can come to you for anything that needs a decision. Then ask in one short question what they want the team to help with first. Write in ${language ?? 'the user\'s language if known; otherwise Chinese'}.`
-+        ? `You were just set up as the user's Main Bot. Greet the user in one or two short messages: say you will run their Bot team and that they can come to you for anything that needs a decision. Then ask in one short question what they want the team to help with first. Write in ${language ?? 'English'}.`
-         : original
-           ? `The user just made you as a copy of ${original.name}: same job, fresh memory. Greet the user in one short message, then ask in one short question what this copy should focus on.`
-           : creator
-@@ -103,6 +103,11 @@ export function install(rt) {
-       const opener = `${kickoff}\nWhere your instructions say otherwise, follow them.`
-       const text = !main && language ? `${opener}\nWrite in ${language}.` : opener
+-        : original
+-          ? `The user just made you as a copy of ${original.name}: same job, fresh memory. Greet the user in one short message, then ask in one short question what this copy should focus on.`
+-          : creator
+-            ? `${creator.name} just created you for the user.${brief ? ` Why you exist: ${brief}` : ''}\nGreet the user in one short message, then ask in one short question where to start. Keep it brief.`
+-            : brief
+-              ? `The user just created you and sent this first message:\n\n${brief}\n\nIntroduce yourself in one short line, then help with it.`
+-              : 'The user just created you. Greet the user in one short message, then ask in one short question what you should focus on.'
+-      const opener = `${kickoff}\nWhere your instructions say otherwise, follow them.`
+-      const text = !main && language ? `${opener}\nWrite in ${language}.` : opener
        const bot = state.bots[id]
+-      if (modelRef === undefined) {
+-        bot.kickoff = { text, from: createdBy ?? null, ...(main ? { main: true } : {}) }
 +      if (isRemote) {
-+        await rt.save()
-+        void rt.waitForModel(bot).then(() => rt.applyModel(bot)).catch(error => rt.warn('ds-bot: route for %s not applied: %s', cleanName, error))
-+        return bot
-+      }
-       if (modelRef === undefined) {
-         bot.kickoff = { text, from: createdBy ?? null, ...(main ? { main: true } : {}) }
          await rt.save()
-@@ -119,6 +119,8 @@ export function install(rt) {
++        void rt.waitForModel(bot).then(() => rt.applyModel(bot)).catch(error => rt.warn('ds-bot: route for %s not applied: %s', cleanName, error))
+         return bot
+       }
+       await rt.save()
+-      // The greeting runs on the Bot's own model, once its provider is registered.
+-      void rt.waitForModel(bot)
+-        .then(() => rt.applyModel(bot).catch(error => rt.warn('ds-bot: model for %s not applied: %s', cleanName, error)))
+-        .then(() => sendKickoff(bot, { text, from: createdBy }))
++      // Nothing is sent on creation (#645): the user's first message is what starts a turn.
++      if (modelRef !== undefined) {
++        void rt.waitForModel(bot)
++          .then(() => rt.applyModel(bot).catch(error => rt.warn('ds-bot: model for %s not applied: %s', cleanName, error)))
++      }
+       return bot
+     } catch (error) {
+       // The Bot's Session was already made: archive it instead of leaving an orphan.
        delete state.bots[id]
        state.mainBotIds = state.mainBotIds.filter(other => other !== id)
        rt.chatOwners.delete(id)
@@ -226,6 +251,34 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        // A save that another change queued meanwhile still carries this Bot; a later
        // one writes the team without it.
        void rt.save().catch(() => {})
+@@ -128,19 +128,6 @@ export function install(rt) {
+     }
+   }
+ 
+-  function sendKickoff(bot, { text, from }) {
+-    void rt.deliver({ fromId: from ?? undefined, toId: bot.id, text, role: 'kickoff' })
+-      .catch(error => rt.warn('ds-bot: kickoff failed: %s', error))
+-  }
+-
+-  // The user wrote first, so the held greeting would only interrupt.
+-  function dropKickoff(botId) {
+-    const bot = rt.botOf(botId)
+-    if (bot?.kickoff === undefined) return
+-    delete bot.kickoff
+-    void rt.save().catch(() => {})
+-  }
+-
+   async function duplicateBot(id) {
+     const bot = rt.botOf(id)
+     if (bot === undefined) throw new Error('Unknown Bot')
+@@ -155,7 +155,6 @@ export function install(rt) {
+       effort: served ? bot.effort : undefined,
+       // A folder that went away since leaves the copy in the team workspace.
+       workDir: bot.workDir !== undefined && await rt.isFolder(bot.workDir) ? bot.workDir : undefined,
+-      copyOf: bot.id,
+     })
+   }
+ 
 @@ -189,6 +189,8 @@ export function install(rt) {
        if (avatar) bot.avatar = avatar
        else delete bot.avatar
@@ -235,6 +288,19 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.model !== undefined) {
        if (patch.model === null || patch.model === '') delete bot.model
        else bot.model = await rt.resolveModel(patch.model)
+@@ -212,12 +212,6 @@ export function install(rt) {
+     await rt.save()
+     if (modelChanged) await rt.applyModel(bot, { force: true })
+     if (moved) void rt.followFolder(bot.id)
+-    if (bot.model && bot.kickoff !== undefined) {
+-      const held = bot.kickoff
+-      delete bot.kickoff
+-      await rt.save()
+-      sendKickoff(bot, held)
+-    }
+     return bot
+   }
+ 
 @@ -235,7 +235,14 @@ export function install(rt) {
    // admin may change its own group but not delete it. Only a member can be admin.
  
@@ -388,9 +454,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -422,6 +422,7 @@ export function install(rt) {
-       if (rt.botOf(other)?.kickoff?.main) delete rt.botOf(other).kickoff
+@@ -417,11 +417,8 @@ export function install(rt) {
      }
+     // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
+     if (main) delete bot.hidden
+-    // A held setup greeting says "you are the Main Bot"; it must not go out after demotion.
+-    for (const other of state.mainBotIds.filter(other => !next.includes(other))) {
+-      if (rt.botOf(other)?.kickoff?.main) delete rt.botOf(other).kickoff
+-    }
      state.mainBotIds = next
 +    rt.syncDesignatedChief()
      await rt.save()
@@ -420,6 +491,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const failed = await saveForDelete()
      // Same as deleteRoom: stopActivity removes the Session's armed scheduled tasks.
      // Past parts are archived too: a part move can leave tasks on the old Session,
+@@ -489,6 +489,6 @@ export function install(rt) {
+   Object.assign(rt, {
+     ensureWorkspace, createSession, createBot, duplicateBot, updateBot, setFlags,
+     roomBusy, autoRoomName, retitleRoom, createRoom, updateRoom, deleteRoom,
+-    setMain, deleteBot, bootstrap, dropKickoff,
++    setMain, deleteBot, bootstrap,
+   })
+ }
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
@@ -905,7 +984,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (target.id === sender.id) refuse('You cannot stop yourself.')
        const { running } = activeSessions(target.id)
        if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
-@@ -162,7 +162,7 @@ export function install(rt) {
+@@ -162,20 +162,20 @@ export function install(rt) {
          agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
        }
        const why = String(args.reason ?? '').trim() || 'Stop what you are doing; the previous turn was ended on purpose. Acknowledge briefly.'
@@ -914,7 +993,13 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        return `Stopped ${target.name} in ${running.map(whereOf).join(' and ')}. It is told why in a new turn, whose reply comes back to you.`
      },
    }))
-@@ -175,7 +175,7 @@ export function install(rt) {
+ 
+   ctx.tools.register(defineTool({
+     name: 'create_bot',
+-    description: 'Main Bot only. Create a new Bot on the user\'s team. It appears in the sidebar and greets the user.',
++    description: 'Main Bot only. Create a new Bot on the user\'s team. It appears in the sidebar and starts no turn until the user writes to it.',
+     parameters: {
+       name: { type: 'string', required: true, description: 'Short display name, e.g. "Researcher" or "Editor"' },
        role: { type: 'string', required: true, description: 'Two-to-four character role label shown under the name' },
        instructions: { type: 'string', required: true, description: 'What this Bot is responsible for and how it should work' },
        brief: { type: 'string', description: 'Why the user wants it, passed to the new Bot as its first context' },
@@ -923,6 +1008,15 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        work_dir: WORK_DIR_PARAM,
      },
      output,
+@@ -187,7 +187,7 @@ export function install(rt) {
+         const name = String(args.name ?? '').trim()
+         await rt.approveFolder(exec, { path: workDir, who: { en: `the new Bot ${name}`, zh: `新 Bot ${name} ` } })
+         const bot = await rt.createBot({ ...args, workDir, createdBy: rt.selfOf(exec.agent.id) })
+-        return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It is greeting the user now.`
++        return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It starts no turn until the user writes to it.`
+       } catch (error) {
+         return `Could not create the Bot: ${error.message}`
+       }
 @@ -257,7 +257,7 @@ export function install(rt) {
      }
      return { bots, unknown }
@@ -1064,6 +1158,50 @@ diff --git a/src/host/tools.js b/src/host/tools.js
              .join('')
            return `${verb} ${args.name} ${args.bot ? `to ${result.bot}` : 'to yourself'}. Changes apply from ${result.bot}'s next message.${endpoint === 'attach' ? approvals : ''}`
          } catch (error) { return error.message }
+diff --git a/test/blocking-question.test.js b/test/blocking-question.test.js
+--- a/test/blocking-question.test.js
++++ b/test/blocking-question.test.js
+@@ -81,14 +81,6 @@ async function setup({ served = ['read', 'ask_user', QUESTION] } = {}) {
+   return { ctx, rt, agentFor, hidden, hiddenIn, guard, sent, stop }
+ }
+ 
+-const until = async (check) => {
+-  const end = Date.now() + 2000
+-  while (!check()) {
+-    if (Date.now() > end) throw new Error('until: the condition did not hold within 2 s')
+-    await new Promise(resolve => setTimeout(resolve, 20))
+-  }
+-}
+-
+ test('a Bot\'s own chat and its group Session lose dsh\'s blocking question tool; other Sessions keep it', async (t) => {
+   const { agentFor, hidden, hiddenIn, stop } = await setup()
+   t.after(stop)
+@@ -129,18 +129,15 @@ test('the guard refuses the blocking question tool in Bot Sessions only', async
+   assert.equal(guard('read', 'writer'), undefined)
+ })
+ 
+-// FeiZhuLulu/DeepSeek-Bot#77: a new Bot told never to use a question tool was opened
+-// with "use ask_user", and a model that picked dsh's ask_user_question for it held the
+-// Bot until the card was answered, with other Bots' messages queued behind it.
+-test('a new Bot that rules out question tools opens without one and cannot block on dsh\'s', async (t) => {
++// FeiZhuLulu/DeepSeek-Bot#77: a new Bot told never to use a question tool must not be
++// told to use one, and its Session must not carry dsh's either. Creating it speaks to
++// nobody (#645); the mask lands on its first delivered turn, and the guard holds before that.
++test('a new Bot that rules out question tools is sent nothing and cannot block on dsh\'s', async (t) => {
+   const { rt, hiddenIn, guard, sent, stop } = await setup()
+   t.after(stop)
+   const receiver = await rt.createBot({ name: 'Receiver', instructions: 'Never use ask_user or any question tool.', createdBy: 'chief' })
+-  await until(() => sent.some(entry => entry.sessionId === receiver.id))
+-  const kickoff = sent.find(entry => entry.sessionId === receiver.id).message.content[0].text
+-  assert.doesNotMatch(kickoff, /ask_user|allowCustom/)
+-  assert.match(kickoff, /Where your instructions say otherwise, follow them\./)
+-  // The Agent was made before Receiver was on the team; the kickoff trims its list.
+-  assert.equal(hiddenIn(receiver.id).length, 1)
++  assert.deepEqual(sent, [])
+   assert.match(guard(QUESTION, receiver.id), /Bots cannot use ask_user_question/)
++  await rt.deliver({ fromId: 'chief', toId: receiver.id, text: 'Start.', role: 'request' })
++  assert.equal(hiddenIn(receiver.id).length, 1)
+ })
 diff --git a/test/fake-ctx.js b/test/fake-ctx.js
 --- a/test/fake-ctx.js
 +++ b/test/fake-ctx.js

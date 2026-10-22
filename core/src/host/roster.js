@@ -56,12 +56,12 @@ export function install(rt) {
     return `${stem} ${index}`
   }
 
-  // `pickModel` leaves the model to the user: the chat opens on a model card, and the
-  // greeting waits until a model is chosen. So does a Bot made when no model is served.
-  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, copyOf, pickModel = false, systemPrompt, fields, remote, ownerId: explicitOwnerId }) {
+  // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
+  // Bot made when no model is served.
+  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, ownerId: explicitOwnerId }) {
     const cleanName = String(botName ?? '').trim().slice(0, 40)
     // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
-    // team names never clash with it and it gets no greeting.
+    // team names never clash with it and creating it starts no turn.
     const isRemote = typeof remote?.handle === 'string'
     if (!isRemote) {
       const problem = nameProblem(cleanName)
@@ -75,6 +75,10 @@ export function install(rt) {
     // model, as applyModel does for the maker), set before its first request, so it never
     // tries an unconfigured profile default first. A friend's Bot is never a maker here.
     const maker = !model && !pickModel && !isRemote && createdBy ? rt.botOf(createdBy) : undefined
+    // A brief is a parent's context (`create_bot`), so it becomes instructions only when
+    // another Bot made this one. A line the user typed in the new-Bot card is their first
+    // request: the client sends it as a turn, and it is never saved as a standing rule (#645).
+    const parentBrief = !isRemote && createdBy ? rt.botOf(createdBy) : undefined
     const inherited = maker && !maker.remote ? await rt.desiredModel(maker) : undefined
     const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : inherited ?? await rt.defaultModel()
     const inheritedEffort = effort === undefined && inherited !== undefined ? maker.effort : undefined
@@ -97,7 +101,7 @@ export function install(rt) {
         ...(modelRef ? { model: modelRef } : {}),
         ...(effortId ? { effort: effortId } : {}),
         ...(dir ? { workDir: dir } : {}),
-        instructions: String(instructions).trim(),
+        instructions: [String(instructions).trim(), parentBrief && brief ? `Why you exist: ${String(brief).trim()}` : ''].filter(Boolean).join('\n\n'),
         createdAt: Date.now(),
         createdBy: createdBy ?? null,
         ownerId,
@@ -116,38 +120,18 @@ export function install(rt) {
           owner.designatedChiefId = id
         }
       }
-      const creator = rt.botOf(createdBy)
-      const original = rt.botOf(copyOf)
-      const language = rt.uiLanguage?.()
-      // The kickoff arrives as a user message, so it outranks the Bot's instructions
-      // unless it gives way to them, and it names no tool those instructions may rule out.
-      const kickoff = main
-        ? `You were just set up as the user's Main Bot. Greet the user in one or two short messages: say you will run their Bot team and that they can come to you for anything that needs a decision. Then ask in one short question what they want the team to help with first. Write in ${language ?? 'English'}.`
-        : original
-          ? `The user just made you as a copy of ${original.name}: same job, fresh memory. Greet the user in one short message, then ask in one short question what this copy should focus on.`
-          : creator
-            ? `${creator.name} just created you for the user.${brief ? ` Why you exist: ${brief}` : ''}\nGreet the user in one short message, then ask in one short question where to start. Keep it brief.`
-            : brief
-              ? `The user just created you and sent this first message:\n\n${brief}\n\nIntroduce yourself in one short line, then help with it.`
-              : 'The user just created you. Greet the user in one short message, then ask in one short question what you should focus on.'
-      const opener = `${kickoff}\nWhere your instructions say otherwise, follow them.`
-      const text = !main && language ? `${opener}\nWrite in ${language}.` : opener
       const bot = state.bots[id]
       if (isRemote) {
         await rt.save()
         void rt.waitForModel(bot).then(() => rt.applyModel(bot)).catch(error => rt.warn('ds-bot: route for %s not applied: %s', cleanName, error))
         return bot
       }
-      if (modelRef === undefined) {
-        bot.kickoff = { text, from: createdBy ?? null, ...(main ? { main: true } : {}) }
-        await rt.save()
-        return bot
-      }
       await rt.save()
-      // The greeting runs on the Bot's own model, once its provider is registered.
-      void rt.waitForModel(bot)
-        .then(() => rt.applyModel(bot).catch(error => rt.warn('ds-bot: model for %s not applied: %s', cleanName, error)))
-        .then(() => sendKickoff(bot, { text, from: createdBy }))
+      // Nothing is sent on creation (#645): the user's first message is what starts a turn.
+      if (modelRef !== undefined) {
+        void rt.waitForModel(bot)
+          .then(() => rt.applyModel(bot).catch(error => rt.warn('ds-bot: model for %s not applied: %s', cleanName, error)))
+      }
       return bot
     } catch (error) {
       // The Bot's Session was already made: archive it instead of leaving an orphan.
@@ -165,19 +149,6 @@ export function install(rt) {
     }
   }
 
-  function sendKickoff(bot, { text, from }) {
-    void rt.deliver({ fromId: from ?? undefined, toId: bot.id, text, role: 'kickoff' })
-      .catch(error => rt.warn('ds-bot: kickoff failed: %s', error))
-  }
-
-  // The user wrote first, so the held greeting would only interrupt.
-  function dropKickoff(botId) {
-    const bot = rt.botOf(botId)
-    if (bot?.kickoff === undefined) return
-    delete bot.kickoff
-    void rt.save().catch(() => {})
-  }
-
   async function duplicateBot(id) {
     const bot = rt.botOf(id)
     if (bot === undefined) throw new Error('Unknown Bot')
@@ -192,7 +163,6 @@ export function install(rt) {
       effort: served ? bot.effort : undefined,
       // A folder that went away since leaves the copy in the team workspace.
       workDir: bot.workDir !== undefined && await rt.isFolder(bot.workDir) ? bot.workDir : undefined,
-      copyOf: bot.id,
     })
   }
 
@@ -251,12 +221,6 @@ export function install(rt) {
     await rt.save()
     if (modelChanged) await rt.applyModel(bot, { force: true })
     if (moved) void rt.followFolder(bot.id)
-    if (bot.model && bot.kickoff !== undefined) {
-      const held = bot.kickoff
-      delete bot.kickoff
-      await rt.save()
-      sendKickoff(bot, held)
-    }
     return bot
   }
 
@@ -512,10 +476,6 @@ export function install(rt) {
     }
     // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
     if (main) delete bot.hidden
-    // A held setup greeting says "you are the Main Bot"; it must not go out after demotion.
-    for (const other of state.mainBotIds.filter(other => !next.includes(other))) {
-      if (rt.botOf(other)?.kickoff?.main) delete rt.botOf(other).kickoff
-    }
     state.mainBotIds = next
     rt.syncDesignatedChief()
     await rt.save()
@@ -592,6 +552,6 @@ export function install(rt) {
   Object.assign(rt, {
     ensureWorkspace, createSession, createBot, duplicateBot, updateBot, setFlags,
     roomBusy, autoRoomName, retitleRoom, createRoom, updateRoom, deleteRoom,
-    setMain, deleteBot, bootstrap, dropKickoff,
+    setMain, deleteBot, bootstrap,
   })
 }

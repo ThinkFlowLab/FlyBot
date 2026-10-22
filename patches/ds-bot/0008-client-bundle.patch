@@ -4274,8 +4274,9 @@ diff --git a/client.js b/client.js
 +    }
      if (source.kind === "bot") {
 -      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react6.createElement)(EarlierParts, { sessionId, roster, actions });
+-      if (source.role === "kickoff" || source.role === "room") return null;
 +      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react8.createElement)(EarlierParts, { sessionId, roster, actions });
-       if (source.role === "kickoff" || source.role === "room") return null;
++      if (source.role === "room") return null;
 +      if (source.role === "mention") return (0, import_react8.createElement)("div", { className: "bt-event" }, (0, import_react8.createElement)("span", null, contentText(data.content)));
        if (source.role === "secret" || deferred) return null;
        if (source.role === "post") {
@@ -6320,8 +6321,7 @@ diff --git a/client.js b/client.js
 -  const button = (0, import_react8.useRef)(null);
 -  const [box, setBox] = (0, import_react8.useState)(null);
 -  (0, import_react8.useEffect)(() => () => clearTimeout(timer.current), []);
-+function ConnectApps({ wide, actions }) {
-   if (!wide) return null;
+-  if (!wide) return null;
 -  const show = () => {
 -    clearTimeout(timer.current);
 -    timer.current = setTimeout(() => {
@@ -6337,12 +6337,10 @@ diff --git a/client.js b/client.js
 -    setTip(false);
 -  };
 -  return (0, import_react8.createElement)(
-+  return (0, import_react13.createElement)(
-     "span",
-     { className: "bt-connect-wrap" },
+-    "span",
+-    { className: "bt-connect-wrap" },
 -    (0, import_react8.createElement)(
-+    (0, import_react13.createElement)(
-       "button",
+-      "button",
 -      {
 -        ref: button,
 -        type: "button",
@@ -6363,6 +6361,13 @@ diff --git a/client.js b/client.js
 -      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
 -      t("Plugin compatibility is not fully verified.")
 -    ), document.body) : null
++function ConnectApps({ wide, actions }) {
++  if (!wide) return null;
++  return (0, import_react13.createElement)(
++    "span",
++    { className: "bt-connect-wrap" },
++    (0, import_react13.createElement)(
++      "button",
 +      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
 +      (0, import_react13.createElement)(PlugIcon),
 +      t("Connect apps")
@@ -7972,15 +7977,14 @@ diff --git a/client.js b/client.js
      });
      load();
      return () => {
-@@ -6896,11 +6896,25 @@ function timingText(task) {
-       return "";
-   }
- }
--var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
--function TaskRow({ task, actions, onView, showBot, roster }) {
--  const [confirming, setConfirming] = (0, import_react15.useState)(false);
--  const [busy, setBusy] = (0, import_react15.useState)(false);
--  (0, import_react15.useEffect)(() => {
+@@ -6893,14 +6893,28 @@ function timingText(task) {
+     case "cron":
+       return `${t("On the schedule {expression}", { expression: task.expression })}${zone}`;
+     default:
+-      return "";
++      return "";
++  }
++}
 +var nextText = (task) => task.status === "paused" ? t("Paused") : task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
 +function lastRunText(run) {
 +  if (run === void 0 || !Number.isFinite(run.at)) return "";
@@ -7994,8 +7998,13 @@ diff --git a/client.js b/client.js
 +      return t("Last run {time} · Failed: {reason}", { time, reason: hostText(run.reason || "Unknown error") });
 +    default:
 +      return t("Last run {time}", { time });
-+  }
-+}
+   }
+ }
+-var nextText = (task) => task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
+-function TaskRow({ task, actions, onView, showBot, roster }) {
+-  const [confirming, setConfirming] = (0, import_react15.useState)(false);
+-  const [busy, setBusy] = (0, import_react15.useState)(false);
+-  (0, import_react15.useEffect)(() => {
 +function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
 +  const [confirming, setConfirming] = (0, import_react20.useState)(false);
 +  const [busy, setBusy] = (0, import_react20.useState)(false);
@@ -9503,7 +9512,7 @@ diff --git a/client.js b/client.js
  .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
  .bt-bs-input:hover{background:var(--bt-hover)}
  .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
-@@ -8165,7 +8165,9 @@ function freshBotName(roster, base = "New Bot") {
+@@ -8165,36 +8165,37 @@ function freshBotName(roster, base = "New Bot") {
  }
  function startModel(roster) {
    const models = roster.models ?? [];
@@ -9512,9 +9521,13 @@ diff --git a/client.js b/client.js
 +  const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find((bot) => bot.id === roster.mainBotId);
 +  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? "";
  }
- function createPayload({ name, look, image, model, effort, brief }) {
+-function createPayload({ name, look, image, model, effort, brief }) {
++function createPayload({ name, look, image, model, effort }) {
    const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } };
-@@ -8176,7 +8176,7 @@ function createPayload({ name, look, image, model, effort, brief }) {
+   if (model) payload.model = model;
+   if (effort) payload.effort = effort;
+-  if (brief) payload.brief = brief;
+   return payload;
  }
  
  // src/client/create-bot.js
@@ -9523,10 +9536,10 @@ diff --git a/client.js b/client.js
  var pick = (list) => list[Math.floor(Math.random() * list.length)];
  var randomLook = (avoid = {}) => {
    const shapes = DEFAULT_SHAPES.filter((shape) => shape !== avoid.shape);
-@@ -8184,17 +8184,17 @@ var randomLook = (avoid = {}) => {
+   const colors = DEFAULT_COLORS.filter((color) => color !== avoid.color);
    return { shape: pick(shapes), color: pick(colors) };
  };
- function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCreated, inline = false }) {
+-function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCreated, inline = false }) {
 -  const [look, setLook] = (0, import_react19.useState)(() => randomLook());
 -  const [image, setImage] = (0, import_react19.useState)(null);
 -  const [name, setName] = (0, import_react19.useState)(start?.name ?? "");
@@ -9536,6 +9549,7 @@ diff --git a/client.js b/client.js
 -  const [error, setError] = (0, import_react19.useState)("");
 -  const fileRef = (0, import_react19.useRef)(null);
 -  const frame = (0, import_react19.useRef)(null);
++function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
 +  const [look, setLook] = (0, import_react26.useState)(() => randomLook());
 +  const [image, setImage] = (0, import_react26.useState)(null);
 +  const [name, setName] = (0, import_react26.useState)(start?.name ?? "");
@@ -9551,6 +9565,17 @@ diff --git a/client.js b/client.js
      if (inline) frame.current?.scrollIntoView({ block: "start", behavior: "smooth" });
    }, []);
    const fallbackName = freshBotName(roster, t("New Bot"));
+@@ -8206,8 +8206,8 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
+     setError("");
+     setBusy(true);
+     try {
+-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }));
+-      onCreated(bot);
++      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }));
++      await onCreated(bot);
+     } catch (failure) {
+       setError(failure?.message ?? String(failure));
+       setBusy(false);
 @@ -8219,25 +8219,25 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
      avatarImage(file).then(setImage, (failure) => setError(failure?.message ?? String(failure)));
    };
@@ -9765,6 +9790,17 @@ diff --git a/client.js b/client.js
    const pick2 = (bot) => {
      setPicked((current) => [...current, bot.id]);
      setQuery("");
+@@ -8384,7 +8384,9 @@ function NewChat({ mode, roster, actions }) {
+     setError("");
+     setDraft({ name: query.trim() !== "" && !exact ? query.trim() : "", fromList: true });
+   };
+-  const created = (bot) => {
++  const created = async (bot) => {
++    const text = message.trim();
++    if (text) await actions.send(bot.id, text);
+     close();
+     actions.openSession(bot.id);
+     actions.showDetails(bot.id, "settings");
 @@ -8392,7 +8392,12 @@ function NewChat({ mode, roster, actions }) {
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return;
@@ -9775,11 +9811,11 @@ diff --git a/client.js b/client.js
 +      ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
 +      ...remotes
 +    ];
-+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...text ? {} : { greet: true } });
++    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {} });
      if (text) await actions.send(room2.id, text);
      actions.openSession(room2.id);
      close();
-@@ -8411,42 +8411,72 @@ function NewChat({ mode, roster, actions }) {
+@@ -8411,46 +8411,75 @@ function NewChat({ mode, roster, actions }) {
        close();
        return;
      }
@@ -9862,6 +9898,10 @@ diff --git a/client.js b/client.js
          roster,
          actions,
          start: draft,
+-        brief: message.trim(),
+         canGoBack: draft.fromList,
+         onBack: draft.fromList ? () => {
+           setDraft(null);
 @@ -8467,33 +8467,41 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
      if (picked.length > 0) setPicked((current) => current.slice(0, -1));
      else if (admin !== null) setAdmin(null);
@@ -10602,7 +10642,14 @@ diff --git a/client.js b/client.js
    const toggle = (id) => setMembers((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
    const pickAdmin = (id) => {
      setAdmin(id);
-@@ -9094,48 +9094,48 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
+@@ -9088,54 +9088,54 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
+     if (busy || admin === null || members.length === 0) return;
+     setBusy(true);
+     let room2;
+-    const done = await run(actions.createRoom([admin, ...members], { admin, greet: true, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
++    const done = await run(actions.createRoom([admin, ...members], { admin, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
+       room2 = value;
+     }));
      if (done && room2) onCreated(room2);
      else setBusy(false);
    };

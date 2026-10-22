@@ -110,9 +110,13 @@ export function NewChat({ mode, roster, actions }) {
     setError('')
     setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
   }
-  // Close first: closing the new-chat pane keeps the details panel, while closing
+  // A line typed in the composer was a request, so it is the new Bot's first turn, not its
+  // instructions (#645): the card is handed no brief, and the line is sent once the Bot
+  // exists. Close first: closing the new-chat pane keeps the details panel, while closing
   // nothing would clear it.
-  const created = (bot) => {
+  const created = async (bot) => {
+    const text = message.trim()
+    if (text) await actions.send(bot.id, text)
     close()
     actions.openSession(bot.id)
     actions.showDetails(bot.id, 'settings')
@@ -127,7 +131,7 @@ export function NewChat({ mode, roster, actions }) {
       ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
       ...remotes,
     ]
-    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}), ...(text ? {} : { greet: true }) })
+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
     if (text) await actions.send(room.id, text)
     actions.openSession(room.id)
     close()
@@ -197,7 +201,7 @@ export function NewChat({ mode, roster, actions }) {
   if (draft) {
     return h('div', { className: 'bt-pane', style: { left: paneLeft } },
       h(CreateBot, {
-        roster, actions, start: draft, brief: message.trim(), canGoBack: draft.fromList,
+        roster, actions, start: draft, canGoBack: draft.fromList,
         onBack: draft.fromList ? () => { setDraft(null); setTimeout(() => inputRef.current?.focus()) } : close,
         onCreated: created,
       }))

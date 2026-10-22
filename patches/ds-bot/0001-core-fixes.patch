@@ -1290,7 +1290,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    const { isOpen, shownPlace, leaving, button, menu, open, close } = useAnchoredMenu()
    const shown = modelOf(bot, roster)
    const current = bot.model ?? bot.appliedModel
-@@ -184,7 +184,7 @@ export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onP
+@@ -184,11 +184,11 @@ export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onP
          : h('div', { className: 'bt-model-none' }, t('No models are set up in DeepSeek Harness yet.')),
        effortRows(reasoning).length > 0 ? h(EffortRows, { reasoning, current: picked, onPick: pickEffort }) : null,
        h('div', { className: 'bt-menu-sep', role: 'separator' }),
@@ -1299,6 +1299,11 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  }
  
  // The card a Bot's chat opens on while the Bot has no model, or has one that is no
+-// longer served. The first Main Bot greets the user only after a pick.
++// longer served. The first Main Bot starts no turn until a model is picked.
+ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
+   const roster = useRoster(value => value)
+   const bot = roster.byId[sessionId]
 @@ -197,6 +197,10 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
    const shown = Boolean(bot) && currentPart(bot) === sessionId && roster.ready
    useEffect(() => { if (shown) void actions.refreshModels?.() }, [shown, sessionId])
@@ -1801,6 +1806,15 @@ diff --git a/src/client/text.js b/src/client/text.js
  // While a Session's history loads, a card asked in it may yet be drawn at its call,
  // so the docks hold it back until then.
  export const historyLoading = snapshot => snapshot?.openState === 'cold' || snapshot?.openState === 'loading'
+@@ -125,7 +125,7 @@ export function toolArgs(root) {
+ }
+ 
+ // A relay context is a Bot-to-Bot request, reply or stop notice injected into the
+-// model's history. ds-bot's own package sources (kickoff, room, secret, handoff
++// model's history. ds-bot's own package sources (room, secret, handoff
+ // parts) are not events in the chat, nor is a request handed back after its line was
+ // already shown: deferred, resumed after a restart, or retried after a tool call
+ // written as text.
 @@ -200,14 +200,26 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
  }
  
@@ -3050,6 +3064,17 @@ diff --git a/src/host/models.js b/src/host/models.js
      bot.appliedModel = ref
      if (effort === undefined) delete bot.appliedEffort
      else bot.appliedEffort = effort
+@@ -163,8 +163,8 @@ export function install(rt) {
+     return ref
+   }
+ 
+-  // A provider may register after the plugin starts; a greeting waits for its Bot's
+-  // model instead of failing with "no adapter registered".
++  // A provider may register after the plugin starts; the model is applied once it is
++  // served instead of failing with "no adapter registered".
+   async function waitForModel(bot, ms = ROUTE_WAIT_MS) {
+     const deadline = Date.now() + ms
+     for (;;) {
 @@ -194,7 +194,54 @@ export function install(rt) {
      }
    }
@@ -3703,6 +3728,15 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
+@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
+ // A group's own Session never reaches a model, so the snapshot DSH prepared there
+ // rides with the user's queued message to the members who answer it.
+ export function attachReference(queued, source, text) {
+-  const post = queued?.findLast(item => item.botId === undefined && item.kickoff !== true)
++  const post = queued?.findLast(item => item.botId === undefined)
+   if (post === undefined || text === '') return
+   const labels = (Array.isArray(source?.references) ? source.references : [])
+     .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
 @@ -51,9 +51,10 @@ export function install(rt) {
  
    // The retry goes where the turn's trigger came from: a group round's waiter or a
@@ -3715,7 +3749,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,7 +70,7 @@ export function install(rt) {
+@@ -70,13 +70,13 @@ export function install(rt) {
      })
    }
  
@@ -3724,6 +3758,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const live = new Map()
    /** @type {Map<string, {sessionId:string, resolve:(text:string|null)=>void, fail:(failure:any)=>void, touch:()=>void, approval:()=>void}>} member turn waiters keyed by exchange id */
    const roomWaiters = new Map()
+   /** @type {Map<string, {roomId:string, replies:any[], members:string[], speaking:string|null}>} */
+   const roomProgress = new Map()
+-  /** @type {Map<string, {text:string, botId?:string, name?:string, reportBack?:boolean, hop?:number, kickoff?:boolean, references?:{labels:string[], text:string}[]}[]>} messages a room's next relay posts */
++  /** @type {Map<string, {text:string, botId?:string, name?:string, reportBack?:boolean, hop?:number, references?:{labels:string[], text:string}[]}[]>} messages a room's next relay posts */
+   const roomInbox = new Map()
+   const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
+   // Member turns of a group round the user stopped: what they end with stays out of the group.
 @@ -162,17 +162,30 @@ export function install(rt) {
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
@@ -3897,7 +3938,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,11 +331,20 @@ export function install(rt) {
+@@ -331,14 +331,21 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -3916,9 +3957,12 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +            // Whose request the post carries on (turn-origin.js): the round's member turns answer it.
 +            ...(typeof source.origin === 'string' ? { origin: source.origin } : {}),
            })
-         } else if (source?.kind === SOURCE_KIND && source.role === 'kickoff' && rt.roomOf(id)) {
-           queueRoomMessage(id, { text: '', kickoff: true })
-@@ -363,12 +363,17 @@ export function install(rt) {
+-        } else if (source?.kind === SOURCE_KIND && source.role === 'kickoff' && rt.roomOf(id)) {
+-          queueRoomMessage(id, { text: '', kickoff: true })
+         } else if (source?.kind === SOURCE_KIND) {
+           if (entry.turn === undefined) entry.pending = source
+           else if (!opened) claimTrigger(id, entry, source)
+@@ -363,12 +363,15 @@ export function install(rt) {
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
                .filter(block => block?.type === 'image' && !block.offloaded).map(block => block.attachment)
@@ -3929,8 +3973,8 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +              ...(source.authorId ? { authorId: source.authorId, authorKind: source.authorKind || 'human', authorName: source.authorName } : {}),
 +            })
            }
-           const own = rt.chatOwners.get(id)
-           if (own !== undefined) rt.dropKickoff(own)
+-          const own = rt.chatOwners.get(id)
+-          if (own !== undefined) rt.dropKickoff(own)
 -          // Any user message answers or supersedes the open question card.
 -          if (state.questions[id] !== undefined) {
 +          // Any user message answers or supersedes the open question card. A group's card waits for
@@ -4145,7 +4189,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    page.shown[0].onclick()
    assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
  })
-@@ -62,3 +62,237 @@ test('no notification for the conversation on screen, for approvals older than t
+@@ -62,3 +62,236 @@ test('no notification for the conversation on screen, for approvals older than t
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -4302,7 +4346,6 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +    noteFailure() {},
 +    warn() {},
 +    switchJobs: () => [],
-+    dropKickoff() {},
 +    flybotReplyRemote: async () => ({}),
 +  }
 +  installTurns(rt)
@@ -4383,6 +4426,17 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  assert.match(settings, /\['approval', 'Waiting for approval', 'Once more if it still waits after 15 min\.'\],\n {2}\['finished', 'Finished'\],\n {2}\['failed', 'Failed'\],/)
 +  assert.match(settings, /disabled: prefs\.notifications === false,\n\s*on: prefs\.notify\?\.\[kind\] !== false, onChange: on => run\(actions\.setPrefs\(\{ notify: \{ \[kind\]: on \} \}\)\)/)
 +})
+diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
+--- a/test/bot-messages.test.js
++++ b/test/bot-messages.test.js
+@@ -269,7 +269,6 @@ function turnsHost() {
+     noteFailure() {},
+     warn() {},
+     switchJobs: () => [],
+-    dropKickoff() {},
+   }
+   installTurns(rt)
+   let seq = 0
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
 +++ b/test/client-bundle.test.js
@@ -5476,6 +5530,17 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +  assert.deepEqual(added.map(call => [call.source.role, call.source.senderRoomId]), [['request', 'r1']])
 +  assert.match(text(added[0]), /Answer: the release branch/)
 +})
+diff --git a/test/history.test.js b/test/history.test.js
+--- a/test/history.test.js
++++ b/test/history.test.js
+@@ -27,6 +27,7 @@ test('historyEntry keeps answers, user and Bot messages, and skips setup', () =>
+   assert.equal(historyEntry({ ...asked, type: 'tool/ptc-dispatch' }, false), undefined)
+   assert.deepEqual(historyEntry(said('hello', { kind: 'user' }), false), { answer: false, who: 'user', text: 'hello', keepAnswers: true })
+   assert.deepEqual(historyEntry(said('[Reply from W]\nok', { kind: 'bot', role: 'reply' }), false), { answer: false, who: 'bot', text: '[Reply from W]\nok', keepAnswers: true })
++  // A team made before #645 still has the greeting prompt in its transcript.
+   assert.deepEqual(historyEntry(said('[Bot team setup]\nhi', { kind: 'bot', role: 'kickoff' }), false), { answer: false, who: 'bot', text: '', keepAnswers: false })
+   assert.deepEqual(historyEntry(said('[Handoff · part 2]', { kind: 'bot', handoff: true }), false), { answer: false, who: 'bot', text: '', keepAnswers: false })
+   assert.deepEqual(historyEntry(said('[Handoff · part 2]', { kind: 'bot', handoff: true, resume: true }), false), { answer: false, who: 'bot', text: '', keepAnswers: true })
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
@@ -5507,7 +5572,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -91,12 +91,23 @@
+@@ -91,12 +91,23 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -5531,7 +5596,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: api route',
      'route POST /api/bot',
      'effect ds-bot: load state',
-@@ -137,6 +137,17 @@
+@@ -137,6 +137,17 @@ test('the client channel answers from the saved state', async (t) => {
    assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
    assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
    assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })
@@ -6084,6 +6149,15 @@ diff --git a/test/models.test.js b/test/models.test.js
  test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
    const { rt } = bench({ reasoning: {
      'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },
+@@ -164,7 +164,7 @@ test('the catalog attaches thinking levels to models a Bot uses', async () => {
+   assert.equal(entries.find(entry => entry.ref === 'stepfun/step-5')?.reasoning, undefined)
+ })
+ 
+-test('a greeting waits for the provider of its Bot model to register', async () => {
++test('a model is applied once the provider of its Bot registers', async () => {
+   const { rt, providers, listeners } = bench({ providers: {} })
+   const waiting = rt.waitForModel({ model: 'stepfun/step-5' }, 5000)
+   setTimeout(() => {
 @@ -186,3 +186,106 @@ test('a Bot on the default model with its own thinking level leaves the default
    await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', effort: 'low' })
    assert.deepEqual(current(), fallback)
@@ -6669,6 +6743,24 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 +  assert.deepEqual(radios([]), [['All my Bots', false], ['Chosen Bots', false], ['No Bot', true]])
 +  assert.deepEqual(radios(['writer']), [['All my Bots', false], ['Chosen Bots', true], ['No Bot', false]])
 +})
+diff --git a/test/tool-node.test.js b/test/tool-node.test.js
+--- a/test/tool-node.test.js
++++ b/test/tool-node.test.js
+@@ -97,7 +97,6 @@ test('non-relay context and ds-bot package sources are ignored', () => {
+   const steps = [stepAt(1, 10), stepAt(2, 30)]
+   const contexts = [
+     relay(12, 'request', { handoff: true }),
+-    relay(14, 'kickoff'),
+     relay(16, 'room'),
+     relay(18, 'secret'),
+     relay(22, 'request', { senderSessionId: undefined }),
+@@ -108,5 +108,5 @@ test('non-relay context and ds-bot package sources are ignored', () => {
+     relay(27, 'stopped', { retried: true }),
+     relay(28, 'request'),
+   ]
+-  assert.deepEqual(relaysBefore(contexts, steps, steps[1]), [contexts[10]])
++  assert.deepEqual(relaysBefore(contexts, steps, steps[1]), [contexts[9]])
+ })
 diff --git a/test/work-dir.test.js b/test/work-dir.test.js
 --- a/test/work-dir.test.js
 +++ b/test/work-dir.test.js
@@ -6715,3 +6807,12 @@ diff --git a/test/work-dir.test.js b/test/work-dir.test.js
  test('a folder outside the team workspace needs the user\'s approval', async (t) => {
    const rejected = approvalServices('rejected')
    const first = await start({ services: rejected.services })
+@@ -264,7 +264,7 @@ test('a folder outside the team workspace needs the user\'s approval', async (t)
+   const allowed = approvalServices('allowed-once')
+   const third = await start({ services: allowed.services })
+   t.after(third.stop)
+-  assert.equal(await third.tool('create_bot', { name: 'Builder', role: 'Build', instructions: 'Build', work_dir: third.project }, 'a'), `Created Builder, working in ${third.project}. It is greeting the user now.`)
++  assert.equal(await third.tool('create_bot', { name: 'Builder', role: 'Build', instructions: 'Build', work_dir: third.project }, 'a'), `Created Builder, working in ${third.project}. It starts no turn until the user writes to it.`)
+   assert.deepEqual(third.created, [{ cwd: third.project }])
+   assert.match(await third.tool('list_bots', {}, 'a'), new RegExp(`- Builder \\(Build, works in ${escapeRegExp(third.project)}\\)`))
+ })

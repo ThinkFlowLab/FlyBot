@@ -3,6 +3,29 @@ FlyBot patch 0007-version-and-tooling on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/).
 diff --git a/dev/smoke.mjs b/dev/smoke.mjs
 --- a/dev/smoke.mjs
 +++ b/dev/smoke.mjs
+@@ -169,18 +169,16 @@ await step('bootstrap: Chief waits for a model', () => api('state'), (value, cal
+   const bots = Object.values(current.bots)
+   models = value.models ?? []
+   return expect(bots.length === 1 && bots[0].name === 'Chief' && current.mainBotIds[0] === bots[0].id, 'expected one Main Bot named Chief')
+-    ?? expect(bots[0].model === undefined && bots[0].kickoff !== undefined, 'Chief should hold its greeting until a model is picked')
+-    ?? expect(value.bots[0].waiting === true, 'the view should show Chief as waiting')
++    ?? expect(bots[0].model === undefined, 'Chief should have no model until one is picked')
+     ?? expect(calls.length === 0, `Chief called the model ${calls.length} times before it had one`)
+     ?? expect(models.length > 0, 'no models listed for the model card')
+ })
+ 
+-await step('user picks a model; Chief greets and asks in its reply', () => api('update-bot', { id: chief().id, model: models.at(-1).ref }), (_value, calls) => {
++await step('user picks a model; nothing is sent', () => api('update-bot', { id: chief().id, model: models.at(-1).ref }), (_value, calls) => {
+   const current = state()
+   return expect(chief().model === models.at(-1).ref, `Chief runs on ${chief().model}`)
+-    ?? expect(chief().kickoff === undefined, 'the greeting is still held')
+-    ?? expect(!current.questions?.[chief().sessionId ?? chief().id], 'the greeting should not leave a question card')
+-    ?? expect(saidText(calls, /先让团队帮你做哪块/), 'expected Chief to ask in its reply')
++    ?? expect(!current.questions?.[chief().sessionId ?? chief().id], 'picking a model should leave no question card')
++    ?? expect(calls.length === 0, `Chief called the model ${calls.length} times when its model was picked`)
+ })
+ 
+ await step('Chief creates Writer, who replies', () => send(chief().id, '创建一个叫Writer的bot'), () => {
 @@ -358,6 +358,22 @@ await step('detached capabilities disappear from Chief', () => send(chief().id,
    return expect(report?.endsWith(seesNothing), `Chief reported ${report}`)
  })
@@ -193,6 +216,14 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  test('diagnostics append fallback redacts an error message', async (t) => {
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
    t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+@@ -174,7 +174,6 @@ function turnsHost() {
+     noteFailure: entry => noted.push(entry),
+     warn() {},
+     switchJobs: () => [],
+-    dropKickoff() {},
+   }
+   installTurns(rt)
+   let seq = 0
 @@ -216,7 +216,7 @@ test('a failed group turn fails its waiter; a stopped one counts as no answer',
  
  test('issueUrl fills the issue form, keeps the versions when the errors are too long, and falls back to the clipboard', async () => {
