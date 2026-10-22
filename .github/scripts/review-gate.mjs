@@ -152,12 +152,15 @@ export function decide({ head, author, reports, policy }) {
       reasons.push(`${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
       continue
     }
-    // #627: who wrote it, refused on two separate grounds — a report with no attribution line and one
-    // that names a writer the policy does not list are different defects, and the log has to say which
-    // one fired. Both fail closed. With one shared GitHub identity the line is a self-report, so this
-    // buys presence and a name from a closed list, not proof (#633).
-    if (!parsed.writer) { reasons.push(`${where(r)}: no Written-by line naming its writer`); continue }
-    if (!writers.has(parsed.writer.toLowerCase())) { reasons.push(`${where(r)}: Written-by names "${parsed.writer}", who is not in the writers list of .github/agent/review-policy.json`); continue }
+    // #627: a *conclusion* has to say who wrote it, refused on two separate grounds — a report with no
+    // attribution line and one that names a writer the policy does not list are different defects, and
+    // the log has to say which one fired. Both fail closed. An ordinary comment is not a conclusion, so
+    // a missing line is not held against it. With one shared GitHub identity the line is a self-report,
+    // so this buys presence and a name from a closed list, not proof (#633).
+    if (parsed.verdict) {
+      if (!parsed.writer) { reasons.push(`${where(r)}: no Written-by line naming its writer`); continue }
+      if (!writers.has(parsed.writer.toLowerCase())) { reasons.push(`${where(r)}: Written-by names "${parsed.writer}", who is not in the writers list of .github/agent/review-policy.json`); continue }
+    }
     if (login(r) === authorLogin && !selfReview.has(authorLogin)) { reasons.push(`${where(r)}: the pull request's own author is not a reviewer (not in selfReview)`); continue }
     if (!reviewers.has(login(r))) { reasons.push(`${where(r)}: not a reviewer listed in .github/agent/review-policy.json`); continue }
     entry.counts = true

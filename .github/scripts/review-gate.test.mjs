@@ -376,3 +376,23 @@ test('#627: a writer named further down does not attribute this report', () => {
   assert.equal(r.ok, false)
   assert.match(r.reason, /no Written-by line/)
 })
+
+test('#627: an ordinary comment is not a conclusion, so a missing Written-by line is not held against it', () => {
+  const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', 'LGTM, merging this after CI')], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /no Verifier report names the tip/)
+  assert.doesNotMatch(r.reason, /Written-by/)
+
+  // A `Tip SHA:` block with no verdict is no conclusion either, so it demands no attribution.
+  const noVerdict = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', [`Tip SHA: ${HEAD}`, 'Ran: npm test → pass'].join('\n'))], policy })
+  assert.doesNotMatch(noVerdict.reason, /Written-by/)
+
+  // And an attributed PASS beside an unattributed ordinary comment still counts.
+  const both = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('reviewer-agent', 'LGTM', '2026-10-18T00:00:00Z'), comment('reviewer-agent', report(), '2026-10-18T01:00:00Z')],
+    policy,
+  })
+  assert.equal(both.ok, true, both.reason)
+})
