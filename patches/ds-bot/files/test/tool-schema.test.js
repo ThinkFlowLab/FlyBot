@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { defineTool as dshDefineTool } from '@deepseek-ai/dsh-tools'
 import { apply } from '../index.js'
+import { toParameterMap } from '../src/host/hooks.js'
+import { defineTool } from '../src/host/tool-schema.js'
 import { fakeContext } from './fake-ctx.js'
 
 // #<issue>: a strict OpenAI-compatible gateway does not read JSON Schema defaults. It normalises an
@@ -126,4 +129,28 @@ test('nested object parameters are complete too', () => {
     assert.deepEqual(param.properties, {}, `${name} declares no keys`)
     assert.deepEqual(param.required, [], name)
   }
+})
+
+test('the completed shape survives DSH compiling the parameter map', () => {
+  // toParameterMap hands DSH a parameter map, which has no place to express an empty `required`
+  // (#768 review). The map is what DSH compiles, so what it compiles is what must be asserted:
+  // this prints the schema at both ends, for the three shapes in the symptom.
+  const cases = {
+    // no parameters at all
+    bot_schedules: undefined,
+    // a JSON Schema object with no properties
+    list_bots: { type: 'object', properties: {} },
+    // every parameter optional
+    update_bot: { type: 'object', properties: { name: { type: 'string' }, role: { type: 'string' } } },
+  }
+  for (const [label, input] of Object.entries(cases)) {
+    const compiled = defineTool({ name: label, description: 'x', parameters: toParameterMap(input), output: { schema: { type: 'string' }, render: () => [] }, execute: () => 'x' })
+    assert.equal(compiled.parameters.type, 'object', label)
+    assert.ok(Object.hasOwn(compiled.parameters, 'properties'), `${label}: DSH's compiled schema lacks properties`)
+    assert.ok(Object.hasOwn(compiled.parameters, 'required'), `${label}: DSH's compiled schema lacks required`)
+    assert.deepEqual(compiled.parameters.required, [], label)
+  }
+  // Without the completion the same compile drops `required`; DSH's own defineTool does that.
+  const bare = dshDefineTool({ name: 'x', description: 'x', parameters: toParameterMap(cases.update_bot), output: { schema: { type: 'string' }, render: () => [] }, execute: () => 'x' })
+  assert.ok(!Object.hasOwn(bare.parameters, 'required'), 'DSH alone leaves required out — that is the defect the wrapper fixes')
 })
