@@ -22,7 +22,7 @@ const ROOT_LABEL = 'Main bot and root of the tree'
 
 export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExisting = true, warn = () => {}, classify, tidy, now = Date.now } = {}) {
   const listeners = new Set()
-  const load = createLoadTracker()
+  const load = createLoadTracker({ now })
 
   function snapshot() {
     const nodes = {}
@@ -71,7 +71,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   // The runtime load of a coordinator's direct children (#507), as one prompt line, so it can
   // send a new part to a free child instead of a busy one.
   function loadNotes(id, nodes) {
-    const line = loadLine(childrenOf(nodes, id), childId => load.of(childId))
+    const line = loadLine(childrenOf(nodes, id), childId => load.of(childId), childId => load.openFor(childId))
     return line === undefined ? [] : [line]
   }
   // Prompt injection: only the tree's marked block is replaced; other text (e.g. Chief's own) stays.
@@ -312,5 +312,6 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   const noteTurnStart = id => load.start(id)
   const noteTurnEnd = id => load.end(id)
   const loadOf = id => load.of(id)
-  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, heightOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, moveBot, findBotByName, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
+  const openForOf = id => load.openFor(id)
+  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, openForOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, heightOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, moveBot, findBotByName, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
 }

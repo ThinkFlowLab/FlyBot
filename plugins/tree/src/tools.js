@@ -1,5 +1,6 @@
 import { MAX_NAME_LENGTH } from './limits.js' // = ds-bot roster's 40-character name truncation
 import { MAX_TEAM_LENGTH } from './allocate.js'
+import { STALLED_AFTER_MS } from './load.js'
 // Model tools. The caller comes from the tool context ({ botId }), never from arguments. A Bot
 // creates only in its own downstream: `parent` must be the caller or one of its descendants (#447).
 // Visible to every tree member (#16 Option B: not Main/root-only). maxChildren and depth are
@@ -82,7 +83,23 @@ export function registerTreeTools(fb, tree) {
         if (bad) return fail(bad)
         const nodes = tree.snapshot()
         if (!nodes[botId]) return fail('this bot is not part of the tree')
-        return { children: tree.childrenOf(nodes, botId).map(({ id, name, role }) => ({ id, name, role, load: tree.loadOf(id) })), depth: tree.depthOf(nodes, botId), limits: tree.limits }
+        return {
+          children: tree.childrenOf(nodes, botId).map(({ id, name, role }) => {
+            // Idle keeps the old shape: no age, no flag, so a reader that only wants the count sees
+            // exactly what it saw before (#624).
+            const openForMs = tree.openForOf(id)
+            return {
+              id,
+              name,
+              role,
+              load: tree.loadOf(id),
+              ...(openForMs > 0 ? { openForMs } : {}),
+              ...(openForMs >= STALLED_AFTER_MS ? { stalled: true } : {}),
+            }
+          }),
+          depth: tree.depthOf(nodes, botId),
+          limits: tree.limits,
+        }
       },
     }),
     fb.registerTool({

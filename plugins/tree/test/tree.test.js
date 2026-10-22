@@ -1443,6 +1443,33 @@ test('#507: a child\'s running turns show as load in the coordinator\'s stored p
   assert.match(sp(m, m.root), /Child load right now — Work: idle/)
 })
 
+test('#624: a turn that never ends shows how long it has been open, and load stays a number', async () => {
+  let clock = Date.UTC(2026, 9, 22, 6)
+  const m = await setup({ now: () => clock })
+  const work = await make(m, m.root, 'Work')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
+  clock += 3 * 60_000
+  let item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(typeof item.load, 'number', 'load keeps its type for every existing reader')
+  assert.equal(item.load, 1)
+  assert.equal(item.openForMs, 3 * 60_000)
+  assert.equal(item.stalled, undefined, 'three minutes is an ordinary turn')
+  m.tree.refreshPrompt(m.root)
+  assert.match(sp(m, m.root), /Work: working\./)
+  // 44 minutes later the turn is still open and now reads as what the issue is about.
+  clock += 44 * 60_000
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.openForMs, 47 * 60_000)
+  assert.equal(item.stalled, true)
+  m.tree.refreshPrompt(m.root)
+  assert.match(sp(m, m.root), /Work: working \(47 min, no turn ended\)/)
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 2 })
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 0)
+  assert.equal(item.openForMs, undefined, 'idle keeps the old shape: no age, no flag')
+  assert.equal(item.stalled, undefined)
+})
+
 test('#450: a merge carries the archived Bot\'s own memory into the kept Bot', async () => {
   const DAY = 24 * 60 * 60 * 1000
   let clock = Date.UTC(2026, 9, 19, 12)
