@@ -26,7 +26,7 @@ Decisions by the maintainer, and what follows from them:
 
 ```
 issue (agent-task form) --maintainer or maintenance routine adds agent-ready--> agent (outside Actions) --branch + PR-->
-   Actions (GITHUB_TOKEN, no LLM): tests-ok, risk tier --T0/T1--> merge queue --T2/T3--> human approves + PASS
+   Actions (GITHUB_TOKEN, no LLM): tests-ok, risk tier --T0/T1--> merge queue; --T2/T3--> PASS at the tip --> merge queue
 ```
 
 | Role | Runs where | Credential | Can do |
@@ -34,7 +34,7 @@ issue (agent-task form) --maintainer or maintenance routine adds agent-ready--> 
 | Controller: tier, labels, enable auto-merge, watchdog | Actions, base-branch code, no PR code run | `GITHUB_TOKEN`, per-job least permissions | label, comment, `gh pr merge --auto --squash` |
 | Agents: implement, review | Grok Bot routines on the box (the owner's maintenance routine runs as `Birfy`) | the maintainer account's own `gh` login; a narrower credential remains the goal | triage and set `agent-ready`, push a branch or fork, open a PR, comment, review, enqueue a PR that may merge |
 | Merge | the required GitHub merge queue on `main` (ruleset `main merge queue`) | none: the queue merges when the required checks pass on its entry | squash only (set by the queue) |
-| Maintainers (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | approve T2/T3 (a human), set `agent-ready`, hold, pause |
+| Maintainers (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | set `agent-ready`, set or lift `hold` (`hold` is human-only), pause |
 
 The owner's routines run as the maintainer account `Birfy`; that is how things work today, and it is allowed for the
 actions in this document. Agents must **never admin-merge, bypass a gate or branch protection, or change rulesets**
@@ -48,7 +48,7 @@ with that login (a merge goes only through the merge queue). A narrower credenti
 | Events it causes do not start workflows (except `workflow_dispatch` and `repository_dispatch`) | a label, comment, push or PR made by an Action does not trigger other workflows; chains of "label, then workflow" do not work | do the whole decision in one job; poll on `schedule`; chain explicitly with `gh workflow run` (dispatch) |
 | A merge or tag made with it may not start `push` workflows (the `Test` run on `main`, `release.yml`) | documented rule, not tested here (see [Merge plumbing](#merge-plumbing-merge_group-merge-queue-auto-merge)): an auto-merge **enabled** with `GITHUB_TOKEN` is reported to merge silently | enable auto-merge with the agent's own credential, never with `GITHUB_TOKEN`; keep `release.yml` waiting for a green run on the tagged commit, and start `Test` by `workflow_dispatch` on `main` if the push run is missing |
 | Read-only and no secrets on `pull_request` from forks | a `pull_request` job cannot label or enable auto-merge for a fork PR | run writers from `schedule` or `pull_request_target` with **base-branch code that never checks out or runs PR code** and reads the PR through the API only |
-| Cannot approve PRs (`can_approve_pull_request_reviews` is off here) | the controller can never approve T3 | intended: a human approves |
+| Cannot approve PRs (`can_approve_pull_request_reviews` is off here) | no automation can approve a pull request | harmless: since 2026-10-22 no gate reads an approval (see [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)); the mechanical stop is `merge-gate` |
 | Cannot change `.github/workflows/**` | an Action cannot edit workflows | intended |
 | About 1,000 API requests per hour per repository | a chatty controller stalls | few calls per tick, filter by label |
 | `schedule` can lag by minutes and public repos' schedules stop after 60 days without activity | polling is not instant | acceptable; `workflow_dispatch` to run now |
@@ -95,8 +95,8 @@ Generated files (`core/client.js`, `patches/**`) are not read or counted; `patch
 
 | Tier | Rule (owner decisions 2026-10-19) | Examples |
 | --- | --- | --- |
-| T3 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself through the queue (owner decision 2026-10-21) | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
-| T2 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself | other `core/src/host/**`, `plugins/**`, unknown paths |
+| T3 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself through the queue (owner decision 2026-10-21); no maintainer approval (`AGENTS.md` → [Merge gates](../AGENTS.md#merge-gates), user decision 2026-10-22) | `.github/**`, `AGENTS.md`, `package.json`, `ds-bot/**`, trust-boundary host files (`authz`, `channel`, `reach`, ...), `plugins/social/src/**`; `child_process`, `eval`, new URL hosts, token env vars, `.skip`/`.only`, fence/sanitize/display-name code; over the size cap |
+| T2 | a PASS at the tip (self-PASS counts) and green CI; the gating agent merges it itself; no maintainer approval (`AGENTS.md` → [Merge gates](../AGENTS.md#merge-gates), user decision 2026-10-22) | other `core/src/host/**`, `plugins/**`, unknown paths |
 | T1 | merge queue on green CI; no PASS, no approval | `core/src/client/**`, tests, generated files |
 | T0 | merge queue on green CI; no PASS, no approval | `docs/**` (except policy docs), READMEs |
 
@@ -221,8 +221,8 @@ and the `test` job never report there and the entry waits until the queue's time
 | --- | --- |
 | Repo | public, owned by an Organization |
 | Merge methods | squash only; `delete_branch_on_merge: true`; `allow_auto_merge: true`; `allow_update_branch: true` |
-| Branch protection on `main` | required checks: the `test` job and `tests-ok`; `strict: false`; no required reviews; `enforce_admins: false`; no force pushes |
-| Rulesets | `main merge queue` on `refs/heads/main`, active, no bypass actors: merge queue (squash, build and merge 1 entry at a time, 5 min wait to fill a group, 60 min check timeout, `ALLGREEN`) and required checks `ubuntu-latest · Node 24 · DSH 0.2.0-rc.2` (the `test` job) and `tests-ok`. The organization-level list needs the `admin:org` scope (not read) |
+| Branch protection on `main` | required checks: the `test` job (`ubuntu-latest · Node 24 · DSH 0.2.0-rc.2`) and `tests-ok`; the `main merge queue` ruleset adds `merge-gate`, so a queue entry must pass all three; `strict: false`; no required reviews; `enforce_admins: false`; no force pushes |
+| Rulesets | `main merge queue` on `refs/heads/main`, active, no bypass actors: merge queue (squash, build and merge 1 entry at a time, 5 min wait to fill a group, 60 min check timeout, `ALLGREEN`) and **three** required checks — `ubuntu-latest · Node 24 · DSH 0.2.0-rc.2` (the `test` job), `tests-ok`, and `merge-gate` (added 2026-10-22, [#639](https://github.com/ThinkFlowLab/FlyBot/issues/639); the context is the job name, never the workflow name). The organization-level list needs the `admin:org` scope (not read) |
 | Org plan | not readable: `plan` is `null` without `admin:org` |
 | Workflow token | default `read`; Actions cannot approve PRs |
 
@@ -249,7 +249,7 @@ independent public reports say the same for `gh pr merge --auto` run with `GITHU
    auto-merge enabled with `GITHUB_TOKEN` (needs a scratch base branch). Conflict-proofing for generated files is a separate PR (patch format, changelog fragments, split core pages).
 2. **Controller, label-only** (`schedule` plus `workflow_dispatch`, `GITHUB_TOKEN`): demote `agent-ready` after a
    non-maintainer edit, set `agent-pr` and `risk:T*`, expire stale claims, a pause variable and a kill-switch drill.
-   Enforce the tier with a required check and CODEOWNERS for the T3 reviewer-tip check.
+   The tier is enforced by the required `merge-gate` check (done 2026-10-22, [#639](https://github.com/ThinkFlowLab/FlyBot/issues/639)); still to do: CODEOWNERS for the T3 reviewer-tip check.
 3. **Agents on a dedicated credential**, one open PR at a time, with the cost caps in one config file.
    Add any new reviewer's login to `.github/agent/review-policy.json` in the same change: until it is
    listed, its report cannot satisfy the reviewed-tip gate.
