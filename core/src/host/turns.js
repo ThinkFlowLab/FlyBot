@@ -377,7 +377,6 @@ export function install(rt) {
         // Whose request the turn answers (turn-origin.js): what its messages said before it began.
         entry.origin = entry.next
         entry.next = undefined
-        rt.connectorTurnChanged?.(id)
         if (entry.pending !== undefined) {
           claimTrigger(id, entry, entry.pending)
           entry.pending = undefined
@@ -391,10 +390,7 @@ export function install(rt) {
         const verdict = originOfSource(source, rt.botOf(rt.selfOf(id)))
         if (verdict !== undefined) {
           if (entry.turn === undefined) entry.next = combine(entry.next, verdict)
-          else if (combine(entry.origin, verdict) !== entry.origin) {
-            entry.origin = combine(entry.origin, verdict)
-            rt.connectorTurnChanged?.(id)
-          }
+          else entry.origin = combine(entry.origin, verdict)
         }
         // A message that shares a step with a bare handoff package is what the turn
         // answers, so the turn is not a hidden acknowledgement.
@@ -517,7 +513,6 @@ export function install(rt) {
         entry.lastText = undefined
         entry.lastCalled = undefined
         entry.origin = undefined
-        rt.connectorTurnChanged?.(id)
         const reason = event.data?.reason
         const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
         if (failure !== undefined) noteTurnFailure(id, failure)

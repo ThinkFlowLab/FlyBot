@@ -1053,17 +1053,9 @@ var ZH = {
   "Off for every Bot. Choose which Bots may use it.": "所有 Bot 都未开启。选择哪些 Bot 可以使用。",
   "On for {count} of {total} Bots": "已为 {total} 个 Bot 中的 {count} 个开启",
   "On for all {total} Bots": "已为全部 {total} 个 Bot 开启",
-  "Allowed for others on {count}": "允许他人使用的有 {count} 个",
-  "On. This Bot can use it for you.": "已开启。这个 Bot 可以为你使用它。",
-  "Off. This Bot will not use it for anyone.": "已关闭。这个 Bot 对任何人都不会使用它。",
-  "{name}: also when others use it": "{name}：别人使用时也开启",
-  "Turn it on for yourself first.": "请先为你自己开启。",
-  "On: anyone who uses this Bot, such as a friend or another room member, can use it too.": "已开启：任何使用这个 Bot 的人（比如好友、房间里的其他成员）也能使用。",
-  "On: {names} can use it through this Bot.": "已开启：{names} 可以通过这个 Bot 使用。",
-  "Off. If others use this Bot, they get it only when you turn this on.": "已关闭。别人使用这个 Bot 时，只有你打开这里才会有。",
-  "Shared with {names}. They cannot use it unless you turn this on.": "已共享给 {names}。除非你打开这里，否则他们用不了。",
-  "On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot.": "默认对你自己开启。别人使用某个 Bot 时，或者 Bot 在有其他人的房间里工作时（比如好友、其他成员），默认关闭，需要你为这个 Bot 单独允许。",
-  "Say whose use it is: yours or other people's": "请说明是你自己使用，还是别人使用",
+  "On. This Bot can use it on every turn.": "已开启。这个 Bot 每一轮都可以使用它。",
+  "Off. This Bot will not use it.": "已关闭。这个 Bot 不会使用它。",
+  "On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend's own Bot never gets it.": "默认对你的每个 Bot 开启，每一轮都可用：它自己的聊天、群聊、定时任务，以及好友使用它时。好友自己的 Bot 永远拿不到。",
   "No Bots": "没有 Bot",
   "Scheduled tasks": "定时任务",
   "Every day": "每天",
@@ -1156,7 +1148,6 @@ var HOST_ERRORS = [
   [/^A group chat holds at most (\d+) Bots$/, "一个群聊最多 $1 个 Bot"],
   [/^Reply mode must be one of (.+)$/, "回复模式只能是 $1"],
   [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, "只有你、主 Bot 或「$1」的管理员可以修改"],
-  [/^Turn (.+) on for (.+) first: other people only get what you have\.$/, "请先为 $2 开启 $1：别人只能得到你已有的权限。"],
   [/^A key must have at least (\d+) characters$/, "密钥至少 $1 个字符"],
   [/^A key can have at most (\d+) characters$/, "密钥最多 $1 个字符"],
   [/^(.+) is not saved yet$/, "$1 还没有保存"],
@@ -10422,37 +10413,17 @@ function ownBots(roster) {
   return (roster?.bots ?? []).filter((bot) => !bot.remote && (me === void 0 || me === null || bot.ownerId === void 0 || bot.ownerId === me));
 }
 var connectedConnectors = (roster) => (roster?.connectors ?? []).filter((connector) => connector.state !== "off");
-var sharedNames = (bot) => (Array.isArray(bot.sharedWith) ? bot.sharedWith : []).join(", ");
 var isOn = (bot, id) => bot.connectors?.[id] !== false;
-var othersOn = (bot, id) => isOn(bot, id) && bot.connectorsShared?.[id] === true;
 function ownHint(bot, id) {
-  return isOn(bot, id) ? t("On. This Bot can use it for you.") : t("Off. This Bot will not use it for anyone.");
-}
-function othersHint(bot, id) {
-  const names = sharedNames(bot);
-  if (!isOn(bot, id)) return t("Turn it on for yourself first.");
-  if (othersOn(bot, id)) return names === "" ? t("On: anyone who uses this Bot, such as a friend or another room member, can use it too.") : t("On: {names} can use it through this Bot.", { names });
-  return names === "" ? t("Off. If others use this Bot, they get it only when you turn this on.") : t("Shared with {names}. They cannot use it unless you turn this on.", { names });
+  return isOn(bot, id) ? t("On. This Bot can use it on every turn.") : t("Off. This Bot will not use it.");
 }
 function usageText(roster, id) {
   const bots = ownBots(roster);
   const own = bots.filter((bot) => isOn(bot, id)).length;
-  const others = bots.filter((bot) => othersOn(bot, id)).length;
-  const base = own === 0 ? t("Off for every Bot. Choose which Bots may use it.") : own === bots.length ? t("On for all {total} Bots", { total: bots.length }) : t("On for {count} of {total} Bots", { count: own, total: bots.length });
-  return others === 0 ? base : `${base} · ${t("Allowed for others on {count}", { count: others })}`;
+  return own === 0 ? t("Off for every Bot. Choose which Bots may use it.") : own === bots.length ? t("On for all {total} Bots", { total: bots.length }) : t("On for {count} of {total} Bots", { count: own, total: bots.length });
 }
-function BotSwitches({ bot, connector, name, actions, run, SwitchRow: SwitchRow2 }) {
-  const set = (scope, on) => void run(actions.setBotConnector(bot.id, connector.id, on, scope));
-  return [
-    (0, import_react22.createElement)(SwitchRow2, { key: "own", label: name, hint: ownHint(bot, connector.id), on: isOn(bot, connector.id), disabled: false, onChange: (on) => set("owner", on) }),
-    (0, import_react22.createElement)("div", { key: "others", className: "bt-connector-others" }, (0, import_react22.createElement)(SwitchRow2, {
-      label: t("{name}: also when others use it", { name }),
-      hint: othersHint(bot, connector.id),
-      on: othersOn(bot, connector.id),
-      disabled: !isOn(bot, connector.id),
-      onChange: (on) => set("shared", on)
-    }))
-  ];
+function BotSwitch({ bot, connector, name, actions, run, SwitchRow: SwitchRow2 }) {
+  return (0, import_react22.createElement)(SwitchRow2, { label: name, hint: ownHint(bot, connector.id), on: isOn(bot, connector.id), disabled: false, onChange: (on) => void run(actions.setBotConnector(bot.id, connector.id, on)) });
 }
 function ConnectorBots({ connector, roster, actions, run, SwitchRow: SwitchRow2 }) {
   const bots = ownBots(roster);
@@ -10462,9 +10433,9 @@ function ConnectorBots({ connector, roster, actions, run, SwitchRow: SwitchRow2 
     bots.length === 0 ? (0, import_react22.createElement)("span", { className: "bt-set-hint" }, t("No Bots")) : bots.map((bot) => (0, import_react22.createElement)(
       "div",
       { key: bot.id, className: "bt-connector-bot" },
-      (0, import_react22.createElement)(BotSwitches, { bot, connector, name: bot.name, actions, run, SwitchRow: SwitchRow2 })
+      (0, import_react22.createElement)(BotSwitch, { bot, connector, name: bot.name, actions, run, SwitchRow: SwitchRow2 })
     )),
-    (0, import_react22.createElement)("span", { className: "bt-set-hint" }, t("On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot."))
+    (0, import_react22.createElement)("span", { className: "bt-set-hint" }, t("On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend's own Bot never gets it."))
   );
 }
 function BotConnectorsCard({ bot, roster, actions, run, Card: Card2, SwitchRow: SwitchRow2 }) {
@@ -10476,7 +10447,7 @@ function BotConnectorsCard({ bot, roster, actions, run, Card: Card2, SwitchRow: 
     connected.map((connector) => (0, import_react22.createElement)(
       "div",
       { key: connector.id, className: "bt-connector-bot" },
-      (0, import_react22.createElement)(BotSwitches, { bot, connector, name: connector.name, actions, run, SwitchRow: SwitchRow2 })
+      (0, import_react22.createElement)(BotSwitch, { bot, connector, name: connector.name, actions, run, SwitchRow: SwitchRow2 })
     ))
   );
 }
@@ -17591,7 +17562,7 @@ function apply(ctx) {
     saveCapability: (capability) => after(call("capability-save", capability)),
     deleteCapability: (name) => after(call("capability-delete", { name })),
     approveCapability: (name) => after(call("capability-approve", { name })),
-    setBotConnector: (botId, connector, enabled, scope = "owner") => after(call("bot-connectors", { botId, connector, enabled, scope })),
+    setBotConnector: (botId, connector, enabled) => after(call("bot-connectors", { botId, connector, enabled })),
     setBotCapability: (botId, name, attached) => after(call("bot-capability", { botId, name, attached })),
     tasks: () => call("tasks"),
     schedules: () => call("schedules"),

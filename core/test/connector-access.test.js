@@ -7,9 +7,9 @@ import { createRuntime } from '../index.js'
 import { CONNECTOR_IDS, connectorOfTool } from '../src/host/connector-access.js'
 import { fakeContext } from './fake-ctx.js'
 
-// #335, #369: the connector tools are mounted once for the whole DSH profile. A Bot's own owner has
-// them by default, also on a Bot that is shared; a turn someone else started has them only when the
-// owner allowed shared use for that Bot. Whose turn it is comes from the messages the turn took in.
+// #335, #369, #601: the connector tools are mounted once for the whole DSH profile. Every turn of the
+// owner's own Bots has them by default, whatever started the turn (owner decision 2026-10-22); the
+// owner can turn a connector off for one Bot, and a friend's Bot never has them.
 
 const COMPOSIO = ['mcp__composio__COMPOSIO_SEARCH_TOOLS', 'mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL']
 const GITHUB = ['mcp__github__create_issue', 'mcp__github__get_me']
@@ -157,76 +157,55 @@ test('an older team saved by #346 starts on: no record is on, an explicit off st
   done()
 })
 
-test('whose turn it is: the owner typing, an answered question and an own Bot passing the owner on use it; anyone else does not', async (t) => {
-  const { rt, agentFor, guard, event, begin, take, end, stop } = await setup()
+// Owner decision 2026-10-22 (#601): 「放开，主要应该用连接器工具」. Where a turn came from no longer matters.
+test('#601: every turn of the owner\'s own Bot uses the connectors, whoever started it, also outside a turn', async (t) => {
+  const { rt, agentFor, hiddenFrom, guard, begin, take, end, stop } = await setup()
   t.after(stop)
   await agentFor('writer')
+  await rt.setGrants('writer', [{ grantee: '@bob.home', name: 'Bob' }])
   const me = rt.botOf('writer').ownerId
-  const verdict = (sources, { before = true } = {}) => {
-    if (before) for (const source of sources) take('writer', source)
+  const verdict = (sources) => {
+    for (const source of sources) take('writer', source)
     begin('writer')
-    if (!before) for (const source of sources) take('writer', source)
-    const answer = guard(COMPOSIO[0], 'writer')
+    const answers = [...COMPOSIO, ...GITHUB].map(name => guard(name, 'writer'))
+    const hidden = [...hiddenFrom('writer')]
     end('writer')
-    return answer
+    return { answers: answers.filter(answer => answer !== undefined), hidden }
   }
-  const refused = /not available to other people using Writer/
-  assert.equal(verdict([TYPED]), undefined, 'the owner typed it')
-  assert.equal(verdict([{ kind: 'user', authorId: me, authorKind: 'human' }]), undefined, 'a signed-in member who owns the Bot')
-  assert.equal(verdict([{ kind: 'user-question-reply' }]), undefined, 'the owner answered a question card')
-  assert.equal(verdict([REQUEST('Chief', 'owner')]), undefined, 'a Bot of the same owner passing on the owner\'s request')
-  assert.equal(verdict([TYPED], { before: false }), undefined, 'the message may come after the turn began')
-
-  assert.match(verdict([{ kind: 'user', authorId: 'ann', authorKind: 'human' }]), refused, 'another member typed it')
-  assert.match(verdict([FRIEND]), refused, 'a friend\'s Bot wrote')
-  assert.match(verdict([{ ...FRIEND, form: 'remote-chat', role: 'remote', origin: undefined }]), refused, 'a friend\'s line in its chat')
-  assert.match(verdict([REQUEST('Chief')]), refused, 'a relay nobody vouched for')
-  assert.match(verdict([REQUEST('Chief', 'other')]), refused, 'a Bot that was itself asked by someone else')
-  assert.match(verdict([{ kind: 'bot', form: 'relay', role: 'request', exchangeId: 'z', origin: 'owner' }, FRIEND]), refused, 'the friend counts even when the owner spoke too')
-  assert.match(verdict([{ kind: 'user', authorId: me }, { kind: 'user', authorId: 'ann' }]), refused)
-  // No verdict at all fails closed, and says why.
-  assert.match(verdict([]), /could not be determined whose request this is/)
-  assert.match(verdict([{ kind: 'plan-mode' }, { kind: 'bot', form: 'relay', role: 'mention', exchangeId: 'm' }]), /could not be determined whose request/, 'notices carry no one\'s request')
-  // Outside any turn the guard refuses too (nothing says whose call this is).
-  assert.match(guard(COMPOSIO[0], 'writer'), /could not be determined whose request/)
-
-  // A friend's line that lands in the owner's running turn takes the tools for the rest of that turn...
-  take('writer', TYPED)
-  begin('writer')
-  assert.equal(guard(COMPOSIO[0], 'writer'), undefined)
-  take('writer', FRIEND)
-  assert.match(guard(COMPOSIO[0], 'writer'), refused)
-  take('writer', TYPED)
-  assert.match(guard(COMPOSIO[0], 'writer'), refused, 'the owner joining later does not clear it')
-  end('writer')
-  // ...and the next turn starts clean.
-  assert.equal(verdict([TYPED]), undefined)
-  event('writer', 'turn/end', { reason: { kind: 'completed' } })
+  const open = { answers: [], hidden: [] }
+  assert.deepEqual(verdict([TYPED]), open, 'the owner typed it')
+  assert.deepEqual(verdict([{ kind: 'user', authorId: me }]), open, 'the owner signed in')
+  assert.deepEqual(verdict([{ kind: 'user', authorId: 'ann', authorKind: 'human' }]), open, 'another member typed it')
+  assert.deepEqual(verdict([FRIEND]), open, 'a friend wrote to the shared Bot')
+  assert.deepEqual(verdict([{ ...FRIEND, form: 'remote-chat', role: 'remote', origin: undefined }]), open, 'a friend\'s line in its chat')
+  assert.deepEqual(verdict([REQUEST('Chief')]), open, 'a relay nobody vouched for')
+  assert.deepEqual(verdict([REQUEST('Chief', 'other')]), open, 'a Bot that was itself asked by someone else')
+  assert.deepEqual(verdict([{ kind: 'schedule' }]), open, 'a scheduled task of a shared Bot')
+  assert.deepEqual(verdict([]), open, 'a turn with no recorded origin')
+  assert.deepEqual(verdict([{ kind: 'plan-mode' }]), open, 'only notices')
+  assert.equal(guard(COMPOSIO[0], 'writer'), undefined, 'outside any turn')
 })
 
-test('a scheduled task is the owner\'s only while the Bot is not shared; DSH-internal messages neither grant nor take away', async (t) => {
-  const { rt, agentFor, guard, begin, take, end, stop } = await setup()
+test('#601: a group round of any origin keeps the tools, also with a friend in the room', async (t) => {
+  const { rt, agentFor, hiddenFrom, guard, begin, take, end, stop } = await setup()
   t.after(stop)
-  await agentFor('writer')
-  take('writer', { kind: 'schedule' })
-  begin('writer')
-  assert.equal(guard(COMPOSIO[0], 'writer'), undefined)
-  take('writer', { kind: 'tool' })
-  take('writer', { kind: 'system-prompt' })
-  assert.equal(guard(COMPOSIO[0], 'writer'), undefined)
-  // A friend gets the Bot while the task runs: from then on it is shared, so the task is not the owner's.
-  await rt.setGrants('writer', [{ grantee: '@bob.home', name: 'Bob' }])
-  assert.match(guard(COMPOSIO[0], 'writer'), /not available to other people using Writer/)
-  end('writer')
-  take('writer', { kind: 'schedule' })
-  begin('writer')
-  assert.match(guard(COMPOSIO[0], 'writer'), /not available to other people/)
-  end('writer')
-  // The owner typing on the same shared Bot is the owner's.
-  take('writer', TYPED)
-  begin('writer')
-  assert.equal(guard(COMPOSIO[0], 'writer'), undefined)
-  end('writer')
+  const owner = rt.botOf('writer').ownerId
+  rt.state.rooms.room.participants = [
+    { kind: 'human', id: owner, role: 'admin', displayName: 'You', joinedSeq: 0 },
+    { kind: 'bot', id: 'chief', role: 'member', joinedSeq: 0 },
+    { kind: 'bot', id: 'writer', role: 'member', joinedSeq: 0 },
+    { kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob', role: 'member', joinedSeq: 1 },
+  ]
+  await rt.save()
+  await agentFor('room-writer')
+  for (const origin of ['owner', 'other', undefined]) {
+    take('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: `rr-${origin}`, senderName: 'You', hop: 0, ...(origin ? { origin } : {}) })
+    begin('room-writer')
+    await tick()
+    for (const name of [...COMPOSIO, ...GITHUB]) assert.equal(guard(name, 'room-writer'), undefined, `${origin}: ${name}`)
+    assert.deepEqual([...hiddenFrom('room-writer')], [], `${origin}: nothing hidden`)
+    end('room-writer')
+  }
 })
 
 test('the owner turns a connector off for one Bot; others follow, and turning it on again removes the record', async (t) => {
@@ -236,10 +215,10 @@ test('the owner turns a connector off for one Bot; others follow, and turning it
 
   const off = await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false })
   assert.equal(off.ok, true, JSON.stringify(off))
-  assert.deepEqual(off.value, { botId: 'writer', connectors: { composio: false }, connectorsShared: {} })
+  assert.deepEqual(off.value, { botId: 'writer', connectors: { composio: false } })
   // The list and the guard follow at once, in the Bot's own chat and in its group Session.
   for (const id of ['writer', 'room-writer']) assert.deepEqual(sorted(hiddenFrom(id)), sorted(COMPOSIO), id)
-  const done = await turn('writer', TYPED)
+  const done = await turn('writer', FRIEND)
   assert.match(guard(COMPOSIO[0], 'writer'), /composio connector is turned off for Writer\. Its owner can turn it on/)
   assert.equal(guard(GITHUB[0], 'writer'), undefined, 'the other connector is untouched')
   done()
@@ -249,133 +228,15 @@ test('the owner turns a connector off for one Bot; others follow, and turning it
   assert.deepEqual(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).bots.writer.connectors, { composio: false })
   const view = (await call('state', {})).value.bots.find(bot => bot.id === 'writer')
   assert.deepEqual(view.connectors, { composio: false })
-  assert.deepEqual(view.sharedWith, [])
 
   const on = await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true })
   assert.equal(on.ok, true)
-  assert.deepEqual(on.value, { botId: 'writer', connectors: {}, connectorsShared: {} })
+  assert.deepEqual(on.value, { botId: 'writer', connectors: {} })
   assert.equal(rt.botOf('writer').connectors, undefined)
   assert.deepEqual([...hiddenFrom('writer')], [])
 })
 
-test('a Bot shared with a friend: the owner still uses it; the friend does not until the owner allows it; allowing needs the owner\'s own switch', async (t) => {
-  const { rt, agentFor, hiddenFrom, guard, call, begin, take, end, stop } = await setup()
-  t.after(stop)
-  await agentFor('writer')
-  await rt.setGrants('writer', [{ grantee: '@bob.home', name: 'Bob' }])
-  assert.deepEqual((await call('state', {})).value.bots.find(bot => bot.id === 'writer').sharedWith, ['Bob'])
-  // Sharing took nothing away: no switch was cleared, none is refused.
-  assert.equal(rt.botOf('writer').connectors, undefined)
-  take('writer', TYPED)
-  begin('writer')
-  for (const name of [...COMPOSIO, ...GITHUB]) assert.equal(guard(name, 'writer'), undefined, `owner: ${name}`)
-  assert.deepEqual([...hiddenFrom('writer')], [])
-  end('writer')
-
-  // The friend drives the Bot: off by default, and the list says so while the turn runs.
-  take('writer', FRIEND)
-  begin('writer')
-  assert.deepEqual(sorted(hiddenFrom('writer')), ALL)
-  for (const name of [...COMPOSIO, ...GITHUB]) assert.match(guard(name, 'writer'), /not available to other people using Writer\. Its owner can allow it/)
-  assert.equal(guard('read', 'writer'), undefined)
-  end('writer')
-  assert.deepEqual([...hiddenFrom('writer')], [], 'the owner\'s list comes back when the friend\'s turn ends')
-
-  // The owner allows composio for others on this Bot: the friend gets that connector only.
-  const allow = await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true, scope: 'shared' })
-  assert.equal(allow.ok, true, JSON.stringify(allow))
-  assert.deepEqual(allow.value, { botId: 'writer', connectors: {}, connectorsShared: { composio: true } })
-  take('writer', FRIEND)
-  begin('writer')
-  assert.deepEqual(sorted(hiddenFrom('writer')), sorted(GITHUB))
-  assert.equal(guard(COMPOSIO[0], 'writer'), undefined)
-  assert.match(guard(GITHUB[0], 'writer'), /not available to other people/)
-  end('writer')
-  const view = (await call('state', {})).value.bots.find(bot => bot.id === 'writer')
-  assert.deepEqual(view.connectorsShared, { composio: true })
-
-  // Other people only get what the owner has: turning the owner's own use off takes the offer with it.
-  await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false })
-  assert.equal(rt.botOf('writer').connectorsShared, undefined)
-  const refused = await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true, scope: 'shared' })
-  assert.equal(refused.ok, false)
-  assert.match(refused.error.message, /Turn composio on for Writer first/)
-  take('writer', FRIEND)
-  begin('writer')
-  assert.match(guard(COMPOSIO[0], 'writer'), /composio connector is turned off for Writer/)
-  end('writer')
-  // An offer that is in the saved file while the owner's use is off does nothing either.
-  rt.botOf('writer').connectorsShared = { composio: true }
-  take('writer', FRIEND)
-  begin('writer')
-  assert.match(guard(COMPOSIO[0], 'writer'), /turned off for Writer/)
-  end('writer')
-  // Turning the shared offer off again.
-  await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true })
-  const off = await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false, scope: 'shared' })
-  assert.deepEqual(off.value.connectorsShared, {})
-})
-
-test('the shared-use switch is off by default on a Bot that is not shared, and stays when the Bot is shared later', async (t) => {
-  const { rt, agentFor, guard, call, begin, take, end, stop } = await setup()
-  t.after(stop)
-  await agentFor('chief')
-  // Allowing it before anyone is there is fine: the room's friend or a later grant is covered.
-  assert.equal((await call('bot-connectors', { botId: 'chief', connector: 'github', enabled: true, scope: 'shared' })).ok, true)
-  await rt.setGrants('chief', [{ grantee: '@bob.home', name: 'Bob' }])
-  take('chief', FRIEND)
-  begin('chief')
-  assert.equal(guard(GITHUB[0], 'chief'), undefined)
-  assert.match(guard(COMPOSIO[0], 'chief'), /not available to other people/)
-  end('chief')
-  // Removing the grant leaves the owner's records alone.
-  await rt.setGrants('chief', [])
-  assert.deepEqual(rt.botOf('chief').connectorsShared, { github: true })
-})
-
-test('a room with other people in it: the Bot\'s turn there is the owner\'s only while nobody else is in the room', async (t) => {
-  const { rt, agentFor, hiddenFrom, guard, begin, take, end, call, stop } = await setup()
-  t.after(stop)
-  const owner = rt.botOf('writer').ownerId
-  rt.state.rooms.room.participants = [
-    { kind: 'human', id: owner, role: 'admin', displayName: 'You', joinedSeq: 0 },
-    { kind: 'bot', id: 'chief', role: 'member', joinedSeq: 0 },
-    { kind: 'bot', id: 'writer', role: 'member', joinedSeq: 0 },
-  ]
-  await agentFor('room-writer')
-  const ROUND = { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: 'rr', senderName: 'You', hop: 0, origin: 'owner' }
-  take('room-writer', ROUND)
-  begin('room-writer')
-  assert.equal(guard(COMPOSIO[0], 'room-writer'), undefined, 'a room of the owner\'s own Bots')
-  // A friend's Bot joins mid-turn: the lines it posts are in the Bot's context from now on.
-  rt.state.rooms.room.participants.push({ kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob', role: 'member', joinedSeq: 1 })
-  await rt.save()
-  assert.match(guard(COMPOSIO[0], 'room-writer'), /not available to other people using Writer/)
-  assert.deepEqual(sorted(hiddenFrom('room-writer')), ALL, 'the list follows the room at once')
-  end('room-writer')
-  // The same round in the room with the friend, from the start: other people's.
-  take('room-writer', ROUND)
-  begin('room-writer')
-  assert.match(guard(COMPOSIO[0], 'room-writer'), /not available to other people/)
-  end('room-writer')
-  // Owner allows others for Writer: the room's turn uses it.
-  await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: true, scope: 'shared' })
-  take('room-writer', ROUND)
-  begin('room-writer')
-  assert.equal(guard(COMPOSIO[0], 'room-writer'), undefined)
-  assert.match(guard(GITHUB[0], 'room-writer'), /not available to other people/)
-  end('room-writer')
-  // The friend leaves: the Bot's own chat was the owner's all along, and the room is alone again.
-  rt.state.rooms.room.participants.at(-1).leftSeq = 5
-  await rt.save()
-  await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false, scope: 'shared' })
-  take('room-writer', ROUND)
-  begin('room-writer')
-  assert.equal(guard(GITHUB[0], 'room-writer'), undefined)
-  end('room-writer')
-})
-
-test('a sub-agent follows its parent Session\'s turn, and one of the DSH Agent keeps the tools', async (t) => {
+test('#601: a sub-agent follows its parent Bot in any turn; one of the DSH Agent keeps the tools', async (t) => {
   const { agentFor, hiddenFrom, guard, begin, take, end, call, stop } = await setup()
   t.after(stop)
   await agentFor('writer')
@@ -383,40 +244,31 @@ test('a sub-agent follows its parent Session\'s turn, and one of the DSH Agent k
   await agentFor('writer-subsub', { parent: 'writer-sub' })
   await agentFor('plain')
   await agentFor('plain-sub', { parent: 'plain' })
-  take('writer', TYPED)
+  take('writer', FRIEND)
   begin('writer')
   for (const id of ['writer-sub', 'writer-subsub']) {
     assert.equal(guard(COMPOSIO[0], id), undefined, id)
-    assert.deepEqual([...hiddenFrom(id)], [])
-  }
-  // A friend's message in the parent's turn takes them from the sub-agents running inside it.
-  take('writer', FRIEND)
-  for (const id of ['writer-sub', 'writer-subsub']) {
-    assert.match(guard(COMPOSIO[0], id), /not available to other people using Writer/, id)
-    assert.deepEqual(sorted(hiddenFrom(id)), ALL, id)
+    assert.deepEqual([...hiddenFrom(id)], [], id)
   }
   end('writer')
-  assert.deepEqual([...hiddenFrom('writer-sub')], [])
   // Turned off for the Bot: the sub-agents lose that connector.
   await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false })
   assert.deepEqual(sorted(hiddenFrom('writer-subsub')), sorted(COMPOSIO))
+  assert.match(guard(COMPOSIO[0], 'writer-sub'), /turned off for Writer/)
   assert.deepEqual([...hiddenFrom('plain-sub')], [])
   assert.equal(guard(COMPOSIO[0], 'plain-sub'), undefined)
 })
 
 test('a connector that mounts after the Bot\'s Agent was set up is listed or hidden by the same rule', async (t) => {
-  const { ctx, agentFor, hiddenFrom, live, begin, take, end, stop } = await setup()
+  const { ctx, agentFor, hiddenFrom, live, call, stop } = await setup()
   t.after(stop)
   live.served = [...OWN]
   await agentFor('writer')
-  take('writer', FRIEND)
-  begin('writer')
-  live.served = [...OWN, ...COMPOSIO]
+  await call('bot-connectors', { botId: 'writer', connector: 'github', enabled: false })
+  live.served = [...OWN, ...COMPOSIO, ...GITHUB]
   ctx.emit('tools/change')
   await tick()
-  assert.deepEqual(sorted(hiddenFrom('writer')), sorted(COMPOSIO), 'a friend\'s turn: hidden as it mounts')
-  end('writer')
-  assert.deepEqual([...hiddenFrom('writer')], [])
+  assert.deepEqual(sorted(hiddenFrom('writer')), sorted(GITHUB), 'only the connector turned off is hidden as it mounts')
 })
 
 test('an Agent whose Bot cannot be determined gets no connector tools, in any turn', async (t) => {
@@ -451,7 +303,7 @@ test('an Agent whose Bot cannot be determined gets no connector tools, in any tu
   end('writer')
 })
 
-test('a friend\'s Bot is never given connector tools, and the switch endpoint refuses an unknown Bot, connector, scope or value', async (t) => {
+test('a friend\'s Bot is never given connector tools, and the switch endpoint refuses an unknown Bot, connector or value', async (t) => {
   const { rt, call, agentFor, guard, begin, take, end, stop } = await setup()
   t.after(stop)
   rt.state.bots.friend = { id: 'friend', name: 'Friend', sessionId: 'friend', remote: { handle: '@bob.home' }, createdAt: 3 }
@@ -461,14 +313,12 @@ test('a friend\'s Bot is never given connector tools, and the switch endpoint re
     [{ botId: 'writer', connector: 'slack', enabled: true }, /No such connector/],
     [{ botId: 'writer', connector: 'composio', enabled: 'yes' }, /turn it on or off/],
     [{ botId: 'writer', connector: 'composio' }, /turn it on or off/],
-    [{ botId: 'writer', connector: 'composio', enabled: false, scope: 'everyone' }, /whose use it is/],
   ]) {
     const result = await call('bot-connectors', payload)
     assert.equal(result.ok, false, JSON.stringify(payload))
     assert.match(result.error.message, message)
   }
   assert.equal(rt.botOf('writer').connectors, undefined)
-  assert.equal(rt.botOf('writer').connectorsShared, undefined)
   // Even if a friend's Bot's chat somehow ran a turn with the owner typing, the tools are refused.
   rt.chatOwners.set('friend', 'friend')
   await agentFor('friend')
@@ -478,70 +328,41 @@ test('a friend\'s Bot is never given connector tools, and the switch endpoint re
   end('friend')
 })
 
-test('disconnecting a connector clears every Bot\'s choices for it, so a new connection starts from the defaults', async (t) => {
+test('disconnecting a connector clears every Bot\'s choice for it, so a new connection starts from the default', async (t) => {
   const { rt, agentFor, hiddenFrom, call, stop } = await setup()
   t.after(stop)
   await agentFor('writer')
   await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false })
-  await call('bot-connectors', { botId: 'writer', connector: 'github', enabled: true, scope: 'shared' })
-  await call('bot-connectors', { botId: 'chief', connector: 'composio', enabled: true, scope: 'shared' })
-  assert.deepEqual(sorted(hiddenFrom('writer')), sorted(COMPOSIO))
+  await call('bot-connectors', { botId: 'writer', connector: 'github', enabled: false })
+  assert.deepEqual(sorted(hiddenFrom('writer')), ALL)
   await rt.forgetConnector('composio')
-  assert.equal(rt.botOf('writer').connectors, undefined)
-  assert.deepEqual(rt.botOf('writer').connectorsShared, { github: true }, 'the other connector keeps its choice')
-  assert.equal(rt.botOf('chief').connectorsShared, undefined)
-  assert.deepEqual([...hiddenFrom('writer')], [], 'a new connection is on for the owner again')
+  assert.deepEqual(rt.botOf('writer').connectors, { github: false }, 'the other connector keeps its choice')
+  assert.deepEqual(sorted(hiddenFrom('writer')), sorted(GITHUB), 'a new connection is on again')
 })
 
-test('a new Bot and a copy start from the defaults: on for the owner, off for others', async (t) => {
+// The "also when others use it" offers saved before #601 mean nothing now; they are dropped on the
+// next switch or disconnect, and a client that still sends a scope is not refused.
+test('#601: a retired shared-use offer is dropped, and a scope from an older client is ignored', async (t) => {
+  const state = team()
+  state.bots.writer.connectorsShared = { github: true }
+  state.bots.chief.connectorsShared = { composio: true }
+  const { rt, call, stop } = await setup({ state })
+  t.after(stop)
+  const old = await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false, scope: 'shared' })
+  assert.equal(old.ok, true, JSON.stringify(old))
+  assert.deepEqual(old.value, { botId: 'writer', connectors: { composio: false } })
+  assert.equal(rt.botOf('writer').connectorsShared, undefined)
+  await rt.forgetConnector('github')
+  assert.equal(rt.botOf('chief').connectorsShared, undefined)
+})
+
+test('a new Bot and a copy start from the default: on', async (t) => {
   const { rt, call, stop } = await setup()
   t.after(stop)
   await call('bot-connectors', { botId: 'writer', connector: 'composio', enabled: false })
-  await call('bot-connectors', { botId: 'writer', connector: 'github', enabled: true, scope: 'shared' })
   const copy = await rt.duplicateBot('writer')
   assert.equal(copy.connectors, undefined)
-  assert.equal(copy.connectorsShared, undefined)
   assert.equal(rt.botOf(copy.id).connectors, undefined)
-  assert.equal(rt.botOf(copy.id).connectorsShared, undefined)
-})
-
-test('the tool list follows a person or friend joining and leaving a room, without a grant change', async (t) => {
-  const state = team()
-  const { rt, agentFor, hiddenFrom, begin, take, end, stop } = await setup({ state })
-  t.after(stop)
-  const owner = rt.botOf('writer').ownerId
-  rt.state.rooms.room.participants = [
-    { kind: 'human', id: owner, role: 'admin', displayName: 'You', joinedSeq: 0 },
-    { kind: 'bot', id: 'chief', role: 'member', joinedSeq: 0 },
-    { kind: 'bot', id: 'writer', role: 'member', joinedSeq: 0 },
-  ]
-  await agentFor('room-writer')
-  take('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: 'rr', origin: 'owner' })
-  begin('room-writer')
-  await tick()
-  assert.deepEqual([...hiddenFrom('room-writer')], [])
-  // A friend's Bot joins the room: the tools leave the list at once, not at the next restart.
-  rt.state.rooms.room.participants.push({ kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob', role: 'member', joinedSeq: 1 })
-  await rt.save()
-  await tick()
-  assert.deepEqual(sorted(hiddenFrom('room-writer')), ALL, 'other people in the room: nothing listed')
-  // The friend leaves: the tools come back.
-  rt.state.rooms.room.participants.at(-1).leftSeq = 5
-  await rt.save()
-  await tick()
-  assert.deepEqual([...hiddenFrom('room-writer')], [], 'alone again: listed again')
-  // The same when the Bot is also granted to a friend of the same name, so the labels do not change
-  // (found in review of #370): who is in the room is what is compared, not the names shown.
-  await rt.setGrants('writer', [{ grantee: '@bob.home', name: 'Bob' }])
-  rt.state.rooms.room.participants.push({ kind: 'bot', remote: true, id: '@bob.home', handle: '@bob.home', displayName: 'Bob', role: 'member', joinedSeq: 6 })
-  await rt.save()
-  await tick()
-  assert.deepEqual(sorted(hiddenFrom('room-writer')), ALL, 'Bob is in the room again')
-  rt.state.rooms.room.participants.at(-1).leftSeq = 9
-  await rt.save()
-  await tick()
-  assert.deepEqual([...hiddenFrom('room-writer')], [], 'Bob left, and the grant still says Bob: listed again')
-  end('room-writer')
 })
 
 test('relays carry whose request they are: the host\'s own and a same-owner Bot passing the owner on are the owner\'s; a friend, another owner\'s Bot or a Bot that cannot say are not', async (t) => {

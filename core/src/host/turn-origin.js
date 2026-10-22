@@ -1,8 +1,7 @@
-// Whose request a Bot turn answers (#335, #369). Connector tools (the owner's mail, calendar,
-// repositories) are the owner's: a turn the owner started may use them, and a turn someone else
-// started (a friend, another room member, another owner's Bot, a Bot that itself was asked by one of
-// them) only if the owner allowed it for shared use. The verdict is read from the messages a turn
-// took in, never from what the Bot says about itself:
+// Whose request a Bot turn answers (#335, #369). Standing approvals and resumed turns read it; since
+// #601 it no longer decides connector tools or secrets, which every turn of the owner's own Bots
+// gets. The verdict is read from the messages a turn took in, never from what the Bot says about
+// itself:
 //
 //   'owner'      the owner typed it, answered a question card, or a Bot of the same owner passed on a
 //                request that was itself the owner's;
@@ -103,13 +102,6 @@ export function combine(a, b) {
   if (b === undefined) return a
   if (a === OTHER || b === OTHER) return OTHER
   return a === SCHEDULED || b === SCHEDULED ? SCHEDULED : OWNER
-}
-
-// The verdict the running turn recorded, before `settled` narrows it. `scheduled` is the one a caller
-// cannot get anywhere else: on a shared Bot it is 'other' as a permission, and still 'scheduled' as
-// a fact, which is what a caller needs to say why a turn is not the owner's (#651).
-export function turnOrigin(rt, sessionId, entry = rt.live?.get(sessionId)) {
-  return entry?.turn === undefined ? undefined : entry.origin
 }
 
 // The verdict that holds right now for the turn a Session is running: 'owner', 'other', or

@@ -904,7 +904,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,6 +771,22 @@ const ZH = {
+@@ -771,6 +771,14 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -912,17 +912,9 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Off for every Bot. Choose which Bots may use it.': '所有 Bot 都未开启。选择哪些 Bot 可以使用。',
 +  'On for {count} of {total} Bots': '已为 {total} 个 Bot 中的 {count} 个开启',
 +  'On for all {total} Bots': '已为全部 {total} 个 Bot 开启',
-+  'Allowed for others on {count}': '允许他人使用的有 {count} 个',
-+  'On. This Bot can use it for you.': '已开启。这个 Bot 可以为你使用它。',
-+  'Off. This Bot will not use it for anyone.': '已关闭。这个 Bot 对任何人都不会使用它。',
-+  '{name}: also when others use it': '{name}：别人使用时也开启',
-+  'Turn it on for yourself first.': '请先为你自己开启。',
-+  'On: anyone who uses this Bot, such as a friend or another room member, can use it too.': '已开启：任何使用这个 Bot 的人（比如好友、房间里的其他成员）也能使用。',
-+  'On: {names} can use it through this Bot.': '已开启：{names} 可以通过这个 Bot 使用。',
-+  'Off. If others use this Bot, they get it only when you turn this on.': '已关闭。别人使用这个 Bot 时，只有你打开这里才会有。',
-+  'Shared with {names}. They cannot use it unless you turn this on.': '已共享给 {names}。除非你打开这里，否则他们用不了。',
-+  'On by default for you. When someone else uses a Bot, or it works in a room with other people, such as a friend or another member, it is off unless you allow it for that Bot.': '默认对你自己开启。别人使用某个 Bot 时，或者 Bot 在有其他人的房间里工作时（比如好友、其他成员），默认关闭，需要你为这个 Bot 单独允许。',
-+  'Say whose use it is: yours or other people\'s': '请说明是你自己使用，还是别人使用',
++  'On. This Bot can use it on every turn.': '已开启。这个 Bot 每一轮都可以使用它。',
++  'Off. This Bot will not use it.': '已关闭。这个 Bot 不会使用它。',
++  'On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend\'s own Bot never gets it.': '默认对你的每个 Bot 开启，每一轮都可用：它自己的聊天、群聊、定时任务，以及好友使用它时。好友自己的 Bot 永远拿不到。',
 +  'No Bots': '没有 Bot',
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
@@ -967,12 +959,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -851,10 +851,13 @@ const HOST_ERRORS = [
-   [/^A group chat holds at most (\d+) Bots$/, '一个群聊最多 $1 个 Bot'],
-   [/^Reply mode must be one of (.+)$/, '回复模式只能是 $1'],
-   [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
-+  [/^Turn (.+) on for (.+) first: other people only get what you have\.$/, '请先为 $2 开启 $1：别人只能得到你已有的权限。'],
-   [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
+@@ -855,6 +855,8 @@ const HOST_ERRORS = [
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
    [/^(.+) is not saved yet$/, '$1 还没有保存'],
    [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, '$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。'],
@@ -3120,7 +3107,7 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -10,7 +10,7 @@ const TEAM_RULES = [
+@@ -10,21 +10,24 @@ const TEAM_RULES = [
    '- When a "[Message from …]" opens a turn, your final text in that turn is delivered back to that Bot automatically and the user does not see it. If one arrives while you are working on something else, take it into account in that work but do not answer it there: once the work is done, it comes back to you in a turn of its own to answer. Answer it directly and briefly, as a list of facts. Never invent facts: say "not discussed yet" when you do not know. If the message brings a request or a decision meant for the user, handle it in the same turn too — do the work, or ask the user with ask_user.',
    '- When a "[Message from … · the user sees your reply here]" arrives, your reply is shown to the user in your own chat and is not sent back. Talk to the user directly, as yourself.',
    '- When a "[Reply from …]" arrives, tell the user the outcome if it matters to them.',
@@ -3129,7 +3116,13 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
    '- Only for a direct user request in your own chat that needs several steps: write one short sentence of normal reply text before your first tool call, and make that tool call in the same response. Never start such a task with tools alone or end it with a promise. On long tasks, give brief factual updates only at meaningful milestones, then keep working.',
    '- For "[Group chat …]", "[Message from …]", or "[Reply from …]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
    '- Offer choices with ask_user (a tap-to-answer card) instead of long option lists in text. Calling it ends your turn at once, so write everything you want to say before the call, in the same reply. The answer arrives as the user\'s next message.',
-@@ -23,8 +23,10 @@ const TEAM_RULES = [
+   '- update_bot changes your own settings: name, role label, color, model, working folder, or instructions. Leave out bot to change yourself. Use it when the user asks you to change how you are set up, for example to work in a project folder (work_dir, a full path). Only a Main Bot can change other Bots; when another Bot needs changing, ask a Main Bot.',
+   '- You may be in group chats with the user and other Bots. You speak in each group from a separate conversation of yours, apart from your own chat with the user. There your turn arrives as a "[Group chat …]" message that shows the speaking order, and your reply is posted to the group. When someone there asks you to do something, do the work in that turn: the group goes on without waiting, and your final reply is posted when you finish. Any member can hand work to another with @Name, and the one that asked answers the result. In a group, read_own_chat shows your own chat (the group sees that you looked; share only what the group needs). In your own chat, read_group_chat shows what was said in a group. A group may have an admin, who steers it: the admin can call members with @Name, change the group with update_group, and start a new discussion there with post_to_group.',
+   '- When you need a key, token, or password, call request_secret: the user types it into a secure card and you never see it. Never ask the user to paste one into the chat. Use it through its environment variable ($DSH_SECRET_<NAME> in bash, $env:DSH_SECRET_<NAME> in PowerShell) and never print it. list_secrets shows which keys exist.',
++  '- For GitHub work, use the GitHub connector tools (mcp__github__*) first. Fall back to $DSH_SECRET_GITHUB_TOKEN with gh or git in the shell only for what those tools cannot do, such as git push.',
+   '- web_search results say which search backend answered. If web_search fails, never guess URLs or present pages you remember as search results: use a browser tool if you have one, otherwise tell the user that search is unavailable and the reason it gave.',
+   '- Your conversations are long-lived. When one grows long, either its older messages are condensed in place into a summary you wrote (a "[Checkpoint N]" message), or it moves on to a fresh part that opens with a handoff note you wrote and your latest messages (a "[Handoff · part N]" message). What leaves your working context stays saved. When you need the exact earlier wording or a detail the summary or note does not show in full (a full path, a figure, every item of a complete list or a final summary), call read_own_chat with words to look for, or with part N to read the note that closed an earlier part; never fill such a detail in from memory. Each line it returns starts with an anchor such as [part 2 #1234 · 10-08 14:22]; pass the anchor as around to read what was said around it.',
+   '- Reply in the user\'s language.',
  ].join('\n')
  
  const MAIN_RULES = [
@@ -3798,18 +3791,17 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -293,6 +293,10 @@ export function install(rt) {
+@@ -293,6 +293,9 @@ export function install(rt) {
          entry.answers = false
          entry.opened = false
          entry.joined = []
 +        // Whose request the turn answers (turn-origin.js): what its messages said before it began.
 +        entry.origin = entry.next
 +        entry.next = undefined
-+        rt.connectorTurnChanged?.(id)
          if (entry.pending !== undefined) {
            claimTrigger(id, entry, entry.pending)
            entry.pending = undefined
-@@ -300,6 +300,17 @@ export function install(rt) {
+@@ -300,6 +300,14 @@ export function install(rt) {
          break
        case 'user/message': {
          const source = event.data?.source
@@ -3819,10 +3811,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +        const verdict = originOfSource(source, rt.botOf(rt.selfOf(id)))
 +        if (verdict !== undefined) {
 +          if (entry.turn === undefined) entry.next = combine(entry.next, verdict)
-+          else if (combine(entry.origin, verdict) !== entry.origin) {
-+            entry.origin = combine(entry.origin, verdict)
-+            rt.connectorTurnChanged?.(id)
-+          }
++          else entry.origin = combine(entry.origin, verdict)
 +        }
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
@@ -3886,12 +3875,11 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -401,9 +401,12 @@ export function install(rt) {
+@@ -401,9 +401,11 @@ export function install(rt) {
          entry.calls = undefined
          entry.lastText = undefined
          entry.lastCalled = undefined
 +        entry.origin = undefined
-+        rt.connectorTurnChanged?.(id)
          const reason = event.data?.reason
          const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
          if (failure !== undefined) noteTurnFailure(id, failure)

@@ -602,7 +602,7 @@ export function apply(ctx) {
     saveCapability: capability => after(call('capability-save', capability)),
     deleteCapability: name => after(call('capability-delete', { name })),
     approveCapability: name => after(call('capability-approve', { name })),
-    setBotConnector: (botId, connector, enabled, scope = 'owner') => after(call('bot-connectors', { botId, connector, enabled, scope })),
+    setBotConnector: (botId, connector, enabled) => after(call('bot-connectors', { botId, connector, enabled })),
     setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
     tasks: () => call('tasks'),
     schedules: () => call('schedules'),

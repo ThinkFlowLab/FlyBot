@@ -139,7 +139,7 @@ The standing "file no new issues" rule covers design proposals only: a reproduci
 1. The self-test routine files issues only; the maintenance routine opens PRs; the release routine owns `CHANGELOG.md` and the version.
 2. No deploy of production Bot Social, and no change to the owner's local instances, without the owner's explicit yes.
 3. A routine PR is merged by the Bot that gated it (owner decision 2026-10-21, [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). A typed chat reply is still not an approval for anything else, and an owner-only decision (scope, security surface, policy) still waits for the owner's word through the normal path (#349).
-4. Connector tools are on by default for the owner's Bots and off by default for other people's, until the owner opts in (#359).
+4. Connector tools are on for every turn of the owner's own Bots, whoever started it, unless the owner turns a connector off for one Bot; a friend's Bot never gets them (#359, owner decision 2026-10-22 on #601). For GitHub work a Bot uses the GitHub connector tools first and `$DSH_SECRET_GITHUB_TOKEN` with `gh`/`git` only as the fallback (for example `git push`).
 5. Bot Social has no keyword commitment scan.
 6. A schedule is per session, not per Bot: an empty `schedule_list` is not evidence that a schedule does not exist; never delete or recreate a schedule from it, and never report "no timers" as a finding (see [A schedule is per session](#a-schedule-is-per-session-not-per-bot-628)).
 
