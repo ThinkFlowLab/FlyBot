@@ -19,7 +19,7 @@ import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { faceMentions, mentionedByHandle } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 
 export const FLYBOT_API_VERSION = 1
 export const SHARED = 'shared'

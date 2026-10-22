@@ -640,12 +640,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  //
  // Work does not hold a round up: a member that is still busy with tools a little after
  // it started, or that is called while still at earlier work, lets the round go on. Its
-@@ -17,11 +17,17 @@
+@@ -16,12 +16,18 @@
+ // where the member that asked for it answers.
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
- import { defineTool } from '@deepseek-ai/dsh-tools'
+-import { defineTool } from '@deepseek-ai/dsh-tools'
 -import { ROOM_LATE_ROUNDS, ROOM_REPLY_TIMEOUT_MS, ROOM_WORK_GRACE_MS, SOURCE_KIND, TEAM_TOOLS } from './constants.js'
 -import { escapeRegExp, splitRef, textOf } from './text.js'
++import { defineTool } from './tool-schema.js'
 +import { ROOM_LATE_ROUNDS, SOURCE_KIND } from './constants.js'
 +import { OWNER, OTHER, SCHEDULED, combine } from './turn-origin.js'
 +import { escapeRegExp, textOf } from './text.js'

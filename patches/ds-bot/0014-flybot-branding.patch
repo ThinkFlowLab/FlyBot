@@ -387,6 +387,15 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 diff --git a/src/host/browser.js b/src/host/browser.js
 --- a/src/host/browser.js
 +++ b/src/host/browser.js
+@@ -3,7 +3,7 @@
+ // the app window, not here, so `read_browser` reaches it through the window: the client
+ // holds a long poll open (`browser-wait`) that reports which Bots have a page open and
+ // carries read requests back; the client answers with `browser-result`.
+-import { defineTool } from '@deepseek-ai/dsh-tools'
++import { defineTool } from './tool-schema.js'
+ import { output } from './tools.js'
+ 
+ // A waiting client counts as present; one that has not polled for this long is gone.
 @@ -124,7 +124,7 @@ export function createBrowserChannel({ now = Date.now, waitMs = WAIT_MS, staleMs
  
    function dispose() {
@@ -500,6 +509,15 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 diff --git a/src/host/secrets.js b/src/host/secrets.js
 --- a/src/host/secrets.js
 +++ b/src/host/secrets.js
+@@ -5,7 +5,7 @@
+ import { randomUUID } from 'node:crypto'
+ import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+ import { join } from 'node:path'
+-import { defineTool } from '@deepseek-ai/dsh-tools'
++import { defineTool } from './tool-schema.js'
+ import { output } from './tools.js'
+ 
+ export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
 @@ -20,6 +20,17 @@ const MAX_REQUESTS = 20
  const USED_SAVE_MS = 5000
  

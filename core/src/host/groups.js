@@ -18,7 +18,7 @@
 // where the member that asked for it answers.
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 import { ROOM_LATE_ROUNDS, SOURCE_KIND } from './constants.js'
 import { OWNER, OTHER, SCHEDULED, combine } from './turn-origin.js'
 import { escapeRegExp, textOf } from './text.js'

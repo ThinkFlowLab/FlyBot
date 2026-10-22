@@ -2797,8 +2797,9 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+-import { defineTool } from '@deepseek-ai/dsh-tools'
 +import { currentParticipants } from './room-membership.js'
- import { defineTool } from '@deepseek-ai/dsh-tools'
++import { defineTool } from './tool-schema.js'
  import { splitRef, unquote } from './text.js'
  import { output } from './tools.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -3317,7 +3318,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +// A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 +
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
-+import { defineTool } from '@deepseek-ai/dsh-tools'
++import { defineTool } from './tool-schema.js'
 +import { textOf } from './text.js'
 +import { output } from './tools.js'
  

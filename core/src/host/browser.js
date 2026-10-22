@@ -3,7 +3,7 @@
 // the app window, not here, so `read_browser` reaches it through the window: the client
 // holds a long poll open (`browser-wait`) that reports which Bots have a page open and
 // carries read requests back; the client answers with `browser-result`.
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
 
 // A waiting client counts as present; one that has not polled for this long is gone.
