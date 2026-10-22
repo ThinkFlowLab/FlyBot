@@ -112,9 +112,17 @@ export function install(rt) {
         if (subtreeOnly && !inSubtree(self, bot.id)) return true
         return false
       }
+      // A held send waits on the owner, not on the Bot: a coordinator reading the
+      // roster sees who is blocked on a decision — a count only, never the held
+      // message's text (#587).
+      const heldSends = {}
+      for (const approval of Object.values(state.flybot?.approvals ?? {})) {
+        if (approval.status !== 'pending' || typeof approval.request?.from !== 'string') continue
+        heldSends[approval.request.from] = (heldSends[approval.request.from] ?? 0) + 1
+      }
       const lines = Object.values(state.bots).filter(listed).map(bot => {
         const model = bot.appliedModel ?? bot.model
-        const tags = [bot.role, model ? `model ${model}` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
+        const tags = [bot.role, model ? `model ${model}` : '', heldSends[bot.id] ? `${heldSends[bot.id]} to approve` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
         const job = !foreign(bot) && bot.instructions ? ` — ${bot.instructions.split('\n')[0].slice(0, 120)}` : ''
         return `- ${bot.name}${tags ? ` (${tags})` : ''}${job}`
       })
