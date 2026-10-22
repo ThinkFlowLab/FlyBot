@@ -1153,7 +1153,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,62 @@
+@@ -1,44 +1,63 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -1191,6 +1191,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { SCHEDULE_CSS } from './schedules.js'
 +import { INBOX_CSS } from './inbox.js'
 +import { MOBILE_CSS } from './mobile.js'
++import { PANE_MIN_WIDTH_CSS } from './panes.js'
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -1460,7 +1461,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,27 +752,33 @@ export function apply(ctx) {
+@@ -752,27 +752,34 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1475,6 +1476,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      installCompiledStyles(MEMBER_CSS, 'members'),
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
 +    installCompiledStyles(MOBILE_CSS, 'mobile'),
++    installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
      installTheme(),
      shadow('sidebar.workspaces', { priority: -10, inject: face }, TeamSidebar),

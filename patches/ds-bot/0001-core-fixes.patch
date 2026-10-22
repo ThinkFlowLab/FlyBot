@@ -166,6 +166,45 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
        if (shown === tabId) await show(null)
        await release(tabId)
        owner.delete(tabId)
+diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
+--- a/src/client/browser-pane.js
++++ b/src/client/browser-pane.js
+@@ -4,6 +4,7 @@
+ // body-level layer by bot-browsers.js; the panel draws the strip and the toolbar
+ // and reports the rectangle the shown webview covers.
+ import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
++import { DEFAULT_WIDTH, DETAILS_WIDTH, panelWidthRange } from './pane-width.js'
+ import { createPortal } from 'react-dom'
+ import { BotMark } from './mark.js'
+ import { STORAGE } from './storage.js'
+@@ -13,15 +13,6 @@ import { t } from './i18n.js'
+ 
+ export const PANEL_LINGER_MS = 300
+ const WIDTH_KEY = STORAGE.browserWidth
+-// One width for the panel, shared by both views. The Bot page keeps it within
+-// DETAILS_WIDTH..DETAILS_MAX, so a wider browser comes back to DETAILS_MAX and a
+-// narrower one keeps its width; the browser takes any width from MIN_WIDTH.
+-const DEFAULT_WIDTH = 520
+-const DETAILS_WIDTH = 320
+-const DETAILS_MAX = 520
+-const MIN_WIDTH = 360
+-// The conversation keeps at least this much room beside the panel.
+-const MIN_CHAT = 420
+ // How long the Bot's mark shows that it read the page.
+ const READ_FLASH_MS = 2400
+ const EMPTY_PAGE = { url: '', title: '', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: '' }
+@@ -59,10 +59,8 @@ const savedWidth = () => {
+     return Number.isFinite(value) && value >= DETAILS_WIDTH ? value : null
+   } catch { return null }
+ }
+-const widthRange = (view, viewport) => (view === 'browser'
+-  ? [MIN_WIDTH, viewport - MIN_CHAT]
+-  : [DETAILS_WIDTH, Math.min(DETAILS_MAX, viewport - MIN_CHAT)])
+ const fitWidth = (width, [low, high]) => Math.round(Math.max(low, Math.min(width, high)))
++const widthRange = (view, viewport) => panelWidthRange(view, viewport)
+ 
+ // The conversation column's right margin lives in one rule of our own, matched on the
+ // column's exact class. A custom property on <body> would restyle the whole page, tens
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js

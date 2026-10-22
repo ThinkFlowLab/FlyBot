@@ -1,0 +1,1 @@
+The multi-pane layout no longer overflows a narrow window: the Details panel shrinks before it starves the conversation, every pane can shrink, and long values wrap, so nothing is clipped and no blank strip is left between the panes (#705).

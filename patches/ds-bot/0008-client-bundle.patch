@@ -12562,7 +12562,7 @@ diff --git a/client.js b/client.js
      const box = ref.current?.getBoundingClientRect();
      if (!box) return;
      setPlace({ left: Math.max(8, Math.min(menu.x, window.innerWidth - box.width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - box.height - 8)) });
-@@ -10952,319 +10952,95 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -10952,14 +10952,14 @@ function AgentMenu({ menu, roster, actions, leaving }) {
        [t("Archive"), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true]
      ]
    ];
@@ -12582,16 +12582,16 @@ diff --git a/client.js b/client.js
          key: label,
          type: "button",
          role: "menuitem",
-         className: danger ? "bt-danger" : void 0,
-         onClick: () => {
+@@ -10968,303 +10968,93 @@ function AgentMenu({ menu, roster, actions, leaving }) {
            actions.closeMenu();
--          void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
--        }
+           void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
+         }
 -      }, (0, import_react29.createElement)(Icon), label))
--    ))
--  );
--}
--
++      }, (0, import_react36.createElement)(Icon), label))
+     ))
+   );
+ }
+ 
 -// src/client/storage.js
 -var STORAGE = {
 -  unread: "ds-bot:unread",
@@ -12655,8 +12655,20 @@ diff --git a/client.js b/client.js
 -    }
 -  } catch {
 -  }
--}
--
++// src/client/pane-width.js
++var DEFAULT_WIDTH = 520;
++var DETAILS_WIDTH = 320;
++var DETAILS_MAX = 520;
++var MIN_WIDTH = 360;
++var MIN_CHAT = 420;
++var MIN_DETAILS = 240;
++function panelWidthRange(view, viewport) {
++  const room2 = Math.max(0, viewport - MIN_CHAT);
++  if (view === "browser") return [MIN_WIDTH, Math.max(MIN_WIDTH, room2)];
++  const low = Math.max(MIN_DETAILS, Math.min(DETAILS_WIDTH, room2));
++  return [low, Math.max(low, Math.min(DETAILS_MAX, room2))];
+ }
+ 
 -// src/client/member-status.js
 -var import_react30 = require("react");
 -var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
@@ -12838,18 +12850,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react30.createElement)("span", null, (0, import_react30.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
 -      entry.here ? (0, import_react30.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
 -    )
-+          void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
-+        }
-+      }, (0, import_react36.createElement)(Icon), label))
-+    ))
-   );
- }
--function useMemberWork(room2, useWork) {
--  const work = useWork?.((value) => value) ?? NO_WORK;
--  const entries2 = room2 ? memberWork(room2, work) : [];
--  const now = useNow2(entries2.some((entry) => entry.state !== "idle"));
--  return { entries: entries2, now };
-+
+-  );
 +// src/client/storage.js
 +var STORAGE = {
 +  unread: "ds-bot:unread",
@@ -12869,7 +12870,12 @@ diff --git a/client.js b/client.js
 +  if (key === STORAGE.browsers) return LEGACY_BROWSER_KEYS;
 +  const name = key.slice(key.indexOf(":") + 1);
 +  return LEGACY_PREFIXES.map((prefix) => `${prefix}${name}`);
-+}
+ }
+-function useMemberWork(room2, useWork) {
+-  const work = useWork?.((value) => value) ?? NO_WORK;
+-  const entries2 = room2 ? memberWork(room2, work) : [];
+-  const now = useNow2(entries2.some((entry) => entry.state !== "idle"));
+-  return { entries: entries2, now };
 +var migrateBrowsers = (storage) => {
 +  if (storage.getItem(STORAGE.browsers) !== null) {
 +    for (const key of LEGACY_BROWSER_KEYS) storage.removeItem(key);
@@ -13361,7 +13367,7 @@ diff --git a/client.js b/client.js
          className: "bt-drawer-name-input",
          autoFocus: true,
          value: draftName,
-@@ -11535,55 +11535,59 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
+@@ -11535,87 +11535,86 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
              setEditing(false);
            }
          }
@@ -13445,7 +13451,13 @@ diff --git a/client.js b/client.js
  var import_react_dom8 = require("react-dom");
  var PANEL_LINGER_MS = 300;
  var WIDTH_KEY = STORAGE.browserWidth;
-@@ -11597,25 +11597,25 @@ var EMPTY_PAGE = { url: "", title: "", favicon: null, loading: false, canGoBack:
+-var DEFAULT_WIDTH = 520;
+-var DETAILS_WIDTH = 320;
+-var DETAILS_MAX = 520;
+-var MIN_WIDTH = 360;
+-var MIN_CHAT = 420;
+ var READ_FLASH_MS = 2400;
+ var EMPTY_PAGE = { url: "", title: "", favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: "" };
  var EMPTY_TABS2 = { ids: [], active: null };
  var SPRING_LEAD2 = springEasing(576, 39.4);
  var SPRING_TRAIL2 = springEasing(144, 19.7);
@@ -13485,6 +13497,16 @@ diff --git a/client.js b/client.js
  }
  var savedWidth = () => {
    try {
+@@ -11625,8 +11625,8 @@ var savedWidth = () => {
+     return null;
+   }
+ };
+-var widthRange = (view, viewport) => view === "browser" ? [MIN_WIDTH, viewport - MIN_CHAT] : [DETAILS_WIDTH, Math.min(DETAILS_MAX, viewport - MIN_CHAT)];
+ var fitWidth = (width, [low, high]) => Math.round(Math.max(low, Math.min(width, high)));
++var widthRange = (view, viewport) => panelWidthRange(view, viewport);
+ var room = { rule: null, selector: "" };
+ var roomRule = () => {
+   const live = room.rule?.parentStyleSheet?.ownerNode?.isConnected;
 @@ -11674,11 +11674,11 @@ var reducedMotion2 = () => typeof matchMedia === "function" && matchMedia("(pref
  var tabLabel = (page) => page.title || shortAddress(page.url) || t("New tab");
  function PanelStrip({ bot, subject, view, ids, active, reading, onView, actions, useBrowserPages }) {
@@ -13995,7 +14017,7 @@ diff --git a/client.js b/client.js
      }
      const end = body2.trimEnd().length;
      const marked = mark ? `${body2.slice(0, end)}${mark}${body2.slice(end)}` : body2;
-@@ -13052,11 +13052,52 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
+@@ -13052,11 +13052,63 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
    };
  }
  
@@ -14022,6 +14044,17 @@ diff --git a/client.js b/client.js
 +.bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
 +.bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}
 +}
++`;
++
++// src/client/panes.js
++var PANE_MIN_WIDTH_CSS = `
++.bt-panel{min-width:0}
++.bt-panel-view{min-width:0}
++.bt-drawer-body{min-width:0;overflow-wrap:anywhere}
++.bt-drawer-body :is(.bt-muted,.bt-note,.bt-section-title,.bt-drawer-role,.bt-drawer-permission){min-width:0;overflow-wrap:anywhere}
++.bt-panel :is(.bt-member,.bt-members,.bt-bcard-row,.bt-drawer-model,.bt-usage-row){min-width:0}
++.bt-panel :is(.bt-muted,.bt-note){white-space:normal}
++[class*="_centerCol"]{min-width:0}
 +`;
 +
 +// src/client/friend-lines.js
@@ -14636,7 +14669,7 @@ diff --git a/client.js b/client.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId);
      if (controller === void 0 || span === void 0) return;
-@@ -14019,27 +14019,33 @@ function apply(ctx) {
+@@ -14019,27 +14019,34 @@ function apply(ctx) {
      installCompiledStyles(SHELL_CSS, "shell"),
      installCompiledStyles(SIDEBAR_CSS, "sidebar"),
      installCompiledStyles(SECRET_CSS, "secrets"),
@@ -14651,6 +14684,7 @@ diff --git a/client.js b/client.js
      installCompiledStyles(MEMBER_CSS, "members"),
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
 +    installCompiledStyles(MOBILE_CSS, "mobile"),
++    installCompiledStyles(PANE_MIN_WIDTH_CSS, "panes"),
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
      installTheme(),
      shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),

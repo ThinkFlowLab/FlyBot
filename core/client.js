@@ -14555,6 +14555,20 @@ function AgentMenu({ menu, roster, actions, leaving }) {
   );
 }
 
+// src/client/pane-width.js
+var DEFAULT_WIDTH = 520;
+var DETAILS_WIDTH = 320;
+var DETAILS_MAX = 520;
+var MIN_WIDTH = 360;
+var MIN_CHAT = 420;
+var MIN_DETAILS = 240;
+function panelWidthRange(view, viewport) {
+  const room2 = Math.max(0, viewport - MIN_CHAT);
+  if (view === "browser") return [MIN_WIDTH, Math.max(MIN_WIDTH, room2)];
+  const low = Math.max(MIN_DETAILS, Math.min(DETAILS_WIDTH, room2));
+  return [low, Math.max(low, Math.min(DETAILS_MAX, room2))];
+}
+
 // src/client/storage.js
 var STORAGE = {
   unread: "ds-bot:unread",
@@ -15063,11 +15077,6 @@ var import_react38 = require("react");
 var import_react_dom8 = require("react-dom");
 var PANEL_LINGER_MS = 300;
 var WIDTH_KEY = STORAGE.browserWidth;
-var DEFAULT_WIDTH = 520;
-var DETAILS_WIDTH = 320;
-var DETAILS_MAX = 520;
-var MIN_WIDTH = 360;
-var MIN_CHAT = 420;
 var READ_FLASH_MS = 2400;
 var EMPTY_PAGE = { url: "", title: "", favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: "" };
 var EMPTY_TABS2 = { ids: [], active: null };
@@ -15101,8 +15110,8 @@ var savedWidth = () => {
     return null;
   }
 };
-var widthRange = (view, viewport) => view === "browser" ? [MIN_WIDTH, viewport - MIN_CHAT] : [DETAILS_WIDTH, Math.min(DETAILS_MAX, viewport - MIN_CHAT)];
 var fitWidth = (width, [low, high]) => Math.round(Math.max(low, Math.min(width, high)));
+var widthRange = (view, viewport) => panelWidthRange(view, viewport);
 var room = { rule: null, selector: "" };
 var roomRule = () => {
   const live = room.rule?.parentStyleSheet?.ownerNode?.isConnected;
@@ -16628,6 +16637,17 @@ var MOBILE_CSS = `
 }
 `;
 
+// src/client/panes.js
+var PANE_MIN_WIDTH_CSS = `
+.bt-panel{min-width:0}
+.bt-panel-view{min-width:0}
+.bt-drawer-body{min-width:0;overflow-wrap:anywhere}
+.bt-drawer-body :is(.bt-muted,.bt-note,.bt-section-title,.bt-drawer-role,.bt-drawer-permission){min-width:0;overflow-wrap:anywhere}
+.bt-panel :is(.bt-member,.bt-members,.bt-bcard-row,.bt-drawer-model,.bt-usage-row){min-width:0}
+.bt-panel :is(.bt-muted,.bt-note){white-space:normal}
+[class*="_centerCol"]{min-width:0}
+`;
+
 // src/client/friend-lines.js
 function friendLineNews(bots, known, isOpen, selfId) {
   const next = { ...known };
@@ -17825,6 +17845,7 @@ function apply(ctx) {
     installCompiledStyles(MEMBER_CSS, "members"),
     installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
     installCompiledStyles(MOBILE_CSS, "mobile"),
+    installCompiledStyles(PANE_MIN_WIDTH_CSS, "panes"),
     browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
     installTheme(),
     shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),
