@@ -87,6 +87,8 @@ Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled 
 
 **An empty `schedule_list` is not evidence that a schedule does not exist; never delete or recreate a schedule from it, and never report "no timers" as a finding.** The owner's UI shows the real list; ask the owner instead of the tool when the run depends on it. `schedule_delete` and `schedule_update` share the same scope, so a Bot can otherwise "clean up" a schedule it cannot see. The DSH-side fix is tracked in #628.
 
+**`bot_schedules` (no arguments) is the Bot-wide list.** It reads DSH's host-wide catalog and keeps every Session that speaks for the calling Bot — its own chat, the earlier parts of it, and the group chats it speaks in — plus its paused tasks, with each task's id, title, next run, state and owning Session. Read that tool before saying anything about this Bot's timers; DSH's `schedule_list` stays per Session, and the DSH-side scoping fix is still tracked in #628.
+
 ### Issue labels
 
 - **Type** (exactly one): `bug`, `enhancement`, `documentation`, `accessibility`.
@@ -141,7 +143,7 @@ The standing "file no new issues" rule covers design proposals only: a reproduci
 3. A routine PR is merged by the Bot that gated it (owner decision 2026-10-21, [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). A typed chat reply is still not an approval for anything else, and an owner-only decision (scope, security surface, policy) still waits for the owner's word through the normal path (#349).
 4. Connector tools are on for every turn of the owner's own Bots, whoever started it, unless the owner turns a connector off for one Bot; a friend's Bot never gets them (#359, owner decision 2026-10-22 on #601). For GitHub work a Bot uses the GitHub connector tools first and `$DSH_SECRET_GITHUB_TOKEN` with `gh`/`git` only as the fallback (for example `git push`).
 5. Bot Social has no keyword commitment scan.
-6. A schedule is per session, not per Bot: an empty `schedule_list` is not evidence that a schedule does not exist; never delete or recreate a schedule from it, and never report "no timers" as a finding (see [A schedule is per session](#a-schedule-is-per-session-not-per-bot-628)).
+6. A schedule is per session, not per Bot: an empty `schedule_list` is not evidence that a schedule does not exist; never delete or recreate a schedule from it, and never report "no timers" as a finding; `bot_schedules` is the Bot-wide list for this (see [A schedule is per session](#a-schedule-is-per-session-not-per-bot-628)).
 
 ## What this project is
 

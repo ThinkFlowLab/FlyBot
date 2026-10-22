@@ -70,9 +70,9 @@ function scheduleService() {
   }
 }
 
-function setup(services = {}) {
+function setup(services = {}, team = TEAM) {
   const home = mkdtempSync(join(tmpdir(), 'dsb-schedules-'))
-  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(team))
   const ctx = fakeContext({ services })
   const register = ctx.connection.fetch.register
   ctx.connection.fetch.register = (route) => { ctx.route = route; return register(route) }
@@ -392,4 +392,57 @@ test('a due task DSH does not deliver while the app runs is a failed run, told o
   // Delivered after all: the next time is in the future again and the failure stays the last run.
   task.record = { ...task.record, scheduledAt: '2030-01-02T01:00:00.000Z' }
   assert.deepEqual(await lastRuns(call), [['failed', 'DSH could not deliver it']])
+})
+
+// #628: DSH's own `schedule_list` answers for one Session, so a task the owner sees in the
+// UI is invisible from another Session of the same Bot, and its `[]` reads the same as
+// "nothing scheduled". `bot_schedules` answers for the Bot.
+test('#628: bot_schedules answers for the Bot, never for the Session the call runs in', async (t) => {
+  const schedule = scheduleService()
+  const team = JSON.parse(JSON.stringify(TEAM))
+  team.rooms.g1.sessions = { w1: 'g1-w1', m1: 'g1-m1' }
+  team.rooms.g1.segments = { w1: [{ sessionId: 'g1-w1-old', endedAt: 5 }] }
+  team.pausedSchedules = { 's-paused': { id: 's-paused', sessionId: 'w1', record: { title: 'Paused brief', prompt: 'Sum up' }, pausedAt: 6 } }
+  const { ctx, home } = setup({ schedule }, team)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const add = (sessionId, title, id, status = 'active') => schedule.tasks.set(id, { sessionId, status, record: { id, title, prompt: `${title} prompt`, scheduledAt: '2030-01-01T01:00:00.000Z' } })
+  add('w2', 'Writer current part', 's-w2')
+  add('w1', 'Writer earlier part', 's-w1')
+  add('g1-w1', 'Writer group', 's-g1')
+  add('g1-w1-old', 'Writer group earlier part', 's-g1-old')
+  add('m1', 'Chief own chat', 's-m1')
+  add('g1-m1', 'Chief group session', 's-g1m')
+  const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
+  const answer = await listed('w2')
+  // Every Session of this Bot: its own chat, the earlier part of it, the group chats it speaks in.
+  for (const name of ['Writer current part', 'Writer earlier part', 'Writer group', 'Writer group earlier part', 'Paused brief']) {
+    assert.ok(answer.includes(name), `${name} is the Bot's schedule`)
+  }
+  assert.match(answer, /own chat, earlier part/)
+  assert.match(answer, /group chat "Launch"/)
+  assert.match(answer, /paused/)
+  // The same answer whichever Session of the Bot asks — that is what "Bot-wide" means.
+  assert.equal(await listed('w1'), answer, 'an earlier part gets the same answer')
+  assert.equal(await listed('g1-w1'), answer, 'so does a group Session it speaks in')
+  // Another Bot's tasks stay out, own chat and group alike.
+  assert.ok(!answer.includes('Chief own chat'))
+  assert.ok(!answer.includes('Chief group session'))
+  // The answer names its scope, so an empty one cannot be read as "nothing is scheduled".
+  assert.match(answer, /every Session of this Bot/)
+  assert.match(answer, /schedule_list answers for one Session only/)
+})
+
+test('#628: without the schedule service the Bot-wide answer says why it is empty', async (t) => {
+  const { ctx, home } = setup()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
+  assert.match(answer, /Automation tasks are off in DSH/)
+  assert.match(answer, /every Session of this Bot/)
+})
+
+test('#628: a Bot with no task in any Session gets an answer that is about the Bot', async (t) => {
+  const { ctx, home } = setup({ schedule: scheduleService() })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
+  assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
 })

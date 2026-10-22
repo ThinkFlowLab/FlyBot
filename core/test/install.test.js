@@ -97,6 +97,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'on agent/created',
     'effect ds-bot: capabilities',
     'effect ds-bot: missed scheduled runs',
+    'tool bot_schedules',
     'effect ds-bot: automation tasks default',
     'effect ds-bot: usage ledger',
     'on llm/stream',

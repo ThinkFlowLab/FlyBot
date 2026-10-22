@@ -24,7 +24,9 @@
 // A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import { textOf } from './text.js'
+import { output } from './tools.js'
 
 const MAX_TITLE = 120
 // How long a due task may stay undelivered while the app runs before it counts as failed.
@@ -408,6 +410,55 @@ export function install(rt) {
     }
     return schedulesView()
   }
+
+  // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
+  // earlier part), or a group chat it speaks in (now, or an earlier part).
+  const placeOf = (sessionId) => {
+    const chat = rt.chatOwners.get(sessionId)
+    if (chat !== undefined) return { botId: chat, place: sessionId === rt.chatOf(chat) ? 'own chat' : 'own chat, earlier part' }
+    const live = rt.groupOwners.get(sessionId)
+    const past = rt.pastOwners.get(sessionId)
+    const owner = live ?? past
+    if (owner === undefined) return undefined
+    // An archived part of a Bot's own chat has no group: it is the same chat, earlier.
+    if (live === undefined && past.roomId === undefined) return { botId: past.botId, place: 'own chat, earlier part' }
+    const name = rt.roomOf(owner.roomId)?.name
+    const place = name === undefined ? 'a group chat' : `group chat "${name}"`
+    return { botId: owner.botId, place: live === undefined ? `${place}, earlier part` : place }
+  }
+
+  // DSH's own `schedule_list` answers for the Session the call runs in, and its empty
+  // answer is indistinguishable from "this Bot has nothing scheduled" (#628): a task the
+  // owner sees in the UI is invisible from another Session of the same Bot. This tool
+  // answers for the Bot instead, from the host-wide catalog.
+  ctx.tools.register(defineTool({
+    name: 'bot_schedules',
+    description: "List every scheduled task this Bot has, in every Session of its own — its own chat, the earlier parts of it, and the group chats it speaks in — with id, title, next run, state and owning Session. DSH's own `schedule_list` answers for one Session only; this one answers for the Bot.",
+    parameters: {},
+    output,
+    async execute(_args, exec) {
+      await rt.load()
+      const botId = rt.selfOf(exec.agent?.id)
+      const bot = rt.botOf(botId)
+      if (bot === undefined) return 'This Session does not belong to a Bot, so there are no Bot-wide scheduled tasks.'
+      const head = `Scheduled tasks of ${bot.name} — every Session of this Bot (DSH's own schedule_list answers for one Session only):`
+      if (service === null) return `${head}\nnone — Automation tasks are off in DSH, so no scheduled task is visible.`
+      const rows = []
+      const add = (entry, status, when) => {
+        const at = placeOf(entry.sessionId)
+        if (at?.botId !== botId) return
+        rows.push({
+          at: when ?? '',
+          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${when === undefined ? 'no next run' : `next ${when}`}, ${status}, ${at.place}, session ${entry.sessionId}`,
+        })
+      }
+      for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
+      for (const entry of Object.values(paused())) add({ ...entry.record, id: entry.id, sessionId: entry.sessionId }, 'paused', undefined)
+      if (rows.length === 0) return `${head}\nnone — no scheduled task in any of its Sessions, so this is the whole list for the Bot.`
+      rows.sort((a, b) => a.at.localeCompare(b.at) || a.line.localeCompare(b.line))
+      return [head, ...rows.map(row => row.line)].join('\n')
+    },
+  }))
 
   const endpoints = {
     schedules: () => schedulesView(),
