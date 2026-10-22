@@ -20,11 +20,6 @@
     "description": "Pull request opened by an agent"
   },
   {
-    "name": "awaiting-approval",
-    "color": "FBCA04",
-    "description": "Legacy: a PR a person must decide on; routine T2/T3 PRs no longer wait for a click"
-  },
-  {
     "name": "self-test",
     "color": "C5DEF5",
     "description": "Filed by the product self-test routine (issues only)"
