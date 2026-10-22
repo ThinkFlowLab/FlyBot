@@ -1521,3 +1521,42 @@ test('#635: move_bot is visible to the root only', async () => {
 })
 
 
+
+// #677: `heightOf` walks children, so it needs the guard `depthOf` has. Two defects lived here: the
+// recursion passed the child *node* instead of its id (so `childrenOf` matched nothing and the height was
+// always 1, which let `move_bot`'s maxDepth check undercount a subtree), and once it recursed properly a
+// corrupted snapshot, where two Bots are each other's parent, died on the stack instead of answering.
+test('#677: a two-node parent cycle ends the height walk instead of overflowing the stack', async () => {
+  const m = await setup({ maxDepth: 3 })
+  const a = await make(m, m.root, 'A')
+  const b = await make(m, a, 'B')
+  // Corrupt the stored pair: A and B become each other's parent, the shape a half-applied move leaves.
+  m.bots.get(a).fields['flybot-tree'].parent = b
+  m.bots.get(b).fields['flybot-tree'].parent = a
+  const nodes = m.tree.snapshot()
+  assert.equal(nodes[a].parent, b)
+  assert.equal(nodes[b].parent, a)
+  assert.equal(m.tree.heightOf(nodes, a), 2, 'the walk counts the pair once, then stops at a node on the path')
+  assert.doesNotThrow(() => m.tree.heightOf(nodes, a), 'the walk is bounded, not recursive to the stack limit')
+
+  // The move path answers with its depth refusal instead of throwing: with the pair counted as 2, A under the
+  // root would end at depth 4. Before the id fix the height was 1 and the move was wrongly allowed; with the
+  // ids right and no `seen` it threw RangeError.
+  const call = m.call(m.root, 'move_bot', { bot: 'A', parent: 'Chief' })
+  await assert.doesNotReject(call, 'the corrupted pair must be answered, not thrown')
+  const r = await call
+  assert.match(r.error, /limit reached: A would end at depth 4 \(maxDepth=3\)/)
+})
+
+test('#677: heightOf measures the whole subtree, so move_bot refuses a subtree that is too deep', async () => {
+  const m = await setup({ maxDepth: 4 })
+  const a = await make(m, m.root, 'A')
+  const b = await make(m, a, 'B')
+  const c = await make(m, b, 'C')
+  const d = await make(m, m.root, 'D')
+  assert.ok(a && b && c && d)
+  assert.equal(m.tree.heightOf(m.tree.snapshot(), a), 2, 'A → B → C is two levels below A')
+  // Moving A under D puts C at depth 5, past maxDepth=4. The old height (1) let this through.
+  const r = await m.call(m.root, 'move_bot', { bot: 'A', parent: 'D' })
+  assert.match(r.error, /limit reached: A would end at depth 5 \(maxDepth=4\)/)
+})

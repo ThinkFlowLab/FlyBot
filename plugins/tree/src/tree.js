@@ -36,10 +36,15 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   }
   const childrenOf = (nodes, id) => Object.values(nodes).filter(n => n.parent === id)
   const depthOf = (nodes, id) => { let d = 0; for (let x = id, seen = new Set(); x && nodes[x] && !seen.has(x); x = nodes[x].parent) { seen.add(x); d++ } return d }
-  // Height of the subtree rooted at id: 0 for a leaf.
-  const heightOf = (nodes, id) => {
+  // Height of the subtree rooted at id: 0 for a leaf. Two things make this walk safe and true: it recurses
+  // on the child's id (it used to pass the node object, so `childrenOf` matched nothing and the height was
+  // always 1), and a `seen` set ends it at a node already on the path, like `depthOf` — a corrupted
+  // snapshot can make two Bots each other's parent, and without the set the walk dies on the stack (#677).
+  const heightOf = (nodes, id, seen = new Set()) => {
+    if (seen.has(id)) return 0
+    seen.add(id)
     const kids = childrenOf(nodes, id)
-    return kids.length ? 1 + Math.max(...kids.map(k => heightOf(nodes, k))) : 0
+    return kids.length ? 1 + Math.max(...kids.map(k => heightOf(nodes, k.id, seen))) : 0
   }
   const traceOf = (nodes, id) => { const p = []; for (let x = id; x && nodes[x] && p.length < 64; x = nodes[x].parent) p.unshift(nodes[x].name); return p.join(' → ') }
 
