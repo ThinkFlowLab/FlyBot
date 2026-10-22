@@ -1081,7 +1081,7 @@ test('a friendship scoped to one Bot: the roster shows only the granted Bots and
 
 // A server that holds every send_as_member and lists the holds. `reasons` names what Bot Social
 // held it for: the plain approval requirement, or a finding of its own (a DLP category).
-function holdingServer({ reasons = [], riskFlags = [] } = {}) {
+function holdingServer({ reasons = ['mvp.all_outbound_requires_approval'], riskFlags = [] } = {}) {
   const server = mockServer()
   server.queue = []
   server.tools.send_as_member = (a) => {
@@ -1456,6 +1456,58 @@ test('#737: an Auto-send line Bot Social held for a finding of its own stays on 
   assert.deepEqual(status.approvals.map(item => [item.id, item.reasons]), [['apr-1-m1', ['commitment']]])
 })
 
+test('#766: only the blanket approval reason is cleared by Auto-send; any other name holds the line', async () => {
+  const cases = [
+    ['policy.new_rule'],
+    ['mvp.all_outbound_requires_approval', 'policy.new_rule'],
+    ['dlp.blocked'],
+    ['mvp.all_outbound_requires_approval', 'dlp.blocked'],
+  ]
+  for (const reasons of cases) {
+    const { ctx, stop } = await team()
+    const server = holdingServer({ reasons })
+    const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+    await grantTeam(ctx.flybot)
+    await social.registerAll()
+    assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+    assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], `never approved without the owner: ${reasons.join(',')}`)
+    assert.equal(server.queue.length, 1, `the hold stays on its card: ${reasons.join(',')}`)
+    social.dispose()
+    await stop()
+  }
+  // A risk flag is a finding too, even beside the blanket reason.
+  const { ctx, call, stop } = await team()
+  const server = holdingServer({ riskFlags: [{ category: 'money', action: 'approve' }] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], 'a risk flag is never cleared without the owner')
+  assert.deepEqual((await call('flybot/social/status', {})).value.approvals.map(item => item.reasons), [['money']])
+  social.dispose()
+  await stop()
+})
+
+test('#766: a hold the server has not listed yet is named in a warn, and the line waits on its card', async (t) => {
+  const warned = []
+  const originalWarn = console.warn
+  console.warn = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.warn = originalWarn })
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  // The line comes back held, but the approval list has not caught up (the lag #737 was reported for).
+  server.tools.list_approvals = () => ({ approvals: [] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], 'nothing is approved out of a list that does not name the hold')
+  assert.match(warned.join('\n'), /Auto-send: Bot Social has not listed the hold apr-1-m1 yet; the line waits on its card/, 'the item is named, so the next report is diagnosable')
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
+})
+
 test('#737: with Auto-send off the chain holds the send, and nothing is approved', async (t) => {
   const { ctx, stop } = await team()
   t.after(stop)
@@ -1717,6 +1769,12 @@ test('#457: a Bot whose face-room Auto-send is on has its clean held line approv
   // A line Bot Social flagged still waits for the owner, switch or not.
   queue = [heldItem(['dlp.commitment'])]
   assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
+  // A reason the card does not name is still a finding (#766): the allow-list, not "no name I know".
+  queue = [heldItem(['policy.new_rule'])]
+  assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
+  queue = [heldItem(['dlp.blocked'])]
+  assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
+  assert.equal(approvals().length, 1, 'only the clean line was ever approved')
   // Writer's switch is off: its line waits.
   queue = [heldItem()]
   assert.deepEqual(await fanout(room, line('b', 'Writer')), { held: true, approvalId: 'apr-face-1' })

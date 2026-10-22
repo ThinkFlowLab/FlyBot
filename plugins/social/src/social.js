@@ -114,6 +114,17 @@ export function holdReasons(item) {
   }
   return names.slice(0, 8)
 }
+// The one hold Auto-send may clear by itself (#737, #766): an approval Bot Social made only for its
+// blanket "all outbound needs approval" rule, with no risk flag. This is an allow-list on purpose — a
+// reason this build does not know, another DLP category or a risk flag is a finding, so the line waits
+// for the owner on its card. An empty or missing `reasons` list is not the blanket rule either: nothing
+// listed is nothing known.
+const BLANKET_HOLD = 'mvp.all_outbound_requires_approval'
+export function holdIsBlanket(item) {
+  const reasons = Array.isArray(item?.reasons) ? item.reasons : []
+  const flags = Array.isArray(item?.risk_flags) ? item.risk_flags : []
+  return reasons.length > 0 && reasons.every(reason => String(reason) === BLANKET_HOLD) && flags.length === 0
+}
 export function approvalView(item, { localName } = {}) {
   if (!item || typeof item !== 'object') return undefined
   const id = String(item.approval_id ?? item.id ?? '')
@@ -146,6 +157,9 @@ export function approvalView(item, { localName } = {}) {
     // The Bot Social identity that wrote it (a local Bot is found by it), and why Bot Social held it (#371).
     ...(typeof item.bot_id === 'string' && item.bot_id ? { botId: item.bot_id } : {}),
     reasons: holdReasons(item),
+    // What Auto-send may clear on its own (#766); the face-room path decides on this, not on the
+    // names the card shows, because a reason this build does not know is a hold too.
+    blanketHold: holdIsBlanket(item),
     text,
     summary: cleanText(item.summary),
     createdAt: item.created_at,
@@ -1513,10 +1527,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const result = await client.callTool('list_approvals', { status: 'pending' })
       const raw = result?.approvals ?? (Array.isArray(result) ? result : [])
       const held = raw.find(item => String(item?.approval_id ?? item?.id ?? '') === String(approvalId))
-      if (!held || holdReasons(held).length > 0) return false
+      // A hold the server has not listed yet is not "no finding": the line waits on its card, and the
+      // report names the item so the next one of these is diagnosable (#766).
+      if (!held) {
+        warn(`Auto-send: Bot Social has not listed the hold ${approvalId} yet; the line waits on its card`)
+        return false
+      }
+      if (!holdIsBlanket(held)) return false
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
-      setPending(pendingCache.items.filter(item => item.id !== approvalId))
-      pendingCache.at = 0
+      // No cache line here: the send path already invalidates it when a message comes back
+      // `pending_approval`, and this hold was created after the last poll, so it was never in the
+      // cache to begin with (#766).
       return true
     } catch (error) {
       warn('Auto-send did not approve the Bot Social hold; the line waits on its card', error)
@@ -3454,7 +3475,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!local || !faceAutoOf(local.id)) return false
     try {
       const held = (await pendingApprovals({ fresh: true })).find(item => item.id === approvalId)
-      if (!held || held.reasons.length > 0) return false
+      if (!held || held.blanketHold !== true) return false
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       setPending(pendingCache.items.filter(item => item.id !== approvalId))
       pendingCache.at = 0
