@@ -14,10 +14,10 @@ const report = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
 
 const say = (body = report(), at = '2026-10-21T10:31:00Z', kind = 'comment') => ({ login: 'reviewer-agent', body, at, kind })
 
-const judgeAt = (over = {}) => judge({ labels: [], head: HEAD, author: 'opener', reports: [say()], policy, queuedSha: HEAD, ...over })
+const judgeAt = (over = {}) => judge({ labels: [], head: HEAD, author: 'opener', reports: [say()], policy, ...over })
 
 test('the queue branch is the only pointer to the pull request', () => {
-  assert.deepEqual(prFromHeadRef(ENTRY), { pr: 566, sha: HEAD })
+  assert.deepEqual(prFromHeadRef(ENTRY), { pr: 566, base: HEAD })
   assert.equal(prFromHeadRef('gh-readonly-queue/main/pr-616-81c708d054f43c90fd201ae3a281fd2e8e8916e7').pr, 616)
   assert.equal(prFromHeadRef('refs/heads/main'), null, 'a ref that is not a queue entry names no pull request')
   assert.equal(prFromHeadRef('gh-readonly-queue/main/pr-566-not-a-sha'), null)
@@ -27,10 +27,10 @@ test('the queue branch is the only pointer to the pull request', () => {
 // The real event payload, verbatim from run 39694988559 (the #626 queue entry): GitHub passes the
 // queue branch fully qualified. Without this, every entry failed before judging anything.
 test('#652 follow-up: a head_ref that carries refs/heads/ still names the queue entry', () => {
-  assert.deepEqual(prFromHeadRef(`refs/heads/${ENTRY}`), { pr: 566, sha: HEAD })
+  assert.deepEqual(prFromHeadRef(`refs/heads/${ENTRY}`), { pr: 566, base: HEAD })
   assert.deepEqual(prFromHeadRef('refs/heads/gh-readonly-queue/main/pr-652-020490044ccad1551f769f0ee141da218f71c1fd'), {
     pr: 652,
-    sha: '020490044ccad1551f769f0ee141da218f71c1fd',
+    base: '020490044ccad1551f769f0ee141da218f71c1fd',
   })
   assert.equal(prFromHeadRef('refs/tags/gh-readonly-queue/main/pr-566-' + HEAD), null, 'only a branch ref is a queue entry')
 })
@@ -84,14 +84,15 @@ test('no conclusion at all refuses: conservative, never a benefit of the doubt',
   assert.match(r.reasons.join('; '), /no Verifier report names the tip/)
 })
 
-test('a head that moved after the entry was built is refused', () => {
-  const r = judgeAt({ head: OLD, queuedSha: HEAD })
+test('a hand run that names a head (--sha) refuses a different live head', () => {
+  const r = judgeAt({ head: OLD, expectedHead: HEAD })
   assert.equal(r.ok, false)
-  assert.match(r.reasons.join('; '), /head moved/)
+  assert.match(r.reasons.join('; '), /not the expected/)
+  assert.equal(judgeAt({ expectedHead: HEAD.slice(0, 12) }).ok, true, 'a short sha names the same head')
 })
 
 test('no head sha refuses instead of passing', () => {
-  const r = judge({ labels: [], head: '', author: 'a', reports: [say()], policy, queuedSha: '' })
+  const r = judge({ labels: [], head: '', author: 'a', reports: [say()], policy })
   assert.equal(r.ok, false)
   assert.match(r.reasons.join('; '), /no head sha/)
 })
@@ -128,9 +129,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const fakeGh = ({ comments, reviews = [], labels = [], files = [] }) => (...args) => {
+const fakeGh = ({ comments, reviews = [], labels = [], files = [], head = HEAD }) => (...args) => {
   const path = args[args.length - 1]
-  const pull = { head: { sha: HEAD }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })) }
+  const pull = { head: { sha: head }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })) }
   if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
   if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
   if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
@@ -256,4 +257,80 @@ test('#640: a mechanical release PR passes on its files alone, and only on those
   assert.equal(judgeAt({ files: release, reports: [] }).exempt, true)
   assert.equal(judgeAt({ files: [...release, 'core/src/host/secrets.js'], reports: [] }).ok, false, 'one file outside the list needs a PASS')
   assert.equal(judgeAt({ files: [], reports: [] }).ok, false, 'no files is not a release PR')
+})
+
+// ---- #654 / run 39701316520: the sha in the queue branch is the entry's BASE, not the pull request
+// head. The real values from that run: main's tip d105f22 (#640), the head of #654, and the entry
+// commit the queue built (GITHUB_SHA). The old gate compared the head to the base and refused every
+// entry ("the pull request head moved to ad0c471666da … built at d105f222847b").
+const RUN_REF = 'refs/heads/gh-readonly-queue/main/pr-654-d105f222847b97853728d85406d0727bedeaba93'
+const RUN_BASE = 'd105f222847b97853728d85406d0727bedeaba93'
+const RUN_HEAD = 'ad0c471666da90e4cbc66752288084fb2d61b71d'
+const RUN_ENTRY = 'ee1739effa52cd97a6ec9fa100a28cf3aee7fca1'
+// #654's diff touched the host, so it is not exempt: the PASS is what lets it through.
+const RUN_FILES = ['core/src/host/turns.js', 'changelog.d/651.fixed.md']
+
+const runQueue = (fixture) => {
+  const policyFile = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  // Exactly what merge-gate.yml hands the script on a merge_group run, and no PR number.
+  return main({
+    gh: fakeGh({ head: RUN_HEAD, files: RUN_FILES, ...fixture }),
+    env: {
+      GITHUB_STEP_SUMMARY: '',
+      REVIEW_POLICY: policyFile,
+      GH_REPO: 'ThinkFlowLab/FlyBot',
+      HEAD_REF: RUN_REF,
+      BASE_SHA: RUN_BASE,
+      ENTRY_SHA: RUN_ENTRY,
+      GITHUB_SHA: RUN_ENTRY,
+      PR: '',
+      MODE: 'queue',
+    },
+  })
+}
+
+test('#654: the queue branch sha is the base, never the head', () => {
+  assert.deepEqual(prFromHeadRef(RUN_REF), { pr: 654, base: RUN_BASE })
+})
+
+test('#654: a merge_group entry with a PASS at the pull request head passes, through main()', () => {
+  const result = runQueue({ comments: [apiComment(firstLine('PASS', RUN_HEAD), '2026-10-22T00:30:00Z')] })
+  assert.equal(result.ok, true, result.reasons.join('; '))
+  assert.equal(result.head, RUN_HEAD, 'the head judged is the pull request head')
+  assert.equal(result.exempt, false, 'a host change still needed its PASS')
+  assert.equal(result.verdict.by, 'reviewer-agent')
+})
+
+test('#654: the queue entry keeps the policy — no PASS, a PASS at the base, an INC, or hold refuse', () => {
+  assert.equal(runQueue({ comments: [] }).ok, false, 'T2 with no conclusion refuses')
+  const atBase = runQueue({ comments: [apiComment(firstLine('PASS', RUN_BASE), '2026-10-22T00:30:00Z')] })
+  assert.equal(atBase.ok, false, 'a PASS that names the base is not a PASS at the head')
+  assert.match(atBase.reasons.join('; '), /not the tip|no Verifier report names the tip/)
+  const atEntry = runQueue({ comments: [apiComment(firstLine('PASS', RUN_ENTRY), '2026-10-22T00:30:00Z')] })
+  assert.equal(atEntry.ok, false, 'nor does a PASS that names the queue entry commit')
+  const inc = runQueue({ comments: [apiComment(firstLine('PASS', RUN_HEAD), '2026-10-22T00:30:00Z'), apiComment(firstLine('INC', RUN_HEAD), '2026-10-22T00:40:00Z')] })
+  assert.equal(inc.ok, false)
+  assert.match(inc.reasons.join('; '), /INC/)
+  const held = runQueue({ labels: ['hold'], comments: [apiComment(firstLine('PASS', RUN_HEAD), '2026-10-22T00:30:00Z')] })
+  assert.equal(held.ok, false)
+  assert.equal(held.held, true)
+})
+
+test('#654: a T1 queue entry passes without a PASS, as the pull_request report says it would', () => {
+  const files = ['core/src/client/panel.js']
+  const queue = runQueue({ files, comments: [] })
+  assert.equal(queue.ok, true, queue.reasons.join('; '))
+  assert.equal(queue.tier, 'T1')
+  const policyFile = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [] }))
+  const report = main({ gh: fakeGh({ head: RUN_HEAD, files, comments: [] }), env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policyFile, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '654', MODE: 'report' } })
+  assert.deepEqual(report.reasons, queue.reasons, 'both events judge the same head the same way')
+  assert.equal(report.head, queue.head)
+})
+
+test('#654: the workflow hands the script the merge_group base and entry shas', () => {
+  const wf = readFileSync(new URL('../workflows/merge-gate.yml', import.meta.url), 'utf8')
+  assert.match(wf, /BASE_SHA: \$\{\{ github\.event\.merge_group\.base_sha \}\}/)
+  assert.match(wf, /ENTRY_SHA: \$\{\{ github\.event\.merge_group\.head_sha \}\}/)
 })

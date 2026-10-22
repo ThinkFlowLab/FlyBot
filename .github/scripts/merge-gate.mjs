@@ -32,7 +32,13 @@ const HOLD = 'hold'
 
 // A `merge_group` event carries no pull request, no labels and no reviews. The only pointer to them
 // is `merge_group.head_ref`, the queue branch the entry was built on:
-// `gh-readonly-queue/<base>/pr-<N>-<sha>`, where <sha> is the head the queue is about to merge.
+// `gh-readonly-queue/<base>/pr-<N>-<sha>`, where <sha> is the BASE the entry was built on — the tip of
+// <base> (or of the entry ahead of it) — not the pull request head. Run 39701316520 (#654) carried
+// `pr-654-d105f222…`: d105f22 was main's tip (#640's merge), the pull request head was ad0c4716… and
+// the entry's own commit (GITHUB_SHA, `merge_group.head_sha`) was ee1739ef…. Reading that sha as the
+// head refused every entry: "the head moved" to its real head, and "no Verifier report names" the base.
+// So the sha is returned as `base`, and the head is judged the way the `pull_request` run judges it:
+// the pull request's own head sha, read live from the API.
 //
 // It arrives fully qualified: every real queue entry so far passed `refs/heads/gh-readonly-queue/...`
 // (runs 39602546475, 39602806953, 39653640861, 39694988559, 39696278650 — all five failed with
@@ -41,7 +47,7 @@ const HOLD = 'hold'
 export function prFromHeadRef(ref) {
   const branch = String(ref ?? '').trim().replace(/^refs\/heads\//i, '')
   const m = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-([0-9a-f]{7,40})$/i.exec(branch)
-  return m ? { pr: Number(m[1]), sha: m[2].toLowerCase() } : null
+  return m ? { pr: Number(m[1]), base: m[2].toLowerCase() } : null
 }
 
 const names = (labels) => (labels ?? []).map((l) => String(typeof l === 'string' ? l : l?.name ?? '').toLowerCase())
@@ -82,18 +88,22 @@ export const exemptFromPass = ({ tier, files }) => {
 }
 const short = (s) => String(s ?? '').slice(0, SHORT)
 
-// labels: the pull request's labels. head: its current head sha. queuedSha: the sha in head_ref, the
-// one the queue merges. reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, files, head, author, reports, policy, queuedSha, mode = 'queue' }) {
+// labels: the pull request's labels. head: its current head sha, the one judged in both modes.
+// expectedHead: optional, a head the caller insists on (`--sha` on a hand run); a different live head
+// refuses. The queue's base sha is never a head: a merge_group entry passes none here (see
+// prFromHeadRef). reports: its comments and review bodies, oldest first (review-gate main()).
+export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue' }) {
   const reasons = []
-  const target = String(queuedSha ?? head ?? '').toLowerCase()
+  const target = String(head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
   const held = names(labels).includes(HOLD)
   if (held) reasons.push('the pull request carries the `hold` label')
-  // A head that moved after the entry was built is not what was reviewed: the queue drops such an
-  // entry itself, and until it does this must not pass it on the strength of an older tip.
-  if (queuedSha && head && !String(head).toLowerCase().startsWith(target)) {
-    reasons.push(`the pull request head moved to ${short(head)} after this entry was built at ${short(target)}`)
+  // A head other than the one the caller named is not what was asked about. On a queue entry the
+  // live head is the one the entry was built from: a push to the pull request removes it from the
+  // queue, and the new head then needs its own PASS anyway.
+  const expected = String(expectedHead ?? '').toLowerCase()
+  if (expected && !target.startsWith(expected)) {
+    reasons.push(`the pull request head is ${short(target)}, not the expected ${short(expected)}`)
   }
   // T0/T1 and the daily release PR need no PASS, so the gate must not refuse them for lacking one
   // (#640, INC point 2): a refusal here would stop every routine fix and every release.
@@ -118,7 +128,9 @@ export function render(result, { pr, labels } = {}) {
     report
       ? result.reasons.length
         ? `A queue entry for this head would be refused: ${result.reasons.join('; ')}. This report never fails.`
-        : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+        : result.exempt
+          ? `A queue entry for this head would pass without a PASS: ${result.tier ? 'a ' + result.tier : 'a T0/T1'} tier or a mechanical release PR (AGENTS.md 6), computed from the changed files.`
+          : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS names ${short(result.head)}.`
       : result.ok && result.exempt
         ? `Queue entry for #${pr} may merge without a PASS: ${result.reasons.length ? 'no \`hold\`' : `${result.tier ? 'a ' + result.tier : 'a T0/T1'} tier or a mechanical release PR (AGENTS.md 6), computed from the changed files`}.`
       : result.ok
@@ -170,8 +182,11 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the
   // base copy of risk-gate.mjs (see exemptFromPass).
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
-  const result = judge({ labels, files, head, author, reports, policy: loadPolicy(policyPath), queuedSha: fromRef?.sha || arg('--sha'), mode })
-  console.log(`merge-gate: PR #${pr} head ${short(head)}${fromRef ? `, queue entry ${short(fromRef.sha)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
+  const result = judge({ labels, files, head, author, reports, policy: loadPolicy(policyPath), expectedHead: arg('--sha'), mode })
+  // The entry's own commit and its base are logged, never judged: neither is a head a Verifier names.
+  const base = env.BASE_SHA || fromRef?.base
+  const entry = env.ENTRY_SHA || (fromRef ? env.GITHUB_SHA : '')
+  console.log(`merge-gate: PR #${pr} head ${short(head)}${base ? `, queue base ${short(base)}` : ''}${entry ? `, entry ${short(entry)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)
   console.log(mode === 'report'
     ? `merge-gate: report — ${result.reasons.length ? `the queue entry would refuse: ${result.reasons.join('; ')}` : 'the queue entry would pass'}`
