@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "note": "One manifest, checked by .github/scripts/testing-layers.mjs: every test file in the repository belongs to a suite row, and every workflow in .github/workflows/ has a row. The tables in docs/testing-layers.md are generated from this file, so the two cannot drift (#749).",
+  "layers": {
+    "L1": {
+      "name": "commit",
+      "trigger": "Push to a branch, a pull request, and every queue entry, through `.github/workflows/test.yml`.",
+      "guarantee": "The cheapest layer that can catch a defect: it must be deterministic and hermetic — no network, no model, no wall-clock or calendar dependence, no ordering between files.",
+      "mustNot": "Reach the network, call a model, read the clock, or depend on a machine's home directory.",
+      "budget": "The whole layer under 10 minutes on a cold runner. A suite that cannot fit is either split or moved up, not added.",
+      "command": "node .github/scripts/testing-layers.mjs --check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && node --test \".github/scripts/*.test.mjs\" && npm run test:interop"
+    },
+    "L2": {
+      "name": "merge",
+      "trigger": "Every merge into `main`, through the merge queue: `test.yml` on the queue entry plus `merge-gate.yml` on that entry.",
+      "guarantee": "Everything a merge must not break: every L1 suite, the ds-bot pin and patch set, the packaged plugin entry points, the strict typecheck of the plugin API, well-formed changelog fragments, the workflow lint, and the verdict/`hold` judgement at the exact commit being merged.",
+      "mustNot": "Be bypassed. `main` requires these checks; a ref push that never built a queue entry cannot land.",
+      "budget": "The checkout-to-green time of `test.yml` plus `merge-gate` on one queue entry; the queue's own limit applies.",
+      "command": "gh pr merge <n> --auto --squash --match-head-commit <sha>"
+    },
+    "L3": {
+      "name": "self-test",
+      "trigger": "The product self-test routine (09:00 and 21:00 Asia/Shanghai) and `live-e2e.yml` on `main` daily; a person drives the former.",
+      "guarantee": "What a user meets: two real homes, a real Bot Social, a real model, and a person watching. It is not deterministic, so it produces issues with reproduction steps instead of failing a merge.",
+      "mustNot": "Gate a merge, or be the only copy of a case that can be reproduced offline: an L3 case that turns out deterministic moves down to L1 and leaves a pointer.",
+      "budget": "A full self-test pass is minutes of wall-clock time with a real model; a live-e2e run is the same on `main`.",
+      "command": "node dev/live-e2e/run.mjs <bench> <port> --model <id> --harness <dsh checkout> --tap <bench>/tap.jsonl --tz Asia/Shanghai  # needs DEEPSEEK_API_KEY; live-e2e.yml is the automated form"
+    }
+  },
+  "suites": [
+    {
+      "id": "core",
+      "layer": "L1",
+      "paths": [
+        "core/test/**/*.test.js"
+      ],
+      "command": "npm --prefix core test",
+      "note": "The host, the client (through the generated `client.js`), the plugin API and the feed; this is the suite the `ubuntu-latest` job runs with coverage."
+    },
+    {
+      "id": "plugins/social",
+      "layer": "L1",
+      "paths": [
+        "plugins/social/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plugins/social test",
+      "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
+    },
+    {
+      "id": "plugins/tree",
+      "layer": "L1",
+      "paths": [
+        "plugins/tree/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plugins/tree test",
+      "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
+    },
+    {
+      "id": "plugins/timeline",
+      "layer": "L1",
+      "paths": [
+        "plugins/timeline/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plugins/timeline test",
+      "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
+    },
+    {
+      "id": "scripts",
+      "layer": "L1",
+      "paths": [
+        ".github/scripts/*.test.mjs"
+      ],
+      "command": "node --test \".github/scripts/*.test.mjs\"",
+      "note": "The repository's own gates: risk tier, review gate, merge gate, enqueue guard, changelog, labels, and this manifest's check."
+    },
+    {
+      "id": "interop",
+      "layer": "L1",
+      "paths": [
+        "dev/interop/**/*.test.mjs"
+      ],
+      "command": "npm run test:interop",
+      "note": "The offline cross-runtime harness; `dev/interop/no-network.mjs` fails the suite if it reaches the network."
+    },
+    {
+      "id": "patch-payload",
+      "layer": "none",
+      "paths": [
+        "patches/ds-bot/files/**"
+      ],
+      "reason": "Generated copies of the files the patches carry. They are compared against `core/` by `node scripts/ds-bot-patches.mjs check` (L2) and never run on their own; the code under test is the copy in `core/`."
+    },
+    {
+      "id": "upstream",
+      "layer": "none",
+      "paths": [
+        "ds-bot/test/**"
+      ],
+      "reason": "The pristine upstream checkout at the pinned version. FlyBot never edits or runs it directly — `core/` is `ds-bot/` plus the patches, and the `core` suite runs the patched copies."
+    },
+    {
+      "id": "live-e2e-unit",
+      "layer": "none",
+      "paths": [
+        "dev/live-e2e/test/**"
+      ],
+      "reason": "Offline unit tests for the live end-to-end harness (a fake adapter, no model). They run in the root `npm run verify` only; no CI gate runs them today. Moving them into L1 is a separate change, and the layer that does drive a real model is `live-e2e.yml`, whose row is below."
+    }
+  ],
+  "workflows": [
+    {
+      "id": "test",
+      "workflow": ".github/workflows/test.yml",
+      "kind": "gate",
+      "layer": "L2",
+      "gate": true,
+      "runs": "push to main, pull_request, merge_group",
+      "role": "Runs every L1 suite, the packaging and patch-pin checks, the strict typecheck, the changelog check and the workflow lint on `push`, `pull_request` and `merge_group`, and aggregates them as `tests-ok`, which `main` requires."
+    },
+    {
+      "id": "merge-gate",
+      "workflow": ".github/workflows/merge-gate.yml",
+      "kind": "gate",
+      "layer": "L2",
+      "gate": true,
+      "runs": "merge_group (reports on pull_request)",
+      "role": "Re-reads `hold` and the newest conclusion at the entry's head, and fails the queue entry when either refuses it."
+    },
+    {
+      "id": "docker",
+      "workflow": ".github/workflows/docker.yml",
+      "kind": "workflow-only",
+      "layer": "L2",
+      "gate": true,
+      "runs": "pull_request that touches the image",
+      "role": "Builds the container image and starts it, so a packaging change cannot merge without the image proving it starts."
+    },
+    {
+      "id": "live-e2e",
+      "workflow": ".github/workflows/live-e2e.yml",
+      "kind": "workflow-only",
+      "layer": "L3",
+      "gate": false,
+      "runs": "daily on main",
+      "role": "Drives the real end-to-end suite with a real model against `main`; it is the automation behind the self-test layer, and it never gates a merge."
+    },
+    {
+      "id": "review-gate",
+      "workflow": ".github/workflows/review-gate.yml",
+      "kind": "not-a-layer",
+      "layer": "none",
+      "gate": false,
+      "reason": "Validates and posts the conclusion on a pull request. It gates nothing by itself: `merge-gate` re-judges the entry at merge time."
+    },
+    {
+      "id": "risk-tier",
+      "workflow": ".github/workflows/risk-tier.yml",
+      "kind": "not-a-layer",
+      "layer": "none",
+      "gate": false,
+      "reason": "Reports the computed risk tier on every pull request. Nothing reads it to block or merge; the tier that decides is recomputed by `merge-gate`."
+    },
+    {
+      "id": "controller",
+      "workflow": ".github/workflows/controller.yml",
+      "kind": "not-a-layer",
+      "layer": "none",
+      "gate": false,
+      "reason": "The label poll: sets `agent-pr` and `risk:T*`, demotes a stale claim. It runs no tests and gates nothing."
+    },
+    {
+      "id": "audit-merges",
+      "workflow": ".github/workflows/audit-merges.yml",
+      "kind": "not-a-layer",
+      "layer": "none",
+      "gate": false,
+      "reason": "A daily read-only audit that fails on a merge newer than its last green run. Advisory: it is not a required check of `main`."
+    },
+    {
+      "id": "label-hygiene",
+      "workflow": ".github/workflows/label-hygiene.yml",
+      "kind": "workflow-only",
+      "layer": "none",
+      "gate": false,
+      "runs": "daily 03:30 Asia/Shanghai, and workflow_dispatch",
+      "reason": "Scheduled cleanup of status labels on closed issues and pull requests (#738). A workflow-only layer with no test file of its own, and it gates nothing."
+    },
+    {
+      "id": "nightly",
+      "workflow": ".github/workflows/nightly.yml",
+      "kind": "workflow-only",
+      "layer": "none",
+      "gate": false,
+      "runs": "daily 00:00 Asia/Shanghai, Sunday 01:00 compat matrix, and workflow_dispatch",
+      "reason": "The compatibility matrix (other OS, Node and DSH versions) on a schedule. It widens coverage but is not a gate, and its cases are not part of L1 or L2."
+    },
+    {
+      "id": "release",
+      "workflow": ".github/workflows/release.yml",
+      "kind": "not-a-layer",
+      "layer": "none",
+      "gate": false,
+      "reason": "The mechanical release: preflight, release PR, tag. It runs no tests of its own."
+    }
+  ]
+}
