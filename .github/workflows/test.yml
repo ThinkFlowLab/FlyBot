@@ -107,6 +107,8 @@ jobs:
         run: npx --yes -p typescript@5.9.3 tsc --noEmit --strict --skipLibCheck types/*.d.ts
       - name: Every test file and every workflow belongs to a layer (#749)
         run: node .github/scripts/testing-layers.mjs --check
+      - name: The self-test catalog page matches docs/self-test.json (#782)
+        run: node scripts/self-test-catalog.mjs --check
       - name: Tests of the repo scripts (risk tier, labels)
         run: node --test ".github/scripts/*.test.mjs"
       - name: Offline cross-runtime harness (no network or model)
