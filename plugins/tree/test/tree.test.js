@@ -1472,7 +1472,7 @@ test('#635: move_bot moves a bot with its subtree and refreshes the prompts', as
   assert.match(sp(m, a), /You have no children/)
 })
 
-test('#635: move_bot refuses cycles, overflow, duplicates and a too deep subtree', async () => {
+test('#635: move_bot refuses a descendant, its own parent, an existing parent and duplicate names', async () => {
   const m = await setup({ maxChildren: 2 })
   const a = await make(m, m.root, 'A')
   const b = await make(m, m.root, 'B')
@@ -1485,6 +1485,23 @@ test('#635: move_bot refuses cycles, overflow, duplicates and a too deep subtree
   assert.ok(x1 && x2)
   assert.match((await m.call(m.root, 'move_bot', { bot: 'X', parent: 'B' })).error, /more than one bot/)
   assert.match((await m.call(m.root, 'move_bot', { bot: x1, parent: b })).error, /already exists/)
+})
+
+test('#635: move_bot refuses a subtree that would end below maxDepth', async () => {
+  const m = await setup()
+  const a = await make(m, m.root, 'A')
+  const b = await make(m, a, 'B')
+  const c = await make(m, b, 'C')
+  await make(m, c, 'D')
+  const e = await make(m, m.root, 'E')
+  // Chief → A → B → C → D already reaches depth 5, so the leaf E under D would end at depth 6.
+  assert.match((await m.call(m.root, 'move_bot', { bot: 'E', parent: 'D' })).error,
+    /limit reached: E would end at depth 6 \(maxDepth=5\)/)
+  assert.equal(f(m, e, 'parent'), m.root, 'a refused move changes nothing')
+  // One level higher is exactly the boundary the limit still allows.
+  const ok = await m.call(m.root, 'move_bot', { bot: 'E', parent: 'C' })
+  assert.equal(ok.error, undefined, JSON.stringify(ok))
+  assert.equal(f(m, e, 'parent'), c)
 })
 
 test('#635: a Bot left outside because the tree was full joins when a deletion frees a slot', async () => {
