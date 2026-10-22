@@ -1089,7 +1089,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,162 +1242,515 @@ function maskOf(shape) {
+@@ -1242,162 +1242,522 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1472,6 +1472,12 @@ diff --git a/client.js b/client.js
 -  for (const mode of ["light", "dark"]) {
 -    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
 +
++// src/client/approval-waiting.js
++var WAITING_STATUSES = Object.freeze(["pending", "pending_approval"]);
++function isApprovalWaiting(status) {
++  return WAITING_STATUSES.includes(status);
++}
++
 +// src/client/flybot-slots.js
 +var import_react2 = require("react");
 +var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -1615,7 +1621,7 @@ diff --git a/client.js b/client.js
 +  const [busy, setBusy] = (0, import_react2.useState)("");
 +  const [error, setError] = (0, import_react2.useState)("");
 +  const [shown, setShown] = (0, import_react2.useState)("");
-+  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
++  const refresh = () => call2("approvals", { status: [...WAITING_STATUSES, "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
 +  });
 +  (0, import_react2.useEffect)(() => {
 +    void refresh();
@@ -1629,7 +1635,7 @@ diff --git a/client.js b/client.js
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
 +  };
-+  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
++  const away = open.filter((approval) => policies.has(approval.by) && isApprovalWaiting(approval.status) && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
 +    if (!awayKey) {
@@ -1684,6 +1690,7 @@ diff --git a/client.js b/client.js
 +        const custom = entries2.find((entry) => entry.inline !== true && (entry.policy === void 0 || entry.policy === approval.by));
 +        if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
 +        const failed = approval.status === "failed";
++        const waiting = isApprovalWaiting(approval.status);
 +        return (0, import_react2.createElement)(
 +          "div",
 +          { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
@@ -1701,8 +1708,8 @@ diff --git a/client.js b/client.js
 +            "div",
 +            { className: "bt-flybot-approval-actions" },
 +            failed ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
-+            failed ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")),
-+            failed ? null : (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve"))
++            waiting ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")) : null,
++            waiting ? (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")) : null
 +          )
 +        );
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
@@ -1887,7 +1894,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,48 +1624,227 @@ function usageOf(list, ids) {
+@@ -1624,47 +1624,226 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -1967,10 +1974,6 @@ diff --git a/client.js b/client.js
 -    const h34 = dt / steps;
 -    let moving = false;
 -    for (const value of values.values()) {
--      for (let index = 0; index < steps; index += 1) {
--        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
--        value.x += value.v * h34;
--      }
 +var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 +var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 +function indexRoster(value) {
@@ -2147,13 +2150,14 @@ diff --git a/client.js b/client.js
 +    const h42 = dt / steps;
 +    let moving = false;
 +    for (const value of values.values()) {
-+      for (let index = 0; index < steps; index += 1) {
+       for (let index = 0; index < steps; index += 1) {
+-        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
+-        value.x += value.v * h34;
 +        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h42;
 +        value.x += value.v * h42;
-+      }
+       }
        if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
          value.x = value.to;
-         value.v = 0;
 @@ -1699,10 +1699,10 @@ function liveSprings(apply2) {
  }
  var CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]';
@@ -2513,36 +2517,6 @@ diff --git a/client.js b/client.js
 -      document.documentElement.removeEventListener("pointerleave", onLeave);
 -    };
 -  }, [enabled]);
--}
--var FIDGETS = ["hop", "sway", "stretch", "look"];
--function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
--  const look = given ?? lookOf(bot);
--  const ref = (0, import_react2.useRef)(null);
--  const maskId = (0, import_react2.useRef)("");
--  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
--  const [poked, setPoked] = (0, import_react2.useState)(false);
--  useGaze(ref, gaze);
--  const common = {
--    ref,
--    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
--    "data-shape": look.image ? "image" : shapeId(look.shape),
--    "data-state": STATES.includes(state) ? state : "idle",
--    "data-live": live ? "" : void 0,
--    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
--    "data-gaze": gaze ? "" : void 0,
--    "data-poke": pokeable ? "" : void 0,
--    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
--    role: label ? "img" : void 0,
--    "aria-label": label,
--    "aria-hidden": label ? void 0 : true,
--    onClick: pokeable ? () => setPoked(true) : void 0,
--    onAnimationEnd: poked ? (event) => {
--      if (/^bt-poke/.test(event.animationName)) setPoked(false);
--    } : void 0
--  };
--  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
--  const box = shapeOf(look.shape).size;
--  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -2574,12 +2548,35 @@ diff --git a/client.js b/client.js
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function StarIcon({ size = 8 }) {
--  return (0, import_react2.createElement)(
--    "svg",
--    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
--  );
+-var FIDGETS = ["hop", "sway", "stretch", "look"];
+-function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
+-  const look = given ?? lookOf(bot);
+-  const ref = (0, import_react2.useRef)(null);
+-  const maskId = (0, import_react2.useRef)("");
+-  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
+-  const [poked, setPoked] = (0, import_react2.useState)(false);
+-  useGaze(ref, gaze);
+-  const common = {
+-    ref,
+-    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
+-    "data-shape": look.image ? "image" : shapeId(look.shape),
+-    "data-state": STATES.includes(state) ? state : "idle",
+-    "data-live": live ? "" : void 0,
+-    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
+-    "data-gaze": gaze ? "" : void 0,
+-    "data-poke": pokeable ? "" : void 0,
+-    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
+-    role: label ? "img" : void 0,
+-    "aria-label": label,
+-    "aria-hidden": label ? void 0 : true,
+-    onClick: pokeable ? () => setPoked(true) : void 0,
+-    onAnimationEnd: poked ? (event) => {
+-      if (/^bt-poke/.test(event.animationName)) setPoked(false);
+-    } : void 0
+-  };
+-  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+-  const box = shapeOf(look.shape).size;
+-  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2614,8 +2611,12 @@ diff --git a/client.js b/client.js
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
  }
--function AdminStar() {
--  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
+-function StarIcon({ size = 8 }) {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
+-  );
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2642,12 +2643,8 @@ diff --git a/client.js b/client.js
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
  }
--function MainStar() {
--  return (0, import_react2.createElement)(
--    "svg",
--    { viewBox: "0 0 20 20", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
--  );
+-function AdminStar() {
+-  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2666,6 +2663,13 @@ diff --git a/client.js b/client.js
 +    offRoster?.();
 +  };
  }
+-function MainStar() {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { viewBox: "0 0 20 20", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
+-  );
+-}
 -function useSettled(state) {
 -  const prev = (0, import_react2.useRef)(state);
 -  const [settled, setSettled] = (0, import_react2.useState)(false);
@@ -2720,18 +2724,7 @@ diff --git a/client.js b/client.js
 -      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 -      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 -    );
-+function installBrandChrome() {
-+  if (typeof document === "undefined") return () => {
-+  };
-+  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
-+  let link = document.getElementById("flybot-favicon");
-+  if (!link) {
-+    link = document.createElement("link");
-+    link.id = "flybot-favicon";
-+    link.rel = "icon";
-+    link.type = "image/svg+xml";
-+    document.head.appendChild(link);
-   }
+-  }
 -  const seats = clusterSeats(Math.min(people.length, 4), size);
 -  const overflow = people.length > 4 ? people.length - 3 : 0;
 -  const gap = size / 14;
@@ -2750,6 +2743,18 @@ diff --git a/client.js b/client.js
 -      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 -    })
 -  );
++function installBrandChrome() {
++  if (typeof document === "undefined") return () => {
++  };
++  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
++  let link = document.getElementById("flybot-favicon");
++  if (!link) {
++    link = document.createElement("link");
++    link.id = "flybot-favicon";
++    link.rel = "icon";
++    link.type = "image/svg+xml";
++    document.head.appendChild(link);
++  }
 +  link.href = href;
 +  const retitle = () => {
 +    const next = brandTitle(document.title);
@@ -3651,7 +3656,7 @@ diff --git a/client.js b/client.js
 +  const custom = useInlineEntry(held?.by);
 +  const [busy, setBusy] = (0, import_react7.useState)(false);
 +  const [error, setError] = (0, import_react7.useState)("");
-+  const waiting = held?.status === "pending";
++  const waiting = isApprovalWaiting(held?.status);
 +  (0, import_react7.useEffect)(() => {
 +    if (!waiting) return void 0;
 +    claimApprovals(`held-reply:${held.id}`, [held.id]);

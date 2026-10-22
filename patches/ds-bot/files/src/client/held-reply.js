@@ -7,6 +7,7 @@ import { Component, createElement as h, useEffect, useState } from 'react'
 import { call as callHost } from './api.js'
 import { registry } from './flybot-registry.js'
 import { claimApprovals } from './approval-claims.js'
+import { isApprovalWaiting } from './approval-waiting.js'
 import { t } from './i18n.js'
 
 const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payload)
@@ -34,7 +35,7 @@ export function HeldReplyActions({ held, actions }) {
   const custom = useInlineEntry(held?.by)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const waiting = held?.status === 'pending'
+  const waiting = isApprovalWaiting(held?.status)
   useEffect(() => {
     if (!waiting) return undefined
     claimApprovals(`held-reply:${held.id}`, [held.id])

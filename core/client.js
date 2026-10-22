@@ -2168,6 +2168,12 @@ function onClaims(fn) {
   };
 }
 
+// src/client/approval-waiting.js
+var WAITING_STATUSES = Object.freeze(["pending", "pending_approval"]);
+function isApprovalWaiting(status) {
+  return WAITING_STATUSES.includes(status);
+}
+
 // src/client/flybot-slots.js
 var import_react2 = require("react");
 var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -2304,7 +2310,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
   const [busy, setBusy] = (0, import_react2.useState)("");
   const [error, setError] = (0, import_react2.useState)("");
   const [shown, setShown] = (0, import_react2.useState)("");
-  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
+  const refresh = () => call2("approvals", { status: [...WAITING_STATUSES, "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
   });
   (0, import_react2.useEffect)(() => {
     void refresh();
@@ -2318,7 +2324,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
     const chat = chatOf(approval, roster);
     return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
   };
-  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
+  const away = open.filter((approval) => policies.has(approval.by) && isApprovalWaiting(approval.status) && !inOpenChat(approval));
   const awayKey = away.map((approval) => approval.id).join(",");
   (0, import_react2.useEffect)(() => {
     if (!awayKey) {
@@ -2373,6 +2379,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
         const custom = entries2.find((entry) => entry.inline !== true && (entry.policy === void 0 || entry.policy === approval.by));
         if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
         const failed = approval.status === "failed";
+        const waiting = isApprovalWaiting(approval.status);
         return (0, import_react2.createElement)(
           "div",
           { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
@@ -2390,8 +2397,8 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
             "div",
             { className: "bt-flybot-approval-actions" },
             failed ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
-            failed ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")),
-            failed ? null : (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve"))
+            waiting ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")) : null,
+            waiting ? (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")) : null
           )
         );
       }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
@@ -5183,7 +5190,7 @@ function HeldReplyActions({ held, actions }) {
   const custom = useInlineEntry(held?.by);
   const [busy, setBusy] = (0, import_react7.useState)(false);
   const [error, setError] = (0, import_react7.useState)("");
-  const waiting = held?.status === "pending";
+  const waiting = isApprovalWaiting(held?.status);
   (0, import_react7.useEffect)(() => {
     if (!waiting) return void 0;
     claimApprovals(`held-reply:${held.id}`, [held.id]);

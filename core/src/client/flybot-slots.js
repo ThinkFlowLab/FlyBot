@@ -36,6 +36,7 @@ import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { t } from './i18n.js'
 import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
+import { isApprovalWaiting, WAITING_STATUSES } from './approval-waiting.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
 
@@ -202,7 +203,8 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [shown, setShown] = useState('')
-  const refresh = () => call('approvals', { status: ['pending', 'failed'] }).then(list => setPending(Array.isArray(list) ? list : [])).catch(() => {})
+  // The dock asks the host for the statuses the shared rule calls waiting, plus `failed` (retry).
+  const refresh = () => call('approvals', { status: [...WAITING_STATUSES, 'failed'] }).then(list => setPending(Array.isArray(list) ? list : [])).catch(() => {})
   useEffect(() => {
     void refresh()
     const timer = setInterval(refresh, POLL_MS)
@@ -216,7 +218,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
     const chat = chatOf(approval, roster)
     return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true)
   }
-  const away = open.filter(approval => policies.has(approval.by) && approval.status !== 'failed' && !inOpenChat(approval))
+  const away = open.filter(approval => policies.has(approval.by) && isApprovalWaiting(approval.status) && !inOpenChat(approval))
   // Only when no chat took it for a moment: moving between chats must not flash the pointer.
   const awayKey = away.map(approval => approval.id).join(',')
   useEffect(() => {
@@ -258,6 +260,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
         const custom = entries.find(entry => entry.inline !== true && (entry.policy === undefined || entry.policy === approval.by))
         if (custom) return h('div', { key: approval.id }, h(Safe, { entry: custom, props: { approval, decide: decision => decide(approval.id, decision), call } }))
         const failed = approval.status === 'failed'
+        const waiting = isApprovalWaiting(approval.status)
         return h('div', { key: approval.id, className: 'bt-flybot-approval', title: approval.reason ?? undefined },
           h('div', { className: 'bt-flybot-approval-head' }, failed ? t('Not sent') : t('Waiting for approval')),
           h('div', { className: 'bt-flybot-approval-origin' },
@@ -271,8 +274,8 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
             : null,
           h('div', { className: 'bt-flybot-approval-actions' },
             failed ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'retry') }, t('Retry')) : null,
-            failed ? null : h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'reject') }, t('Reject')),
-            failed ? null : h('button', { type: 'button', className: 'bt-flybot-approve', disabled: busy === approval.id, onClick: () => decide(approval.id, 'approve') }, t('Approve'))))
+            waiting ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'reject') }, t('Reject')) : null,
+            waiting ? h('button', { type: 'button', className: 'bt-flybot-approve', disabled: busy === approval.id, onClick: () => decide(approval.id, 'approve') }, t('Approve')) : null))
       }).concat(error ? [h('div', { key: 'error', className: 'bt-flybot-approval-error', role: 'alert' }, error)] : [])) : null)
 }
 
