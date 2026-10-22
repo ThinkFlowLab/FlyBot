@@ -203,7 +203,7 @@ test('notifications from one chat collapse into one that counts the updates unti
 })
 
 // The host side: which ended turns the window hears of.
-function turnsHost({ bots, rooms = {}, groupOwners = new Map() } = {}) {
+function turnsHost({ bots, rooms = {}, groupOwners = new Map(), chatOwners = new Map() } = {}) {
   let listener
   const rt = {
     ctx: { on: (name, fn) => { if (name === 'session/event') listener = fn } },
@@ -211,7 +211,7 @@ function turnsHost({ bots, rooms = {}, groupOwners = new Map() } = {}) {
     isBotSession: () => true,
     roomOf: id => rooms[id],
     groupOwners,
-    chatOwners: new Map(),
+    chatOwners,
     botOf: id => bots[id],
     selfOf: id => groupOwners.get(id)?.botId ?? id,
     save: async () => {},
@@ -230,7 +230,7 @@ function turnsHost({ bots, rooms = {}, groupOwners = new Map() } = {}) {
     if (source) emit(id, 'user/message', { content: [{ type: 'text', text: 'hi' }], source })
     emit(id, 'turn/end', { turn: n, reason })
   }
-  return { rt, turn }
+  return { rt, emit, turn }
 }
 
 const completed = { kind: 'completed' }
@@ -262,6 +262,36 @@ test('the host lists finished and failed turns of my own Bots, not stopped, aske
   for (let n = 40; n < 60; n++) turn('b', n, completed)
   assert.equal(rt.endedView().length, 20)
   assert.ok(rt.endedView().every(entry => entry.failed === undefined))
+})
+
+test("the work view counts each place's tool calls for the inbox, and the ended turn keeps its own (#471)", () => {
+  const { rt, emit } = turnsHost({
+    bots: { b: { id: 'b', name: 'Coder' } },
+    rooms: { r1: { id: 'r1', name: 'Ops' } },
+    groupOwners: new Map([['g1', { botId: 'b', roomId: 'r1' }]]),
+    chatOwners: new Map([['b', 'b']]),
+  })
+  const work = () => rt.workView().b
+  emit('b', 'turn/start', { turn: 1 })
+  assert.equal(work().calls, undefined)
+  emit('b', 'tool/call', { callId: 'k1', name: 'pwsh' })
+  emit('b', 'tool/call', { callId: 'k2', name: 'write' })
+  assert.equal(work().calls, 2)
+  // A turn without a tool call has no count to show.
+  emit('b', 'turn/end', { turn: 1, reason: completed })
+  assert.equal(work(), undefined)
+  assert.equal(rt.endedView()[0].calls, 2)
+  emit('b', 'turn/start', { turn: 2 })
+  emit('b', 'turn/end', { turn: 2, reason: completed })
+  assert.equal(rt.endedView()[1].calls, undefined)
+  // A group turn counts for that group only: it is never added to the Bot's own chat.
+  emit('g1', 'turn/start', { turn: 1 })
+  emit('g1', 'tool/call', { callId: 'k3', name: 'pwsh' })
+  assert.deepEqual(rt.roomWorkView().r1.map(entry => [entry.botId, entry.calls]), [['b', 1]])
+  // The Bot's entry names the group, so no own-chat card picks that count up.
+  assert.deepEqual([rt.workView().b.roomId, rt.workView().b.calls], ['r1', 1])
+  emit('g1', 'turn/end', { turn: 1, reason: completed })
+  assert.deepEqual(rt.endedView().map(entry => [entry.roomId, entry.calls]), [[undefined, 2], [undefined, undefined], ['r1', 1]])
 })
 
 test('Settings → General has one switch per kind under the main one, off while the main one is off (#469)', async () => {

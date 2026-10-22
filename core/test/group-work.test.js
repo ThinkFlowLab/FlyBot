@@ -297,7 +297,7 @@ test('an own-chat turn handed out from a group names that group in the work view
   await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
   host.begin('c')
   host.emit('c', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: 'npm test' }) })
-  assert.deepEqual(plain((await bots()).c), { since: (await bots()).c.since, tool: 'pwsh', step: 'npm test', fromRoomId: 'r1' })
+  assert.deepEqual(plain((await bots()).c), { since: (await bots()).c.since, tool: 'pwsh', step: 'npm test', calls: 1, fromRoomId: 'r1' })
   host.finish('c', 'ok')
   // The user's own line, and a hand-off answered to the user in the Bot's own chat, are the Bot's own.
   host.emit('a', 'turn/start', { turn: 1 })

@@ -247,7 +247,7 @@ export function install(rt) {
       if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
       const step = entry.tool ? stepOf(entry) : undefined
       const handed = owner ? undefined : handedFromGroup(id)
-      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}), ...(handed ? { fromRoomId: handed.room.id } : {}) }
+      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(entry.toolCalls > 0 ? { calls: entry.toolCalls } : {}), ...(owner ? { roomId: owner.roomId } : {}), ...(handed ? { fromRoomId: handed.room.id } : {}) }
     }
     return bots
   }
@@ -264,6 +264,7 @@ export function install(rt) {
         botId: owner.botId,
         since: entry.since,
         ...(entry.tool ? { tool: entry.tool } : {}),
+        ...(entry.toolCalls > 0 ? { calls: entry.toolCalls } : {}),
         ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
       }]
     }
@@ -298,7 +299,7 @@ export function install(rt) {
       .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
     return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
   }
-  const noteEnded = (id, turn, info, reason, failure) => {
+  const noteEnded = (id, turn, info, reason, failure, calls) => {
     if (failure === undefined && reason?.kind !== 'completed') return
     const owner = rt.groupOwners.get(id)
     const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
@@ -312,6 +313,7 @@ export function install(rt) {
       botId: bot.id,
       ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
       at,
+      ...(calls > 0 ? { calls } : {}),
       ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
     }], at)
   }
@@ -347,6 +349,7 @@ export function install(rt) {
       case 'tool/call': {
         const name = String(event.data?.name ?? '')
         startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
+        if (entry.turn !== undefined) entry.toolCalls = (entry.toolCalls ?? 0) + 1
         // A program is as quick as the tools it runs, so its sub-calls decide.
         if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
         break
@@ -369,6 +372,9 @@ export function install(rt) {
         entry.since = event.time ?? Date.now()
         entry.texts = []
         entry.info = undefined
+        // The turn's tool-call count for the inbox (#471), one per tool/call event, the same
+        // events the activity feed folds. A program's sub-calls are not tool/call events.
+        entry.toolCalls = 0
         // A turn turned away before its first step may end without a turn/end.
         entry.switched = false
         entry.answers = false
@@ -502,6 +508,7 @@ export function install(rt) {
         const switched = entry.switched === true
         // The turn whose text answers a friend's line: a held reply is drawn on it, in place (#418).
         const answeredTurn = entry.turn
+        const toolCalls = entry.toolCalls
         entry.turn = undefined
         entry.info = undefined
         entry.texts = []
@@ -510,6 +517,7 @@ export function install(rt) {
         entry.since = undefined
         entry.tool = undefined
         entry.calls = undefined
+        entry.toolCalls = undefined
         entry.lastText = undefined
         entry.lastCalled = undefined
         entry.origin = undefined
@@ -525,7 +533,7 @@ export function install(rt) {
         const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
         const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
         if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
-        if (!retry) noteEnded(id, answeredTurn, info, reason, failure)
+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls)
         const replyText = () => {
           const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
           return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply

@@ -735,7 +735,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,36 @@ const ZH = {
+@@ -360,9 +360,37 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -764,6 +764,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Approve it in the chat': '请在对话里批准',
 +  'The last turn did not finish': '上一轮没有完成',
 +  'Latest: {text}': '最新：{text}',
++  '{count} tool calls': '{count} 次工具调用',
 +  'Untitled task': '未命名任务',
 +  'for {time}': '已 {time}',
 +  'just started': '刚开始',
@@ -3742,11 +3743,19 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 -      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(owner ? { roomId: owner.roomId } : {}) }
 +      const step = entry.tool ? stepOf(entry) : undefined
 +      const handed = owner ? undefined : handedFromGroup(id)
-+      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(owner ? { roomId: owner.roomId } : {}), ...(handed ? { fromRoomId: handed.room.id } : {}) }
++      bots[botId] = { since: entry.since, ...(entry.tool ? { tool: entry.tool } : {}), ...(step ? { step } : {}), ...(entry.toolCalls > 0 ? { calls: entry.toolCalls } : {}), ...(owner ? { roomId: owner.roomId } : {}), ...(handed ? { fromRoomId: handed.room.id } : {}) }
      }
      return bots
    }
-@@ -238,6 +238,44 @@ export function install(rt) {
+@@ -221,6 +221,7 @@ export function install(rt) {
+         botId: owner.botId,
+         since: entry.since,
+         ...(entry.tool ? { tool: entry.tool } : {}),
++        ...(entry.toolCalls > 0 ? { calls: entry.toolCalls } : {}),
+         ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
+       }]
+     }
+@@ -238,6 +238,45 @@ export function install(rt) {
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
@@ -3767,7 +3776,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
 +    return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
 +  }
-+  const noteEnded = (id, turn, info, reason, failure) => {
++  const noteEnded = (id, turn, info, reason, failure, calls) => {
 +    if (failure === undefined && reason?.kind !== 'completed') return
 +    const owner = rt.groupOwners.get(id)
 +    const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
@@ -3781,6 +3790,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      botId: bot.id,
 +      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
 +      at,
++      ...(calls > 0 ? { calls } : {}),
 +      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
 +    }], at)
 +  }
@@ -3791,7 +3801,23 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -293,6 +293,9 @@ export function install(rt) {
+@@ -266,6 +266,7 @@ export function install(rt) {
+       case 'tool/call': {
+         const name = String(event.data?.name ?? '')
+         startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
++        if (entry.turn !== undefined) entry.toolCalls = (entry.toolCalls ?? 0) + 1
+         // A program is as quick as the tools it runs, so its sub-calls decide.
+         if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
+         break
+@@ -288,11 +288,17 @@ export function install(rt) {
+         entry.since = event.time ?? Date.now()
+         entry.texts = []
+         entry.info = undefined
++        // The turn's tool-call count for the inbox (#471), one per tool/call event, the same
++        // events the activity feed folds. A program's sub-calls are not tool/call events.
++        entry.toolCalls = 0
+         // A turn turned away before its first step may end without a turn/end.
+         entry.switched = false
          entry.answers = false
          entry.opened = false
          entry.joined = []
@@ -3858,7 +3884,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              delete state.questions[id]
              void rt.save().catch(() => {})
            }
-@@ -386,11 +386,16 @@ export function install(rt) {
+@@ -386,11 +386,17 @@ export function install(rt) {
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -3872,11 +3898,15 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const switched = entry.switched === true
 +        // The turn whose text answers a friend's line: a held reply is drawn on it, in place (#418).
 +        const answeredTurn = entry.turn
++        const toolCalls = entry.toolCalls
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -401,9 +401,11 @@ export function install(rt) {
+@@ -399,11 +399,14 @@ export function install(rt) {
+         entry.since = undefined
+         entry.tool = undefined
          entry.calls = undefined
++        entry.toolCalls = undefined
          entry.lastText = undefined
          entry.lastCalled = undefined
 +        entry.origin = undefined
@@ -3893,7 +3923,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
 -        if (retry) void retryWrittenCall(id, info).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
 +        if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
-+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure)
++        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls)
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
@@ -4060,7 +4090,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    page.shown[0].onclick()
    assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
  })
-@@ -62,3 +62,207 @@ test('no notification for the conversation on screen, for approvals older than t
+@@ -62,3 +62,237 @@ test('no notification for the conversation on screen, for approvals older than t
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -4201,7 +4231,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +})
 +
 +// The host side: which ended turns the window hears of.
-+function turnsHost({ bots, rooms = {}, groupOwners = new Map() } = {}) {
++function turnsHost({ bots, rooms = {}, groupOwners = new Map(), chatOwners = new Map() } = {}) {
 +  let listener
 +  const rt = {
 +    ctx: { on: (name, fn) => { if (name === 'session/event') listener = fn } },
@@ -4209,7 +4239,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +    isBotSession: () => true,
 +    roomOf: id => rooms[id],
 +    groupOwners,
-+    chatOwners: new Map(),
++    chatOwners,
 +    botOf: id => bots[id],
 +    selfOf: id => groupOwners.get(id)?.botId ?? id,
 +    save: async () => {},
@@ -4228,7 +4258,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +    if (source) emit(id, 'user/message', { content: [{ type: 'text', text: 'hi' }], source })
 +    emit(id, 'turn/end', { turn: n, reason })
 +  }
-+  return { rt, turn }
++  return { rt, emit, turn }
 +}
 +
 +const completed = { kind: 'completed' }
@@ -4260,6 +4290,36 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  for (let n = 40; n < 60; n++) turn('b', n, completed)
 +  assert.equal(rt.endedView().length, 20)
 +  assert.ok(rt.endedView().every(entry => entry.failed === undefined))
++})
++
++test("the work view counts each place's tool calls for the inbox, and the ended turn keeps its own (#471)", () => {
++  const { rt, emit } = turnsHost({
++    bots: { b: { id: 'b', name: 'Coder' } },
++    rooms: { r1: { id: 'r1', name: 'Ops' } },
++    groupOwners: new Map([['g1', { botId: 'b', roomId: 'r1' }]]),
++    chatOwners: new Map([['b', 'b']]),
++  })
++  const work = () => rt.workView().b
++  emit('b', 'turn/start', { turn: 1 })
++  assert.equal(work().calls, undefined)
++  emit('b', 'tool/call', { callId: 'k1', name: 'pwsh' })
++  emit('b', 'tool/call', { callId: 'k2', name: 'write' })
++  assert.equal(work().calls, 2)
++  // A turn without a tool call has no count to show.
++  emit('b', 'turn/end', { turn: 1, reason: completed })
++  assert.equal(work(), undefined)
++  assert.equal(rt.endedView()[0].calls, 2)
++  emit('b', 'turn/start', { turn: 2 })
++  emit('b', 'turn/end', { turn: 2, reason: completed })
++  assert.equal(rt.endedView()[1].calls, undefined)
++  // A group turn counts for that group only: it is never added to the Bot's own chat.
++  emit('g1', 'turn/start', { turn: 1 })
++  emit('g1', 'tool/call', { callId: 'k3', name: 'pwsh' })
++  assert.deepEqual(rt.roomWorkView().r1.map(entry => [entry.botId, entry.calls]), [['b', 1]])
++  // The Bot's entry names the group, so no own-chat card picks that count up.
++  assert.deepEqual([rt.workView().b.roomId, rt.workView().b.calls], ['r1', 1])
++  emit('g1', 'turn/end', { turn: 1, reason: completed })
++  assert.deepEqual(rt.endedView().map(entry => [entry.roomId, entry.calls]), [[undefined, 2], [undefined, undefined], ['r1', 1]])
 +})
 +
 +test('Settings → General has one switch per kind under the main one, off while the main one is off (#469)', async () => {
@@ -5270,7 +5330,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +  await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
 +  host.begin('c')
 +  host.emit('c', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: 'npm test' }) })
-+  assert.deepEqual(plain((await bots()).c), { since: (await bots()).c.since, tool: 'pwsh', step: 'npm test', fromRoomId: 'r1' })
++  assert.deepEqual(plain((await bots()).c), { since: (await bots()).c.since, tool: 'pwsh', step: 'npm test', calls: 1, fromRoomId: 'r1' })
 +  host.finish('c', 'ok')
 +  // The user's own line, and a hand-off answered to the user in the Bot's own chat, are the Bot's own.
 +  host.emit('a', 'turn/start', { turn: 1 })

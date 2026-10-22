@@ -615,6 +615,7 @@ var ZH = {
   "Approve it in the chat": "请在对话里批准",
   "The last turn did not finish": "上一轮没有完成",
   "Latest: {text}": "最新：{text}",
+  "{count} tool calls": "{count} 次工具调用",
   "Untitled task": "未命名任务",
   "for {time}": "已 {time}",
   "just started": "刚开始",
@@ -6890,6 +6891,19 @@ function latestActivity(card, { roster, work, sessions }) {
   if (sessions?.byId && card.chat) options.push(previewOf(sessions, partOf(roster, card.chat)));
   return options.find((text) => typeof text === "string" && text !== "" && text !== card.title && text !== card.reason) ?? "";
 }
+function toolCalls(card, { roster, work }) {
+  const botId = card.bot?.id;
+  if (botId === void 0) return 0;
+  const roomId = roster.roomsById?.[card.chat] ? card.chat : void 0;
+  const running = runningIn(work, botId, roomId);
+  if (running !== void 0) return running.calls ?? 0;
+  let newest;
+  for (const entry of work.ended ?? []) {
+    if (entry.botId !== botId || (entry.roomId ?? "") !== (roomId ?? "")) continue;
+    if ((entry.at ?? 0) >= (newest?.at ?? -Infinity)) newest = entry;
+  }
+  return newest?.calls ?? 0;
+}
 function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() }) {
   const needs = [];
   const progress = [];
@@ -7031,7 +7045,10 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
     }
   }
   const newest = (a, b) => (b.at ?? Infinity) - (a.at ?? Infinity);
-  for (const card of [...needs, ...progress, ...done]) card.activity = latestActivity(card, { roster, work, sessions });
+  for (const card of [...needs, ...progress, ...done]) {
+    card.activity = latestActivity(card, { roster, work, sessions });
+    card.calls = toolCalls(card, { roster, work });
+  }
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 }
 var needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length;
@@ -7086,6 +7103,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
         (0, import_react12.createElement)("span", { className: "bt-inbox-meta", title: meta }, meta)
       ),
       (0, import_react12.createElement)("span", { className: "bt-inbox-title", title: card.title }, card.title),
+      card.calls > 0 ? (0, import_react12.createElement)("span", { className: "bt-inbox-calls" }, t("{count} tool calls", { count: card.calls })) : null,
       card.reason ? (0, import_react12.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
       card.activity ? (0, import_react12.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
       card.hint ? (0, import_react12.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
@@ -7214,6 +7232,7 @@ var INBOX_CSS = `
 .bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}

@@ -118,6 +118,23 @@ function latestActivity(card, { roster, work, sessions }) {
   return options.find(text => typeof text === 'string' && text !== '' && text !== card.title && text !== card.reason) ?? ''
 }
 
+// The tool calls of the turn a card shows for its place (#471): the turn running there now,
+// else the newest ended turn there. One place only — never added across places, and 0
+// when that turn used no tool or the place has no count.
+function toolCalls(card, { roster, work }) {
+  const botId = card.bot?.id
+  if (botId === undefined) return 0
+  const roomId = roster.roomsById?.[card.chat] ? card.chat : undefined
+  const running = runningIn(work, botId, roomId)
+  if (running !== undefined) return running.calls ?? 0
+  let newest
+  for (const entry of work.ended ?? []) {
+    if (entry.botId !== botId || (entry.roomId ?? '') !== (roomId ?? '')) continue
+    if ((entry.at ?? 0) >= (newest?.at ?? -Infinity)) newest = entry
+  }
+  return newest?.calls ?? 0
+}
+
 /**
  * The three groups of cards, newest first in each.
  * `sessions` is the shell's Session list ({ byId }); `now` the current time.
@@ -230,7 +247,10 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
     }
   }
   const newest = (a, b) => (b.at ?? Infinity) - (a.at ?? Infinity)
-  for (const card of [...needs, ...progress, ...done]) card.activity = latestActivity(card, { roster, work, sessions })
+  for (const card of [...needs, ...progress, ...done]) {
+    card.activity = latestActivity(card, { roster, work, sessions })
+    card.calls = toolCalls(card, { roster, work })
+  }
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) }
 }
 
@@ -277,6 +297,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
         h(Status, { status: card.status }),
         h('span', { className: 'bt-inbox-meta', title: meta }, meta)),
       h('span', { className: 'bt-inbox-title', title: card.title }, card.title),
+      card.calls > 0 ? h('span', { className: 'bt-inbox-calls' }, t('{count} tool calls', { count: card.calls })) : null,
       card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, card.reason) : null,
       card.activity ? h('span', { className: 'bt-inbox-activity', title: card.activity }, t('Latest: {text}', { text: card.activity })) : null,
       card.hint ? h('span', { className: 'bt-inbox-hint' }, card.hint) : null,
@@ -385,6 +406,7 @@ export const INBOX_CSS = `
 .bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}

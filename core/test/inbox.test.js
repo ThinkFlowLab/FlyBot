@@ -335,6 +335,52 @@ test('each card has a one-line latest activity that never repeats its title or r
   }
 })
 
+// #471 v1: one tool-call count per card, for that card's own place, never summed.
+const countedWork = {
+  bots: { b1: { since: NOW - 60_000, tool: 'pwsh', calls: 3 } },
+  rooms: { r1: [{ botId: 'b3', since: NOW - 30_000, calls: 2 }, { botId: 'b1', since: NOW - 60_000, calls: 5 }] },
+  approvals: [
+    { id: 'c1', botId: 'b1', tool: 'edit', at: NOW - 1000, answerable: false },
+    { id: 'c2', botId: 'b3', roomId: 'r1', tool: 'pwsh', at: NOW - 1000, answerable: true },
+  ],
+  ended: [
+    { id: 'x2', botId: 'b2', sessionId: 's2', at: NOW - 600_000 },
+    { id: 'x1', botId: 'b2', sessionId: 's2', at: NOW - 120_000, calls: 7 },
+    { id: 'x3', botId: 'b2', roomId: 'r1', at: NOW - 300_000, calls: 1 },
+  ],
+}
+const countedTasks = [task('n1', 'working'), task('n2', 'working', { ownerBotId: 'b2', origin: { roomId: 'r1' } })]
+const countedModel = inboxModel({ roster, work: countedWork, tasks: countedTasks, sessions, now: NOW })
+const countedCard = id => [...countedModel.needs, ...countedModel.progress, ...countedModel.done].find(card => card.id === id)
+
+test("a card shows its own place's tool-call count, from the running turn there or the last ended one (#471)", () => {
+  // The turn running in the place now: b1's own chat (3) and b3's turn in Ops (2).
+  assert.equal(countedCard('approval:c1').calls, 3)
+  assert.equal(countedCard('approval:c2').calls, 2)
+  assert.equal(countedCard('run:b1|r1').calls, 5)
+  // No turn running there: the newest ended turn in that place, never an older or another place's.
+  assert.equal(countedCard('task:n1').calls, 7)
+  assert.equal(countedCard('task:n2').calls, 1)
+  assert.equal(countedCard('chat:b2').calls, 7)
+  // Unknown (a card with no Bot, a place with no counted turn) is 0, and nothing is summed.
+  assert.equal(countedCard('held:r1').calls, 0)
+  assert.equal(inboxModel({ roster, work: { ...countedWork, ended: [] }, tasks: countedTasks, sessions, now: NOW }).progress.find(card => card.id === 'task:n1').calls, 0)
+})
+
+test('a count of 0 or unknown draws no line; a counted card draws one `N tool calls` line, read-only', () => {
+  const callsRows = card => byClass(draw(card), 'bt-inbox-calls')
+  const [row] = callsRows(countedCard('approval:c1'))
+  assert.equal(row.props.className, 'bt-inbox-calls')
+  assert.equal(textOf(row), '3 tool calls')
+  assert.equal(textOf(callsRows(countedCard('task:n2'))[0]), '1 tool calls')
+  for (const card of [countedCard('held:r1'), ...inboxModel({ roster, work, tasks, sessions, now: NOW }).done]) {
+    assert.equal(callsRows(card).length, 0, card.id)
+    assert.doesNotMatch(textOf(draw(card)), /tool calls/, card.id)
+  }
+  // Still read-only: the same single Open action, on a counted card too.
+  assert.deepEqual(plain(buttons(draw(countedCard('approval:c1'))).map(textOf)), ['Open'])
+})
+
 test('a question asked about work handed out from a group is a Needs you card that opens the group (#552)', () => {
   const asked = {
     ...roster,
