@@ -15,13 +15,14 @@ test('plan: create missing, keep equal, update changed, ignore others', () => {
 
 test('labels.json: valid, unique, agent-ready is the approval label', () => {
   const names = wanted.map((l) => l.name.toLowerCase())
-  assert.equal(wanted.length, 12, 'the 12 live labels (#702: the retired approval label is not one of them)')
+  // #702 retired the approval label; #739 added `pass`, which records that a verdict was a PASS.
+  assert.equal(wanted.length, 13, 'the 13 live labels')
   assert.equal(new Set(names).size, names.length)
   for (const l of wanted) {
     assert.match(l.color, /^[0-9A-F]{6}$/i)
     assert.ok(l.description.length > 0 && l.description.length <= 100, l.name)
   }
-  for (const n of ['agent-task', 'agent-ready', 'agent-working', 'agent-pr', 'self-test', 'needs-human', 'hold']) assert.ok(names.includes(n), n)
+  for (const n of ['agent-task', 'agent-ready', 'agent-working', 'agent-pr', 'self-test', 'needs-human', 'hold', 'pass']) assert.ok(names.includes(n), n)
 })
 
 test('the agent-task form never applies agent-ready', () => {

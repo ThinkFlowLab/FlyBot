@@ -58,5 +58,10 @@
     "name": "risk:T3",
     "color": "D93F0B",
     "description": "T3 (PASS at the tip, green CI). Advisory; the controller labels it, the merge gate recomputes it"
+  },
+  {
+    "name": "pass",
+    "color": "006B75",
+    "description": "Reviewer PASS verdict at the merged head; set by pass-label, never removed"
   }
 ]

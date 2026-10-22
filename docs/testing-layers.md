@@ -100,5 +100,6 @@ The tables below are generated: edit `docs/testing-layers.json`, then run
 | `label-hygiene.yml` | workflow-only | none | no | daily 03:30 Asia/Shanghai, and workflow_dispatch | Scheduled cleanup of status labels on closed issues and pull requests (#738). A workflow-only layer with no test file of its own, and it gates nothing. |
 | `nightly.yml` | workflow-only | none | no | daily 00:00 Asia/Shanghai, Sunday 01:00 compat matrix, and workflow_dispatch | The compatibility matrix (other OS, Node and DSH versions) on a schedule. It widens coverage but is not a gate, and its cases are not part of L1 or L2. |
 | `release.yml` | not-a-layer | none | no | — | The mechanical release: preflight, release PR, tag. It runs no tests of its own. |
+| `pass-label.yml` | workflow-only | none | no | issue_comment (created) and workflow_dispatch | Applies the `pass` label to a pull request whose conclusion was a PASS, and backfills merged ones (#739). A workflow-only layer with no test file of its own, and it gates nothing. |
 
 <!-- generated:testing-layers:end -->

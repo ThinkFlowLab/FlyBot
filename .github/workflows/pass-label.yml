@@ -1,0 +1,62 @@
+name: Pass label
+
+# A merged pull request kept no trace of the verdict that let it in: `agent-pr` stays, and the PASS
+# lives only in a comment thread (#739). This labels a pull request `pass` when a `Verdict: PASS at
+# <sha>` conclusion is posted, and backfills the merged ones on demand.
+#
+# It is a record, not a gate. It only ever adds the label — a later INC, a moved tip or a `hold` never
+# removes it — and it reads the conclusion with the same parser the gates use, so a comment from
+# outside the repository, a `Written-by:` name the policy does not list and a `Correction from …`
+# comment all leave the pull request alone.
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: 'Label every merged pull request whose head carried a PASS'
+        type: boolean
+        default: true
+
+concurrency:
+  group: pass-label-${{ github.event.issue.number || 'backfill' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  label:
+    name: pass label
+    # A comment on a plain issue is not a pull request; a manual run is the backfill.
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      # The comment body is untrusted text: it is only parsed, never run, and the label is added from
+      # base-branch code. `pull_request` on a comment would run PR code, so this stays an
+      # `issue_comment` workflow.
+      - name: Label the pull request a PASS conclusion was posted on
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ASSOCIATION: ${{ github.event.comment.author_association }}
+        run: node .github/scripts/pass-label.mjs --comment
+      - name: Backfill merged pull requests whose head carried a PASS
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/pass-label.mjs --backfill
