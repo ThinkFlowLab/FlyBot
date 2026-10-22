@@ -1,0 +1,1 @@
+A turn that finished while the plugin was not listening (a plugin reload, or a crash right after DSH recorded the end) is no longer picked up as "restarted while you were working" and repeated: the durable Session log decides, and only a turn the restart really cut is resumed.

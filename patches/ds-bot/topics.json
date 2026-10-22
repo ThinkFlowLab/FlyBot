@@ -47,7 +47,8 @@
     "test/prompt.test.js",
     "src/client/browser-pane.js",
     "src/client/pane-width.js",
-    "src/client/panes.js"
+    "src/client/panes.js",
+    "test/follow-through.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",
