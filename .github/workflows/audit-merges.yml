@@ -1,0 +1,63 @@
+# The read-only patrol for every merge on main (#689, #697). `merge-gate` refuses a queue entry it
+# does not approve, and the merge queue is the only route into `main` — this job checks the second
+# half: `audit-merges.mjs` walks the recent commits and reports the ones that landed without a
+# successful `Merge gate` run on the commit that landed.
+#
+# Red means "new". History holds bypasses from before `merge-gate` became a required check, so the
+# walk starts at the `head_sha` of this workflow's own previous successful run: everything at or
+# before it prints as `earlier bypass` and never fails. A first run has no previous run, so it
+# baselines on the current time — the history at that moment is the baseline, and the first green is
+# the watermark. Nothing is committed for this; the state is the run history.
+#
+# Read-only by construction: `contents: read`, `actions: read`, `pull-requests: read`, and the script
+# only reads the API. It never comments, labels, enqueues or merges.
+
+name: Audit merges
+
+on:
+  schedule:
+    - cron: "41 1 * * *" # daily 09:41 Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: audit-merges
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: audit-merges
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Watermark: the head of the previous successful run
+        id: watermark
+        run: |
+          previous="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/audit-merges.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty')"
+          if [ -z "$previous" ]; then
+            echo "no previous successful run: baselining the history this run finds"
+          else
+            echo "since=$previous" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Audit merges against the watermark
+        run: |
+          if [ -n "${{ steps.watermark.outputs.since }}" ]; then
+            node .github/scripts/audit-merges.mjs --limit 50 --since "${{ steps.watermark.outputs.since }}"
+          else
+            node .github/scripts/audit-merges.mjs --limit 50 --baseline
+          fi

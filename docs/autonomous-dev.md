@@ -190,6 +190,13 @@ agent reads, and the record a later enforcement step is checked against.
 **The gates themselves** — `hold`, the newest-conclusion rule, and the `merge-gate` job that enforces both on a queue
 entry — are in [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates). This section is only the plumbing.
 
+**The patrol.** [`audit-merges.yml`](../.github/workflows/audit-merges.yml) runs
+[`audit-merges.mjs`](../.github/scripts/audit-merges.mjs) daily and checks the other half of the gate: that every commit
+on `main` came through the queue with a successful `Merge gate` run on the commit that landed. It is read-only
+(`contents: read`, `actions: read`, `pull-requests: read`) and takes its watermark from the `head_sha` of its own
+previous successful run, so a red run means a bypass **newer than that watermark** — findings at or before it print as
+`earlier bypass` and never fail it (#697). A first run has no previous run and baselines the history it finds.
+
 **How to merge.** A direct `gh pr merge <n> --squash` is refused with `! The merge strategy for main is set by the merge
 queue`; that is not a failure. Enqueue instead: `gh pr merge <n> --auto --squash [--match-head-commit <sha>]` (gh has no
 `--merge-queue` flag). gh may still print the strategy line, or `! Pull request #<n> is already queued to merge`; the PR is
