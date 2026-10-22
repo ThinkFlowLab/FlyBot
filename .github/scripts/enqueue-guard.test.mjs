@@ -47,8 +47,8 @@ const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = [
 
 const run = (fixture = {}) => main({
   gh: fakeGh({ files: [HOST_FILE], ...fixture }),
-  env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' },
-  repo: 'ThinkFlowLab/FlyBot',
+  env: { REVIEW_POLICY: POLICY, GH_REPO: fixture.repo ?? 'ThinkFlowLab/FlyBot', PR: '566' },
+  repo: fixture.repo ?? 'ThinkFlowLab/FlyBot',
   pr: 566,
 })
 
@@ -206,6 +206,24 @@ test('#718: a fork is exempt — its head is not ours to ask for an issue', () =
   // The same pull request on a branch this repository owns is refused, so the exemption is the fork and
   // not a missing fixture field.
   assert.equal(run({ body: '## Summary\n\nTidy up the dock.', labels: [], files: [TEST_FILE], comments: [] }).ok, false)
+})
+
+// The repository name in the API paths is case-insensitive, so the ownership test is too: spelling `--repo`
+// in lower case used to turn our own branch into a "fork" and let both rules through (#718 INC).
+test('#718: a lower-case --repo spelling does not turn our own branch into a fork', () => {
+  const r = run({ body: '## Summary', labels: [], files: [TEST_FILE], repo: 'thinkflowlab/flybot', comments: [] })
+  assert.equal(r.fork, false)
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /no issue reference/)
+  assert.match(r.reasons.join('; '), /missing label: agent-pr/)
+})
+
+test('#718: a fork stays exempt under any --repo spelling', () => {
+  for (const repo of ['ThinkFlowLab/FlyBot', 'thinkflowlab/flybot']) {
+    const r = run({ body: '## Summary', labels: [], files: [TEST_FILE], headRepo: 'HugoXK/FlyBot', repo, comments: [] })
+    assert.equal(r.fork, true, repo)
+    assert.equal(r.ok, true, repo + ' → ' + r.reasons.join('; '))
+  }
 })
 
 // The guard is only in the path if the instructions that tell an agent to enqueue name it; otherwise

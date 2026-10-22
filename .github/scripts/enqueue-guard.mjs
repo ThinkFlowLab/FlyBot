@@ -12,7 +12,8 @@
 // So this is the step immediately before that call. It refuses — exit 1, the reason printed — when
 // the pull request carries `hold`, when the newest conclusion at its head is not a PASS, or when that
 // conclusion is itself marked "record only — do not merge". It also refuses a pull request that names
-// no issue in its body or carries no `agent-pr` label (#NNN; a mechanical release PR is exempt), so
+// no issue in its body or carries no `agent-pr` label (#718; a mechanical release PR and a fork are
+// exempt), so
 // "one issue, one pull request" is checked rather than remembered. It reuses `judge({ mode: 'queue' })`, so
 // "may this enter the queue" keeps one definition: a rule added to the merge gate is enforced here
 // without being restated, unless someone deliberately changes both.
@@ -130,8 +131,9 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const result = judge({ labels, files, head, author: pull.user?.login, reports, policy: loadPolicy(policyPath), expectedHead: arg('--sha'), mode: 'queue' })
   const mechanicalRelease = isMechanicalRelease(files.map((f) => f.filename))
   // The branch this repository owns, not a contributor's: `head.repo` is null when the fork was deleted,
-  // which is not ours either.
-  const fork = pull.head?.repo?.full_name !== repo
+  // which is not ours either. Both sides are lower-cased because the repository name in the API paths is
+  // case-insensitive: `--repo thinkflowlab/flybot` used to read our own branch as a fork and print ALLOW.
+  const fork = String(pull.head?.repo?.full_name ?? '').toLowerCase() !== String(repo).toLowerCase()
   const decision = guard({ pr, head, labels, body: pull.body, mechanicalRelease, fork, result, reports })
 
   console.log(`enqueue-guard: PR #${pr} head ${short(decision.head)}, labels [${labels.join(', ')}]`)
