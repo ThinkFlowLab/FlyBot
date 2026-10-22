@@ -1,0 +1,1 @@
+`list_children` now describes the routing fields it already answers ([#733](https://github.com/ThinkFlowLab/FlyBot/issues/733)): `load` for every child, and `openForMs`/`stalled` for a child with an open turn, so a coordinator can send new work to an idle child instead of learning the shape from the implementation.

@@ -1486,6 +1486,31 @@ test('#624: a turn that never ends shows how long it has been open, and load sta
   assert.equal(item.stalled, undefined)
 })
 
+// #733: a model routes on the description, not on the code, so the description must name the
+// fields the tool answers — and the answer must still carry them.
+test('#733: list_children describes the load fields it returns', async () => {
+  let clock = Date.UTC(2026, 9, 22, 6)
+  const m = await setup({ now: () => clock })
+  const { description } = m.tools.get('list_children')
+  for (const field of ['load', 'openForMs', 'stalled']) assert.match(description, new RegExp(`\\b${field}\\b`))
+  // `stalled` is not a synonym for busy: the description says what makes it true.
+  assert.match(description, /stalled: true once[^.]*stall threshold/)
+  const work = await make(m, m.root, 'Work')
+  const writer = await make(m, m.root, 'Writer')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
+  clock += 47 * 60_000
+  const children = (await m.call(m.root, 'list_children')).children
+  const busy = children.find(c => c.id === work)
+  assert.equal(busy.load, 1)
+  assert.equal(busy.openForMs, 47 * 60_000)
+  assert.equal(busy.stalled, true)
+  // An idle child keeps the old shape, so the description promises the fields only with a turn open.
+  const idle = children.find(c => c.id === writer)
+  assert.equal(idle.load, 0)
+  assert.equal('openForMs' in idle, false)
+  assert.equal('stalled' in idle, false)
+})
+
 test('#696: two turns open, the later one ends, and the age left is the older turn\'s', async () => {
   let clock = Date.UTC(2026, 9, 22, 7)
   const m = await setup({ now: () => clock })

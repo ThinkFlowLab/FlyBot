@@ -75,7 +75,7 @@ export function registerTreeTools(fb, tree) {
   return [
     fb.registerTool({
       name: 'list_children',
-      description: 'List your direct child bots (id, name, role). These and your parent are the only bots you can message.',
+      description: 'List your direct child bots (id, name, role, and load: how many turns each is running now). A child with an open turn also carries openForMs, the age of its oldest open turn, and stalled: true once that turn has been open past the stall threshold. These and your parent are the only bots you can message; send new work to an idle child first.',
       parameters: LIST_CHILDREN_SCHEMA,
       visibleTo: inTree,
       async execute(args, { botId }) {
