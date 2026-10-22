@@ -4,10 +4,12 @@ import { openTrace, TraceLocked } from './store.js'
 import { buildWindow, clampWindow } from './window.js'
 import { createExporter, otlpPayload, spansFrom } from './otel.js'
 import { buildHealth } from './health.js'
+import { createAlertTracker } from './alerts.js'
 
 export const ENDPOINT = 'timeline/window'
 export const EXPORT_ENDPOINT = 'timeline/export'
 export const HEALTH_ENDPOINT = 'timeline/health'
+export const ALERTS_ENDPOINT = 'timeline/alerts'
 
 export function createTimeline(adapter, { dir, persist = true, now = Date.now, exporter, ...limits } = {}) {
   let trace
@@ -54,13 +56,19 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   // Team health (#357): the same window, reduced to per-Bot signals and flags. Read-only.
   const health = (body = {}) => buildHealth(window(body))
   const offHealth = adapter.handle(HEALTH_ENDPOINT, health)
+  // Durable alerts (#584): the same window, folded across reads so a condition opens once and
+  // resolves when it clears. Read-only and in memory; nothing new reaches the trace.
+  const alerts = createAlertTracker()
+  const alertView = (body = {}) => alerts.fold(window(body))
+  const offAlerts = adapter.handle(ALERTS_ENDPOINT, alertView)
   return {
-    trace, recorder, window, exportNow, exportWindow, health,
+    trace, recorder, window, exportNow, exportWindow, health, alerts, alertView,
     dispose() {
       if (exportTimer !== undefined) clearInterval(exportTimer)
       offEndpoint()
       offExport()
       offHealth()
+      offAlerts()
       off()
       trace.close()
     },
