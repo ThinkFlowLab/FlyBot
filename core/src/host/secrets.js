@@ -7,7 +7,6 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { output } from './tools.js'
-import { OTHER, SCHEDULED, OWNER, settled, turnOrigin } from './turn-origin.js'
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
 export const ENV_PREFIX = 'DSH_SECRET_'
@@ -21,16 +20,16 @@ const MAX_REQUESTS = 20
 const USED_SAVE_MS = 5000
 
 export const envName = name => `${ENV_PREFIX}${name}`
-// A shell this turn cannot use a key in says so instead of looking empty (#601, #651): names and a
-// reason, never a value, so "you did not configure it" and "it was withheld" stop looking the same.
-// The reasons are a closed set; a caller that adds one adds it here.
+// A shell that cannot use a saved key says so instead of looking empty (#651): names and a reason,
+// never a value. Owner decision 2026-10-22 (#601): the owner's own Bots get the owner's keys on every
+// turn, whoever started it, so the only reasons left are the real boundaries: a friend's Bot, a key
+// the owner scoped to other Bots, and a shell whose Bot cannot be told. A closed set; a caller that
+// adds one adds it here.
 export const WITHHELD_VAR = 'DSH_SECRETS_WITHHELD'
 export const WITHHELD_REASONS = Object.freeze({
   REMOTE: 'remote-bot',
-  NOT_OWNER: 'turn-not-owner',
-  SHARED_SCHEDULED: 'shared-bot-scheduled',
-  SHARED_ROOM: 'shared-room',
-  UNKNOWN_TURN: 'unknown-turn',
+  NOT_IN_SCOPE: 'not-in-scope',
+  UNKNOWN_BOT: 'unknown-bot',
 })
 export const canUse = (secret, botId) => secret !== undefined && botId !== undefined
   && (secret.scope === 'all' || (Array.isArray(secret.scope) && secret.scope.includes(botId)))
@@ -414,8 +413,7 @@ export function install(rt) {
       if (!SECRET_NAME.test(name)) return 'Name the key with capitals, digits, and underscores, starting with a letter (for example GITHUB_TOKEN).'
       const secret = secrets.get(name)
       if (canUse(secret, bot.id)) {
-        const reason = withheldReason(secret, id, bot.id, bot)
-        if (reason !== undefined) return `${name} is saved for this Bot but withheld this turn: ${reason}. A key is only in the shell on the owner's own turn. You cannot see the value; never print it.`
+        if (bot.remote !== undefined) return `${name} is the owner's key and never reaches a friend's Bot.`
         return `${name} is already saved and you may use it: ${usage(name)}. You cannot see the value; never print it.`
       }
       if (rt.groupOwners.has(id)) return 'Secret cards only work in your own chat. Tell the group you will ask the user in your own chat, and call request_secret there.'
@@ -461,11 +459,10 @@ export function install(rt) {
       if (rt.botOf(self) === undefined) return 'Only Bots on the team can use list_secrets.'
       if (secrets.size === 0) return 'No keys are saved yet. Ask for one with request_secret.'
       const bot = rt.botOf(self)
-      // #651: say why a key is not in this turn's shell. A name and a reason, never a value.
       const use = (secret) => {
         if (!canUse(secrets.get(secret.name), self)) return 'you may not use it; ask with request_secret'
-        const reason = bot === undefined ? undefined : withheldReason(secrets.get(secret.name), exec.agent?.id, self, bot)
-        return reason === undefined ? `you may use it as $${envName(secret.name)}` : `withheld this turn: ${reason} — ask the user for the owner's turn`
+        if (bot.remote !== undefined) return 'never available to a friend\'s Bot'
+        return `you may use it as $${envName(secret.name)}`
       }
       return [
         'Saved keys (values are never shown):',
@@ -509,45 +506,41 @@ export function install(rt) {
     return ctx.llm.stream({ ...options, messages: fresh, ...(system !== undefined ? { system } : {}) })
   })
 
-  // Keys are the owner's (#359, #545): a shell gets them only on the owner's own turn. A turn
-  // someone else started (a friend, another room member, another owner's Bot) gets none, and a
-  // shell outside a known turn gets them only while the Bot is shared with nobody, the same
-  // fail-closed rule as the connector tools (connector-access.js).
-  const ownersTurn = (sessionId, bot) => {
-    const verdict = settled(rt, sessionId)
-    if (verdict !== undefined) return verdict !== OTHER
-    return rt.sharedWith(bot.id).length === 0
+  // The Bot a shell call works for: its own chat, a group Session and an earlier part resolve
+  // through selfOf; a sub-agent's call is followed up to its parent, the same chain the connector
+  // guard uses (connector-access.js `whoseAgent`). `{ unknown }` is a chain that cannot be followed
+  // to its end; `{ plain }` is a Session of no Bot (the DSH Agent).
+  const whoseShell = (execution) => {
+    if (typeof rt.whoseAgent === 'function') return rt.whoseAgent(execution?.agent)
+    const id = execution?.agent?.session?.header?.id ?? execution?.agent?.id
+    const bot = rt.botOf(rt.selfOf(id))
+    return bot === undefined ? { plain: true } : { bot, sessionId: id }
   }
 
-  // Why this key is not in the shell for the turn that is running, or undefined when it is. A key
-  // the owner scoped to this Bot by name (scope [<botId>]) is this Bot's own: it reaches the Bot's
-  // scheduled turn even while the Bot is shared, because the owner said which Bot may use it.
-  // scope 'all' is "you did not pick a Bot", so it keeps the fail-closed rule (#651 B).
-  const withheldReason = (secret, sessionId, botId, bot) => {
-    if (bot.remote !== undefined) return WITHHELD_REASONS.REMOTE
-    const origin = turnOrigin(rt, sessionId)
-    if (origin === OTHER) return WITHHELD_REASONS.NOT_OWNER
-    if (ownersTurn(sessionId, bot)) return undefined
-    const explicitForThisBot = Array.isArray(secret.scope) && secret.scope.includes(botId)
-    if (origin === SCHEDULED) return explicitForThisBot ? undefined : WITHHELD_REASONS.SHARED_SCHEDULED
-    if (origin === OWNER) return WITHHELD_REASONS.SHARED_ROOM
-    return WITHHELD_REASONS.UNKNOWN_TURN
-  }
-
+  // Owner decision 2026-10-22 (#601): every one of the owner's own Bots gets the owner's keys on
+  // every turn, whatever started it (a group round, a relay, a schedule, a friend talking to a
+  // shared Bot, a turn with no recorded origin, a sub-agent). The boundaries that stay: a friend's
+  // Bot (`remote`) never gets them, and a key the owner scoped to chosen Bots goes only to those.
   function resolveEnv(execution) {
-    const sessionId = execution?.agent?.session?.header?.id ?? execution?.agent?.id
-    const botId = rt.selfOf(sessionId)
-    const bot = rt.botOf(botId)
-    if (bot === undefined) return {}
-    const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
+    const who = whoseShell(execution)
+    if (who.plain === true) return {}
     const values = {}
     const withheld = []
+    if (who.unknown === true) {
+      for (const secret of secrets.values()) withheld.push(`${secret.name}:${WITHHELD_REASONS.UNKNOWN_BOT}`)
+      if (withheld.length) values[WITHHELD_VAR] = withheld.join(',')
+      return values
+    }
+    const { bot } = who
+    const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
     let used = false
     for (const secret of secrets.values()) {
-      if (!canUse(secret, botId)) continue
-      const reason = withheldReason(secret, sessionId, botId, bot)
-      if (reason !== undefined) {
-        withheld.push(`${secret.name}:${reason}`)
+      if (bot.remote !== undefined) {
+        withheld.push(`${secret.name}:${WITHHELD_REASONS.REMOTE}`)
+        continue
+      }
+      if (!canUse(secret, bot.id)) {
+        withheld.push(`${secret.name}:${WITHHELD_REASONS.NOT_IN_SCOPE}`)
         continue
       }
       values[envName(secret.name)] = secret.value
@@ -581,7 +574,7 @@ export function install(rt) {
           // withheld-reason variable resolveEnv may return is declared with the keys.
           variables: {
             ...Object.fromEntries(list.map(secret => [envName(secret.name), { description: `FlyBot secret ${secret.name}${secret.purpose ? `: ${secret.purpose}` : ''}` }])),
-            [WITHHELD_VAR]: { description: 'FlyBot saved keys withheld from this shell this turn, as NAME:reason pairs; names and reasons, never a value' },
+            [WITHHELD_VAR]: { description: 'FlyBot saved keys this shell cannot use, as NAME:reason pairs (remote-bot, not-in-scope, unknown-bot); names and reasons, never a value' },
           },
           resolve: resolveEnv,
         })
@@ -612,14 +605,9 @@ export function install(rt) {
   Object.assign(rt, {
     secretsView,
     secretValue: name => secrets.get(name)?.value,
-    // For a capability, which mounts for the Bot's whole Agent whatever the turn: a key for all
-    // Bots stays out of a Bot that is shared with anyone; a key whose list names the Bot is the
-    // owner's explicit choice (#545).
-    canUseSecret: (name, botId) => {
-      const secret = secrets.get(name)
-      if (!canUse(secret, botId) || rt.botOf(botId)?.remote !== undefined) return false
-      return secret.scope !== 'all' || rt.sharedWith(botId).length === 0
-    },
+    // For a capability, which mounts for the Bot's whole Agent: the same rule as the shell (#601),
+    // every one of the owner's own Bots the key's scope names, a shared one too; never a friend's Bot.
+    canUseSecret: (name, botId) => canUse(secrets.get(name), botId) && rt.botOf(botId) !== undefined && rt.botOf(botId).remote === undefined,
     secretEndpoint,
     forgetBotSecrets,
     loadSecrets,

@@ -65,6 +65,8 @@ export function install(rt) {
     return id === undefined ? { plain: true } : { unknown: true }
   }
   const botOfAgent = agent => whoseAgent(agent).bot
+  // secrets.js follows a shell call to its Bot along the same chain (#601).
+  rt.whoseAgent = whoseAgent
 
   // Whose request the Agent's turn answers, as the call guard needs it: a turn with no verdict is
   // someone else's.

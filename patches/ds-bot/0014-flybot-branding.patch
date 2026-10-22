@@ -487,28 +487,20 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 diff --git a/src/host/secrets.js b/src/host/secrets.js
 --- a/src/host/secrets.js
 +++ b/src/host/secrets.js
-@@ -7,6 +7,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promi
- import { join } from 'node:path'
- import { defineTool } from '@deepseek-ai/dsh-tools'
- import { output } from './tools.js'
-+import { OTHER, SCHEDULED, OWNER, settled, turnOrigin } from './turn-origin.js'
- 
- export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
- export const ENV_PREFIX = 'DSH_SECRET_'
 @@ -20,6 +20,17 @@ const MAX_REQUESTS = 20
  const USED_SAVE_MS = 5000
  
  export const envName = name => `${ENV_PREFIX}${name}`
-+// A shell this turn cannot use a key in says so instead of looking empty (#601, #651): names and a
-+// reason, never a value, so "you did not configure it" and "it was withheld" stop looking the same.
-+// The reasons are a closed set; a caller that adds one adds it here.
++// A shell that cannot use a saved key says so instead of looking empty (#651): names and a reason,
++// never a value. Owner decision 2026-10-22 (#601): the owner's own Bots get the owner's keys on every
++// turn, whoever started it, so the only reasons left are the real boundaries: a friend's Bot, a key
++// the owner scoped to other Bots, and a shell whose Bot cannot be told. A closed set; a caller that
++// adds one adds it here.
 +export const WITHHELD_VAR = 'DSH_SECRETS_WITHHELD'
 +export const WITHHELD_REASONS = Object.freeze({
 +  REMOTE: 'remote-bot',
-+  NOT_OWNER: 'turn-not-owner',
-+  SHARED_SCHEDULED: 'shared-bot-scheduled',
-+  SHARED_ROOM: 'shared-room',
-+  UNKNOWN_TURN: 'unknown-turn',
++  NOT_IN_SCOPE: 'not-in-scope',
++  UNKNOWN_BOT: 'unknown-bot',
 +})
  export const canUse = (secret, botId) => secret !== undefined && botId !== undefined
    && (secret.scope === 'all' || (Array.isArray(secret.scope) && secret.scope.includes(botId)))
@@ -619,29 +611,27 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
      }
    }
  
-@@ -380,7 +380,11 @@ export function install(rt) {
+@@ -380,7 +380,10 @@ export function install(rt) {
        const name = normalizeName(args.name)
        if (!SECRET_NAME.test(name)) return 'Name the key with capitals, digits, and underscores, starting with a letter (for example GITHUB_TOKEN).'
        const secret = secrets.get(name)
 -      if (canUse(secret, bot.id)) return `${name} is already saved and you may use it: ${usage(name)}. You cannot see the value; never print it.`
 +      if (canUse(secret, bot.id)) {
-+        const reason = withheldReason(secret, id, bot.id, bot)
-+        if (reason !== undefined) return `${name} is saved for this Bot but withheld this turn: ${reason}. A key is only in the shell on the owner's own turn. You cannot see the value; never print it.`
++        if (bot.remote !== undefined) return `${name} is the owner's key and never reaches a friend's Bot.`
 +        return `${name} is already saved and you may use it: ${usage(name)}. You cannot see the value; never print it.`
 +      }
        if (rt.groupOwners.has(id)) return 'Secret cards only work in your own chat. Tell the group you will ask the user in your own chat, and call request_secret there.'
        if (!rt.chatOwners.has(id)) return 'Secret cards only work in your current own chat.'
        const readOnly = rt.readOnly()
-@@ -423,9 +423,16 @@ export function install(rt) {
+@@ -423,9 +423,15 @@ export function install(rt) {
        const self = callerOf(exec)
        if (rt.botOf(self) === undefined) return 'Only Bots on the team can use list_secrets.'
        if (secrets.size === 0) return 'No keys are saved yet. Ask for one with request_secret.'
 +      const bot = rt.botOf(self)
-+      // #651: say why a key is not in this turn's shell. A name and a reason, never a value.
 +      const use = (secret) => {
 +        if (!canUse(secrets.get(secret.name), self)) return 'you may not use it; ask with request_secret'
-+        const reason = bot === undefined ? undefined : withheldReason(secrets.get(secret.name), exec.agent?.id, self, bot)
-+        return reason === undefined ? `you may use it as $${envName(secret.name)}` : `withheld this turn: ${reason} — ask the user for the owner's turn`
++        if (bot.remote !== undefined) return 'never available to a friend\'s Bot'
++        return `you may use it as $${envName(secret.name)}`
 +      }
        return [
          'Saved keys (values are never shown):',
@@ -650,51 +640,49 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
        ].join('\n')
      },
    }))
-@@ -465,14 +465,47 @@ export function install(rt) {
+@@ -465,14 +465,43 @@ export function install(rt) {
      return ctx.llm.stream({ ...options, messages: fresh, ...(system !== undefined ? { system } : {}) })
    })
  
-+  // Keys are the owner's (#359, #545): a shell gets them only on the owner's own turn. A turn
-+  // someone else started (a friend, another room member, another owner's Bot) gets none, and a
-+  // shell outside a known turn gets them only while the Bot is shared with nobody, the same
-+  // fail-closed rule as the connector tools (connector-access.js).
-+  const ownersTurn = (sessionId, bot) => {
-+    const verdict = settled(rt, sessionId)
-+    if (verdict !== undefined) return verdict !== OTHER
-+    return rt.sharedWith(bot.id).length === 0
++  // The Bot a shell call works for: its own chat, a group Session and an earlier part resolve
++  // through selfOf; a sub-agent's call is followed up to its parent, the same chain the connector
++  // guard uses (connector-access.js `whoseAgent`). `{ unknown }` is a chain that cannot be followed
++  // to its end; `{ plain }` is a Session of no Bot (the DSH Agent).
++  const whoseShell = (execution) => {
++    if (typeof rt.whoseAgent === 'function') return rt.whoseAgent(execution?.agent)
++    const id = execution?.agent?.session?.header?.id ?? execution?.agent?.id
++    const bot = rt.botOf(rt.selfOf(id))
++    return bot === undefined ? { plain: true } : { bot, sessionId: id }
 +  }
 +
-+  // Why this key is not in the shell for the turn that is running, or undefined when it is. A key
-+  // the owner scoped to this Bot by name (scope [<botId>]) is this Bot's own: it reaches the Bot's
-+  // scheduled turn even while the Bot is shared, because the owner said which Bot may use it.
-+  // scope 'all' is "you did not pick a Bot", so it keeps the fail-closed rule (#651 B).
-+  const withheldReason = (secret, sessionId, botId, bot) => {
-+    if (bot.remote !== undefined) return WITHHELD_REASONS.REMOTE
-+    const origin = turnOrigin(rt, sessionId)
-+    if (origin === OTHER) return WITHHELD_REASONS.NOT_OWNER
-+    if (ownersTurn(sessionId, bot)) return undefined
-+    const explicitForThisBot = Array.isArray(secret.scope) && secret.scope.includes(botId)
-+    if (origin === SCHEDULED) return explicitForThisBot ? undefined : WITHHELD_REASONS.SHARED_SCHEDULED
-+    if (origin === OWNER) return WITHHELD_REASONS.SHARED_ROOM
-+    return WITHHELD_REASONS.UNKNOWN_TURN
-+  }
-+
++  // Owner decision 2026-10-22 (#601): every one of the owner's own Bots gets the owner's keys on
++  // every turn, whatever started it (a group round, a relay, a schedule, a friend talking to a
++  // shared Bot, a turn with no recorded origin, a sub-agent). The boundaries that stay: a friend's
++  // Bot (`remote`) never gets them, and a key the owner scoped to chosen Bots goes only to those.
    function resolveEnv(execution) {
 -    const botId = rt.selfOf(execution?.agent?.session?.header?.id ?? execution?.agent?.id)
 -    if (rt.botOf(botId) === undefined) return {}
-+    const sessionId = execution?.agent?.session?.header?.id ?? execution?.agent?.id
-+    const botId = rt.selfOf(sessionId)
-+    const bot = rt.botOf(botId)
-+    if (bot === undefined) return {}
-     const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
+-    const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
++    const who = whoseShell(execution)
++    if (who.plain === true) return {}
      const values = {}
 +    const withheld = []
++    if (who.unknown === true) {
++      for (const secret of secrets.values()) withheld.push(`${secret.name}:${WITHHELD_REASONS.UNKNOWN_BOT}`)
++      if (withheld.length) values[WITHHELD_VAR] = withheld.join(',')
++      return values
++    }
++    const { bot } = who
++    const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
      let used = false
      for (const secret of secrets.values()) {
-       if (!canUse(secret, botId)) continue
-+      const reason = withheldReason(secret, sessionId, botId, bot)
-+      if (reason !== undefined) {
-+        withheld.push(`${secret.name}:${reason}`)
+-      if (!canUse(secret, botId)) continue
++      if (bot.remote !== undefined) {
++        withheld.push(`${secret.name}:${WITHHELD_REASONS.REMOTE}`)
++        continue
++      }
++      if (!canUse(secret, bot.id)) {
++        withheld.push(`${secret.name}:${WITHHELD_REASONS.NOT_IN_SCOPE}`)
 +        continue
 +      }
        values[envName(secret.name)] = secret.value
@@ -717,24 +705,19 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
 +          // withheld-reason variable resolveEnv may return is declared with the keys.
 +          variables: {
 +            ...Object.fromEntries(list.map(secret => [envName(secret.name), { description: `FlyBot secret ${secret.name}${secret.purpose ? `: ${secret.purpose}` : ''}` }])),
-+            [WITHHELD_VAR]: { description: 'FlyBot saved keys withheld from this shell this turn, as NAME:reason pairs; names and reasons, never a value' },
++            [WITHHELD_VAR]: { description: 'FlyBot saved keys this shell cannot use, as NAME:reason pairs (remote-bot, not-in-scope, unknown-bot); names and reasons, never a value' },
 +          },
            resolve: resolveEnv,
          })
        } catch (error) {
-@@ -529,7 +529,14 @@ export function install(rt) {
+@@ -529,7 +529,9 @@ export function install(rt) {
    Object.assign(rt, {
      secretsView,
      secretValue: name => secrets.get(name)?.value,
 -    canUseSecret: (name, botId) => canUse(secrets.get(name), botId),
-+    // For a capability, which mounts for the Bot's whole Agent whatever the turn: a key for all
-+    // Bots stays out of a Bot that is shared with anyone; a key whose list names the Bot is the
-+    // owner's explicit choice (#545).
-+    canUseSecret: (name, botId) => {
-+      const secret = secrets.get(name)
-+      if (!canUse(secret, botId) || rt.botOf(botId)?.remote !== undefined) return false
-+      return secret.scope !== 'all' || rt.sharedWith(botId).length === 0
-+    },
++    // For a capability, which mounts for the Bot's whole Agent: the same rule as the shell (#601),
++    // every one of the owner's own Bots the key's scope names, a shared one too; never a friend's Bot.
++    canUseSecret: (name, botId) => canUse(secrets.get(name), botId) && rt.botOf(botId) !== undefined && rt.botOf(botId).remote === undefined,
      secretEndpoint,
      forgetBotSecrets,
      loadSecrets,
@@ -923,14 +906,15 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
  })
  
  test('read-only secret reload does not requeue capability reconciliation', async t => {
-@@ -425,3 +425,24 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
+@@ -425,3 +425,25 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
    assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
    assert.equal(rt.capabilityStatusesView().chief.team, undefined)
  })
 +
-+// A key for all Bots is the owner's own (#359, #545). A capability mounts for the Bot's whole Agent,
-+// whoever's turn it is, so on a Bot shared with a friend it gets only a key that names that Bot.
-+test('a key for all Bots does not reach a shared Bot\'s capability; one that names the Bot does', async t => {
++// Owner decision 2026-10-22 (#601): the owner's keys reach every one of the owner's own Bots, a
++// shared one too, so a capability on a Bot shared with a friend gets a key for all Bots. A key the
++// owner scoped to chosen Bots still stays out of the Bots it does not name.
++test('a key for all Bots reaches a shared Bot\'s capability; a key scoped to other Bots does not', async t => {
 +  const state = team()
 +  state.grants = { worker: [{ grantee: '@bob.home', name: 'Bob' }] }
 +  const env = await setup({ state, secret: { name: 'TOKEN', value: 'fake-secret-value', purpose: '', scope: 'all', requestedBy: null, createdAt: 1, updatedAt: 1 } })
@@ -942,11 +926,11 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
 +  for (const id of ['chief', 'worker']) ctx.emit('agent/created', { agent: testAgent(id, mounts, skills) })
 +  await rt.scheduleCapabilitiesReconcile()
 +  assert.equal(rt.capabilityStatusesView().chief.echo.state, 'ready')
-+  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'error')
-+  assert.equal(mounts.some(mount => mount.sessionId === 'worker' && mount.config?.headers?.Authorization?.includes('fake-secret-value')), false)
-+  await rt.secretEndpoint('secret-update', { name: 'TOKEN', scope: ['chief', 'worker'] })
-+  await rt.scheduleCapabilitiesReconcile()
 +  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'ready')
++  await rt.secretEndpoint('secret-update', { name: 'TOKEN', scope: ['chief'] })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.equal(rt.capabilityStatusesView().worker.echo.state, 'error')
++  assert.equal(rt.capabilityStatusesView().chief.echo.state, 'ready')
 +})
 diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 --- a/test/dsh-update.test.js
@@ -982,6 +966,14 @@ diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 diff --git a/test/secrets.test.js b/test/secrets.test.js
 --- a/test/secrets.test.js
 +++ b/test/secrets.test.js
+@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+ import { apply } from '../index.js'
++import { SOURCE_KIND } from '../src/host/constants.js'
+ import { canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
+ import { fakeContext } from './fake-ctx.js'
+ 
 @@ -73,9 +73,10 @@ const TEAM = {
    questions: {},
  }
@@ -995,7 +987,7 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
    const contributors = []
    const shellEnv = {
      register(contributor) {
-@@ -119,7 +119,19 @@ function start() {
+@@ -119,7 +119,21 @@ function start() {
      assert.equal(result.ok, true, JSON.stringify(result.error))
      return result.value
    }
@@ -1006,7 +998,9 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  const env = (agentId, command = '') => {
 +    const entry = contributors.filter(item => item.live).at(-1)
 +    if (entry === undefined) return {}
-+    const resolved = entry.resolve({ agent: { id: agentId, session: { header: { id: agentId } } }, arguments: { command } })
++    // A string is a Bot Session's id; an object is the Agent itself (a sub-agent names its parent).
++    const agent = typeof agentId === 'string' ? { id: agentId, session: { header: { id: agentId } } } : agentId
++    const resolved = entry.resolve({ agent, arguments: { command } })
 +    for (const [key, value] of Object.entries(resolved)) {
 +      if (!Object.hasOwn(entry.variables, key)) throw new Error(`bash env contributor "${entry.name}" returned undeclared key "${key}"`)
 +      if (typeof value !== 'string') throw new Error(`bash env contributor "${entry.name}" returned a non-string value for "${key}"`)
@@ -1027,6 +1021,15 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
  
    // Asking again only names the variable.
    const again = await bench.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'x' }, 'b2')
+@@ -191,7 +191,7 @@ test('a Bot outside the scope gets an allow card, and allowing resolves it', asy
+   await bench.tool('request_secret', { name: 'DEMO_TOKEN', purpose: '测试' }, 'b2')
+   let [request] = (await bench.view()).secretRequests.b2
+   assert.equal((await bench.call('secret-set', { requestId: request.id, value, scope: 'bot' })).value.scope.join(), 'b2')
+-  assert.deepEqual(bench.env('c3'), {})
++  assert.deepEqual(bench.env('c3'), { DSH_SECRETS_WITHHELD: 'DEMO_TOKEN:not-in-scope' })
+ 
+   // Coder asks too, while a second Writer card would be superseded by the first answer.
+   const asked = await bench.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'c3')
 @@ -267,6 +267,54 @@ test('a deleted Bot leaves every scope list and takes its cards along', async (t
    assert.deepEqual(JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0].scope, ['b2'])
  })
@@ -1048,8 +1051,8 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  const team = await bench.view()
 +  assert.deepEqual(team.secrets.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all'], ['NOBODY_KEY', []], ['WRITER_KEY', ['b2']]])
 +  assert.ok(!JSON.stringify(team).includes(github))
-+  assert.deepEqual(bench.env('c3'), { DSH_SECRET_GITHUB_TOKEN: github })
-+  assert.deepEqual(bench.env('g-b2'), { DSH_SECRET_GITHUB_TOKEN: github, DSH_SECRET_WRITER_KEY: picked })
++  assert.deepEqual(bench.env('c3'), { DSH_SECRET_GITHUB_TOKEN: github, DSH_SECRETS_WITHHELD: 'NOBODY_KEY:not-in-scope,WRITER_KEY:not-in-scope' })
++  assert.deepEqual(bench.env('g-b2'), { DSH_SECRET_GITHUB_TOKEN: github, DSH_SECRET_WRITER_KEY: picked, DSH_SECRETS_WITHHELD: 'NOBODY_KEY:not-in-scope' })
 +  const stored = JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets
 +  assert.deepEqual(stored.map(secret => [secret.name, secret.scope]), [['GITHUB_TOKEN', 'all'], ['NOBODY_KEY', []], ['WRITER_KEY', ['b2']]])
 +})
@@ -1061,28 +1064,28 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  assert.equal(added.value.scope, 'all')
 +  const none = await bench.call('secret-update', { name: 'NEW_KEY', scope: [] })
 +  assert.deepEqual(none.value.scope, [])
-+  assert.deepEqual(bench.env('b2'), {})
++  assert.deepEqual(bench.env('b2'), { DSH_SECRETS_WITHHELD: 'NEW_KEY:not-in-scope' })
 +  const stored = JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0]
 +  assert.equal(stored.scopeSet, true)
 +  const back = await bench.call('secret-update', { name: 'NEW_KEY', scope: 'all' })
 +  assert.equal(back.value.scope, 'all')
 +})
 +
-+// "All my Bots" is the owner's own use (#359, #545): a Bot shared with a friend gets no key in a
-+// shell unless the turn is known to be the owner's, the same fail-closed rule as connector tools.
-+test('a key for all Bots stays out of a shared Bot\'s shell when the turn is not known to be the owner\'s', async (t) => {
++// Owner decision 2026-10-22 (#601): "All my Bots" means every turn of every one of the owner's
++// Bots, a Bot shared with a friend too, also outside a known turn.
++test('#601: a key for all Bots reaches a shared Bot\'s shell outside a known turn', async (t) => {
 +  const value = fresh()
 +  const bench = start({ team: { ...TEAM, grants: { c3: [{ grantee: '@bob.home', name: 'Bob' }] } } })
 +  t.after(bench.stop)
 +  await bench.call('secret-set', { name: 'GITHUB_TOKEN', value })
 +  assert.deepEqual(bench.env('b2'), { DSH_SECRET_GITHUB_TOKEN: value })
-+  assert.deepEqual(bench.env('c3'), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:unknown-turn' })
++  assert.deepEqual(bench.env('c3'), { DSH_SECRET_GITHUB_TOKEN: value })
 +})
 +
  test('tool results and model requests lose the values', async (t) => {
    const bench = start()
    t.after(bench.stop)
-@@ -302,3 +302,93 @@ test('tool results and model requests lose the values', async (t) => {
+@@ -302,3 +302,115 @@ test('tool results and model requests lose the values', async (t) => {
    stream({ ...options, system: 'clean', messages: [] }, next)
    assert.equal(passed.length, 2)
  })
@@ -1104,14 +1107,53 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  assert.equal(env.DSH_SECRETS_WITHHELD, undefined)
 +})
 +
-+test('#651: someone else’s turn names the key and the reason, and carries no value', async (t) => {
-+  const bench = await seeded({ secrets: saved('all') })
++test('#601: a turn someone else started still gets the owner\'s key', async (t) => {
++  const bench = await seeded({ secrets: saved('all'), team: SHARED })
 +  t.after(bench.stop)
 +  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
 +  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'user', authorId: 'ann' } } })
++  assert.deepEqual(bench.env('b2'), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
++})
++
++test('#601: a group round whose origin is someone else\'s gets the key in every member\'s shell', async (t) => {
++  const bench = await seeded({ secrets: saved('all') })
++  t.after(bench.stop)
++  // The round reached the member as a host relay stamped 'other' (groups.js roundOrigins).
++  bench.ctx.emitArgs('session/event', { id: 'g-b2' }, { type: 'turn/start', data: { turn: 1 } })
++  bench.ctx.emitArgs('session/event', { id: 'g-b2' }, { type: 'user/message', data: { content: [], source: { kind: SOURCE_KIND, form: 'relay', role: 'room', roomId: 'r1', origin: 'other' } } })
++  assert.deepEqual(bench.env('g-b2'), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
++})
++
++test('#601: a shared Bot\'s scheduled turn gets a key for all Bots', async (t) => {
++  const bench = await seeded({ secrets: saved('all'), team: SHARED })
++  t.after(bench.stop)
++  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
++  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
++  assert.deepEqual(bench.env('b2'), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
++})
++
++test('#601: bash in a sub-agent gets its parent Bot\'s keys; a chain that cannot be followed gets none', async (t) => {
++  const bench = await seeded({ secrets: saved('all'), team: SHARED })
++  t.after(bench.stop)
++  const sub = { id: 'sub-1', session: { header: { id: 'sub-1', parentSession: 'b2' } } }
++  assert.deepEqual(bench.env(sub), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
++  // The parent Session is gone: it may have been anyone's, so no value, and the shell says why.
++  const lost = { id: 'sub-2', session: { header: { id: 'sub-2', parentSession: 'gone' } } }
++  assert.deepEqual(bench.env(lost), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:unknown-bot' })
++  // A Session of no Bot (the DSH Agent) is untouched, as before.
++  assert.deepEqual(bench.env({ id: 'plain', session: { header: { id: 'plain' } } }), {})
++})
++
++test('#601: a key scoped to chosen Bots still reaches only those Bots, on any turn', async (t) => {
++  const bench = await seeded({ secrets: saved(['m1']), team: SHARED })
++  t.after(bench.stop)
++  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
++  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'user' } } })
 +  const env = bench.env('b2')
-+  assert.deepEqual(env, { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:turn-not-owner' })
-+  assert.ok(!JSON.stringify(env).includes('ghp_testvalue_123'), 'no value anywhere in the shell env')
++  assert.deepEqual(env, { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:not-in-scope' })
++  assert.ok(!JSON.stringify(env).includes('ghp_testvalue_123'))
++  assert.deepEqual(bench.env('m1'), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
++  assert.deepEqual(bench.env({ id: 'sub-3', session: { header: { id: 'sub-3', parentSession: 'b2' } } }), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:not-in-scope' })
 +})
 +
 +test('#651: a friend’s Bot says remote-bot, and a host with no key says nothing at all', async (t) => {
@@ -1134,32 +1176,17 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  assert.ok(!listed.text.includes('withheld'))
 +})
 +
-+test('#651: a shared Bot’s scheduled turn withholds scope "all" and keeps it for the Bot it names', async (t) => {
-+  const sharedAll = await seeded({ secrets: saved('all'), team: SHARED })
-+  t.after(sharedAll.stop)
-+  sharedAll.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
-+  sharedAll.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
-+  assert.deepEqual(sharedAll.env('b2'), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:shared-bot-scheduled' })
-+
-+  // The owner said which Bot may use this key, so that Bot's own scheduled turn still has it.
-+  const sharedThis = await seeded({ secrets: saved(['b2']), team: SHARED })
-+  t.after(sharedThis.stop)
-+  sharedThis.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
-+  sharedThis.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
-+  assert.deepEqual(sharedThis.env('b2'), { DSH_SECRET_GITHUB_TOKEN: 'ghp_testvalue_123' })
-+})
-+
-+test('#651: list_secrets and request_secret give the same reason, and never a value', async (t) => {
-+  const bench = await seeded({ secrets: saved('all') })
++test('#601: list_secrets and request_secret tell a Bot on someone else\'s turn it may use the key, never the value', async (t) => {
++  const bench = await seeded({ secrets: saved('all'), team: SHARED })
 +  t.after(bench.stop)
 +  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
 +  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'user', authorId: 'ann' } } })
 +  const listed = await bench.tool('list_secrets', {}, 'b2')
-+  assert.match(listed.text, /GITHUB_TOKEN/)
-+  assert.match(listed.text, /withheld this turn: turn-not-owner/)
++  assert.match(listed.text, /GITHUB_TOKEN .*you may use it as \$DSH_SECRET_GITHUB_TOKEN/)
++  assert.ok(!listed.text.includes('withheld'))
 +  assert.ok(!listed.text.includes('ghp_testvalue_123'))
 +  const asked = await bench.tool('request_secret', { name: 'GITHUB_TOKEN', purpose: 'GitHub' }, 'b2')
-+  assert.match(asked.text, /withheld this turn: turn-not-owner/)
++  assert.match(asked.text, /already saved and you may use it/)
 +  assert.ok(!asked.text.includes('ghp_testvalue_123'))
 +})
 +
@@ -1172,9 +1199,7 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  const [entry] = bench.contributors.filter(item => item.live)
 +  assert.ok(Object.hasOwn(entry.variables, 'DSH_SECRETS_WITHHELD'))
 +  assert.match(entry.variables.DSH_SECRETS_WITHHELD.description, /never a value/)
-+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'turn/start', data: { turn: 1 } })
-+  bench.ctx.emitArgs('session/event', { id: 'b2' }, { type: 'user/message', data: { content: [], source: { kind: 'schedule' } } })
-+  assert.deepEqual(bench.env('b2'), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:shared-bot-scheduled' })
++  assert.deepEqual(bench.env({ id: 'sub-9', session: { header: { id: 'sub-9', parentSession: 'gone' } } }), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:unknown-bot' })
 +})
 diff --git a/test/store.test.js b/test/store.test.js
 --- a/test/store.test.js
