@@ -412,10 +412,12 @@ test('#628: bot_schedules answers for the Bot, never for the Session the call ru
   add('g1-w1-old', 'Writer group earlier part', 's-g1-old')
   add('m1', 'Chief own chat', 's-m1')
   add('g1-m1', 'Chief group session', 's-g1m')
+  // A task the owner set for the group chat itself lives on the group's own Session (#628).
+  add('g1', 'Launch group task', 's-g1-own')
   const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
   const answer = await listed('w2')
   // Every Session of this Bot: its own chat, the earlier part of it, the group chats it speaks in.
-  for (const name of ['Writer current part', 'Writer earlier part', 'Writer group', 'Writer group earlier part', 'Paused brief']) {
+  for (const name of ['Writer current part', 'Writer earlier part', 'Writer group', 'Writer group earlier part', 'Launch group task', 'Paused brief']) {
     assert.ok(answer.includes(name), `${name} is the Bot's schedule`)
   }
   assert.match(answer, /own chat, earlier part/)
@@ -430,6 +432,43 @@ test('#628: bot_schedules answers for the Bot, never for the Session the call ru
   // The answer names its scope, so an empty one cannot be read as "nothing is scheduled".
   assert.match(answer, /every Session of this Bot/)
   assert.match(answer, /schedule_list answers for one Session only/)
+})
+
+// A group chat keeps its own Session, and a task the owner sets for the group lives on it
+// (#628): its id is the room id, so it belongs to every member of that group and to nobody
+// else — including a Bot that only sees the group's members' Sessions.
+test('#628: a task set for the group chat is listed for its members, not for a Bot outside it', async (t) => {
+  const schedule = scheduleService()
+  const team = JSON.parse(JSON.stringify(TEAM))
+  team.bots.w3 = { id: 'w3', sessionId: 'w3', name: 'Outsider', role: '', instructions: '', createdAt: 7 }
+  const { ctx, home, call } = setup({ schedule }, team)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const made = await call('schedule-create', { target: 'g1', title: 'Standup', prompt: 'Where are we?', when: { kind: 'daily', time: '10:00', timeZone: 'UTC' } })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  assert.equal([...schedule.tasks.values()][0].sessionId, 'g1', 'the task lives on the group Session')
+  const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
+  const writer = await listed('w2')
+  assert.ok(writer.includes('Standup'), 'a member sees the group chat’s own task')
+  assert.match(writer, /group chat "Launch"/)
+  assert.ok((await listed('m1')).includes('Standup'), 'the admin is a member and sees it too')
+  const outsider = await listed('w3')
+  assert.ok(!outsider.includes('Standup'), 'a Bot outside the group is not told about it')
+  assert.match(outsider, /none — no scheduled task in any of its Sessions/, 'and its answer says so plainly')
+})
+
+test('#628: a paused task on the group chat’s own Session is listed too', async (t) => {
+  const schedule = scheduleService()
+  const team = JSON.parse(JSON.stringify(TEAM))
+  team.bots.w3 = { id: 'w3', sessionId: 'w3', name: 'Outsider', role: '', instructions: '', createdAt: 7 }
+  team.pausedSchedules = { 's-gpaused': { id: 's-gpaused', sessionId: 'g1', record: { title: 'Paused group brief', prompt: 'Sum up' }, pausedAt: 6 } }
+  const { ctx, home } = setup({ schedule }, team)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
+  const answer = await listed('w2')
+  assert.ok(answer.includes('Paused group brief'), 'a paused group task is still a task of the Bot')
+  assert.match(answer, /paused/)
+  assert.match(answer, /group chat "Launch"/)
+  assert.ok(!(await listed('w3')).includes('Paused group brief'))
 })
 
 test('#628: without the schedule service the Bot-wide answer says why it is empty', async (t) => {

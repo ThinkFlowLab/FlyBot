@@ -87,7 +87,7 @@ Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled 
 
 **An empty `schedule_list` is not evidence that a schedule does not exist; never delete or recreate a schedule from it, and never report "no timers" as a finding.** The owner's UI shows the real list; ask the owner instead of the tool when the run depends on it. `schedule_delete` and `schedule_update` share the same scope, so a Bot can otherwise "clean up" a schedule it cannot see.
 
-**`bot_schedules` (no arguments) is the Bot-wide list.** It reads DSH's host-wide catalog and keeps every Session that speaks for the calling Bot — its own chat, the earlier parts of it, and the group chats it speaks in — plus its paused tasks, with each task's id, title, next run, state and owning Session. Read that tool before saying anything about this Bot's timers; DSH's `schedule_list` stays per Session, and the DSH-side scoping fix is still tracked in #628.
+**`bot_schedules` (no arguments) is the Bot-wide list.** It reads DSH's host-wide catalog and keeps every Session that speaks for the calling Bot — its own chat, the earlier parts of it, the group chats it speaks in, and a group chat's own Session for the tasks the owner set for that group (to its members only) — plus its paused tasks, with each task's id, title, next run, state and owning Session. Read that tool before saying anything about this Bot's timers; DSH's `schedule_list` stays per Session, and the DSH-side scoping fix is still tracked in #628.
 
 ### Issue labels
 
