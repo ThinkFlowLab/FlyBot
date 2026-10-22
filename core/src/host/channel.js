@@ -11,6 +11,8 @@ const NOTIFY_KINDS = ['approval', 'finished', 'failed']
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
 // How long a burst of the user's lines is collected before it opens one turn (#642).
 const SETTLE_MS = 1_500
+// How many windows a held burst is retried on its own before it waits for the user's next line.
+const SETTLE_RETRIES = 3
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 // Programming and file system errors are DS Bot's own faults, logged with their stack;
@@ -40,40 +42,67 @@ export function install(rt) {
   // it lands as its own queued item, so a burst never reorders work that is already under way.
   const settling = new Map()
   const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
-  const openSettledTurn = async (sessionId, lines) => {
-    try {
-      await rt.ensureCapabilities(sessionId)
-      await ctx.sessionController.prompt({
-        requestId: randomUUID(),
-        sessionId,
-        mode: 'queue',
-        content: [{ type: 'text', text: lines.join('\n') }],
-      }, AbortSignal.timeout(30_000))
-    } catch (error) {
-      rt.warn?.('ds-bot: held user lines were not delivered: %s', error)
-    }
-  }
-  const flushSettled = sessionId => {
-    const held = settling.get(sessionId)
-    if (held === undefined) return Promise.resolve()
-    settling.delete(sessionId)
+  const armSettled = (sessionId, held) => {
     clearTimeout(held.timer)
-    return openSettledTurn(sessionId, held.lines)
+    held.timer = setTimeout(() => {
+      void flushSettled(sessionId).catch(error => rt.warn?.('ds-bot: held user lines were not delivered; they are kept: %s', error))
+    }, SETTLE_MS)
+    held.timer?.unref?.()
+  }
+  const openSettledTurn = async (sessionId, lines) => {
+    await rt.ensureCapabilities(sessionId)
+    await ctx.sessionController.prompt({
+      requestId: randomUUID(),
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: lines.join('\n') }],
+    }, AbortSignal.timeout(30_000))
+  }
+  // Throws when the turn could not be opened (#682): the caller that is still waiting for an
+  // answer gets the error, and the lines stay held — a held line is not dropped because a
+  // prompt failed, and `send` never answers ok for a line that then disappears.
+  const flushSettled = async (sessionId) => {
+    const held = settling.get(sessionId)
+    if (held === undefined) return
+    clearTimeout(held.timer)
+    held.timer = undefined
+    const lines = held.lines.splice(0)
+    try {
+      await openSettledTurn(sessionId, lines)
+    } catch (error) {
+      held.lines.unshift(...lines)
+      held.failures += 1
+      // Retried on the next window a few times; past that the lines wait for the user's next
+      // line instead of retrying on their own forever.
+      if (held.failures < SETTLE_RETRIES) armSettled(sessionId, held)
+      else rt.warn?.('ds-bot: %d held user lines for %s could not be delivered after %d tries; they go out with the next line', lines.length, sessionId, held.failures)
+      throw error
+    }
+    held.failures = 0
+    // A line that arrived while the prompt was in flight stays in order behind the ones just sent.
+    if (held.lines.length > 0) armSettled(sessionId, held)
+    else settling.delete(sessionId)
   }
   // True when the line was held for the window; false means the caller opens its own turn.
   const settleLine = async (sessionId, text) => {
     if (turnRunning(sessionId)) {
-      // A turn began inside the window: the held lines queue ahead of this one, in order.
+      // A turn began inside the window: the held lines queue ahead of this one, in order, and a
+      // failure there is the caller's to report.
       await flushSettled(sessionId)
       return false
     }
     const held = settling.get(sessionId)
     if (held !== undefined) {
       held.lines.push(text)
+      // A failed flush past its retries leaves the entry without a timer: this line re-arms it.
+      if (held.timer === undefined) {
+        held.failures = 0
+        armSettled(sessionId, held)
+      }
       return true
     }
-    const waiting = { lines: [text], timer: setTimeout(() => void flushSettled(sessionId), SETTLE_MS) }
-    waiting.timer?.unref?.()
+    const waiting = { lines: [text], failures: 0, timer: undefined }
+    armSettled(sessionId, waiting)
     settling.set(sessionId, waiting)
     return true
   }

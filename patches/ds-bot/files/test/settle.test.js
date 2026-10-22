@@ -155,3 +155,54 @@ test('#642: a line arriving while a turn runs is not held, and the held lines st
   await drain()
   assert.equal(prompts.length, 2, 'nothing is left over for the closed window')
 })
+
+test('#682: a failed flush keeps the held line and retries on the next window', async (t) => {
+  const { call, prompts, ctx, rt, stop } = start()
+  t.after(stop)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const orig = ctx.sessionController.prompt
+  let fail = true
+  ctx.sessionController.prompt = async (request) => {
+    if (fail) throw Object.assign(new Error('ds-bot: the Session is gone'), { code: 'bot/refused' })
+    return orig(request)
+  }
+
+  assert.equal((await call('send', { sessionId: chief, text: 'keep me' })).ok, true)
+  t.mock.timers.tick(1_500)
+  await drain()
+  assert.deepEqual(prompts, [], 'the failed prompt delivered nothing')
+
+  fail = false
+  t.mock.timers.tick(1_500)
+  await drain()
+  assert.deepEqual(prompts.map(entry => entry.text), ['keep me'], 'the held line went out on the retry, in order')
+})
+
+test('#682: a failed flush on the send path answers the sender the error, not ok', async (t) => {
+  const { call, prompts, ctx, rt, stop } = start()
+  t.after(stop)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+  const orig = ctx.sessionController.prompt
+  let fail = true
+  ctx.sessionController.prompt = async (request) => {
+    if (fail) throw Object.assign(new Error('ds-bot: the Session is gone'), { code: 'bot/refused' })
+    return orig(request)
+  }
+
+  await call('send', { sessionId: chief, text: 'held one' })
+  // The turn starts inside the window, so the next line must not be held behind the timer.
+  rt.liveOf(chief).turn = 'turn-1'
+  const refused = await call('send', { sessionId: chief, text: 'busy one' })
+  assert.equal(refused.ok, false, 'a line the host could not deliver is not reported as sent')
+  assert.equal(refused.error.code, 'bot/refused')
+  assert.deepEqual(prompts, [])
+
+  fail = false
+  const retried = await call('send', { sessionId: chief, text: 'busy again' })
+  assert.equal(retried.ok, true)
+  assert.deepEqual(prompts.map(entry => entry.text), ['held one', 'busy again'], 'the kept line still goes first')
+})
