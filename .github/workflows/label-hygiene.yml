@@ -1,0 +1,40 @@
+name: Label hygiene
+
+# Status labels must not outlive the item (#738): a closed issue or a merged pull request that still
+# carries `agent-working`/`agent-pr`/`agent-ready`/`agent-task`/`awaiting-approval` makes the board
+# count finished work as in flight. This job removes exactly those labels and nothing else, and it
+# prints `before:`/`after:` counts so the cleanup is verified rather than trusted.
+#
+# `hold` is untouched: only a human removes it (AGENTS.md → Merge gates).
+on:
+  schedule:
+    - cron: '30 19 * * *' # 03:30 Asia/Shanghai, a quiet hour
+  workflow_dispatch:
+
+concurrency:
+  group: label-hygiene
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  label-hygiene:
+    name: label-hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      - name: Strip stale status labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/label-hygiene.mjs --apply

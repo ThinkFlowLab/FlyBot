@@ -207,6 +207,16 @@ skipped the queue prints as `bypassed queue:` and fails the run while an older o
 not — the watermark lives in the Actions API and nothing is committed. Its first run passes `--baseline`, so the first
 green run is the baseline and only a newer bypass turns it red ([#697](https://github.com/ThinkFlowLab/FlyBot/issues/697)).
 
+**The patrol that keeps the labels honest.** A status label says what is happening to an item *now*, so it must not
+outlive the item: on 2026-10-22 the board counted 11 closed issues and 43 closed pull requests as in flight, because
+nothing removed `agent-working`/`agent-pr` when they closed. `.github/workflows/label-hygiene.yml` runs
+`label-hygiene.mjs` daily and on `workflow_dispatch`, and it removes exactly the status labels in its `STALE_LABELS`
+list — `bug`, `area:*`, `risk:*`, `hold`, `needs-*` and `status:done` are records and it never touches them, because
+`hold` stays human-only in both directions. It asks once per status label (GitHub's `labels=` filter is an AND, so one
+query for five labels would only find an item carrying all five), prints the `before:` count, applies, then reads the
+repository back and prints `after:` — a non-zero `after:` fails the run, so the cleanup is verified rather than
+trusted ([#738](https://github.com/ThinkFlowLab/FlyBot/issues/738)).
+
 **What the trigger does.** A merge queue builds each entry on a `gh-readonly-queue/main/pr-N-<sha>` branch (a merge of
 the PR onto the current `main`, plus the entries ahead of it) and merges only when the required checks pass on that
 commit. Required checks are matched by name on that commit, so `Test` must run on `merge_group`; otherwise `tests-ok`
