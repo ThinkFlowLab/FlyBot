@@ -28,7 +28,7 @@ Everything in `plugins/timeline/`: the recorder, the trace file, the read model 
 | `plugins/timeline/src/store.js` | The trace: single writer, write-tmp + fsync + rename, capped segments. |
 | `plugins/timeline/src/window.js` | Pure read model: records to lanes, turns, tools, arrows, edges, utilization, the token spend per Bot (#357), per-Bot outcomes and recent failures (#471), the open requests waiting longest (#469) and the tools each Bot used (#359). |
 | `plugins/timeline/src/health.js` | Team health (#357): pure `buildHealth(window)` turning the window into per-Bot signals and flags. |
-| `plugins/timeline/src/digest.js` | Team run report (#582): pure `buildDigest(window)` turning the window into short Markdown, with the count and duration formatting (`formatCount`, `formatMs`). |
+| `plugins/timeline/src/digest.js` | Team run report (#582): pure `buildDigest(window)` turning the window into short Markdown, with the count and duration formatting (`formatCount`, `formatMs`). A duration rounds once and carries into the next unit (#761), so the text says `1m` and `2h00m`, never `60s`, `60m` or `1h60m`. |
 | `plugins/timeline/src/alerts.js` | Durable alerts (#584): pure `createAlertTracker()` folding a window across reads, so a condition opens one alert and resolves when it clears. |
 | `plugins/timeline/client.js` | Browser entry (`@flybot/timeline`): the 2 s poller exposed as `ctx.flybot.timeline`, the geometry functions (`layoutSwimlanes`, `layoutMap`, `waitRows`, `utilizationRows`) and the panel (swimlanes, who waits on whom, utilization, and **Copy report**), opened from its `flybot.sidebar.section` row, the only entry (not in the + menu, #269). |
 | `plugins/timeline/src/sanitize.js` | The cleaners for ids, labels, codes, times, counts. |
