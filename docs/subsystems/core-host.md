@@ -321,3 +321,12 @@ A discarded `.catch(() => {})` in the host sources either starts with `void` (fi
 ## Tests
 
 `npm test` in `core/`; smoke test for `index.js` / `src/host/` changes.
+
+### Images a text-only model cannot see (#779)
+
+`src/host/images.js` reads a chat image with a model that declares image input before the request reaches a model that cannot (`ocrRoute`: `config.ocrModel` first, then served models declaring `image`, the DSH default first among them; `config.textOnlyModels` names a model whose provider claims image input but rejects it). Readings are cached per attachment in `<home>/ocr.json`, so later requests repeat the same words and the prompt cache still hits.
+
+- When no model can read an image, both places it becomes text — a Bot chat (`imageAsText` through `withImagesAsText`) and the group relay (`imagesForGroup`) — use the same `imagePlaceholder`.
+- That placeholder names the file when the Bot's own file tools can open it: `attachmentFilePath` takes the attachment store's `imageHostPath` through the file sandbox's `processPathFromHostPath` (the same mapping `dsh-spill-policy` applies to spooled tool output) and falls back to the local object layout `<home>/attachments/v1/objects/<first two>/<sha256>`. Either candidate must `stat` as a regular file, so a Bot is never sent after a file that is not there (a host path the sandbox cannot open is worse than no path), and only a `sha256:<64 hex>` id has an object path at all.
+- Nothing is copied into a Bot's working folder: a copy would need a lifecycle and a cleanup policy of its own, and the readable path already lets a Bot move or submit the bytes itself.
+- Covered by `core/test/images.test.js` and, through the Session hook and the group relay, `core/test/session-identity.test.js`.
