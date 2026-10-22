@@ -170,10 +170,10 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const author = pull.user?.login
   const labels = (pull.labels ?? []).map((l) => l.name)
   const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at })),
+    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at, association: c.author_association })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at })),
+      .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association })),
   ]
 
   // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`

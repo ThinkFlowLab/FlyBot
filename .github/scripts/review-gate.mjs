@@ -30,6 +30,10 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const SHORT = 12
+// #676: a conclusion is read only from someone GitHub ties to this repository. The fail-closed rule
+// above makes any newest conclusion refuse, so without this an outside comment saying `Verdict: INC`
+// could hold a merge. A comment from anyone else is not a conclusion: it can neither pass nor block.
+const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 
 // The last Verifier block in one body: a comment may hold an earlier review that a later
 // one replaced, and only the last block is the verdict the reviewer stands behind.
@@ -154,6 +158,11 @@ export function decide({ head, author, reports, policy }) {
       continue
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
+    const association = String(r.association ?? '').toUpperCase()
+    if (!ASSOCIATIONS.has(association)) {
+      reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, so it is not a conclusion`)
+      continue
+    }
     // #676: a conclusion at this tip belongs to the newest-word question even when it fails a check
     // below, so it joins `atTip` carrying its reason instead of being dropped. Dropping it made a
     // newer refusal invisible: an INC with no `Written-by:` line left an older PASS in force, and a
@@ -236,10 +245,10 @@ function main() {
   if (!head) throw new Error(`pull request ${pr} has no head sha`)
 
   const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at, url: c.html_url })),
+    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at, association: c.author_association, url: c.html_url })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, url: v.html_url })),
+      .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association, url: v.html_url })),
   ]
 
   const result = decide({ head, author, reports, policy: loadPolicy(policyPath) })

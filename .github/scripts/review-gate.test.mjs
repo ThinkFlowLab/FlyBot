@@ -18,7 +18,7 @@ const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → p
     `Verdict: ${verdict}`,
   ].join('\n')
 
-const comment = (login, body = report(), at = '2026-10-18T01:00:00Z', kind = 'comment') => ({ login, body, at, kind })
+const comment = (login, body = report(), at = '2026-10-18T01:00:00Z', kind = 'comment', association = 'MEMBER') => ({ login, body, at, kind, association })
 
 test('a PASS by a listed reviewer that names the tip counts', () => {
   const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent')], policy })
@@ -258,7 +258,7 @@ test('#640: a quoted Tip SHA later in the body does not move the first line to a
 
   // And the whole point: the INC is not dropped, so it still refuses the merge.
   const head = '1234567890abcdef000000000000000000000000'
-  const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', body: report, at: when })
+  const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', body: report, at: when, association: 'MEMBER' })
   const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }
   const pass = ['Tip SHA: ' + head, 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: PASS'].join('\n')
   const result = decide({
@@ -452,4 +452,22 @@ test('#676: a newer PASS with no command it ran still refuses over an older good
   })
   assert.equal(r.ok, false)
   assert.match(r.reason, /lists no command it ran/)
+})
+
+// #676, as narrowed: the fail-closed newest-word rule is for people GitHub ties to this repository.
+// Anyone else's `Verdict:` line is not a conclusion, so it can neither pass nor hold a merge.
+test('#676: a conclusion from outside the repository counts for nothing', () => {
+  const inc = [`Verdict: INC at ${HEAD}`, 'Written-by: Reviewer', '', 'Ran: npm test → fail'].join('\n')
+  const outsider = { login: 'passer-by', body: inc, at: '2026-10-18T02:00:00Z', kind: 'comment', association: 'NONE' }
+  const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), outsider], policy })
+  assert.equal(r.ok, true, 'the listed reviewer\'s PASS stands; an outside comment cannot block it')
+  assert.equal(r.verdict, 'PASS')
+
+  const solo = decide({ head: HEAD, author: 'opener', reports: [outsider], policy })
+  assert.equal(solo.ok, false, 'nor can it pass a tip')
+  assert.match(solo.reason, /author association NONE is not OWNER, MEMBER or COLLABORATOR/)
+
+  const missing = decide({ head: HEAD, author: 'opener', reports: [{ login: 'reviewer-agent', body: report(), at: '2026-10-18T01:00:00Z', kind: 'comment' }], policy })
+  assert.equal(missing.ok, false, 'an association the API did not send is not assumed')
+  assert.match(missing.reason, /author association missing/)
 })

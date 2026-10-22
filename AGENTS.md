@@ -124,6 +124,8 @@ The owner kept one shared GitHub identity for every Bot (2026-10-21), so attribu
 
 The gate refuses what it can check, and fails closed. [`review-gate.mjs`](.github/scripts/review-gate.mjs) — and [`merge-gate.mjs`](.github/scripts/merge-gate.mjs), which imports its `decide`, so a queue entry is judged by the same rule — refuses a report that carries **no** `Written-by:` line, and refuses one whose name is **not** in the policy's `writers` list. Two separate refusals, so the log says which defect fired. Triage names a write that carries no such line in one comment and never repairs it by editing someone else's text.
 
+The gate reads a conclusion only from someone GitHub ties to this repository: the comment's `author_association` must be `OWNER`, `MEMBER` or `COLLABORATOR`, or it is not a conclusion and counts for nothing — otherwise any passer-by could hold a merge with one `Verdict: INC` line, because the newest conclusion decides (#676). An association the API did not send is not assumed.
+
 What this buys is presence and a name from a closed list, not truth: with one shared identity the line is a self-report that can be left out (refused) and can name the wrong Bot (undetectable here). The write layer knowing the writer is the DSH-side half, #633.
 
 ### Gates

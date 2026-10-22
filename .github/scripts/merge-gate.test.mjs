@@ -13,7 +13,7 @@ const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Revie
 const report = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
   [`Tip SHA: ${tip}`, 'Written-by: Reviewer', 'Ran:', '  - npm run verify → pass', 'Not run:', '  - smoke — host code unchanged', `Verdict: ${verdict}`].join('\n')
 
-const say = (body = report(), at = '2026-10-21T10:31:00Z', kind = 'comment') => ({ login: 'reviewer-agent', body, at, kind })
+const say = (body = report(), at = '2026-10-21T10:31:00Z', kind = 'comment') => ({ login: 'reviewer-agent', body, at, kind, association: 'MEMBER' })
 
 const judgeAt = (over = {}) => judge({ labels: [], head: HEAD, author: 'opener', reports: [say()], policy, ...over })
 
@@ -152,8 +152,8 @@ const runGate = (fixture) => {
   })
 }
 
-const apiComment = (body, at) => ({ user: { login: 'reviewer-agent' }, body, created_at: at })
-const apiReview = (body, at) => ({ user: { login: 'reviewer-agent' }, body, submitted_at: at })
+const apiComment = (body, at) => ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
+const apiReview = (body, at) => ({ user: { login: 'reviewer-agent' }, body, submitted_at: at, author_association: 'MEMBER' })
 
 const firstLine = (verdict, tip = HEAD) => [
   `Verdict: ${verdict} at ${tip}`,
@@ -347,7 +347,7 @@ const queueReal = (fx, body = fx.comment.body) => main({
   gh: (...args) => {
     const path = args[args.length - 1]
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
-    if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at })
+    if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
     if (path.includes('/reviews')) return ''
     if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head }, user: { login: fx.author }, labels: [] })
     throw new Error('fake gh: unexpected ' + path)
