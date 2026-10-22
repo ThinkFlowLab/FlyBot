@@ -27,9 +27,11 @@ async function start(config = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-flybot-'))
   const state = config.empty === true ? emptyTeam() : team()
   Object.assign(state.rooms, config.rooms ?? {})
-  const { rooms, empty, ...applyConfig } = config
+  const { rooms, empty, llm, defaultModel, ...applyConfig } = config
   writeFileSync(join(home, 'state.json'), JSON.stringify(state))
-  const ctx = fakeContext()
+  // A test may serve a model: the profile default rides the DSH service, as in test/memory.test.js.
+  const services = defaultModel === undefined ? {} : { agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: defaultModel }) } }
+  const ctx = fakeContext({ services })
   const agents = new Map()
   const agentOf = (id) => {
     if (!agents.has(id)) {
@@ -43,7 +45,7 @@ async function start(config = {}) {
     return agents.get(id)
   }
   Object.assign(ctx, {
-    llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
+    llm: llm ?? { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
     workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
     sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async id => ({ agent: agentOf(id) }), selectModel: async () => {}, page: async () => ({ records: [], hasMore: false }) },
     sessionTitle: { rename: async () => {} },
@@ -817,6 +819,29 @@ test('#450: flybot.model.ask is refused unless the host allow-lists the plugin',
   assert.deepEqual(await fb.scope('stranger').model.ask({ prompt: 'hi' }), { ok: false, code: 'not-allowed' })
   // Named, but this host serves no model: the gate opened, the call found none.
   assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'hi' }), { ok: false, code: 'no-model' })
+})
+
+test('#579: flybot.modelFor reaches the plugin call, and an unnamed plugin keeps the team default', async (t) => {
+  const requests = []
+  const llm = {
+    listProviders: () => [{ id: 'deepseek' }],
+    listModels: async () => [{ id: 'v4' }, { id: 'v4-flash' }],
+    resolveModelInfo: async () => ({}),
+    async* stream(request) {
+      requests.push(request)
+      yield { type: 'text-delta', index: 0, text: 'ok' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  }
+  const { fb, stop } = await start({ flybot: { modelPlugins: ['probe', 'other'], modelFor: { probe: 'deepseek/v4-flash' } }, defaultModel: 'v4', llm })
+  t.after(stop)
+  assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'classify' }), { ok: true, text: 'ok' })
+  assert.equal(requests.length, 1)
+  assert.deepEqual([requests[0].provider, requests[0].model], ['deepseek', 'v4-flash'], 'the entry from config.flybot.modelFor is used')
+  assert.deepEqual(await fb.scope('other').model.ask({ prompt: 'classify' }), { ok: true, text: 'ok' })
+  assert.deepEqual([requests[1].provider, requests[1].model], ['deepseek', 'v4'], 'a plugin the host did not name keeps the team default')
+  assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'classify', model: 'deepseek/v4' }), { ok: true, text: 'ok' })
+  assert.deepEqual([requests[2].provider, requests[2].model], ['deepseek', 'v4'], 'a model the call names still wins')
 })
 
 test('#450: flybot.memory reads and writes a Bot only for an allow-listed plugin', async (t) => {
