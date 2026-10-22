@@ -1452,6 +1452,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // nobody sees in the Bot's chat, and the reply would never leave (#258). Room lines are
           // different (the friend's owner decides those), so they keep their hold.
           if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
+          // Auto-send (#417) let this line out without a FlyBot card, so Bot Social's own hold would
+          // park it with nobody left to decide it: the owner's switch already answered the same
+          // question (#737). Room lines stay with the friend's owner, and a hold with a finding of
+          // its own keeps its card. Only Auto-send on this pair reaches here unapproved: the chain
+          // holds every other send before the transport runs.
+          else if (msg.via !== 'room' && msg.via !== 'room-share' && typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto') await autoSendRemoteLine(sent)
         }
         return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
       }
@@ -1493,6 +1499,29 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     pendingCache.at = 0
     await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       .catch(error => warn('direct-chat owner line not approved yet; the next poll retries', error))
+  }
+  // Approves the Bot Social hold on a line Auto-send (#417) let out with no FlyBot card (#737), only
+  // when Bot Social held it for no finding of its own (no DLP category on the hold). Anything else
+  // stays on its card, where the owner decides it, exactly as with Auto-send off.
+  async function autoSendRemoteLine(sent) {
+    const approvalId = sent?.message?.approval_id ?? sent?.approval_id
+    if (!approvalId) return false
+    try {
+      // Read straight from the server, not through pendingApprovals(): that path also posts the
+      // waiting notice and refreshes the card, and a hold this line is about to clear has nobody
+      // waiting for it.
+      const result = await client.callTool('list_approvals', { status: 'pending' })
+      const raw = result?.approvals ?? (Array.isArray(result) ? result : [])
+      const held = raw.find(item => String(item?.approval_id ?? item?.id ?? '') === String(approvalId))
+      if (!held || holdReasons(held).length > 0) return false
+      await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
+      setPending(pendingCache.items.filter(item => item.id !== approvalId))
+      pendingCache.at = 0
+      return true
+    } catch (error) {
+      warn('Auto-send did not approve the Bot Social hold; the line waits on its card', error)
+      return false
+    }
   }
   // Typed-by-owner attestation (Bot Social typed_by_owner): `supported` is learned from the
   // server's feature list (face rooms) or from an attested reply; `forbidden` is set when this
