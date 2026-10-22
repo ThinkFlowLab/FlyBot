@@ -41,6 +41,8 @@ const RECORD_ONLY = /^[\s>*+-]*(?:record only\s*[—–-]+\s*do not (?:merge|que
 // all — #711/#712/#713 arrived with neither and nothing refused them, because the guard only looked at
 // `hold`, the conclusions and the diff. The reference is a line of its own, so prose about "fixes" does
 // not pass; the spellings accepted are exactly `Fixes #<n>` and `Closes #<n>`, behind any `#`, `>` or `-`.
+// The rules only hold where the branch is ours: a fork is exempt, because we cannot push to its head
+// and the owner keeps their own workflow there (#711/#713).
 const ISSUE_REF = /^[\s>#-]*(?:fixes|closes)\s*#\d+/im
 const short = (s) => String(s ?? '').slice(0, SHORT)
 const labelNames = (labels) => (labels ?? []).map((l) => String(typeof l === 'string' ? l : l?.name ?? '').toLowerCase())
@@ -61,14 +63,16 @@ export function recordOnlyAt(reports, head) {
 }
 
 // The decision, without the network: `result` is merge-gate's `judge` output for this head.
-export function guard({ pr, head, labels, body, mechanicalRelease, result, reports }) {
+export function guard({ pr, head, labels, body, mechanicalRelease, fork, result, reports }) {
   const quiet = recordOnlyAt(reports, result.head ?? head)
   const reasons = [...result.reasons]
   if (quiet) reasons.push('the newest conclusion at this head says "record only — do not merge"')
-  // A mechanical release PR carries neither an issue nor the label by design — it is the routine's own
-  // daily output under the standing approval (AGENTS.md 6) — so it is the one exemption. `result.exempt`
-  // cannot be used for this: it is true for T0/T1 as well, and routine work still names its issue.
-  if (!mechanicalRelease) {
+  // Two exemptions, both about what the pull request is rather than how risky it is. A mechanical release
+  // PR carries neither an issue nor the label by design — it is the routine's own daily output under the
+  // standing approval (AGENTS.md 6). A fork is not ours: its head cannot be pushed by us, and the owner runs
+  // their own workflow there (#711/#713). `result.exempt` cannot stand in for either: it is true for T0/T1
+  // as well, and routine work still names its issue.
+  if (!mechanicalRelease && !fork) {
     if (!ISSUE_REF.test(String(body ?? ''))) reasons.push('no issue reference in the pull request body: add "Fixes #<n>"')
     if (!labelNames(labels).includes('agent-pr')) reasons.push('missing label: agent-pr')
   }
@@ -79,6 +83,7 @@ export function guard({ pr, head, labels, body, mechanicalRelease, result, repor
     reasons,
     recordOnly: Boolean(quiet),
     mechanicalRelease: Boolean(mechanicalRelease),
+    fork: Boolean(fork),
     labels: labels ?? [],
     // One loud sentence: a refusal says what to do ("do not enqueue") and why, so it cannot be read
     // as a warning that some other step may override.
@@ -124,7 +129,10 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // believes it has, and `--sha` lets a caller insist on the head it read a moment ago.
   const result = judge({ labels, files, head, author: pull.user?.login, reports, policy: loadPolicy(policyPath), expectedHead: arg('--sha'), mode: 'queue' })
   const mechanicalRelease = isMechanicalRelease(files.map((f) => f.filename))
-  const decision = guard({ pr, head, labels, body: pull.body, mechanicalRelease, result, reports })
+  // The branch this repository owns, not a contributor's: `head.repo` is null when the fork was deleted,
+  // which is not ours either.
+  const fork = pull.head?.repo?.full_name !== repo
+  const decision = guard({ pr, head, labels, body: pull.body, mechanicalRelease, fork, result, reports })
 
   console.log(`enqueue-guard: PR #${pr} head ${short(decision.head)}, labels [${labels.join(', ')}]`)
   console.log(decision.ok

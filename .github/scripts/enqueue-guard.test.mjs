@@ -29,7 +29,7 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [] } = {}) =>
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
-const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener' } = {}) => {
+const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot' } = {}) => {
   const calls = []
   const gh = (...args) => {
     const path = args[args.length - 1]
@@ -37,7 +37,7 @@ const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = [
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head }, user: { login: author }, body, labels: labels.map((name) => ({ name })) })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head, repo: { full_name: headRepo } }, user: { login: author }, body, labels: labels.map((name) => ({ name })) })
     // Anything else — `gh pr merge` above all — is the guard doing more than checking.
     throw new Error('fake gh: unexpected ' + path)
   }
@@ -197,6 +197,15 @@ test('#718: a mechanical release pull request needs neither an issue nor the lab
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.exempt, true)
   assert.equal(r.mechanicalRelease, true)
+})
+
+test('#718: a fork is exempt — its head is not ours to ask for an issue', () => {
+  const r = run({ body: '## Summary\n\nTidy up the dock.', labels: [], files: [TEST_FILE], headRepo: 'HugoXK/FlyBot', comments: [] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.fork, true)
+  // The same pull request on a branch this repository owns is refused, so the exemption is the fork and
+  // not a missing fixture field.
+  assert.equal(run({ body: '## Summary\n\nTidy up the dock.', labels: [], files: [TEST_FILE], comments: [] }).ok, false)
 })
 
 // The guard is only in the path if the instructions that tell an agent to enqueue name it; otherwise
