@@ -129,8 +129,10 @@ function openedByLink(state, room, botId) {
   const bot = state.bots?.[botId]
   if (!bot || bot.remote !== undefined || !bot.ownerId || !Array.isArray(room?.localInvites)) return false
   const at = Date.now()
+  // Open (not withdrawn, not out of date: a link has no deadline now), or still holding a seat it made.
   return room.localInvites.some(invite => invite?.server === true && invite.mintedBy === bot.ownerId
-    && (Boolean(invite.acceptedBy) || Number(invite.expiresAt) > at))
+    && (Boolean(invite.acceptedBy) || (invite.homes && Object.keys(invite.homes).length > 0)
+      || (!invite.withdrawnAt && (invite.expiresAt == null || Number(invite.expiresAt) > at))))
 }
 
 // May this local Bot take part in a room that has a remote participant or more than one

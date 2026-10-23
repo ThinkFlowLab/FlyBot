@@ -755,6 +755,11 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     const at = typeof value === 'number' ? value : Date.parse(String(value ?? ''))
     return Number.isFinite(at) ? at : undefined
   }
+  const claimView = c => (c ? {
+    home: normHandle(c.home) || undefined,
+    bots: (Array.isArray(c.bots) ? c.bots : []).map(normHandle).filter(Boolean),
+    members: (Array.isArray(c.members) ? c.members : []).map(m => ({ handle: normHandle(m?.handle), display_name: String(m?.display_name ?? ''), owner_name: String(m?.owner_name ?? '') })),
+  } : null)
   const localView = body => ({
     roomId: String(body?.room_id ?? ''),
     name: body?.name ? String(body.name) : '',
@@ -763,13 +768,9 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     inviterHome: normHandle(body?.inviter?.home) || undefined,
     expiresAt: msOf(body?.expires_at),
     claimed: body?.claimed === true,
-    ...(body?.claimer !== undefined ? {
-      claimer: body.claimer ? {
-        home: normHandle(body.claimer.home) || undefined,
-        bots: (Array.isArray(body.claimer.bots) ? body.claimer.bots : []).map(normHandle).filter(Boolean),
-        members: (Array.isArray(body.claimer.members) ? body.claimer.members : []).map(m => ({ handle: normHandle(m?.handle), display_name: String(m?.display_name ?? ''), owner_name: String(m?.owner_name ?? '') })),
-      } : null,
-    } : {}),
+    ...(body?.claimer !== undefined ? { claimer: claimView(body.claimer) } : {}),
+    // Bot Social #65: a link admits every home it is given to; the minter reads each of their claims.
+    ...(Array.isArray(body?.claimers) ? { claimers: body.claimers.map(claimView).filter(Boolean) } : {}),
   })
   const localInvites = {
     async mint({ roomId, name, handle } = {}) {
@@ -791,10 +792,18 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
       const body = await callHttp('POST', `${localBase}/${encodeURIComponent(clean)}/claim`, { bots: handles })
       return { ...localView(body), bots: (Array.isArray(body?.bots) ? body.bots : []).map(normHandle).filter(Boolean) }
     },
-    async revoke(ticket) {
+    // Withdraw: nobody new can join. `endClaims` (the room is gone) also ends every home's seat there.
+    async revoke(ticket, { endClaims = false } = {}) {
       const clean = localTicket(ticket)
       if (!clean) return
-      await callHttp('DELETE', `${localBase}/${encodeURIComponent(clean)}`)
+      await callHttp('DELETE', `${localBase}/${encodeURIComponent(clean)}${endClaims ? '?end_claims=1' : ''}`)
+    },
+    // The minter ends one home's claim (it removed that guest); `home` is that home's or one of its Bots' handle.
+    async endClaim(ticket, home) {
+      const clean = localTicket(ticket)
+      const who = normHandle(home)
+      if (!clean || !who) return
+      await callHttp('DELETE', `${localBase}/${encodeURIComponent(clean)}/claims/${encodeURIComponent(who)}`)
     },
   }
 

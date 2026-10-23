@@ -3109,8 +3109,10 @@ test('the sidebar + menu gets a Face-to-face room action from social', () => {
   pluginOf([]).apply({})
   const row = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group')
   assert.ok(row)
-  assert.equal(row[1].label, 'Face-to-face room')
-  assert.match(row[1].hint, /6-digit/)
+  // #892: one entry for both ways in, a number entered together or a group's invite link.
+  assert.equal(row[1].label, 'Join or create by number or link')
+  assert.match(row[1].hint, /number/)
+  assert.match(row[1].hint, /invite link/)
   // #385: each social row has its own mark and a short one-line hint with no closing period.
   const friend = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
   assert.equal(typeof row[1].icon, 'function')
@@ -9948,11 +9950,11 @@ test('#876: each refusal of a group link is its own sentence, never "not an invi
     seen.add(text)
   }
   assert.equal(seen.size, 7, 'seven refusals, seven sentences')
-  // A link someone already claimed is said before anyone presses Join.
+  // A link this home already joined with is said before anyone presses Join.
   const taken = localLinkDialog(async () => ({ preview: { name: 'Trip plan', lead: 'Chief', expiresAt: Date.now() + 60_000, claimed: true } }))
   taken.render().find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
   await settleUi()
-  assert.match(taken.last().status.text, /Someone else already joined with that link/)
+  assert.match(taken.last().status.text, /You already joined this group with that link/, '#892: claimed is this home\'s own claim, never someone else\'s')
   // And a refusal on Join (the claim) is said the same way.
   const late = localLinkDialog(async (endpoint) => (endpoint === 'room-invite-ask' ? { refused: 'expired' } : {}), { link: LOCAL_URL, status: null, preview: { name: 'Trip plan', local: true, link: LOCAL_URL } })
   late.render().find(n => n.props['data-flybot'] === 'face-link-preview-join').props.onClick()
@@ -9960,38 +9962,120 @@ test('#876: each refusal of a group link is its own sentence, never "not an invi
   assert.equal(late.last().status.text, 'That link has expired. Ask for a new one.')
 })
 
-test('#876: the Members card row makes a link with its QR, copy, countdown and withdraw', async () => {
+// The Members-card row with a React stand-in that keeps every useState by its call order.
+function memberInviteRow(host) {
   const hostCalls = []
   const { registered, walk, sandbox } = loadSocialClient(async () => ({}))
-  const url = 'https://social.example.com/r/@chief.alice.home/AbCdEfGhIjKlMnOpQrStUv'
   sandbox.__flybot__.host = async (endpoint, payload) => {
     hostCalls.push([endpoint, payload])
-    if (endpoint === 'room-invite-mint') return { invite: { ticket: 'AbCdEfGhIjKlMnOpQrStUv', handle: '@chief.alice.home', url, expiresAt: Date.now() + 600_000, server: true } }
-    return { revoked: true }
+    return host(endpoint, payload)
   }
-  let invite = null
+  const states = []
   let i = 0
   const plugin = registered[0].factory(() => ({
     createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
     Fragment: 'F', useEffect() {}, useMemo: fn => fn(), useRef: value => ({ current: value }),
-    useState: value => { const at = i++ % 5; return at === 0 ? [invite, next => { invite = next }] : [value, () => {}] },
+    useState: (value) => {
+      const at = i++
+      if (!(at in states)) states[at] = value
+      return [states[at], (next) => { states[at] = typeof next === 'function' ? next(states[at]) : next }]
+    },
   }))
   const draw = () => { i = 0; return walk(plugin.LocalInviteRow({ room: { id: 'r1', name: 'Trip plan' } })) }
-  let tree = draw()
-  assert.equal(tree.find(n => n.props['data-flybot'] === 'room-invite-qr'), undefined, 'no QR before a link exists')
-  assert.match(tree.find(n => n.props['data-flybot'] === 'room-invite-about').children.join(''), /They do not become a friend/)
-  await tree.find(n => n.props['data-flybot'] === 'room-invite-mint').props.onClick()
-  assert.deepEqual(plain(hostCalls[0]), ['room-invite-mint', { roomId: 'r1' }])
-  tree = draw()
-  const qr = tree.find(n => n.props['data-flybot'] === 'room-invite-qr')
-  assert.equal(qr.props['data-url'], url, 'the QR is the link itself')
+  const byHook = (tree, name) => tree.find(n => n.props['data-flybot'] === name)
+  const text = (tree, name) => byHook(tree, name)?.children.join('')
+  return { hostCalls, draw, byHook, text, states }
+}
+
+test('#876 / #892: the Members card row makes a link with no deadline, with its QR, copy and withdraw', async () => {
+  const url = 'https://social.example.com/r/@chief.alice.home/AbCdEfGhIjKlMnOpQrStUv'
+  const row = memberInviteRow(async (endpoint) => {
+    if (endpoint === 'room-invite-mint') return { invite: { ticket: 'AbCdEfGhIjKlMnOpQrStUv', handle: '@chief.alice.home', url, expiresAt: null, server: true } }
+    if (endpoint === 'room-invite') return { invite: null, invites: [] }
+    return { revoked: true }
+  })
+  let tree = row.draw()
+  assert.equal(row.byHook(tree, 'room-invite-qr'), undefined, 'no QR before a link exists')
+  assert.equal(row.text(tree, 'room-invite-about'), 'Anyone you give the link to can join with their Bot, until you withdraw it. They do not become a friend.')
+  assert.doesNotMatch(row.text(tree, 'room-invite-about'), /minute/)
+  assert.equal(row.byHook(tree, 'room-invite-mint').children.join(''), 'Create link')
+  await row.byHook(tree, 'room-invite-mint').props.onClick()
+  assert.deepEqual(plain(row.hostCalls[0]), ['room-invite-mint', { roomId: 'r1' }])
+  tree = row.draw()
+  const qr = row.byHook(tree, 'room-invite-qr')
+  assert.equal(qr.props['data-url'], url, 'the QR is the link itself, with no deadline to stop it')
   assert.ok(Number(qr.props['data-modules']) >= 21)
-  assert.equal(tree.find(n => n.props['data-flybot'] === 'room-invite-url').children.join(''), url)
-  assert.match(tree.find(n => n.props['data-flybot'] === 'room-invite-count').children.join(''), /^(10:00|9:5\d) left to join$/)
-  assert.ok(tree.find(n => n.props['data-flybot'] === 'room-invite-copy'))
-  await tree.find(n => n.props['data-flybot'] === 'room-invite-revoke').props.onClick()
-  assert.deepEqual(plain(hostCalls[1]), ['room-invite-revoke', { roomId: 'r1', ticket: 'AbCdEfGhIjKlMnOpQrStUv' }])
-  assert.equal(invite, null)
+  assert.equal(row.text(tree, 'room-invite-url'), url)
+  assert.equal(row.text(tree, 'room-invite-count'), 'Works until you withdraw it.')
+  assert.equal(row.byHook(tree, 'room-invite-ended'), undefined)
+  assert.equal(row.byHook(tree, 'room-invite-mint').children.join(''), 'New link')
+  assert.ok(row.byHook(tree, 'room-invite-copy'))
+  // A week on, the link still shows: nothing counts down.
+  const realNow = Date.now
+  Date.now = () => realNow() + 7 * 24 * 3600_000
+  try { assert.ok(row.byHook(row.draw(), 'room-invite-qr'), 'still live a week later') } finally { Date.now = realNow }
+  await row.byHook(row.draw(), 'room-invite-revoke').props.onClick()
+  assert.deepEqual(plain(row.hostCalls.find(([endpoint]) => endpoint === 'room-invite-revoke')), ['room-invite-revoke', { roomId: 'r1', ticket: 'AbCdEfGhIjKlMnOpQrStUv' }])
+  assert.equal(row.states[0], null)
+})
+
+test('#892: a link an older Bot Social still dates counts down, in the host\'s words', async () => {
+  const row = memberInviteRow(async () => ({ invite: { ticket: 'AbCdEfGhIjKlMnOpQrStUv', handle: '@chief.alice.home', url: 'https://s/r/@chief.alice.home/AbCdEfGhIjKlMnOpQrStUv', expiresAt: Date.now() + 600_000, server: true }, invites: [] }))
+  await row.byHook(row.draw(), 'room-invite-mint').props.onClick()
+  assert.match(row.text(row.draw(), 'room-invite-count'), /^(10:00|9:5\d) left to join$/)
+})
+
+test('#892: earlier links still work, so the row says how many and can withdraw them all', async () => {
+  const link = t => ({ ticket: t, handle: '@chief.alice.home', url: `https://s/r/@chief.alice.home/${t}`, expiresAt: null, server: true })
+  const newest = link('NewestAbCdEfGhIjKlMnOp')
+  let open = [link('OlderAAbCdEfGhIjKlMnOp'), link('OlderBAbCdEfGhIjKlMnOp'), newest]
+  const row = memberInviteRow(async (endpoint, payload) => {
+    if (endpoint === 'room-invite-mint') return { invite: newest }
+    if (endpoint === 'room-invite') return { invite: open.at(-1) ?? null, invites: open }
+    if (endpoint === 'room-invite-revoke') { open = payload.ticket ? open.filter(item => item.ticket !== payload.ticket) : []; return { revoked: true } }
+    return {}
+  })
+  await row.byHook(row.draw(), 'room-invite-mint').props.onClick()
+  let tree = row.draw()
+  const others = row.byHook(tree, 'room-invite-others')
+  assert.equal(others.children[0].children.join(''), '2 earlier links still work.')
+  assert.equal(row.text(tree, 'room-invite-revoke-all'), 'Withdraw all')
+  await row.byHook(tree, 'room-invite-revoke-all').props.onClick()
+  assert.deepEqual(plain(row.hostCalls.at(-1)), ['room-invite-revoke', { roomId: 'r1' }], 'no ticket: every unused link')
+  tree = row.draw()
+  assert.equal(row.byHook(tree, 'room-invite-others'), undefined)
+  assert.equal(row.byHook(tree, 'room-invite-qr'), undefined)
+  assert.equal(row.text(tree, 'room-invite-note'), 'Every unused link was withdrawn.')
+})
+
+test('#892: the dialog names both ways in: a number entered together, or a group invite link or its QR', () => {
+  const tree = localLinkDialog(async () => ({}), { link: '', status: null }).render()
+  const find = name => tree.find(n => n.props['data-flybot'] === name)
+  assert.equal(find('face-group').props['aria-label'], 'Join or create by number or link')
+  assert.equal(find('face-group-title').children.join(''), 'Join or create by number or link')
+  const about = find('face-join-about').children.join('')
+  assert.match(about, /same 6-digit number/)
+  assert.match(about, /paste a group invite link or scan its QR code/)
+  const input = tree.find(n => n.props.className === 'fs-link-input')
+  assert.equal(input.props.placeholder, 'Or paste a group invite link (https://…/r/…)')
+  assert.equal(input.props['aria-label'], 'Group invite link')
+})
+
+test('#892: the row and the dialog speak the host\'s language when it has a translator', async () => {
+  const { registered, walk, sandbox, entries, pluginOf } = loadSocialClient(async () => ({}))
+  sandbox.__flybot__.t = (text) => `zh:${text}`
+  sandbox.__flybot__.host = async () => ({})
+  let i = 0
+  const states = []
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F', useEffect() {}, useMemo: fn => fn(), useRef: value => ({ current: value }),
+    useState: (value) => { const at = i++; if (!(at in states)) states[at] = value; return [states[at], () => {}] },
+  }))
+  const tree = walk(plugin.LocalInviteRow({ room: { id: 'r1' } }))
+  assert.equal(tree.find(n => n.props.className === 'fs-label-inline').children.join(''), 'zh:Invite by link')
+  assert.equal(tree.find(n => n.props['data-flybot'] === 'room-invite-about').children.join(''), 'zh:Anyone you give the link to can join with their Bot, until you withdraw it. They do not become a friend.')
+  void entries; void pluginOf
 })
 
 test('#773: scanning a room invite link joins that room with its ticket', async () => {

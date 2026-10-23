@@ -206,13 +206,14 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         : outside.length + outsidePeople.length + outsideRemotes.length > 0
           ? h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(true) }, h(PlusIcon), t('Add member'))
           : null,
-      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here.
-      room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions }),
       h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
         // The host checks for two members on every change, even a rename.
         members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
           : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
-            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')))),
+            : t('No admin yet. An admin can call members with @Name, change the group, and post here.'))),
+      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after
+      // the note on who leads, so that note stays with the members it is about (#892).
+      room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions })),
     h(StandingApprovalsCard, { scope: 'room', target: room, roster, actions, run, Card }),
     h(Card, { title: t('Sidebar') },
       h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: room.pinned === true, onChange: pinned => run(actions.setFlags(room.id, { pinned })) }),

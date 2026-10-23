@@ -500,6 +500,8 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
 .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
 .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
+/* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
+.bt-flybot-room-members{padding:10px 12px}
 .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
 .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
 .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}

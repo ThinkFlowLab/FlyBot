@@ -11,7 +11,7 @@ import { reducedMotion } from './activity-row.js'
 import { Shimmer, workPhrase } from './cells.js'
 import { springEasing, SPRING_SHAPE } from './motion.js'
 import { hostText, t } from './i18n.js'
-import { friendBotTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
+import { friendBotTitle, roomTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
 import { showsDshRow } from './dsh-offer.js'
 import { InboxRow } from './inbox.js'
 
@@ -161,22 +161,25 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null
   if (room.hidden && !active) return null
   const pinned = room.pinned === true
-  const title = room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name)
+  const title = roomTitle(room)
+  // A room a link opened is named by its owner's name for it; who shared it is the secondary text (#892).
+  const from = room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : ''
+  const hover = from && from !== title ? `${title} · ${from}` : title
   const waiting = approval || (room.pendingCount ?? 0) > 0
   const alert = question || waiting
   const face = room.origin === 'face-to-face'
-  const label = [title, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : ''].filter(Boolean).join(', ')
+  const label = [hover, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : ''].filter(Boolean).join(', ')
   return h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
     // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
-    title,
+    title: hover,
     'data-room-id': id, onClick: () => actions.openSession(id),
     onContextMenu: (event) => { event.preventDefault(); actions.openMenu({ kind: 'room', id, x: event.clientX, y: event.clientY }) },
   },
   h(RoomAvatar, { room, roster, size: 36 }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag' }, t('Shared')) : null, pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag', title: from }, t('Shared')) : null, pinned ? h(PinMark) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   wide && alert && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)

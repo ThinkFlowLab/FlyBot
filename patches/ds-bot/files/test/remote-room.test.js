@@ -1272,7 +1272,7 @@ test('#825: an answer held for approval shows up as one line in the room, not as
   assert.ok(room.log.some(line => line.kind === 'notice' && /held for approval/.test(line.text || '')), 'the room says so once')
 })
 
-test('#852, #878: a room’s links — ten minutes each, several live at once, withdrawn one by one, gone with the room', async (t) => {
+test('#852, #878, #892: a room’s links — no deadline, several live at once, withdrawn one by one, gone with the room', async (t) => {
   const { rt } = host(t, TEAM)
   await rt.load()
   const { alice } = await signAliceAndBob(rt)
@@ -1286,8 +1286,14 @@ test('#852, #878: a room’s links — ten minutes each, several live at once, w
   // The link answers "who do I knock on" by naming the inviter Bot in its own path segment.
   assert.deepEqual(parseRoomInviteLink(first.url), { kind: 'local', handle: '@chief.a.home', ticket: first.ticket })
   assert.equal(roomInviteUrl('@chief.a.home', first.ticket, 'https://social.botawaken.com/'), first.url, 'one builder, no trailing slash')
-  const window = first.expiresAt - Date.now()
-  assert.ok(window > 9 * 60 * 1000 && window <= 10 * 60 * 1000, `ten minutes, the face-room window (got ${window} ms)`)
+  // No deadline (owner decision, 2026-10-24): the link works until it is withdrawn.
+  assert.equal(first.expiresAt, null, 'a link has no deadline')
+  assert.equal('expiresAt' in rt.state.rooms.war.localInvites[0], false, 'the record keeps none either')
+  const realNow = Date.now
+  Date.now = () => realNow() + 30 * 24 * 3600_000
+  try {
+    assert.equal(rt.roomOfLocalInvite(first.ticket).id, 'war', 'a month later the link still opens its room')
+  } finally { Date.now = realNow }
   assert.equal(rt.roomOfLocalInvite(first.ticket).id, 'war')
 
   // #878: one link per person invited, so several are live at once; the card shows the newest.
@@ -1298,7 +1304,8 @@ test('#852, #878: a room’s links — ten minutes each, several live at once, w
   assert.deepEqual(rt.localInvitesOf('war').map(i => i.ticket), [first.ticket, second.ticket])
   assert.equal(rt.localInviteOf('war').ticket, second.ticket, 'the newest is the one to show')
 
-  // Ten minutes is the whole life: past the deadline the room offers no preview, and a fresh mint works.
+  // A link that was minted with a deadline (an older Bot Social, or one minted before the change) keeps
+  // it: past it the room offers no preview, and a fresh mint works.
   for (const item of rt.state.rooms.war.localInvites) item.expiresAt = Date.now() - 1
   assert.equal(rt.localInviteOf('war'), undefined, 'an expired ticket offers nothing')
   assert.equal(rt.roomOfLocalInvite(second.ticket), undefined, 'an expired ticket resolves no room, so accept cannot open one')
@@ -1428,15 +1435,15 @@ test('#852: the knock asks the room record, and only the accept admits one home'
   assert.equal(answered[0].ticket, invite.ticket)
   assert.equal(answered[0].roomId, 'war')
   assert.equal(answered[0].name, 'War room')
-  assert.ok(answered[0].expiresAt > Date.now(), 'the offer carries the deadline the inviter clock set')
+  assert.equal(answered[0].expiresAt, undefined, 'a link with no deadline offers none')
   assert.equal(Object.keys(rt.state.rooms).length, roomsBefore, 'a knock creates no room on either side')
   assert.equal(seats().length, 0, 'a knock adds nobody')
-  assert.equal(rt.state.rooms.war.localInvites[0].acceptedBy, undefined, 'the offer does not consume the ticket')
+  assert.equal(rt.state.rooms.war.localInvites[0].homes, undefined, 'the offer seats nobody')
 
   // The accept: consume, seat once, and the join goes back; the same home retrying adds no second seat.
   const accepted = await knock({ op: 'ask', ticket: invite.ticket, accept: true })
   assert.equal(accepted.accepted, true)
-  assert.equal(rt.state.rooms.war.localInvites[0].acceptedBy, '@coder.bob.home')
+  assert.deepEqual(rt.state.rooms.war.localInvites[0].homes, { '@coder.bob.home': ['@coder.bob.home'] })
   assert.equal(seats().length, 1, 'the accept seats the asker once')
   assert.equal(seats()[0].handle, '@coder.bob.home')
   const joins = () => sent.filter(m => m.text.includes('"op":"join"'))
@@ -1446,10 +1453,13 @@ test('#852: the knock asks the room record, and only the accept admits one home'
   assert.equal(seats().length, 1, 'no second seat')
   assert.ok(joins().length > before, 'the lost join reply is sent again')
 
-  // Another home cannot take the seat the ticket already gave one home.
+  // #892: a link admits anyone it is given to, so another home is not refused for the link's sake; on this
+  // friend-only path the room still decides who it can seat (Eve is nobody's friend here).
   const other = await knock({ op: 'ask', ticket: invite.ticket, accept: true }, '@coder.eve.home', '@eve.home')
-  assert.equal(other.refused, 'consumed')
+  assert.notEqual(other.refused, 'consumed', 'the link is not spent on the first home')
+  assert.equal(other.refused, 'not-addable')
   assert.equal(seats().length, 1, 'the refused home seats nobody')
+  assert.equal(rt.localInviteOf('war').ticket, invite.ticket, 'the link stays open after someone joined')
 
   // Unknown, expired and sender-less knocks change nothing and say why.
   assert.equal((await knock({ op: 'ask', ticket: 'A'.repeat(22) })).refused, 'unknown')
@@ -1463,6 +1473,6 @@ test('#852: the knock asks the room record, and only the accept admits one home'
   const fresh = await rt.mintRoomInvite('war')
   const refusedAdd = await knock({ op: 'ask', ticket: fresh.ticket, accept: true }, '@stranger.eve.home', '@eve.home')
   assert.equal(refusedAdd.refused, 'not-addable', 'a Bot the room cannot seat is refused')
-  assert.equal(rt.state.rooms.war.localInvites.find(i => i.ticket === fresh.ticket).acceptedBy, undefined, 'the refused add left the ticket unconsumed')
+  assert.deepEqual(rt.state.rooms.war.localInvites.find(i => i.ticket === fresh.ticket).homes, {}, 'the refused add left no home on the link')
   assert.equal(seats().length, 1, 'and seated nobody')
 })

@@ -204,7 +204,8 @@ test('a face-room sidebar row stays on one line and shows its full title on hove
   const mark = sidebar.slice(sidebar.indexOf('function FaceMark('), sidebar.indexOf('\n}\n', sidebar.indexOf('function FaceMark(')))
   assert.match(mark, /className: 'bt-row-remote bt-row-face'/)
   const row = sidebar.slice(sidebar.indexOf('function RoomRow('), sidebar.indexOf('function AgentSessionRow('))
-  assert.match(row, /'aria-current': active \? 'page' : undefined,\n(\s*\/\/[^\n]*\n)?\s*title,\n/)
+  // #892: the hover is the title, plus who shared it for a shared room.
+  assert.match(row, /'aria-current': active \? 'page' : undefined,\n(\s*\/\/[^\n]*\n)?\s*title: hover,\n/)
   // No sidebar row wraps its title (#384 dropped the friend's Bot two-line clamp too).
   assert.equal(styles.split('\n').some(line => line.includes('-webkit-line-clamp:2') && line.includes('.bt-row-')), false)
   assert.match(styles, /\.bt-row-title\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)

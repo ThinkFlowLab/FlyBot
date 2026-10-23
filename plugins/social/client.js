@@ -243,6 +243,10 @@ window.__ModuleLoader__.load({
 
 .fs-invite{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 0 2px}
 .fs-invite-head{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.bt-flybot-room-members .fs-invite{gap:6px;padding:0}
+.bt-flybot-room-members .fs-invite-head{min-height:26px}
+.bt-flybot-room-members .fs-invite .fs-hint{padding:0}
+.fs-invite-others{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .fs-label-inline{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-invite-live{display:flex;flex-direction:column;align-items:center;gap:4px}
 .fs-invite-link{display:flex;align-items:center;gap:8px;max-width:100%}
@@ -885,6 +889,20 @@ window.__ModuleLoader__.load({
     // face-room invite. Same regex as the host's parseInviteLink; the sentence is shown here too.
     const localInviteHandle = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/(@[A-Za-z0-9._-]{1,120})\/[A-Za-z0-9_-]{16,64}\/?(?:[?#].*)?$/i)?.[1] ?? ''
     // A core endpoint by its own name (#876): the local room's link lives in the host, not in this plugin.
+    // The interface's translator (#892): core's dictionary carries this plugin's Members-card and dialog copy,
+    // so a zh UI reads it in Chinese. An older host has none: the English stands, with {params} filled in.
+    // #892: the entry, the dialog's title and its copy name both ways in (core's dictionary has the zh).
+    const JOIN_OR_CREATE = 'Join or create by number or link'
+    const JOIN_OR_CREATE_HINT = 'Enter a number, or paste a group invite link'
+    const JOIN_OR_CREATE_ABOUT = 'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.'
+    const LINK_PLACEHOLDER = 'Or paste a group invite link (https://…/r/…)'
+    const tr = (text, params) => {
+      const fn = globalThis.__flybot__?.t
+      if (typeof fn === 'function') {
+        try { return fn(text, params) } catch { /* fall through to the English */ }
+      }
+      return String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
+    }
     const host = (endpoint, payload) => {
       const fn = globalThis.__flybot__?.host
       if (typeof fn !== 'function') return Promise.reject(Object.assign(new Error('This FlyBot cannot make room links yet.'), { code: 'bot/not-found' }))
@@ -896,12 +914,13 @@ window.__ModuleLoader__.load({
     const LOCAL_REFUSAL_COPY = {
       expired: 'That link has expired. Ask for a new one.',
       revoked: 'That link was withdrawn. Ask for a new one.',
-      'claimed-elsewhere': 'Someone else already joined with that link. Ask for one of your own.',
+      // A link admits anyone it is given to (#892): this refusal is about this home's own earlier claim.
+      'claimed-elsewhere': 'You already joined with that link using other Bots. Leave the group first to join with different ones.',
       'own-invite': 'That link is for this FlyBot\u2019s own room.',
       busy: 'Too many tries for now. Wait a minute and try again.',
       unknown: 'That link does not open any room. Check that it was copied whole.',
       'lookup-failed': 'Bot Social could not look up that link right now. Try again.',
-      consumed: 'Someone else already joined with that link. Ask for one of your own.',
+      consumed: 'That link cannot seat these Bots. Ask for a new one.',
       'not-addable': 'That room cannot take guests right now.',
       'no-sender': 'This FlyBot has no Bot Social identity yet.',
     }
@@ -1052,16 +1071,30 @@ window.__ModuleLoader__.load({
       useStyles()
       const roomId = room?.id
       const [invite, setInvite] = useState(null)
+      const [others, setOthers] = useState(0)
       const [note, setNote] = useState(null)
       const [busy, setBusy] = useState(false)
       const [copied, setCopied] = useState(false)
       const [, setTick] = useState(0)
+      // The newest open link is the one shown; the others still work until withdrawn (no deadline).
+      const openOf = value => (Array.isArray(value?.invites) ? value.invites.filter(item => item?.url) : [])
+      const take = (value) => {
+        const shown = value?.invite?.url ? value.invite : null
+        setInvite(shown)
+        setOthers(openOf(value).filter(item => item.ticket !== shown?.ticket).length)
+      }
+      // How many open links there are besides the one on screen (none shown: all of them).
+      const recount = async (shownTicket) => {
+        const value = await host('room-invite', { roomId })
+        setOthers(openOf(value).filter(item => item.ticket !== shownTicket).length)
+      }
       useEffect(() => {
         if (!roomId) return undefined
         let gone = false
-        host('room-invite', { roomId }).then(value => { if (!gone && value?.invite?.url) setInvite(value.invite) }, () => {})
+        host('room-invite', { roomId }).then(value => { if (!gone) take(value) }, () => {})
         return () => { gone = true }
       }, [roomId])
+      // Only a link an older Bot Social still dates counts down.
       useEffect(() => (invite?.expiresAt ? everySecond(() => setTick(n => n + 1)) : undefined), [invite?.expiresAt])
       if (!roomId) return null
       const run = async (fn) => {
@@ -1071,13 +1104,24 @@ window.__ModuleLoader__.load({
       }
       const mint = () => run(async () => {
         const value = await host('room-invite-mint', { roomId })
-        if (value?.invite?.url) setInvite(value.invite)
-        else setNote({ tone: 'error', text: 'No link came back. Try again.' })
+        if (!value?.invite?.url) {
+          setNote({ tone: 'error', text: tr('No link came back. Try again.') })
+          return
+        }
+        setInvite(value.invite)
+        await recount(value.invite.ticket).catch(() => {})
       })
       const revoke = () => run(async () => {
         await host('room-invite-revoke', { roomId, ticket: invite?.ticket })
         setInvite(null)
-        setNote({ tone: 'hint', text: 'The link was withdrawn. Nobody can join with it now.' })
+        await recount(undefined).catch(() => {})
+        setNote({ tone: 'hint', text: tr('The link was withdrawn. Nobody can join with it now.') })
+      })
+      const revokeAll = () => run(async () => {
+        await host('room-invite-revoke', { roomId })
+        setInvite(null)
+        setOthers(0)
+        setNote({ tone: 'hint', text: tr('Every unused link was withdrawn.') })
       })
       const copy = async () => {
         const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
@@ -1087,29 +1131,41 @@ window.__ModuleLoader__.load({
           setTimeout(() => setCopied(false), 1500)
         } catch { /* clipboard denied: the link is on screen to select */ }
       }
-      const at = isoAt(invite?.expiresAt)
+      // No deadline: the QR shows as long as the link is open ('open'); a dated link stops at its date.
+      const dated = Boolean(invite?.expiresAt)
+      const at = dated ? isoAt(invite.expiresAt) : 'open'
       const live = Boolean(invite?.url) && qrJoinable(at, Date.now())
+      const left = dated ? Math.max(0, Date.parse(at) - Date.now()) : 0
+      const leftText = `${Math.floor(Math.ceil(left / 1000) / 60)}:${String(Math.ceil(left / 1000) % 60).padStart(2, '0')}`
       return h('div', { className: 'fs-invite', 'data-flybot': 'room-invite' },
         h('div', { className: 'fs-invite-head' },
-          h('span', { className: 'fs-label-inline' }, 'Invite by link'),
-          invite?.url && !live ? h('span', { className: 'fs-hint', 'data-flybot': 'room-invite-ended' }, 'This link has expired.') : null,
+          h('span', { className: 'fs-label-inline' }, tr('Invite by link')),
           h('button', {
             type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'room-invite-mint', disabled: busy, onClick: mint,
-          }, live ? 'New link' : 'Create link')),
+          }, live ? tr('New link') : tr('Create link'))),
+        invite?.url && !live ? h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-ended' }, tr('This link has expired.')) : null,
         live ? null : h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-about' },
-          'Anyone you give the link to can join with their Bot, for 10 minutes. They do not become a friend.'),
+          tr('Anyone you give the link to can join with their Bot, until you withdraw it. They do not become a friend.')),
         note ? h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-note', 'data-tone': note.tone, role: 'status' }, note.text) : null,
         live
           ? h('div', { className: 'fs-invite-live', 'data-flybot': 'room-invite-live' },
             h(QrImage, {
               text: invite.url, kind: 'room-invite-qr', at, attrs: { 'data-url': invite.url },
-              label: 'QR code for this group invite', hint: 'Scan with FlyBot to join this group',
+              label: tr('QR code for this group invite'), hint: tr('Scan with FlyBot to join this group'),
             }),
             h('div', { className: 'fs-invite-link' },
               h('code', { className: 'fs-invite-url', 'data-flybot': 'room-invite-url' }, invite.url),
-              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-copy', onClick: copy }, copied ? 'Copied' : 'Copy link')),
-            h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-count' }, countdown(at)),
-            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke', disabled: busy, onClick: revoke }, 'Withdraw link'))
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-copy', onClick: copy }, copied ? tr('Copied') : tr('Copy link'))),
+            h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-count' }, dated
+              ? tr('{time} left to join', { time: leftText })
+              : tr('Works until you withdraw it.')),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke', disabled: busy, onClick: revoke }, tr('Withdraw link')))
+          : null,
+        // Earlier links have no deadline either: say they still work, and let the owner end them all.
+        others > 0
+          ? h('div', { className: 'fs-invite-others', 'data-flybot': 'room-invite-others' },
+            h('span', { className: 'fs-hint' }, others === 1 ? tr('1 earlier link still works.') : tr('{count} earlier links still work.', { count: others })),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke-all', disabled: busy, onClick: revokeAll }, tr('Withdraw all')))
           : null)
     }
     function FaceWaitCode({ code, qrAt, qrOffsetMs } = {}) {
@@ -1515,7 +1571,8 @@ window.__ModuleLoader__.load({
         }
         const card = invitePreview({ name: seen?.name, lead: seen?.owner ? `${seen.lead || 'Bot'} (${seen.owner})` : seen?.lead, expiresAt: isoAt(seen?.expiresAt) })
         if (seen?.claimed) {
-          setInvite({ link: text, status: { tone: 'error', text: localRefusal('claimed-elsewhere') } })
+          // `claimed` is this home's own claim: it already joined (#892), so say that rather than refuse.
+          setInvite({ link: text, status: { tone: 'hint', text: 'You already joined this group with that link. It is in your sidebar.' } })
           return
         }
         if (!card) {
@@ -1581,13 +1638,13 @@ window.__ModuleLoader__.load({
       const digitsTyped = String(code).replace(/\D/g, '').length === 6
       const nobody = step === 'nobody' ? faceWaitCode(room, code) : ''
       return h('div', {
-        className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': 'Face-to-face room',
+        className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': tr(JOIN_OR_CREATE),
         onClick: event => { if (event?.target === event?.currentTarget) dismiss() },
       },
         h('div', { className: 'fs-dialog' },
           h('div', { className: 'fs-dialog-head' },
-            h('div', { className: 'fs-name' }, 'Face-to-face room'),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: dismiss }, 'Close')),
+            h('div', { className: 'fs-name', 'data-flybot': 'face-group-title' }, tr(JOIN_OR_CREATE)),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: dismiss }, tr('Close'))),
           step === 'nobody' ? h('div', { className: 'fs-wait', 'data-flybot': 'face-nobody', role: 'status' },
             h('div', { className: 'fs-name' }, `Nobody is using ${nobody} yet.`),
             h('div', { className: 'fs-hint' }, 'Check the number with the people you are meeting, or start a room with it and wait for them.'),
@@ -1622,7 +1679,7 @@ window.__ModuleLoader__.load({
                   disabled: !!busy || !room.roomId, onClick: enter,
                 }, 'Enter chat'),
               }))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
-            h('div', { className: 'fs-hint' }, 'Pick your Bots and enter the same 6-digit number as everyone nearby.'),
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-join-about' }, tr(JOIN_OR_CREATE_ABOUT)),
             h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
               bots.map(bot => h(FaceTile, {
                 key: bot.id,
@@ -1634,48 +1691,48 @@ window.__ModuleLoader__.load({
               }))),
             bots.length === 0 ? h('div', { className: 'fs-hint' }, 'Loading your Bots…') : null,
             h('div', { className: 'fs-hint', 'data-flybot': 'face-join-room' },
-              'Room-only: friends do not see these Bots unless you invite them.'),
+              tr('Room-only: friends do not see these Bots unless you invite them.')),
             h('div', { className: 'fs-line' },
               h('input', {
                 className: 'fs-digits', value: code, inputMode: 'numeric', autoComplete: 'off', maxLength: 6,
-                placeholder: '6 digits', 'aria-label': '6-digit room number',
+                placeholder: tr('6 digits'), 'aria-label': tr('6-digit room number'),
                 onChange: e => setCode(String(e.target.value).replace(/\D/g, '').slice(0, 6)),
               }),
               h('button', {
                 type: 'submit', className: 'fs-btn',
                 // Enabled once a Bot is picked and all 6 digits are in (#458); the tooltip says what is missing.
                 disabled: busy || !selected.length || !digitsTyped,
-                title: !selected.length ? 'Pick a Bot first.' : digitsTyped ? undefined : 'Enter all 6 digits.',
-              }, 'Join')),
+                title: !selected.length ? tr('Pick a Bot first.') : digitsTyped ? undefined : tr('Enter all 6 digits.'),
+              }, tr('Join'))),
             h('div', { className: 'fs-link-row', 'data-flybot': 'face-link-join' },
               h('input', {
                 className: 'fs-link-input', value: invite.link, type: 'url', autoComplete: 'off', spellCheck: false,
-                placeholder: 'Invite link (https://…/r/…)', 'aria-label': 'Invite link',
+                placeholder: tr(LINK_PLACEHOLDER), 'aria-label': tr('Group invite link'),
                 onChange: e => setInvite({ link: String(e.target.value), status: null }),
               }),
               h('button', {
                 type: 'button', className: 'fs-btn', 'data-flybot': 'face-link-join-go', disabled: !!busy,
                 onClick: () => previewLink(),
-              }, 'Join with link'),
+              }, tr('Join with link')),
               invite.status ? h('div', {
                 className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-link-status', 'data-tone': invite.status.tone, role: 'status',
               }, invite.status.text) : null),
             preview ? h(InvitePreviewCard, {
               preview, busy, kind: 'face-link-preview',
               onClear: clearInvite,
-              joinLabel: preview.local ? 'Join group' : 'Join',
+              joinLabel: preview.local ? tr('Join group') : tr('Join'),
               onJoin: () => (preview.local ? joinLocal(preview.link) : joinTicket(preview.link ?? invite.link, preview.ticket)),
             }) : null,
             h('div', { className: 'fs-scan-row' },
               h('button', {
                 type: 'button', className: 'fs-btn', 'data-flybot': 'face-scan', disabled: !!busy,
                 onClick: beginScan,
-              }, 'Scan a code'),
+              }, tr('Scan a code')),
               scan ? h('div', {
                 className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-scan-status',
                 'data-tone': scan.tone, role: 'status',
               }, scan.text) : null),
-            !selected.length && bots.length ? h('div', { className: 'fs-hint', 'data-flybot': 'face-join-pick' }, 'Pick a Bot first.') : null,
+            !selected.length && bots.length ? h('div', { className: 'fs-hint', 'data-flybot': 'face-join-pick' }, tr('Pick a Bot first.')) : null,
             failures.length ? h('div', { className: 'fs-status fs-fail', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
               failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
             status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone }, status.text) : null)))
@@ -3298,8 +3355,9 @@ window.__ModuleLoader__.load({
             slots().register('flybot.new-chat.action', {
               id: 'social-face-group',
               order: 15,
-              label: 'Face-to-face room',
-              hint: 'Meet people nearby with a 6-digit number',
+              // #892: one entry for both ways in: a number entered together, or a group's invite link or QR.
+              label: JOIN_OR_CREATE,
+              hint: JOIN_OR_CREATE_HINT,
               icon: NearbyIcon,
               run: ({ close } = {}) => { openFaceToFace(); close?.() },
             }),

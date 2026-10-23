@@ -1124,7 +1124,9 @@ export function install(rt) {
       // #884: Bot Social's record of a local room's invite tickets. `impl` is
       // { identify(botIds) (give those local Bots a Bot Social identity if they have none),
       //   mint({ roomId, name, handle }) → { ticket, expiresAt } | undefined (no server support),
-      //   preview(ticket), claim(ticket, handles), verify(ticket) → { roomId, claimer }, revoke(ticket) };
+      //   preview(ticket), claim(ticket, handles), verify(ticket) → { roomId, claimer, claimers? },
+      //   revoke(ticket, { endClaims? }) (withdraw: no new joins; endClaims also ends every seat's reach),
+      //   endClaim?(ticket, handle) (end one home's claim: the owner removed that guest) };
       // a refusal throws an Error whose `code` is Bot Social's. Returns the unregister function.
       serveInvites(impl) {
         if (!impl || typeof impl !== 'object') { rt.roomInviteServer = undefined; return () => {} }

@@ -1,7 +1,7 @@
 // The Session's page effects (#803) live here rather than in header.js so they carry no
 // React: they are installed once from `apply` and only follow two plain sources.
 import { t } from './i18n.js'
-import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
 import { holdComposerLabel } from './composer-label.js'
 
 // The pill's effects belong to the *Session being looked at*, not to the pill being
@@ -42,7 +42,7 @@ export function installHeaderEffects({ sessions, roster, actions, doc = globalTh
     const room = sessionId === undefined ? undefined : state?.roomsById?.[sessionId]
     const name = bot?.remote
       ? friendBotTitle(bot)
-      : (room?.displayName || (room?.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room?.name) || bot?.name || '')
+      : (roomTitle(room) || bot?.name || '')
     // A friend's Bot runs on its owner's home, so the local run stats are relay turns
     // (always 0): CSS hides the shell's stats footer in that chat (#419).
     run('friend-chat', `${sessionId}|${bot?.remote === true}`, () => {

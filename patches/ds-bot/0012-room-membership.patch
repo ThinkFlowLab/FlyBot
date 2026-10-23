@@ -74,7 +74,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  import { Segmented, useGlide, useMorph } from './motion.js'
  import { MemberWork, useMemberWork } from './member-status.js'
  import { t } from './i18n.js'
-+import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
++import { remoteBotTitle, roomTitle } from '../shared/remote-label.js'
 +import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 +import { call } from './api.js'
  
@@ -138,7 +138,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
    const members = room.members.map(id => roster.byId[id]).filter(Boolean)
    const { entries, now } = useMemberWork(room, useWork)
 +  const invited = room.viewerRole === 'invited-owner'
-+  const title = room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name)
++  const title = roomTitle(room)
 +  const leaveMine = () => {
 +    const mine = remotes.find(p => p.ownerId === roster.self?.memberId)
 +      || members.find(member => member.ownerId === roster.self?.memberId)
@@ -403,7 +403,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    const mode = shownMode(room, roster)
    const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
-@@ -65,37 +65,66 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+@@ -65,37 +65,67 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
        h('div', { className: 'bt-set-row bt-bs-row' },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
@@ -460,13 +460,15 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +        : outside.length + outsidePeople.length + outsideRemotes.length > 0
            ? h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(true) }, h(PlusIcon), t('Add member'))
            : null,
-+      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here.
-+      room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions }),
        h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
          // The host checks for two members on every change, even a rename.
          members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
            : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
-             : t('No admin yet. An admin can call members with @Name, change the group, and post here.')))),
+-            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')))),
++            : t('No admin yet. An admin can call members with @Name, change the group, and post here.'))),
++      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after
++      // the note on who leads, so that note stays with the members it is about (#892).
++      room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions })),
 +    h(StandingApprovalsCard, { scope: 'room', target: room, roster, actions, run, Card }),
      h(Card, { title: t('Sidebar') },
        h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: room.pinned === true, onChange: pinned => run(actions.setFlags(room.id, { pinned })) }),
@@ -510,7 +512,7 @@ diff --git a/src/client/header.js b/src/client/header.js
  import { ActivityIndicator } from './activity-row.js'
 -import { clockLabel, openingTurn, unseenSince } from './cells.js'
  import { t } from './i18n.js'
-+import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
++import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
  
  // -------------------------------------------------------------------------
  // Conversation header
@@ -533,7 +535,7 @@ diff --git a/src/client/header.js b/src/client/header.js
 -  const name = bot?.name ?? room?.name ?? ''
 +  const name = bot?.remote
 +    ? friendBotTitle(bot)
-+    : (room?.displayName || (room?.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room?.name) || bot?.name || '')
++    : (roomTitle(room) || bot?.name || '')
    const useNews = useMemoryNews ?? noNews
    const memoryIds = bot ? [bot.id] : room?.members ?? []
    const notice = useMemoryNotice(memoryIds, useNews)

@@ -6,7 +6,7 @@ import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { ActivityIndicator } from './activity-row.js'
 import { t } from './i18n.js'
-import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
 
 // -------------------------------------------------------------------------
 // Conversation header
@@ -72,7 +72,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const detailsOpen = useUi(state => state.details === sessionId)
   const name = bot?.remote
     ? friendBotTitle(bot)
-    : (room?.displayName || (room?.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room?.name) || bot?.name || '')
+    : (roomTitle(room) || bot?.name || '')
   const useNews = useMemoryNews ?? noNews
   const memoryIds = bot ? [bot.id] : room?.members ?? []
   const notice = useMemoryNotice(memoryIds, useNews)

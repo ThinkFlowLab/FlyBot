@@ -155,6 +155,16 @@ export function sharedRoomTitle(inviterName) {
   return `Shared room from ${cleanPeerName(inviterName, 'a friend')}`
 }
 
+// What a room is called in the sidebar, the header and the details drawer. A room a link opened
+// (#884) keeps the name its owner gave it, and who shared it is secondary text (#892); a friend's
+// shared room, or a link room with no name, says who shared it.
+export function roomTitle(room) {
+  if (!room) return ''
+  const name = cleanPeerName(room.name, '')
+  if (room.sharedFrom?.ticket && name) return name
+  return room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name) || ''
+}
+
 // Same name from two owners: keep the owner in the label (remoteBotTitle already does).
 export function disambiguatedRemoteTitle(record, others = []) {
   const title = remoteBotTitle(record)

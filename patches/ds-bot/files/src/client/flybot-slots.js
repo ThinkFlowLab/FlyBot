@@ -54,6 +54,9 @@ export function registry() {
   globalThis.__flybot__.call ??= call
   // A core endpoint by its own name (`room-invite-mint`), for a plugin row in a core card (#876).
   globalThis.__flybot__.host ??= callHost
+  // The interface's translator, for plugin copy that core's dictionary carries (#892: Invite by link,
+  // the Join-or-create dialog), so a zh UI reads it in Chinese.
+  globalThis.__flybot__.t ??= t
   // Classic-script plugins cannot import mark.js; they render the same Bot look
   // the sidebar / session list / chat header use via these host components.
   globalThis.__flybot__.BotMark ??= BotMark

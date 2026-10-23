@@ -3649,7 +3649,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       preview: ticket => faceApi.localInvites.preview(ticket),
       claim: (ticket, handles) => faceApi.localInvites.claim(ticket, handles),
       verify: ticket => faceApi.localInvites.preview(ticket),
-      revoke: ticket => faceApi.localInvites.revoke(ticket),
+      revoke: (ticket, opts) => faceApi.localInvites.revoke(ticket, opts),
+      endClaim: (ticket, home) => faceApi.localInvites.endClaim(ticket, home),
     }))
   }
 

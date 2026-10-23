@@ -14,7 +14,7 @@ import { ScheduleSummary } from './schedules.js'
 import { Segmented, useGlide, useMorph } from './motion.js'
 import { MemberWork, useMemberWork } from './member-status.js'
 import { t } from './i18n.js'
-import { remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { remoteBotTitle, roomTitle } from '../shared/remote-label.js'
 import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 import { call } from './api.js'
 
@@ -170,7 +170,7 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
   const members = room.members.map(id => roster.byId[id]).filter(Boolean)
   const { entries, now } = useMemberWork(room, useWork)
   const invited = room.viewerRole === 'invited-owner'
-  const title = room.displayName || (room.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room.name)
+  const title = roomTitle(room)
   const leaveMine = () => {
     const mine = remotes.find(p => p.ownerId === roster.self?.memberId)
       || members.find(member => member.ownerId === roster.self?.memberId)

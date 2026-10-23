@@ -55,6 +55,39 @@ var ZH = {
   "Chat with several of your Bots": "和你的几个 Bot 一起聊",
   "Face-to-face room": "面对面房间",
   "Meet people nearby with a 6-digit number": "用同一组 6 位数字和身边的人见面",
+  // #892: one entry for both ways in, a number entered together or a group's invite link, and its dialog.
+  "Join or create by number or link": "面对面建群或用链接加入",
+  "Enter a number, or paste a group invite link": "输入数字面对面建群，或粘贴邀请链接加入",
+  "Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.": "选好你的 Bot。和身边的人输入同一组 6 位数字一起建群，或粘贴群邀请链接、扫描二维码加入那个群。",
+  "Or paste a group invite link (https://…/r/…)": "或粘贴群邀请链接（https://…/r/…）",
+  "Group invite link": "群邀请链接",
+  "Room-only: friends do not see these Bots unless you invite them.": "仅限这个房间：除非你邀请，好友看不到这些 Bot。",
+  "6 digits": "6 位数字",
+  "6-digit room number": "6 位房间号",
+  "Pick a Bot first.": "请先选一个 Bot。",
+  "Enter all 6 digits.": "请输入完整的 6 位数字。",
+  "Join with link": "用链接加入",
+  "Scan a code": "扫码",
+  "Join group": "加入群",
+  Join: "加入",
+  // #876 / #892: Invite by link, at the foot of a group's Members card. A link has no deadline.
+  "Invite by link": "用链接邀请",
+  "Create link": "创建链接",
+  "New link": "新链接",
+  "Anyone you give the link to can join with their Bot, until you withdraw it. They do not become a friend.": "拿到链接的人可以带着自己的 Bot 加入，直到你撤回链接。他们不会成为你的好友。",
+  "No link came back. Try again.": "没有拿到链接，请重试。",
+  "The link was withdrawn. Nobody can join with it now.": "链接已撤回，现在没人能用它加入。",
+  "Every unused link was withdrawn.": "所有还没用过的链接都已撤回。",
+  "This link has expired.": "这个链接已过期。",
+  "QR code for this group invite": "这个群邀请的二维码",
+  "Scan with FlyBot to join this group": "用 FlyBot 扫码加入这个群",
+  "Copy link": "复制链接",
+  "{time} left to join": "还剩 {time} 可加入",
+  "Works until you withdraw it.": "在你撤回之前一直有效。",
+  "Withdraw link": "撤回链接",
+  "1 earlier link still works.": "还有 1 个之前的链接仍然有效。",
+  "{count} earlier links still work.": "还有 {count} 个之前的链接仍然有效。",
+  "Withdraw all": "全部撤回",
   "Paste an invite link or code": "粘贴邀请链接或邀请码",
   "A coding session without a Bot": "不带 Bot 的编码会话",
   "New Bot “{name}”": "新建 Bot「{name}」",
@@ -1504,6 +1537,12 @@ function friendBotOwner(bot) {
 function sharedRoomTitle(inviterName) {
   return `Shared room from ${cleanPeerName(inviterName, "a friend")}`;
 }
+function roomTitle(room2) {
+  if (!room2) return "";
+  const name = cleanPeerName(room2.name, "");
+  if (room2.sharedFrom?.ticket && name) return name;
+  return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
+}
 function disambiguatedRemoteTitle(record, others = []) {
   const title = remoteBotTitle(record);
   const name = cleanPeerName(record?.displayName || record?.name);
@@ -2262,6 +2301,7 @@ function registry2() {
   const slots = registry();
   globalThis.__flybot__.call ??= call2;
   globalThis.__flybot__.host ??= call;
+  globalThis.__flybot__.t ??= t;
   globalThis.__flybot__.BotMark ??= BotMark;
   globalThis.__flybot__.BotAvatar ??= BotAvatar;
   globalThis.__flybot__.lookOf ??= lookOf;
@@ -3702,6 +3742,8 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
 .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
 .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
+/* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
+.bt-flybot-room-members{padding:10px 12px}
 .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
 .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
 .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
@@ -4384,7 +4426,7 @@ function sessionTabLabel(roster, sessionId) {
     return friendBotTitle(bot);
   }
   if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
-  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
+  if (room2) return roomTitle(room2);
   return bot?.name || "";
 }
 function installTabTitle(sessions, roster, doc = globalThis.document) {
@@ -7514,11 +7556,13 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
   const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null;
   if (room2.hidden && !active) return null;
   const pinned = room2.pinned === true;
-  const title = room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name);
+  const title = roomTitle(room2);
+  const from = room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : "";
+  const hover = from && from !== title ? `${title} · ${from}` : title;
   const waiting = approval || (room2.pendingCount ?? 0) > 0;
   const alert = question || waiting;
   const face = room2.origin === "face-to-face";
-  const label = [title, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : ""].filter(Boolean).join(", ");
+  const label = [hover, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : ""].filter(Boolean).join(", ");
   return (0, import_react13.createElement)(
     "button",
     {
@@ -7527,7 +7571,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
       // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
-      title,
+      title: hover,
       "data-room-id": id,
       onClick: () => actions.openSession(id),
       onContextMenu: (event) => {
@@ -7540,7 +7584,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
     wide ? (0, import_react13.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react13.createElement)("span", { className: "bt-row-name" }, (0, import_react13.createElement)("span", { className: "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react13.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react13.createElement)("span", { className: "bt-tag" }, t("Shared")) : null, pinned ? (0, import_react13.createElement)(PinMark) : null),
+      (0, import_react13.createElement)("span", { className: "bt-row-name" }, (0, import_react13.createElement)("span", { className: "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react13.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react13.createElement)("span", { className: "bt-tag", title: from }, t("Shared")) : null, pinned ? (0, import_react13.createElement)(PinMark) : null),
       workingLine ? (0, import_react13.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react13.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && alert && !active ? (0, import_react13.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react13.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
@@ -8276,7 +8320,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   const bot = roster.byId[sessionId];
   const room2 = roster.roomsById[sessionId];
   const detailsOpen = useUi((state) => state.details === sessionId);
-  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
+  const name = bot?.remote ? friendBotTitle(bot) : roomTitle(room2) || bot?.name || "";
   const useNews = useMemoryNews ?? noNews;
   const memoryIds = bot ? [bot.id] : room2?.members ?? [];
   const notice = useMemoryNotice(memoryIds, useNews);
@@ -8483,7 +8527,7 @@ function installHeaderEffects({ sessions, roster, actions, doc = globalThis.docu
     const sessionId = row?.id;
     const bot = sessionId === void 0 ? void 0 : state?.byId?.[sessionId];
     const room2 = sessionId === void 0 ? void 0 : state?.roomsById?.[sessionId];
-    const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
+    const name = bot?.remote ? friendBotTitle(bot) : roomTitle(room2) || bot?.name || "";
     run("friend-chat", `${sessionId}|${bot?.remote === true}`, () => {
       if (!bot?.remote) return void 0;
       doc.body.dataset.btFriendChat = "";
@@ -12566,14 +12610,15 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
         )),
         (0, import_react30.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
       ] : outside.length + outsidePeople.length + outsideRemotes.length > 0 ? (0, import_react30.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react30.createElement)(PlusIcon), t("Add member")) : null,
-      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here.
-      room2.origin === "face-to-face" || room2.origin === "inbound-share" ? null : (0, import_react30.createElement)(FlyBotRoomMembers, { room: room2, roster, actions }),
       (0, import_react30.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react30.createElement)(
         "span",
         { className: "bt-set-hint" },
         // The host checks for two members on every change, even a rename.
         members.length < 2 ? t("Add a Bot first: a group chat needs at least two.") : admin ? t("{name} leads this group: it can call members with @Name, change the group, and post here.", { name: admin.name }) : t("No admin yet. An admin can call members with @Name, change the group, and post here.")
-      ))
+      )),
+      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after
+      // the note on who leads, so that note stays with the members it is about (#892).
+      room2.origin === "face-to-face" || room2.origin === "inbound-share" ? null : (0, import_react30.createElement)(FlyBotRoomMembers, { room: room2, roster, actions })
     ),
     (0, import_react30.createElement)(StandingApprovalsCard, { scope: "room", target: room2, roster, actions, run, Card }),
     (0, import_react30.createElement)(
@@ -14970,7 +15015,7 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
   const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
   const { entries: entries2, now } = useMemberWork(room2, useWork);
   const invited = room2.viewerRole === "invited-owner";
-  const title = room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name);
+  const title = roomTitle(room2);
   const leaveMine = () => {
     const mine = remotes.find((p) => p.ownerId === roster.self?.memberId) || members.find((member) => member.ownerId === roster.self?.memberId);
     if (mine) void actions.updateRoom(room2.id, { removeParticipants: [{ kind: "bot", id: mine.handle || mine.id, remote: Boolean(mine.handle) }] });

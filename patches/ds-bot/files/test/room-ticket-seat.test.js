@@ -13,6 +13,7 @@ import { install as installRooms, publishedRemoteOf } from '../src/host/room-mem
 import { install as installReach, mayShareRoom } from '../src/host/reach.js'
 import { encodeRoomShare, parseRoomShare } from '../src/shared/room-share.js'
 import { unwrapUntrusted } from '../src/host/delivery.js'
+import { roomTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
 
 const ALICE = {
   version: 2,
@@ -99,56 +100,63 @@ function makeHome(t, saved, label) {
   return { rt, warnings }
 }
 
-// Bot Social's side, as #60 has it: a ticket record per link, one claim per ticket, and room reach
-// between the inviter's Bot and each claimed Bot, under that room id only.
+// Bot Social's side, as #60 and #65 have it: a ticket record per link with no deadline, any number of
+// homes each claiming once, and room reach between the inviter's Bot and each claimed Bot, under that
+// room id only. Withdrawing stops new claims and keeps the reach of homes that joined; `endClaims` (the
+// room is gone) or the minter's endClaim (a guest removed) ends it.
 function fakeServer() {
   const tickets = new Map()
   let n = 0
   const fail = code => Object.assign(new Error(code), { code })
-  const reach = (from, to, roomId) => [...tickets.values()].some(t => !t.revoked && !t.released && t.claimer && t.roomId === roomId
-    && ((t.handle === from && t.claimer.bots.includes(to)) || (t.handle === to && t.claimer.bots.includes(from))))
+  const live = t => [...t.claims.values()].filter(c => !c.released)
+  const reach = (from, to, roomId) => [...tickets.values()].some(t => t.roomId === roomId && live(t)
+    .some(c => (t.handle === from && c.bots.includes(to)) || (t.handle === to && c.bots.includes(from))))
+  const view = c => ({ home: c.home, bots: c.bots, members: c.bots.map(handle => ({ handle, display_name: handle.split('.')[0].slice(1).replace(/^./, ch => ch.toUpperCase()), owner_name: 'Bob' })) })
   const as = home => ({
     mint: async ({ roomId, name, handle }) => {
       n += 1
       const ticket = `Tkt${String(n).padStart(4, '0')}AbCdEfGhIjKlMnO`
-      const expiresAt = Date.now() + 10 * 60 * 1000
-      tickets.set(ticket, { ticket, roomId, name, handle, minter: home, expiresAt })
-      return { ticket, expiresAt }
+      tickets.set(ticket, { ticket, roomId, name, handle, minter: home, expiresAt: null, claims: new Map() })
+      return { ticket, expiresAt: undefined }
     },
     preview: async ticket => {
       const t = tickets.get(ticket)
       if (!t) throw fail('invite_not_found')
       if (t.revoked) throw fail('revoked')
-      return { roomId: t.roomId, name: t.name, lead: { handle: t.handle, name: 'Chief', ownerName: 'Alice' }, expiresAt: t.expiresAt, claimed: Boolean(t.claimer) }
+      return { roomId: t.roomId, name: t.name, lead: { handle: t.handle, name: 'Chief', ownerName: 'Alice' }, expiresAt: undefined, claimed: Boolean(t.claims.get(home) && !t.claims.get(home).released) }
     },
     claim: async (ticket, bots) => {
       const t = tickets.get(ticket)
       if (!t) throw fail('invite_not_found')
+      const mine = t.claims.get(home)
+      if (!t.revoked && mine && !mine.released && [...mine.bots].sort().join() === [...bots].sort().join()) return { roomId: t.roomId, inviterHandle: t.handle, bots }
       if (t.revoked) throw fail('revoked')
       if (t.minter === home) throw fail('own_invite')
-      if (t.claimer || t.released) {
-        if (t.claimer?.home === home && [...t.claimer.bots].sort().join() === [...bots].sort().join() && !t.released) return { roomId: t.roomId, inviterHandle: t.handle, bots }
-        throw fail('already_claimed')
-      }
-      t.claimer = { home, bots: [...bots] }
+      if (mine && !mine.released) throw fail('already_claimed')
+      t.claims.set(home, { home, bots: [...bots] })
       return { roomId: t.roomId, inviterHandle: t.handle, bots }
     },
     verify: async ticket => {
       const t = tickets.get(ticket)
       if (!t || t.minter !== home) throw fail('invite_not_found')
       if (t.revoked) throw fail('revoked')
-      return {
-        roomId: t.roomId,
-        claimer: t.claimer && !t.released
-          ? { home: t.claimer.home, bots: t.claimer.bots, members: t.claimer.bots.map(handle => ({ handle, display_name: handle.split('.')[0].slice(1).replace(/^./, c => c.toUpperCase()), owner_name: 'Bob' })) }
-          : null,
-      }
+      const claims = live(t)
+      return { roomId: t.roomId, claimers: claims.map(view), claimer: claims.length ? view(claims.at(-1)) : null }
     },
-    revoke: async ticket => {
+    revoke: async (ticket, { endClaims = false } = {}) => {
       const t = tickets.get(ticket)
       if (!t) return
-      if (t.minter === home) t.revoked = true
-      else if (t.claimer?.home === home) t.released = true
+      if (t.minter === home) {
+        t.revoked = true
+        if (endClaims) for (const c of t.claims.values()) c.released = true
+      } else if (t.claims.get(home)) t.claims.get(home).released = true
+    },
+    endClaim: async (ticket, handle) => {
+      const t = tickets.get(ticket)
+      if (!t || t.minter !== home) throw fail('forbidden')
+      const c = live(t).find(item => item.home === handle || item.bots.includes(handle))
+      if (!c) throw fail('claim_not_found')
+      c.released = true
     },
   })
   return { tickets, reach, as }
@@ -229,7 +237,7 @@ test('#884: a stranger claims a room link with two of its Bots, both are seated,
   assert.ok(seats.every(p => p.admittedBy === 'ticket' && p.ticket === invite.ticket && p.hostBotId === 'chief-a'))
   assert.equal(seats.find(p => p.handle === '@helper.bob.home').displayName, 'Helper', "the seat's name comes from the server's claim")
   assert.equal(publishedRemoteOf(a.rt.state, '@chief.bob.home'), undefined, 'a seat is not a friend: nothing is published')
-  assert.equal(a.rt.localInviteOf('war'), undefined, 'the spent link is not offered again')
+  assert.equal(a.rt.localInviteOf('war').ticket, invite.ticket, 'the link stays open for the next person it is given to (#892)')
 
   // The guest home has one room that mirrors it, with both of its Bots.
   const mirror = guestRoomOf(b.rt)
@@ -239,6 +247,10 @@ test('#884: a stranger claims a room link with two of its Bots, both are seated,
   assert.equal(mirror.sharedFrom.remoteRoomId, 'war')
   assert.equal(mirror.sharedFrom.ticket, invite.ticket)
   assert.equal(mirror.sharedFrom.inviterName, 'Alice', 'the guest reads the owner, never the host’s own "You"')
+  // #892: the guest's sidebar, header and drawer name it as its owner did; who shared it is secondary.
+  const shownToGuest = b.rt.presentRoom(mirror, { memberId: 'owner-1' })
+  assert.equal(roomTitle(shownToGuest), 'Launch plan')
+  assert.equal(sharedRoomTitle(shownToGuest.sharedFrom.inviterName), 'Shared room from Alice')
   const joins = log.filter(m => parseRoomShare(m.text)?.op === 'join')
   assert.ok(joins.every(m => m.from === 'chief-a' && m.meta.scope === 'war' && m.delivered), 'joins go from the linked Bot, under the room scope')
 
@@ -292,11 +304,11 @@ test('#884: the accept is read back from Bot Social, and each way it fails has i
   a.rt.roomInviteServer.verify = verify
   assert.equal(seats().length, 0, 'no refusal seated anyone')
 
-  // A second home's claim on a spent link is refused at the server; the dialog names it.
+  // #892: another home's claim does not close a link: this home still claims it.
   const late = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
-  server.tickets.get(late.ticket).claimer = { home: '@eve.home', bots: ['@eve.eve.home'] }
-  const refused = await b.rt.askLocalInvite(late.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
-  assert.equal(refused.refused, 'claimed-elsewhere')
+  server.tickets.get(late.ticket).claims.set('@eve.home', { home: '@eve.home', bots: ['@eve.eve.home'] })
+  const second = await b.rt.askLocalInvite(late.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  assert.equal(second.refused, undefined, 'a link someone else used still admits this home')
   await assert.rejects(() => b.rt.askLocalInvite(late.url, { accept: true, bots: ['chief-a-not-mine'] }, { memberId: 'owner-1' }), /Bots of your own/)
 
   assert.equal((await knockFrom(invite.ticket)).accepted, true)
@@ -304,11 +316,12 @@ test('#884: the accept is read back from Bot Social, and each way it fails has i
   assert.equal((await knockFrom(invite.ticket)).accepted, true, 'the retry succeeds without a second seat')
   assert.equal(seats().length, 1)
   await a.rt.revokeRoomInvite('war', invite.ticket)
-  assert.equal((await knockFrom(invite.ticket)).refused, 'unknown', 'a withdrawn link answers nothing')
+  assert.equal((await knockFrom(invite.ticket, '@helper.bob.home')).refused, 'revoked', 'a withdrawn link seats nobody new')
+  assert.equal(seats().length, 1, 'and the seat it made stays')
   assert.ok(log.length > 0)
 })
 
-test('#884: withdrawing the link ends the seat at both homes and at the server', async (t) => {
+test('#892: withdrawing the link stops new joins and keeps the seat; removing the guest ends its reach', async (t) => {
   const { server, a, b, log, settle } = await twoHomes(t)
   const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
   await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
@@ -317,16 +330,27 @@ test('#884: withdrawing the link ends the seat at both homes and at the server',
   await settle()
   const mirror = guestRoomOf(b.rt)
   assert.ok(mirror && !mirror.hidden)
+  const live = () => a.rt.state.rooms.war.participants.filter(p => p.remote === true && p.leftSeq === undefined)
 
   assert.deepEqual(await a.rt.revokeRoomInvite('war', invite.ticket), { revoked: true })
   await settle()
-  assert.equal(a.rt.state.rooms.war.participants.filter(p => p.remote === true && p.leftSeq === undefined).length, 0, 'the seat left with its ticket')
-  assert.equal(server.tickets.get(invite.ticket).revoked, true, 'and the reach ended at the server')
-  assert.equal(mirror.hidden, true, 'the guest heard the leave')
-  assert.equal(mayShareRoom(a.rt.state, a.rt.state.rooms.war, 'writer-a'), false, 'with no link left, Writer is private again')
+  assert.equal(server.tickets.get(invite.ticket).revoked, true, 'nobody new can claim it at the server')
+  assert.equal(a.rt.localInviteOf('war'), undefined, 'the card offers no link')
+  assert.equal(live().length, 1, 'the seat it made stays (owner decision on #853)')
+  assert.equal(mirror.hidden, undefined, 'the guest keeps the room')
+  assert.equal(mayShareRoom(a.rt.state, a.rt.state.rooms.war, 'writer-a'), true, 'a seat the link made still opens the room')
+  await b.rt.fanoutRoomLine(mirror, { who: 'Chief', botId: 'chief-b', authorId: 'chief-b', authorKind: 'bot', text: 'still here', seq: 99 })
+  assert.equal(log.at(-1).delivered, true, 'the guest can still write')
 
-  // A line the guest sends now has no reach, and a line for the host's room from a non-seat is dropped.
-  await b.rt.fanoutRoomLine(mirror, { who: 'Chief', botId: 'chief-b', authorId: 'chief-b', authorKind: 'bot', text: 'still there?', seq: 99 })
+  // The owner removes the guest: its claim ends at the server, the guest hears it, and the link record goes.
+  await a.rt.removeRoomParticipant('war', { kind: 'bot', id: '@chief.bob.home' }, { memberId: 'owner-1' })
+  await settle()
+  assert.equal(live().length, 0)
+  assert.equal(server.tickets.get(invite.ticket).claims.get('@bob.home').released, true, 'the reach ended at the server')
+  assert.equal(mirror.hidden, true, 'the guest heard the leave')
+  assert.equal(a.rt.state.rooms.war.localInvites.length, 0, 'a withdrawn link that seats nobody is dropped')
+  assert.equal(mayShareRoom(a.rt.state, a.rt.state.rooms.war, 'writer-a'), false, 'with no link left, Writer is private again')
+  await b.rt.fanoutRoomLine(mirror, { who: 'Chief', botId: 'chief-b', authorId: 'chief-b', authorKind: 'bot', text: 'still there?', seq: 100 })
   assert.equal(log.at(-1).delivered, false)
   const before = Object.keys(a.rt.state.rooms).length
   const stray = await a.rt.applyInboundRoomShare({ text: `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'war', text: 'hi', seq: 1 })}`, fromHandle: '@chief.bob.home', fromHome: '@bob.home' })
@@ -343,15 +367,18 @@ test('#884: the guest leaving gives the claim back; deleting the room withdraws 
   const mirror = guestRoomOf(b.rt)
   await b.rt.removeRoomParticipant(mirror.id, { kind: 'bot', id: 'chief-b' }, { memberId: 'owner-1' })
   await settle()
-  assert.equal(server.tickets.get(invite.ticket).released, true, 'the claim was given back')
+  assert.equal(server.tickets.get(invite.ticket).claims.get('@bob.home').released, true, 'the claim was given back')
   assert.equal(b.rt.state.roomClaims?.[invite.ticket], undefined, 'and its way out is gone')
   assert.equal(b.rt.reach({ from: 'chief-b', to: { kind: 'remote', handle: '@chief.alice.home' }, meta: { scope: 'war' } }).action, 'deny')
   assert.equal(a.rt.state.rooms.war.participants.filter(p => p.remote === true && p.leftSeq === undefined).length, 0, 'the host room lost the seat')
-  assert.equal(a.rt.localInvitesOf('war').length, 0)
+  assert.equal(a.rt.localInvitesOf('war').length, 1, 'the link stays open for others (#892)')
 
+  // Someone else joins with the same link; deleting the room withdraws it and ends that home's reach too.
+  server.tickets.get(invite.ticket).claims.set('@eve.home', { home: '@eve.home', bots: ['@eve.eve.home'] })
   const open = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
   await a.rt.dropRoomInvites(a.rt.state.rooms.war)
   assert.equal(server.tickets.get(open.ticket).revoked, true, 'a deleted room takes its links with it at the server')
+  assert.equal(server.tickets.get(invite.ticket).claims.get('@eve.home').released, true, 'and every home that joined loses its reach')
 })
 
 test('#884: a server without local room invites keeps the friend-only link', async (t) => {
