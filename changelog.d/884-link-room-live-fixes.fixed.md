@@ -1,0 +1,1 @@
+In a group joined by link, the guest can write too, under their own name, and lines arrive as written. The guest’s Bot no longer drops out of the inviter’s group after the first message. A ticket the guest never claimed opens nothing.

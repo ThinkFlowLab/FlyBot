@@ -38,7 +38,7 @@ import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle,
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
 import { encodeRoomShare, LOCAL_INVITE_TTL_MS, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
-import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
+import { cleanName, fenceUntrusted, isFencedUntrusted, unwrapUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
 import { mentionSpans } from '../shared/mentions.js'
 
@@ -912,6 +912,10 @@ export function install(rt) {
     }
   }
 
+  // A line as written, for a link's seat (#884): the far home fences it once with `who`, so a fence
+  // stored here is opened first, never nested (a nested one reads as markup to the person).
+  const seatText = line => (!line.text ? `[${cleanName(line.kind || 'event')}]` : isFencedUntrusted(line.text) ? unwrapUntrusted(line.text) : String(line.text))
+
   // #884: a seat a ticket admitted is reached from the Bot its link named, under that room's scope only,
   // and is told about the room by that Bot.
   const isTicketSeat = p => p?.remote === true && p.admittedBy === 'ticket'
@@ -1547,17 +1551,22 @@ export function install(rt) {
       const seatedAuthor = room.sharedFrom?.ticket && author && currentParticipants(room).some(p => p.kind === 'bot' && !p.remote && p.id === author) ? author : undefined
       const sender = seatedAuthor ?? room.sharedFrom?.localBotId ?? shareSpeaker(room)
       if (!sender) return
+      // A link's room (#884): the owner's own line is said under their Bot Social name, never this
+      // home's "You", and the text goes as written: the inviter's home fences it once, on arrival.
+      const ticketed = Boolean(room.sharedFrom?.ticket)
+      const ownLine = ticketed && line.authorKind === 'human' && line.remote !== true
+      const sayer = ownLine ? cleanPeerName(state.bots?.[sender]?.fields?.social?.member?.ownerName, who) : who
       const result = await sendShareTo(room, { handle: inviter, id: inviter }, {
         op: 'line',
         roomId: room.sharedFrom?.remoteRoomId,
         name: room.name,
         invitedHandle: inviter,
         seq: line.seq,
-        who,
+        who: sayer,
         kind: line.kind || 'message',
         authorKind: line.authorKind,
         authorId: line.authorId,
-        text: `${who}: ${body}`,
+        text: ticketed ? seatText(line) : `${who}: ${body}`,
         hop: Number(line.hop) || ((Number(room.hop) || 0) + 1),
         calls: callsIn(room, line.text),
         ...shareInviter(room),
@@ -1592,7 +1601,7 @@ export function install(rt) {
           kind: line.kind || 'message',
           authorKind: line.authorKind,
           authorId: line.authorId,
-          text: `${who}: ${body}`,
+          text: seatText(line),
           hop: Number(line.hop) || (line.authorKind === 'bot' && line.remote !== true ? (Number(room.hop) || 0) + 1 : 0),
           calls: callsIn(room, line.text),
           ...seat.from,
@@ -1775,6 +1784,14 @@ export function install(rt) {
       }
     }
     const ticket = typeof data.ticket === 'string' && TICKET_SHAPE.test(data.ticket) ? data.ticket : undefined
+    // #884: a join that says it comes through a link is one this home claimed: that inviter, that room,
+    // and a Bot the claim brought. A ticket nobody here claimed opens nothing.
+    if (ticket && data.op === 'join') {
+      const claim = state.roomClaims?.[ticket]
+      const same = (a, b) => String(a ?? '').toLowerCase() === String(b ?? '').toLowerCase() && String(a ?? '') !== ''
+      if (!claim || !same(claim.inviterHandle, event.fromHandle) || String(claim.roomId ?? '') !== String(data.roomId ?? '')
+        || (localBotId && !(claim.bots ?? []).includes(localBotId))) return { handled: true, refused: 'unclaimed' }
+    }
     if (data.op === 'leave') {
       if (!room) return { handled: true, room: undefined }
       // #884: a seat of a room that holds several Bots of mine ends for the Bot it names; the room
@@ -1917,6 +1934,11 @@ export function install(rt) {
       inviteNotice: true,
       maxHops: Number.isFinite(Number(draft.maxHops)) ? Math.max(0, Math.floor(Number(draft.maxHops))) : DEFAULT_MAX_HOPS,
       participants: [
+        // A link admits the person with their Bots (#878): the owner can write in the room it opened.
+        ...(typeof draft.ticket === 'string' && draft.ticket ? [{
+          kind: 'human', id: ownerId, role: 'member', displayName: displayNameFor(state, ownerId, 'You'),
+          joinedSeq: draft.joinedSeq ?? 0, joinedAt: draft.invitedAt ?? at,
+        }] : []),
         ...(localBotId ? [{
           kind: 'bot',
           id: localBotId,

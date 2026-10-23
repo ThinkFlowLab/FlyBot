@@ -11,7 +11,8 @@ import { install as installMemberAuth } from '../src/host/member-auth.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { install as installRooms, publishedRemoteOf } from '../src/host/room-membership.js'
 import { install as installReach, mayShareRoom } from '../src/host/reach.js'
-import { parseRoomShare } from '../src/shared/room-share.js'
+import { encodeRoomShare, parseRoomShare } from '../src/shared/room-share.js'
+import { unwrapUntrusted } from '../src/host/delivery.js'
 
 const ALICE = {
   version: 2,
@@ -234,7 +235,7 @@ test('#884: a stranger claims a room link with two of its Bots, both are seated,
   const mirror = guestRoomOf(b.rt)
   assert.ok(mirror, 'the joins projected the room on the guest side')
   assert.equal(Object.values(b.rt.state.rooms).filter(r => r.origin === 'inbound-share').length, 1, 'one room for both seats')
-  assert.deepEqual(mirror.participants.filter(p => p.leftSeq === undefined).map(p => p.id).sort(), ['chief-b', 'helper-b'])
+  assert.deepEqual(mirror.participants.filter(p => p.leftSeq === undefined && p.kind === 'bot').map(p => p.id).sort(), ['chief-b', 'helper-b'])
   assert.equal(mirror.sharedFrom.remoteRoomId, 'war')
   assert.equal(mirror.sharedFrom.ticket, invite.ticket)
   assert.equal(mirror.sharedFrom.inviterName, 'Alice', 'the guest reads the owner, never the host’s own "You"')
@@ -383,4 +384,53 @@ test('#884: a home with no Bot Social identity yet gets one for the link it make
   b.rt.roomInviteServer.identify = async () => { throw new Error('503') }
   delete b.rt.state.bots['chief-b'].fields
   await assert.rejects(() => b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' }), /could not give this Bot an identity/)
+})
+
+test('#884: the guest writes in the room the link opened, under its own name, and no line nests a fence', async (t) => {
+  const { a, b, settle } = await twoHomes(t)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['helper-b'] }, { memberId: 'owner-1' })
+  await settle()
+  const room = a.rt.state.rooms.war
+  const mirror = guestRoomOf(b.rt)
+  // One link admits the person with their Bot (#878): Bob is in the room it opened on his side.
+  assert.ok(mirror.participants.some(p => p.kind === 'human' && p.id === 'owner-1' && p.leftSeq === undefined), 'the guest owner has a seat to write from')
+
+  const line = await a.rt.postRoomMessage('war', { text: 'Ship on Friday?', authorId: 'owner-1', authorKind: 'human', displayName: 'Alice' })
+  await settle()
+  const arrived = mirror.log.find(entry => String(entry.text).includes('Ship on Friday?'))
+  assert.equal(unwrapUntrusted(arrived.text), 'Ship on Friday?', 'fenced once on arrival, with nothing nested or prefixed (live run: a garbled fence)')
+  assert.equal((String(arrived.text).match(/untrusted-message/g) ?? []).length, 2)
+  assert.ok(line)
+
+  const own = await b.rt.postRoomMessage(mirror.id, { text: 'See you there.', authorId: 'owner-1', authorKind: 'human' })
+  assert.ok(own, 'the guest owner may post in the mirror')
+  await settle()
+  const landed = room.log.find(entry => String(entry.text).includes('See you there.'))
+  assert.ok(landed, "the guest's own line reached the host room")
+  assert.equal(landed.who, 'Bob', 'said under his Bot Social name, never his home\'s "You"')
+  assert.equal(landed.authorKind, 'human')
+  assert.equal(landed.authorId, '@helper.bob.home#owner-1')
+  assert.equal(unwrapUntrusted(landed.text), 'See you there.')
+})
+
+test('#884: a join that names a ticket this home never claimed opens nothing', async (t) => {
+  const { a, b } = await twoHomes(t)
+  const before = Object.keys(b.rt.state.rooms).length
+  const forged = encodeRoomShare({ op: 'join', roomId: 'war', name: 'Free stuff', invitedHandle: '@helper.bob.home', ticket: 'TktZZZZAbCdEfGhIjKlMnO', inviterHandle: '@chief.alice.home', inviterName: 'Alice' })
+  const out = await b.rt.applyInboundRoomShare({ text: forged, fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'helper-b' })
+  assert.equal(out.refused, 'unclaimed')
+  assert.equal(Object.keys(b.rt.state.rooms).length, before, 'no room was projected')
+  // A real claim, but a join from another Bot of the inviter's home, or for another room, is refused too.
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  b.rt.flybotSend = async () => ({ action: 'sent' })
+  await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['helper-b'] }, { memberId: 'owner-1' })
+  const join = extra => encodeRoomShare({ op: 'join', roomId: 'war', name: 'Launch plan', invitedHandle: '@helper.bob.home', ticket: invite.ticket, inviterHandle: '@chief.alice.home', inviterName: 'Alice', ...extra })
+  assert.equal((await b.rt.applyInboundRoomShare({ text: join(), fromHandle: '@writer.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'helper-b' })).refused, 'unclaimed')
+  assert.equal((await b.rt.applyInboundRoomShare({ text: join({ roomId: 'other' }), fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'helper-b' })).refused, 'unclaimed')
+  assert.equal((await b.rt.applyInboundRoomShare({ text: join(), fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'chief-b' })).refused, 'unclaimed', 'a Bot the claim did not bring')
+  assert.equal(Object.keys(b.rt.state.rooms).length, before)
+  const ok = await b.rt.applyInboundRoomShare({ text: join(), fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'helper-b' })
+  assert.equal(ok.refused, undefined)
+  assert.equal(Object.keys(b.rt.state.rooms).length, before + 1, 'the claimed join projects the room')
 })

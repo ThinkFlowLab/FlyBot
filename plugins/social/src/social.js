@@ -1297,6 +1297,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (room.origin === 'face-to-face' || room.origin === 'inbound-share') continue
       for (const p of room.participants ?? []) {
         if (!p.remote || p.leftSeq !== undefined || !p.handle) continue
+        // A seat a room link admitted is never a friend's Bot (#884): the roster does not list it, and
+        // its link, not the roster, decides when it goes.
+        if (p.admittedBy === 'ticket') continue
         const key = norm(p.handle)
         if (live.has(key) || isHiddenRemote(settings, key)) continue
         try {
@@ -1546,8 +1549,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (msg.via !== 'room' && msg.via !== 'room-share') return undefined
     const scope = typeof msg.meta?.scope === 'string' ? msg.meta.scope : ''
     if (!scope || typeof msg.from !== 'string' || msg.attachments?.length) return undefined
+    // The text must be the host's own envelope for that same room, whole: a plain line wearing the
+    // `via` and the scope is not room traffic.
+    const share = roomShareEnvelope(msg.text)
+    if (!share || String(share.roomId ?? '') !== scope) return undefined
     const to = norm(msg.target?.handle)
     return (flybot.rooms?.ticketPeers?.() ?? []).find(peer => peer.from === msg.from && peer.scope === scope && norm(peer.to) === to)
+  }
+  // `FLYBOT-ROOM-SHARE\n{json}` exactly as core's encodeRoomShare writes it (src/shared/room-share.js).
+  function roomShareEnvelope(text) {
+    const raw = String(text ?? '')
+    const head = 'FLYBOT-ROOM-SHARE\n'
+    if (!raw.startsWith(head)) return undefined
+    try {
+      const data = JSON.parse(raw.slice(head.length))
+      return data && data.v === 1 && ['join', 'leave', 'line', 'ask', 'invite'].includes(data.op) ? data : undefined
+    } catch {
+      return undefined
+    }
   }
   // Sent under the room's id: Bot Social's room reach (the claim's grant pair) carries it, and refuses
   // it once the link is withdrawn or given back.

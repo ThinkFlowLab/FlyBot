@@ -10184,10 +10184,20 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
     ['no scope', { from: 'a', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war' } }],
     ['another Bot of mine', { from: 'b', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
     ['another Bot of theirs', { from: 'a', to: '@other.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
+    // The text itself must be the host's envelope for that room, whole.
+    ['plain text wearing the room via', { from: 'a', to: '@guest.eve.home', text: 'hello there', via: 'room', meta: { roomId: 'war', scope: 'war' } }],
+    ['an envelope for another room', { from: 'a', to: '@guest.eve.home', text: share.replace('"war"', '"other"'), via: 'room', meta: { roomId: 'war', scope: 'war' } }],
+    ['the marker inside a plain line', { from: 'a', to: '@guest.eve.home', text: `look: ${share}`, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
   ]
   for (const [why, msg] of refused) {
     const out = await ctx.flybot.bot.send(msg)
     assert.equal(out.action, 'deny', `${why}: ${JSON.stringify(out)}`)
   }
   assert.equal(sends().length, 1, 'none of those reached Bot Social')
+  // The roster sync drops friends' Bots that are no longer listed; a seat is not one (live two-home run:
+  // the guest's Bot "left" the room right after the first line).
+  await social.remoteBots({ fresh: true })
+  for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve))
+  const seat = ctx.flybot.rooms.list().find(r => r.id === 'war').participants.find(p => p.handle === '@guest.eve.home')
+  assert.equal(seat.leftSeq, undefined, 'the seat stays: its link decides, not the roster')
 })
