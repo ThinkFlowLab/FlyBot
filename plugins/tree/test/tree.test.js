@@ -1759,3 +1759,33 @@ test('#677: heightOf measures the whole subtree, so move_bot refuses a subtree t
   const r = await m.call(m.root, 'move_bot', { bot: 'A', parent: 'D' })
   assert.match(r.error, /limit reached: A would end at depth 5 \(maxDepth=4\)/)
 })
+
+test('#764: a name taken anywhere refuses the whole team before anything is created', async () => {
+  const m = await setup()
+  const review = await make(m, m.root, 'Review')
+  const existing = (await child(m, review, 'Reviewer', 'checks pull requests')).created.id
+  const before = m.bots.size
+  const snap = JSON.stringify([...m.bots.values()].map(b => [b.id, b.name, b.systemPrompt, b.fields]))
+  // The host refuses a duplicate name wherever the existing Bot sits (roster.js), not only under
+  // the parent; building the lead first left it childless and the team half-built.
+  const r = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Reviewer: checks the tree and the CI'] })
+  assert.match(r.error, /nothing was created/)
+  assert.match(r.error, /"Reviewer" is already taken by Chief → Review → Reviewer/)
+  assert.equal(m.bots.size, before, 'no lead, no partial team')
+  assert.equal(JSON.stringify([...m.bots.values()].map(b => [b.id, b.name, b.systemPrompt, b.fields])), snap, 'the tree is byte-identical')
+  assert.deepEqual(m.tree.overview().runs, [], 'no journal entry either')
+  assert.equal(f(m, existing, 'treeRole'), 'checks pull requests', 'the existing Bot is untouched')
+  // Every clash is named, not just the first one; a name whose role does not match is not reused.
+  await child(m, m.root, 'Scout', 'watches the neighbourhood')
+  const two = await m.call(m.root, 'create_team', { team: 'Ship', members: ['Reviewer: checks releases', 'Scout: ships releases'] })
+  assert.match(two.error, /nothing was created/)
+  assert.match(two.error, /"Reviewer" is already taken by Chief → Review → Reviewer/)
+  assert.match(two.error, /"Scout" is already taken by Chief → Scout/)
+  assert.equal(m.bots.size, before + 1, 'still nothing created by the refused team, no Ship Lead either')
+  // Reuse by role is not a clash: the member with the same role is reused and nothing is created for it.
+  const reused = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Reviewer: checks pull requests'] })
+  assert.equal(reused.error, undefined)
+  assert.deepEqual(reused.team.members.map(x => [x.name, Boolean(x.reused)]), [['Dev', false], ['Reviewer', true]])
+  assert.match(reused.note, /Reused where they are: Chief → Review → Reviewer/)
+  assert.equal(f(m, existing, 'parent'), review, 'reused where it stands, not moved')
+})

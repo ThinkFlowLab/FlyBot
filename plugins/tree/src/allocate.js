@@ -190,7 +190,6 @@ export function createAllocator({ fb, limits, snapshot, childrenOf, depthOf, tra
   }
   async function buildTeam(callerId, label, list, { parentId, key, leadId: existingLead }) {
     let nodes = snapshot()
-    const run = begin('team')
     const done = list.map(m => ({ name: m.name, role: m.role }))
     // Reuse: the same role already in the caller's branch (never the lead itself).
     const taken = new Set(existingLead ? [existingLead] : [])
@@ -198,6 +197,21 @@ export function createAllocator({ fb, limits, snapshot, childrenOf, depthOf, tra
       const id = sameRoleIn(nodes, callerId, d.name, d.role, taken)
       if (id) { d.reusedId = id; taken.add(id) }
     }
+    // #764: a Bot's name is unique across the whole roster, not only under its parent — the host
+    // refuses a duplicate wherever the existing Bot sits. Check every name this team would create
+    // (the lead included) before anything is written: otherwise the lead is created, the member whose
+    // name is taken is dropped, and the team is left half-built with a childless lead.
+    const creating = [...(existingLead ? [] : [leadNameOf(label)]), ...done.filter(d => !d.reusedId).map(d => d.name)]
+    const roster = fb.listBots()
+    const clashes = creating
+      .map(name => ({ name, hit: roster.find(b => norm(b.name) === norm(name)) }))
+      .filter(c => c.hit)
+    if (clashes.length) {
+      const where = clashes.map(c => `"${c.name}" is already taken by ${nodes[c.hit.id] ? traceOf(nodes, c.hit.id) : `a Bot outside the tree (${c.hit.name})`}`)
+      const one = clashes.length === 1
+      throw new Error(`nothing was created: ${where.join('; ')}. Rename ${one ? 'that member' : 'those members'}, or give the existing Bot the same role so it is reused`)
+    }
+    const run = begin('team')
     let leadId = existingLead
     const home = leadId ? nodes[leadId].parent : parentId
     // A reused member flat next to the lead (or at the parent, for a new lead) joins the lead.
