@@ -909,10 +909,10 @@ export function install(rt) {
     return results
   }
 
-  // A group hears what each @ of a friend's Bot did (#80, #81): the answer never
-  // re-enters the group (it lands in the friend's Bot's own chat), and a denied or
-  // failed send was visible only in this log. One muted line in the room, posted as a
-  // relay role the room's round machinery does not answer (groups.js `opens`).
+  // A group hears only what went wrong (#80, #81; #825 changed the success half): a Bot in the room is
+  // called by the room line itself and answers in the group, so a "sent" receipt says nothing true and
+  // is not posted. A denied or failed send was visible only in this log, so it stays. One muted line in
+  // the room, posted as a relay role the room's round machinery does not answer (groups.js `opens`).
   async function mentionReceipt(sessionId, room, results, known) {
     if (room === undefined || results.length === 0) return
     const line = value => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
@@ -925,8 +925,11 @@ export function install(rt) {
         return `${name}: not sent${shown ? ` — ${shown}` : ''}`
       }
       if (action === 'hold') return `${name}: held for your approval${why ? ` — ${why}` : ''}`
-      return `${name}: sent — its replies appear in its own chat, not in this group`
-    })
+      // A member of this room answers in the room (#825); anything else is a 1:1 send whose reply
+      // lands in its own chat, and saying so in the group would be the receipt #825 removed.
+      return undefined
+    }).filter(line => line !== undefined)
+    if (lines.length === 0) return
     try {
       const agent = await rt.resolveAgent(sessionId)
       agent.followup(createUserMessage({

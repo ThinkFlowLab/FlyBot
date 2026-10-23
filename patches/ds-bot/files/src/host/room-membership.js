@@ -39,11 +39,18 @@ import { encodeRoomShare, parseRoomShare } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
+import { mentionSpans } from '../shared/mentions.js'
 
 const KINDS = new Set(['human', 'bot'])
 const ROLES = new Set(['admin', 'member'])
 // Held face-room lines kept per room (#456): the newest, so a long room cannot grow its record forever.
 const HELD_LINES_KEPT = 50
+// #825: a Bot's answer opens at most this many further answers in a shared room, unless the room
+// stores its own `maxHops`. A person's line is hop 0, so 3 lets the Bots answer each other twice.
+const DEFAULT_MAX_HOPS = 3
+// Answers already started in a projected room, keyed `(remoteRoomId, seq, botId)`, so a line delivered
+// twice (#641) does not open a second turn.
+const ANSWERED_KEPT = 200
 
 export const PARTICIPANT_KINDS = ['human', 'bot']
 export const ROOM_ROLES = ['admin', 'member']
@@ -372,7 +379,7 @@ export function install(rt) {
   const append = (room, line) => {
     ensureLog(room)
     room.seq += 1
-    const stamped = { ...line, seq: room.seq }
+    const stamped = { ...(rt.stampHop?.(room, line) ?? line), seq: room.seq }
     room.log = [...room.log, stamped].slice(-200)
     return stamped
   }
@@ -429,6 +436,61 @@ export function install(rt) {
     if (!text) return text
     if (isFencedUntrusted(text)) return text
     return fenceUntrusted(name, text)
+  }
+
+  const maxHopsOf = room => (Number.isFinite(Number(room?.maxHops)) ? Number(room.maxHops) : DEFAULT_MAX_HOPS)
+
+  // #825: which friends' Bots a line calls, by the one "@" rule the rest of the host uses — over each
+  // remote participant's handle and the name it is shown as. Fenced and quoted text is literal, so a
+  // handle inside a block never starts a turn.
+  const callsIn = (room, text) => {
+    const said = String(text ?? '')
+    if (!said.includes('@')) return []
+    const names = []
+    for (const peer of currentParticipants(room).filter(isRemoteParticipant)) {
+      const handle = peer.handle ?? peer.id
+      for (const name of [String(handle).replace(/^@+/, ''), peer.displayName, peer.label]) {
+        if (name) names.push({ name: String(name), handle })
+      }
+    }
+    if (names.length === 0) return []
+    const found = new Set()
+    for (const span of mentionSpans(said, names)) if (span.bot) found.add(span.bot.handle)
+    return [...found]
+  }
+
+  // A line's `calls` are handles; the projected room answers with the local Bot behind the handle it
+  // was invited as. Anything else in the list is another home's business.
+  const localCalls = (room, calls) => {
+    if (!Array.isArray(calls) || calls.length === 0) return []
+    const wanted = new Set(calls.map(handle => String(handle ?? '').replace(/^@+/, '').toLowerCase()).filter(Boolean))
+    const out = []
+    // The projected room's local Bot is the one the invite was addressed to: that handle is how the
+    // other home knows it, even when the local record carries no social handle of its own.
+    const invited = String(room.sharedFrom?.invitedHandle ?? '').replace(/^@+/, '').toLowerCase()
+    if (invited && wanted.has(invited)) {
+      const own = room.sharedFrom?.localBotId ?? currentParticipants(room).find(peer => peer.kind === 'bot' && !peer.remote)?.id
+      if (own) out.push(own)
+    }
+    for (const peer of currentParticipants(room)) {
+      if (peer.kind !== 'bot' || peer.remote) continue
+      const record = state.bots?.[peer.id]
+      const handles = [peer.handle, peer.id, record?.fields?.social?.member?.handle, record?.name]
+        .filter(Boolean).map(value => String(value).replace(/^@+/, '').toLowerCase())
+      if (handles.some(handle => wanted.has(handle)) && !out.includes(peer.id)) out.push(peer.id)
+    }
+    return out
+  }
+
+  // Hop accounting (#825): a person's line is 0 and every Bot answer is one more than the newest line
+  // the room received. A friend's line carries its own number, which also raises the room's cap count.
+  rt.stampHop = (room, line) => {
+    if (!line || typeof line !== 'object') return line
+    const inbound = Number(line.hop)
+    if (Number.isFinite(inbound) && inbound > (Number(room.hop) || 0)) room.hop = inbound
+    if (line.hop !== undefined || line.remote === true || line.authorKind !== 'bot') return line
+    if (line.kind && line.kind !== 'message') return line
+    return { ...line, hop: (Number(room.hop) || 0) + 1 }
   }
 
   rt.authoredRoomLine = (room, line) => {
@@ -828,11 +890,13 @@ export function install(rt) {
     }
   }
 
-  async function sendShareTo(room, remote, payload, via) {
-    const from = shareSpeaker(room)
-    if (!from || !rt.flybotSend) return
+  async function sendShareTo(room, remote, payload, via, sender) {
+    const from = sender ?? shareSpeaker(room)
+    if (!from || !rt.flybotSend) return undefined
     try {
-      await rt.flybotSend({
+      // The answer says whether the send went out, is held for the owner, or was refused (#825 D):
+      // a held or refused reply has to become one line in the room instead of nothing.
+      return await rt.flybotSend({
         from,
         to: remote.handle || remote.id,
         text: encodeRoomShare(payload),
@@ -842,6 +906,7 @@ export function install(rt) {
       })
     } catch (error) {
       rt.warn?.('ds-bot: room share not sent to %s: %s', remote.handle || remote.id, error)
+      return undefined
     }
   }
 
@@ -892,15 +957,46 @@ export function install(rt) {
       }
       return
     }
+    const who = cleanName(line.who || 'member')
+    const body = !line.text
+      ? `[${cleanName(line.kind || 'event')}]`
+      : isFencedUntrusted(line.text) ? line.text : fenceUntrusted(who, line.text)
+    // #825: the projected room answers into the group it mirrors. The line goes back as one
+    // `op: 'line'` envelope to the friend who invited this Bot, under *their* room id, one hop on,
+    // carrying the handles it calls there.
+    if (room.origin === 'inbound-share' && !isFaceRoom(room)) {
+      const inviter = room.sharedFrom?.inviterHandle
+      if (!inviter || !rt.flybotSend) return
+      const sender = room.sharedFrom?.localBotId ?? shareSpeaker(room)
+      if (!sender) return
+      const result = await sendShareTo(room, { handle: inviter, id: inviter }, {
+        op: 'line',
+        roomId: room.sharedFrom?.remoteRoomId,
+        name: room.name,
+        invitedHandle: inviter,
+        seq: line.seq,
+        who,
+        kind: line.kind || 'message',
+        authorKind: line.authorKind,
+        authorId: line.authorId,
+        text: `${who}: ${body}`,
+        hop: Number(line.hop) || ((Number(room.hop) || 0) + 1),
+        calls: callsIn(room, line.text),
+        ...shareInviter(room),
+      }, 'room', sender)
+      // Held for the owner's approval, or refused: the group gets one line about it instead of silence.
+      const why = result?.action === 'hold' ? 'held for approval' : result?.action === 'deny' || result?.action === 'refused' ? 'rejected by its owner' : undefined
+      if (why !== undefined && line.authorKind === 'bot' && line.remote !== true) {
+        append(room, { who, kind: 'notice', text: `${who}'s answer is ${why}`, authorKind: 'bot' })
+        await rt.save?.()
+      }
+      return
+    }
     const remotes = currentParticipants(room).filter(isRemoteParticipant)
     if (remotes.length === 0 || !rt.flybotSend) return
     const localAuthor = line.authorKind === 'bot' && !line.remote && rt.botOf?.(line.authorId ?? line.botId) ? (line.authorId ?? line.botId) : undefined
     if (localAuthor !== undefined && !mayShareRoom(state, room, localAuthor)) return
     if (!shareSpeaker(room)) return
-    const who = cleanName(line.who || 'member')
-    const body = !line.text
-      ? `[${cleanName(line.kind || 'event')}]`
-      : isFencedUntrusted(line.text) ? line.text : fenceUntrusted(who, line.text)
     const from = shareInviter(room)
     for (const remote of remotes) {
       if (line.authorId === remote.id || line.authorId === remote.handle) continue
@@ -916,6 +1012,8 @@ export function install(rt) {
         authorKind: line.authorKind,
         authorId: line.authorId,
         text: `${who}: ${body}`,
+        hop: Number(line.hop) || (line.authorKind === 'bot' && line.remote !== true ? (Number(room.hop) || 0) + 1 : 0),
+        calls: callsIn(room, line.text),
         ...from,
       }, 'room')
     }
@@ -1083,20 +1181,40 @@ export function install(rt) {
       }
       syncMembers(room)
     }
+    let called = []
     if (data.op === 'line') {
       const who = cleanPeerName(data.who || fromName, fromName)
-      append(room, rt.authoredRoomLine(room, {
+      const hop = Number.isFinite(Number(data.hop)) ? Math.max(0, Math.floor(Number(data.hop))) : 0
+      const posted = append(room, rt.authoredRoomLine(room, {
         who,
         text: data.text || '',
         authorId: data.authorId || fromHandle,
         authorKind: data.authorKind || 'human',
         remote: true,
+        hop,
         ...(data.authorKind === 'bot' ? { botId: data.authorId || fromHandle } : {}),
         kind: data.kind === 'message' ? undefined : data.kind,
       }))
+      // #825: the line names Bots, and one of them is mine. The remote home resolved the call where
+      // mentions are resolved, so this side never reads @names out of the text.
+      const named = localCalls(room, data.calls)
+      if (named.length > 0 && hop < maxHopsOf(room) && typeof rt.startInboundTurn === 'function') {
+        room.answered ??= []
+        // Keyed by the remote line, not the local copy: a redelivery of the same line lands at a new
+        // local seq, so keying on that would answer the same line twice.
+        const remoteSeq = Number.isFinite(Number(data.seq)) ? Number(data.seq) : posted.seq
+        for (const botId of named) {
+          const key = `${data.roomId}:${remoteSeq}:${botId}`
+          if (room.answered.includes(key)) continue
+          room.answered = [...room.answered, key].slice(-ANSWERED_KEPT)
+          called.push(botId)
+          void Promise.resolve(rt.startInboundTurn({ room, botId, seq: posted.seq, hop, who, text: data.text || '' }))
+            .catch(error => rt.warn?.('ds-bot: inbound call in %s failed: %s', room.name, error))
+        }
+      }
     }
     await rt.save?.()
-    return { handled: true, room }
+    return { handled: true, room, ...(called.length > 0 ? { called } : {}) }
   }
 
   rt.recordInboundSharedRoom = async function recordInboundSharedRoom(draft = {}, actor) {
@@ -1133,6 +1251,7 @@ export function install(rt) {
         joinedSeq: draft.joinedSeq ?? 0,
       },
       inviteNotice: true,
+      maxHops: Number.isFinite(Number(draft.maxHops)) ? Math.max(0, Math.floor(Number(draft.maxHops))) : DEFAULT_MAX_HOPS,
       participants: [
         ...(localBotId ? [{
           kind: 'bot',

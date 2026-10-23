@@ -27,6 +27,13 @@ export function encodeRoomShare(payload = {}) {
   if (payload.authorKind) body.authorKind = clip(payload.authorKind, 16)
   if (payload.authorId) body.authorId = clip(payload.authorId, 120)
   if (payload.text) body.text = String(payload.text).slice(0, 18_000)
+  // #825: the Bots a line calls, resolved by the sending home where mentions are already resolved,
+  // and how many Bot answers the discussion has already taken. A receiving home answers only its own
+  // handles in `calls` and only below its room's hop cap; nothing here is read back out of the text.
+  if (Number.isFinite(Number(payload.hop)) && Number(payload.hop) > 0) body.hop = Math.min(Math.floor(Number(payload.hop)), 99)
+  if (Array.isArray(payload.calls) && payload.calls.length > 0) {
+    body.calls = payload.calls.map(handle => clip(handle, 120)).filter(Boolean).slice(0, 24)
+  }
   return `${ROOM_SHARE_MARK}\n${JSON.stringify(body)}`
 }
 

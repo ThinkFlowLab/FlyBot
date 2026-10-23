@@ -1010,3 +1010,105 @@ test('channel: a refused group carries its details to the client, an ordinary re
   assert.equal(plain.ok, false)
   assert.deepEqual(plain.error.details, {})
 })
+
+// #825: a friend's Bot called in a group answers in that group. The call travels on the room-share
+// envelope (resolved where mentions are resolved), the receiving home opens one turn below the room's
+// hop cap, and the answer goes back as the projected room's line.
+test('#825: a line carries the calls it makes and its hop, and a fenced handle calls nobody', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  await withRemote(rt, await rt.authenticate(alice.sessionToken))
+  sent.length = 0
+  await rt.fanoutRoomLine(rt.state.rooms.war, { seq: 4, who: 'Alice', text: 'hello @Coder, can you look?', authorKind: 'human', authorId: 'owner-1' })
+  assert.equal(sent.length, 1)
+  const called = parseRoomShare(sent[0].text)
+  assert.deepEqual(called.calls, ['@coder.bob.home'])
+  assert.equal(called.hop ?? 0, 0, "a person's line is hop 0")
+
+  sent.length = 0
+  await rt.fanoutRoomLine(rt.state.rooms.war, { seq: 5, who: 'Alice', text: '```\n@Coder\n```\nand `@Coder` again', authorKind: 'human', authorId: 'owner-1' })
+  assert.equal(parseRoomShare(sent[0].text).calls, undefined, 'a fenced or quoted handle is literal text, not a call')
+
+  sent.length = 0
+  await rt.fanoutRoomLine(rt.state.rooms.war, { seq: 6, who: 'Chief A', text: 'on it @Coder', authorKind: 'bot', authorId: 'chief-a' })
+  const answered = parseRoomShare(sent[0].text)
+  assert.equal(answered.hop, 1, "a Bot's line is one hop on")
+  assert.deepEqual(answered.calls, ['@coder.bob.home'])
+})
+
+test('#825: a called Bot in a projected room gets one turn per line, and the hop cap stops the chain', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const room = await rt.recordInboundSharedRoom({
+    id: 'from-alice-825',
+    name: 'War room',
+    inviterName: 'Alice',
+    inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home',
+    invitedHandle: '@coder.bob.home',
+    localBotId: 'spec-b',
+    remoteRoomId: 'alice-war',
+  }, actorB)
+  assert.equal(room.maxHops, 3, 'a room stores its cap; the default is 3')
+  const turns = []
+  rt.startInboundTurn = async args => { turns.push(args) }
+  const line = (seq, extra = {}) => encodeRoomShare({
+    op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq, who: 'Alice', authorKind: 'human', authorId: 'alice', text: `Alice: @Writer B question ${seq}`,
+    calls: ['@coder.bob.home'], ...extra,
+  })
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: line(1) }, actorB)
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: line(1) }, actorB)
+  assert.equal(turns.length, 1, 'the same line delivered twice opens one turn')
+  assert.equal(turns[0].botId, 'spec-b')
+  assert.equal(turns[0].hop, 0)
+
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: line(2, { hop: 1, authorKind: 'bot', authorId: '@chief.alice.home' }) }, actorB)
+  assert.equal(turns.length, 2, 'a Bot answer below the cap is answered')
+
+  rt.state.rooms[room.id].maxHops = 2
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: line(3, { hop: 2, authorKind: 'bot', authorId: '@chief.alice.home' }) }, actorB)
+  assert.equal(turns.length, 2, 'at hop == maxHops no turn starts')
+
+  // A handle that is not this room's Bot opens nothing.
+  await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: line(4, { calls: ['@someone.else.home'] }) }, actorB)
+  assert.equal(turns.length, 2)
+})
+
+test('#825: the answer goes back into the group the projected room mirrors, one hop on', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const room = await rt.recordInboundSharedRoom({
+    id: 'from-alice-825b', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', localBotId: 'spec-b', remoteRoomId: 'alice-war',
+  }, actorB)
+  rt.flybotSend = async msg => { sent.push(msg); return { action: 'sent' } }
+  sent.length = 0
+  await rt.fanoutRoomLine(room, { seq: 9, who: 'Writer B', botId: 'spec-b', authorId: 'spec-b', authorKind: 'bot', text: 'looking now' })
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].to, '@chief.alice.home')
+  const back = parseRoomShare(sent[0].text)
+  assert.equal(back.roomId, 'alice-war', "the answer carries the inviter's room id, not the projection's")
+  assert.equal(back.hop, 1)
+  assert.match(back.text, /looking now/)
+})
+
+test('#825: an answer held for approval shows up as one line in the room, not as silence', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const room = await rt.recordInboundSharedRoom({
+    id: 'from-alice-825c', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', localBotId: 'spec-b', remoteRoomId: 'alice-war',
+  }, actorB)
+  rt.flybotSend = async msg => { sent.push(msg); return { action: 'hold' } }
+  await rt.fanoutRoomLine(room, { seq: 10, who: 'Writer B', botId: 'spec-b', authorId: 'spec-b', authorKind: 'bot', text: 'held answer' })
+  assert.ok(room.log.some(line => line.kind === 'notice' && /held for approval/.test(line.text || '')), 'the room says so once')
+})
