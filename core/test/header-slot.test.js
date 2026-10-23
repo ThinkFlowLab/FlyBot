@@ -46,17 +46,22 @@ test('the Bot pill is appended to conversation.session.header.utilities', () => 
   assert.match(utilities[1], /\bid:\s*'bot-pill'/, 'the utilities entry carries a stable id')
 })
 
-// The shell renders .utilities only while its chrome shows (a blank Session hides it, hideChrome = blank),
-// so moving the pill there dropped every effect below it: the friend-Bot empty-chat hint, the visit ledger,
-// the composer placeholder, the room flag and the face @ filter would only start after the first message.
-test('#803: the page effects ride conversation.session.header.corner, drawn in every state', () => {
-  const corner = /shadow\(\s*'conversation\.session\.header\.corner'\s*,\s*\{([^}]*)\}\s*,\s*HeaderSeats\s*\)/.exec(code)
-  assert.ok(corner, 'HeaderSeats must register into conversation.session.header.corner')
-  assert.match(corner[1], /\binject:\s*face\b/, 'the corner seat gets the same face as the pill')
-  const seats = bodyOf('HeaderSeats')
+// The shell renders .utilities only while its chrome shows (a blank Session hides it, hideChrome =
+// blank), so the pill's page effects cannot live in the pill. They must not be given a seat of their
+// own either: `.corner` is the one header seat the shell draws in every state, and it is a `single`
+// slot that ui-sidebar-right's ExpandButton already owns at priority 0. A second registration in the
+// same cell throws (`single slot "…" already has a registration at priority 0`) out of `apply`, so
+// FlyBot's whole client plugin fails to load. The effects are installed once from `apply` instead.
+test('#803: the page effects are installed from apply, not parked in a slot', () => {
+  assert.doesNotMatch(
+    code,
+    /shadow\(\s*'conversation\.session\.header\.corner'\s*,/,
+    'ds-bot must not register into conversation.session.header.corner: it is a single slot whose '
+    + 'occupant is ui-sidebar-right\'s ExpandButton, and a same-priority registration throws',
+  )
+  assert.match(code, /installHeaderEffects\(/, 'the client plugin installs the header effects from apply')
   const pill = bodyOf('HeaderPill')
-  for (const effect of ['btRemoteChat', 'btFriendChat', 'btRoom', 'beginVisit', 'holdComposerLabel', '--bt-first-sep']) {
-    assert.ok(seats.includes(effect), `${effect} runs in HeaderSeats`)
-    assert.ok(!pill.includes(effect), `${effect} does not run in the pill as well`)
+  for (const effect of ['btRemoteChat', 'btFriendChat', 'btRoom', 'beginVisit', 'holdComposerLabel']) {
+    assert.ok(!pill.includes(effect), `${effect} does not run in the pill`)
   }
 })

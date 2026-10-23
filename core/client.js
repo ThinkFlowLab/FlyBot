@@ -8121,38 +8121,6 @@ var SIDEBAR_CSS = `
 .bt-row-settings svg{width:15px;height:15px}
 `;
 
-// src/client/composer-label.js
-var ATTRIBUTES = ["aria-label", "data-placeholder"];
-function holdComposerLabel(doc, label) {
-  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
-  const shell = /* @__PURE__ */ new Map();
-  const apply2 = () => {
-    for (const el of doc.querySelectorAll("[data-composer-input]")) {
-      for (const name of ATTRIBUTES) {
-        const current = el.getAttribute(name);
-        if (current === label) continue;
-        if (!shell.has(el)) shell.set(el, {});
-        shell.get(el)[name] = current;
-        el.setAttribute(name, label);
-      }
-    }
-  };
-  apply2();
-  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
-  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
-  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
-  return () => {
-    watcher?.disconnect();
-    for (const [el, values] of shell) {
-      if (!el.isConnected) continue;
-      for (const [name, value] of Object.entries(values)) {
-        if (value == null) el.removeAttribute(name);
-        else el.setAttribute(name, value);
-      }
-    }
-  };
-}
-
 // src/client/header.js
 var import_react14 = require("react");
 var import_react_dom4 = require("react-dom");
@@ -8184,8 +8152,9 @@ function MemoryNotice({ shown }) {
     (0, import_react14.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react14.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react14.createElement)(MemoryIcon)), label)
   );
 }
-function HeaderSeats({ sessionId, useRoster, useSessions, useUi, useTurnClock, actions }) {
+function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
   const roster = useRoster((value) => value);
+  const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
   const firstTurns = useSessions((list) => {
     const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline;
     return Array.isArray(outline) ? outline.slice(0, 8).map((entry) => entry.turn).join(",") : "";
@@ -8201,52 +8170,6 @@ function HeaderSeats({ sessionId, useRoster, useSessions, useUi, useTurnClock, a
     else document.body.style.removeProperty("--bt-first-sep");
     return () => document.body.style.removeProperty("--bt-first-sep");
   }, [opening]);
-  const bot = roster.byId[sessionId];
-  const room2 = roster.roomsById[sessionId];
-  const blank3 = useSessions((list) => list.byId[sessionId]?.blank === true);
-  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
-  const remoteEmptyHint = t("Send a message. Your friend approves unless Auto-send is on.");
-  (0, import_react14.useEffect)(() => {
-    if (bot?.remote && blank3) {
-      document.body.dataset.btRemoteChat = "empty";
-      document.body.style.setProperty("--bt-remote-empty", JSON.stringify(remoteEmptyHint));
-    } else {
-      delete document.body.dataset.btRemoteChat;
-      document.body.style.removeProperty("--bt-remote-empty");
-    }
-    return () => {
-      delete document.body.dataset.btRemoteChat;
-      document.body.style.removeProperty("--bt-remote-empty");
-    };
-  }, [bot?.remote, blank3, remoteEmptyHint]);
-  (0, import_react14.useEffect)(() => {
-    if (!bot?.remote) return void 0;
-    document.body.dataset.btFriendChat = "";
-    return () => {
-      delete document.body.dataset.btFriendChat;
-    };
-  }, [bot?.remote]);
-  const composerLabel = name ? t("Message {name}", { name }) : t("Message");
-  (0, import_react14.useLayoutEffect)(() => holdComposerLabel(document, composerLabel), [composerLabel]);
-  (0, import_react14.useEffect)(() => {
-    actions.beginVisit(sessionId);
-    return () => actions.endVisit(sessionId);
-  }, [sessionId]);
-  const face = room2?.origin === "face-to-face";
-  (0, import_react14.useEffect)(() => face ? actions.filterFaceAtMenu?.(sessionId) : void 0, [sessionId, face]);
-  (0, import_react14.useEffect)(() => {
-    if (room2) document.body.dataset.btRoom = "";
-    else delete document.body.dataset.btRoom;
-    return () => {
-      delete document.body.dataset.btRoom;
-    };
-  }, [Boolean(room2)]);
-  return null;
-}
-function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
-  const roster = useRoster((value) => value);
-  const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
-  const hiddenTurns = roster.exchangeTurns?.[sessionId];
   const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
   const owner = roster.byId[sessionId]?.id ?? sessionId;
   const doing = useActivity((map) => map[owner]);
@@ -8407,6 +8330,104 @@ function NewMessagePills({ sessionId, hiddenTurns, useSessions, useUi, useTurnCl
     ),
     document.body
   );
+}
+
+// src/client/composer-label.js
+var ATTRIBUTES = ["aria-label", "data-placeholder"];
+function holdComposerLabel(doc, label) {
+  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
+  const shell = /* @__PURE__ */ new Map();
+  const apply2 = () => {
+    for (const el of doc.querySelectorAll("[data-composer-input]")) {
+      for (const name of ATTRIBUTES) {
+        const current = el.getAttribute(name);
+        if (current === label) continue;
+        if (!shell.has(el)) shell.set(el, {});
+        shell.get(el)[name] = current;
+        el.setAttribute(name, label);
+      }
+    }
+  };
+  apply2();
+  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
+  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
+  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
+  return () => {
+    watcher?.disconnect();
+    for (const [el, values] of shell) {
+      if (!el.isConnected) continue;
+      for (const [name, value] of Object.entries(values)) {
+        if (value == null) el.removeAttribute(name);
+        else el.setAttribute(name, value);
+      }
+    }
+  };
+}
+
+// src/client/header-effects.js
+function installHeaderEffects({ sessions, roster, actions, doc = globalThis.document }) {
+  if (!doc) return () => {
+  };
+  const slots = /* @__PURE__ */ new Map();
+  const run = (id, dep, setup) => {
+    const held = slots.get(id);
+    if (held !== void 0 && held.dep === dep) return;
+    held?.off();
+    slots.set(id, { dep, off: setup() ?? (() => {
+    }) });
+  };
+  const apply2 = () => {
+    const list = sessions.getSnapshot();
+    const state = roster.getSnapshot();
+    const row = Object.values(list?.byId ?? {}).find((entry) => (entry?.retainedBy?.mainView ?? 0) > 0);
+    const sessionId = row?.id;
+    const bot = sessionId === void 0 ? void 0 : state?.byId?.[sessionId];
+    const room2 = sessionId === void 0 ? void 0 : state?.roomsById?.[sessionId];
+    const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
+    run("friend-chat", `${sessionId}|${bot?.remote === true}`, () => {
+      if (!bot?.remote) return void 0;
+      doc.body.dataset.btFriendChat = "";
+      return () => {
+        delete doc.body.dataset.btFriendChat;
+      };
+    });
+    run("remote-empty", `${sessionId}|${bot?.remote === true}|${row?.blank === true}`, () => {
+      if (!bot?.remote || row?.blank !== true) return void 0;
+      doc.body.dataset.btRemoteChat = "empty";
+      doc.body.style.setProperty("--bt-remote-empty", JSON.stringify(t("Send a message. Your friend approves unless Auto-send is on.")));
+      return () => {
+        delete doc.body.dataset.btRemoteChat;
+        doc.body.style.removeProperty("--bt-remote-empty");
+      };
+    });
+    run("composer-label", `${sessionId}|${name}`, () => holdComposerLabel(doc, name ? t("Message {name}", { name }) : t("Message")));
+    run("visit", sessionId, () => {
+      if (sessionId === void 0) return void 0;
+      actions.beginVisit(sessionId);
+      return () => actions.endVisit(sessionId);
+    });
+    run("face-at-menu", `${sessionId}|${room2?.origin === "face-to-face"}`, () => {
+      if (room2?.origin !== "face-to-face") return void 0;
+      const stop = actions.filterFaceAtMenu?.(sessionId);
+      return typeof stop === "function" ? stop : void 0;
+    });
+    run("room-flag", `${sessionId}|${room2 !== void 0}`, () => {
+      if (room2 === void 0) return void 0;
+      doc.body.dataset.btRoom = "";
+      return () => {
+        delete doc.body.dataset.btRoom;
+      };
+    });
+  };
+  apply2();
+  const offSessions = sessions.subscribe(apply2);
+  const offRoster = roster.subscribe(apply2);
+  return () => {
+    offSessions?.();
+    offRoster?.();
+    for (const held of slots.values()) held.off();
+    slots.clear();
+  };
 }
 
 // src/client/composer.js
@@ -17776,6 +17797,12 @@ function apply(ctx) {
   const browserPages = browsers?.pages ?? createSource({});
   const browserTabs = browsers?.tabs ?? createSource({});
   const face = () => ({ actions, hooks: { roster, ui: ui2, activity, work, memoryNews, registry: registry3, turnClock, live, cards, browserPages, browserTabs, surface, update } });
+  ctx.effect(() => installHeaderEffects({
+    sessions: ctx.sessions.list,
+    roster,
+    actions,
+    doc: typeof document === "undefined" ? void 0 : document
+  }), "ds-bot: session header effects");
   ctx.effect(() => noticeApprovals({
     work,
     roster,
@@ -17891,9 +17918,6 @@ function apply(ctx) {
     // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
     // utilities list beside them instead of replacing the whole header.
     shadow("conversation.session.header.utilities", { id: "bot-pill", order: 100, inject: face }, HeaderPill),
-    // The shell draws .utilities only while its chrome shows (a blank Session hides it), so what the
-    // pill does to the page rides .corner, which the shell draws in every state (#803).
-    shadow("conversation.session.header.corner", { id: "bot-header-seats", order: 100, inject: face }, HeaderSeats),
     shadow("conversation.chat.node", { key: "assistant-step", priority: -10, locale: "chat", inject: assistantFace }, AssistantCell),
     shadow("conversation.chat.node", { key: "turn-trigger", priority: -10, locale: "chat", inject: face }, TriggerCell),
     shadow("conversation.chat.node", { key: "tool-call", priority: -10, locale: "chat", inject: face }, ToolCell),

@@ -63,10 +63,10 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
   assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
   // #419 / #499: the composer keeps "Message <name>" from the first paint on and after the shell re-renders
   // it (composer-label.test.js); a friend's Bot chat hides the stats footer.
-  assert.match(text('header.js'), /useLayoutEffect\(\(\) => holdComposerLabel\(document, composerLabel\), \[composerLabel\]\)/)
+  assert.match(text('header-effects.js'), /holdComposerLabel\(doc, name \? t\('Message \{name\}', \{ name \}\) : t\('Message'\)\)/)
   assert.match(text('composer-label.js'), /new Observer\(apply\)/)
   assert.match(text('composer-label.js'), /const ATTRIBUTES = \['aria-label', 'data-placeholder'\]/)
-  assert.match(text('header.js'), /document\.body\.dataset\.btFriendChat = ''/)
+  assert.match(text('header-effects.js'), /doc\.body\.dataset\.btFriendChat = ''/)
   assert.match(text('styles.js'), /body\[data-bt-friend-chat\] \[data-composer-stats\]\{display:none!important\}/)
   assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
   // #276: only the user's own Bots are offered as a Main Bot, in both selects.

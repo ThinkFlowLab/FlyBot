@@ -4852,12 +4852,13 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4626,154 +4626,880 @@ function useRowEntrances(replacing) {
+@@ -4624,156 +4624,882 @@ function useRowEntrances(replacing) {
+     const observer = new MutationObserver(() => {
+       if (!frame) frame = requestAnimationFrame(scan);
      });
-     scan();
-     return () => {
--      cancelAnimationFrame(frame);
--      observer.disconnect();
+-    scan();
++    scan();
++    return () => {
 +      cancelAnimationFrame(frame);
 +      observer.disconnect();
 +    };
@@ -5304,7 +5305,9 @@ diff --git a/client.js b/client.js
 +      if (!stopped) timer = setTimeout(load, POLL_MS2);
 +    });
 +    load();
-+    return () => {
+     return () => {
+-      cancelAnimationFrame(frame);
+-      observer.disconnect();
 +      stopped = true;
 +      clearTimeout(timer);
 +      taskListeners.delete(setTasks);
@@ -6576,7 +6579,7 @@ diff --git a/client.js b/client.js
  }
  var SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -5491,18 +5491,60 @@ var SIDEBAR_CSS = `
+@@ -5491,18 +5491,28 @@ var SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
@@ -6592,38 +6595,6 @@ diff --git a/client.js b/client.js
 +.bt-row-settings svg{width:15px;height:15px}
  `;
  
-+// src/client/composer-label.js
-+var ATTRIBUTES = ["aria-label", "data-placeholder"];
-+function holdComposerLabel(doc, label) {
-+  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
-+  const shell = /* @__PURE__ */ new Map();
-+  const apply2 = () => {
-+    for (const el of doc.querySelectorAll("[data-composer-input]")) {
-+      for (const name of ATTRIBUTES) {
-+        const current = el.getAttribute(name);
-+        if (current === label) continue;
-+        if (!shell.has(el)) shell.set(el, {});
-+        shell.get(el)[name] = current;
-+        el.setAttribute(name, label);
-+      }
-+    }
-+  };
-+  apply2();
-+  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
-+  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
-+  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
-+  return () => {
-+    watcher?.disconnect();
-+    for (const [el, values] of shell) {
-+      if (!el.isConnected) continue;
-+      for (const [name, value] of Object.entries(values)) {
-+        if (value == null) el.removeAttribute(name);
-+        else el.setAttribute(name, value);
-+      }
-+    }
-+  };
-+}
-+
  // src/client/header.js
 -var import_react9 = require("react");
 +var import_react14 = require("react");
@@ -6641,7 +6612,7 @@ diff --git a/client.js b/client.js
      const left = seen + MEMORY_NOTICE_MS - Date.now();
      setShown(seen > 0 && left > 0);
      if (seen === 0 || left <= 0) return void 0;
-@@ -5512,21 +5512,20 @@ function useMemoryNotice(ids, useMemoryNews) {
+@@ -5512,16 +5512,16 @@ function useMemoryNotice(ids, useMemoryNews) {
    return shown;
  }
  function MemoryNotice({ shown }) {
@@ -6662,14 +6633,8 @@ diff --git a/client.js b/client.js
 +    (0, import_react14.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react14.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react14.createElement)(MemoryIcon)), label)
    );
  }
--function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
-+function HeaderSeats({ sessionId, useRoster, useSessions, useUi, useTurnClock, actions }) {
-   const roster = useRoster((value) => value);
--  const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
-   const firstTurns = useSessions((list) => {
-     const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline;
-     return Array.isArray(outline) ? outline.slice(0, 8).map((entry) => entry.turn).join(",") : "";
-@@ -5537,63 +5537,95 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
+ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
+@@ -5537,7 +5537,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
      const first = openingTurn(state[sessionId], firstTurns, hiddenTurns);
      return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : "";
    });
@@ -6678,79 +6643,32 @@ diff --git a/client.js b/client.js
      if (opening) document.body.style.setProperty("--bt-first-sep", JSON.stringify(opening));
      else document.body.style.removeProperty("--bt-first-sep");
      return () => document.body.style.removeProperty("--bt-first-sep");
-   }, [opening]);
--  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
--  const owner = roster.byId[sessionId]?.id ?? sessionId;
--  const doing = useActivity((map) => map[owner]);
+@@ -5548,52 +5548,38 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
    const bot = roster.byId[sessionId];
    const room2 = roster.roomsById[sessionId];
--  const detailsOpen = useUi((state) => state.details === sessionId);
+   const detailsOpen = useUi((state) => state.details === sessionId);
 -  const name = bot?.name ?? room2?.name ?? "";
--  const useNews = useMemoryNews ?? noNews;
--  const memoryIds = bot ? [bot.id] : room2?.members ?? [];
--  const notice = useMemoryNotice(memoryIds, useNews);
++  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
+   const useNews = useMemoryNews ?? noNews;
+   const memoryIds = bot ? [bot.id] : room2?.members ?? [];
+   const notice = useMemoryNotice(memoryIds, useNews);
 -  const changed = useNews((map) => latestMemoryChange(map, memoryIds));
 -  (0, import_react9.useEffect)(() => {
 -    document.body.style.setProperty("--bt-placeholder", JSON.stringify(name ? t("Message {name}", { name }) : t("Message")));
 -  }, [name, t("Message")]);
 -  (0, import_react9.useEffect)(() => {
-+  const blank3 = useSessions((list) => list.byId[sessionId]?.blank === true);
-+  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
-+  const remoteEmptyHint = t("Send a message. Your friend approves unless Auto-send is on.");
-+  (0, import_react14.useEffect)(() => {
-+    if (bot?.remote && blank3) {
-+      document.body.dataset.btRemoteChat = "empty";
-+      document.body.style.setProperty("--bt-remote-empty", JSON.stringify(remoteEmptyHint));
-+    } else {
-+      delete document.body.dataset.btRemoteChat;
-+      document.body.style.removeProperty("--bt-remote-empty");
-+    }
-+    return () => {
-+      delete document.body.dataset.btRemoteChat;
-+      document.body.style.removeProperty("--bt-remote-empty");
-+    };
-+  }, [bot?.remote, blank3, remoteEmptyHint]);
-+  (0, import_react14.useEffect)(() => {
-+    if (!bot?.remote) return void 0;
-+    document.body.dataset.btFriendChat = "";
-+    return () => {
-+      delete document.body.dataset.btFriendChat;
-+    };
-+  }, [bot?.remote]);
-+  const composerLabel = name ? t("Message {name}", { name }) : t("Message");
-+  (0, import_react14.useLayoutEffect)(() => holdComposerLabel(document, composerLabel), [composerLabel]);
-+  (0, import_react14.useEffect)(() => {
-     actions.beginVisit(sessionId);
-     return () => actions.endVisit(sessionId);
-   }, [sessionId]);
+-    actions.beginVisit(sessionId);
+-    return () => actions.endVisit(sessionId);
+-  }, [sessionId]);
 -  (0, import_react9.useEffect)(() => {
-+  const face = room2?.origin === "face-to-face";
-+  (0, import_react14.useEffect)(() => face ? actions.filterFaceAtMenu?.(sessionId) : void 0, [sessionId, face]);
-+  (0, import_react14.useEffect)(() => {
-     if (room2) document.body.dataset.btRoom = "";
-     else delete document.body.dataset.btRoom;
-     return () => {
-       delete document.body.dataset.btRoom;
-     };
-   }, [Boolean(room2)]);
+-    if (room2) document.body.dataset.btRoom = "";
+-    else delete document.body.dataset.btRoom;
+-    return () => {
+-      delete document.body.dataset.btRoom;
+-    };
+-  }, [Boolean(room2)]);
 -  const memoryNotice = notice && changed !== null && roster.memory !== false;
 -  return (0, import_react9.createElement)(
-+  return null;
-+}
-+function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
-+  const roster = useRoster((value) => value);
-+  const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
-+  const hiddenTurns = roster.exchangeTurns?.[sessionId];
-+  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
-+  const owner = roster.byId[sessionId]?.id ?? sessionId;
-+  const doing = useActivity((map) => map[owner]);
-+  const bot = roster.byId[sessionId];
-+  const room2 = roster.roomsById[sessionId];
-+  const detailsOpen = useUi((state) => state.details === sessionId);
-+  const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
-+  const useNews = useMemoryNews ?? noNews;
-+  const memoryIds = bot ? [bot.id] : room2?.members ?? [];
-+  const notice = useMemoryNotice(memoryIds, useNews);
 +  const changed2 = useNews((map) => latestMemoryChange(map, memoryIds));
 +  const memoryNotice = notice && changed2 !== null && roster.memory !== false;
 +  return (0, import_react14.createElement)(
@@ -6872,9 +6790,108 @@ diff --git a/client.js b/client.js
        null,
        showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
        showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
-@@ -5715,18 +5715,18 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+@@ -5714,19 +5714,117 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+   );
  }
  
++// src/client/composer-label.js
++var ATTRIBUTES = ["aria-label", "data-placeholder"];
++function holdComposerLabel(doc, label) {
++  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
++  const shell = /* @__PURE__ */ new Map();
++  const apply2 = () => {
++    for (const el of doc.querySelectorAll("[data-composer-input]")) {
++      for (const name of ATTRIBUTES) {
++        const current = el.getAttribute(name);
++        if (current === label) continue;
++        if (!shell.has(el)) shell.set(el, {});
++        shell.get(el)[name] = current;
++        el.setAttribute(name, label);
++      }
++    }
++  };
++  apply2();
++  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
++  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
++  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
++  return () => {
++    watcher?.disconnect();
++    for (const [el, values] of shell) {
++      if (!el.isConnected) continue;
++      for (const [name, value] of Object.entries(values)) {
++        if (value == null) el.removeAttribute(name);
++        else el.setAttribute(name, value);
++      }
++    }
++  };
++}
++
++// src/client/header-effects.js
++function installHeaderEffects({ sessions, roster, actions, doc = globalThis.document }) {
++  if (!doc) return () => {
++  };
++  const slots = /* @__PURE__ */ new Map();
++  const run = (id, dep, setup) => {
++    const held = slots.get(id);
++    if (held !== void 0 && held.dep === dep) return;
++    held?.off();
++    slots.set(id, { dep, off: setup() ?? (() => {
++    }) });
++  };
++  const apply2 = () => {
++    const list = sessions.getSnapshot();
++    const state = roster.getSnapshot();
++    const row = Object.values(list?.byId ?? {}).find((entry) => (entry?.retainedBy?.mainView ?? 0) > 0);
++    const sessionId = row?.id;
++    const bot = sessionId === void 0 ? void 0 : state?.byId?.[sessionId];
++    const room2 = sessionId === void 0 ? void 0 : state?.roomsById?.[sessionId];
++    const name = bot?.remote ? friendBotTitle(bot) : room2?.displayName || (room2?.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2?.name) || bot?.name || "";
++    run("friend-chat", `${sessionId}|${bot?.remote === true}`, () => {
++      if (!bot?.remote) return void 0;
++      doc.body.dataset.btFriendChat = "";
++      return () => {
++        delete doc.body.dataset.btFriendChat;
++      };
++    });
++    run("remote-empty", `${sessionId}|${bot?.remote === true}|${row?.blank === true}`, () => {
++      if (!bot?.remote || row?.blank !== true) return void 0;
++      doc.body.dataset.btRemoteChat = "empty";
++      doc.body.style.setProperty("--bt-remote-empty", JSON.stringify(t("Send a message. Your friend approves unless Auto-send is on.")));
++      return () => {
++        delete doc.body.dataset.btRemoteChat;
++        doc.body.style.removeProperty("--bt-remote-empty");
++      };
++    });
++    run("composer-label", `${sessionId}|${name}`, () => holdComposerLabel(doc, name ? t("Message {name}", { name }) : t("Message")));
++    run("visit", sessionId, () => {
++      if (sessionId === void 0) return void 0;
++      actions.beginVisit(sessionId);
++      return () => actions.endVisit(sessionId);
++    });
++    run("face-at-menu", `${sessionId}|${room2?.origin === "face-to-face"}`, () => {
++      if (room2?.origin !== "face-to-face") return void 0;
++      const stop = actions.filterFaceAtMenu?.(sessionId);
++      return typeof stop === "function" ? stop : void 0;
++    });
++    run("room-flag", `${sessionId}|${room2 !== void 0}`, () => {
++      if (room2 === void 0) return void 0;
++      doc.body.dataset.btRoom = "";
++      return () => {
++        delete doc.body.dataset.btRoom;
++      };
++    });
++  };
++  apply2();
++  const offSessions = sessions.subscribe(apply2);
++  const offRoster = roster.subscribe(apply2);
++  return () => {
++    offSessions?.();
++    offRoster?.();
++    for (const held of slots.values()) held.off();
++    slots.clear();
++  };
++}
++
  // src/client/composer.js
 -var import_react10 = require("react");
 +var import_react15 = require("react");
@@ -10535,13 +10552,13 @@ diff --git a/client.js b/client.js
      ),
 -    (0, import_react23.createElement)(
 +    face ? (0, import_react30.createElement)(
-+      Card,
+       Card,
+-      { title: t("Members · {count}", { count: members.length }) },
 +      { title: t("Members · {count}", { count: people2.length }) },
 +      people2.map((person) => (0, import_react30.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
 +    ) : null,
 +    face ? null : (0, import_react30.createElement)(
-       Card,
--      { title: t("Members · {count}", { count: members.length }) },
++      Card,
 +      { title: t("Members · {count}", { count: members.length + humans.length + remotes.length }) },
 +      humans.map((person) => (0, import_react30.createElement)(
 +        "div",
@@ -12632,9 +12649,23 @@ diff --git a/client.js b/client.js
    );
  }
  
--// src/client/storage.js
--var STORAGE = {
--  unread: "ds-bot:unread",
++// src/client/pane-width.js
++var DEFAULT_WIDTH = 520;
++var DETAILS_WIDTH = 320;
++var DETAILS_MAX = 520;
++var MIN_WIDTH = 360;
++var MIN_CHAT = 420;
++var MIN_DETAILS = 240;
++function panelWidthRange(view, viewport) {
++  const room2 = Math.max(0, viewport - MIN_CHAT);
++  if (view === "browser") return [MIN_WIDTH, Math.max(MIN_WIDTH, room2)];
++  const low = Math.max(MIN_DETAILS, Math.min(DETAILS_WIDTH, room2));
++  return [low, Math.max(low, Math.min(DETAILS_MAX, room2))];
++}
++
+ // src/client/storage.js
+ var STORAGE = {
+   unread: "ds-bot:unread",
 -  reactions: "ds-bot:reactions",
 -  seen: "ds-bot:seen",
 -  prefs: "ds-bot:prefs",
@@ -12695,20 +12726,8 @@ diff --git a/client.js b/client.js
 -    }
 -  } catch {
 -  }
-+// src/client/pane-width.js
-+var DEFAULT_WIDTH = 520;
-+var DETAILS_WIDTH = 320;
-+var DETAILS_MAX = 520;
-+var MIN_WIDTH = 360;
-+var MIN_CHAT = 420;
-+var MIN_DETAILS = 240;
-+function panelWidthRange(view, viewport) {
-+  const room2 = Math.max(0, viewport - MIN_CHAT);
-+  if (view === "browser") return [MIN_WIDTH, Math.max(MIN_WIDTH, room2)];
-+  const low = Math.max(MIN_DETAILS, Math.min(DETAILS_WIDTH, room2));
-+  return [low, Math.max(low, Math.min(DETAILS_MAX, room2))];
- }
- 
+-}
+-
 -// src/client/member-status.js
 -var import_react30 = require("react");
 -var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
@@ -12891,9 +12910,6 @@ diff --git a/client.js b/client.js
 -      entry.here ? (0, import_react30.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
 -    )
 -  );
-+// src/client/storage.js
-+var STORAGE = {
-+  unread: "ds-bot:unread",
 +  reactions: "ds-bot:reactions",
 +  seen: "ds-bot:seen",
 +  friendLines: "ds-bot:friend-lines",
@@ -14396,8 +14412,8 @@ diff --git a/client.js b/client.js
 +    off();
 +    timers.clearTimeout?.(timer);
 +  };
-+}
-+
+ }
+ 
 +// src/client/stats-dock.js
 +var import_react42 = require("react");
 +var STATS_DOCK = "conversation.composer.dock";
@@ -14411,7 +14427,7 @@ diff --git a/client.js b/client.js
 +    const { turns, steps } = params;
 +    return text === `${turns} turns ${steps} steps` ? `${noun(turns, "turn", "turns")} ${noun(steps, "step", "steps")}` : text;
 +  };
- }
++}
 +function statsDock(entriesOf, id = STATS_ID) {
 +  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === id);
 +  function StatsDock(props) {
@@ -14423,7 +14439,7 @@ diff --git a/client.js b/client.js
 +  return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
 +}
 +var statsDocks = (entriesOf) => STATS_IDS.map((id) => ({ id, ...statsDock(entriesOf, id) }));
- 
++
  // src/client/index.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
  function apply(ctx) {
@@ -14656,12 +14672,18 @@ diff --git a/client.js b/client.js
    actions.signInEntry = () => ctx.slots.entries?.("settings.models.sign-in")?.[0] ?? null;
    actions.canSignIn = () => Boolean(actions.signInEntry());
    actions.signIn = () => ui2.set((state) => ({ ...state, signIn: (state.signIn ?? 0) + 1 }));
-@@ -13964,7 +13964,7 @@ function apply(ctx) {
+@@ -13964,7 +13964,13 @@ function apply(ctx) {
    });
    const browserPages = browsers?.pages ?? createSource({});
    const browserTabs = browsers?.tabs ?? createSource({});
 -  const face = () => ({ actions, hooks: { roster, ui: ui2, activity, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } });
 +  const face = () => ({ actions, hooks: { roster, ui: ui2, activity, work, memoryNews, registry: registry3, turnClock, live, cards, browserPages, browserTabs, surface, update } });
++  ctx.effect(() => installHeaderEffects({
++    sessions: ctx.sessions.list,
++    roster,
++    actions,
++    doc: typeof document === "undefined" ? void 0 : document
++  }), "ds-bot: session header effects");
    ctx.effect(() => noticeApprovals({
      work,
      roster,
@@ -14711,7 +14733,7 @@ diff --git a/client.js b/client.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId);
      if (controller === void 0 || span === void 0) return;
-@@ -14019,33 +14019,47 @@ function apply(ctx) {
+@@ -14019,33 +14019,44 @@ function apply(ctx) {
      installCompiledStyles(SHELL_CSS, "shell"),
      installCompiledStyles(SIDEBAR_CSS, "sidebar"),
      installCompiledStyles(SECRET_CSS, "secrets"),
@@ -14757,9 +14779,6 @@ diff --git a/client.js b/client.js
 +    // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
 +    // utilities list beside them instead of replacing the whole header.
 +    shadow("conversation.session.header.utilities", { id: "bot-pill", order: 100, inject: face }, HeaderPill),
-+    // The shell draws .utilities only while its chrome shows (a blank Session hides it), so what the
-+    // pill does to the page rides .corner, which the shell draws in every state (#803).
-+    shadow("conversation.session.header.corner", { id: "bot-header-seats", order: 100, inject: face }, HeaderSeats),
      shadow("conversation.chat.node", { key: "assistant-step", priority: -10, locale: "chat", inject: assistantFace }, AssistantCell),
      shadow("conversation.chat.node", { key: "turn-trigger", priority: -10, locale: "chat", inject: face }, TriggerCell),
      shadow("conversation.chat.node", { key: "tool-call", priority: -10, locale: "chat", inject: face }, ToolCell),

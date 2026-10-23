@@ -1154,7 +1154,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,63 @@
+@@ -1,44 +1,64 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -1167,10 +1167,10 @@ diff --git a/src/client/index.js b/src/client/index.js
 +import { installBrandChrome, installTabTitle } from './brand.js'
  import { lookOf } from './mark.js'
 -import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
--import { HeaderPill } from './header.js'
--import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 +import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
-+import { HeaderPill, HeaderSeats } from './header.js'
+ import { HeaderPill } from './header.js'
+-import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
++import { installHeaderEffects } from './header-effects.js'
 +import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
  import { CHATS_SOURCE, atSources } from './at-menu.js'
 +import { watchFaceMenu } from './face-at-filter.js'
@@ -1411,6 +1411,24 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
+@@ -690,6 +690,17 @@ export function apply(ctx) {
+   const browserPages = browsers?.pages ?? createSource({})
+   const browserTabs = browsers?.tabs ?? createSource({})
+   const face = () => ({ actions, hooks: { roster, ui, activity, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
++  // What the pill does to the page follows the Session being looked at, not the seat the
++  // pill is painted in: the shell hides `.utilities` on a blank Session, so a Side effect
++  // parked in the pill stops there. Nothing is claimed for them either — `.corner`, the one
++  // header seat the shell draws in every state, already belongs to ui-sidebar-right's own
++  // button (a `single` slot registers at one priority per cell) (#803).
++  ctx.effect(() => installHeaderEffects({
++    sessions: ctx.sessions.list,
++    roster,
++    actions,
++    doc: typeof document === 'undefined' ? undefined : document,
++  }), 'ds-bot: session header effects')
+   ctx.effect(() => noticeApprovals({
+     work,
+     roster,
 @@ -715,10 +715,23 @@ export function apply(ctx) {
    }
  
@@ -1463,7 +1481,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,47 @@ export function apply(ctx) {
+@@ -752,33 +752,44 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1508,9 +1526,6 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
 +    // utilities list beside them instead of replacing the whole header.
 +    shadow('conversation.session.header.utilities', { id: 'bot-pill', order: 100, inject: face }, HeaderPill),
-+    // The shell draws .utilities only while its chrome shows (a blank Session hides it), so what the
-+    // pill does to the page rides .corner, which the shell draws in every state (#803).
-+    shadow('conversation.session.header.corner', { id: 'bot-header-seats', order: 100, inject: face }, HeaderSeats),
      shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
      shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
      shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),
@@ -2917,10 +2932,10 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 +  assert.doesNotMatch(text('sidebar.js'), /wide && bot\.remote \? h\('button'/)
 +  // #419 / #499: the composer keeps "Message <name>" from the first paint on and after the shell re-renders
 +  // it (composer-label.test.js); a friend's Bot chat hides the stats footer.
-+  assert.match(text('header.js'), /useLayoutEffect\(\(\) => holdComposerLabel\(document, composerLabel\), \[composerLabel\]\)/)
++  assert.match(text('header-effects.js'), /holdComposerLabel\(doc, name \? t\('Message \{name\}', \{ name \}\) : t\('Message'\)\)/)
 +  assert.match(text('composer-label.js'), /new Observer\(apply\)/)
 +  assert.match(text('composer-label.js'), /const ATTRIBUTES = \['aria-label', 'data-placeholder'\]/)
-+  assert.match(text('header.js'), /document\.body\.dataset\.btFriendChat = ''/)
++  assert.match(text('header-effects.js'), /doc\.body\.dataset\.btFriendChat = ''/)
 +  assert.match(text('styles.js'), /body\[data-bt-friend-chat\] \[data-composer-stats\]\{display:none!important\}/)
 +  assert.match(text('settings.js'), /filter\(bot => !bot\.remote\)/)
 +  // #276: only the user's own Bots are offered as a Main Bot, in both selects.

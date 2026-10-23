@@ -9,7 +9,8 @@ import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } fro
 import { installBrandChrome, installTabTitle } from './brand.js'
 import { lookOf } from './mark.js'
 import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
-import { HeaderPill, HeaderSeats } from './header.js'
+import { HeaderPill } from './header.js'
+import { installHeaderEffects } from './header-effects.js'
 import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 import { CHATS_SOURCE, atSources } from './at-menu.js'
 import { watchFaceMenu } from './face-at-filter.js'
@@ -757,6 +758,17 @@ export function apply(ctx) {
   const browserPages = browsers?.pages ?? createSource({})
   const browserTabs = browsers?.tabs ?? createSource({})
   const face = () => ({ actions, hooks: { roster, ui, activity, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
+  // What the pill does to the page follows the Session being looked at, not the seat the
+  // pill is painted in: the shell hides `.utilities` on a blank Session, so a Side effect
+  // parked in the pill stops there. Nothing is claimed for them either — `.corner`, the one
+  // header seat the shell draws in every state, already belongs to ui-sidebar-right's own
+  // button (a `single` slot registers at one priority per cell) (#803).
+  ctx.effect(() => installHeaderEffects({
+    sessions: ctx.sessions.list,
+    roster,
+    actions,
+    doc: typeof document === 'undefined' ? undefined : document,
+  }), 'ds-bot: session header effects')
   ctx.effect(() => noticeApprovals({
     work,
     roster,
@@ -883,9 +895,6 @@ export function apply(ctx) {
     // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
     // utilities list beside them instead of replacing the whole header.
     shadow('conversation.session.header.utilities', { id: 'bot-pill', order: 100, inject: face }, HeaderPill),
-    // The shell draws .utilities only while its chrome shows (a blank Session hides it), so what the
-    // pill does to the page rides .corner, which the shell draws in every state (#803).
-    shadow('conversation.session.header.corner', { id: 'bot-header-seats', order: 100, inject: face }, HeaderSeats),
     shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
     shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
     shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),

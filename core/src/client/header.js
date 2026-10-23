@@ -3,11 +3,10 @@ import { createPortal } from 'react-dom'
 import { currentPart, latestMemoryChange } from './text.js'
 import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
 import { botState, BotAvatar, RoomAvatar } from './mark.js'
-import { ActivityIndicator } from './activity-row.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
+import { ActivityIndicator } from './activity-row.js'
 import { t } from './i18n.js'
 import { friendBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
-import { holdComposerLabel } from './composer-label.js'
 
 // -------------------------------------------------------------------------
 // Conversation header
@@ -44,21 +43,18 @@ function MemoryNotice({ shown }) {
     h('span', { className: 'bt-pill-mem-in', ref: inner }, h('span', { className: 'bt-pill-mem-ico' }, h(MemoryIcon)), label))
 }
 
-// Everything the header pill does to the page — the empty-chat hint, the visit ledger, the composer
-// placeholder, the room and face flags — lives here rather than in the pill. The shell renders
-// `conversation.session.header.utilities`, and the pill with it, only while its chrome shows
-// (`!hideChrome`, the shell's `blank`), so a Session without a first message would drop every one of
-// those effects; `conversation.session.header.corner` is rendered in every state, so they ride there (#803).
-export function HeaderSeats({ sessionId, useRoster, useSessions, useUi, useTurnClock, actions }) {
+export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
   const roster = useRoster(value => value)
+  const title = useSessions(list => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? '')
   const firstTurns = useSessions((list) => {
     const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline
     return Array.isArray(outline) ? outline.slice(0, 8).map(entry => entry.turn).join(',') : ''
   })
   const hiddenTurns = roster.exchangeTurns?.[sessionId]
   const visit = useUi(state => state.visits?.[sessionId])
-  // The opening separator has no turn before it, so the transcript column draws it,
-  // unless the opening is unread: then the first trigger draws it under the divider.
+  // The opening separator is the one page effect that stays with the pill: it needs a turn, so
+  // the shell always draws the header for it, and it reads `useTurnClock`, which the installer
+  // in header-effects.js deliberately does not carry.
   const opening = useTurnClock((state) => {
     const first = openingTurn(state[sessionId], firstTurns, hiddenTurns)
     return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : ''
@@ -68,57 +64,6 @@ export function HeaderSeats({ sessionId, useRoster, useSessions, useUi, useTurnC
     else document.body.style.removeProperty('--bt-first-sep')
     return () => document.body.style.removeProperty('--bt-first-sep')
   }, [opening])
-  const bot = roster.byId[sessionId]
-  const room = roster.roomsById[sessionId]
-  const blank = useSessions(list => list.byId[sessionId]?.blank === true)
-  const name = bot?.remote
-    ? friendBotTitle(bot)
-    : (room?.displayName || (room?.sharedFrom ? sharedRoomTitle(room.sharedFrom.inviterName) : room?.name) || bot?.name || '')
-  const remoteEmptyHint = t("Send a message. Your friend approves unless Auto-send is on.")
-  useEffect(() => {
-    if (bot?.remote && blank) {
-      document.body.dataset.btRemoteChat = 'empty'
-      document.body.style.setProperty('--bt-remote-empty', JSON.stringify(remoteEmptyHint))
-    } else {
-      delete document.body.dataset.btRemoteChat
-      document.body.style.removeProperty('--bt-remote-empty')
-    }
-    return () => {
-      delete document.body.dataset.btRemoteChat
-      document.body.style.removeProperty('--bt-remote-empty')
-    }
-  }, [bot?.remote, blank, remoteEmptyHint])
-  // A friend's Bot runs on its owner's home: the local run stats (turns, steps, tok/s, cache)
-  // are relay turns and always 0 here, so CSS hides the shell's stats footer in that chat (#419).
-  useEffect(() => {
-    if (!bot?.remote) return undefined
-    document.body.dataset.btFriendChat = ''
-    return () => { delete document.body.dataset.btFriendChat }
-  }, [bot?.remote])
-  // The composer placeholder is not localizable per Session, so CSS reads it from here.
-  const composerLabel = name ? t('Message {name}', { name }) : t('Message')
-  // Before the first paint, and again whenever the shell renders its own composer copy (#419, #499).
-  useLayoutEffect(() => holdComposerLabel(document, composerLabel), [composerLabel])
-  useEffect(() => {
-    actions.beginVisit(sessionId)
-    return () => actions.endVisit(sessionId)
-  }, [sessionId])
-  // A face room's "@" lists the room's people and Bots, not the shell's Sessions (#305).
-  const face = room?.origin === 'face-to-face'
-  useEffect(() => (face ? actions.filterFaceAtMenu?.(sessionId) : undefined), [sessionId, face])
-  // Group chats have no voice mode, so the composer CSS needs to know the Session kind.
-  useEffect(() => {
-    if (room) document.body.dataset.btRoom = ''
-    else delete document.body.dataset.btRoom
-    return () => { delete document.body.dataset.btRoom }
-  }, [Boolean(room)])
-  return null
-}
-
-export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
-  const roster = useRoster(value => value)
-  const title = useSessions(list => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? '')
-  const hiddenTurns = roster.exchangeTurns?.[sessionId]
   const running = useSessionStatus(map => map.get(sessionId)?.running === true)
   const owner = roster.byId[sessionId]?.id ?? sessionId
   const doing = useActivity(map => map[owner])
