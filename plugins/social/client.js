@@ -884,7 +884,28 @@ window.__ModuleLoader__.load({
     // Two shapes in one field (#852): the local one names the Bot to knock on, and its ticket is not a
     // face-room invite. Same regex as the host's parseInviteLink; the sentence is shown here too.
     const localInviteHandle = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/(@[A-Za-z0-9._-]{1,120})\/[A-Za-z0-9_-]{16,64}\/?(?:[?#].*)?$/i)?.[1] ?? ''
-    const LOCAL_INVITE_COPY = 'That link opens a room on another FlyBot. It does not join a face-to-face room.'
+    // A core endpoint by its own name (#876): the local room's link lives in the host, not in this plugin.
+    const host = (endpoint, payload) => {
+      const fn = globalThis.__flybot__?.host
+      if (typeof fn !== 'function') return Promise.reject(Object.assign(new Error('This FlyBot cannot make room links yet.'), { code: 'bot/not-found' }))
+      return fn(endpoint, payload)
+    }
+    // The host keeps a deadline in milliseconds; the countdown and the card read an ISO time.
+    const isoAt = (ms) => (Number.isFinite(Number(ms)) && Number(ms) > 0 ? new Date(Number(ms)).toISOString() : '')
+    // One sentence per way a room link is refused (#876), never the generic "not an invite link".
+    const LOCAL_REFUSAL_COPY = {
+      expired: 'That link has expired. Ask for a new one.',
+      revoked: 'That link was withdrawn. Ask for a new one.',
+      'claimed-elsewhere': 'Someone else already joined with that link. Ask for one of your own.',
+      'own-invite': 'That link is for this FlyBot\u2019s own room.',
+      busy: 'Too many tries for now. Wait a minute and try again.',
+      unknown: 'That link does not open any room. Check that it was copied whole.',
+      'lookup-failed': 'Bot Social could not look up that link right now. Try again.',
+      consumed: 'Someone else already joined with that link. Ask for one of your own.',
+      'not-addable': 'That room cannot take guests right now.',
+      'no-sender': 'This FlyBot has no Bot Social identity yet.',
+    }
+    const localRefusal = (code) => LOCAL_REFUSAL_COPY[String(code ?? '')] ?? LOCAL_REFUSAL_COPY['lookup-failed']
     // The preview card names a room the person has not entered (#798). `name` is that room's own
     // string and the host passes it through as sent, so the last place before a person reads it
     // cleans it: one line, no controls, brackets, markup or @, capped — the same rules as the
@@ -1022,6 +1043,73 @@ window.__ModuleLoader__.load({
             h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-count' },
               invite.expiresAt ? countdown(invite.expiresAt) : 'Anyone with the link can join while the room is open.'),
             h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-revoke', disabled: !!busy, onClick: revoke }, 'Withdraw link'))
+          : null)
+    }
+    // #876: Invite by link in a local group's Members card. The host makes the link (Bot Social records
+    // it, so a stranger can join); this row mints, shows the QR and the link, counts down and withdraws.
+    // Several people may each get a link (#878): the newest is shown, and a joined one stops showing.
+    function LocalInviteRow({ room } = {}) {
+      useStyles()
+      const roomId = room?.id
+      const [invite, setInvite] = useState(null)
+      const [note, setNote] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [copied, setCopied] = useState(false)
+      const [, setTick] = useState(0)
+      useEffect(() => {
+        if (!roomId) return undefined
+        let gone = false
+        host('room-invite', { roomId }).then(value => { if (!gone && value?.invite?.url) setInvite(value.invite) }, () => {})
+        return () => { gone = true }
+      }, [roomId])
+      useEffect(() => (invite?.expiresAt ? everySecond(() => setTick(n => n + 1)) : undefined), [invite?.expiresAt])
+      if (!roomId) return null
+      const run = async (fn) => {
+        setBusy(true)
+        setNote(null)
+        try { await fn() } catch (e) { setNote({ tone: 'error', text: errorText(e) }) } finally { setBusy(false) }
+      }
+      const mint = () => run(async () => {
+        const value = await host('room-invite-mint', { roomId })
+        if (value?.invite?.url) setInvite(value.invite)
+        else setNote({ tone: 'error', text: 'No link came back. Try again.' })
+      })
+      const revoke = () => run(async () => {
+        await host('room-invite-revoke', { roomId, ticket: invite?.ticket })
+        setInvite(null)
+        setNote({ tone: 'hint', text: 'The link was withdrawn. Nobody can join with it now.' })
+      })
+      const copy = async () => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+        try {
+          await clip?.writeText?.(invite.url)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: the link is on screen to select */ }
+      }
+      const at = isoAt(invite?.expiresAt)
+      const live = Boolean(invite?.url) && qrJoinable(at, Date.now())
+      return h('div', { className: 'fs-invite', 'data-flybot': 'room-invite' },
+        h('div', { className: 'fs-invite-head' },
+          h('span', { className: 'fs-label-inline' }, 'Invite by link'),
+          invite?.url && !live ? h('span', { className: 'fs-hint', 'data-flybot': 'room-invite-ended' }, 'This link has expired.') : null,
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'room-invite-mint', disabled: busy, onClick: mint,
+          }, live ? 'New link' : 'Create link')),
+        live ? null : h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-about' },
+          'Anyone you give the link to can join with their Bot, for 10 minutes. They do not become a friend.'),
+        note ? h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-note', 'data-tone': note.tone, role: 'status' }, note.text) : null,
+        live
+          ? h('div', { className: 'fs-invite-live', 'data-flybot': 'room-invite-live' },
+            h(QrImage, {
+              text: invite.url, kind: 'room-invite-qr', at, attrs: { 'data-url': invite.url },
+              label: 'QR code for this group invite', hint: 'Scan with FlyBot to join this group',
+            }),
+            h('div', { className: 'fs-invite-link' },
+              h('code', { className: 'fs-invite-url', 'data-flybot': 'room-invite-url' }, invite.url),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-copy', onClick: copy }, copied ? 'Copied' : 'Copy link')),
+            h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-count' }, countdown(at)),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke', disabled: busy, onClick: revoke }, 'Withdraw link'))
           : null)
     }
     function FaceWaitCode({ code, qrAt, qrOffsetMs } = {}) {
@@ -1369,7 +1457,7 @@ window.__ModuleLoader__.load({
       const previewLink = async (typed) => {
         const text = String(typed ?? invite.link ?? '').trim()
         if (localInviteHandle(text)) {
-          setInvite({ link: text, status: { tone: 'error', text: LOCAL_INVITE_COPY } })
+          await previewLocal(text)
           return
         }
         const ticket = faceInviteTicket(text)
@@ -1405,6 +1493,57 @@ window.__ModuleLoader__.load({
         }
         await joinTicket(text, ticket)
       }
+      // #876: a room link of another FlyBot. The host reads Bot Social's record first (a stranger can),
+      // and Join claims it for the picked Bots; the room appears here when the inviter's home seats them.
+      const previewLocal = async (text) => {
+        if (invite.preview?.local && invite.preview.link === text) return
+        setBusy(true)
+        setFailures([])
+        setInvite({ link: text, status: { tone: 'hint', text: 'Looking up that room…' } })
+        let seen = null
+        try {
+          seen = (await host('room-invite-preview', { link: text }))?.preview ?? null
+        } catch (e) {
+          setBusy(false)
+          setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
+          return
+        }
+        setBusy(false)
+        if (seen?.refused) {
+          setInvite({ link: text, status: { tone: 'error', text: localRefusal(seen.refused) } })
+          return
+        }
+        const card = invitePreview({ name: seen?.name, lead: seen?.owner ? `${seen.lead || 'Bot'} (${seen.owner})` : seen?.lead, expiresAt: isoAt(seen?.expiresAt) })
+        if (seen?.claimed) {
+          setInvite({ link: text, status: { tone: 'error', text: localRefusal('claimed-elsewhere') } })
+          return
+        }
+        if (!card) {
+          // An older server has no record to read: the friend's knock is still the way in.
+          setInvite({ link: text, status: null, preview: { name: 'A group on another FlyBot', lead: '', people: '', expiresAt: '', clockOffsetMs: 0, local: true, link: text } })
+          return
+        }
+        setInvite({ link: text, status: null, preview: { ...card, local: true, link: text } })
+      }
+      const joinLocal = async (text) => {
+        if (!selected.length) {
+          setInvite(current => ({ ...current, status: { tone: 'error', text: 'Pick a Bot first.' } }))
+          return
+        }
+        setBusy(true)
+        setInvite(current => ({ ...current, status: { tone: 'hint', text: 'Joining with that link…' } }))
+        try {
+          const result = await host('room-invite-ask', { link: text, accept: true, bots: selected })
+          if (result?.refused) {
+            setInvite({ link: text, status: { tone: 'error', text: localRefusal(result.refused) } })
+            return
+          }
+          const name = invite.preview?.name && invite.preview.name !== 'A group on another FlyBot' ? `"${invite.preview.name}"` : 'the group'
+          setInvite({ link: '', status: { tone: 'ok', text: `Asked to join ${name}. It opens in your sidebar as soon as their FlyBot seats your Bots.` } })
+        } catch (e) {
+          setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
+        } finally { setBusy(false) }
+      }
       // One sentence per way a scan can fail, and the number field is untouched either way.
       const beginScan = () => {
         setScan({ tone: 'hint', text: 'Point the camera at a FlyBot room code.' })
@@ -1415,7 +1554,8 @@ window.__ModuleLoader__.load({
           }
           const raw = String(result?.raw ?? '')
           if (localInviteHandle(raw)) {
-            setScan({ tone: 'error', text: LOCAL_INVITE_COPY })
+            setScan({ tone: 'ok', text: 'Scanned a group link.' })
+            void previewLocal(raw)
             return
           }
           if (faceInviteTicket(raw)) {
@@ -1523,7 +1663,8 @@ window.__ModuleLoader__.load({
             preview ? h(InvitePreviewCard, {
               preview, busy, kind: 'face-link-preview',
               onClear: clearInvite,
-              onJoin: () => joinTicket(preview.link ?? invite.link, preview.ticket),
+              joinLabel: preview.local ? 'Join group' : 'Join',
+              onJoin: () => (preview.local ? joinLocal(preview.link) : joinTicket(preview.link ?? invite.link, preview.ticket)),
             }) : null,
             h('div', { className: 'fs-scan-row' },
               h('button', {
@@ -3132,6 +3273,7 @@ window.__ModuleLoader__.load({
       FriendBotRow,
       FriendChatSettings,
       FaceToFaceGroup,
+      LocalInviteRow,
       FaceAvatar,
       FaceRoomOverview,
       FaceRoomCard,
@@ -3175,6 +3317,8 @@ window.__ModuleLoader__.load({
             slots().register('flybot.approvals', { id: 'social-held-reply', order: 50, policy: 'social', inline: true, component: HeldReplyCard }),
             slots().register('flybot.settings.page', { id: 'social', order: 100, label: 'Bot Social', icon: SocialPageIcon, component: SocialServerSettings }),
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
+            // An older host has no Members-card slot: the row is simply not drawn there.
+            (() => { try { return slots().register('flybot.room.members', { id: 'social-room-invite', order: 50, component: LocalInviteRow }) } catch { return () => {} } })(),
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
             slots().register('flybot.session.dock', { id: 'social-thinking', order: 60, component: PeerThinking }),

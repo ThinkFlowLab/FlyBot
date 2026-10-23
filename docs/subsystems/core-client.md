@@ -71,6 +71,7 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 ### Face-to-face room lead
 
+- A local group's **Members · N** card (`group-settings.js`) ends with the plugin rows of slot `flybot.room.members` (`FlyBotRoomMembers` in `flybot-slots.js`), never in a face or shared (`inbound-share`) room; the rows get `host`, the core endpoint call (also `__flybot__.host`), for `room-invite` / `room-invite-mint` / `room-invite-revoke` (#876, the social plugin's **Invite by link**). Covered by `core/test/room-members-slot.test.js`.
 - The face room's details (`FaceMembers` in `details-drawer.js`) open with `FaceLead` (`group-settings.js`, #476): the current lead as `Bot (person)`, *Default* until the creator picked one. Only when `room.face.lead.canPick` (this home made the room and Bot Social stores a lead) does it show **Change**, a **Make lead** button per Bot of every home and **Use the default lead**; each calls `social/face-lead`. Everyone else sees it read-only. `FacePersonRow` marks the lead's Bot with a *Lead* tag (`isLeadSeat`, by handle). Never a chat command.
 
 ### Room avatars in face-to-face chats

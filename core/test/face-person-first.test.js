@@ -20,7 +20,7 @@ async function load(entry) {
     require: (name) => {
       const platform = {
         react: {
-          createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
+          Component: class {}, createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
           useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useEffect: () => {}, useRef: current => ({ current }),
           useLayoutEffect: () => {}, useMemo: make => make(), useCallback: fn => fn, useSyncExternalStore: (sub, get) => get(), Fragment: 'fragment',
         },

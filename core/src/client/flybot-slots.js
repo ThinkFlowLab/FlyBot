@@ -15,6 +15,8 @@
 //                            `inline: true` with `policy`: instead, the buttons drawn on a held reply's own bubble in the
 //                            chat (#418), component({ held, decide, call, actions }); held = { id, by, status, to, toName, from }
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
+//   flybot.room.members     { id, order, component({ room, roster, actions, call, host }) }  rows at the foot of a local group's
+//                            Members card (#876: Invite by link); `host(endpoint, payload)` calls a core endpoint, which `call` cannot
 //   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim, t }) }  above the composer;
 //                            a dock that draws the cards of one approval policy sets `policy` and calls claim(ids) with the
 //                            approval ids it shows: the overlay then draws no second card for them (#260)
@@ -50,6 +52,8 @@ export const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payloa
 export function registry() {
   const slots = baseRegistry()
   globalThis.__flybot__.call ??= call
+  // A core endpoint by its own name (`room-invite-mint`), for a plugin row in a core card (#876).
+  globalThis.__flybot__.host ??= callHost
   // Classic-script plugins cannot import mark.js; they render the same Bot look
   // the sidebar / session list / chat header use via these host components.
   globalThis.__flybot__.BotMark ??= BotMark
@@ -157,6 +161,14 @@ export function FlyBotRoomOverview({ room, roster, actions }) {
   if (entries.length === 0) return null
   return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-room-overview', 'data-flybot': entry.id },
     h(Safe, { entry, props: { room, roster, actions, call } }))))
+}
+
+// Rows a plugin adds at the foot of a local group's Members card (#876: Invite by link).
+export function FlyBotRoomMembers({ room, roster, actions }) {
+  const entries = useSlot('flybot.room.members')
+  if (entries.length === 0) return null
+  return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-room-members', 'data-flybot': entry.id },
+    h(Safe, { entry, props: { room, roster, actions, call, host: callHost } }))))
 }
 
 export function FlyBotAccountHeader({ actions }) {

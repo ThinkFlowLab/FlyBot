@@ -544,6 +544,8 @@ export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
  *   one middleware (`policy`).
  * - `flybot.room.overview`: a block at the top of a group's overview (Leave / Start for a
  *   face-to-face room).
+ * - `flybot.room.members`: rows at the foot of a local group's Members card (the social plugin's
+ *   **Invite by link**: mint, QR, copy, countdown, withdraw). `host` calls a core endpoint by its own name.
  * - `flybot.session.dock`: a card above the composer in a Bot or group chat (held Bot
  *   Social replies waiting for approval).
  * - `flybot.account.header`: a compact block at the top of the account menu (the social
@@ -570,6 +572,7 @@ export interface FlyBotSlots {
   /** policy: only approvals held by this middleware name; omit for all. */
   'flybot.approvals': { id: string; order?: number; policy?: string; component(props: ApprovalCardProps): any }
   'flybot.room.overview': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall }): any }
+  'flybot.room.members': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall; host: FlyBotCall }): any }
   'flybot.session.dock': { id: string; order?: number; /** The `by` of the approvals this dock draws; the overlay then draws no second card for the ids it claims. */ policy?: string; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall; /** Report the approval ids this dock shows (a plugin's own policy). */ claim?: (ids: string[]) => void }): any }
   'flybot.account.header': { id: string; order?: number; component(props: { actions?: any; call: FlyBotCall }): any }
   'flybot.settings.page': {

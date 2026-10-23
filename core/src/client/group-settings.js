@@ -7,6 +7,7 @@ import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
 import { StandingApprovalsCard } from './standing-approvals.js'
+import { FlyBotRoomMembers } from './flybot-slots.js'
 import { remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
@@ -205,6 +206,8 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         : outside.length + outsidePeople.length + outsideRemotes.length > 0
           ? h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(true) }, h(PlusIcon), t('Add member'))
           : null,
+      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here.
+      room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions }),
       h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
         // The host checks for two members on every change, even a rename.
         members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')

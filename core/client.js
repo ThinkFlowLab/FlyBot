@@ -1539,7 +1539,7 @@ function faceAliases(participant, name) {
 }
 
 // src/client/flybot-registry.js
-var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header", "flybot.settings.page"];
+var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.room.members", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header", "flybot.settings.page"];
 function createRegistry() {
   const entries2 = new Map(SLOTS.map((name) => [name, []]));
   const listeners2 = /* @__PURE__ */ new Set();
@@ -2261,6 +2261,7 @@ var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
 function registry2() {
   const slots = registry();
   globalThis.__flybot__.call ??= call2;
+  globalThis.__flybot__.host ??= call;
   globalThis.__flybot__.BotMark ??= BotMark;
   globalThis.__flybot__.BotAvatar ??= BotAvatar;
   globalThis.__flybot__.lookOf ??= lookOf;
@@ -2351,6 +2352,15 @@ function FlyBotRoomOverview({ room: room2, roster, actions }) {
     "div",
     { key: entry.id, className: "bt-flybot-room-overview", "data-flybot": entry.id },
     (0, import_react2.createElement)(Safe, { entry, props: { room: room2, roster, actions, call: call2 } })
+  )));
+}
+function FlyBotRoomMembers({ room: room2, roster, actions }) {
+  const entries2 = useSlot("flybot.room.members");
+  if (entries2.length === 0) return null;
+  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+    "div",
+    { key: entry.id, className: "bt-flybot-room-members", "data-flybot": entry.id },
+    (0, import_react2.createElement)(Safe, { entry, props: { room: room2, roster, actions, call: call2, host: call } })
   )));
 }
 function FlyBotAccountHeader({ actions }) {
@@ -12556,6 +12566,8 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
         )),
         (0, import_react30.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
       ] : outside.length + outsidePeople.length + outsideRemotes.length > 0 ? (0, import_react30.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react30.createElement)(PlusIcon), t("Add member")) : null,
+      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here.
+      room2.origin === "face-to-face" || room2.origin === "inbound-share" ? null : (0, import_react30.createElement)(FlyBotRoomMembers, { room: room2, roster, actions }),
       (0, import_react30.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react30.createElement)(
         "span",
         { className: "bt-set-hint" },
