@@ -3,7 +3,7 @@ FlyBot patch 0001-core-fixes on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Generate
 diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
-@@ -27,6 +27,7 @@
+@@ -27,6 +27,7 @@ Tested with dsh `0.2.0-rc.2` (Web and Desktop) on Linux.
  - **Bot browser (dsh Desktop only)**: see [Bot browser](#bot-browser).
  - **Images**: for a model that cannot read images, a vision model first turns the image into text.
  - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
@@ -11,7 +11,7 @@ diff --git a/README.md b/README.md
  - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
  - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
  
-@@ -71,9 +72,12 @@
+@@ -71,9 +71,12 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
      memory: true                    # false turns memory off: no memory tools, section or panel
      memoryReview: true              # false leaves memory to the Bots' own remember calls
      diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
@@ -24,7 +24,7 @@ diff --git a/README.md b/README.md
  ```
  
  **Updates**: when a window opens, DS Bot asks where it was installed from for a newer release: the npm registry (the one the DSH plugin manager installs from, then its fallbacks), or the latest GitHub release for a `github:…#vX.Y.Z` install. A newer version shows a cloud button at the top right of the sidebar; **Update** reinstalls DS Bot through the DSH plugin manager, and the new version runs from the next DSH start. A linked or local checkout is never offered an update. Settings → About DS Bot shows the same state, with **Check for updates** to ask again at once.
-@@ -82,10 +86,11 @@
+@@ -82,10 +82,11 @@ The same card can carry DSH itself: a DS Bot release may name the DSH release it
  
  ## Models
  
@@ -2806,7 +2806,7 @@ diff --git a/src/host/images.js b/src/host/images.js
  import { join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
  import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
-@@ -27,6 +27,56 @@
+@@ -27,6 +27,56 @@ export function offloadTargets(session, beforeSeq) {
    return targets
  }
  
@@ -2863,7 +2863,7 @@ diff --git a/src/host/images.js b/src/host/images.js
  export function install(rt) {
    const { ctx, config, home } = rt
  
-@@ -128,16 +178,18 @@
+@@ -128,16 +128,18 @@ export function install(rt) {
      return ocrPending.get(id)
    }
  
@@ -2887,7 +2887,7 @@ diff --git a/src/host/images.js b/src/host/images.js
          : `[Image ${label}. You cannot see images, so ${reading.model} read it for you:]\n${reading.text}\n[End of image ${label}]`,
      }
    }
-@@ -150,7 +202,7 @@
+@@ -150,7 +150,7 @@ export function install(rt) {
        const reading = await imageReading(attachment, sessionId)
        const label = imageLabel(attachment)
        return reading === null
@@ -2896,7 +2896,7 @@ diff --git a/src/host/images.js b/src/host/images.js
          : `[Image ${label}, read by ${reading.model}:]\n${reading.text}\n[End of image ${label}]`
      }))
    }
-@@ -164,13 +216,20 @@
+@@ -164,13 +164,20 @@ export function install(rt) {
          if (block?.type === 'image' && !block.offloaded) images.set(String(block.attachment.attachmentId), block.attachment)
        }
      }
@@ -3359,7 +3359,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 diff --git a/src/host/resume.js b/src/host/resume.js
 --- a/src/host/resume.js
 +++ b/src/host/resume.js
-@@ -9,6 +9,7 @@
+@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
  import { mkdir, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
  import { SOURCE_KIND } from './constants.js'
@@ -3367,7 +3367,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
  
  // Long enough for DSH to finish opening its workspaces after a start.
  const RESUME_DELAY_MS = 3000
-@@ -51,7 +52,7 @@
+@@ -51,7 +51,7 @@ export function install(rt) {
    // What the last run left; read before this run notes anything.
    let interrupted = readNotes(file)
  
@@ -3376,7 +3376,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    let turns = {}
    /** @type {Record<string, {at:number, args:any}[]>} deliveries no turn has taken up, by Session */
    let queued = {}
-@@ -76,6 +77,10 @@
+@@ -76,6 +76,10 @@ export function install(rt) {
        await writeFile(file, snapshot, 'utf8')
      }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
    }
@@ -3387,7 +3387,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    const update = (id, change) => {
      const next = change(turns[id])
      if (next === turns[id]) return
-@@ -84,26 +89,33 @@
+@@ -84,26 +84,33 @@ export function install(rt) {
      else turns[id] = next
      persist()
    }
@@ -3432,7 +3432,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      try {
        return await deliver(noted)
      } catch (error) {
-@@ -137,10 +149,13 @@
+@@ -137,10 +137,13 @@ export function install(rt) {
        case 'turn/start': {
          const owner = rt.groupOwners.get(id)
          const botId = owner?.botId ?? rt.chatOwners.get(id)
@@ -3447,7 +3447,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          if (event.data?.source?.kind !== SOURCE_KIND) break
          // turns.js, installed earlier, has already claimed the turn's trigger.
          const info = rt.live.get(id)?.info
-@@ -151,7 +166,9 @@
+@@ -151,7 +151,9 @@ export function install(rt) {
        case 'turn/end': {
          // DSH stops every turn as it shuts down; that one is picked up at the next start.
          const reason = event.data?.reason
@@ -3458,7 +3458,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          update(id, () => undefined)
          break
        }
-@@ -173,17 +190,17 @@
+@@ -173,17 +173,17 @@ export function install(rt) {
        // A turn already picked up once and cut off again stays stopped: a restart loop
        // must not run it forever.
        if (record.resumed) return
@@ -3479,7 +3479,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    }
  
    // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH
-@@ -198,39 +215,93 @@
+@@ -198,11 +198,50 @@ export function install(rt) {
        && current(item.args) !== undefined && taken?.has(item.args.exchangeId) !== true)
      if (fresh.length === 0) return
      const target = current(fresh[0].args)
@@ -3498,14 +3498,14 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 +        // The delivery wrapper dropped its note; put it back so the next start retries it.
 +        failed.push(item)
 +      }
-     }
++    }
 +    if (failed.length > 0) {
 +      queued = { ...queued, [sessionId]: [...(queued[sessionId] ?? []), ...failed].slice(-QUEUED_MAX) }
 +      persist()
 +      rt.warn('ds-bot: %d message(s) for %s were not sent again; kept for the next start', failed.length, sessionId)
 +    }
-   }
- 
++  }
++
 +  // Did the noted turn really end while nobody was listening (a plugin reload, or a crash after
 +  // DSH appended its end)? The durable Session log is the truth: a turn that finished ends
 +  // `completed` (or `blocked` / `max-tokens` / `forked`, or is aborted by the user / hook / parent);
@@ -3529,11 +3529,10 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 +      return ['completed', 'blocked', 'max-tokens', 'forked'].includes(reason.kind)
 +    } catch {
 +      return false
-+    }
-+  }
-+
-   async function resumeAll() {
-     await rt.load()
+     }
+   }
+ 
+@@ -211,26 +211,41 @@ export function install(rt) {
      if (rt.readOnly() !== undefined) return
      const { turns: noted, queued: dropped } = interrupted
      interrupted = { turns: {}, queued: {} }
@@ -4773,7 +4772,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
 --- a/test/bot-messages.test.js
 +++ b/test/bot-messages.test.js
-@@ -4,7 +4,7 @@
+@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { setTimeout as delay } from 'node:timers/promises'
  import { test } from 'node:test'
@@ -4782,7 +4781,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
  import { fakeContext } from './fake-ctx.js'
  import { install as installTurns } from '../src/host/turns.js'
  import { install as installParts } from '../src/host/parts.js'
-@@ -78,7 +78,9 @@
+@@ -78,7 +78,9 @@ async function start(seed) {
      route = options
      return register(options)
    }
@@ -4793,7 +4792,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
    let seq = 0
    const emit = (id, type, data) => {
      for (const listener of ctx.listeners.get('session/event') ?? []) {
-@@ -98,7 +100,7 @@
+@@ -98,7 +98,7 @@ async function start(seed) {
    }
    // Loading once fills the Session-owner indexes turns.js filters events by.
    await tool('list_bots', {}, 'a')
@@ -4802,7 +4801,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
  }
  
  const textOf = content => content.map(block => block.text ?? '').join('\n')
-@@ -269,7 +271,6 @@
+@@ -269,7 +269,6 @@ function turnsHost() {
      noteFailure() {},
      warn() {},
      switchJobs: () => [],
@@ -4810,7 +4809,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
    }
    installTurns(rt)
    let seq = 0
-@@ -510,3 +511,64 @@
+@@ -510,3 +510,64 @@ test('a request the model keeps turning down moves the Bot on, without its lates
    await delay(30)
    assert.equal(made, 2)
  })
@@ -5634,7 +5633,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 --- a/test/follow-through.test.js
 +++ b/test/follow-through.test.js
-@@ -3,7 +3,7 @@
+@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -5643,7 +5642,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  import { fakeContext } from './fake-ctx.js'
  import { stripWrittenCalls, writesToolCall } from '../src/host/turns.js'
  
-@@ -27,9 +27,13 @@
+@@ -27,9 +27,13 @@ const seed = () => ({
  // One DS Bot host on `home`; a second start on the same home is a restart.
  // Hosts by home: a home is removed only after its hosts stopped and their writes landed.
  const started = new Map()
@@ -5657,7 +5656,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const agents = new Map()
    const agentOf = (sessionId) => {
      if (!agents.has(sessionId)) {
-@@ -43,25 +47,37 @@
+@@ -43,25 +43,37 @@ async function start(home) {
    Object.assign(ctx, {
      llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
      workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
@@ -5699,7 +5698,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    started.set(home, [...(started.get(home) ?? []), host])
    return host
  }
-@@ -72,6 +88,7 @@
+@@ -72,6 +72,7 @@ const freshHome = (t) => {
    t.after(async () => {
      await Promise.all((started.get(home) ?? []).map(host => host.stop()))
      started.delete(home)
@@ -5707,7 +5706,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
      rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
    })
    return home
-@@ -81,6 +98,10 @@
+@@ -81,6 +81,10 @@ const settle = async (check) => {
    while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
    assert.ok(check(), 'condition not reached')
  }
@@ -5718,7 +5717,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const notes = (home) => {
    try { return JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')) } catch { return { turns: {}, queued: {} } }
-@@ -195,6 +216,110 @@
+@@ -195,6 +195,110 @@ test('when only DS Bot restarts, a turn still running or finished meanwhile is n
    assert.deepEqual([third.agentOf('b').calls[0].source.exchangeId, third.agentOf('a').calls.length], ['x1', 0])
  })
  
@@ -5829,7 +5828,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  test('a finished turn leaves nothing to pick up', async (t) => {
    t.mock.timers.enable({ apis: ['setTimeout'] })
    const home = freshHome(t)
-@@ -246,6 +371,65 @@
+@@ -246,6 +246,65 @@ test('a message a shutdown cancelled is sent again once; one still waiting, take
    assert.equal((await second.call('exchange', { a: 'a', b: 'b' })).value.length, 4)
  })
  
@@ -6285,7 +6284,7 @@ diff --git a/test/images.test.js b/test/images.test.js
  
  test('offloadTargets selects live images from prior user and tool messages', () => {
    const events = [
-@@ -32,3 +35,83 @@
+@@ -32,3 +32,83 @@ test('offloadTargets selects live images from prior user and tool messages', ()
      { seq: 2, imageIndexes: [0] },
    ])
  })
@@ -7522,7 +7521,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
-@@ -41,7 +41,7 @@
+@@ -41,7 +41,7 @@ async function drain(stream) {
  // `ctx.llm.stream` runs the plugin's `llm/stream` listeners in order, as DSH does,
  // and then a route that turns down a request without a Session. `respond` gives the
  // text of each answer the route lets through.
@@ -7531,7 +7530,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-session-identity-'))
    writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
    const bench = { tokens: 0, compacted: 0, respond: () => '', requests: [] }
-@@ -95,7 +95,7 @@
+@@ -95,7 +95,7 @@ function start() {
      sessions: { messageProjections: [] },
      workspaceRegistry: { archiveSession: async () => {} },
    })
@@ -7540,7 +7539,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
    const hook = pattern => ctx.listeners.get('llm/stream').find(listener => pattern.test(String(listener)))
    const stop = async () => {
      await ctx.dispose()
-@@ -105,7 +105,7 @@
+@@ -105,7 +105,7 @@ function start() {
      }
      rmSync(home, { recursive: true, force: true, maxRetries: 5 })
    }
@@ -7549,7 +7548,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
  }
  
  for (const sessionId of ['b2', 'g3']) {
-@@ -172,3 +172,43 @@
+@@ -172,3 +172,43 @@ test('the Session hooks pass DS Bot\'s own requests through, and still act on a
    assert.equal(images(own('b2', picture), pass), passed)
    assert.notEqual(images(round('b2', picture), pass), passed)
  })
