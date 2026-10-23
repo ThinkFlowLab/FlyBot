@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { apply as applyDsBot } from 'ds-bot'
 import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
-import { approvalDraftText, approvalView, createSocial, draftText, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
+import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFaceAutoSend, holdIsBlanket, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
@@ -1199,12 +1199,12 @@ test('a friendship scoped to one Bot: the roster shows only the granted Bots and
 
 // A server that holds every send_as_member and lists the holds. `reasons` names what Bot Social
 // held it for: the plain approval requirement, or a finding of its own (a DLP category).
-function holdingServer({ reasons = ['mvp.all_outbound_requires_approval'], riskFlags = [] } = {}) {
+function holdingServer({ reasons = ['mvp.all_outbound_requires_approval'], riskFlags = [], holdReason } = {}) {
   const server = mockServer()
   server.queue = []
   server.tools.send_as_member = (a) => {
     const id = `apr-${server.queue.length + 1}-${a.from_bot_id}`
-    server.queue.push({ approval_id: id, kind: 'outbound_message', status: 'pending', bot_id: a.from_bot_id, ...(reasons.length ? { reasons } : {}), ...(riskFlags.length ? { risk_flags: riskFlags } : {}), message: { to: { handle: a.to, display_name: 'Coder' }, payload: { text: a.text } } })
+    server.queue.push({ approval_id: id, kind: 'outbound_message', status: 'pending', bot_id: a.from_bot_id, ...(reasons.length ? { reasons } : {}), ...(riskFlags.length ? { risk_flags: riskFlags } : {}), ...(holdReason === undefined ? {} : { hold_reason: holdReason }), message: { to: { handle: a.to, display_name: 'Coder' }, payload: { text: a.text } } })
     return { conversation_id: 'c1', message: { message_id: `msg-${id}`, status: 'pending_approval', approval_id: id } }
   }
   server.tools.list_approvals = () => ({ approvals: server.queue })
@@ -1646,6 +1646,65 @@ test('#766: only the blanket approval reason is cleared by Auto-send; any other 
   await stop()
 })
 
+test('#865: the field says why Bot Social held it; `reasons` is only the fallback', () => {
+  const BLANKET = 'mvp.all_outbound_requires_approval'
+  // The field alone decides, whether or not `reasons` agrees.
+  assert.equal(holdIsBlanket({ hold_reason: 'blanket_outbound', reasons: [BLANKET] }), true)
+  assert.equal(holdIsBlanket({ hold_reason: 'blanket_outbound' }), true, 'a server that sends only the field is read')
+  assert.equal(holdIsBlanket({ hold_reason: 'blanket_outbound', reasons: [BLANKET, 'dlp.commitment'] }), true, 'the field wins over blanket-shaped reasons')
+  // Every other value keeps its card, including one this build does not know.
+  for (const reason of ['risk', 'attachment', 'policy', 'face_room_auto_send_off', 'policy.new_rule']) {
+    assert.equal(holdIsBlanket({ hold_reason: reason, reasons: [BLANKET] }), false, `${reason} is never cleared by a connector`)
+  }
+  // No field: today's allow-list, so an older server's holds are not stranded.
+  assert.equal(holdIsBlanket({ reasons: [BLANKET] }), true)
+  assert.equal(holdIsBlanket({ reasons: [BLANKET, 'dlp.commitment'] }), false)
+  assert.equal(holdIsBlanket({ reasons: [BLANKET], risk_flags: [{ category: 'money' }] }), false)
+  assert.equal(holdIsBlanket({ reasons: [] }), false)
+  // A blank field is no answer, not an answer of "not blanket".
+  assert.equal(holdIsBlanket({ hold_reason: '', reasons: [BLANKET] }), true)
+  // #457: the room's own switch is clearable on the face-room path only; the blanket rule itself stays strict.
+  assert.equal(holdIsBlanket({ hold_reason: 'face_room_auto_send_off' }), false)
+  assert.equal(holdAllowsFaceAutoSend({ hold_reason: 'face_room_auto_send_off' }), true)
+  assert.equal(holdAllowsFaceAutoSend({ hold_reason: 'face_room_auto_send_off', reasons: [BLANKET, 'dlp.commitment'] }), true, 'the field wins here too')
+  assert.equal(holdAllowsFaceAutoSend({ hold_reason: 'risk' }), false)
+  assert.equal(holdAllowsFaceAutoSend({ reasons: [BLANKET] }), true)
+  assert.equal(holdAllowsFaceAutoSend({ reasons: [] }), false)
+  assert.equal(holdAllowsFaceAutoSend({ hold_reason: '', reasons: [BLANKET] }), true)
+})
+
+test('#865: a hold naming anything but blanket_outbound keeps its card, and the card carries the field', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  // Blanket-shaped reasons, but the field says the hold is the face-room Auto-send switch: the card stays.
+  const server = holdingServer({ holdReason: 'face_room_auto_send_off' })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], 'Auto-send does not clear a hold the field does not call blanket')
+  assert.equal(server.queue.length, 1)
+  const card = (await call('flybot/social/status', {})).value.approvals[0]
+  assert.equal(card.holdReason, 'face_room_auto_send_off', 'the view keeps the field instead of dropping it')
+  assert.equal(card.blanketHold, false)
+})
+
+test('#865: a hold the field calls blanket_outbound is cleared even with no reasons on the row', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer({ reasons: [], holdReason: 'blanket_outbound' })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  await waitUntil(() => server.queue.length === 0)
+  // The same confirm-code pair as any other cleared hold: the call, then the code.
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval').map(c => [c.args.decision, c.args.confirm_code]), [['approved', undefined], ['approved', 'C0DE02']])
+  assert.deepEqual((await call('flybot/social/status', {})).value.approvals, [], 'no card for a blanket hold')
+})
+
 test('#766: a hold the server has not listed yet is named in a warn, and the line waits on its card', async (t) => {
   const warned = []
   const originalWarn = console.warn
@@ -1883,11 +1942,17 @@ test('#457: a Bot whose face-room Auto-send is on has its clean held line approv
   const { ctx, call, stop } = await team()
   t.after(stop)
   const server = withFaceRooms(mockServer())
-  const heldItem = (reasons = []) => ({
+  // Bot Social's real shape for a face-room hold (#457, #865): a clean line is held for the room's own
+  // Auto-send switch, with the blanket reason beside it and no finding of its own. A hold with a finding
+  // names it in `hold_reason` (`risk` / `policy` / `attachment`).
+  const heldItem = ({ reasons = [], holdReason = 'face_room_auto_send_off' } = {}) => ({
     approval_id: 'apr-face-1', kind: 'face_room_message', status: 'pending', sender_kind: 'bot', bot_id: 'm1',
-    room_id: 'frm_123456', reasons: ['mvp.all_outbound_requires_approval', ...reasons],
+    room_id: 'frm_123456', hold_reason: holdReason, reasons: ['mvp.all_outbound_requires_approval', ...reasons],
     message: { payload: { text: 'hold me' } }, summary: 'To the room: hold me',
   })
+  // An older server sends no field at all; the blanket reason is then the whole answer.
+  const older = heldItem()
+  delete older.hold_reason
   let queue = []
   server.tools.list_approvals = () => ({ approvals: queue })
   server.tools.decide_approval = a => {
@@ -1919,24 +1984,28 @@ test('#457: a Bot whose face-room Auto-send is on has its clean held line approv
   queue = [heldItem()]
   assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
   assert.equal(approvals().length, 0)
-  // Chief's switch on: its clean line goes out, approved by the switch.
+  // Chief's switch on: its clean line goes out, approved by the switch. The hold it arrives with is the
+  // room's own switch (`face_room_auto_send_off`), which is what #457 exists to clear.
   await call('flybot/social/face-auto', { botId: 'a', on: true })
   queue = [heldItem()]
   assert.equal(await fanout(room, line('a', 'Chief')), undefined)
   assert.deepEqual(approvals().map(c => [c.args.approval_id, c.args.decision]), [['apr-face-1', 'approved']])
-  // A line Bot Social flagged still waits for the owner, switch or not.
-  queue = [heldItem(['dlp.commitment'])]
+  // A hold with a finding of its own still waits for the owner, switch or not.
+  for (const finding of [{ holdReason: 'risk', reasons: ['dlp.commitment'] }, { holdReason: 'policy', reasons: ['policy.new_rule'] }, { holdReason: 'attachment' }]) {
+    queue = [heldItem(finding)]
+    assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' }, `a ${finding.holdReason} hold is never cleared by the switch`)
+  }
+  // A reason the card does not name is still a finding (#766): the rule, not "no name I know".
+  queue = [heldItem({ holdReason: 'policy', reasons: ['dlp.blocked'] })]
   assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
-  // A reason the card does not name is still a finding (#766): the allow-list, not "no name I know".
-  queue = [heldItem(['policy.new_rule'])]
-  assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
-  queue = [heldItem(['dlp.blocked'])]
-  assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
-  assert.equal(approvals().length, 1, 'only the clean line was ever approved')
+  // A server that sends no field keeps the old allow-list, so its blanket holds still clear.
+  queue = [older]
+  assert.equal(await fanout(room, line('a', 'Chief')), undefined)
+  assert.equal(approvals().length, 2, 'only the blanket hold and the room-switch hold were approved')
   // Writer's switch is off: its line waits.
   queue = [heldItem()]
   assert.deepEqual(await fanout(room, line('b', 'Writer')), { held: true, approvalId: 'apr-face-1' })
-  assert.equal(approvals().length, 1)
+  assert.equal(approvals().length, 2)
 })
 
 test('approvalView: outbound draft text is sanitized, friend requests stay out', () => {

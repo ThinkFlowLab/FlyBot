@@ -119,16 +119,33 @@ export function holdReasons(item) {
   }
   return names.slice(0, 8)
 }
-// The one hold Auto-send may clear by itself (#737, #766): an approval Bot Social made only for its
-// blanket "all outbound needs approval" rule, with no risk flag. This is an allow-list on purpose — a
-// reason this build does not know, another DLP category or a risk flag is a finding, so the line waits
-// for the owner on its card. An empty or missing `reasons` list is not the blanket rule either: nothing
-// listed is nothing known.
+// The one hold the outbound paths may clear by itself (#737, #766, #865). Bot Social says why it held a
+// line in `hold_reason`, and `blanket_outbound` — its own "all outbound needs approval" rule — is the
+// only value they clear. Every other value is a finding or an owner setting (`risk`, `attachment`,
+// `policy`, the face-room Auto-send switch): the line waits for the owner on its card. The field wins
+// when it and `reasons` disagree.
+// A server that sends no field keeps the old allow-list, so a reason this build does not know, another
+// DLP category or a risk flag still holds the line (#766); an absent field is not "not blanket", or
+// every hold on an older server would strand.
 const BLANKET_HOLD = 'mvp.all_outbound_requires_approval'
 export function holdIsBlanket(item) {
+  const reason = typeof item?.hold_reason === 'string' ? item.hold_reason : ''
+  if (reason) return reason === 'blanket_outbound'
   const reasons = Array.isArray(item?.reasons) ? item.reasons : []
   const flags = Array.isArray(item?.risk_flags) ? item.risk_flags : []
-  return reasons.length > 0 && reasons.every(reason => String(reason) === BLANKET_HOLD) && flags.length === 0
+  return reasons.length > 0 && reasons.every(entry => String(entry) === BLANKET_HOLD) && flags.length === 0
+}
+// #457: the face-room path clears one more hold than the blanket rule. Bot Social writes
+// `face_room_auto_send_off` for a face-room line when nothing but the room's own Auto-send switch is
+// holding it, and that switch is the owner's standing consent (the owner pressed it for this Bot), so a
+// Bot whose switch is on has to be able to send. Only `autoSendFaceLine` reads this; `autoSendRemoteLine`
+// and `autoSendRoomEnvelope` stay on `holdIsBlanket` alone, so #865's strict rule for outbound lines is
+// untouched. The field still decides: a row with no `hold_reason` is never cleared here, or an older
+// server's holds would strand.
+const FACE_ROOM_AUTO_SEND_OFF = 'face_room_auto_send_off'
+export function holdAllowsFaceAutoSend(item) {
+  if (holdIsBlanket(item)) return true
+  return typeof item?.hold_reason === 'string' && item.hold_reason === FACE_ROOM_AUTO_SEND_OFF
 }
 export function approvalView(item, { localName } = {}) {
   if (!item || typeof item !== 'object') return undefined
@@ -162,9 +179,13 @@ export function approvalView(item, { localName } = {}) {
     // The Bot Social identity that wrote it (a local Bot is found by it), and why Bot Social held it (#371).
     ...(typeof item.bot_id === 'string' && item.bot_id ? { botId: item.bot_id } : {}),
     reasons: holdReasons(item),
-    // What Auto-send may clear on its own (#766); the face-room path decides on this, not on the
-    // names the card shows, because a reason this build does not know is a hold too.
+    // Why Bot Social says it held this line (#865): kept on the view so the decision and anything that
+    // shows it read one field, not a second inference from `reasons`.
+    ...(typeof item.hold_reason === 'string' && item.hold_reason ? { holdReason: item.hold_reason } : {}),
+    // What Auto-send may clear on its own (#766, #865): the blanket hold only. The face-room path reads
+    // `autoSendHold` beside it, which adds its own switch (#457); the outbound paths never do.
     blanketHold: holdIsBlanket(item),
+    autoSendHold: holdAllowsFaceAutoSend(item),
     text,
     summary: cleanText(item.summary),
     createdAt: item.created_at,
@@ -3598,14 +3619,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       }
     }))
   }
-  // Approves a held room line of a Bot whose Auto-send is on (#457), only when Bot Social held it
-  // for no finding of its own (no DLP category on the hold); anything else stays on its card.
+  // Approves a held room line of a Bot whose Auto-send is on (#457), only when Bot Social held it for no
+  // finding of its own — the blanket rule, or nothing but the room's own Auto-send switch
+  // (`autoSendHold`); anything else stays on its card.
   async function autoSendFaceLine(serverBotId, approvalId) {
     const local = bringable().find(bot => bot.botId === serverBotId)
     if (!local || !faceAutoOf(local.id)) return false
     try {
       const held = (await pendingApprovals({ fresh: true })).find(item => item.id === approvalId)
-      if (!held || held.blanketHold !== true) return false
+      if (!held || held.autoSendHold !== true) return false
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       setPending(pendingCache.items.filter(item => item.id !== approvalId))
       pendingCache.at = 0
