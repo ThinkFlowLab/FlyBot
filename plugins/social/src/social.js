@@ -655,12 +655,20 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     ...(ownerName ? { ownerName } : {}),
     ...(roomOnly ? { roomOnly: true } : {}),
   })
-  function register(bot, { forFace = false, forInvite = false } = {}) {
+  async function register(bot, { forFace = false, forInvite = false } = {}) {
     if (!bot) return Promise.resolve(undefined)
     const existing = memberOf(bot.id)
     if (existing) {
-      if (forInvite && existing.roomOnly) flybot.fields.set(bot.id, 'member', memberFields(existing))
-      return Promise.resolve(memberOf(bot.id))
+      // A person grant promotes a room-only identity (#863): keep the owner-level name and home the
+      // share envelope reads, and fill either one from whoami only when the record never had it.
+      if (forInvite && existing.roomOnly) {
+        const me = await meIdentity()
+        flybot.fields.set(bot.id, 'member', memberFields(existing, {
+          home: existing.home || home?.handle || me.home,
+          ownerName: existing.ownerName || me.ownerName,
+        }))
+      }
+      return memberOf(bot.id)
     }
     if (!forFace && !forInvite && !hasPersonGrant(bot.id)) return Promise.resolve(undefined)
     if (!home || flybot.readOnly?.()) return Promise.resolve(undefined)
@@ -751,7 +759,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.on?.('bot.grants', bot => {
     if (!bot.granted) return
     const member = memberOf(bot.id)
-    if (member?.roomOnly) flybot.fields.set(bot.id, 'member', { bot_id: member.bot_id, handle: member.handle })
+    if (member?.roomOnly) {
+      // Promoting out of room-only must not drop the owner-level name and home (#863): the share
+      // envelope reads them, and losing them left it saying "a friend" until the next restart.
+      void (async () => {
+        const me = await meIdentity()
+        flybot.fields.set(bot.id, 'member', memberFields(member, {
+          home: member.home || home?.handle || me.home,
+          ownerName: member.ownerName || me.ownerName,
+        }))
+        await register(bot, { forInvite: true })
+      })().catch(error => warn('register failed', error))
+      return
+    }
     void register(bot, { forInvite: true }).catch(error => warn('register failed', error))
   }) ?? (() => {}))
   disposers.push(flybot.on('bot.removed', ({ bot }) => {

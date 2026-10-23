@@ -348,6 +348,40 @@ test('#848: a whoami that fails once is read again, so the name is not lost unti
   assert.equal(scope.fields.get('a', 'member').home, '@selftesta2.home')
 })
 
+test('#863: a person grant promotes a room-only identity without dropping its name and home', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // whoami would fill these in, so give it different answers: the record's own values must win.
+  server.tools.whoami = () => ({ kind: 'owner', display_name: 'Whoami Name', auto_approve_face_rooms: false, connector_identity: { bot_handles: ['@whoami.home'] } })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const scope = ctx.flybot.scope('social')
+  scope.fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home', home: '@alice.home', ownerName: 'Alice', roomOnly: true })
+  await ctx.flybot.grants.set('a', [{ grantee: '@bob.home' }])
+  await settle()
+  const member = scope.fields.get('a', 'member')
+  assert.equal(member.home, '@alice.home', 'the stored home survives the promotion')
+  assert.equal(member.ownerName, 'Alice', 'the stored owner name survives the promotion')
+  assert.equal(member.roomOnly, undefined, 'only roomOnly is dropped')
+})
+
+test('#863: promotion fills a name the room-only record never had, instead of waiting for a restart', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.whoami = () => ({ kind: 'owner', display_name: 'SelfTest A2', auto_approve_face_rooms: false, connector_identity: { bot_handles: ['@selftesta2.home'] } })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const scope = ctx.flybot.scope('social')
+  scope.fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home', home: '@selftesta2.home', roomOnly: true })
+  await social.register(ctx.flybot.bot.get('a'), { forInvite: true })
+  const member = scope.fields.get('a', 'member')
+  assert.equal(member.ownerName, 'SelfTest A2', 'the owner name comes from whoami at promotion time')
+  assert.equal(member.home, '@selftesta2.home', 'the stored home is kept')
+  assert.equal(member.roomOnly, undefined, 'only roomOnly is dropped')
+})
+
 test('any local Bot can message any Bot of a friend home; the send is held, then signed as the member', async (t) => {
   const { ctx, tool, stop } = await team()
   t.after(stop)
