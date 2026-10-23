@@ -621,7 +621,7 @@ diff --git a/src/client/sources.js b/src/client/sources.js
 diff --git a/src/host/groups.js b/src/host/groups.js
 --- a/src/host/groups.js
 +++ b/src/host/groups.js
-@@ -7,8 +7,10 @@
+@@ -7,21 +7,29 @@
  // the speaking order and the member's place in it. Nobody answers a room that has
  // moved on, and nobody has to count lines to know who went before. A plain message
  // goes to every member in roster order, admin first, or to the admin alone in admin
@@ -634,9 +634,10 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  //
  // Work does not hold a round up: a member that is still busy with tools a little after
  // it started, or that is called while still at earlier work, lets the round go on. Its
-@@ -16,12 +16,18 @@
+ // turn keeps running in its group Session, and what it ends with is posted to the group,
  // where the member that asked for it answers.
- import { randomUUID } from 'node:crypto'
+-import { randomUUID } from 'node:crypto'
++import { createHash, randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
 -import { defineTool } from '@deepseek-ai/dsh-tools'
 -import { ROOM_LATE_ROUNDS, ROOM_REPLY_TIMEOUT_MS, ROOM_WORK_GRACE_MS, SOURCE_KIND, TEAM_TOOLS } from './constants.js'
@@ -651,7 +652,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +import { currentParticipants, isFaceRoom } from './room-membership.js'
 +import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, faceRoster, isFaceLead } from './face-lead.js'
 +import { faceMentions } from './face-mentions.js'
-+import { stripSessionChips } from './delivery.js'
++import { cleanName, stripSessionChips } from './delivery.js'
 +import { createDshRoomParticipant } from './room-participant.js'
  
  const ROOM_LOG_MAX = 60
@@ -743,17 +744,19 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    return `${line.who}: ${line.text}`
  }
  const transcript = lines => lines.map(lineText).join('\n')
-@@ -86,6 +86,9 @@ export const referenceNote = references => (references?.length
+@@ -86,6 +86,11 @@ export const referenceNote = references => (references?.length
    : '')
  
  const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
++// The turn's own closing line: the full reply rule above stands in the group's section of the system prompt.
++const ROOM_REPLY_NOW = 'Reply now with your message for the group, no name prefix, or [PASS] to stay silent.'
 +// Words that address the whole room: a plain line with one of them may get an answer from each Bot (#299).
 +const ROOM_EVERYONE = /大家|你们|各位|所有人|所有 ?[Bb]ot|每个人|每位|各自|分别|everyone|everybody|y'?all|you all|all of you|each of you|introduce yourselves/i
-+const ROOM_REPLY_FORCED = 'Reply with your message for the group, no name prefix, short. Do not reply [PASS].'
++const ROOM_REPLY_FORCED = 'This turn is the exception to the [PASS] rule: reply with your message for the group, no name prefix, short. Do not reply [PASS].'
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -100,44 +100,70 @@ const slotLabel = (slot) => {
+@@ -100,52 +100,138 @@ const slotLabel = (slot) => {
    return slot.name
  }
  
@@ -769,6 +772,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -const roomKickoff = language => `The user just created this group and has not written yet. Greet the user in one short message and ask what they want this group to work on. Do not call members with @ yet, and do not reply [PASS]. No name prefix. Write in ${language ?? 'the user\'s language if known; otherwise Chinese'}.`
 -
  const ROOM_READ_MAX = 30
++// The group's standing section sits after DSH's own sections, so a member's group Session shares the
++// longest possible system-prompt prefix with its own chat, and before the persona suffix that closes it.
++const ROOM_SECTION_ORDER = 10150
++// What a member last saw of the notice, so its next turn says when the notice changed.
++const noticeMark = notice => createHash('sha256').update(String(notice ?? '')).digest('hex').slice(0, 16)
  
  export function install(rt) {
    const { ctx } = rt
@@ -815,53 +823,118 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    owners.delete(undefined)
 +    if (owners.size <= 1) return true
 +    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
-+  }
-+
+   }
+ 
+-  // Lines from before the round's opening message are kept apart from this round, so
+-  // an earlier round (an old count-off, say) never reads as part of the current one.
+-  function roomPrompt(room, member, round) {
 +  async function groupSessionFor(room, member) {
 +    const session = await participant.open({ room, member })
 +    return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
 +  }
 +
-+  // A plain line in a face-to-face room (#299): the Bots decide who answers. Each gets this note, so one
-+  // Bot answers a specific question, a follow-up goes to the Bot that just spoke, and a line to everyone may
-+  // get a short answer from each. A pass posts nothing.
++  // A plain line in a face-to-face room (#299): the Bots decide who answers. The rule for such lines is
++  // in the room's standing section (routeRules); each routed turn carries this short note with what
++  // only this line can say, so one Bot answers a specific question, a follow-up goes to the Bot that
++  // just spoke, and a line to everyone may get a short answer from each. A pass posts nothing.
 +  function routeNote(room, member, round) {
 +    const { broadcast, last, forced } = round.route
 +    if (forced === member.id) return 'The user asked this and nobody else answered. Answer now: if the line is plainly for another owner\'s Bot, say that in one short sentence.'
-+    const everyone = room.members.map(rt.botOf).filter(Boolean)
-+    const roles = everyone.filter(bot => bot.role).map(bot => `${bot.name}${bot.id === member.id ? ' (you)' : ''}: ${String(bot.role).slice(0, 80)}`)
-+    const friends = currentParticipants(room).filter(p => p.kind === 'bot' && p.remote).map(p => p.label || p.displayName).filter(Boolean)
 +    const answered = friendAnswers(room, round)
 +    return [
-+      'This line names no Bot, and the group should get the right answer, not one from everyone. Decide whether it is yours.',
 +      broadcast
-+        ? 'It is addressed to everyone (introductions, what each of you can do, a round of opinions): give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
++        ? 'This line names no Bot and is addressed to everyone: give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.'
 +        : isFaceLead(room, member)
-+          ? FACE_LEAD_ROUTE
-+          : 'Default to [PASS]: exactly one Bot answers a line like this, and the first Bot that answers ends it, so the Bots after it are not asked. Answer only if it is for you: it names you or your role, no other member\'s role fits it better, or it follows up on your own last answer. Reply [PASS] when it is for another Bot by name or role, when it follows up on another Bot\'s answer, or when you would only be guessing.',
++          ? 'This line names no Bot. You are the room lead, so a line like this is yours: answer it, by the rule for such lines in your instructions for this group.'
++          : 'This line names no Bot. Default to [PASS]: exactly one Bot answers it; answer only if it is for you, by the rule for such lines in your instructions for this group.',
 +      last && !broadcast ? `${last.name} spoke last before this line: a follow-up to what ${last.name} said ("what did you mean", "and then?", "say more") is for ${last.name}.` : '',
-+      roles.length > 0 ? `What members do: ${roles.join('; ')}.` : '',
-+      friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
 +      answered.length > 0 ? `${answered.join(', ')} already answered this line or posted a plan; add only your role's part, and do not re-plan or repeat it.` : '',
++    ].filter(Boolean).join(' ')
++  }
++  // The standing rule for a face room's lines that name no Bot (#299, #476): the member's own default,
++  // the exception for a line to everyone, and the Bots that answer in their own home.
++  function routeRules(room, member) {
++    if (!isFaceRoom(room)) return ''
++    const friends = currentParticipants(room).filter(p => p.kind === 'bot' && p.remote).map(p => cleanName(p.label || p.displayName, '')).filter(Boolean)
++    return [
++      'A line from a person that names no Bot: the group should get the right answer, not one from everyone, so each Bot decides whether it is its own.',
++      isFaceLead(room, member)
++        ? FACE_LEAD_ROUTE
++        : 'Default to [PASS]: exactly one Bot answers a line like this, and the first Bot that answers ends it, so the Bots after it are not asked. Answer only if it is for you: it names you or your role, no other member\'s role fits it better (each Bot\'s role is in the list above), or it follows up on your own last answer. Reply [PASS] when it is for another Bot by name or role, when it follows up on another Bot\'s answer, or when you would only be guessing.',
++      'A line addressed to everyone (introductions, what each of you can do, a round of opinions) is the exception: give your own short answer, but reply [PASS] if it would only repeat what a Bot before you said.',
++      friends.length > 0 ? `Other owners' Bots here answer for themselves in their own home: ${friends.join(', ')}.` : '',
 +      '[PASS] posts nothing and nobody sees it: never explain a pass.',
 +    ].filter(Boolean).join(' ')
-   }
- 
-   // Lines from before the round's opening message are kept apart from this round, so
-@@ -153,14 +153,13 @@ export function install(rt) {
++  }
++
++  // What holds for every turn of a member in this group (#894): who is here, how calls work, the
++  // notice, the member's own role here and the reply rule. It is a section of the system prompt, so
++  // the model reads it on every call and a checkpoint or a new part never drops it, while the
++  // Session's history keeps one copy per change instead of one per turn. Only room settings go in
++  // it, never the round, so it changes when the group does. Peer names and roles in a face roster
++  // are cleaned by faceRoster (one line each, capped, no markup).
++  function standingText(room, member) {
+     const peers = room.members.filter(id => id !== member.id).map(rt.botOf).filter(Boolean)
+       .map(bot => `${bot.name}${rt.isAdminOf(room, bot.id) ? ' (admin)' : ''}`)
+     const leads = rt.isAdminOf(room, member.id)
++    const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
++    return [
++      '# This group chat',
++      'This conversation is where you speak in one group chat. Each turn arrives as a "[Group chat …]" message with what is new and the speaking order; the rules below hold for every turn here.',
++      members,
++      room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : '',
++      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
++      routeRules(room, member),
++      ROOM_REPLY,
++    ].filter(Boolean).join('\n\n')
++  }
++  const roomSectionFor = (sessionId) => {
++    const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
++    const room = rt.roomOf(owner?.roomId)
++    const member = rt.botOf(owner?.botId)
++    if (room === undefined || member === undefined || !room.members.includes(member.id)) return ''
++    return standingText(room, member)
++  }
++  ctx.effect(() => ctx.systemPrompt.section({
++    name: 'bot-room',
++    order: ROOM_SECTION_ORDER,
++    interpolate: false,
++    text: context => roomSectionFor(context?.agent?.id),
++  }), 'ds-bot: group chat section')
++
++  // A notice that changed since this member's last turn here: the section already holds the new
++  // text, so the turn only says that it changed. Marks the notice seen.
++  function noticeChange(room, member) {
++    room.noticeSeen ??= {}
++    const before = room.noticeSeen[member.id]
++    const now = noticeMark(room.notice)
++    room.noticeSeen[member.id] = now
++    if (before === undefined || before === now) return ''
++    return room.notice
++      ? 'The group notice changed since your last turn here; the new notice is in your instructions for this group.'
++      : 'The group notice was cleared since your last turn here.'
++  }
++
++  // Lines from before the round's opening message are kept apart from this round, so
++  // an earlier round (an old count-off, say) never reads as part of the current one.
++  // The group's standing rules are not repeated here: they are in the section above.
++  function roomPrompt(room, member, round) {
+     const lines = unseenLines(room, member.id)
+     const earlier = lines.filter(line => line.seq < round.startSeq).slice(-ROOM_EARLIER_MAX)
+     const current = lines.filter(line => line.seq >= round.startSeq)
+@@ -153,14 +153,9 @@ export function install(rt) {
      const index = round.slots.findIndex(slot => slot.status === 'speaking')
      const before = index
      const after = round.slots.length - index - 1
 -    const members = `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
-+    const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
-     const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
+-    const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
 -    if (round.kickoff) return [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n')
      const working = workingIn(room).filter(item => item.bot.id !== member.id)
      return [
-       members,
-       notice,
+-      members,
+-      notice,
 -      leads ? adminNote(room) : '',
-+      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
++      noticeChange(room, member),
        earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
        current.length
          ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${transcript(current)}`
@@ -871,7 +944,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        `You are number ${index + 1} of ${round.slots.length}. ${before === 0 ? 'Nobody spoke before you' : `${before} went before you`}${after === 0 ? ', and you are the last.' : `; ${after} after you will see your message.`}`,
 -      ROOM_REPLY,
 +      round.route ? routeNote(room, member, round) : '',
-+      round.route?.forced === member.id ? ROOM_REPLY_FORCED : ROOM_REPLY,
++      round.route?.forced === member.id ? ROOM_REPLY_FORCED : ROOM_REPLY_NOW,
      ].filter(Boolean).join('\n\n')
    }
  

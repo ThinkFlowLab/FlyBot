@@ -126,7 +126,8 @@ async function start(t, config = {}) {
       if (memberIds().length >= expected && memberIds().every(id => roundTurns.has(id))) break
       await new Promise(resolve => setImmediate(resolve))
     }
-    return memberIds().map(id => textOf(agents.get(id).calls[0]))
+    // The group's standing rules (members, notice) ride in its system-prompt section, the turn in the message.
+    return memberIds().map(id => `${ctx.sections.get('bot-room')?.text({ agent: { id } }) ?? ''}\n${textOf(agents.get(id).calls[0])}`)
   }
   return { ctx, call, emit, tool, agentOf, signIn, home, runRound }
 }

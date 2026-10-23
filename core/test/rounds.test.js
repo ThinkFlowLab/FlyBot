@@ -114,6 +114,8 @@ const waitFor = async (check) => {
   return undefined
 }
 const turnFor = (sent, ...earlier) => waitFor(() => sent.find(entry => !earlier.includes(entry) && entry.message.source.role === 'room'))
+// The group's standing rules for a member: its system-prompt section, read the way DSH renders it per call.
+const standingOf = (ctx, sessionId) => ctx.sections.get('bot-room').text({ agent: { id: sessionId } })
 
 test('a new group Session waits for capabilities before its first member prompt', async (t) => {
   const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
@@ -749,8 +751,9 @@ test('#299: a plain line lets the Bots decide who answers: the passes post nothi
   const first = await turnFor(sent)
   assert.match(promptOf(first), /names no Bot/, 'the line is routed: each Bot decides whether it is theirs')
   assert.match(promptOf(first), /\[PASS\]/)
-  assert.match(promptOf(first), /Writer: Writes docs and copy/, 'members see what each does')
-  assert.match(promptOf(first), /Bob's Chief|Chief/, 'friend\'s Bots are named as answering for themselves')
+  // The roster with each Bot's role and the standing rule for such lines are the room's section (#894).
+  assert.match(standingOf(env.ctx, first.sessionId), /Writer: Writes docs and copy/, 'members see what each does')
+  assert.match(standingOf(env.ctx, first.sessionId), /Other owners' Bots here answer for themselves in their own home: .*Chief/, 'friend\'s Bots are named as answering for themselves')
   await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
   const second = await turnFor(sent, first)
   assert.ok(second)
@@ -893,7 +896,7 @@ test('#299: the pass rule is explicit, and the follow-up rule holds on the real 
   const { running: one } = await say('文档怎么写', 'real-1')
   const a = await turnFor(sent)
   assert.match(promptOf(a), /Default to \[PASS\]/)
-  assert.match(promptOf(a), /the first Bot that answers ends it/)
+  assert.match(standingOf(env.ctx, a.sessionId), /the first Bot that answers ends it/)
   await answer(a.sessionId, a.message.source.exchangeId, '[PASS]', 1)
   const b = await turnFor(sent, a)
   assert.equal(b.sessionId, hosted.sessions[writer])
@@ -1123,7 +1126,7 @@ test('#455: another person\'s line and another home\'s Bot line that arrive mid-
 })
 
 test('#476: the face room lead plans and assigns; other Bots do their part; the lead moves with the room in the next round', async (t) => {
-  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  const { call, emit, userMessage, relay, answer, stop, sent, rt, ctx } = start()
   t.after(stop)
   await team(call, sent)
   await rt.load()
@@ -1148,7 +1151,7 @@ test('#476: the face room lead plans and assigns; other Bots do their part; the 
   const running = relay(hosted.id, 'lead-plain')
   const first = await turnFor(sent)
   assert.equal(first.sessionId, hosted.sessions[writer])
-  const prompt = first.message.content[0].text
+  const prompt = standingOf(ctx, first.sessionId)
   assert.match(prompt, /You are this room's lead \(总负责人\)/)
   assert.match(prompt, /write the one plan/)
   assert.match(prompt, /- The user: Chief: Chief of Staff; Writer \(you, room lead\): Copywriter/)
@@ -1173,7 +1176,7 @@ test('#476: the face room lead plans and assigns; other Bots do their part; the 
   }
   await next
   assert.ok(turns.length > 0)
-  const asked = turns[0].message.content[0].text
+  const asked = standingOf(ctx, turns[0].sessionId)
   assert.match(asked, /Coder \(Bob\) is this room's lead \(总负责人\)/)
   assert.match(asked, /You are not the lead\. Do only the part assigned to you, or answer when you are named\. Don't re-plan/)
   assert.match(asked, /- Bob's Bots: Coder \(room lead\): Developer/)
@@ -1487,4 +1490,116 @@ test("#804: a member's @Admin is honoured after the admin already spoke in the r
 
   const result = JSON.parse(await running)
   assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer', 'Chief', 'Third', 'Chief'])
+})
+
+// #894 (#796): the group's standing rules (members, @Name calls, the notice, the reply rule) are the
+// group's system-prompt section, read on every model call; each turn's message carries only the round.
+// Before, every turn repeated them, so the member's Session history kept one copy per turn.
+test('a member reads the group\'s rules and notice from its standing section, and no turn repeats them', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, ctx, rt } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+  const notice = 'Rule one: answer with the tip SHA.\nRule two: never paste a key.'
+  await call('update-room', { id: room.id, notice })
+  sent.length = 0
+  const texts = []
+  for (const round of [1, 2]) {
+    await emit(room.id, userMessage(`Status ${round}?`))
+    const running = relay(room.id, `standing-${round}`)
+    const seen = [...sent]
+    for (let at = 0; at < 2; at += 1) {
+      const turn = await turnFor(sent, ...seen)
+      seen.push(turn)
+      texts.push({ sessionId: turn.sessionId, text: turn.message.content[0].text })
+      await answer(turn.sessionId, turn.message.source.exchangeId, `Done ${round}.${at}`, round * 10 + at)
+    }
+    await running
+  }
+  assert.equal(texts.length, 4)
+  for (const { sessionId, text } of texts) {
+    const standing = standingOf(ctx, sessionId)
+    assert.match(standing, /^# This group chat/)
+    assert.ok(standing.includes(`Group notice (shared instructions for every member):\n${notice}`), 'the notice is in the section')
+    assert.match(standing, /Members: the user, /)
+    assert.match(standing, /Writing "@Name" calls that member next/)
+    assert.match(standing, /Reply \[PASS\] to stay silent/)
+    assert.ok(!text.includes('Rule one'), 'no turn repeats the notice')
+    assert.doesNotMatch(text, /Members: the user|Writing "@Name" calls|Group notice|You are this group's admin/)
+    assert.match(text, /Speaking order for this round/)
+    assert.match(text, /Reply now with your message for the group, no name prefix, or \[PASS\] to stay silent\.$/)
+  }
+  // The admin's own rules are its section's, not another member's.
+  const chief = (await call('state', {})).value.mainBotId
+  await rt.load()
+  const live = rt.roomOf(room.id)
+  assert.match(standingOf(ctx, live.sessions[chief]), /You are this group's admin\./)
+  assert.doesNotMatch(standingOf(ctx, texts.find(entry => entry.sessionId !== live.sessions[chief]).sessionId), /You are this group's admin/)
+  // A Bot's own chat and the group's relay Session get no group section, so their prompts are unchanged.
+  assert.equal(standingOf(ctx, rt.chatOf(chief)), '')
+  assert.equal(standingOf(ctx, room.id), '')
+  assert.equal(standingOf(ctx, undefined), '')
+})
+
+test('a changed notice reaches every member\'s section at once, and its next turn says only that it changed', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, ctx } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+  await call('update-room', { id: room.id, notice: 'Old rule.' })
+  const round = async (label) => {
+    sent.length = 0
+    await emit(room.id, userMessage(`Line ${label}`))
+    const running = relay(room.id, `notice-${label}`)
+    const turns = []
+    for (let at = 0; at < 2; at += 1) {
+      const turn = await turnFor(sent, ...turns)
+      turns.push(turn)
+      await answer(turn.sessionId, turn.message.source.exchangeId, `ok ${label}`, at)
+    }
+    await running
+    return turns.map(turn => ({ sessionId: turn.sessionId, text: turn.message.content[0].text }))
+  }
+  const first = await round('a')
+  for (const { text } of first) assert.doesNotMatch(text, /notice changed/, 'a first turn has nothing to compare with')
+  await call('update-room', { id: room.id, notice: 'New rule: reply in English.' })
+  for (const { sessionId } of first) {
+    assert.match(standingOf(ctx, sessionId), /New rule: reply in English\./, 'the section holds the new notice before anyone speaks')
+    assert.doesNotMatch(standingOf(ctx, sessionId), /Old rule/)
+  }
+  const second = await round('b')
+  for (const { text } of second) {
+    assert.match(text, /The group notice changed since your last turn here; the new notice is in your instructions for this group\./)
+    assert.ok(!text.includes('New rule: reply in English.'), 'the turn does not repeat the notice itself')
+  }
+  const third = await round('c')
+  for (const { text } of third) assert.doesNotMatch(text, /notice changed/, 'said once, not on every turn after')
+  await call('update-room', { id: room.id, notice: '' })
+  const fourth = await round('d')
+  for (const { sessionId, text } of fourth) {
+    assert.match(text, /The group notice was cleared since your last turn here\./)
+    assert.doesNotMatch(standingOf(ctx, sessionId), /Group notice/)
+  }
+})
+
+// #894 (#796): a face room's roster, lead rules and the rule for lines that name no Bot are its standing
+// section too; a routed turn says only what this line adds (who spoke last, who already answered).
+test('a face room\'s roster and routing rule stand in its section; a routed turn carries a short note', async (t) => {
+  const env = start()
+  const { emit, userMessage, relay, stop, ctx } = env
+  t.after(stop)
+  const { hosted, writer } = await routedRoom(env, 'standing')
+  await emit(hosted.id, userMessage('帮我看看文档怎么写'))
+  const turns = await passAll(env, relay(hosted.id, 'standing-1'), 0)
+  assert.ok(turns.length >= 2)
+  for (const turn of turns.slice(0, 2)) {
+    const text = promptOf(turn)
+    const standing = standingOf(ctx, turn.sessionId)
+    assert.match(standing, /This is a face-to-face room with people from several homes/)
+    assert.match(standing, /Writer( \(you\))?: Writes docs and copy/)
+    assert.match(standing, /Default to \[PASS\]: exactly one Bot answers a line like this, and the first Bot that answers ends it/)
+    assert.match(standing, /A line addressed to everyone .* is the exception/)
+    assert.match(standing, /\[PASS\] posts nothing and nobody sees it: never explain a pass\./)
+    assert.match(text, /This line names no Bot\. Default to \[PASS\]: exactly one Bot answers it; answer only if it is for you, by the rule for such lines in your instructions for this group\./)
+    assert.doesNotMatch(text, /face-to-face room with people|What members do|never explain a pass|the first Bot that answers ends it|Writing "@Name" calls/)
+  }
+  assert.ok(turns.some(turn => turn.sessionId === hosted.sessions[writer]))
 })
