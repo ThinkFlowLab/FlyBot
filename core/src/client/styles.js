@@ -852,12 +852,13 @@ export const CONVERSATION_CSS = `
 [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
 :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
 [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
-[class*="_header"]:has(.bt-head){border-bottom-color:transparent!important;box-shadow:none!important}
-/* The transcript runs under a floating header pill. */
-header[class*="_header"]:has(.bt-head){position:absolute!important;top:0;left:0;right:0;z-index:8;display:flex!important;padding:10px 0 0!important;background:transparent!important;pointer-events:none;justify-content:center}
-header[class*="_header"]:has(.bt-head)::before{content:"";position:absolute;inset:0 0 auto;height:60px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
-header[class*="_header"]:has(.bt-head)>[class*="_headerLeading"]{position:absolute;left:12px;top:10px;pointer-events:auto}
-header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+/* FlyBot's pill rides the shell's own Session header utilities, beside the seats
+   the native header renders (actions: the subagent catalog; lineage; corner).
+   It is a compact control in that row now, not a floating replacement for the
+   whole header, so the header keeps its own layout, border and drag row. */
+[class*="_header"] .bt-head{display:flex;align-items:center;height:auto;flex:none;width:auto;pointer-events:auto}
+[class*="_header"] .bt-head .bt-pill{height:30px;padding:3px 10px 3px 4px;gap:6px;font-size:13px;line-height:18px;max-width:min(320px,32vw)}
+[class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
 [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
 /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
    without its copy and branch row; a tail with nothing in it takes no room. */

@@ -221,7 +221,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
-@@ -3,8 +3,16 @@
+@@ -3,8 +3,16 @@ import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
  import { questionReply } from './parts.js'
  import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
@@ -238,7 +238,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,14 +21,95 @@
+@@ -21,14 +21,95 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -337,7 +337,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      revision: state.revision,
      workspaceId: state.workspaceId ?? null,
      // `mainBotId` is the first Main Bot, which the sidebar shows as its tile.
-@@ -36,17 +36,52 @@
+@@ -36,17 +36,52 @@ export function install(rt) {
      mainBotIds: state.mainBotIds,
      // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
      // `waiting`: the Bot holds its greeting until the user picks its model.
@@ -395,7 +395,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
      agents: Object.values(state.agents),
      // Key names and who may use them; values never leave the host.
-@@ -54,7 +54,8 @@
+@@ -54,7 +54,8 @@ export function install(rt) {
      capabilities: rt.capabilityLibraryView(),
      secretRequests: state.secretRequests ?? {},
      colors: [...COLORS, ...EXTRA_COLORS],
@@ -405,7 +405,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,49 @@
+@@ -65,22 +65,49 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -466,7 +466,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,57 @@
+@@ -97,28 +97,57 @@ export function install(rt) {
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -528,7 +528,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -141,7 +141,7 @@
+@@ -141,7 +141,7 @@ export function install(rt) {
            return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
          case 'create-bot': {
            await rt.bootstrap()
@@ -537,7 +537,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(bot)
          }
          case 'update-bot':
-@@ -150,17 +150,23 @@
+@@ -150,17 +150,23 @@ export function install(rt) {
          case 'delete-bot':
            await rt.load()
            await rt.deleteBot(body.id)
@@ -564,7 +564,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
            return ok(room)
          }
-@@ -175,8 +175,26 @@
+@@ -175,8 +175,26 @@ export function install(rt) {
              add: Array.isArray(body.add) ? body.add : undefined,
              remove: Array.isArray(body.remove) ? body.remove : undefined,
              workDir: body.workDir,
@@ -593,7 +593,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          }
          case 'folders':
          case 'folder-pick':
-@@ -203,17 +203,19 @@
+@@ -203,17 +203,19 @@ export function install(rt) {
          case 'remove-agent':
            await rt.load()
            await rt.removeAgent(body.agentId)
@@ -616,7 +616,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'stop-member-work':
            return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
          case 'dismiss-question':
-@@ -231,6 +231,9 @@
+@@ -231,6 +231,9 @@ export function install(rt) {
            await rt.load()
            return ok(await rt.secretEndpoint(endpoint, body))
          case 'connector-connect':
@@ -626,7 +626,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -241,11 +241,22 @@
+@@ -241,11 +241,22 @@ export function install(rt) {
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -650,7 +650,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'memory-view':
          case 'memory-ask':
          case 'memory-forget':
-@@ -258,8 +258,17 @@
+@@ -258,8 +258,17 @@ export function install(rt) {
            const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
            const question = state.questions[sessionId]
            if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
@@ -668,7 +668,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            // Claim the question before queueing so a second answer is refused.
            delete state.questions[sessionId]
            try {
-@@ -278,9 +278,46 @@
+@@ -278,9 +278,46 @@ export function install(rt) {
            const text = String(body.text ?? '').trim()
            if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
            await rt.load()
@@ -715,7 +715,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,112 @@
+@@ -319,32 +319,112 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)

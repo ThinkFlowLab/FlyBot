@@ -876,7 +876,11 @@ export function apply(ctx) {
     installCompiledStyles(CONVERSATION_CSS, 'conversation'),
     installMentions(),
     installAtMenu(),
-    shadow('conversation.session.header', { priority: -10, inject: face }, HeaderPill),
+    // The shell's own Session header stays, so the child seats it renders keep
+    // working — notably the subagent catalog `conversation.session.header.actions`
+    // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
+    // utilities list beside them instead of replacing the whole header.
+    shadow('conversation.session.header.utilities', { id: 'bot-pill', order: 100, inject: face }, HeaderPill),
     shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
     shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
     shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),
