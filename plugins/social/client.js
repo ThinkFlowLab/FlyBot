@@ -1358,6 +1358,10 @@ window.__ModuleLoader__.load({
           setInvite({ link: text, status: { tone: 'error', text: INVITE_LINK_COPY } })
           return
         }
+        // The card on screen for this ticket already answers the press (#824): asking again would cost
+        // another round trip and reset its countdown. Compare the ticket, never the text — the same
+        // link retyped with spaces, or through another host, is the same ticket and the same card.
+        if (invite.preview?.ticket === ticket) return
         setBusy(true)
         setFailures([])
         setInvite({ link: text, status: { tone: 'hint', text: 'Looking up that room…' } })

@@ -1,0 +1,1 @@
+Pressing **Join with link** again while the preview card for that link is already on screen no longer asks the server for the same room twice: the card stays up with its countdown, a different link in the field previews once, and **Clear** lets the same link be looked up again ([#824](https://github.com/ThinkFlowLab/FlyBot/issues/824)).

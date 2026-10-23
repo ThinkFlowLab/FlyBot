@@ -9108,6 +9108,80 @@ test('#798: a pasted link shows the room before any Bot joins, and the card is w
   assert.ok(dialog.has('face-wait'), 'the join moved on to the waiting pane it always had')
 })
 
+test('#824: pressing Join with link over the card on screen asks for nothing and keeps the card', async () => {
+  let previews = 0
+  const calls = []
+  const dialog = dialogWithState(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/face-invite-preview') {
+      previews += 1
+      // A second look would draw a different card, so the name and the count prove which one is up.
+      return {
+        roomId: 'frm_9',
+        name: previews === 1 ? 'Kitchen sync' : 'Second look',
+        lead: 'Chief',
+        members: previews === 1 ? 3 : 5,
+        maxMembers: 8,
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      }
+    }
+    return { roomId: 'r_1', status: 'open' }
+  })
+  dialog.find('face-link-join-go').props.onClick()
+  await dialog.settle()
+  dialog.render()
+  assert.equal(previews, 1, 'one press, one preview')
+  assert.equal(dialog.text(dialog.find('face-link-preview-members')), '3 / 8 in the room')
+
+  dialog.find('face-link-join-go').props.onClick()
+  await dialog.settle()
+  dialog.render()
+  assert.equal(previews, 1, 'the card on screen for that ticket already answers the press')
+  assert.equal(dialog.text(dialog.find('face-link-preview-name')), 'Kitchen sync', 'the card is kept, not rebuilt')
+  assert.equal(dialog.text(dialog.find('face-link-preview-members')), '3 / 8 in the room')
+  assert.ok(dialog.has('face-link-preview'), 'the card is still up')
+  assert.deepEqual(calls.map(([endpoint]) => endpoint), ['social/face-invite-preview'], 'nobody was joined either')
+})
+
+test('#824: another ticket previews once, and Clear lets the same ticket preview again', async () => {
+  let previews = 0
+  const dialog = dialogWithState(async (endpoint) => {
+    if (endpoint === 'social/face-invite-preview') {
+      previews += 1
+      return { roomId: 'frm_9', name: `Room ${previews}`, lead: 'Chief', members: 2, maxMembers: 8, expiresAt: '2099-01-01T00:00:00.000Z' }
+    }
+    return {}
+  })
+  dialog.find('face-link-join-go').props.onClick()
+  await dialog.settle()
+  dialog.render()
+  assert.equal(previews, 1)
+
+  // Editing the field drops the card it no longer describes, so the next press is a fresh look.
+  dialog.find('face-link-join').children[0].props.onChange({ target: { value: `  ${INVITE_URL}  ` } })
+  dialog.render()
+  assert.equal(dialog.has('face-link-preview'), false, 'a field edit drops the card for the old link')
+
+  const other = 'https://bot-social.example.com/r/ZzYyXxWwVvUuTtSsRrQqPp'
+  dialog.find('face-link-join').children[0].props.onChange({ target: { value: other } })
+  dialog.render()
+  dialog.find('face-link-join-go').props.onClick()
+  await dialog.settle()
+  dialog.render()
+  assert.equal(previews, 2, 'a different ticket previews once')
+  assert.equal(dialog.text(dialog.find('face-link-preview-name')), 'Room 2', 'the card follows the new ticket')
+
+  dialog.find('face-link-preview-clear').props.onClick()
+  dialog.render()
+  assert.equal(dialog.has('face-link-preview'), false, 'Clear drops the card')
+  dialog.find('face-link-join').children[0].props.onChange({ target: { value: INVITE_URL } })
+  dialog.render()
+  dialog.find('face-link-join-go').props.onClick()
+  await dialog.settle()
+  dialog.render()
+  assert.equal(previews, 3, 'after Clear the same link previews again')
+})
+
 test('#798: a room name with markup renders cleaned, and a count without a maximum still shows', async () => {
   const dialog = dialogWithState(async (endpoint) => {
     if (endpoint === 'social/face-invite-preview') return { name: '  <b>Kitchen</b>\n@everyone  ', lead: 'Chief', members: 2 }
