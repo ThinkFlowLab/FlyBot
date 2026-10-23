@@ -1059,6 +1059,17 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
           h('div', { className: 'fs-name' }, WAITING_OTHERS))
       }
+      if (item.status === 'failed') {
+        // A failed send cannot be approved or rejected: say it did not go and offer Retry, like
+        // the core's held-reply card. Approve/Reject on it would answer "already failed" silently.
+        const parties = holdParties(item)
+        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': 'failed', 'data-role': 'owner', role: 'status', title: item.error || undefined },
+          h('div', { className: 'fs-label' }, 'Not sent'),
+          item.from || item.to || item.toName ? h('div', { className: 'fs-sub' }, `${parties.from} → ${parties.to}`) : null,
+          item.error ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-error' }, item.error) : null,
+          h('div', { className: 'fs-actions fs-chat-actions' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')))
+      }
       const { from, to } = holdParties(item)
       const text = shownHoldText(item.text || item.summary || '')
       const long = text.length > 160 || text.split(/\n/).length > 3
@@ -1152,6 +1163,9 @@ window.__ModuleLoader__.load({
       return {
         id: approval.id,
         source: 'local',
+        // A failed local hold must read as failed and offer Retry, like the core overlay (#52).
+        status: approval.status,
+        ...(approval.error ? { error: String(approval.error) } : {}),
         from: composer ? 'You' : approval.senderName,
         // The local Bot that wrote it (not a line you typed): its own chat shows the card (#254).
         ...(!composer && typeof approval.request?.from === 'string' ? { fromId: approval.request.from } : {}),
@@ -1279,6 +1293,7 @@ window.__ModuleLoader__.load({
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
       const [busy, setBusy] = useState('')
+      const [error, setError] = useState('')
       const load = () => {
         call('social/status', {}).then(value => {
           setItems(Array.isArray(value?.approvals) ? value.approvals : [])
@@ -1317,6 +1332,7 @@ window.__ModuleLoader__.load({
       if (!mine.length && !waitingOthers) return null
       const decide = async (item, decision) => {
         setBusy(item.id)
+        setError('')
         try {
           const always = decision === 'always'
           const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
@@ -1342,20 +1358,27 @@ window.__ModuleLoader__.load({
           setItems(drop)
           setLocal(drop)
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
+        } catch (failure) {
+          // A stale or failed hold must say why, never swallow the click.
+          setError(String(failure?.message ?? failure).slice(0, 200))
         } finally { setBusy('') }
       }
+      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
+      // (`status: 'pending'`). A failed hold is not approved; it is retried.
+      const waiting = entry => !entry.status || entry.status === 'pending'
       const approveAll = async () => {
-        for (const item of mine.filter(entry => !entry.status)) await decide(item, 'approve')
+        for (const item of mine.filter(waiting)) await decide(item, 'approve')
       }
       if (waitingOthers) {
         return h('div', { 'data-flybot': 'chat-approvals' },
           h(ChatApproval, { item: { id: 'waiting' }, canDecide: false }))
       }
       return h('div', { 'data-flybot': 'chat-approvals' },
-        mine.length > 1 && mine.some(entry => !entry.status)
+        mine.length > 1 && mine.some(waiting)
           ? h('div', { className: 'fs-chat-actions' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll }, 'Approve all'))
           : null,
+        error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
         mine.map(item => h(ChatApproval, {
           key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide, t,
         })))

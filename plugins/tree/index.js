@@ -22,6 +22,27 @@ export function apply(ctx, config = {}) {
     const parent = tree.parentOf(id)
     if (typeof parent === 'string' && tree.isMember(parent)) tree.refreshPrompt(parent)
   }
+  // A turn boundary also rewrites the Bot's own prompt: a rename or role edit in the core reaches
+  // neither it nor its parent by itself, and a coordinator must never call a child by its old name.
+  // writeBlock skips an unchanged block, so this costs a string compare per turn.
+  const refreshPrompts = (id) => {
+    if (typeof id === 'string' && tree.isMember(id)) tree.refreshPrompt(id)
+    refreshParentPrompt(id)
+  }
+  // A Main Bot change (roster.setMain) fires no event this plugin sees: when the current Main is not
+  // the root, adopt it before the turn's prompts are written, so a coordinator never works under an
+  // old root and the tree never has two. config.autoRoot: false turns the whole adoption off, at the
+  // start and here, so the flag does not merely delay it to the first turn.
+  const reconcileRoot = () => {
+    if (config.autoRoot === false) return
+    try {
+      const chief = tree.findChief()
+      if (chief === undefined || tree.snapshot()[chief.id]?.root === true) return
+      void tree.ensureRoot().catch(error => warn('flybot-tree: root not updated after a Main Bot change:', error?.message ?? error))
+    } catch (error) {
+      warn('flybot-tree: root not updated after a Main Bot change:', error?.message ?? error)
+    }
+  }
   const disposers = [
     fb.useSend('tree', treeSendMiddleware(tree, { bypassSocial: config.bypassSocial === true, isRemote: fb.isRemote, hasAnyGrant: fb.hasAnyGrant })),
     ...registerTreeTools(fb, tree),
@@ -33,8 +54,10 @@ export function apply(ctx, config = {}) {
     // Runtime load: how many turns each Bot runs now, so a coordinator routes to a free child (#507).
     // A change is also written into the child's parent prompt, so the Child-load line a coordinator
     // reads stays current (writeBlock only rewrites the block when the line really changed).
-    fb.onFeed('turn.start', e => { tree.noteTurnStart(e?.botId); refreshParentPrompt(e?.botId) }),
-    fb.onFeed('turn.end', e => { tree.noteTurnEnd(e?.botId); refreshParentPrompt(e?.botId) }),
+    // The feed names the turn it is about (turnId); dropping it made an end close whichever turn was
+    // oldest, so with two open and the later one ending first, openFor reported the newer age (#696).
+    fb.onFeed('turn.start', e => { tree.noteTurnStart(e?.botId, e?.turnId); reconcileRoot(); refreshPrompts(e?.botId) }),
+    fb.onFeed('turn.end', e => { tree.noteTurnEnd(e?.botId, e?.turnId); reconcileRoot(); refreshPrompts(e?.botId) }),
     // The tree view: what the last reorganization did, one-click undo, dismiss.
     fb.handleApi('tree/reorg', () => tree.overview(), { read: true }),
     fb.handleApi('tree/undo', payload => tree.undo(typeof payload?.runId === 'string' ? payload.runId : undefined)),

@@ -22,7 +22,7 @@ const ROOT_LABEL = 'Main bot and root of the tree'
 
 export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExisting = true, warn = () => {}, classify, tidy, now = Date.now } = {}) {
   const listeners = new Set()
-  const load = createLoadTracker()
+  const load = createLoadTracker({ now })
 
   function snapshot() {
     const nodes = {}
@@ -71,7 +71,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   // The runtime load of a coordinator's direct children (#507), as one prompt line, so it can
   // send a new part to a free child instead of a busy one.
   function loadNotes(id, nodes) {
-    const line = loadLine(childrenOf(nodes, id), childId => load.of(childId))
+    const line = loadLine(childrenOf(nodes, id), childId => load.of(childId), childId => load.openFor(childId))
     return line === undefined ? [] : [line]
   }
   // Prompt injection: only the tree's marked block is replaced; other text (e.g. Chief's own) stays.
@@ -119,13 +119,29 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   function adoptChief() {
     const chief = findChief()
     if (!chief) return undefined
+    // The Main role can move (roster.setMain): the tree marks the root it adopted, so exactly that
+    // one is demoted when the Main changes (a second root another flow created is left alone) and
+    // adoption places it like any other Bot instead of leaving two roots.
+    for (const bot of fb.listBots()) {
+      if (bot.id === chief.id || fb.getField(bot.id, 'adoptedRoot') !== true) continue
+      fb.setField(bot.id, 'adoptedRoot', undefined)
+      fb.setField(bot.id, 'treeRole', undefined)
+      fb.setField(bot.id, 'parent', undefined)
+    }
+    if (fb.getField(chief.id, 'adoptedRoot') !== true) fb.setField(chief.id, 'adoptedRoot', true)
     if (fb.getField(chief.id, 'parent') !== undefined) fb.setField(chief.id, 'parent', null)
     if (fb.getField(chief.id, 'treeRole') !== ROOT_ROLE) fb.setField(chief.id, 'treeRole', ROOT_ROLE)
     migrateLegacyRoots(chief.id)
     if (adoptExisting) adoptUnattached(chief.id)
+    // #748: a demoted root brings its subtree along, and place() no longer squeezes a branch past
+    // maxDepth to fit it in: that first pass leaves the branch out. The repair below re-attaches its
+    // children to the new root, and the second pass then places the demoted root as the leaf it is.
+    // Both passes are needed: dropping either one leaves the old root outside the tree for good
+    // (reconcileRoot stops calling us once the new Main is the root).
+    organizer.repair()
+    if (adoptExisting) adoptUnattached(chief.id)
     // #452: restore 归档-* / Archive-* mis-renames; hide archived from the default sidebar.
     try { const r = organizer.repairArchiveNames(); if (r && typeof r.then === 'function') r.catch(error => warn('flybot-tree: archive-name repair failed:', error?.message ?? error)) } catch (error) { warn('flybot-tree: archive-name repair failed:', error?.message ?? error) }
-    organizer.repair()
     refreshAll()
     return chief.id
   }
@@ -291,9 +307,32 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
    * descendants get a fresh prompt (their trace no longer names the deleted bot).
    */
   function onBotRemoved({ botId, parent }) {
+    // A removed Bot's open turns can never end, so its load records go with it (#732). This runs before
+    // the tree guard below: the tracker is fed from the core activity feed, so a Bot outside the tree
+    // (never placed, or created straight through core) has records too.
+    load.clear(botId)
     if (parent === undefined) return // not a tree bot
-    const up = parent ?? null
-    for (const child of childrenOf(snapshot(), botId)) fb.setField(child.id, 'parent', up)
+    const kids = childrenOf(snapshot(), botId)
+    // Removing a root must not leave its children with `parent: null`, which isRoot reads as a
+    // root: the team flattened into a forest, its list_children was empty, and a restart did not
+    // repair it. Hand them to the team's current Main instead, adopted as the root now.
+    let up = parent ?? null
+    if (parent === null) {
+      const chief = findChief()
+      if (chief) { up = chief.id; adoptChief() }
+    }
+    for (const child of kids) fb.setField(child.id, 'parent', up)
+    if (parent === null && up === null && kids.length > 0) {
+      // No Main to adopt (the core keeps at least one, so this is an imported/edge state):
+      // create a Root and move the children under it once it exists.
+      for (const child of kids) fb.setField(child.id, 'parent', undefined)
+      void ensureRoot().then((root) => {
+        if (typeof root !== 'string') return
+        for (const child of kids) fb.setField(child.id, 'parent', root)
+        organizer.repair()
+        refreshAll()
+      }).catch(error => warn('flybot-tree: could not re-root after %s was removed: %s', botId, error?.message ?? error))
+    }
     organizer.repair()
     refreshAll()
     emit({ botId, key: 'removed' })
@@ -309,8 +348,9 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
 
   const { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, idle: settled, repairArchiveNames } = organizer
   const { findBots, createChild: allocateChild, createTeam } = allocator
-  const noteTurnStart = id => load.start(id)
-  const noteTurnEnd = id => load.end(id)
+  const noteTurnStart = (id, turnId) => load.start(id, turnId)
+  const noteTurnEnd = (id, turnId) => load.end(id, turnId)
   const loadOf = id => load.of(id)
-  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, heightOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, moveBot, findBotByName, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
+  const openForOf = id => load.openFor(id)
+  return { tidy: tidyNow, maybeTidy, undo, dismiss, overview, noteActivity, noteTurnStart, noteTurnEnd, loadOf, openForOf, refreshPrompt, parentOf, settled, repairArchiveNames, limits, forest, adoptUnattached, snapshot, childrenOf, depthOf, heightOf, traceOf, ensureRoot, adoptChief, findChief, migrateLegacyRoots, promptFor, createChild, allocateChild, createTeam, findBots, moveBot, findBotByName, isMember, isRoot, rootOf, isTreeEdge, onFieldChange, onBotRemoved, subscribe }
 }

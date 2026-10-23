@@ -219,6 +219,23 @@ test('an idle Bot\'s own chat moves to its new folder at once, and back', async 
   assert.match(handoffOf(agentOf('s2')), new RegExp(`because your working folder changed to ${escapeRegExp(team)}\\.`))
 })
 
+test('a part move that fails before the handoff keeps the old part current', async (t) => {
+  const { ctx, call, state, project, created, stop } = await start()
+  t.after(stop)
+  // Writing the handoff package to the fresh Session fails: the move must leave the old part
+  // where it was instead of recording an empty part with no package (the old code flipped the
+  // Bot's pointer first).
+  let fail = true
+  ctx.sessions.flush = async (session) => {
+    if (fail && String(session?.id ?? '').startsWith('s')) { fail = false; throw new Error('the handoff package was not written') }
+  }
+  await call('update-bot', { id: 'b', workDir: project })
+  await until(() => created.length > 0) // the move created its fresh Session
+  await settle()
+  assert.equal(state().bots.b.sessionId, 'b', 'the old part stays current')
+  assert.equal((state().bots.b.segments ?? []).length, 0, 'no empty fresh part was recorded')
+})
+
 test('a running Bot moves at its next step and carries that step\'s input along', async (t) => {
   const { requests, services } = approvalServices('allowed-once')
   const { tool, preStep, agentOf, created, project, state, stop } = await start({ services })
@@ -300,7 +317,7 @@ test('a folder outside the team workspace needs the user\'s approval', async (t)
   const allowed = approvalServices('allowed-once')
   const third = await start({ services: allowed.services })
   t.after(third.stop)
-  assert.equal(await third.tool('create_bot', { name: 'Builder', role: 'Build', instructions: 'Build', work_dir: third.project }, 'a'), `Created Builder, working in ${third.project}. It is greeting the user now.`)
+  assert.equal(await third.tool('create_bot', { name: 'Builder', role: 'Build', instructions: 'Build', work_dir: third.project }, 'a'), `Created Builder, working in ${third.project}. It starts no turn until the user writes to it.`)
   assert.deepEqual(third.created, [{ cwd: third.project }])
   assert.match(await third.tool('list_bots', {}, 'a'), new RegExp(`- Builder \\(Build, works in ${escapeRegExp(third.project)}\\)`))
 })

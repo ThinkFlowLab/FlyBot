@@ -1,7 +1,7 @@
 // Team tools: the roster, bot-to-bot messages, group chat settings and posts, and the
 // question card. Group rounds and reading chats are in groups.js.
 import { randomUUID } from 'node:crypto'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_MODES, SOURCE_KIND } from './constants.js'
 import { unquote } from './text.js'
 import { isListedRemoteChat } from '../shared/remote-label.js'
@@ -112,9 +112,17 @@ export function install(rt) {
         if (subtreeOnly && !inSubtree(self, bot.id)) return true
         return false
       }
+      // A held send waits on the owner, not on the Bot: a coordinator reading the
+      // roster sees who is blocked on a decision — a count only, never the held
+      // message's text (#587).
+      const heldSends = {}
+      for (const approval of Object.values(state.flybot?.approvals ?? {})) {
+        if (approval.status !== 'pending' || typeof approval.request?.from !== 'string') continue
+        heldSends[approval.request.from] = (heldSends[approval.request.from] ?? 0) + 1
+      }
       const lines = Object.values(state.bots).filter(listed).map(bot => {
         const model = bot.appliedModel ?? bot.model
-        const tags = [bot.role, model ? `model ${model}` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
+        const tags = [bot.role, model ? `model ${model}` : '', heldSends[bot.id] ? `${heldSends[bot.id]} to approve` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
         const job = !foreign(bot) && bot.instructions ? ` — ${bot.instructions.split('\n')[0].slice(0, 120)}` : ''
         return `- ${bot.name}${tags ? ` (${tags})` : ''}${job}`
       })
@@ -251,7 +259,7 @@ export function install(rt) {
 
   ctx.tools.register(defineTool({
     name: 'create_bot',
-    description: 'Main Bot only. Create a new Bot on the user\'s team. It appears in the sidebar and greets the user.',
+    description: 'Main Bot only. Create a new Bot on the user\'s team. It appears in the sidebar and starts no turn until the user writes to it.',
     parameters: {
       name: { type: 'string', required: true, description: 'Short display name, e.g. "Researcher" or "Editor"' },
       role: { type: 'string', required: true, description: 'Two-to-four character role label shown under the name' },
@@ -269,7 +277,7 @@ export function install(rt) {
         const name = String(args.name ?? '').trim()
         await rt.approveFolder(exec, { path: workDir, who: { en: `the new Bot ${name}`, zh: `新 Bot ${name} ` } })
         const bot = await rt.createBot({ ...args, workDir, createdBy: rt.selfOf(exec.agent.id) })
-        return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It is greeting the user now.`
+        return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It starts no turn until the user writes to it.`
       } catch (error) {
         return `Could not create the Bot: ${error.message}`
       }

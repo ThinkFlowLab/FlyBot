@@ -2,25 +2,62 @@
 // coordinator can route a new part to a child that is free instead of stacking work on a busy
 // one. The core's activity feed (turn.start / turn.end) is the only input; it carries ids and
 // times, never text. Pure and process-local: nothing here is persisted.
-export function createLoadTracker() {
-  /** @type {Map<string, number>} open turns per Bot id */
+//
+// How long a turn has been open (#624): a count alone cannot tell a long turn from a stuck one —
+// `load: 1` read identically for a 47-minute-old turn that never consumed its queue and for a
+// turn three seconds in. Each open turn's start is kept, keyed by the feed's turnId when it has one
+// so an end closes the turn that really ended (#696), and `openFor()` answers the age of the oldest
+// one still open. A reader can draw its own line. It is a hint for routing, never a gate: this
+// plugin cannot see a Bot's inbox, so a legitimately long turn also ages.
+export const STALLED_AFTER_MS = 12 * 60_000
+
+const minutes = ms => Math.max(1, Math.round(ms / 60_000))
+
+export function createLoadTracker({ now = Date.now } = {}) {
+  /** @type {Map<string, { turnId?: string, at: number }[]>} open turns per Bot id, oldest first */
   const open = new Map()
+  const turnsOf = id => open.get(id) ?? []
+  const cleanTurn = value => (typeof value === 'string' && value !== '' ? value : undefined)
   return {
-    start(id) {
+    start(id, turnId) {
       if (typeof id !== 'string' || id === '') return
-      open.set(id, (open.get(id) ?? 0) + 1)
+      const turns = turnsOf(id)
+      const key = cleanTurn(turnId)
+      turns.push({ ...(key === undefined ? {} : { turnId: key }), at: now() })
+      open.set(id, turns)
     },
-    end(id) {
+    end(id, turnId) {
       if (typeof id !== 'string' || id === '') return
-      const next = (open.get(id) ?? 0) - 1
-      if (next <= 0) open.delete(id)
-      else open.set(id, next)
+      const turns = turnsOf(id)
+      if (turns.length === 0) return
+      // An end that names its turn closes that one, so a later turn ending first no longer closes an
+      // earlier one and leaves the age of the wrong turn behind (#696). With no match — an id never
+      // seen, or none at all — exactly one turn goes, the oldest, so the count still falls by one.
+      const key = cleanTurn(turnId)
+      const at = key === undefined ? -1 : turns.findIndex(turn => turn.turnId === key)
+      turns.splice(at >= 0 ? at : 0, 1)
+      if (turns.length === 0) open.delete(id)
+      else open.set(id, turns)
+    },
+    /**
+     * Drop every open turn of one Bot (#732). A removed Bot's turns can never end, so the records go
+     * with it; an id never seen is a no-op.
+     */
+    clear(id) {
+      if (typeof id !== 'string' || id === '') return
+      open.delete(id)
     },
     of(id) {
-      return open.get(id) ?? 0
+      return turnsOf(id).length
+    },
+    /** Age in ms of the oldest open turn, 0 when the Bot is idle. */
+    openFor(id, at = now()) {
+      const turns = turnsOf(id)
+      if (turns.length === 0) return 0
+      return Math.max(0, at - turns[0].at)
     },
     snapshot() {
-      return Object.fromEntries(open)
+      return Object.fromEntries([...open].map(([id, turns]) => [id, turns.length]))
     },
   }
 }
@@ -36,9 +73,19 @@ export function loadWord(count) {
 /**
  * One prompt line for a coordinator: which of its direct children are free and which are busy,
  * so it can send a part to an idle one. Undefined when the Bot has no children (nothing to route).
+ * A child whose oldest open turn is past `STALLED_AFTER_MS` says how long it has been open, so a
+ * coordinator can tell "busy" from "has not ended a turn in 47 minutes" (#624).
  */
-export function loadLine(children, countOf) {
+export function loadLine(children, countOf, openForOf = () => 0) {
   if (!Array.isArray(children) || children.length === 0) return undefined
-  const parts = children.map(child => `${child.name}: ${loadWord(countOf(child.id))}`)
+  const parts = children.map(child => {
+    const count = Number(countOf(child.id)) || 0
+    const age = Number(openForOf(child.id)) || 0
+    if (count <= 0 || age < STALLED_AFTER_MS) return `${child.name}: ${loadWord(count)}`
+    const waited = count === 1
+      ? `working (${minutes(age)} min, no turn ended)`
+      : `busy (${count} running, oldest open ${minutes(age)} min)`
+    return `${child.name}: ${waited}`
+  })
   return `Child load right now — ${parts.join(', ')}. Send a new part to a child that is idle or working before one that is busy.`
 }

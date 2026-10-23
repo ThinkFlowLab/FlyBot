@@ -5,7 +5,10 @@ import { createElement as h, useMemo } from 'react'
 // lower, with the same inject and locale, and hands it a `t` that says "1 turn" / "1 step"
 // (#419). Nothing else about the footer changes; Chinese and other copy pass through.
 export const STATS_DOCK = 'conversation.composer.dock'
+// 0.2.0-rc.2 draws the counts in one "stats" footer; 0.2.1-alpha.1 splits that footer into
+// "activity" (the turns and steps, still the `stats.counts` string) and "usage" (#659).
 export const STATS_ID = 'stats'
+export const STATS_IDS = [STATS_ID, 'activity']
 
 const noun = (count, one, many) => `${count} ${Number(count) === 1 ? one : many}`
 
@@ -21,10 +24,10 @@ export function pluralStats(t) {
 }
 
 // `entriesOf(slot)` reads the slot ledger (`ctx.slots.entries`). The shell's entry is looked
-// up when the footer renders, so plugin load order does not matter; without it, or without
-// its hooks, no footer is drawn.
-export function statsDock(entriesOf) {
-  const shell = () => (entriesOf(STATS_DOCK) ?? []).find(entry => entry?.component !== StatsDock && entry?.options?.id === STATS_ID)
+// up by the id this wrapper was registered for, when the footer renders, so plugin load order
+// does not matter; a shell without that entry draws no footer rather than an empty pill.
+export function statsDock(entriesOf, id = STATS_ID) {
+  const shell = () => (entriesOf(STATS_DOCK) ?? []).find(entry => entry?.component !== StatsDock && entry?.options?.id === id)
   function StatsDock(props) {
     const t = useMemo(() => (typeof props.t === 'function' ? pluralStats(props.t) : props.t), [props.t])
     const entry = shell()
@@ -33,3 +36,7 @@ export function statsDock(entriesOf) {
   }
   return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} }
 }
+
+// One wrapper per shell id: on a shell that publishes only one of them the other renders
+// nothing, because the lookup finds no shell entry under its own id.
+export const statsDocks = entriesOf => STATS_IDS.map(id => ({ id, ...statsDock(entriesOf, id) }))

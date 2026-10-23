@@ -132,6 +132,23 @@ export function createServerController({ base, flybot, start, registerUnavailabl
     social = undefined
   }
 
+  // A switched-away server's face-to-face rooms cannot be reached from the new one: keep them as
+  // read-only transcripts (a past room) instead of an open room whose lines go nowhere. Switching
+  // back does not reopen them: `faceSnapshotPast` keeps a room left here left, and a line to it is
+  // refused (`bot/room-ended`). Never throws.
+  async function endFaceRooms(faceRoomIds) {
+    for (const faceRoomId of faceRoomIds ?? []) {
+      try {
+        const room = flybot.rooms?.ofFace?.(faceRoomId)
+        if (!room) continue
+        if (room.face?.status === 'left' || room.face?.status === 'closed') continue
+        await flybot.rooms.upsertFace({ roomId: faceRoomId, localId: room.id, status: 'left' })
+      } catch (failure) {
+        warn('flybot-social: old face-to-face room not ended:', failure)
+      }
+    }
+  }
+
   // Starts the social layer for a server and settles with it; a start that finishes after it was
   // replaced (or timed out) is disposed instead of kept.
   function launch(target) {
@@ -248,6 +265,10 @@ export function createServerController({ base, flybot, start, registerUnavailabl
         const info = await probe(address, { fetch: base.fetch })
         const previous = current
         const target = { server: address, displayName: name, source: serverKey(address) === defaultKey ? 'config' : 'settings' }
+        // Captured before the switch; only a successful switch ends them (a failed one reverts).
+        const previousFaceRooms = (flybot.rooms?.list?.() ?? [])
+          .filter(room => room.origin === 'face-to-face' && room.face?.roomId && (room.face.status === 'open' || room.face.status === 'candidate'))
+          .map(room => room.face.roomId)
         stop()
         if (previous.server) await park(previous.server)
         writeOverride(target)
@@ -270,6 +291,9 @@ export function createServerController({ base, flybot, start, registerUnavailabl
           const why = cleanLine(failure?.message ?? failure, 200) || 'the server did not accept this FlyBot'
           throw refused(`Could not connect to the new server: ${why} The previous server is back${state === 'connected' ? '' : ', but it did not reconnect either'}.`, 'switch_failed')
         }
+        // A rename on the same server is not a switch (#729): that server still reaches these rooms, so
+        // only a change of address ends them.
+        if (serverKey(previous.server) !== serverKey(address)) await endFaceRooms(previousFaceRooms)
         return view()
       } finally {
         busy = false

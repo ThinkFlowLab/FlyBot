@@ -24,7 +24,7 @@
 // A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 import { textOf } from './text.js'
 import { output } from './tools.js'
 

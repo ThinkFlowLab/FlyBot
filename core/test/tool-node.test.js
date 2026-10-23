@@ -97,7 +97,6 @@ test('non-relay context and ds-bot package sources are ignored', () => {
   const steps = [stepAt(1, 10), stepAt(2, 30)]
   const contexts = [
     relay(12, 'request', { handoff: true }),
-    relay(14, 'kickoff'),
     relay(16, 'room'),
     relay(18, 'secret'),
     relay(22, 'request', { senderSessionId: undefined }),
@@ -108,5 +107,5 @@ test('non-relay context and ds-bot package sources are ignored', () => {
     relay(27, 'stopped', { retried: true }),
     relay(28, 'request'),
   ]
-  assert.deepEqual(relaysBefore(contexts, steps, steps[1]), [contexts[10]])
+  assert.deepEqual(relaysBefore(contexts, steps, steps[1]), [contexts[9]])
 })

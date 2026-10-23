@@ -17,6 +17,7 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const { createElement: h, useEffect, useState, useCallback } = require('react')
     const ENDPOINT = 'timeline/window'
+    const DIGEST_ENDPOINT = 'timeline/digest'
     const VERSION = 1
     const POLL_MS = 2000
     const MAX_BACKOFF_MS = 30_000
@@ -124,8 +125,27 @@ window.__ModuleLoader__.load({
           restart()
         },
         refresh: restart,
+        // The team run report (#582): read-only and on demand — the button asks for it, the poller never
+        // does, so a report costs one request when a person wants one.
+        async digest({ title } = {}) {
+          const asked = { windowMs: state.windowMs, ...(state.to === undefined ? {} : { to: state.to }) }
+          if (typeof title === 'string' && title.trim()) asked.title = title.trim().slice(0, 80)
+          const value = await flybot.call(DIGEST_ENDPOINT, asked)
+          const markdown = typeof value?.markdown === 'string' ? value.markdown : undefined
+          if (markdown === undefined) throw new Error('the host sent no report')
+          return { markdown, line: typeof value.line === 'string' ? value.line : undefined }
+        },
         dispose() { disposed = true; timers.clearTimeout(timer); stopWatching?.(); stopWatching = undefined; listeners.clear() },
       }
+    }
+
+    // ------------------------------------------------------------------ clipboard
+    // The report is copied on demand, never on a poll. A page can refuse the clipboard (no secure
+    // context, permission denied): the panel says so rather than pretending it copied.
+    async function copyText(text) {
+      const clip = globalThis.navigator?.clipboard
+      if (!clip || typeof clip.writeText !== 'function') throw new Error('this page has no clipboard')
+      await clip.writeText(String(text ?? ''))
     }
 
     // ------------------------------------------------------------------ formatting
@@ -597,6 +617,17 @@ window.__ModuleLoader__.load({
       useStyles()
       const [tab, setTab] = useState('lanes')
       const [compress, setCompress] = useState(false)
+      const [copy, setCopy] = useState({ status: 'idle' })
+      const copyReport = useCallback(async () => {
+        setCopy({ status: 'busy' })
+        try {
+          const report = await api.digest()
+          await copyText(report.markdown)
+          setCopy({ status: 'copied' })
+        } catch (error) {
+          setCopy({ status: 'error', error: safe(error?.message ?? error, 120) })
+        }
+      }, [api])
       const [snap, setSnap] = useState(api.state)
       useEffect(() => {
         const off = api.subscribe(setSnap)
@@ -624,12 +655,13 @@ window.__ModuleLoader__.load({
             h('select', { className: 'tl-btn', 'aria-label': 'Window', value: String(snap.windowMs), onChange: event => api.setWindow({ windowMs: Number(event.target.value) }) },
               ...WINDOWS.map(([label, ms]) => h('option', { key: ms, value: String(ms) }, `Last ${label}`))),
             h('button', { className: 'tl-btn', onClick: () => api.setWindow({ windowMs: snap.windowMs, to: (win ? win.to : Date.now()) - snap.windowMs / 2 }) }, 'Earlier'),
+            h('button', { className: 'tl-btn', 'aria-label': 'Copy report', title: 'Copy this window as a Markdown report', onClick: () => { void copyReport() } }, copy.status === 'copied' ? 'Copied' : copy.status === 'busy' ? 'Copying…' : 'Copy report'),
             h('button', { className: 'tl-btn live', 'aria-pressed': snap.to === undefined, title: snap.to === undefined ? 'Following the latest activity' : 'Back to the latest activity', onClick: () => { if (snap.to !== undefined) api.setWindow({ windowMs: snap.windowMs }) } }, h('i', { className: 'tl-dot', 'aria-hidden': 'true' }), 'Live'),
             h('button', { className: 'tl-btn', 'aria-label': 'Close', onClick: onClose }, '✕')),
           win && h('div', { className: 'tl-range', 'data-flybot': 'timeline-range' },
             h('span', { className: 'tl-range-text' }, fmtRange(win.from, win.to)),
             h('span', { className: 'tl-range-live' }, win.live ? 'live, up to the latest activity' : 'earlier window, not live')),
-          h('div', { className: 'tl-body' }, ...notesOf(snap).map((note, i) => h('p', { key: `n${i}`, className: note.err ? 'tl-note err' : 'tl-note', role: note.err ? 'alert' : undefined }, note.text)), body),
+          h('div', { className: 'tl-body' }, ...notesOf(snap).map((note, i) => h('p', { key: `n${i}`, className: note.err ? 'tl-note err' : 'tl-note', role: note.err ? 'alert' : undefined }, note.text)), copy.status === 'error' && h('p', { className: 'tl-note err', role: 'alert' }, `Could not copy the report: ${copy.error}`), body),
           h('div', { className: 'tl-foot' },
             h('span', null, 'Delivered: in the other Bot\'s log, not read.'),
             h('span', null, 'Model time: turn time outside tools.'))))
@@ -675,7 +707,7 @@ window.__ModuleLoader__.load({
       return off
     }
     return {
-      name: 'flybot-timeline', inject, apply, createStore, checkWindow, ENDPOINT, VERSION, POLL_MS, WINDOWS, CSS,
+      name: 'flybot-timeline', inject, apply, createStore, checkWindow, ENDPOINT, DIGEST_ENDPOINT, VERSION, POLL_MS, WINDOWS, CSS, copyText,
       safe, fmtDur, fmtClock, fmtRange, makeScale, niceTicks, layoutSwimlanes, layoutMap, waitRows, utilizationRows, createPanelState,
       Swimlanes, CommMap, Utilization, TimelinePanel, makeSection, notesOf,
     }

@@ -1,1 +1,0 @@
-OTLP export no longer drops a span whose record shares the millisecond the previous batch ended on (a tool call that ends at the same millisecond it started, or a turn ending at the last record's time): the export cursor re-reads records at its last timestamp and deduplicates spans by id.

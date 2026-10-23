@@ -44,10 +44,17 @@ const HOLD = 'hold'
 // (runs 39602546475, 39602806953, 39653640861, 39694988559, 39696278650 — all five failed with
 // "cannot read a pull request from head_ref" before this prefix was accepted, so the gate never once
 // judged a queue entry). Accept both spellings rather than depend on which one the event carries.
+//
+// The base branch is not a single segment: by the queue naming rule
+// `gh-readonly-queue/<base>/pr-<N>-<sha>`, a queue built on `release/1.0` yields
+// `gh-readonly-queue/release/1.0/pr-<N>-<sha>` (no such run in this repo yet), so the base
+// is matched greedily up to the final `/pr-…` and may contain slashes. Everything that made the old
+// single-segment pattern refuse still refuses: a non-`gh-readonly-queue/` ref, a missing or
+// non-numeric PR number, and a tail that is not 7–40 hex characters.
 export function prFromHeadRef(ref) {
   const branch = String(ref ?? '').trim().replace(/^refs\/heads\//i, '')
-  const m = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-([0-9a-f]{7,40})$/i.exec(branch)
-  return m ? { pr: Number(m[1]), base: m[2].toLowerCase() } : null
+  const m = /^gh-readonly-queue\/(.+)\/pr-(\d+)-([0-9a-f]{7,40})$/i.exec(branch)
+  return m ? { pr: Number(m[2]), base: m[3].toLowerCase() } : null
 }
 
 const names = (labels) => (labels ?? []).map((l) => String(typeof l === 'string' ? l : l?.name ?? '').toLowerCase())

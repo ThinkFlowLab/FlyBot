@@ -68,7 +68,7 @@ export function notSentLine(error) {
  * What a model call on a remote chat's route should do, from the request alone:
  * { kind: 'echo', text } writes a friend's message back as the reply; { kind: 'send',
  * messageId, text } is a message the user typed in the chat; { kind: 'none' } is anything
- * else (a kickoff, a one-off request without a durable message), which writes nothing.
+ * else (a one-off request without a durable message), which writes nothing.
  */
 // Messages the host appends as role:'user' that the user did not type: context snapshots (the
 // time context), the AGENTS.md baseline (form 'instructions') and notices (plan mode, tool

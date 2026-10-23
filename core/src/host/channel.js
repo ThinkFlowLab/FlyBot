@@ -1,6 +1,7 @@
 // Client channel: the team view the browser renders, and the POST /api/bot endpoints.
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { questionReply } from './parts.js'
 import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 import { isFaceRoom } from './room-membership.js'
@@ -124,14 +125,13 @@ export function install(rt) {
     mainBotId: state.mainBotIds[0] ?? null,
     mainBotIds: state.mainBotIds,
     // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
-    // `waiting`: the Bot holds its greeting until the user picks its model.
-    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => {
+    bots: Object.values(state.bots).map(({ segments, ...bot }) => {
       // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
       const pending = rt.listChatApprovals?.(bot, actor) ?? []
       // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,
       // and a waiting one counts toward the row's wait badge.
       const held = bot.remote || (rt.authzEnforced?.() && actor && bot.ownerId !== actor.memberId) ? [] : rt.heldRepliesOf?.(bot.id) ?? []
-      const waitingReplies = held.filter(reply => reply.status === 'pending').length
+      const waitingReplies = held.filter(reply => isApprovalWaiting(reply.status)).length
       return {
         ...bot,
         granted: rt.hasAnyGrant?.(bot.id) === true,
@@ -141,7 +141,6 @@ export function install(rt) {
         parts: (segments ?? []).map(segment => segment.sessionId),
         pendingCount: pending.length + waitingReplies,
         ...(held.length ? { heldReplies: held } : {}),
-        ...(kickoff ? { waiting: true } : {}),
       }
     }),
     // `parts`: the members' hidden group Sessions and their earlier segments, for usage.
@@ -348,7 +347,6 @@ export function install(rt) {
             ...(typeof body.admin === 'string' ? { admin: body.admin } : {}),
             ...(Array.isArray(body.participants) ? { participants: body.participants } : {}),
           })
-          if (body.greet === true) await rt.greetRoom(room.id).catch(error => rt.warn('ds-bot: greeting in %s failed: %s', room.name, error))
           return ok(room)
         }
         case 'update-room': {
@@ -375,6 +373,8 @@ export function install(rt) {
           await rt.load()
           const leaked = unshareableReference(actor, body.text)
           if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
+          const posted = rt.roomOf(String(body.roomId ?? body.id ?? ''))
+          if (posted && isFaceRoom(posted) && (posted.face?.status === 'left' || posted.face?.status === 'closed')) return fail('This room has ended', 'bot/room-ended')
           const line = await rt.postRoomMessage(String(body.roomId ?? body.id ?? ''), {
             text: body.text,
             authorId: body.authorId,
@@ -516,6 +516,9 @@ export function install(rt) {
           const room = rt.roomOf(sessionId)
           if (room && isFaceRoom(room)) {
             if (actor && rt.authzEnforced() && !rt.roomMemberOf(actor, room.id)) return fail('You are not a member of that room', 'bot/forbidden')
+            // A room the server no longer reaches (a switched-away server, or a room that left):
+            // refuse instead of appending a line every other home will never see.
+            if (room.face?.status === 'left' || room.face?.status === 'closed') return fail('This room has ended', 'bot/room-ended')
             // Face rooms must not go through sessionController.prompt: that starts a local
             // bot round (turns/steps) and never fans the line to the other FlyBot instance.
             const line = await rt.postRoomMessage(room.id, { text, displayName: actor?.displayName }, actor)

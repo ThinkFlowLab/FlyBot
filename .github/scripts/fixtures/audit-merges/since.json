@@ -1,0 +1,32 @@
+{
+  "note": "The two real bypasses on main plus their commit dates, so the #697 watermark can be driven without the network: #650 landed as 6438cb2b on 2026-10-21T18:32:09Z and #680 as 6b9820bb on 2026-10-22T05:56:53Z. `afterBoth` is a watermark newer than both, `betweenThem` newer than #650 only.",
+  "commits": [
+    {
+      "sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41",
+      "date": "2026-10-22T05:56:53Z"
+    },
+    {
+      "sha": "6438cb2b63ecc274e6669d1448c4872af5cabb74",
+      "date": "2026-10-21T18:32:09Z"
+    }
+  ],
+  "watermarks": {
+    "afterBoth": "2026-10-22T06:30:00Z",
+    "betweenThem": "2026-10-21T20:00:00Z"
+  },
+  "bySha": {
+    "6b9820bbd75304a6eb41e90e045fc58596dd1a41": {
+      "pulls": [{ "number": 680, "merge_commit_sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41" }],
+      "runs": [
+        { "id": 39730969259, "name": "Merge gate", "path": ".github/workflows/merge-gate.yml", "event": "merge_group", "head_sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41", "conclusion": "failure" },
+        { "id": 39730969253, "name": "Test", "path": ".github/workflows/test.yml", "event": "merge_group", "head_sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41", "conclusion": "success" }
+      ]
+    },
+    "6438cb2b63ecc274e6669d1448c4872af5cabb74": {
+      "pulls": [{ "number": 650, "merge_commit_sha": "6438cb2b63ecc274e6669d1448c4872af5cabb74" }],
+      "runs": [
+        { "id": 39711998891, "name": "Merge gate", "path": ".github/workflows/merge-gate.yml", "event": "merge_group", "head_sha": "6438cb2b63ecc274e6669d1448c4872af5cabb74", "conclusion": "failure" }
+      ]
+    }
+  }
+}

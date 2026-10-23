@@ -183,3 +183,18 @@ test('#385: the + menu rows have their own marks, one verb style and short hints
   assert.doesNotMatch(menu, /t\('Rename Bot'\)/)
   assert.match(menu, /t\('Edit Bot'\)/)
 })
+
+test('#645: a line typed in the composer is the new Bot\'s first turn, not its instructions', () => {
+  const src = readFileSync(new URL('../src/client/new-chat.js', import.meta.url), 'utf8')
+  const card = readFileSync(new URL('../src/client/create-bot.js', import.meta.url), 'utf8')
+  // The new-Bot card is handed no brief at all: a typed request never becomes a standing rule.
+  assert.match(src, /h\(CreateBot, \{\n\s*roster, actions, start: draft, canGoBack: draft\.fromList,/)
+  assert.doesNotMatch(src, /brief:/)
+  assert.doesNotMatch(card, /brief/)
+  // Creating from the composer sends that line to the Bot, the way opening one does; the
+  // helper opens the Bot first, so a failed send still lands on its chat (#698).
+  assert.match(src, /const created = \(bot\) => \{\n\s*close\(\)\n\s*return afterCreate\(\{ id: bot\.id, text: message, actions \}\)/)
+  assert.match(src, /import \{ afterCreate \} from '\.\/bot-draft\.js'/)
+  assert.match(src, /onCreated: created/)
+  assert.match(card, /await onCreated\(bot\)/)
+})

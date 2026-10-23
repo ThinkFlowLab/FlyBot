@@ -295,7 +295,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 --- a/src/client/bot-draft.js
 +++ b/src/client/bot-draft.js
-@@ -8,10 +8,15 @@ export function freshBotName(roster, base = 'New Bot') {
+@@ -8,17 +8,39 @@ export function freshBotName(roster, base = 'New Bot') {
    return `${base} ${index}`
  }
  
@@ -312,7 +312,34 @@ diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 +  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? ''
  }
  
- // The model is always sent: the host fixes it on the Bot at creation.
+-// The model is always sent: the host fixes it on the Bot at creation.
+-export function createPayload({ name, look, image, model, effort, brief }) {
++// The model is always sent: the host fixes it on the Bot at creation. The card never sends a
++// brief: a line typed in the composer is the Bot's first request, and the host takes a brief
++// as instructions only from a Bot that creates another (#645).
++export function createPayload({ name, look, image, model, effort }) {
+   const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } }
+   if (model) payload.model = model
+   if (effort) payload.effort = effort
+-  if (brief) payload.brief = brief
+   return payload
+ }
++
++// What the new-Bot card does once the Bot exists: open its chat and send the line typed in
++// the composer as its first turn. The Bot is already made, so a failed send leaves the user
++// on its chat with the failure, never on a card whose Create can only answer "a Bot with
++// that name already exists" (#698).
++export async function afterCreate({ id, text, actions }) {
++  actions.openSession(id)
++  actions.showDetails(id, 'settings')
++  const line = String(text ?? '').trim()
++  if (line === '') return
++  try {
++    await actions.send(id, line)
++  } catch (failure) {
++    actions.notify?.(failure?.message ?? String(failure))
++  }
++}
 diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 --- a/src/client/bot-settings.js
 +++ b/src/client/bot-settings.js
@@ -410,7 +437,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -2,12 +2,18 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
+@@ -2,12 +2,19 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
  import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
@@ -423,6 +450,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { SecretToolCell } from './secret-card.js'
  import { dateLocale, t } from './i18n.js'
 +import { remoteMessageText } from './flybot-registry.js'
++import { isApprovalWaiting } from '../shared/approval-waiting.js'
 +import { cleanPeerName, friendBotOwner, normRemoteHandle, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
 +import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 +import { fileSize } from './flybot-slots.js'
@@ -516,7 +544,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  // the same live and after a reload; "Chief → Chief (SelfB1233)" named two Bots and no person.
 +  const chat = (roster.bots ?? []).find(item => item.remote?.handle === held.to)
 +  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t('a friend')
-+  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': held.status === 'pending' ? '' : undefined },
++  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': isApprovalWaiting(held.status) ? '' : undefined },
 +    children,
 +    closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null)
 +}
@@ -720,7 +748,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // A centered event line that names a group chat and opens it.
  function GroupEvent({ prefix, room, name, roster, actions }) {
    return h('div', { className: 'bt-event' },
-@@ -331,17 +331,30 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
+@@ -331,17 +331,31 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
      : body
  
    function triggerBody() {
@@ -735,8 +763,11 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      if (source.kind === 'bot') {
        // A part opens with its handoff package, so the earlier parts go right above it.
        if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions })
-       // Group turns belong to the group chat; the member's own chat stays one-to-one.
-       if (source.role === 'kickoff' || source.role === 'room') return null
+-      // Group turns belong to the group chat; the member's own chat stays one-to-one.
+-      if (source.role === 'kickoff' || source.role === 'room') return null
++      // Group turns belong to the group chat; the member's own chat stays one-to-one. A
++      // kickoff line was a setup prompt, never a message the parent Bot sent (#698).
++      if (source.role === 'room' || source.role === 'kickoff') return null
 +      // The host's receipt for the user's @ of a friend's Bot in this group (#80):
 +      // where the message went, or why it did not leave.
 +      if (source.role === 'mention') return h('div', { className: 'bt-event' }, h('span', null, contentText(data.content)))
@@ -1049,6 +1080,26 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 diff --git a/src/client/create-bot.js b/src/client/create-bot.js
 --- a/src/client/create-bot.js
 +++ b/src/client/create-bot.js
+@@ -18,7 +18,7 @@ const randomLook = (avoid = {}) => {
+ 
+ // The new-Bot form: look first, then name and model. Nothing exists until Create.
+ // `inline` drops the pane's header for a form shown inside Settings.
+-export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBack, onCreated, inline = false }) {
++export function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
+   const [look, setLook] = useState(() => randomLook())
+   const [image, setImage] = useState(null)
+   const [name, setName] = useState(start?.name ?? '')
+@@ -40,8 +40,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
+     setError('')
+     setBusy(true)
+     try {
+-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }))
+-      onCreated(bot)
++      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }))
++      await onCreated(bot)
+     } catch (failure) {
+       setError(failure?.message ?? String(failure))
+       setBusy(false)
 @@ -88,7 +88,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
          : t('Add a provider and a model in DeepSeek Harness first, or pick one in the Bot\'s chat later.'))),
      error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null,
@@ -1103,7 +1154,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,62 @@
+@@ -1,44 +1,63 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
  import { isHex, inkText, paintCss } from './inks.js'
@@ -1141,6 +1192,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { SCHEDULE_CSS } from './schedules.js'
 +import { INBOX_CSS } from './inbox.js'
 +import { MOBILE_CSS } from './mobile.js'
++import { PANE_MIN_WIDTH_CSS } from './panes.js'
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -1152,7 +1204,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { MEMBER_CSS, MemberDock } from './member-status.js'
  import { USER_MESSAGE_CSS, UserMessageCell, canDrawUserMessages } from './user-message.js'
  import { noticeApprovals } from './approval-notices.js'
-+import { STATS_DOCK, STATS_ID, statsDock } from './stats-dock.js'
++import { STATS_DOCK, statsDocks } from './stats-dock.js'
  
  export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
  
@@ -1363,7 +1415,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component))
 +  // The shell's run-stats footer, drawn by the shell's own entry with FlyBot's plurals (#419).
-+  const runStats = statsDock(name => ctx.slots.entries?.(name) ?? [])
++  const runStats = statsDocks(name => ctx.slots.entries?.(name) ?? [])
  
    // The "@" menu's Bot group and the chats "+" references. The composer's controller
    // for a Session is the shell's own, so the chats open at its caret.
@@ -1410,7 +1462,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,43 @@ export function apply(ctx) {
+@@ -752,27 +752,34 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1425,6 +1477,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      installCompiledStyles(MEMBER_CSS, 'members'),
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
 +    installCompiledStyles(MOBILE_CSS, 'mobile'),
++    installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
      installTheme(),
      shadow('sidebar.workspaces', { priority: -10, inject: face }, TeamSidebar),
@@ -1446,18 +1499,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ]
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, 'conversation'),
-     installMentions(),
-     installAtMenu(),
--    shadow('conversation.session.header', { priority: -10, inject: face }, HeaderPill),
-+    // The shell's own Session header stays, so the child seats it renders keep
-+    // working — notably the subagent catalog `conversation.session.header.actions`
-+    // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
-+    // utilities list beside them instead of replacing the whole header.
-+    shadow('conversation.session.header.utilities', { id: 'bot-pill', order: 100, inject: face }, HeaderPill),
-     shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
-     shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
-     shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),
-@@ -790,15 +790,23 @@ export function apply(ctx) {
+@@ -790,15 +790,24 @@ export function apply(ctx) {
      // every message.
      shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
      shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
@@ -1473,11 +1515,13 @@ diff --git a/src/client/index.js b/src/client/index.js
 -    // in its details panel.
 +    // The composer carries no model picker; a Bot's model lives in its details panel.
      shadow('conversation.input.model', { priority: -10 }, Nothing),
-     shadow('conversation.composer.dock', { id: 'activity', order: 0, priority: -10 }, Nothing),
+-    shadow('conversation.composer.dock', { id: 'activity', order: 0, priority: -10 }, Nothing),
      shadow('conversation.composer.dock', { id: 'usage', order: 1, priority: -10 }, Nothing),
 +    // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
-+    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
-+    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: 'chat', inject: runStats.inject }, runStats.component),
++    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419). 0.2.1-alpha.1 splits that
++    // footer into "activity" (the counts, same string) and "usage", so the counts pill takes
++    // the same wrapper and both shells show one footer (#659).
++    ...runStats.map(entry => shadow(STATS_DOCK, { id: entry.id, order: 0, priority: -10, locale: 'chat', inject: entry.inject }, entry.component)),
      shadow('conversation.input.left', { id: 'bot-plus', order: -100, inject: face }, ComposerPlus),
 +    shadow('conversation.input.left', { id: 'bot-as', order: -90, inject: face }, ComposerIdentity),
      shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),
@@ -1494,7 +1538,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -1,21 +1,31 @@
+@@ -1,21 +1,32 @@
  import { createElement as h, useRef, useState } from 'react'
 -import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 -import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
@@ -1502,6 +1546,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
  import { AdminStar, BotMark } from './mark.js'
  import { useEscape, usePaneLeft } from './overlay-hooks.js'
  import { CreateBot } from './create-bot.js'
++import { afterCreate } from './bot-draft.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
  import { t } from './i18n.js'
 +import { newChatActionRows } from './flybot-registry.js'
@@ -1588,7 +1633,23 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    }
    const pick = (bot) => {
      setPicked(current => [...current, bot.id])
-@@ -71,7 +71,12 @@ export function NewChat({ mode, roster, actions }) {
+@@ -59,19 +59,25 @@ export function NewChat({ mode, roster, actions }) {
+     setError('')
+     setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
+   }
+-  // Close first: closing the new-chat pane keeps the details panel, while closing
++  // A line typed in the composer was a request, so it is the new Bot's first turn, not its
++  // instructions (#645): the card is handed no brief, and the line is sent once the Bot
++  // exists. Close first: closing the new-chat pane keeps the details panel, while closing
+   // nothing would clear it.
+   const created = (bot) => {
+     close()
+-    actions.openSession(bot.id)
+-    actions.showDetails(bot.id, 'settings')
++    return afterCreate({ id: bot.id, text: message, actions })
+   }
+   // The admin and at least one more Bot make a group; a message typed below goes with it,
+   // else the admin opens by asking what the group is for.
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return
      const text = message.trim()
@@ -1598,7 +1659,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +      ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
 +      ...remotes,
 +    ]
-+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}), ...(text ? {} : { greet: true }) })
++    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
      if (text) await actions.send(room.id, text)
      actions.openSession(room.id)
      close()
@@ -1662,6 +1723,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const active = Math.min(cursor, Math.max(options.length - 1, 0))
    const listed = options.map(option => option.key).join('\n')
    const glide = useGlide(`${active}\n${listed}`, { axis: 'y', ...QUICK_EDGES })
+@@ -114,7 +114,7 @@ export function NewChat({ mode, roster, actions }) {
+   if (draft) {
+     return h('div', { className: 'bt-pane', style: { left: paneLeft } },
+       h(CreateBot, {
+-        roster, actions, start: draft, brief: message.trim(), canGoBack: draft.fromList,
++        roster, actions, start: draft, canGoBack: draft.fromList,
+         onBack: draft.fromList ? () => { setDraft(null); setTimeout(() => inputRef.current?.focus()) } : close,
+         onCreated: created,
+       }))
 @@ -126,9 +126,16 @@ export function NewChat({ mode, roster, actions }) {
      if (picked.length > 0) setPicked(current => current.slice(0, -1))
      else if (admin !== null) setAdmin(null)
@@ -2463,23 +2533,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-group-replies{display:contents}
  /* A Bot chat is flat in every work-details mode, without changing the user's mode
     (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -805,21 +805,23 @@ export const CONVERSATION_CSS = `
- [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
- :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
- [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
--[class*="_header"]:has(.bt-head){border-bottom-color:transparent!important;box-shadow:none!important}
--/* The transcript runs under a floating header pill. */
--header[class*="_header"]:has(.bt-head){position:absolute!important;top:0;left:0;right:0;z-index:8;display:flex!important;padding:10px 0 0!important;background:transparent!important;pointer-events:none;justify-content:center}
--header[class*="_header"]:has(.bt-head)::before{content:"";position:absolute;inset:0 0 auto;height:60px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
--header[class*="_header"]:has(.bt-head)>[class*="_headerLeading"]{position:absolute;left:12px;top:10px;pointer-events:auto}
--header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
-+/* FlyBot's pill rides the shell's own Session header utilities, beside the seats
-+   the native header renders (actions: the subagent catalog; lineage; corner).
-+   It is a compact control in that row now, not a floating replacement for the
-+   whole header, so the header keeps its own layout, border and drag row. */
-+[class*="_header"] .bt-head{display:flex;align-items:center;height:auto;flex:none;width:auto;pointer-events:auto}
-+[class*="_header"] .bt-head .bt-pill{height:30px;padding:3px 10px 3px 4px;gap:6px;font-size:13px;line-height:18px;max-width:min(320px,32vw)}
-+[class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
+@@ -814,12 +814,13 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
  /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
     without its copy and branch row; a tail with nothing in it takes no room. */
@@ -2693,7 +2747,14 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 --- a/test/create-bot.test.js
 +++ b/test/create-bot.test.js
-@@ -7,7 +7,22 @@ const models = [
+@@ -1,24 +1,42 @@
+ import { test } from 'node:test'
+ import assert from 'node:assert/strict'
+-import { createPayload, freshBotName, startModel } from '../src/client/bot-draft.js'
++import { afterCreate, createPayload, freshBotName, startModel } from '../src/client/bot-draft.js'
+ 
+ const models = [
+   { ref: 'ollama/ds-flash', name: 'DS Flash', providerName: 'Ollama' },
    { ref: 'cloud/qwen-max', name: 'Qwen Max', providerName: 'Cloud' },
  ]
  
@@ -2717,6 +2778,60 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
    assert.equal(startModel({ models, defaultModel: 'cloud/qwen-max' }), 'cloud/qwen-max')
    assert.equal(startModel({ models, defaultModel: 'gone/model' }), 'ollama/ds-flash')
    assert.equal(startModel({ models, defaultModel: null }), 'ollama/ds-flash')
+   assert.equal(startModel({ models: [], defaultModel: 'cloud/qwen-max' }), '')
+ })
+ 
+-test('the payload carries the look, the chosen model, and the brief', () => {
++test('the payload carries the look and the chosen model, and never a brief (#645)', () => {
+   const look = { shape: 'star', color: 'blue' }
+   assert.deepEqual(createPayload({ name: 'A', look, model: 'cloud/qwen-max' }), { name: 'A', color: 'blue', avatar: { shape: 'star' }, model: 'cloud/qwen-max' })
+-  assert.deepEqual(createPayload({ name: 'A', look, model: '', brief: 'hi', image: 'data:image/png;base64,AA' }),
+-    { name: 'A', color: 'blue', avatar: { shape: 'star', image: 'data:image/png;base64,AA' }, brief: 'hi' })
++  // A line typed in the composer is the new Bot's first request, sent as a turn, so the card
++  // sends no `brief` the host would fold into the Bot's instructions.
++  const payload = createPayload({ name: 'A', look, model: '', brief: '帮我写周报', image: 'data:image/png;base64,AA' })
++  assert.deepEqual(payload, { name: 'A', color: 'blue', avatar: { shape: 'star', image: 'data:image/png;base64,AA' } })
++  assert.equal(payload.brief, undefined)
+ })
+ 
+ test('the suggested name skips taken names', () => {
+@@ -27,3 +27,36 @@ test('the suggested name skips taken names', () => {
+   assert.equal(freshBotName(roster, 'Kimi'), 'Kimi 2')
+   assert.equal(freshBotName(roster, 'Writer'), 'Writer')
+ })
++
++// #698: the Bot exists once the card reports it, so a first send that fails must leave the
++// user on the new Bot's chat with the failure, not on a card whose Create can only answer
++// "a Bot with that name already exists".
++test('a failed first send still opens the new Bot and shows the failure', async () => {
++  const calls = []
++  const actions = {
++    openSession: id => calls.push(['open', id]),
++    showDetails: (id, tab) => calls.push(['details', id, tab]),
++    send: async (id, text) => { calls.push(['send', id, text]); throw new Error('the turn could not be opened') },
++    notify: text => calls.push(['notify', text]),
++  }
++  await afterCreate({ id: 'writer', text: '  帮我写周报  ', actions })
++  assert.deepEqual(calls, [
++    ['open', 'writer'],
++    ['details', 'writer', 'settings'],
++    ['send', 'writer', '帮我写周报'],
++    ['notify', 'the turn could not be opened'],
++  ])
++  assert.ok(!calls.some(([kind, text]) => kind === 'notify' && String(text).includes('already exists')), 'no duplicate-Bot complaint')
++})
++
++test('the new Bot is opened even when the composer had nothing typed, and a sent line reports nothing', async () => {
++  const opened = []
++  const silent = { openSession: id => opened.push(id), showDetails: () => {}, send: async () => { throw new Error('should not send') }, notify: text => opened.push(`notify:${text}`) }
++  await afterCreate({ id: 'quiet', text: '', actions: silent })
++  await afterCreate({ id: 'quiet', text: '   ', actions: silent })
++  assert.deepEqual(opened, ['quiet', 'quiet'])
++  const sent = []
++  const working = { openSession: () => {}, showDetails: () => {}, send: async (id, text) => sent.push([id, text]), notify: text => sent.push(['notify', text]) }
++  await afterCreate({ id: 'writer', text: 'Review the notes', actions: working })
++  assert.deepEqual(sent, [['writer', 'Review the notes']])
++})
 diff --git a/test/looks.test.js b/test/looks.test.js
 --- a/test/looks.test.js
 +++ b/test/looks.test.js

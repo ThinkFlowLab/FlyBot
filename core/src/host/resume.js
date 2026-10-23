@@ -89,26 +89,33 @@ export function install(rt) {
     else turns[id] = next
     persist()
   }
+  // Every entry of that exchange: one exchange can be noted under two Sessions while a Session
+  // moves to a new part, and leaving one behind made the next start send the message again.
   const forgetQueued = (exchangeId) => {
+    const rest = {}
+    let dropped = false
     for (const [sessionId, list] of Object.entries(queued)) {
-      const at = list.findIndex(item => item.args.exchangeId === exchangeId)
-      if (at === -1) continue
-      const rest = list.toSpliced(at, 1)
-      queued = { ...queued }
-      if (rest.length === 0) delete queued[sessionId]
-      else queued[sessionId] = rest
-      persist()
-      return
+      const kept = list.filter(item => item.args.exchangeId !== exchangeId)
+      if (kept.length !== list.length) dropped = true
+      if (kept.length > 0) rest[sessionId] = kept
     }
+    if (!dropped) return
+    queued = rest
+    persist()
   }
 
   const deliver = rt.deliver
   rt.deliver = async (args) => {
     const noted = { ...args, exchangeId: args.exchangeId ?? randomUUID() }
     const sessionId = noted.sessionId ?? rt.chatOf(noted.toId)
-    // Noted before it is sent: a turn may take it up before the send returns.
-    queued = { ...queued, [sessionId]: [...(queued[sessionId] ?? []), { at: Date.now(), args: noted }].slice(-QUEUED_MAX) }
-    persist()
+    // Noted before it is sent: a turn may take it up before the send returns. A resend delivers an
+    // exchange the notes already hold, and noting it twice left the second copy on disk after the
+    // turn took it up; that copy was sent again by the next start.
+    const notedAlready = Object.values(queued).some(list => list.some(item => item.args.exchangeId === noted.exchangeId))
+    if (!notedAlready) {
+      queued = { ...queued, [sessionId]: [...(queued[sessionId] ?? []), { at: Date.now(), args: noted }].slice(-QUEUED_MAX) }
+      persist()
+    }
     try {
       return await deliver(noted)
     } catch (error) {
@@ -142,7 +149,7 @@ export function install(rt) {
       case 'turn/start': {
         const owner = rt.groupOwners.get(id)
         const botId = owner?.botId ?? rt.chatOwners.get(id)
-        update(id, () => ({ botId, ...(owner ? { roomId: owner.roomId } : {}), since: event.time ?? Date.now(), ...originNote(id) }))
+        update(id, () => ({ botId, ...(owner ? { roomId: owner.roomId } : {}), since: event.time ?? Date.now(), ...(event.data?.turn !== undefined ? { turn: event.data.turn } : {}), ...originNote(id) }))
         break
       }
       case 'user/message': {
@@ -159,7 +166,9 @@ export function install(rt) {
       case 'turn/end': {
         // DSH stops every turn as it shuts down; that one is picked up at the next start.
         const reason = event.data?.reason
-        if (reason?.kind === 'aborted' && reason.reason?.kind === 'disposed') break
+        // DSH stopping every turn as it shuts down, or the format layer recording a restart as
+        // `interrupted`: that one is picked up at the next start, so its note stays.
+        if ((reason?.kind === 'aborted' && reason.reason?.kind === 'disposed') || reason?.kind === 'interrupted') break
         update(id, () => undefined)
         break
       }
@@ -206,11 +215,50 @@ export function install(rt) {
       && current(item.args) !== undefined && taken?.has(item.args.exchangeId) !== true)
     if (fresh.length === 0) return
     const target = current(fresh[0].args)
+    // No Session to open yet: every item stays noted (seeded by resumeAll) for the next start.
     const agent = await rt.resolveAgent(target)
     const waiting = new Set([...(agent.inbox?.nextStep ?? []), ...(agent.inbox?.nextTurn ?? [])].map(message => message.source?.exchangeId))
-    for (const { args } of fresh) {
+    const failed = []
+    for (const item of fresh) {
+      const { args } = item
       if (waiting.has(args.exchangeId) || taken?.has(args.exchangeId) === true) continue
-      await rt.deliver({ ...args, sessionId: current(args), steer: false, resent: true })
+      try {
+        await rt.deliver({ ...args, sessionId: current(args), steer: false, resent: true })
+      } catch {
+        // The delivery wrapper dropped its note; put it back so the next start retries it.
+        failed.push(item)
+      }
+    }
+    if (failed.length > 0) {
+      queued = { ...queued, [sessionId]: [...(queued[sessionId] ?? []), ...failed].slice(-QUEUED_MAX) }
+      persist()
+      rt.warn('ds-bot: %d message(s) for %s were not sent again; kept for the next start', failed.length, sessionId)
+    }
+  }
+
+  // Did the noted turn really end while nobody was listening (a plugin reload, or a crash after
+  // DSH appended its end)? The durable Session log is the truth: a turn that finished ends
+  // `completed` (or `blocked` / `max-tokens` / `forked`, or is aborted by the user / hook / parent);
+  // only `interrupted`, an abort caused by `disposed` and a missing end describe work a restart
+  // cut. A note from a build before this change has no `turn`, so it keeps the old behaviour.
+  async function endedNormally(sessionId, record) {
+    if (!Number.isInteger(record.turn) || typeof ctx.sessionController?.page !== 'function') return false
+    try {
+      const agent = await rt.resolveAgent(sessionId)
+      const seq = Number(agent?.session?.seq)
+      const page = await ctx.sessionController.page({
+        address: { kind: 'session', sessionId },
+        ...(Number.isFinite(seq) && seq > 0 ? { throughSeq: seq - 1 } : {}),
+        maxMessages: 200,
+      }, AbortSignal.timeout(5000))
+      const end = (page?.records ?? []).map(entry => entry?.event)
+        .filter(event => event?.type === 'turn/end' && event.data?.turn === record.turn).at(-1)
+      const reason = end?.data?.reason
+      if (reason === undefined) return false
+      if (reason.kind === 'aborted') return ['user', 'parent', 'hook'].includes(reason.reason?.kind)
+      return ['completed', 'blocked', 'max-tokens', 'forked'].includes(reason.kind)
+    } catch {
+      return false
     }
   }
 
@@ -219,26 +267,41 @@ export function install(rt) {
     if (rt.readOnly() !== undefined) return
     const { turns: noted, queued: dropped } = interrupted
     interrupted = { turns: {}, queued: {} }
-    // Taken up now, so another restart does not pick them up twice.
-    persist()
+    // Keep everything still owed in the live notes until its pickup succeeds: clearing the file
+    // first meant one failed delivery (or a crash during the pickup) lost the note for good.
+    turns = { ...noted }
+    queued = { ...dropped }
     // Agents and inboxes are read before anything wakes their Sessions.
     const cut = []
     for (const [sessionId, record] of Object.entries(noted)) {
       const first = firstTurn.get(sessionId)
-      if (first === 'turn/end') continue
-      // Still running: noted again, as if it had started here.
-      if (first === undefined && (await rt.resolveAgent(sessionId).catch(() => undefined))?.status === 'running') update(sessionId, () => record)
-      else cut.push([sessionId, record])
+      // `turn/end` is the noted turn ending here; `turn/start` means another turn began, so the
+      // noted one must have ended too (a turn cannot start until the previous one ends).
+      if (first === 'turn/end' || first === 'turn/start') { update(sessionId, () => undefined); continue }
+      // Still running: the note stays, as if it had started here.
+      if (first === undefined && (await rt.resolveAgent(sessionId).catch(() => undefined))?.status === 'running') continue
+      // Finished while this plugin was not listening: do not repeat work that is already done.
+      if (await endedNormally(sessionId, record)) { update(sessionId, () => undefined); continue }
+      cut.push([sessionId, record])
     }
     firstTurn = undefined
     for (const [sessionId, list] of Object.entries(dropped)) {
-      if (!Array.isArray(list)) continue
+      if (!Array.isArray(list)) { delete queued[sessionId]; continue }
       await resendQueued(sessionId, list).catch(error => rt.warn('ds-bot: sending again what %s was sent failed: %s', sessionId, error))
     }
     taken = undefined
     for (const [sessionId, record] of cut) {
-      await resumeTurn(sessionId, record).catch(error => rt.warn('ds-bot: picking up the turn of %s failed: %s', sessionId, error))
+      // The note stays while the pickup runs: a failed delivery — or a crash in the middle of one —
+      // must not lose it. Only a pickup handed over drops it, and not when the resumed turn has
+      // written its own note meanwhile (that one describes the running turn, not this pickup).
+      try {
+        await resumeTurn(sessionId, record)
+        update(sessionId, current => (current === record ? undefined : current))
+      } catch (error) {
+        rt.warn('ds-bot: picking up the turn of %s failed: %s', sessionId, error)
+      }
     }
+    persist()
   }
 
   ctx.effect(() => {

@@ -1089,7 +1089,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,162 +1242,515 @@ function maskOf(shape) {
+@@ -1242,162 +1242,522 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1472,6 +1472,12 @@ diff --git a/client.js b/client.js
 -  for (const mode of ["light", "dark"]) {
 -    for (const key of THEME_KEYS) if (!isHex(theme?.[mode]?.[key])) throw new Error(`Theme ${mode}.${key} must be a #rrggbb color`);
 +
++// src/shared/approval-waiting.js
++var WAITING_STATUSES = Object.freeze(["pending", "pending_approval"]);
++function isApprovalWaiting(status) {
++  return WAITING_STATUSES.includes(status);
++}
++
 +// src/client/flybot-slots.js
 +var import_react2 = require("react");
 +var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -1615,7 +1621,7 @@ diff --git a/client.js b/client.js
 +  const [busy, setBusy] = (0, import_react2.useState)("");
 +  const [error, setError] = (0, import_react2.useState)("");
 +  const [shown, setShown] = (0, import_react2.useState)("");
-+  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
++  const refresh = () => call2("approvals", { status: [...WAITING_STATUSES, "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
 +  });
 +  (0, import_react2.useEffect)(() => {
 +    void refresh();
@@ -1629,7 +1635,7 @@ diff --git a/client.js b/client.js
 +    const chat = chatOf(approval, roster);
 +    return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
 +  };
-+  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
++  const away = open.filter((approval) => policies.has(approval.by) && isApprovalWaiting(approval.status) && !inOpenChat(approval));
 +  const awayKey = away.map((approval) => approval.id).join(",");
 +  (0, import_react2.useEffect)(() => {
 +    if (!awayKey) {
@@ -1684,6 +1690,7 @@ diff --git a/client.js b/client.js
 +        const custom = entries2.find((entry) => entry.inline !== true && (entry.policy === void 0 || entry.policy === approval.by));
 +        if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
 +        const failed = approval.status === "failed";
++        const waiting = isApprovalWaiting(approval.status);
 +        return (0, import_react2.createElement)(
 +          "div",
 +          { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
@@ -1701,8 +1708,8 @@ diff --git a/client.js b/client.js
 +            "div",
 +            { className: "bt-flybot-approval-actions" },
 +            failed ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
-+            failed ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")),
-+            failed ? null : (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve"))
++            waiting ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")) : null,
++            waiting ? (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")) : null
 +          )
 +        );
 +      }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
@@ -1887,7 +1894,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,48 +1624,227 @@ function usageOf(list, ids) {
+@@ -1624,47 +1624,226 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -1967,10 +1974,6 @@ diff --git a/client.js b/client.js
 -    const h34 = dt / steps;
 -    let moving = false;
 -    for (const value of values.values()) {
--      for (let index = 0; index < steps; index += 1) {
--        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
--        value.x += value.v * h34;
--      }
 +var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 +var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 +function indexRoster(value) {
@@ -2147,13 +2150,14 @@ diff --git a/client.js b/client.js
 +    const h42 = dt / steps;
 +    let moving = false;
 +    for (const value of values.values()) {
-+      for (let index = 0; index < steps; index += 1) {
+       for (let index = 0; index < steps; index += 1) {
+-        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
+-        value.x += value.v * h34;
 +        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h42;
 +        value.x += value.v * h42;
-+      }
+       }
        if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
          value.x = value.to;
-         value.v = 0;
 @@ -1699,10 +1699,10 @@ function liveSprings(apply2) {
  }
  var CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]';
@@ -2412,23 +2416,7 @@ diff --git a/client.js b/client.js
  .bt-group-replies{display:contents}
  /* A Bot chat is flat in every work-details mode, without changing the user's mode
     (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -2622,21 +2622,23 @@ var CONVERSATION_CSS = `
- [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
- :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
- [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
--[class*="_header"]:has(.bt-head){border-bottom-color:transparent!important;box-shadow:none!important}
--/* The transcript runs under a floating header pill. */
--header[class*="_header"]:has(.bt-head){position:absolute!important;top:0;left:0;right:0;z-index:8;display:flex!important;padding:10px 0 0!important;background:transparent!important;pointer-events:none;justify-content:center}
--header[class*="_header"]:has(.bt-head)::before{content:"";position:absolute;inset:0 0 auto;height:60px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
--header[class*="_header"]:has(.bt-head)>[class*="_headerLeading"]{position:absolute;left:12px;top:10px;pointer-events:auto}
--header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
-+/* FlyBot's pill rides the shell's own Session header utilities, beside the seats
-+   the native header renders (actions: the subagent catalog; lineage; corner).
-+   It is a compact control in that row now, not a floating replacement for the
-+   whole header, so the header keeps its own layout, border and drag row. */
-+[class*="_header"] .bt-head{display:flex;align-items:center;height:auto;flex:none;width:auto;pointer-events:auto}
-+[class*="_header"] .bt-head .bt-pill{height:30px;padding:3px 10px 3px 4px;gap:6px;font-size:13px;line-height:18px;max-width:min(320px,32vw)}
-+[class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
+@@ -2631,12 +2631,13 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
  /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
     without its copy and branch row; a tail with nothing in it takes no room. */
@@ -2529,36 +2517,6 @@ diff --git a/client.js b/client.js
 -      document.documentElement.removeEventListener("pointerleave", onLeave);
 -    };
 -  }, [enabled]);
--}
--var FIDGETS = ["hop", "sway", "stretch", "look"];
--function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
--  const look = given ?? lookOf(bot);
--  const ref = (0, import_react2.useRef)(null);
--  const maskId = (0, import_react2.useRef)("");
--  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
--  const [poked, setPoked] = (0, import_react2.useState)(false);
--  useGaze(ref, gaze);
--  const common = {
--    ref,
--    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
--    "data-shape": look.image ? "image" : shapeId(look.shape),
--    "data-state": STATES.includes(state) ? state : "idle",
--    "data-live": live ? "" : void 0,
--    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
--    "data-gaze": gaze ? "" : void 0,
--    "data-poke": pokeable ? "" : void 0,
--    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
--    role: label ? "img" : void 0,
--    "aria-label": label,
--    "aria-hidden": label ? void 0 : true,
--    onClick: pokeable ? () => setPoked(true) : void 0,
--    onAnimationEnd: poked ? (event) => {
--      if (/^bt-poke/.test(event.animationName)) setPoked(false);
--    } : void 0
--  };
--  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
--  const box = shapeOf(look.shape).size;
--  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -2590,12 +2548,35 @@ diff --git a/client.js b/client.js
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
  }
--function StarIcon({ size = 8 }) {
--  return (0, import_react2.createElement)(
--    "svg",
--    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
--  );
+-var FIDGETS = ["hop", "sway", "stretch", "look"];
+-function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
+-  const look = given ?? lookOf(bot);
+-  const ref = (0, import_react2.useRef)(null);
+-  const maskId = (0, import_react2.useRef)("");
+-  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
+-  const [poked, setPoked] = (0, import_react2.useState)(false);
+-  useGaze(ref, gaze);
+-  const common = {
+-    ref,
+-    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
+-    "data-shape": look.image ? "image" : shapeId(look.shape),
+-    "data-state": STATES.includes(state) ? state : "idle",
+-    "data-live": live ? "" : void 0,
+-    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
+-    "data-gaze": gaze ? "" : void 0,
+-    "data-poke": pokeable ? "" : void 0,
+-    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
+-    role: label ? "img" : void 0,
+-    "aria-label": label,
+-    "aria-hidden": label ? void 0 : true,
+-    onClick: pokeable ? () => setPoked(true) : void 0,
+-    onAnimationEnd: poked ? (event) => {
+-      if (/^bt-poke/.test(event.animationName)) setPoked(false);
+-    } : void 0
+-  };
+-  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+-  const box = shapeOf(look.shape).size;
+-  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2630,8 +2611,12 @@ diff --git a/client.js b/client.js
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
  }
--function AdminStar() {
--  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
+-function StarIcon({ size = 8 }) {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
+-  );
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2658,12 +2643,8 @@ diff --git a/client.js b/client.js
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
  }
--function MainStar() {
--  return (0, import_react2.createElement)(
--    "svg",
--    { viewBox: "0 0 20 20", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
--  );
+-function AdminStar() {
+-  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2682,6 +2663,13 @@ diff --git a/client.js b/client.js
 +    offRoster?.();
 +  };
  }
+-function MainStar() {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { viewBox: "0 0 20 20", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
+-  );
+-}
 -function useSettled(state) {
 -  const prev = (0, import_react2.useRef)(state);
 -  const [settled, setSettled] = (0, import_react2.useState)(false);
@@ -2736,18 +2724,7 @@ diff --git a/client.js b/client.js
 -      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
 -      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
 -    );
-+function installBrandChrome() {
-+  if (typeof document === "undefined") return () => {
-+  };
-+  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
-+  let link = document.getElementById("flybot-favicon");
-+  if (!link) {
-+    link = document.createElement("link");
-+    link.id = "flybot-favicon";
-+    link.rel = "icon";
-+    link.type = "image/svg+xml";
-+    document.head.appendChild(link);
-   }
+-  }
 -  const seats = clusterSeats(Math.min(people.length, 4), size);
 -  const overflow = people.length > 4 ? people.length - 3 : 0;
 -  const gap = size / 14;
@@ -2766,6 +2743,18 @@ diff --git a/client.js b/client.js
 -      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 -    })
 -  );
++function installBrandChrome() {
++  if (typeof document === "undefined") return () => {
++  };
++  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
++  let link = document.getElementById("flybot-favicon");
++  if (!link) {
++    link = document.createElement("link");
++    link.id = "flybot-favicon";
++    link.rel = "icon";
++    link.type = "image/svg+xml";
++    document.head.appendChild(link);
++  }
 +  link.href = href;
 +  const retitle = () => {
 +    const next = brandTitle(document.title);
@@ -3667,7 +3656,7 @@ diff --git a/client.js b/client.js
 +  const custom = useInlineEntry(held?.by);
 +  const [busy, setBusy] = (0, import_react7.useState)(false);
 +  const [error, setError] = (0, import_react7.useState)("");
-+  const waiting = held?.status === "pending";
++  const waiting = isApprovalWaiting(held?.status);
 +  (0, import_react7.useEffect)(() => {
 +    if (!waiting) return void 0;
 +    claimApprovals(`held-reply:${held.id}`, [held.id]);
@@ -3914,7 +3903,7 @@ diff --git a/client.js b/client.js
 +  const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
 +  return (0, import_react8.createElement)(
 +    "div",
-+    { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
++    { className: "bt-held-reply", "data-state": held.status, "data-held": isApprovalWaiting(held.status) ? "" : void 0 },
 +    children,
 +    closing ? (0, import_react8.createElement)(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null
 +  );
@@ -4290,8 +4279,9 @@ diff --git a/client.js b/client.js
 +    }
      if (source.kind === "bot") {
 -      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react6.createElement)(EarlierParts, { sessionId, roster, actions });
+-      if (source.role === "kickoff" || source.role === "room") return null;
 +      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react8.createElement)(EarlierParts, { sessionId, roster, actions });
-       if (source.role === "kickoff" || source.role === "room") return null;
++      if (source.role === "room" || source.role === "kickoff") return null;
 +      if (source.role === "mention") return (0, import_react8.createElement)("div", { className: "bt-event" }, (0, import_react8.createElement)("span", null, contentText(data.content)));
        if (source.role === "secret" || deferred) return null;
        if (source.role === "post") {
@@ -6353,12 +6343,10 @@ diff --git a/client.js b/client.js
 -    setTip(false);
 -  };
 -  return (0, import_react8.createElement)(
-+  return (0, import_react13.createElement)(
-     "span",
-     { className: "bt-connect-wrap" },
+-    "span",
+-    { className: "bt-connect-wrap" },
 -    (0, import_react8.createElement)(
-+    (0, import_react13.createElement)(
-       "button",
+-      "button",
 -      {
 -        ref: button,
 -        type: "button",
@@ -6379,6 +6367,11 @@ diff --git a/client.js b/client.js
 -      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
 -      t("Plugin compatibility is not fully verified.")
 -    ), document.body) : null
++  return (0, import_react13.createElement)(
++    "span",
++    { className: "bt-connect-wrap" },
++    (0, import_react13.createElement)(
++      "button",
 +      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
 +      (0, import_react13.createElement)(PlugIcon),
 +      t("Connect apps")
@@ -9519,7 +9512,7 @@ diff --git a/client.js b/client.js
  .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
  .bt-bs-input:hover{background:var(--bt-hover)}
  .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
-@@ -8165,7 +8165,9 @@ function freshBotName(roster, base = "New Bot") {
+@@ -8165,36 +8165,48 @@ function freshBotName(roster, base = "New Bot") {
  }
  function startModel(roster) {
    const models = roster.models ?? [];
@@ -9528,10 +9521,25 @@ diff --git a/client.js b/client.js
 +  const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find((bot) => bot.id === roster.mainBotId);
 +  return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? "";
  }
- function createPayload({ name, look, image, model, effort, brief }) {
+-function createPayload({ name, look, image, model, effort, brief }) {
++function createPayload({ name, look, image, model, effort }) {
    const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } };
-@@ -8176,7 +8176,7 @@ function createPayload({ name, look, image, model, effort, brief }) {
+   if (model) payload.model = model;
+   if (effort) payload.effort = effort;
+-  if (brief) payload.brief = brief;
+   return payload;
  }
++async function afterCreate({ id, text, actions }) {
++  actions.openSession(id);
++  actions.showDetails(id, "settings");
++  const line2 = String(text ?? "").trim();
++  if (line2 === "") return;
++  try {
++    await actions.send(id, line2);
++  } catch (failure) {
++    actions.notify?.(failure?.message ?? String(failure));
++  }
++}
  
  // src/client/create-bot.js
 -var import_react19 = require("react");
@@ -9539,10 +9547,10 @@ diff --git a/client.js b/client.js
  var pick = (list) => list[Math.floor(Math.random() * list.length)];
  var randomLook = (avoid = {}) => {
    const shapes = DEFAULT_SHAPES.filter((shape) => shape !== avoid.shape);
-@@ -8184,17 +8184,17 @@ var randomLook = (avoid = {}) => {
+   const colors = DEFAULT_COLORS.filter((color) => color !== avoid.color);
    return { shape: pick(shapes), color: pick(colors) };
  };
- function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCreated, inline = false }) {
+-function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCreated, inline = false }) {
 -  const [look, setLook] = (0, import_react19.useState)(() => randomLook());
 -  const [image, setImage] = (0, import_react19.useState)(null);
 -  const [name, setName] = (0, import_react19.useState)(start?.name ?? "");
@@ -9552,6 +9560,7 @@ diff --git a/client.js b/client.js
 -  const [error, setError] = (0, import_react19.useState)("");
 -  const fileRef = (0, import_react19.useRef)(null);
 -  const frame = (0, import_react19.useRef)(null);
++function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
 +  const [look, setLook] = (0, import_react26.useState)(() => randomLook());
 +  const [image, setImage] = (0, import_react26.useState)(null);
 +  const [name, setName] = (0, import_react26.useState)(start?.name ?? "");
@@ -9567,6 +9576,17 @@ diff --git a/client.js b/client.js
      if (inline) frame.current?.scrollIntoView({ block: "start", behavior: "smooth" });
    }, []);
    const fallbackName = freshBotName(roster, t("New Bot"));
+@@ -8206,8 +8206,8 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
+     setError("");
+     setBusy(true);
+     try {
+-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }));
+-      onCreated(bot);
++      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }));
++      await onCreated(bot);
+     } catch (failure) {
+       setError(failure?.message ?? String(failure));
+       setBusy(false);
 @@ -8219,25 +8219,25 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
      avatarImage(file).then(setImage, (failure) => setError(failure?.message ?? String(failure)));
    };
@@ -9781,7 +9801,14 @@ diff --git a/client.js b/client.js
    const pick2 = (bot) => {
      setPicked((current) => [...current, bot.id]);
      setQuery("");
-@@ -8392,7 +8392,12 @@ function NewChat({ mode, roster, actions }) {
+@@ -8386,13 +8386,17 @@ function NewChat({ mode, roster, actions }) {
+   };
+   const created = (bot) => {
+     close();
+-    actions.openSession(bot.id);
+-    actions.showDetails(bot.id, "settings");
++    return afterCreate({ id: bot.id, text: message, actions });
+   };
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return;
      const text = message.trim();
@@ -9791,11 +9818,11 @@ diff --git a/client.js b/client.js
 +      ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
 +      ...remotes
 +    ];
-+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...text ? {} : { greet: true } });
++    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {} });
      if (text) await actions.send(room2.id, text);
      actions.openSession(room2.id);
      close();
-@@ -8411,42 +8411,72 @@ function NewChat({ mode, roster, actions }) {
+@@ -8411,46 +8411,75 @@ function NewChat({ mode, roster, actions }) {
        close();
        return;
      }
@@ -9878,6 +9905,10 @@ diff --git a/client.js b/client.js
          roster,
          actions,
          start: draft,
+-        brief: message.trim(),
+         canGoBack: draft.fromList,
+         onBack: draft.fromList ? () => {
+           setDraft(null);
 @@ -8467,33 +8467,41 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
      if (picked.length > 0) setPicked((current) => current.slice(0, -1));
      else if (admin !== null) setAdmin(null);
@@ -10618,7 +10649,14 @@ diff --git a/client.js b/client.js
    const toggle = (id) => setMembers((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
    const pickAdmin = (id) => {
      setAdmin(id);
-@@ -9094,48 +9094,48 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
+@@ -9088,54 +9088,54 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
+     if (busy || admin === null || members.length === 0) return;
+     setBusy(true);
+     let room2;
+-    const done = await run(actions.createRoom([admin, ...members], { admin, greet: true, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
++    const done = await run(actions.createRoom([admin, ...members], { admin, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
+       room2 = value;
+     }));
      if (done && room2) onCreated(room2);
      else setBusy(false);
    };
@@ -12529,7 +12567,7 @@ diff --git a/client.js b/client.js
      const box = ref.current?.getBoundingClientRect();
      if (!box) return;
      setPlace({ left: Math.max(8, Math.min(menu.x, window.innerWidth - box.width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - box.height - 8)) });
-@@ -10952,319 +10952,95 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -10952,14 +10952,14 @@ function AgentMenu({ menu, roster, actions, leaving }) {
        [t("Archive"), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true]
      ]
    ];
@@ -12549,16 +12587,16 @@ diff --git a/client.js b/client.js
          key: label,
          type: "button",
          role: "menuitem",
-         className: danger ? "bt-danger" : void 0,
-         onClick: () => {
+@@ -10968,303 +10968,93 @@ function AgentMenu({ menu, roster, actions, leaving }) {
            actions.closeMenu();
--          void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
--        }
+           void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
+         }
 -      }, (0, import_react29.createElement)(Icon), label))
--    ))
--  );
--}
--
++      }, (0, import_react36.createElement)(Icon), label))
+     ))
+   );
+ }
+ 
 -// src/client/storage.js
 -var STORAGE = {
 -  unread: "ds-bot:unread",
@@ -12622,8 +12660,20 @@ diff --git a/client.js b/client.js
 -    }
 -  } catch {
 -  }
--}
--
++// src/client/pane-width.js
++var DEFAULT_WIDTH = 520;
++var DETAILS_WIDTH = 320;
++var DETAILS_MAX = 520;
++var MIN_WIDTH = 360;
++var MIN_CHAT = 420;
++var MIN_DETAILS = 240;
++function panelWidthRange(view, viewport) {
++  const room2 = Math.max(0, viewport - MIN_CHAT);
++  if (view === "browser") return [MIN_WIDTH, Math.max(MIN_WIDTH, room2)];
++  const low = Math.max(MIN_DETAILS, Math.min(DETAILS_WIDTH, room2));
++  return [low, Math.max(low, Math.min(DETAILS_MAX, room2))];
+ }
+ 
 -// src/client/member-status.js
 -var import_react30 = require("react");
 -var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
@@ -12805,18 +12855,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react30.createElement)("span", null, (0, import_react30.createElement)(Shimmer, null, `${workPhrase(entry.doing.tool)}…`), where ? ` ${where}` : "", since(now, entry.doing.since)),
 -      entry.here ? (0, import_react30.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
 -    )
-+          void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
-+        }
-+      }, (0, import_react36.createElement)(Icon), label))
-+    ))
-   );
- }
--function useMemberWork(room2, useWork) {
--  const work = useWork?.((value) => value) ?? NO_WORK;
--  const entries2 = room2 ? memberWork(room2, work) : [];
--  const now = useNow2(entries2.some((entry) => entry.state !== "idle"));
--  return { entries: entries2, now };
-+
+-  );
 +// src/client/storage.js
 +var STORAGE = {
 +  unread: "ds-bot:unread",
@@ -12836,7 +12875,12 @@ diff --git a/client.js b/client.js
 +  if (key === STORAGE.browsers) return LEGACY_BROWSER_KEYS;
 +  const name = key.slice(key.indexOf(":") + 1);
 +  return LEGACY_PREFIXES.map((prefix) => `${prefix}${name}`);
-+}
+ }
+-function useMemberWork(room2, useWork) {
+-  const work = useWork?.((value) => value) ?? NO_WORK;
+-  const entries2 = room2 ? memberWork(room2, work) : [];
+-  const now = useNow2(entries2.some((entry) => entry.state !== "idle"));
+-  return { entries: entries2, now };
 +var migrateBrowsers = (storage) => {
 +  if (storage.getItem(STORAGE.browsers) !== null) {
 +    for (const key of LEGACY_BROWSER_KEYS) storage.removeItem(key);
@@ -13328,7 +13372,7 @@ diff --git a/client.js b/client.js
          className: "bt-drawer-name-input",
          autoFocus: true,
          value: draftName,
-@@ -11535,55 +11535,59 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
+@@ -11535,87 +11535,86 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
              setEditing(false);
            }
          }
@@ -13412,7 +13456,13 @@ diff --git a/client.js b/client.js
  var import_react_dom8 = require("react-dom");
  var PANEL_LINGER_MS = 300;
  var WIDTH_KEY = STORAGE.browserWidth;
-@@ -11597,25 +11597,25 @@ var EMPTY_PAGE = { url: "", title: "", favicon: null, loading: false, canGoBack:
+-var DEFAULT_WIDTH = 520;
+-var DETAILS_WIDTH = 320;
+-var DETAILS_MAX = 520;
+-var MIN_WIDTH = 360;
+-var MIN_CHAT = 420;
+ var READ_FLASH_MS = 2400;
+ var EMPTY_PAGE = { url: "", title: "", favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: "" };
  var EMPTY_TABS2 = { ids: [], active: null };
  var SPRING_LEAD2 = springEasing(576, 39.4);
  var SPRING_TRAIL2 = springEasing(144, 19.7);
@@ -13452,6 +13502,16 @@ diff --git a/client.js b/client.js
  }
  var savedWidth = () => {
    try {
+@@ -11625,8 +11625,8 @@ var savedWidth = () => {
+     return null;
+   }
+ };
+-var widthRange = (view, viewport) => view === "browser" ? [MIN_WIDTH, viewport - MIN_CHAT] : [DETAILS_WIDTH, Math.min(DETAILS_MAX, viewport - MIN_CHAT)];
+ var fitWidth = (width, [low, high]) => Math.round(Math.max(low, Math.min(width, high)));
++var widthRange = (view, viewport) => panelWidthRange(view, viewport);
+ var room = { rule: null, selector: "" };
+ var roomRule = () => {
+   const live = room.rule?.parentStyleSheet?.ownerNode?.isConnected;
 @@ -11674,11 +11674,11 @@ var reducedMotion2 = () => typeof matchMedia === "function" && matchMedia("(pref
  var tabLabel = (page) => page.title || shortAddress(page.url) || t("New tab");
  function PanelStrip({ bot, subject, view, ids, active, reading, onView, actions, useBrowserPages }) {
@@ -13962,7 +14022,7 @@ diff --git a/client.js b/client.js
      }
      const end = body2.trimEnd().length;
      const marked = mark ? `${body2.slice(0, end)}${mark}${body2.slice(end)}` : body2;
-@@ -13052,11 +13052,52 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
+@@ -13052,11 +13052,63 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
    };
  }
  
@@ -13989,6 +14049,17 @@ diff --git a/client.js b/client.js
 +.bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
 +.bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}
 +}
++`;
++
++// src/client/panes.js
++var PANE_MIN_WIDTH_CSS = `
++.bt-panel{min-width:0}
++.bt-panel-view{min-width:0}
++.bt-drawer-body{min-width:0;overflow-wrap:anywhere}
++.bt-drawer-body :is(.bt-muted,.bt-note,.bt-section-title,.bt-drawer-role,.bt-drawer-permission){min-width:0;overflow-wrap:anywhere}
++.bt-panel :is(.bt-member,.bt-members,.bt-bcard-row,.bt-drawer-model,.bt-usage-row){min-width:0}
++.bt-panel :is(.bt-muted,.bt-note){white-space:normal}
++[class*="_centerCol"]{min-width:0}
 +`;
 +
 +// src/client/friend-lines.js
@@ -14208,7 +14279,7 @@ diff --git a/client.js b/client.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
-@@ -13216,42 +13216,112 @@ var USER_MESSAGE_CSS = `
+@@ -13216,42 +13216,114 @@ var USER_MESSAGE_CSS = `
  `;
  
  // src/client/approval-notices.js
@@ -14296,6 +14367,7 @@ diff --git a/client.js b/client.js
 +var import_react42 = require("react");
 +var STATS_DOCK = "conversation.composer.dock";
 +var STATS_ID = "stats";
++var STATS_IDS = [STATS_ID, "activity"];
 +var noun = (count, one, many) => `${count} ${Number(count) === 1 ? one : many}`;
 +function pluralStats(t2) {
 +  return (key, params) => {
@@ -14304,9 +14376,9 @@ diff --git a/client.js b/client.js
 +    const { turns, steps } = params;
 +    return text === `${turns} turns ${steps} steps` ? `${noun(turns, "turn", "turns")} ${noun(steps, "step", "steps")}` : text;
 +  };
-+}
-+function statsDock(entriesOf) {
-+  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === STATS_ID);
+ }
++function statsDock(entriesOf, id = STATS_ID) {
++  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === id);
 +  function StatsDock(props) {
 +    const t2 = (0, import_react42.useMemo)(() => typeof props.t === "function" ? pluralStats(props.t) : props.t, [props.t]);
 +    const entry = shell();
@@ -14314,7 +14386,8 @@ diff --git a/client.js b/client.js
 +    return (0, import_react42.createElement)(entry.component, { ...props, t: t2 });
 +  }
 +  return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
- }
++}
++var statsDocks = (entriesOf) => STATS_IDS.map((id) => ({ id, ...statsDock(entriesOf, id) }));
  
  // src/client/index.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
@@ -14561,7 +14634,7 @@ diff --git a/client.js b/client.js
      } };
    };
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
-+  const runStats = statsDock((name) => ctx.slots.entries?.(name) ?? []);
++  const runStats = statsDocks((name) => ctx.slots.entries?.(name) ?? []);
    let atMenu = null;
 +  const faceMenus = /* @__PURE__ */ new Map();
 +  const watchFace = (sessionId) => {
@@ -14603,7 +14676,7 @@ diff --git a/client.js b/client.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId);
      if (controller === void 0 || span === void 0) return;
-@@ -14019,33 +14019,43 @@ function apply(ctx) {
+@@ -14019,27 +14019,34 @@ function apply(ctx) {
      installCompiledStyles(SHELL_CSS, "shell"),
      installCompiledStyles(SIDEBAR_CSS, "sidebar"),
      installCompiledStyles(SECRET_CSS, "secrets"),
@@ -14618,6 +14691,7 @@ diff --git a/client.js b/client.js
      installCompiledStyles(MEMBER_CSS, "members"),
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
 +    installCompiledStyles(MOBILE_CSS, "mobile"),
++    installCompiledStyles(PANE_MIN_WIDTH_CSS, "panes"),
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
      installTheme(),
      shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),
@@ -14640,18 +14714,7 @@ diff --git a/client.js b/client.js
    ];
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, "conversation"),
-     installMentions(),
-     installAtMenu(),
--    shadow("conversation.session.header", { priority: -10, inject: face }, HeaderPill),
-+    // The shell's own Session header stays, so the child seats it renders keep
-+    // working — notably the subagent catalog `conversation.session.header.actions`
-+    // (ui-subagent) and the lineage title. FlyBot's pill is appended to the
-+    // utilities list beside them instead of replacing the whole header.
-+    shadow("conversation.session.header.utilities", { id: "bot-pill", order: 100, inject: face }, HeaderPill),
-     shadow("conversation.chat.node", { key: "assistant-step", priority: -10, locale: "chat", inject: assistantFace }, AssistantCell),
-     shadow("conversation.chat.node", { key: "turn-trigger", priority: -10, locale: "chat", inject: face }, TriggerCell),
-     shadow("conversation.chat.node", { key: "tool-call", priority: -10, locale: "chat", inject: face }, ToolCell),
-@@ -14057,15 +14057,23 @@ function apply(ctx) {
+@@ -14057,15 +14057,24 @@ function apply(ctx) {
      // every message.
      shadow("conversation.chat.node", { key: "question-reply", priority: -10, locale: "chat" }, AnsweredCell),
      shadow("conversation.chat.node", { key: "compaction", priority: -10, locale: "chat" }, Nothing),
@@ -14667,11 +14730,13 @@ diff --git a/client.js b/client.js
 -    // in its details panel.
 +    // The composer carries no model picker; a Bot's model lives in its details panel.
      shadow("conversation.input.model", { priority: -10 }, Nothing),
-     shadow("conversation.composer.dock", { id: "activity", order: 0, priority: -10 }, Nothing),
+-    shadow("conversation.composer.dock", { id: "activity", order: 0, priority: -10 }, Nothing),
      shadow("conversation.composer.dock", { id: "usage", order: 1, priority: -10 }, Nothing),
 +    // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
-+    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
-+    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: "chat", inject: runStats.inject }, runStats.component),
++    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419). 0.2.1-alpha.1 splits that
++    // footer into "activity" (the counts, same string) and "usage", so the counts pill takes
++    // the same wrapper and both shells show one footer (#659).
++    ...runStats.map((entry) => shadow(STATS_DOCK, { id: entry.id, order: 0, priority: -10, locale: "chat", inject: entry.inject }, entry.component)),
      shadow("conversation.input.left", { id: "bot-plus", order: -100, inject: face }, ComposerPlus),
 +    shadow("conversation.input.left", { id: "bot-as", order: -90, inject: face }, ComposerIdentity),
      shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),

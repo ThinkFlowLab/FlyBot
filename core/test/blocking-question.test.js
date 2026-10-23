@@ -81,14 +81,6 @@ async function setup({ served = ['read', 'ask_user', QUESTION] } = {}) {
   return { ctx, rt, agentFor, hidden, hiddenIn, guard, sent, stop }
 }
 
-const until = async (check) => {
-  const end = Date.now() + 2000
-  while (!check()) {
-    if (Date.now() > end) throw new Error('until: the condition did not hold within 2 s')
-    await new Promise(resolve => setTimeout(resolve, 20))
-  }
-}
-
 test('a Bot\'s own chat and its group Session lose dsh\'s blocking question tool; other Sessions keep it', async (t) => {
   const { agentFor, hidden, hiddenIn, stop } = await setup()
   t.after(stop)
@@ -129,18 +121,15 @@ test('the guard refuses the blocking question tool in Bot Sessions only', async 
   assert.equal(guard('read', 'writer'), undefined)
 })
 
-// FeiZhuLulu/DeepSeek-Bot#77: a new Bot told never to use a question tool was opened
-// with "use ask_user", and a model that picked dsh's ask_user_question for it held the
-// Bot until the card was answered, with other Bots' messages queued behind it.
-test('a new Bot that rules out question tools opens without one and cannot block on dsh\'s', async (t) => {
+// FeiZhuLulu/DeepSeek-Bot#77: a new Bot told never to use a question tool must not be
+// told to use one, and its Session must not carry dsh's either. Creating it speaks to
+// nobody (#645); the mask lands on its first delivered turn, and the guard holds before that.
+test('a new Bot that rules out question tools is sent nothing and cannot block on dsh\'s', async (t) => {
   const { rt, hiddenIn, guard, sent, stop } = await setup()
   t.after(stop)
   const receiver = await rt.createBot({ name: 'Receiver', instructions: 'Never use ask_user or any question tool.', createdBy: 'chief' })
-  await until(() => sent.some(entry => entry.sessionId === receiver.id))
-  const kickoff = sent.find(entry => entry.sessionId === receiver.id).message.content[0].text
-  assert.doesNotMatch(kickoff, /ask_user|allowCustom/)
-  assert.match(kickoff, /Where your instructions say otherwise, follow them\./)
-  // The Agent was made before Receiver was on the team; the kickoff trims its list.
-  assert.equal(hiddenIn(receiver.id).length, 1)
+  assert.deepEqual(sent, [])
   assert.match(guard(QUESTION, receiver.id), /Bots cannot use ask_user_question/)
+  await rt.deliver({ fromId: 'chief', toId: receiver.id, text: 'Start.', role: 'request' })
+  assert.equal(hiddenIn(receiver.id).length, 1)
 })

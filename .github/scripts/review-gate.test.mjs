@@ -8,10 +8,10 @@ const HEAD = 'a4d506a1b2c3d4e5f60718293a4b5c6d7e8f9012'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
 const policy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], writers: ['Reviewer', 'Chief'] }
 
-const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → pass'], notRun = true } = {}) =>
+const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → pass'], notRun = true, writer = 'Reviewer' } = {}) =>
   [
     `Tip SHA: ${tip}`,
-    'Written-by: Reviewer',
+    `Written-by: ${writer}`,
     'Ran:',
     ...ran,
     ...(notRun ? ['Not run:', '  - smoke — host code unchanged'] : []),
@@ -164,6 +164,28 @@ test('the policy file lists at least one reviewer', () => {
   for (const login of p.reviewers) assert.match(login, /^[\w-]+$/)
   const reviewers = p.reviewers.map((l) => l.toLowerCase())
   for (const login of p.selfReview ?? []) assert.ok(reviewers.includes(login.toLowerCase()), `selfReview ${login} must also be a reviewer`)
+})
+
+// #627: every Bot on the team may carry a `Written-by:` line. The roster is written out on
+// purpose: when the team gains a Bot, this list and the policy must gain the name together, or that
+// Bot's PASS is refused and nobody notices until it is needed (Reviewer2, 2026-10-22). Dropping a
+// name from the policy turns this red; so does adding a Bot to the team and not to `writers`.
+const TEAM_WRITERS = [
+  'Chief', 'Triage', 'Reviewer', 'Reviewer2', 'Release', 'SelfTest', 'Maintainer',
+  'Dev', 'Dev2', 'Dev3', 'Dev4', 'Birfy',
+]
+
+test('the policy lets every Bot on the team write a report', () => {
+  const p = loadPolicy(new URL('../agent/review-policy.json', import.meta.url))
+  const writers = new Set((p.writers ?? []).map((w) => String(w).toLowerCase()))
+  const missing = TEAM_WRITERS.filter((name) => !writers.has(name.toLowerCase()))
+  assert.deepEqual(missing, [], `these Bots would have every PASS refused: ${missing.join(', ')}`)
+  const gate = { ...p, reviewers: ['reviewer-agent'] }
+  for (const name of TEAM_WRITERS) {
+    const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report({ writer: name }))], policy: gate })
+    assert.equal(r.ok, true, `a PASS written by ${name} must count`)
+    assert.equal(r.by, 'reviewer-agent')
+  }
 })
 
 test('workflow: pull_request, read-only, not required, acts on nothing', () => {

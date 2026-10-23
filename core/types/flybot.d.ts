@@ -503,6 +503,12 @@ export interface FlyBotConfig {
   flybot?: {
     /** middleware name -> names it may bypass, e.g. { tree: ['social'] }. Default: none. */
     bypass?: Record<string, string[]>
+    /**
+     * plugin name -> the model its calls use by default, e.g. { 'flybot-tree': 'deepseek/v4-flash' }.
+     * A call that names a model wins; an unnamed plugin, or a non-string / empty entry, falls back to
+     * the team default (#579).
+     */
+    modelFor?: Record<string, string>
   }
 }
 

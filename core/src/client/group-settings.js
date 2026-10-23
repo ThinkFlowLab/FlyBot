@@ -235,7 +235,7 @@ export function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
     if (busy || admin === null || members.length === 0) return
     setBusy(true)
     let room
-    const done = await run(actions.createRoom([admin, ...members], { admin, greet: true, ...(name.trim() ? { name: name.trim() } : {}) }).then((value) => { room = value }))
+    const done = await run(actions.createRoom([admin, ...members], { admin, ...(name.trim() ? { name: name.trim() } : {}) }).then((value) => { room = value }))
     if (done && room) onCreated(room)
     else setBusy(false)
   }

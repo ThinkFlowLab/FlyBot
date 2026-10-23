@@ -30,6 +30,7 @@ import { USAGE_CSS } from './usage-page.js'
 import { SCHEDULE_CSS } from './schedules.js'
 import { INBOX_CSS } from './inbox.js'
 import { MOBILE_CSS } from './mobile.js'
+import { PANE_MIN_WIDTH_CSS } from './panes.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -40,7 +41,7 @@ import { ABOUT_CSS } from './about.js'
 import { MEMBER_CSS, MemberDock } from './member-status.js'
 import { USER_MESSAGE_CSS, UserMessageCell, canDrawUserMessages } from './user-message.js'
 import { noticeApprovals } from './approval-notices.js'
-import { STATS_DOCK, STATS_ID, statsDock } from './stats-dock.js'
+import { STATS_DOCK, statsDocks } from './stats-dock.js'
 
 export const inject = ['sessions', 'uiWorkspace', 'uiConversation', 'slots', 'theme', 'layout']
 
@@ -782,7 +783,7 @@ export function apply(ctx) {
 
   const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component))
   // The shell's run-stats footer, drawn by the shell's own entry with FlyBot's plurals (#419).
-  const runStats = statsDock(name => ctx.slots.entries?.(name) ?? [])
+  const runStats = statsDocks(name => ctx.slots.entries?.(name) ?? [])
 
   // The "@" menu's Bot group and the chats "+" references. The composer's controller
   // for a Session is the shell's own, so the chats open at its caret.
@@ -854,6 +855,7 @@ export function apply(ctx) {
     installCompiledStyles(MEMBER_CSS, 'members'),
     installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
     installCompiledStyles(MOBILE_CSS, 'mobile'),
+    installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
     browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
     installTheme(),
     shadow('sidebar.workspaces', { priority: -10, inject: face }, TeamSidebar),
@@ -902,11 +904,12 @@ export function apply(ctx) {
     shadow('conversation.input.plan', { priority: -10 }, Nothing),
     // The composer carries no model picker; a Bot's model lives in its details panel.
     shadow('conversation.input.model', { priority: -10 }, Nothing),
-    shadow('conversation.composer.dock', { id: 'activity', order: 0, priority: -10 }, Nothing),
     shadow('conversation.composer.dock', { id: 'usage', order: 1, priority: -10 }, Nothing),
     // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
-    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
-    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: 'chat', inject: runStats.inject }, runStats.component),
+    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419). 0.2.1-alpha.1 splits that
+    // footer into "activity" (the counts, same string) and "usage", so the counts pill takes
+    // the same wrapper and both shells show one footer (#659).
+    ...runStats.map(entry => shadow(STATS_DOCK, { id: entry.id, order: 0, priority: -10, locale: 'chat', inject: entry.inject }, entry.component)),
     shadow('conversation.input.left', { id: 'bot-plus', order: -100, inject: face }, ComposerPlus),
     shadow('conversation.input.left', { id: 'bot-as', order: -90, inject: face }, ComposerIdentity),
     shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),

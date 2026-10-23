@@ -90,6 +90,7 @@ Model providers are set up with dsh's `llm-pi-ai` plugin in `cordis.patch.yml`. 
 
 - Give every model a `contextWindow`. DS Bot takes its lines from it: the usable window is the window minus the reply reserve (`maxTokens`), the hard line is 95% of that, and the check line is `checkRatio` of it. A model without `contextWindow` gets the adapter's default (262,144 tokens for `llm-pi-ai`), which may be wrong for that model; a model that reports no window at all counts as 500,000.
 - To send images, the provider needs `defaultInput: [ text, image ]`.
+- An image is read before it reaches a model that cannot see it: FlyBot sends it to a model that declares image input (the configured `ocrModel` first) and gives the text to the Bot. A team with no such model still gets the picture as text, and that placeholder then names the file itself (`<home>/attachments/v1/objects/<first two>/<sha256>`) when the bytes are still on disk, so a Bot can open it with its own file tools. Readings are cached in `ocr.json`.
 - Keep API keys out of the repository. Use dsh's own key storage or environment variables.
 
 ## Memory

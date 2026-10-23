@@ -1,0 +1,62 @@
+name: Audit merges
+
+# The patrol `audit-merges.mjs` was written for (#689, #697): every commit on `main` must have come
+# through the merge queue, and a bypass must be found by something other than a reader's eye.
+#
+# Red means "a bypass newer than the last green run". `--since` is the `head_sha` of this workflow's
+# own previous **successful** run, so the watermark lives in the Actions API: the job commits nothing,
+# writes no label and no comment, and needs read permissions only.
+#
+# A first run has no previous run to point at, so it passes `--baseline`: every finding prints as
+# `earlier bypass:` and the run is green. That first green run is the baseline — from then on only a
+# bypass newer than it fails, which is the whole point (#697: on the whole history this audit is red
+# on 21 of the last 40 commits and therefore unreadable).
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: audit-merges
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  audit-merges:
+    name: audit-merges
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      # The watermark is the commit this workflow last passed on. Reading it costs one API call and
+      # keeps the job read-only; a committed watermark file would need a push and a write token.
+      - name: Previous successful run
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha=$(gh api "repos/$GH_REPO/actions/workflows/audit-merges.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty')
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Audit the merges on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SINCE: ${{ steps.previous.outputs.sha }}
+        run: |
+          if [ -n "$SINCE" ]; then
+            node .github/scripts/audit-merges.mjs --since "$SINCE" --limit 100
+          else
+            node .github/scripts/audit-merges.mjs --baseline --limit 100
+          fi

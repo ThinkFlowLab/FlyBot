@@ -18,7 +18,7 @@ const randomLook = (avoid = {}) => {
 
 // The new-Bot form: look first, then name and model. Nothing exists until Create.
 // `inline` drops the pane's header for a form shown inside Settings.
-export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBack, onCreated, inline = false }) {
+export function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
   const [look, setLook] = useState(() => randomLook())
   const [image, setImage] = useState(null)
   const [name, setName] = useState(start?.name ?? '')
@@ -40,8 +40,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
     setError('')
     setBusy(true)
     try {
-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }))
-      onCreated(bot)
+      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }))
+      await onCreated(bot)
     } catch (failure) {
       setError(failure?.message ?? String(failure))
       setBusy(false)

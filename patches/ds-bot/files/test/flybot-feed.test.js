@@ -203,7 +203,6 @@ test('negative: host nudges, replays and strangers stay out of the feed', async 
   emit('b', 'user/message', relay({ role: 'request', resumed: true }))
   emit('b', 'user/message', relay({ role: 'request', retried: true }))
   emit('b', 'user/message', relay({ role: 'retry' }))
-  emit('b', 'user/message', relay({ role: 'kickoff' }))
   emit('b', 'user/message', { source: { kind: 'schedule' }, content: [] })
   emit('nobody', 'turn/start', { turn: 1 })
   emit('nobody', 'user/message', { source: { kind: 'user' }, content: [] })

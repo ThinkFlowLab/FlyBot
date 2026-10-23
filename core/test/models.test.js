@@ -188,7 +188,7 @@ test('the catalog attaches thinking levels to models a Bot uses', async () => {
   assert.equal(entries.find(entry => entry.ref === 'stepfun/step-5')?.reasoning, undefined)
 })
 
-test('a greeting waits for the provider of its Bot model to register', async () => {
+test('a model is applied once the provider of its Bot registers', async () => {
   const { rt, providers, listeners } = bench({ providers: {} })
   const waiting = rt.waitForModel({ model: 'stepfun/step-5' }, 5000)
   setTimeout(() => {

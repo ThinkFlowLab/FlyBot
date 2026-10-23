@@ -9,6 +9,7 @@ import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
 import { remoteMessageText } from './flybot-registry.js'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { cleanPeerName, friendBotOwner, normRemoteHandle, ownerNameOf, remoteBotTitle } from '../shared/remote-label.js'
 import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 import { fileSize } from './flybot-slots.js'
@@ -197,7 +198,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   // the same live and after a reload; "Chief → Chief (SelfB1233)" named two Bots and no person.
   const chat = (roster.bots ?? []).find(item => item.remote?.handle === held.to)
   const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t('a friend')
-  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': held.status === 'pending' ? '' : undefined },
+  return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': isApprovalWaiting(held.status) ? '' : undefined },
     children,
     closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null)
 }
@@ -567,8 +568,9 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     if (source.kind === 'bot') {
       // A part opens with its handoff package, so the earlier parts go right above it.
       if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions })
-      // Group turns belong to the group chat; the member's own chat stays one-to-one.
-      if (source.role === 'kickoff' || source.role === 'room') return null
+      // Group turns belong to the group chat; the member's own chat stays one-to-one. A
+      // kickoff line was a setup prompt, never a message the parent Bot sent (#698).
+      if (source.role === 'room' || source.role === 'kickoff') return null
       // The host's receipt for the user's @ of a friend's Bot in this group (#80):
       // where the message went, or why it did not leave.
       if (source.role === 'mention') return h('div', { className: 'bt-event' }, h('span', null, contentText(data.content)))

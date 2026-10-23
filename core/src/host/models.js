@@ -193,8 +193,8 @@ export function install(rt) {
     return ref
   }
 
-  // A provider may register after the plugin starts; a greeting waits for its Bot's
-  // model instead of failing with "no adapter registered".
+  // A provider may register after the plugin starts; the model is applied once it is
+  // served instead of failing with "no adapter registered".
   async function waitForModel(bot, ms = ROUTE_WAIT_MS) {
     const deadline = Date.now() + ms
     for (;;) {

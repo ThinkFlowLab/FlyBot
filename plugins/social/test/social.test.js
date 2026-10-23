@@ -1079,13 +1079,14 @@ test('a friendship scoped to one Bot: the roster shows only the granted Bots and
   assert.deepEqual(server.calls.filter(c => c.name === 'send_as_member').at(-1).args, { from_bot_id: chiefId, to: '@coder.bob.home', text: 'hello from chief' })
 })
 
-// A server that holds every send_as_member (no Auto-send) and lists the holds.
-function holdingServer() {
+// A server that holds every send_as_member and lists the holds. `reasons` names what Bot Social
+// held it for: the plain approval requirement, or a finding of its own (a DLP category).
+function holdingServer({ reasons = ['mvp.all_outbound_requires_approval'], riskFlags = [] } = {}) {
   const server = mockServer()
   server.queue = []
   server.tools.send_as_member = (a) => {
     const id = `apr-${server.queue.length + 1}-${a.from_bot_id}`
-    server.queue.push({ approval_id: id, kind: 'outbound_message', status: 'pending', bot_id: a.from_bot_id, message: { to: { handle: a.to, display_name: 'Coder' }, payload: { text: a.text } } })
+    server.queue.push({ approval_id: id, kind: 'outbound_message', status: 'pending', bot_id: a.from_bot_id, ...(reasons.length ? { reasons } : {}), ...(riskFlags.length ? { risk_flags: riskFlags } : {}), message: { to: { handle: a.to, display_name: 'Coder' }, payload: { text: a.text } } })
     return { conversation_id: 'c1', message: { message_id: `msg-${id}`, status: 'pending_approval', approval_id: id } }
   }
   server.tools.list_approvals = () => ({ approvals: server.queue })
@@ -1199,8 +1200,8 @@ test('#272: a reply to the Bot that carried a request is held and leaves on appr
 test('#258: only an owner-approved send finishes Bot Social\'s hold; a Bot cannot claim it was approved', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
-  const server = holdingServer()
-  // Auto-send on locally, but this server did not auto-approve: the hold stays a card.
+  // Auto-send on locally, and the server held it for a finding of its own (#737): the hold stays a card.
+  const server = holdingServer({ reasons: ['dlp.commitment'] })
   const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
@@ -1213,7 +1214,8 @@ test('#258: only an owner-approved send finishes Bot Social\'s hold; a Bot canno
 test('#227: a Bot\'s message to a friend keeps its approval card, whatever its text says', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
-  const server = holdingServer()
+  // Auto-send on, and the server held it for a finding of its own: the text decides nothing (#737).
+  const server = holdingServer({ reasons: ['dlp.commitment'] })
   const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
@@ -1247,7 +1249,8 @@ test('#227: an incoming line that looks like a person\'s line stays the Bot\'s l
 test('#226: a held line arriving or being decided refreshes the friend chat wait badge at once', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
-  const server = holdingServer()
+  // A hold with a finding of its own keeps its card even with Auto-send on (#737).
+  const server = holdingServer({ reasons: ['dlp.commitment'] })
   const changed = []
   const scope = ctx.flybot.scope
   ctx.flybot.scope = (name) => {
@@ -1283,7 +1286,8 @@ test('#226: a held line arriving or being decided refreshes the friend chat wait
 test('#271: a Bot\'s direct message to a friend is not a line of a Face-to-face room that has the friend in it', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
-  const server = holdingServer()
+  // A hold with a finding of its own keeps its card, so the card is there to be looked at (#737).
+  const server = holdingServer({ reasons: ['dlp.commitment'] })
   let provider
   const scope = ctx.flybot.scope
   ctx.flybot.scope = (name) => {
@@ -1308,7 +1312,8 @@ test('#271: a Bot\'s direct message to a friend is not a line of a Face-to-face 
 test('#278: "Waiting for the owner\'s approval" is posted into the rooms a hold belongs to, never a Face-to-face room that has the friend in it', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
-  const server = holdingServer()
+  // The hold carries a finding, so it stays pending and the notice has something to be about (#737).
+  const server = holdingServer({ reasons: ['dlp.commitment'] })
   const posted = []
   const scope = ctx.flybot.scope
   ctx.flybot.scope = (name) => {
@@ -1415,6 +1420,105 @@ test('decide-approval (#69): owner click approves or rejects via Bot Social', as
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
   assert.equal((await call('flybot/social/decide-approval', { approvalId: 'apr-hold-1', decision: 'maybe' })).ok, false)
   assert.equal(server.calls.some(c => c.name === 'set_auto_approve'), false)
+})
+
+test('#737: Auto-send clears the Bot Social hold on the same send, so the line leaves and no card is left behind', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  const approvals = server.calls.filter(c => c.name === 'decide_approval')
+  assert.equal(approvals.length, 2, 'the confirm handshake only: one approval, decided once')
+  assert.deepEqual(approvals.map(c => [c.args.approval_id, c.args.decision]), [['apr-1-m1', 'approved'], ['apr-1-m1', 'approved']])
+  assert.deepEqual(server.queue, [], 'Bot Social no longer holds the line')
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 0, 'no card for a line Auto-send already let out')
+  assert.deepEqual(status.approvals, [])
+})
+
+test('#737: an Auto-send line Bot Social held for a finding of its own stays on the card', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer({ reasons: ['mvp.all_outbound_requires_approval', 'dlp.commitment'] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'we commit to that' })).action, 'allow')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], 'a hold with a finding is never approved without the owner')
+  assert.equal(server.queue.length, 1)
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1)
+  assert.deepEqual(status.approvals.map(item => [item.id, item.reasons]), [['apr-1-m1', ['commitment']]])
+})
+
+test('#766: only the blanket approval reason is cleared by Auto-send; any other name holds the line', async () => {
+  const cases = [
+    ['policy.new_rule'],
+    ['mvp.all_outbound_requires_approval', 'policy.new_rule'],
+    ['dlp.blocked'],
+    ['mvp.all_outbound_requires_approval', 'dlp.blocked'],
+  ]
+  for (const reasons of cases) {
+    const { ctx, stop } = await team()
+    const server = holdingServer({ reasons })
+    const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+    await grantTeam(ctx.flybot)
+    await social.registerAll()
+    assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+    assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], `never approved without the owner: ${reasons.join(',')}`)
+    assert.equal(server.queue.length, 1, `the hold stays on its card: ${reasons.join(',')}`)
+    social.dispose()
+    await stop()
+  }
+  // A risk flag is a finding too, even beside the blanket reason.
+  const { ctx, call, stop } = await team()
+  const server = holdingServer({ riskFlags: [{ category: 'money', action: 'approve' }] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], 'a risk flag is never cleared without the owner')
+  assert.deepEqual((await call('flybot/social/status', {})).value.approvals.map(item => item.reasons), [['money']])
+  social.dispose()
+  await stop()
+})
+
+test('#766: a hold the server has not listed yet is named in a warn, and the line waits on its card', async (t) => {
+  const warned = []
+  const originalWarn = console.warn
+  console.warn = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.warn = originalWarn })
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  // The line comes back held, but the approval list has not caught up (the lag #737 was reported for).
+  server.tools.list_approvals = () => ({ approvals: [] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [], 'nothing is approved out of a list that does not name the hold')
+  assert.match(warned.join('\n'), /Auto-send: Bot Social has not listed the hold apr-1-m1 yet; the line waits on its card/, 'the item is named, so the next report is diagnosable')
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
+})
+
+test('#737: with Auto-send off the chain holds the send, and nothing is approved', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'hold')
+  assert.deepEqual(server.calls.filter(c => c.name === 'send_as_member'), [], 'a held line never reaches Bot Social')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval'), [])
 })
 
 test('the waiting-notice ledger drops a hold once it is no longer pending', async (t) => {
@@ -1665,6 +1769,12 @@ test('#457: a Bot whose face-room Auto-send is on has its clean held line approv
   // A line Bot Social flagged still waits for the owner, switch or not.
   queue = [heldItem(['dlp.commitment'])]
   assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
+  // A reason the card does not name is still a finding (#766): the allow-list, not "no name I know".
+  queue = [heldItem(['policy.new_rule'])]
+  assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
+  queue = [heldItem(['dlp.blocked'])]
+  assert.deepEqual(await fanout(room, line('a', 'Chief')), { held: true, approvalId: 'apr-face-1' })
+  assert.equal(approvals().length, 1, 'only the clean line was ever approved')
   // Writer's switch is off: its line waits.
   queue = [heldItem()]
   assert.deepEqual(await fanout(room, line('b', 'Writer')), { held: true, approvalId: 'apr-face-1' })
@@ -3328,6 +3438,37 @@ test('#371: a local Bot\'s hold shows in its own chat when the friend\'s chat is
   assert.equal(fresh().holdReasonLine(['commitment', 'pii.phone', 'money', 'mystery'], undefined), 'Held for your approval: contains commitment language, a phone number, a money amount')
   assert.equal(fresh().holdReasonLine(['mystery'], undefined), '')
   assert.equal(fresh().holdReasonLine([], undefined), '')
+})
+
+test('#260: Approve all approves Bot Social holds too, not only local ones', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const friend = { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' } }
+  const roster = { bots: [friend] }
+  const item = id => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@coder.bob.home', toName: 'Bob', text: id })
+  const tree = walk(pluginOf([[item('s1'), item('s2')], [], '']).ChatApprovalDock({ bot: friend, roster }))
+  const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
+  assert.ok(all, 'Approve all is offered for Bot Social holds (they carry status: pending)')
+  await all.props.onClick()
+  const decided = calls.filter(([endpoint]) => endpoint === 'social/decide-approval').map(([, payload]) => payload.approvalId)
+  assert.deepEqual(decided.sort(), ['s1', 's2'])
+})
+
+test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const friend = { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' } }
+  const roster = { bots: [friend] }
+  const hold = { id: 'f1', kind: 'outbound_message', source: 'local', status: 'failed', error: 'file changed after approval', from: 'Chief', to: '@coder.bob.home', toName: 'Bob', text: 'x' }
+  const tree = walk(pluginOf([[], [hold], '']).ChatApprovalDock({ bot: friend, roster }))
+  const card = tree.find(node => node.props['data-flybot'] === 'chat-approval')
+  assert.equal(card?.props['data-state'], 'failed')
+  assert.ok(tree.some(node => node.props['data-flybot'] === 'hold-error' && node.children.includes('file changed after approval')))
+  assert.equal(tree.some(node => node.props.className === 'fs-btn fs-btn-sm fs-btn-primary' && node.children.includes('Approve')), false, 'no Approve on a failed hold')
+  const retry = tree.find(node => node.props['data-flybot'] === 'hold-retry')
+  assert.ok(retry, 'Retry is offered')
+  await retry.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide').map(([, payload]) => [payload.id, payload.decision]), [['f1', 'retry']])
 })
 
 test('#126: a face-room hold shows in that chat with a readable name', () => {
@@ -7418,6 +7559,10 @@ test('Settings server: status, check and switch with the old credentials kept, t
   await flybot.grants.set('a', [{ id: 'g1', grantee: '@bob.home', name: 'Bob' }])
   flybot.fields.set('a', 'autoApprove', { '@bob.home': true })
   await ctx.flybot.scope('social').fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home' })
+  // A face-to-face room hosted on server A: the new server cannot reach it, so it must not stay open.
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_old', localId: 'g-old', status: 'open', name: 'Old room' })
+  // Still forming, not open yet: the same rule applies to it when the server really changes.
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_cand', localId: 'g-cand', status: 'candidate', name: 'Candidate room' })
 
   // Check: nothing is saved, the platform's features are shown; refused addresses never reach the network.
   const before = servers.seen.length
@@ -7442,8 +7587,18 @@ test('Settings server: status, check and switch with the old credentials kept, t
   assert.match(refused.error.message, /HTTP 404/)
   assert.equal(flybot.fields.get('a', 'member').bot_id, 'm1')
 
+  // Renaming this home on the same server is not a switch: that server's rooms keep working.
+  const renamed = await call('flybot/social/server-set', { server: 'https://a.test', displayName: 'Danyang A2', confirm: true })
+  assert.equal(renamed.ok, true, JSON.stringify(renamed))
+  assert.equal(renamed.value.server, 'https://a.test')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_old').face.status, 'open', 'a rename on the same server does not end its rooms')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_cand').face.status, 'candidate', 'nor the room still being formed there')
+  assert.equal((await call('room-post', { roomId: 'g-old', text: 'still here' })).ok, true, 'and a line to it still goes out')
+
   const switched = await call('flybot/social/server-set', { server: 'https://b.test', displayName: 'Danyang B', confirm: true })
   assert.equal(switched.ok, true, JSON.stringify(switched))
+  assert.equal(ctx.flybot.rooms.ofFace('frm_old').face.status, 'left', "the previous server's face room is not left open")
+  assert.equal(ctx.flybot.rooms.ofFace('frm_cand').face.status, 'left', 'a room still forming on the previous server is ended too')
   status = switched.value
   assert.equal(status.server, 'https://b.test')
   assert.equal(status.source, 'settings')
@@ -7486,6 +7641,11 @@ test('Settings server: status, check and switch with the old credentials kept, t
   assert.deepEqual(ctx.flybot.grants.of('a').map(grant => grant.grantee), ['@bob.home'])
   assert.equal(readFileSync(credentialsPath, 'utf8'), credentialsA)
   assert.equal(JSON.parse(readFileSync(credentialsB, 'utf8')).token, 'tok-b')
+  // Switching back does not reopen the room it left: it stays a past room, and a line to it is refused.
+  assert.equal(ctx.flybot.rooms.ofFace('frm_old').face.status, 'left', 'a room this home left stays left after switching back')
+  const posted = await call('room-post', { roomId: 'g-old', text: 'hello' })
+  assert.equal(posted.ok, false)
+  assert.equal(posted.error?.code, 'bot/room-ended')
 })
 
 test('Settings server: a switch that fails puts the previous server back, with its files and identities', async (t) => {
@@ -7502,6 +7662,8 @@ test('Settings server: a switch that fails puts the previous server back, with i
   await flybot.grants.set('a', [{ id: 'g1', grantee: '@bob.home' }])
   flybot.fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home' })
   const credentialsA = readFileSync(credentialsPath, 'utf8')
+  // A room on the server that keeps working: a switch that fails must not end it.
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_a', localId: 'g-a', status: 'open', name: 'Room on A' })
 
   const failed = await call('flybot/social/server-set', { server: 'https://closed.test', confirm: true })
   assert.equal(failed.ok, false)
@@ -7518,6 +7680,8 @@ test('Settings server: a switch that fails puts the previous server back, with i
   assert.equal(servers.mock('https://a.test').onboarded(), 1)
   assert.equal((await call('flybot/social/status', {})).ok, true)
   assert.doesNotMatch(warned.join('\n'), /tok-a/)
+  assert.equal(ctx.flybot.rooms.ofFace('frm_a').face.status, 'open', 'a switch that failed ends none of the rooms that still work')
+  assert.equal((await call('room-post', { roomId: 'g-a', text: 'still here' })).ok, true, 'and lines to them still go out')
 })
 
 test('Settings server: nothing configured is unchanged, and a first server can be set from Settings', async (t) => {
@@ -8541,6 +8705,31 @@ test('#500: createSocialApi grantBotToFriend prefers MCP and falls back to REST 
     const result = await api.grantBotToFriend({ botId: 'm1', friendHome: '@bob.home' })
     assert.equal(result.unavailable, true)
   }
+})
+
+test('#500: share-friends registers a Bot that has not been shared yet', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_friends = () => ({
+    friends: [{ relationship_id: 'r-bob', status: 'active', peer: { bot_id: 'pb-bob', handle: '@bob.home', display_name: 'BobHome', owner_display_name: 'Bob' } }],
+    pending_incoming: [], pending_outgoing: [],
+  })
+  server.tools.list_bot_grants = () => ({ grants: [] })
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(bot => bot.isMain) || ctx.flybot.bot.list()[0]
+  assert.equal(ctx.flybot.scope('social').fields.get(chief.id, 'member'), undefined, 'the Bot has no Bot Social identity yet')
+  // Sharing → Share with a friend opens this list for a Bot that was never invited or shared.
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  assert.deepEqual(listing.friends.map(friend => friend.home), ['@bob.home'])
+  const member = ctx.flybot.scope('social').fields.get(chief.id, 'member')
+  assert.ok(member?.bot_id, 'the Bot was registered on demand')
+  assert.ok(server.calls.some(entry => entry.name === 'add_home_member'), 'its identity was minted on Bot Social')
 })
 
 test('#500: social/share-friends lists friends without this Bot; share-with-friend grants and refreshes access', async (t) => {

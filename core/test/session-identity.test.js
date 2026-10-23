@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -41,7 +41,7 @@ async function drain(stream) {
 // `ctx.llm.stream` runs the plugin's `llm/stream` listeners in order, as DSH does,
 // and then a route that turns down a request without a Session. `respond` gives the
 // text of each answer the route lets through.
-function start() {
+function start({ config = {} } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-session-identity-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   const bench = { tokens: 0, compacted: 0, respond: () => '', requests: [] }
@@ -95,7 +95,7 @@ function start() {
     sessions: { messageProjections: [] },
     workspaceRegistry: { archiveSession: async () => {} },
   })
-  const rt = createRuntime(ctx, { home })
+  const rt = createRuntime(ctx, { home, ...config })
   const hook = pattern => ctx.listeners.get('llm/stream').find(listener => pattern.test(String(listener)))
   const stop = async () => {
     await ctx.dispose()
@@ -105,7 +105,7 @@ function start() {
     }
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { ctx, rt, bench, hook, stop }
+  return { ctx, rt, bench, hook, home, stop }
 }
 
 for (const sessionId of ['b2', 'g3']) {
@@ -171,4 +171,44 @@ test('the Session hooks pass DS Bot\'s own requests through, and still act on a 
   const images = hook(/imagesAsTextOrPass/)
   assert.equal(images(own('b2', picture), pass), passed)
   assert.notEqual(images(round('b2', picture), pass), passed)
+})
+
+// #779: with no vision model a picture cannot be read, and the placeholder then names the bytes on
+// disk so a Bot can pick them up with its own file tools. Both paths that turn an image into text
+// for a text-only model share that placeholder: the group relay and a Bot chat.
+test('an unread image names its bytes in a group and in a chat alike', async (t) => {
+  const { ctx, rt, bench, home, stop } = start({ config: { textOnlyModels: ['deepseek/vision'] } })
+  t.after(stop)
+  const id = 'b'.repeat(64)
+  const objectPath = join(home, 'attachments', 'v1', 'objects', id.slice(0, 2), id)
+  mkdirSync(join(home, 'attachments', 'v1', 'objects', id.slice(0, 2)), { recursive: true })
+  writeFileSync(objectPath, 'not really a png')
+  const picture = { attachmentId: `sha256:${id}`, name: 'chart.png', mediaType: 'image/png', bytes: 16 }
+
+  const [line] = await rt.imagesForGroup([picture], 'r1')
+  assert.match(line, /it could not be read right now\. The file is at /)
+  assert.ok(line.includes(`"${objectPath}"`), line)
+
+  bench.respond = () => 'It is a chart.'
+  const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', attachment: picture }, { type: 'text', text: 'What is this?' }] }
+  const chunks = await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
+  assert.equal(chunks.at(-1).reason.kind, 'stop')
+  // No vision request went out: there is no model to send it to.
+  assert.deepEqual(bench.requests.map(request => request.model), ['v4'])
+  assert.ok(bench.requests[0].messages[0].content[0].text.includes(`"${objectPath}"`), bench.requests[0].messages[0].content[0].text)
+})
+
+test('an unread image whose bytes are gone keeps the placeholder short', async (t) => {
+  const { ctx, rt, bench, home, stop } = start({ config: { textOnlyModels: ['deepseek/vision'] } })
+  t.after(stop)
+  const id = 'c'.repeat(64)
+  const picture = { attachmentId: `sha256:${id}`, name: 'gone.png' }
+  const [line] = await rt.imagesForGroup([picture], 'r1')
+  assert.match(line, /it could not be read right now\. Ask the user/)
+  assert.ok(!line.includes(home), line)
+
+  bench.respond = () => 'It is a chart.'
+  const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', attachment: picture }, { type: 'text', text: 'What is this?' }] }
+  await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
+  assert.ok(!bench.requests[0].messages[0].content[0].text.includes(home), bench.requests[0].messages[0].content[0].text)
 })

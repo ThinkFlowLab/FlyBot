@@ -184,7 +184,7 @@ export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onP
 }
 
 // The card a Bot's chat opens on while the Bot has no model, or has one that is no
-// longer served. The first Main Bot greets the user only after a pick.
+// longer served. The first Main Bot starts no turn until a model is picked.
 export function ModelChoiceDock({ sessionId, useRoster, actions }) {
   const roster = useRoster(value => value)
   const bot = roster.byId[sessionId]

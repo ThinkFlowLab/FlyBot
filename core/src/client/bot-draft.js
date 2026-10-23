@@ -19,11 +19,28 @@ export function startModel(roster) {
   return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? ''
 }
 
-// The model is always sent: the host fixes it on the Bot at creation.
-export function createPayload({ name, look, image, model, effort, brief }) {
+// The model is always sent: the host fixes it on the Bot at creation. The card never sends a
+// brief: a line typed in the composer is the Bot's first request, and the host takes a brief
+// as instructions only from a Bot that creates another (#645).
+export function createPayload({ name, look, image, model, effort }) {
   const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } }
   if (model) payload.model = model
   if (effort) payload.effort = effort
-  if (brief) payload.brief = brief
   return payload
+}
+
+// What the new-Bot card does once the Bot exists: open its chat and send the line typed in
+// the composer as its first turn. The Bot is already made, so a failed send leaves the user
+// on its chat with the failure, never on a card whose Create can only answer "a Bot with
+// that name already exists" (#698).
+export async function afterCreate({ id, text, actions }) {
+  actions.openSession(id)
+  actions.showDetails(id, 'settings')
+  const line = String(text ?? '').trim()
+  if (line === '') return
+  try {
+    await actions.send(id, line)
+  } catch (failure) {
+    actions.notify?.(failure?.message ?? String(failure))
+  }
 }

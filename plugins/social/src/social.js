@@ -114,6 +114,17 @@ export function holdReasons(item) {
   }
   return names.slice(0, 8)
 }
+// The one hold Auto-send may clear by itself (#737, #766): an approval Bot Social made only for its
+// blanket "all outbound needs approval" rule, with no risk flag. This is an allow-list on purpose — a
+// reason this build does not know, another DLP category or a risk flag is a finding, so the line waits
+// for the owner on its card. An empty or missing `reasons` list is not the blanket rule either: nothing
+// listed is nothing known.
+const BLANKET_HOLD = 'mvp.all_outbound_requires_approval'
+export function holdIsBlanket(item) {
+  const reasons = Array.isArray(item?.reasons) ? item.reasons : []
+  const flags = Array.isArray(item?.risk_flags) ? item.risk_flags : []
+  return reasons.length > 0 && reasons.every(reason => String(reason) === BLANKET_HOLD) && flags.length === 0
+}
 export function approvalView(item, { localName } = {}) {
   if (!item || typeof item !== 'object') return undefined
   const id = String(item.approval_id ?? item.id ?? '')
@@ -146,6 +157,9 @@ export function approvalView(item, { localName } = {}) {
     // The Bot Social identity that wrote it (a local Bot is found by it), and why Bot Social held it (#371).
     ...(typeof item.bot_id === 'string' && item.bot_id ? { botId: item.bot_id } : {}),
     reasons: holdReasons(item),
+    // What Auto-send may clear on its own (#766); the face-room path decides on this, not on the
+    // names the card shows, because a reason this build does not know is a hold too.
+    blanketHold: holdIsBlanket(item),
     text,
     summary: cleanText(item.summary),
     createdAt: item.created_at,
@@ -1452,6 +1466,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // nobody sees in the Bot's chat, and the reply would never leave (#258). Room lines are
           // different (the friend's owner decides those), so they keep their hold.
           if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
+          // Auto-send (#417) let this line out without a FlyBot card, so Bot Social's own hold would
+          // park it with nobody left to decide it: the owner's switch already answered the same
+          // question (#737). Room lines stay with the friend's owner, and a hold with a finding of
+          // its own keeps its card. Only Auto-send on this pair reaches here unapproved: the chain
+          // holds every other send before the transport runs.
+          else if (msg.via !== 'room' && msg.via !== 'room-share' && typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto') await autoSendRemoteLine(sent)
         }
         return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
       }
@@ -1493,6 +1513,36 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     pendingCache.at = 0
     await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       .catch(error => warn('direct-chat owner line not approved yet; the next poll retries', error))
+  }
+  // Approves the Bot Social hold on a line Auto-send (#417) let out with no FlyBot card (#737), only
+  // when Bot Social held it for no finding of its own (no DLP category on the hold). Anything else
+  // stays on its card, where the owner decides it, exactly as with Auto-send off.
+  async function autoSendRemoteLine(sent) {
+    const approvalId = sent?.message?.approval_id ?? sent?.approval_id
+    if (!approvalId) return false
+    try {
+      // Read straight from the server, not through pendingApprovals(): that path also posts the
+      // waiting notice and refreshes the card, and a hold this line is about to clear has nobody
+      // waiting for it.
+      const result = await client.callTool('list_approvals', { status: 'pending' })
+      const raw = result?.approvals ?? (Array.isArray(result) ? result : [])
+      const held = raw.find(item => String(item?.approval_id ?? item?.id ?? '') === String(approvalId))
+      // A hold the server has not listed yet is not "no finding": the line waits on its card, and the
+      // report names the item so the next one of these is diagnosable (#766).
+      if (!held) {
+        warn(`Auto-send: Bot Social has not listed the hold ${approvalId} yet; the line waits on its card`)
+        return false
+      }
+      if (!holdIsBlanket(held)) return false
+      await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
+      // No cache line here: the send path already invalidates it when a message comes back
+      // `pending_approval`, and this hold was created after the last poll, so it was never in the
+      // cache to begin with (#766).
+      return true
+    } catch (error) {
+      warn('Auto-send did not approve the Bot Social hold; the line waits on its card', error)
+      return false
+    }
   }
   // Typed-by-owner attestation (Bot Social typed_by_owner): `supported` is learned from the
   // server's feature list (face rooms) or from an attested reply; `forbidden` is set when this
@@ -2285,7 +2335,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots to share')
-    const member = activeMember(bot.id)
+    // Sharing with an existing friend is the first time this Bot needs a Bot Social identity,
+    // exactly like an invite; mint it here instead of refusing to list the friends (#500).
+    let member = activeMember(bot.id)
+    if (!member) member = await register(bot, { forInvite: true })
     if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
     await syncOutgoingGrants({ only: bot.id }).catch(error => warn('grants not synced for share list', error))
     const listed = typeof api.listGrants === 'function'
@@ -3422,7 +3475,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!local || !faceAutoOf(local.id)) return false
     try {
       const held = (await pendingApprovals({ fresh: true })).find(item => item.id === approvalId)
-      if (!held || held.reasons.length > 0) return false
+      if (!held || held.blanketHold !== true) return false
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       setPending(pendingCache.items.filter(item => item.id !== approvalId))
       pendingCache.at = 0

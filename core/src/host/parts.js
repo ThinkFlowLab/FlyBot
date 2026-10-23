@@ -41,9 +41,9 @@ export function cardText(args) {
 // What one event adds to a Bot's chat history: an answer of the Bot's (its text, or a
 // question card), or a message from the user (`who: 'user'`) or another Bot
 // (`who: 'bot'`) that the answers after it belong to. Context that other plugins append
-// (time, attachments) adds nothing. Setup kickoffs, handoff packages, and, in an own
-// chat, group turns from before group Sessions existed show no text, and drop the
-// answers to them.
+// (time, attachments) adds nothing. Handoff packages, setup kickoffs from a team made
+// before #645, and, in an own chat, group turns from before group Sessions existed show no
+// text, and drop the answers to them.
 // The user's answer to an ask_user card. The message carries the question with the
 // answer, so the answer still makes sense after a checkpoint drops the card.
 export function questionReply(question, answer) {
@@ -680,7 +680,7 @@ export function install(rt) {
   // from the model. `folder`: the part moves on because its working folder changed.
   function startSwitch(agent, { resume = false, carry = [], info, joined, overflow = false, failed, bare = false, folder = false, hard = overflow || folder } = {}) {
     const place = placeOf(agent.id)
-    if (place === undefined || switches.has(agent.id) || readOnly()) return
+    if (place === undefined || switches.has(agent.id) || readOnly()) return false
     const job = { ...place, carry: [...carry], info, joined, resume, overflow, failed, bare, folder, hard, origin: settled(rt, agent.id) }
     switches.set(agent.id, job)
     void runSwitch(agent, job)
@@ -707,6 +707,7 @@ export function install(rt) {
         }
         await forward(job, back).catch(error => rt.warn('ds-bot: input for %s was not handed on: %s', agent.id, error))
       })
+    return true
   }
 
   async function runSwitch(agent, job) {
@@ -783,6 +784,32 @@ export function install(rt) {
     await rt.applyPermission(bot, freshId)
       .catch(error => rt.warn('ds-bot: permission for the fresh part of %s not applied: %s', bot.name, error))
     const segment = { sessionId: agent.id, endedAt: Date.now(), ...(tokens !== undefined ? { tokens } : {}), ...noted }
+    const resume = job.resume || job.overflow
+    // Commit the new part before its handoff turn can run: a handoff visible to a failure handler
+    // before the segment is saved would let a second switch lose the previous part's note. A failed
+    // handoff rolls the pointer back below, so the finalizer still hands the input on in the old part.
+    const previousSession = bot.sessionId
+    const previousSegments = bot.segments === undefined ? undefined : [...bot.segments]
+    const previousRoomSessions = room === undefined ? undefined : { ...room.sessions }
+    const previousRoomSegments = room?.segments?.[bot.id] === undefined ? undefined : [...room.segments[bot.id]]
+    const previousQuestion = state.questions[agent.id]
+    const restore = () => {
+      if (room !== undefined) {
+        if (previousRoomSegments === undefined) delete room.segments[bot.id]
+        else room.segments[bot.id] = previousRoomSegments
+        if (previousRoomSessions === undefined) delete room.sessions[bot.id]
+        else room.sessions = previousRoomSessions
+      } else {
+        if (previousSegments === undefined) delete bot.segments
+        else bot.segments = previousSegments
+        bot.sessionId = previousSession
+        delete state.questions[freshId]
+        if (previousQuestion !== undefined) state.questions[agent.id] = previousQuestion
+      }
+      freshParts.delete(freshId)
+      // The part was never handed over, so it is not a rescued part either.
+      rescued.delete(freshId)
+    }
     if (room !== undefined) {
       room.segments ??= {}
       ;(room.segments[bot.id] ??= []).push(segment)
@@ -798,28 +825,47 @@ export function install(rt) {
         delete state.questions[agent.id]
       }
     }
-    await rt.save()
+    // The rescued mark goes in with the pointer, before the save awaits: a failure handler that
+    // sees this part can never see it uncommitted, and a save that fails drops the mark again.
     if (job.failed !== undefined) rescued.set(freshId, job.bare ? 'bare' : 'carried')
-    void rt.moveSchedules(agent.id, freshId)
-    job.moved = true
-    const resume = job.resume || job.overflow
-    await rt.ensureCapabilities(freshId)
-    const fresh = await rt.resolveAgent(freshId)
-    const cwd = fresh.session.header?.cwd
-    const folder = cwd !== undefined && cwd !== session.header?.cwd ? cwd : undefined
-    // A fresh part that is not where it was made for would move on at every step.
-    if (intended !== undefined && cwd !== undefined && cwd !== intended) {
-      folderRetry.set(freshId, Date.now() + FOLDER_RETRY_MS)
-      rt.warn('ds-bot: the fresh part of %s did not start in %s; it works in %s', bot.name, intended, cwd)
+    try {
+      await rt.save()
+    } catch (error) {
+      restore()
+      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
+      throw error
     }
-    const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
-    freshParts.set(freshId, estimateTokens(text))
-    fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
-    await ctx.sessions.flush(fresh.session)
-    // Then what the old part held: the stopped turn's input, then whatever waited.
+    let folder
+    try {
+      await rt.ensureCapabilities(freshId)
+      const fresh = await rt.resolveAgent(freshId)
+      const cwd = fresh.session.header?.cwd
+      folder = cwd !== undefined && cwd !== session.header?.cwd ? cwd : undefined
+      // A fresh part that is not where it was made for would move on at every step.
+      if (intended !== undefined && cwd !== undefined && cwd !== intended) {
+        folderRetry.set(freshId, Date.now() + FOLDER_RETRY_MS)
+        rt.warn('ds-bot: the fresh part of %s did not start in %s; it works in %s', bot.name, intended, cwd)
+      }
+      const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
+      fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
+      await ctx.sessions.flush(fresh.session)
+      freshParts.set(freshId, estimateTokens(text))
+    } catch (error) {
+      // No package: the old part is current again, and the finalizer hands the input on there.
+      restore()
+      await rt.save().catch(() => { /* the in-memory state is the old part; a failed rollback save is the worst case */ })
+      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
+      throw error
+    }
+    void rt.moveSchedules(agent.id, freshId)
+    // The old part's held input goes on here. Mark the move done only once it was handed on, so a
+    // failure lets the finalizer retry it on the part that is now current.
     const held = [...agent.inbox.nextStep, ...agent.inbox.nextTurn]
+    job.carry.push(...held)
+    await forward(job, [...job.carry])
     for (const message of held) agent.inbox.remove(message.id)
-    await forward(job, [...job.carry.splice(0), ...held])
+    job.carry.splice(0)
+    job.moved = true
     ctx.logger.info('ds-bot: %s%s moved on to part %d at %d tokens (check line %d, hard line %d); %s; %d latest and %d earlier messages carried%s', bot.name, room ? ` in ${room.name}` : '', number + 1, tokens ?? -1, lines?.check ?? -1, lines?.hard ?? -1,
       written !== undefined ? `note written in ${written.attempts} attempt(s)` : `note put together by DS Bot (${noted.fallback}${noted.note ? `, carries part ${noted.noteFrom}'s` : ', nothing to carry'})`,
       carried.recent.length, carried.earlier.length, folder === undefined ? '' : `; now works in ${folder}`)
@@ -848,16 +894,16 @@ export function install(rt) {
       freshParts.delete(agent.id)
       partBase.set(agent.id, (tokensOf(agent.session) ?? 0) + fresh)
     }
-    if (!readOnly() && await folderMove(agent, { midTurn: payload.step > 1 }) !== undefined) return switchBeforeStep(agent, payload, { folder: true })
+    if (!readOnly() && await folderMove(agent, { midTurn: payload.step > 1 }) !== undefined) return switchBeforeStep(agent, payload, { folder: true }, next)
     const lines = await contextLines(agent.session).catch(() => undefined)
     const tokens = tokensOf(agent.session)
     if (lines === undefined || tokens === undefined || tokens < lines.hard || !grown(agent.id, tokens, lines) || readOnly()) return next()
     if (await decide(agent, { midTurn: payload.step > 1 }) === 'compact' && await condense(agent, lines, { inTurn: true, signal: payload.signal })) return next()
-    return switchBeforeStep(agent, payload, { hard: true })
+    return switchBeforeStep(agent, payload, { hard: true }, next)
   }, { prepend: true })
 
   // `messages` left the inbox for this step, so the switch carries them along.
-  function switchBeforeStep(agent, payload, options) {
+  function switchBeforeStep(agent, payload, options, next) {
     // A switch may have started while the checks above awaited.
     const running = switches.get(agent.id)
     if (running !== undefined) {
@@ -866,8 +912,11 @@ export function install(rt) {
     }
     const midTurn = payload.step > 1
     const entry = rt.liveOf(agent.id)
+    const started = startSwitch(agent, { resume: midTurn, carry: payload.messages, info: midTurn ? entry.info : undefined, joined: midTurn ? [...(entry.joined ?? [])] : undefined, ...options })
+    // No switch actually started: keep the step and its messages instead of rejecting them
+    // (DSH has already taken them out of the inbox).
+    if (!started) return next()
     entry.switched = true
-    startSwitch(agent, { resume: midTurn, carry: payload.messages, info: midTurn ? entry.info : undefined, joined: midTurn ? [...(entry.joined ?? [])] : undefined, ...options })
     return { kind: 'reject' }
   }
 

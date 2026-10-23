@@ -10,7 +10,7 @@
 // can show it without reading the file.
 import { appendFile, mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 import { looksSecret } from './memory.js'
 import { output } from './tools.js'
 

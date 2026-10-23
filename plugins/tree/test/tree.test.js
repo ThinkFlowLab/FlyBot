@@ -65,6 +65,87 @@ test('tools: create under caller only, list, duplicates, depth 5, 8 children', a
   assert.match(sp(m, work), /COORDINATOR[\s\S]*- Dev: Dev stuff/)
 })
 
+test('removing a former root re-attaches its children to the current root', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  const life = await make(m, m.root, 'Life')
+  // A second Main takes over; the old Chief is demoted and then deleted (the UI allows both).
+  const chief2 = m.addBot({ name: 'Chief2', isMain: true })
+  m.bots.get(m.root).isMain = false
+  m.removeBot(m.root)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(f(m, work, 'parent'), chief2)
+  assert.equal(f(m, life, 'parent'), chief2)
+  const parentless = [...m.bots.values()].filter(bot => bot.fields['flybot-tree']?.parent == null)
+  assert.deepEqual(parentless.map(bot => bot.name), ['Chief2'], 'one root, not a forest')
+  assert.deepEqual((await m.call(chief2, 'list_children')).children.map(c => c.name).sort(), ['Life', 'Work'])
+})
+
+test('a rename made in the core reaches the tree prompts on the next turn', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  assert.match(sp(m, m.root), /- Work: Work stuff/)
+  assert.match(sp(m, work), /You are Work, a bot in a recursive bot tree/)
+  await m.flybot.bot.update(work, { name: 'Trips' })
+  // A coordinator reads its children from its prompt: the next turn must carry the new name.
+  m.feed('turn.start', { botId: m.root, place: 'chat', sessionId: 's', turnId: 'r1', turn: 1, time: 1 })
+  assert.match(sp(m, m.root), /- Trips: Work stuff/)
+  assert.doesNotMatch(sp(m, m.root), /- Work: Work stuff/)
+  // The renamed Bot reads its own name from its prompt too.
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 'w1', turn: 1, time: 2 })
+  assert.match(sp(m, work), /You are Trips, a bot in a recursive bot tree/)
+})
+
+test('a new Main Bot takes the root on the next turn, and the old root is demoted', async () => {
+  const m = await setup()
+  await make(m, m.root, 'Work')
+  const chief2 = m.addBot({ name: 'Chief2', isMain: true })
+  m.bots.get(m.root).isMain = false
+  m.feed('turn.start', { botId: chief2, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 1 })
+  const roots = [...m.bots.values()].filter(bot => bot.fields['flybot-tree']?.treeRole === 'root')
+  assert.deepEqual(roots.map(bot => bot.name), ['Chief2'], 'exactly one root, the current Main')
+  assert.notEqual(f(m, m.root, 'treeRole'), 'root')
+  assert.equal(m.tree.isRoot(m.root), false, 'the previous root is placed like any other Bot')
+})
+
+test('#748: a Main change on a tree that already sits at maxDepth keeps every Bot inside the limits', async () => {
+  const m = createMockFlybot()
+  m.addBot({ name: 'Chief', isMain: true })
+  const { tree } = plugin.apply({ flybot: m.flybot }, {})
+  const root = await tree.ensureRoot()
+  const l1 = await make(m, root, 'L1')
+  const l2 = await make(m, l1, 'L2')
+  const l3 = await make(m, l2, 'L3')
+  const l4 = await make(m, l3, 'L4')
+  assert.equal(f(m, l4, 'parent'), l3, 'the chain reaches maxDepth')
+  const chief2 = m.addBot({ name: 'Chief2', isMain: true })
+  m.bots.get(root).isMain = false
+  m.feed('turn.start', { botId: chief2, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 1 })
+  await tree.settled()
+  const nodes = tree.snapshot()
+  assert.equal(nodes[chief2]?.root, true, 'the new Main is the only root')
+  for (const bot of m.bots.values()) assert.ok(nodes[bot.id], `${bot.name} is still in the tree`)
+  for (const id of Object.keys(nodes)) {
+    assert.ok(tree.depthOf(nodes, id) <= 5, `${nodes[id].name} is at depth ${tree.depthOf(nodes, id)} (maxDepth=5)`)
+    if (id !== chief2) assert.ok(nodes[nodes[id].parent], `${nodes[id].name} has a parent inside the tree`)
+  }
+  // The tree and its own limits agree about the deepest Bot: one more child would be depth 6, not 7.
+  assert.match((await m.call(l4, 'create_child_bot', { name: 'L6', role_description: 'x' })).error, /a child of L4 would be at depth 6 \(maxDepth=5\)/)
+})
+
+test('autoRoot: false is not overridden by a Main Bot change at a turn boundary', async () => {
+  const m = createMockFlybot()
+  const chief = m.addBot({ name: 'Chief', isMain: true })
+  const { tree } = plugin.apply({ flybot: m.flybot }, { autoRoot: false, adoptExisting: false })
+  assert.deepEqual(tree.snapshot(), {}, 'no root at the start')
+  m.feed('turn.start', { botId: chief, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 1 })
+  m.feed('turn.end', { botId: chief, place: 'chat', sessionId: 's', turnId: 't', turn: 1, time: 2 })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(tree.snapshot(), {}, 'a turn boundary must not create the root the config turned off')
+  assert.equal(f(m, chief, 'treeRole'), undefined)
+  assert.equal(f(m, chief, 'adoptedRoot'), undefined)
+})
+
 test('tools: configurable limits and hidden from non-tree bots', async () => {
   const m = await setup({ maxDepth: 2, maxChildren: 1 })
   const a = await make(m, m.root, 'A')
@@ -292,12 +373,35 @@ test('client builds the tree from ctx.flybot.bots() and fields', async () => {
   assert.equal(mod.buildForest(nodes)[0].children[0].name, 'Work')
 })
 
-test('bot.removed for a non-tree bot is ignored', async () => {
+// #732: the tracker's invariant is that every record belongs to a live Bot. Removal re-attaches the
+// children but used to leave the deleted Bot's open turns counted forever.
+test('#732: a removed Bot leaves no open-turn record behind, and a live one keeps its own', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work'); const dev = await make(m, m.root, 'Dev')
+  m.feed('turn.start', { botId: work, turnId: 'work-1' })
+  m.feed('turn.start', { botId: work, turnId: 'work-2' })
+  m.feed('turn.start', { botId: dev, turnId: 'dev-1' })
+  assert.equal(m.tree.loadOf(work), 2, 'both turns are open before the removal')
+  m.removeBot(work)
+  assert.equal(m.tree.loadOf(work), 0, 'the removed Bot is no longer counted')
+  assert.equal(m.tree.openForOf(work), 0, 'and has no open turn left to age')
+  assert.equal(m.tree.loadOf(dev), 1, 'a live Bot keeps its record')
+  m.feed('turn.end', { botId: dev, turnId: 'dev-1' })
+  assert.equal(m.tree.loadOf(dev), 0)
+})
+
+test('bot.removed for a non-tree bot is ignored, and still drops its load records', async () => {
   const m = await setup()
   const a = await make(m, m.root, 'A')
   const o = await outsider(m)
+  // A Bot the tree never held still runs turns, and the feed records them: the tree guard must not
+  // skip the cleanup for it (#732).
+  m.feed('turn.start', { botId: o, turnId: 'o-1' })
+  assert.equal(m.tree.loadOf(o), 1, 'a tracked Bot outside the tree')
   m.removeBot(o)
   assert.equal(f(m, a, 'parent'), m.root)
+  assert.equal(m.tree.loadOf(o), 0, 'a removed non-tree Bot is no longer counted')
+  assert.equal(m.tree.openForOf(o), 0, 'and has no open turn left to age')
 })
 
 test('adapter requires flybot.scope', () => {
@@ -1443,6 +1547,84 @@ test('#507: a child\'s running turns show as load in the coordinator\'s stored p
   assert.match(sp(m, m.root), /Child load right now — Work: idle/)
 })
 
+test('#624: a turn that never ends shows how long it has been open, and load stays a number', async () => {
+  let clock = Date.UTC(2026, 9, 22, 6)
+  const m = await setup({ now: () => clock })
+  const work = await make(m, m.root, 'Work')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
+  clock += 3 * 60_000
+  let item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(typeof item.load, 'number', 'load keeps its type for every existing reader')
+  assert.equal(item.load, 1)
+  assert.equal(item.openForMs, 3 * 60_000)
+  assert.equal(item.stalled, undefined, 'three minutes is an ordinary turn')
+  m.tree.refreshPrompt(m.root)
+  assert.match(sp(m, m.root), /Work: working\./)
+  // 44 minutes later the turn is still open and now reads as what the issue is about.
+  clock += 44 * 60_000
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.openForMs, 47 * 60_000)
+  assert.equal(item.stalled, true)
+  m.tree.refreshPrompt(m.root)
+  assert.match(sp(m, m.root), /Work: working \(47 min, no turn ended\)/)
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 2 })
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 0)
+  assert.equal(item.openForMs, undefined, 'idle keeps the old shape: no age, no flag')
+  assert.equal(item.stalled, undefined)
+})
+
+// #733: a model routes on the description, not on the code, so the description must name the
+// fields the tool answers — and the answer must still carry them.
+test('#733: list_children describes the load fields it returns', async () => {
+  let clock = Date.UTC(2026, 9, 22, 6)
+  const m = await setup({ now: () => clock })
+  const { description } = m.tools.get('list_children')
+  for (const field of ['load', 'openForMs', 'stalled']) assert.match(description, new RegExp(`\\b${field}\\b`))
+  // `stalled` is not a synonym for busy: the description says what makes it true.
+  assert.match(description, /stalled: true once[^.]*stall threshold/)
+  const work = await make(m, m.root, 'Work')
+  const writer = await make(m, m.root, 'Writer')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
+  clock += 47 * 60_000
+  const children = (await m.call(m.root, 'list_children')).children
+  const busy = children.find(c => c.id === work)
+  assert.equal(busy.load, 1)
+  assert.equal(busy.openForMs, 47 * 60_000)
+  assert.equal(busy.stalled, true)
+  // An idle child keeps the old shape, so the description promises the fields only with a turn open.
+  const idle = children.find(c => c.id === writer)
+  assert.equal(idle.load, 0)
+  assert.equal('openForMs' in idle, false)
+  assert.equal('stalled' in idle, false)
+})
+
+test('#696: two turns open, the later one ends, and the age left is the older turn\'s', async () => {
+  let clock = Date.UTC(2026, 9, 22, 7)
+  const m = await setup({ now: () => clock })
+  const work = await make(m, m.root, 'Work')
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 's#1', turn: 1, time: 1 })
+  clock += 10 * 60_000
+  m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 's#2', turn: 2, time: 2 })
+  clock += 2 * 60_000
+  // 12 minutes: the older turn is the oldest open one, so the line names 12 whatever ends next.
+  let item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 2)
+  assert.equal(item.openForMs, 12 * 60_000)
+  // The turn that ends is the newer one: the older turn is still open, so its age must stay.
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 's#2', turn: 2, time: 3 })
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 1, 'only the turn that ended is gone')
+  assert.equal(item.openForMs, 12 * 60_000, 'not the 2 minutes of the turn that ended')
+  assert.equal(item.stalled, true)
+  m.tree.refreshPrompt(m.root)
+  assert.match(sp(m, m.root), /Work: working \(12 min, no turn ended\)/)
+  m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 's#1', turn: 1, time: 4 })
+  item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
+  assert.equal(item.load, 0)
+  assert.equal(item.openForMs, undefined)
+})
+
 test('#450: a merge carries the archived Bot\'s own memory into the kept Bot', async () => {
   const DAY = 24 * 60 * 60 * 1000
   let clock = Date.UTC(2026, 9, 19, 12)
@@ -1576,4 +1758,34 @@ test('#677: heightOf measures the whole subtree, so move_bot refuses a subtree t
   // Moving A under D puts C at depth 5, past maxDepth=4. The old height (1) let this through.
   const r = await m.call(m.root, 'move_bot', { bot: 'A', parent: 'D' })
   assert.match(r.error, /limit reached: A would end at depth 5 \(maxDepth=4\)/)
+})
+
+test('#764: a name taken anywhere refuses the whole team before anything is created', async () => {
+  const m = await setup()
+  const review = await make(m, m.root, 'Review')
+  const existing = (await child(m, review, 'Reviewer', 'checks pull requests')).created.id
+  const before = m.bots.size
+  const snap = JSON.stringify([...m.bots.values()].map(b => [b.id, b.name, b.systemPrompt, b.fields]))
+  // The host refuses a duplicate name wherever the existing Bot sits (roster.js), not only under
+  // the parent; building the lead first left it childless and the team half-built.
+  const r = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Reviewer: checks the tree and the CI'] })
+  assert.match(r.error, /nothing was created/)
+  assert.match(r.error, /"Reviewer" is already taken by Chief → Review → Reviewer/)
+  assert.equal(m.bots.size, before, 'no lead, no partial team')
+  assert.equal(JSON.stringify([...m.bots.values()].map(b => [b.id, b.name, b.systemPrompt, b.fields])), snap, 'the tree is byte-identical')
+  assert.deepEqual(m.tree.overview().runs, [], 'no journal entry either')
+  assert.equal(f(m, existing, 'treeRole'), 'checks pull requests', 'the existing Bot is untouched')
+  // Every clash is named, not just the first one; a name whose role does not match is not reused.
+  await child(m, m.root, 'Scout', 'watches the neighbourhood')
+  const two = await m.call(m.root, 'create_team', { team: 'Ship', members: ['Reviewer: checks releases', 'Scout: ships releases'] })
+  assert.match(two.error, /nothing was created/)
+  assert.match(two.error, /"Reviewer" is already taken by Chief → Review → Reviewer/)
+  assert.match(two.error, /"Scout" is already taken by Chief → Scout/)
+  assert.equal(m.bots.size, before + 1, 'still nothing created by the refused team, no Ship Lead either')
+  // Reuse by role is not a clash: the member with the same role is reused and nothing is created for it.
+  const reused = await m.call(m.root, 'create_team', { team: 'FlyBot', members: ['Dev: writes the FlyBot code', 'Reviewer: checks pull requests'] })
+  assert.equal(reused.error, undefined)
+  assert.deepEqual(reused.team.members.map(x => [x.name, Boolean(x.reused)]), [['Dev', false], ['Reviewer', true]])
+  assert.match(reused.note, /Reused where they are: Chief → Review → Reviewer/)
+  assert.equal(f(m, existing, 'parent'), review, 'reused where it stands, not moved')
 })

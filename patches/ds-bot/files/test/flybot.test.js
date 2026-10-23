@@ -8,6 +8,10 @@ import { apply } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 import { cleanPublishedName, orderMiddleware, SEND_PRIORITY } from '../src/host/hooks.js'
 
+const emptyTeam = () => ({
+  version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0,
+})
+
 const team = () => ({
   version: 1,
   mainBotIds: ['a'],
@@ -21,11 +25,13 @@ const team = () => ({
 
 async function start(config = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-flybot-'))
-  const state = team()
+  const state = config.empty === true ? emptyTeam() : team()
   Object.assign(state.rooms, config.rooms ?? {})
-  const { rooms, ...applyConfig } = config
+  const { rooms, empty, llm, defaultModel, ...applyConfig } = config
   writeFileSync(join(home, 'state.json'), JSON.stringify(state))
-  const ctx = fakeContext()
+  // A test may serve a model: the profile default rides the DSH service, as in test/memory.test.js.
+  const services = defaultModel === undefined ? {} : { agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: defaultModel }) } }
+  const ctx = fakeContext({ services })
   const agents = new Map()
   const agentOf = (id) => {
     if (!agents.has(id)) {
@@ -39,7 +45,7 @@ async function start(config = {}) {
     return agents.get(id)
   }
   Object.assign(ctx, {
-    llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
+    llm: llm ?? { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
     workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
     sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async id => ({ agent: agentOf(id) }), selectModel: async () => {}, page: async () => ({ records: [], hasMore: false }) },
     sessionTitle: { rename: async () => {} },
@@ -54,7 +60,7 @@ async function start(config = {}) {
   apply(ctx, { home, ...applyConfig })
   const tool = (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId } })
   const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
-  await tool('list_bots', {}, 'a')
+  if (empty !== true) await tool('list_bots', {}, 'a')
   const stop = async () => {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
@@ -815,6 +821,29 @@ test('#450: flybot.model.ask is refused unless the host allow-lists the plugin',
   assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'hi' }), { ok: false, code: 'no-model' })
 })
 
+test('#579: flybot.modelFor reaches the plugin call, and an unnamed plugin keeps the team default', async (t) => {
+  const requests = []
+  const llm = {
+    listProviders: () => [{ id: 'deepseek' }],
+    listModels: async () => [{ id: 'v4' }, { id: 'v4-flash' }],
+    resolveModelInfo: async () => ({}),
+    async* stream(request) {
+      requests.push(request)
+      yield { type: 'text-delta', index: 0, text: 'ok' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  }
+  const { fb, stop } = await start({ flybot: { modelPlugins: ['probe', 'other'], modelFor: { probe: 'deepseek/v4-flash' } }, defaultModel: 'v4', llm })
+  t.after(stop)
+  assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'classify' }), { ok: true, text: 'ok' })
+  assert.equal(requests.length, 1)
+  assert.deepEqual([requests[0].provider, requests[0].model], ['deepseek', 'v4-flash'], 'the entry from config.flybot.modelFor is used')
+  assert.deepEqual(await fb.scope('other').model.ask({ prompt: 'classify' }), { ok: true, text: 'ok' })
+  assert.deepEqual([requests[1].provider, requests[1].model], ['deepseek', 'v4'], 'a plugin the host did not name keeps the team default')
+  assert.deepEqual(await fb.scope('probe').model.ask({ prompt: 'classify', model: 'deepseek/v4' }), { ok: true, text: 'ok' })
+  assert.deepEqual([requests[2].provider, requests[2].model], ['deepseek', 'v4'], 'a model the call names still wins')
+})
+
 test('#450: flybot.memory reads and writes a Bot only for an allow-listed plugin', async (t) => {
   const { fb, stop } = await start({ flybot: { memoryPlugins: ['probe'] } })
   t.after(stop)
@@ -825,4 +854,42 @@ test('#450: flybot.memory reads and writes a Bot only for an allow-listed plugin
   const listed = fb.scope('probe')
   assert.deepEqual(await listed.memory.append('a', 'The user prefers tea'), { ok: true })
   assert.ok(listed.memory.read('a').some(entry => entry.text === 'The user prefers tea'))
+})
+
+test('onboarding announces the first Main Bot to plugins', async (t) => {
+  const { fb, call, stop } = await start({ empty: true })
+  t.after(stop)
+  const created = []
+  fb.on('bot.created', bot => created.push(bot.name))
+  const result = await call('state', {})
+  assert.equal(result.ok, true)
+  // A plugin (the tree) adopts Chief only through this event; without it the root is missed.
+  assert.deepEqual(created, ['Chief'])
+})
+
+test('a duplicated Bot is announced to plugins like any new Bot', async (t) => {
+  const { fb, call, stop } = await start()
+  t.after(stop)
+  const created = []
+  fb.on('bot.created', bot => created.push(bot.name))
+  const copy = (await call('duplicate-bot', { id: 'b' })).value
+  assert.ok(copy?.id)
+  assert.deepEqual(created, [copy.name])
+})
+
+test('#587: list_bots marks a Bot whose send waits on the owner with a count, never the text', async (t) => {
+  const { fb, tool, received, stop } = await start()
+  t.after(stop)
+  fb.bot.send.use({ name: 'hold-all', handle: () => ({ action: 'hold', reason: 'check first' }) })
+  const out = await tool('message_bot', { to: 'Coder', message: 'secret plan' }, 'b')
+  assert.match(out, /^Held for the user's approval/)
+  assert.deepEqual(received('c'), [], 'the send stays undelivered while it waits')
+  const listed = await tool('list_bots', {}, 'a')
+  assert.match(listed, /- Writer \(Write, 1 to approve\)/, 'a coordinator sees the waiting Bot in the roster')
+  assert.ok(!listed.includes('secret plan'), 'the tag is a count only, never the held message text')
+  const [pending] = fb.approvals.list()
+  await fb.approvals.decide(pending.id, 'approve')
+  assert.match(received('c')[0], /secret plan/, 'an approved hold dispatches')
+  const after = await tool('list_bots', {}, 'a')
+  assert.ok(!after.includes('to approve'), 'a decided hold leaves no tag')
 })

@@ -328,7 +328,7 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
     const attempt = allowAsync => {
       const nodes = snapshot()
       if (!nodes[root]) return undefined
-      const x = { id: bot.id, name: bot.name, height: 1, p: profileOf({ id: bot.id, name: bot.name, role: bot.role, treeRole: role, prompt: ownText(fb.getBot(bot.id)?.systemPrompt), tools: get(bot.id, 'activity')?.tools ?? [] }, classify) }
+      const x = { id: bot.id, name: bot.name, height: heightOf(nodes, bot.id), p: profileOf({ id: bot.id, name: bot.name, role: bot.role, treeRole: role, prompt: ownText(fb.getBot(bot.id)?.systemPrompt), tools: get(bot.id, 'activity')?.tools ?? [] }, classify) }
       for (const at of homesFor(nodes, root, x)) {
         if (fits(nodes, at, x)) {
           placeAt(bot.id, at, role)

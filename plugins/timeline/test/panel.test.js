@@ -488,3 +488,66 @@ test('a turn bar\'s tooltip names the model the turn ran on (#366)', () => {
   assert.match(bar('a#1').title, /^Chief: .* · deepseek-v4-pro$/)
   assert.doesNotMatch(bar('a#2').title, /deepseek/)
 })
+
+// ---- the run report (#582) --------------------------------------------------------------
+// The report is fetched on demand, never by the poller, and the clipboard is the browser's: the test
+// installs one, as a page would have, and reads what the button copied.
+const withClipboard = (fn) => {
+  const written = []
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (text) => { written.push(text) } } }, configurable: true, writable: true })
+  return Promise.resolve(fn(written)).finally(() => {
+    if (had) Object.defineProperty(globalThis, 'navigator', had)
+    else delete globalThis.navigator
+  })
+}
+
+test('#582: the data layer asks for the report at the window the panel shows', async () => {
+  const asked = []
+  const flybot = { call: async (endpoint, body) => { asked.push([endpoint, body]); return { markdown: '# Team report', line: '4 turns' } } }
+  const store = client.createStore(flybot, { windowMs: 300_000 })
+  const report = await store.digest()
+  assert.deepEqual(asked, [['timeline/digest', { windowMs: 300_000 }]])
+  assert.equal(report.markdown, '# Team report')
+  assert.equal(report.line, '4 turns')
+  store.setWindow({ windowMs: 60_000 })
+  await store.digest({ title: ' Standup ' })
+  assert.deepEqual(asked.at(-1), ['timeline/digest', { windowMs: 60_000, title: 'Standup' }])
+  // A host that answers nothing usable is an error, not an empty report.
+  const silent = client.createStore({ call: async () => ({}) }, {})
+  await assert.rejects(() => silent.digest(), /no report/)
+  store.dispose()
+  silent.dispose()
+})
+
+test('#582: Copy report copies the Markdown and says so', async () => {
+  await withClipboard(async (written) => {
+    const api = fakeApi(okState())
+    api.digest = async () => ({ markdown: '# Team report\n\n## Chief\n- 4 turns' })
+    const view = mount(client.TimelinePanel, { api, onClose() {} })
+    assert.ok(button(view.tree, 'Copy report'))
+    button(view.tree, 'Copy report').props.onClick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.deepEqual(written, ['# Team report\n\n## Chief\n- 4 turns'])
+    assert.ok(button(view.tree, 'Copied'))
+    view.unmount()
+  })
+})
+
+test('#582: a refused clipboard is reported, not swallowed', async () => {
+  const api = fakeApi(okState())
+  api.digest = async () => ({ markdown: '# Team report' })
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true })
+  try {
+    const view = mount(client.TimelinePanel, { api, onClose() {} })
+    button(view.tree, 'Copy report').props.onClick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.match(textOf(findAll(view.tree, node => node.props.role === 'alert')[0]), /Could not copy the report: this page has no clipboard/)
+    assert.ok(button(view.tree, 'Copy report')) // the button stays available
+    view.unmount()
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'navigator', had)
+    else delete globalThis.navigator
+  }
+})

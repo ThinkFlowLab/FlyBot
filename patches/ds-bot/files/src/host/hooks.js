@@ -11,6 +11,7 @@
 // same API with their own field namespace; the unscoped API uses namespace 'shared'.
 import { createHash, randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
@@ -19,11 +20,11 @@ import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { faceMentions, mentionedByHandle } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './tool-schema.js'
 
 export const FLYBOT_API_VERSION = 1
 export const SHARED = 'shared'
-// Roles that are one Bot talking to another; group rounds, kickoffs, and notices are not.
+// Roles that are one Bot talking to another; group rounds and notices are not.
 const BOT_TO_BOT_ROLES = new Set(['request', 'reply', 'stopped', 'report'])
 const ACTIONS = new Set(['allow', 'deny', 'hold'])
 const MAX_ATTACHMENTS = 5
@@ -103,7 +104,8 @@ export function install(rt) {
   // Plugins the host allows to read and write a Bot's own memory (#450 item 1). Empty by default.
   const memoryPlugins = new Set(config?.flybot?.memoryPlugins ?? [])
   // A sanctioned, capped model call for a named plugin (#450). Empty allow-list by default.
-  const modelAsk = createPluginModel(rt, { allow: config?.flybot?.modelPlugins ?? [] })
+  // A per-plugin default model (#579): a call from a plugin named here uses it unless it names one.
+  const modelAsk = createPluginModel(rt, { allow: config?.flybot?.modelPlugins ?? [], models: config?.flybot?.modelFor ?? {} })
   const warn = (...args) => rt.warn?.(...args)
   const emit = (name, payload) => { try { ctx.emit?.(name, payload) } catch (error) { warn('flybot: %s listener failed: %s', name, error) } }
 
@@ -361,7 +363,7 @@ export function install(rt) {
     const ids = new Set(botIds)
     // Pending, and approved-but-not-yet-dispatched: otherwise a concurrent setMain /
     // deleteBot during release() skips the record (status already `approved`) (#97).
-    const inFlight = a => a.status === 'pending' || (a.status === 'approved' && a.exchangeId === undefined)
+    const inFlight = a => isApprovalWaiting(a.status) || (a.status === 'approved' && a.exchangeId === undefined)
     const hit = Object.values(store()).filter(a => inFlight(a)
       && (ids.has(a.request?.from) && (field === undefined || field === 'from')
         || ids.has(a.request?.to) && field === undefined))
@@ -394,7 +396,7 @@ export function install(rt) {
   const hold = async (msg, verdict) => {
     await rt.load()
     const all = store()
-    if (Object.values(all).filter(a => a.status === 'pending').length >= PENDING_MAX) {
+    if (Object.values(all).filter(a => isApprovalWaiting(a.status)).length >= PENDING_MAX) {
       throw new HoldFull(`${PENDING_MAX} messages already wait for approval; decide those first`)
     }
     const audience = rt.roomOf?.(msg?.meta?.sessionId)?.id
@@ -410,7 +412,7 @@ export function install(rt) {
       ...(ownerId !== null ? { ownerId } : {}),
     }
     all[approval.id] = approval
-    const done = Object.values(all).filter(a => a.status !== 'pending').sort((a, b) => a.createdAt - b.createdAt)
+    const done = Object.values(all).filter(a => !isApprovalWaiting(a.status)).sort((a, b) => a.createdAt - b.createdAt)
     for (const old of done.slice(0, Math.max(0, Object.keys(all).length - APPROVALS_KEPT))) delete all[old.id]
     await rt.save()
     approvalsChanged(approval)
@@ -496,7 +498,7 @@ export function install(rt) {
     .map(a => ({
       id: a.id,
       by: a.by,
-      status: SENT.has(a.status) || a.status === 'pending' || a.status === 'failed' ? a.status : 'rejected',
+      status: SENT.has(a.status) || isApprovalWaiting(a.status) || a.status === 'failed' ? a.status : 'rejected',
       sessionId: a.request.meta.replyIn.sessionId,
       turn: a.request.meta.replyIn.turn,
       to: toRemote(a.request.to)?.handle ?? null,
@@ -563,7 +565,7 @@ export function install(rt) {
         approvalsChanged(approval)
         return clone(approval)
       }
-      if (approval.status !== 'pending') throw Object.assign(new Error(`flybot: approval ${id} is already ${approval.status}`), { code: 'bot/stale' })
+      if (!isApprovalWaiting(approval.status)) throw Object.assign(new Error(`flybot: approval ${id} is already ${approval.status}`), { code: 'bot/stale' })
       if (decision !== 'approve' && decision !== 'reject') throw new Error('flybot: decision is approve or reject')
       approval.status = decision === 'approve' ? 'approved' : 'rejected'
       approval.decidedAt = Date.now()
@@ -680,7 +682,7 @@ export function install(rt) {
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
     // Everything that is not a first, checked send still carries its sender: resumed, retried,
-    // deferred and re-sent deliveries (and kickoffs, notices) are judged by the owner policy
+    // deferred and re-sent deliveries (and notices) are judged by the owner policy
     // now, since the Bot they name may have had its grant revoked, replaced or removed since.
     if (!gated(args) && !args.flybotChecked && (args.remote?.handle || args.fromId !== undefined)) {
       const owner = ownerPolicy(args)

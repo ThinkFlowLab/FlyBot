@@ -3,6 +3,7 @@ import { PlusIcon, PeopleIcon, ArrowUpIcon, BotIcon, ChatIcon, TerminalIcon } fr
 import { AdminStar, BotMark } from './mark.js'
 import { useEscape, usePaneLeft } from './overlay-hooks.js'
 import { CreateBot } from './create-bot.js'
+import { afterCreate } from './bot-draft.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
 import { t } from './i18n.js'
 import { newChatActionRows } from './flybot-registry.js'
@@ -110,12 +111,13 @@ export function NewChat({ mode, roster, actions }) {
     setError('')
     setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
   }
-  // Close first: closing the new-chat pane keeps the details panel, while closing
+  // A line typed in the composer was a request, so it is the new Bot's first turn, not its
+  // instructions (#645): the card is handed no brief, and the line is sent once the Bot
+  // exists. Close first: closing the new-chat pane keeps the details panel, while closing
   // nothing would clear it.
   const created = (bot) => {
     close()
-    actions.openSession(bot.id)
-    actions.showDetails(bot.id, 'settings')
+    return afterCreate({ id: bot.id, text: message, actions })
   }
   // The admin and at least one more Bot make a group; a message typed below goes with it,
   // else the admin opens by asking what the group is for.
@@ -127,7 +129,7 @@ export function NewChat({ mode, roster, actions }) {
       ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
       ...remotes,
     ]
-    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}), ...(text ? {} : { greet: true }) })
+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
     if (text) await actions.send(room.id, text)
     actions.openSession(room.id)
     close()
@@ -197,7 +199,7 @@ export function NewChat({ mode, roster, actions }) {
   if (draft) {
     return h('div', { className: 'bt-pane', style: { left: paneLeft } },
       h(CreateBot, {
-        roster, actions, start: draft, brief: message.trim(), canGoBack: draft.fromList,
+        roster, actions, start: draft, canGoBack: draft.fromList,
         onBack: draft.fromList ? () => { setDraft(null); setTimeout(() => inputRef.current?.focus()) } : close,
         onCreated: created,
       }))

@@ -428,6 +428,28 @@ test('channel: delete-bot answers with the actor\'s scoped view, not the whole t
   assert.equal(deleted.value.bots.some(bot => bot.id === 'spec-a'), false, "another owner's private Bot stays out of the answer")
 })
 
+test('channel: a line to an ended face room is refused, not appended', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  await rt.load()
+  const room = await rt.upsertFaceRoom({ roomId: 'frm_left', localId: 'g-left', status: 'left', name: 'Ended room' })
+  const before = room.log.length
+  const sent = await call('send', { sessionId: 'g-left', text: 'hello' })
+  assert.equal(sent.ok, false)
+  assert.equal(sent.error.code, 'bot/room-ended')
+  assert.equal(rt.roomOf('g-left').log.length, before, 'nothing was appended to a room no home can reach')
+})
+
+test('channel: room-post into an ended face room is refused too', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  await rt.load()
+  const room = await rt.upsertFaceRoom({ roomId: 'frm_left', localId: 'g-left', status: 'left', name: 'Ended room' })
+  const before = room.log.length
+  const posted = await call('room-post', { roomId: 'g-left', text: 'hello' })
+  assert.equal(posted.ok, false)
+  assert.equal(posted.error?.code, 'bot/room-ended')
+  assert.equal(rt.roomOf('g-left').log.length, before, 'nothing was appended')
+})
+
 test('channel: a legacy single-owner create-room still works', async (t) => {
   const { call } = startChannel(t, TEAM)
   const invite = (await call('auth-invite', {})).value

@@ -2168,6 +2168,12 @@ function onClaims(fn) {
   };
 }
 
+// src/shared/approval-waiting.js
+var WAITING_STATUSES = Object.freeze(["pending", "pending_approval"]);
+function isApprovalWaiting(status) {
+  return WAITING_STATUSES.includes(status);
+}
+
 // src/client/flybot-slots.js
 var import_react2 = require("react");
 var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -2304,7 +2310,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
   const [busy, setBusy] = (0, import_react2.useState)("");
   const [error, setError] = (0, import_react2.useState)("");
   const [shown, setShown] = (0, import_react2.useState)("");
-  const refresh = () => call2("approvals", { status: ["pending", "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
+  const refresh = () => call2("approvals", { status: [...WAITING_STATUSES, "failed"] }).then((list) => setPending(Array.isArray(list) ? list : [])).catch(() => {
   });
   (0, import_react2.useEffect)(() => {
     void refresh();
@@ -2318,7 +2324,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
     const chat = chatOf(approval, roster);
     return Boolean(chat) && (claimed.chats?.has(chat) === true || claimed.chats?.has(roster?.byId?.[chat]?.sessionId) === true);
   };
-  const away = open.filter((approval) => policies.has(approval.by) && approval.status !== "failed" && !inOpenChat(approval));
+  const away = open.filter((approval) => policies.has(approval.by) && isApprovalWaiting(approval.status) && !inOpenChat(approval));
   const awayKey = away.map((approval) => approval.id).join(",");
   (0, import_react2.useEffect)(() => {
     if (!awayKey) {
@@ -2373,6 +2379,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
         const custom = entries2.find((entry) => entry.inline !== true && (entry.policy === void 0 || entry.policy === approval.by));
         if (custom) return (0, import_react2.createElement)("div", { key: approval.id }, (0, import_react2.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2 } }));
         const failed = approval.status === "failed";
+        const waiting = isApprovalWaiting(approval.status);
         return (0, import_react2.createElement)(
           "div",
           { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
@@ -2390,8 +2397,8 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
             "div",
             { className: "bt-flybot-approval-actions" },
             failed ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
-            failed ? null : (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")),
-            failed ? null : (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve"))
+            waiting ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")) : null,
+            waiting ? (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")) : null
           )
         );
       }).concat(error ? [(0, import_react2.createElement)("div", { key: "error", className: "bt-flybot-approval-error", role: "alert" }, error)] : [])
@@ -5184,7 +5191,7 @@ function HeldReplyActions({ held, actions }) {
   const custom = useInlineEntry(held?.by);
   const [busy, setBusy] = (0, import_react7.useState)(false);
   const [error, setError] = (0, import_react7.useState)("");
-  const waiting = held?.status === "pending";
+  const waiting = isApprovalWaiting(held?.status);
   (0, import_react7.useEffect)(() => {
     if (!waiting) return void 0;
     claimApprovals(`held-reply:${held.id}`, [held.id]);
@@ -5443,7 +5450,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t("a friend");
   return (0, import_react8.createElement)(
     "div",
-    { className: "bt-held-reply", "data-state": held.status, "data-held": held.status === "pending" ? "" : void 0 },
+    { className: "bt-held-reply", "data-state": held.status, "data-held": isApprovalWaiting(held.status) ? "" : void 0 },
     children,
     closing ? (0, import_react8.createElement)(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null
   );
@@ -5807,7 +5814,7 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
     }
     if (source.kind === "bot") {
       if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react8.createElement)(EarlierParts, { sessionId, roster, actions });
-      if (source.role === "kickoff" || source.role === "room") return null;
+      if (source.role === "room" || source.role === "kickoff") return null;
       if (source.role === "mention") return (0, import_react8.createElement)("div", { className: "bt-event" }, (0, import_react8.createElement)("span", null, contentText(data.content)));
       if (source.role === "secret" || deferred) return null;
       if (source.role === "post") {
@@ -11307,12 +11314,22 @@ function startModel(roster) {
   const main = roster.byId?.[roster.mainBotId] ?? (roster.bots ?? []).find((bot) => bot.id === roster.mainBotId);
   return (served(main?.model) ?? served(main?.appliedModel) ?? served(roster.defaultModel) ?? models[0])?.ref ?? "";
 }
-function createPayload({ name, look, image, model, effort, brief }) {
+function createPayload({ name, look, image, model, effort }) {
   const payload = { name, color: look.color, avatar: image ? { shape: look.shape, image } : { shape: look.shape } };
   if (model) payload.model = model;
   if (effort) payload.effort = effort;
-  if (brief) payload.brief = brief;
   return payload;
+}
+async function afterCreate({ id, text, actions }) {
+  actions.openSession(id);
+  actions.showDetails(id, "settings");
+  const line2 = String(text ?? "").trim();
+  if (line2 === "") return;
+  try {
+    await actions.send(id, line2);
+  } catch (failure) {
+    actions.notify?.(failure?.message ?? String(failure));
+  }
 }
 
 // src/client/create-bot.js
@@ -11323,7 +11340,7 @@ var randomLook = (avoid = {}) => {
   const colors = DEFAULT_COLORS.filter((color) => color !== avoid.color);
   return { shape: pick(shapes), color: pick(colors) };
 };
-function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCreated, inline = false }) {
+function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inline = false }) {
   const [look, setLook] = (0, import_react26.useState)(() => randomLook());
   const [image, setImage] = (0, import_react26.useState)(null);
   const [name, setName] = (0, import_react26.useState)(start?.name ?? "");
@@ -11346,8 +11363,8 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
     setError("");
     setBusy(true);
     try {
-      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort, brief }));
-      onCreated(bot);
+      const bot = await actions.createBot(createPayload({ name: finalName, look, image, model, effort }));
+      await onCreated(bot);
     } catch (failure) {
       setError(failure?.message ?? String(failure));
       setBusy(false);
@@ -11564,8 +11581,7 @@ function NewChat({ mode, roster, actions }) {
   };
   const created = (bot) => {
     close();
-    actions.openSession(bot.id);
-    actions.showDetails(bot.id, "settings");
+    return afterCreate({ id: bot.id, text: message, actions });
   };
   const makeGroup = async () => {
     if (admin === null || picked.length === 0) return;
@@ -11575,7 +11591,7 @@ function NewChat({ mode, roster, actions }) {
       ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
       ...remotes
     ];
-    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...text ? {} : { greet: true } });
+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {} });
     if (text) await actions.send(room2.id, text);
     actions.openSession(room2.id);
     close();
@@ -11663,7 +11679,6 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
         roster,
         actions,
         start: draft,
-        brief: message.trim(),
         canGoBack: draft.fromList,
         onBack: draft.fromList ? () => {
           setDraft(null);
@@ -12467,7 +12482,7 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
     if (busy || admin === null || members.length === 0) return;
     setBusy(true);
     let room2;
-    const done = await run(actions.createRoom([admin, ...members], { admin, greet: true, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
+    const done = await run(actions.createRoom([admin, ...members], { admin, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
       room2 = value;
     }));
     if (done && room2) onCreated(room2);
@@ -14548,6 +14563,20 @@ function AgentMenu({ menu, roster, actions, leaving }) {
   );
 }
 
+// src/client/pane-width.js
+var DEFAULT_WIDTH = 520;
+var DETAILS_WIDTH = 320;
+var DETAILS_MAX = 520;
+var MIN_WIDTH = 360;
+var MIN_CHAT = 420;
+var MIN_DETAILS = 240;
+function panelWidthRange(view, viewport) {
+  const room2 = Math.max(0, viewport - MIN_CHAT);
+  if (view === "browser") return [MIN_WIDTH, Math.max(MIN_WIDTH, room2)];
+  const low = Math.max(MIN_DETAILS, Math.min(DETAILS_WIDTH, room2));
+  return [low, Math.max(low, Math.min(DETAILS_MAX, room2))];
+}
+
 // src/client/storage.js
 var STORAGE = {
   unread: "ds-bot:unread",
@@ -15056,11 +15085,6 @@ var import_react38 = require("react");
 var import_react_dom8 = require("react-dom");
 var PANEL_LINGER_MS = 300;
 var WIDTH_KEY = STORAGE.browserWidth;
-var DEFAULT_WIDTH = 520;
-var DETAILS_WIDTH = 320;
-var DETAILS_MAX = 520;
-var MIN_WIDTH = 360;
-var MIN_CHAT = 420;
 var READ_FLASH_MS = 2400;
 var EMPTY_PAGE = { url: "", title: "", favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: "" };
 var EMPTY_TABS2 = { ids: [], active: null };
@@ -15094,8 +15118,8 @@ var savedWidth = () => {
     return null;
   }
 };
-var widthRange = (view, viewport) => view === "browser" ? [MIN_WIDTH, viewport - MIN_CHAT] : [DETAILS_WIDTH, Math.min(DETAILS_MAX, viewport - MIN_CHAT)];
 var fitWidth = (width, [low, high]) => Math.round(Math.max(low, Math.min(width, high)));
+var widthRange = (view, viewport) => panelWidthRange(view, viewport);
 var room = { rule: null, selector: "" };
 var roomRule = () => {
   const live = room.rule?.parentStyleSheet?.ownerNode?.isConnected;
@@ -16621,6 +16645,17 @@ var MOBILE_CSS = `
 }
 `;
 
+// src/client/panes.js
+var PANE_MIN_WIDTH_CSS = `
+.bt-panel{min-width:0}
+.bt-panel-view{min-width:0}
+.bt-drawer-body{min-width:0;overflow-wrap:anywhere}
+.bt-drawer-body :is(.bt-muted,.bt-note,.bt-section-title,.bt-drawer-role,.bt-drawer-permission){min-width:0;overflow-wrap:anywhere}
+.bt-panel :is(.bt-member,.bt-members,.bt-bcard-row,.bt-drawer-model,.bt-usage-row){min-width:0}
+.bt-panel :is(.bt-muted,.bt-note){white-space:normal}
+[class*="_centerCol"]{min-width:0}
+`;
+
 // src/client/friend-lines.js
 function friendLineNews(bots, known, isOpen, selfId) {
   const next = { ...known };
@@ -16928,6 +16963,7 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
 var import_react42 = require("react");
 var STATS_DOCK = "conversation.composer.dock";
 var STATS_ID = "stats";
+var STATS_IDS = [STATS_ID, "activity"];
 var noun = (count, one, many) => `${count} ${Number(count) === 1 ? one : many}`;
 function pluralStats(t2) {
   return (key, params) => {
@@ -16937,8 +16973,8 @@ function pluralStats(t2) {
     return text === `${turns} turns ${steps} steps` ? `${noun(turns, "turn", "turns")} ${noun(steps, "step", "steps")}` : text;
   };
 }
-function statsDock(entriesOf) {
-  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === STATS_ID);
+function statsDock(entriesOf, id = STATS_ID) {
+  const shell = () => (entriesOf(STATS_DOCK) ?? []).find((entry) => entry?.component !== StatsDock && entry?.options?.id === id);
   function StatsDock(props) {
     const t2 = (0, import_react42.useMemo)(() => typeof props.t === "function" ? pluralStats(props.t) : props.t, [props.t]);
     const entry = shell();
@@ -16947,6 +16983,7 @@ function statsDock(entriesOf) {
   }
   return { component: StatsDock, inject: (...args) => shell()?.inject?.(...args) ?? {} };
 }
+var statsDocks = (entriesOf) => STATS_IDS.map((id) => ({ id, ...statsDock(entriesOf, id) }));
 
 // src/client/index.js
 var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
@@ -17755,7 +17792,7 @@ function apply(ctx) {
     } };
   };
   const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
-  const runStats = statsDock((name) => ctx.slots.entries?.(name) ?? []);
+  const runStats = statsDocks((name) => ctx.slots.entries?.(name) ?? []);
   let atMenu = null;
   const faceMenus = /* @__PURE__ */ new Map();
   const watchFace = (sessionId) => {
@@ -17818,6 +17855,7 @@ function apply(ctx) {
     installCompiledStyles(MEMBER_CSS, "members"),
     installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
     installCompiledStyles(MOBILE_CSS, "mobile"),
+    installCompiledStyles(PANE_MIN_WIDTH_CSS, "panes"),
     browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
     installTheme(),
     shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),
@@ -17866,11 +17904,12 @@ function apply(ctx) {
     shadow("conversation.input.plan", { priority: -10 }, Nothing),
     // The composer carries no model picker; a Bot's model lives in its details panel.
     shadow("conversation.input.model", { priority: -10 }, Nothing),
-    shadow("conversation.composer.dock", { id: "activity", order: 0, priority: -10 }, Nothing),
     shadow("conversation.composer.dock", { id: "usage", order: 1, priority: -10 }, Nothing),
     // The shell's run-stats footer stays (hidden in a friend's Bot chat by CSS), with
-    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419).
-    shadow(STATS_DOCK, { id: STATS_ID, order: 0, priority: -10, locale: "chat", inject: runStats.inject }, runStats.component),
+    // "1 turn" / "1 step" instead of "1 turns 1 steps" (#419). 0.2.1-alpha.1 splits that
+    // footer into "activity" (the counts, same string) and "usage", so the counts pill takes
+    // the same wrapper and both shells show one footer (#659).
+    ...runStats.map((entry) => shadow(STATS_DOCK, { id: entry.id, order: 0, priority: -10, locale: "chat", inject: entry.inject }, entry.component)),
     shadow("conversation.input.left", { id: "bot-plus", order: -100, inject: face }, ComposerPlus),
     shadow("conversation.input.left", { id: "bot-as", order: -90, inject: face }, ComposerIdentity),
     shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),
