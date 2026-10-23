@@ -136,7 +136,7 @@ export function createAllocator({ fb, limits, snapshot, childrenOf, depthOf, tra
     const group = seat.group
     leaveSeat(callerId, seat)
     if (!group || group.length < 2) return placeAlone(callerId, name, role, parentRef)
-    return (await joinGroup(callerId, key, group, String(name ?? '').trim(), role)) ?? placeAlone(callerId, name, role, parentRef)
+    return (await joinGroup(callerId, key, uniqueNames(group), String(name ?? '').trim(), role)) ?? placeAlone(callerId, name, role, parentRef)
   }
 
   /** Today's path (one Bot at a time): reuse, or create under the planned parent. Also the fallback. */
@@ -163,6 +163,14 @@ export function createAllocator({ fb, limits, snapshot, childrenOf, depthOf, tra
   // finds one, created once otherwise) with every member of the burst under it. The overlap is the
   // definition, never clock time; a call that starts after the previous one returned keeps the
   // plain path above. Different keys are not forced together, and no classifier is consulted.
+  // Two calls in one burst can be the same Bot-to-be: the host keeps a name unique across the roster,
+  // so the second call finds the Bot the first one made and reuses it. The group is still real (both
+  // seats were create work), but its lead names that Bot once, not once per seat (#840).
+  function uniqueNames(names) {
+    const seen = new Set()
+    return names.filter(n => { const k = norm(n); if (seen.has(k)) return false; seen.add(k); return true })
+  }
+
   function leaveSeat(callerId, seat) {
     const seats = burstSeats.get(callerId)
     if (!seats) return

@@ -1863,11 +1863,40 @@ test('#810: two creates in flight at once in one domain get one lead and two chi
   assert.equal(ra.created.parent.id, lead.id)
   assert.equal(rb.created.parent.id, lead.id, 'the second member does not fall into the broader Dev Lead')
   assert.deepEqual(childrenIn(f, lead.id).map(x => x.name).sort(), ['FlyBot Programmer', 'FlyBot Tester'])
+  assert.deepEqual([...lead.fields.treeRole.matchAll(/FlyBot (?:Programmer|Tester)/g)].map(m => m[0]).sort(), ['FlyBot Programmer', 'FlyBot Tester'], 'every member is named once: deduping a burst must not drop a member that was not reused (#840)')
   assert.deepEqual(childrenIn(f, f.devLead).map(x => x.name).sort(), ['Existing Programmer', 'FlyBot Lead'])
   const path = tree.traceOf(tree.snapshot(), lead.id)
   assert.match(path, /FlyBot Lead$/)
   assert.ok(ra.created.path.startsWith(`${path} → `), ra.created.path)
   assert.ok(rb.created.path.startsWith(`${path} → `), rb.created.path)
+})
+
+// #840: two calls in one burst with the SAME name and role are one Bot — the host keeps a name unique
+// across the roster, so the second call finds the Bot the first one made and reuses it. The group is
+// still real (both seats were create work), so one lead is made; it must name that Bot once, not once
+// per seat. The counts do not move with the fix, so this case fails on the duplicated name only.
+test('#840: a burst of two same-name same-role calls names that Bot once in the lead', async () => {
+  const f = fakeAdapter()
+  const tree = createTree(f.fb, { limits: { maxDepth: 5, maxChildren: 2 } })
+  const releaseA = f.hold('FlyBot Programmer')
+  const releaseB = f.hold('FlyBot Programmer')
+  const a = tree.allocateChild(f.chief, 'FlyBot Programmer', 'writes code', undefined)
+  const b = tree.allocateChild(f.chief, 'FlyBot Programmer', 'writes code', undefined)
+  await until('a create to start', () => Boolean(byName(f, 'FlyBot Programmer')))
+  releaseA(); releaseB()
+  const [ra, rb] = await Promise.all([a, b])
+  const lead = byName(f, 'FlyBot Lead')
+  assert.ok(lead, 'the burst is still a group, so it has one lead')
+  assert.equal(lead.fields.lead?.key, 'project:flybot', 'the same group a different-name burst makes')
+  assert.equal([...f.bots.values()].filter(x => x.name === 'FlyBot Programmer').length, 1, 'one member Bot')
+  assert.equal([...f.bots.values()].filter(x => x.fields?.lead?.key === 'project:flybot').length, 1, 'one lead')
+  assert.deepEqual(childrenIn(f, lead.id).map(x => x.name), ['FlyBot Programmer'], 'the second call reused it, it did not create another')
+  const names = [...lead.fields.treeRole.matchAll(/FlyBot Programmer/g)].length
+  assert.equal(names, 1, `the lead names that Bot once, not once per seat: ${lead.fields.treeRole}`)
+  assert.match(lead.fields.treeRole, /coordinates FlyBot Programmer\. Hand each FlyBot task/)
+  assert.equal(ra.created.parent.id, lead.id)
+  assert.ok(rb.reused, 'the second call reports the reuse it got')
+  assert.match(rb.note, /already exists/, 'the reuse still explains itself')
 })
 
 test('#810: with the burst path off, the same fixture places them under two different parents', async () => {
