@@ -903,8 +903,10 @@ export function install(rt) {
     const from = shareSpeaker(room)
     const member = from ? state.bots?.[from]?.fields?.social?.member : undefined
     const ownerId = from ? state.bots?.[from]?.ownerId : undefined
+    // "You" is this home's own label for its owner, so the far side would read itself in it.
+    const humanName = human?.displayName && human.displayName !== 'You' ? human.displayName : undefined
     return {
-      inviterName: human?.displayName || member?.ownerName || displayNameFor(state, ownerId, 'a friend'),
+      inviterName: humanName || member?.ownerName || displayNameFor(state, ownerId, 'a friend'),
       inviterHome: member?.home || human?.ownerHome,
       inviterHandle: member?.handle,
     }

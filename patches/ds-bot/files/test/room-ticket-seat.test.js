@@ -33,7 +33,8 @@ const ALICE = {
       seq: 0,
       seen: {},
       participants: [
-        { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'Alice', joinedSeq: 0, joinedAt: 1 },
+        // A group made on a home whose owner has no name yet: the human is the local "You" (live pre-check).
+        { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'You', joinedSeq: 0, joinedAt: 1 },
         { kind: 'bot', id: 'chief-a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
         { kind: 'bot', id: 'writer-a', role: 'member', displayName: 'Writer', joinedSeq: 0, joinedAt: 1 },
       ],
@@ -236,6 +237,7 @@ test('#884: a stranger claims a room link with two of its Bots, both are seated,
   assert.deepEqual(mirror.participants.filter(p => p.leftSeq === undefined).map(p => p.id).sort(), ['chief-b', 'helper-b'])
   assert.equal(mirror.sharedFrom.remoteRoomId, 'war')
   assert.equal(mirror.sharedFrom.ticket, invite.ticket)
+  assert.equal(mirror.sharedFrom.inviterName, 'Alice', 'the guest reads the owner, never the host’s own "You"')
   const joins = log.filter(m => parseRoomShare(m.text)?.op === 'join')
   assert.ok(joins.every(m => m.from === 'chief-a' && m.meta.scope === 'war' && m.delivered), 'joins go from the linked Bot, under the room scope')
 

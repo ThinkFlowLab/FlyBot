@@ -72,3 +72,17 @@ test('face-room REST calls carry the connector token on the documented routes', 
   assert.deepEqual(await api.list(), [])
   assert.deepEqual(calls, [{ url: 'https://social.test/v1/face-rooms', authorization: 'Bearer otk_test' }])
 })
+
+test('a 204 answer (a withdrawn link) is a Response, not a crash of the process', async (t) => {
+  const { createServer } = await import('node:http')
+  const { socialFetch } = await import('../src/mcp-client.js')
+  const server = createServer((req, res) => { res.writeHead(req.method === 'DELETE' ? 204 : 200, { 'content-type': 'application/json' }).end(req.method === 'DELETE' ? undefined : '{"ok":true}') })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const gone = await socialFetch(`${base}/v1/local-room-invites/tk`, { method: 'DELETE' })
+  assert.equal(gone.status, 204)
+  assert.equal(await gone.text(), '')
+  const read = await socialFetch(`${base}/v1/local-room-invites/tk`)
+  assert.deepEqual(await read.json(), { ok: true })
+})

@@ -36,6 +36,8 @@ export function fetchOptions(init = {}) {
   return { ...init, agent: init.agent ?? socialHttpAgent() }
 }
 
+const NULL_BODY = new Set([101, 204, 205, 304])
+
 export function socialFetch(url, init = {}) {
   const parsed = new URL(String(url))
   const lib = parsed.protocol === 'http:' ? http : https
@@ -54,7 +56,14 @@ export function socialFetch(url, init = {}) {
           if (value === undefined) continue
           headerMap.set(key, Array.isArray(value) ? value.join(', ') : String(value))
         }
-        resolve(new Response(buf, { status: res.statusCode ?? 0, statusText: res.statusMessage ?? '', headers: headerMap }))
+        // A 204/205/304 must have no body, and a Response that throws here would be uncaught and end the
+        // process (a link withdrawn with DELETE answers 204): no body for those, and a bad status rejects.
+        const status = res.statusCode ?? 0
+        try {
+          resolve(new Response(NULL_BODY.has(status) ? null : buf, { status, statusText: res.statusMessage ?? '', headers: headerMap }))
+        } catch (error) {
+          reject(error)
+        }
       })
     })
     req.on('error', reject)
