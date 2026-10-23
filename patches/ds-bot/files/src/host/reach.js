@@ -122,11 +122,23 @@ function ownersInRoom(state, room) {
   return owners
 }
 
+// #884: the owner made a Bot Social link for this room, which is the consent to show the room — as
+// it is, with that owner's own Bots in it — to the home the link seats. Only that owner's Bots, and
+// only while a link of the room is open or still holds a seat.
+function openedByLink(state, room, botId) {
+  const bot = state.bots?.[botId]
+  if (!bot || bot.remote !== undefined || !bot.ownerId || !Array.isArray(room?.localInvites)) return false
+  const at = Date.now()
+  return room.localInvites.some(invite => invite?.server === true && invite.mintedBy === bot.ownerId
+    && (Boolean(invite.acceptedBy) || Number(invite.expiresAt) > at))
+}
+
 // May this local Bot take part in a room that has a remote participant or more than one
 // owner? A grant matching someone already in the room, or a code-join, is enough.
 export function mayShareRoom(state, room, botId) {
   if (isCodeJoined(state, room?.id, botId)) return true
   if (hasAnyGrant(state, botId)) return true
+  if (openedByLink(state, room, botId)) return true
   if (!ownerKnown(state, state.bots?.[botId])) return false
   for (const remote of remotesInRoom(room)) {
     if (hasGrant(state, botId, remote.handle || remote.id, room?.id) || hasGrant(state, botId, remote.handle || remote.id)) return true

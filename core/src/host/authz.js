@@ -388,7 +388,7 @@ export function install(rt) {
     if (ep === 'share-brief') return ALLOW
     // #876: knocking at another FlyBot's room link is not authority over anything here. The knock
     // carries a ticket that the inviter's record decides on, and the sender is the actor's own Bot.
-    if (ep === 'room-invite-ask') return ALLOW
+    if (ep === 'room-invite-ask' || ep === 'room-invite-preview') return ALLOW
     // Task transitions are requester-checked on the record in tasks.js (#54) — the
     // endpoint only needs a signed-in actor, like held-send decisions. Create is
     // grant-aware there (owner, matching grant, or the named room). Explicit set:

@@ -438,6 +438,8 @@ export function install(rt) {
   async function deleteRoom(id) {
     const room = rt.roomOf(id)
     if (room === undefined) throw new Error('Unknown group chat')
+    // #884: a room's invite links and the seats they admitted end with it, at Bot Social too.
+    await Promise.resolve(rt.dropRoomInvites?.(room)).catch(error => rt.warn('ds-bot: links of %s not withdrawn: %s', room.name, error))
     for (const botId of Object.keys(room.sessions ?? {})) rt.dropGroupSession(room, botId)
     delete state.rooms[id]
     delete state.questions[id]

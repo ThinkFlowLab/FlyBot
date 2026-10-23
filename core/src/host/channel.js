@@ -387,21 +387,30 @@ export function install(rt) {
         // countdown); minting replaces the live ticket, withdrawing stops answering at once.
         case 'room-invite': {
           await rt.load()
-          const invite = rt.localInviteOf(String(body.roomId ?? body.id ?? ''))
-          return ok({ invite: invite ?? null })
+          const roomId = String(body.roomId ?? body.id ?? '')
+          const invite = rt.localInviteOf(roomId)
+          // #878: every open link of the room; `invite` stays the newest, for the card that shows one.
+          return ok({ invite: invite ?? null, invites: rt.localInvitesOf(roomId) })
         }
         case 'room-invite-mint': {
           await rt.load()
-          return ok({ invite: await rt.mintRoomInvite(String(body.roomId ?? body.id ?? '')) })
+          return ok({ invite: await rt.mintRoomInvite(String(body.roomId ?? body.id ?? ''), actor) })
         }
         case 'room-invite-revoke': {
           await rt.load()
-          return ok(await rt.revokeRoomInvite(String(body.roomId ?? body.id ?? '')))
+          const ticket = typeof body.ticket === 'string' && body.ticket ? body.ticket : undefined
+          return ok(await rt.revokeRoomInvite(String(body.roomId ?? body.id ?? ''), ticket))
         }
-        // The invitee's side: a knock at the link (and, on Join, the accepting knock).
+        // The invitee's side: what the link is (Bot Social's record when there is one), before Join.
+        case 'room-invite-preview': {
+          await rt.load()
+          return ok({ preview: await rt.previewLocalInvite(String(body.link ?? body.url ?? '')) })
+        }
+        // The invitee's side: a knock at the link (and, on Join, the accepting knock with the Bots it brings).
         case 'room-invite-ask': {
           await rt.load()
-          return ok(await rt.askLocalInvite(String(body.link ?? body.url ?? ''), { accept: body.accept === true }, actor))
+          const bots = Array.isArray(body.bots) ? body.bots.filter(id => typeof id === 'string').slice(0, 8) : undefined
+          return ok(await rt.askLocalInvite(String(body.link ?? body.url ?? ''), { accept: body.accept === true, ...(bots ? { bots } : {}) }, actor))
         }
         case 'folders':
         case 'folder-pick':

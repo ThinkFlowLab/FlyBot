@@ -1121,6 +1121,21 @@ export function install(rt) {
       },
       applyInbound: (event, actor) => rt.applyInboundRoomShare?.(event, actor),
       leaveInbound: spec => rt.leaveInboundShares?.(spec),
+      // #884: Bot Social's record of a local room's invite tickets. `impl` is
+      // { mint({ roomId, name, handle }) → { ticket, expiresAt } | undefined (no server support),
+      //   preview(ticket), claim(ticket, handles), verify(ticket) → { roomId, claimer }, revoke(ticket) };
+      // a refusal throws an Error whose `code` is Bot Social's. Returns the unregister function.
+      serveInvites(impl) {
+        if (!impl || typeof impl !== 'object') { rt.roomInviteServer = undefined; return () => {} }
+        const wrapped = { ...impl }
+        rt.roomInviteServer = wrapped
+        return () => { if (rt.roomInviteServer === wrapped) rt.roomInviteServer = undefined }
+      },
+      // The rooms of this home a ticket seat is in, and the stranger's Bot each seat is: the
+      // transport lets a room share through to exactly these, and to nobody else off the roster.
+      ticketSeats: () => Object.values(state.rooms || {}).flatMap(room => (room.participants ?? [])
+        .filter(p => p.remote === true && p.admittedBy === 'ticket' && p.leftSeq === undefined)
+        .map(p => ({ roomId: room.id, handle: p.handle, hostBotId: p.hostBotId }))),
     },
     remote: {
       publish: list => remoteMembers.publish(plugin, list),

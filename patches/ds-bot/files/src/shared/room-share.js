@@ -32,6 +32,11 @@ export function encodeRoomShare(payload = {}) {
   if (payload.lead) body.lead = clip(payload.lead)
   if (Number.isFinite(Number(payload.expiresAt)) && Number(payload.expiresAt) > 0) body.expiresAt = Math.floor(Number(payload.expiresAt))
   if (body.op === 'ask' && !payload.roomId) delete body.roomId
+  // #878: the accepting knock on a ticket Bot Social recorded names the Bots the claim brought. The
+  // inviter's home reads the claim back from the server; this list is only what the knock says.
+  if (Array.isArray(payload.bots) && payload.bots.length > 0) {
+    body.bots = payload.bots.map(handle => clip(handle, 120)).filter(handle => handle.startsWith('@')).slice(0, 8)
+  }
   if (payload.who) body.who = clip(payload.who)
   if (payload.kind) body.kind = clip(payload.kind, 32)
   if (payload.authorKind) body.authorKind = clip(payload.authorKind, 16)

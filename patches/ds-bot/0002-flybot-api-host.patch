@@ -442,8 +442,12 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (room.name !== before) {
        changes.push(`renamed it "${room.name}"`)
        await retitleRoom(room)
-@@ -385,6 +385,7 @@ export function install(rt) {
+@@ -383,8 +383,11 @@ export function install(rt) {
+   async function deleteRoom(id) {
+     const room = rt.roomOf(id)
      if (room === undefined) throw new Error('Unknown group chat')
++    // #884: a room's invite links and the seats they admitted end with it, at Bot Social too.
++    await Promise.resolve(rt.dropRoomInvites?.(room)).catch(error => rt.warn('ds-bot: links of %s not withdrawn: %s', room.name, error))
      for (const botId of Object.keys(room.sessions ?? {})) rt.dropGroupSession(room, botId)
      delete state.rooms[id]
 +    delete state.questions[id]
