@@ -43,7 +43,7 @@ export function systemPrompt({ name, role, trace, children, root = false, notes 
     '3. Send each child only its own self-contained part, all in parallel, then wait.',
     // #895: load is read through list_children, not written here: a line that changed at every child turn boundary
     // changed this whole system prompt, and DSH then re-sent all of it.
-    '   Before you send a new part, call list_children: it shows each child\'s load right now (turns running, and how long an open turn has been open). Send it to a child that is idle or working before one that is busy.',
+    '   When more than one child fits a part, call list_children before you send it: it shows each child\'s load right now (turns running, and how long an open turn has been open). Send it to a child that is idle or working before one that is busy.',
     '4. Aggregate the answers into one concise answer for your parent (or the user). If only one child answered, pass its answer through unchanged.',
     `5. ${traceRule(trace, root)}`,
     'You may message only your parent and your direct children.', ...(root ? [limitRule] : [OUTSIDE_RULE]), ...placementRules(limits), tools, ...notes].join('\n')

@@ -1539,7 +1539,7 @@ test('#507, #895: a child\'s running turns show as load in list_children, and th
   const work = await make(m, m.root, 'Work')
   const before = sp(m, m.root)
   // The coordinator is told where load is, once, in words that do not change with it.
-  assert.match(before, /Before you send a new part, call list_children: it shows each child's load right now/)
+  assert.match(before, /When more than one child fits a part, call list_children before you send it: it shows each child's load right now/)
   m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
   m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't2', turn: 2, time: 2 })
   // A child's turn boundary leaves the system prompt alone: a load line there changed the whole
