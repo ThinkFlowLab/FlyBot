@@ -1212,12 +1212,28 @@ export function install(rt) {
   rt.applyInboundRoomShare = async function applyInboundRoomShare(event = {}, actor) {
     const data = parseRoomShare(event.text)
     if (!data) return undefined
-    const fromHandle = event.fromHandle || data.inviterHandle
-    const fromHome = event.fromHome || data.inviterHome
-    const fromName = cleanPeerName(event.fromName || data.inviterName, 'a friend')
+    // The envelope names the person who invited; the event names the Bot that carried the line here (#873).
+    // Prefer the envelope for the identity, and keep the transport only as the fallback, so the room reads
+    // "Shared room from Alice" rather than after the sender's Bot.
+    const fromHandle = data.inviterHandle || event.fromHandle
+    const fromHome = data.inviterHome || event.fromHome
+    const fromName = cleanPeerName(data.inviterName || event.fromName, 'a friend')
+    // A chat line is attributed to its speaker (`who`) and otherwise to the sender, never to the inviter:
+    // this fix is about the room's identity, not about who wrote inside it.
+    const transportName = cleanPeerName(event.fromName || data.inviterName, 'a friend')
     const localBotId = event.localBotId && state.bots?.[event.localBotId] ? event.localBotId : undefined
     const ownerId = actor?.memberId ?? event.ownerId ?? Object.keys(state.members || {})[0]
     let room = inboundOf(data.roomId, fromHome, fromHandle)
+    if (!room) {
+      // A share recorded before this fix stores the transport's identity, so the envelope's home would not
+      // match it and the same remote room would fork into a second `inbound-share` room. Match the values
+      // the room already has as well; the envelope still wins for what gets recorded.
+      const storedHome = event.fromHome || ''
+      const storedHandle = event.fromHandle || ''
+      if ((storedHome && storedHome !== fromHome) || (storedHandle && storedHandle !== fromHandle)) {
+        room = inboundOf(data.roomId, storedHome, storedHandle)
+      }
+    }
     if (data.op === 'leave') {
       if (!room) return { handled: true, room: undefined }
       markInboundLeft(room)
@@ -1257,7 +1273,7 @@ export function install(rt) {
     }
     let called = []
     if (data.op === 'line') {
-      const who = cleanPeerName(data.who || fromName, fromName)
+      const who = cleanPeerName(data.who || transportName, transportName)
       const hop = Number.isFinite(Number(data.hop)) ? Math.max(0, Math.floor(Number(data.hop))) : 0
       const posted = append(room, rt.authoredRoomLine(room, {
         who,

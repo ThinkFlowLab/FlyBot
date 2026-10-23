@@ -851,11 +851,24 @@ test('applyInboundRoomShare projects a join with no chat line, then a leave hide
   const room = first.room
   assert.equal(room.origin, 'inbound-share')
   assert.equal(room.sharedFrom.remoteRoomId, 'alice-war')
-  assert.equal(room.sharedFrom.inviterName, 'Chief')
+  // #873: the envelope names the person who invited ('Alice'); the event names the Bot that carried the
+  // line ('Chief'). This assertion used to pin the transport's name, which was the bug.
+  assert.equal(room.sharedFrom.inviterName, 'Alice')
+  assert.equal(room.sharedFrom.inviterHome, '@alice.home')
   assert.equal(viewerRole(room, actorB, rt.state), 'invited-owner')
   const shown = presentRoom(rt.state.rooms[room.id], actorB, rt.state)
-  assert.match(shown.displayName, /Shared room from/)
+  assert.equal(shown.displayName, 'Shared room from Alice')
   assert.equal(roomVisibleTo(rt.state, actorB, room.id), true)
+
+  // A later envelope naming another inviter renames the same room: the envelope owns the record, and the
+  // room is still the one we already had (no second copy for the same remote room).
+  const renamed = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alicia',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 2,
+  })
+  const again = await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: renamed, localBotId: 'spec-b' }, actorB)
+  assert.equal(again.room.id, room.id)
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterName, 'Alicia')
 
   const line = encodeRoomShare({
     op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
@@ -871,6 +884,87 @@ test('applyInboundRoomShare projects a join with no chat line, then a leave hide
   await rt.applyInboundRoomShare({ fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: leave, localBotId: 'spec-b' }, actorB)
   assert.equal(rt.state.rooms[room.id].hidden, true)
   assert.equal(roomVisibleTo(rt.state, actorB, room.id), false)
+})
+
+test('#873: a room recorded under the transport identity is found again when the envelope names another inviter', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  // Recorded before this fix, when the only identity written down was the transmitting Bot's. The envelope
+  // now names a different home; matching only on the envelope would fork a second room for one remote room.
+  const old = await rt.recordInboundSharedRoom({
+    id: 'before-873',
+    name: 'War room',
+    inviterName: 'Chief',
+    inviterHome: '@transport.home',
+    inviterHandle: '@chief.transport.home',
+    invitedHandle: '@coder.bob.home',
+    localBotId: 'spec-b',
+    remoteRoomId: 'alice-war',
+  }, actorB)
+  const inboundCount = () => Object.values(rt.state.rooms).filter(room => room.origin === 'inbound-share').length
+  const before = inboundCount()
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 2,
+  })
+  const result = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.transport.home', fromHome: '@transport.home', fromName: 'Chief',
+    text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(result.room.id, old.id, 'the room we already had, not a duplicate')
+  assert.equal(inboundCount(), before, 'no second inbound-share room for the same remote room')
+})
+
+test('#873: a line keeps its speaker, never the inviter, while the envelope names the inviter', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 1,
+  })
+  const { room } = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: join, localBotId: 'spec-b',
+  }, actorB)
+  const delivery = { fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', localBotId: 'spec-b' }
+  await rt.applyInboundRoomShare({
+    ...delivery,
+    text: encodeRoomShare({
+      op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+      invitedHandle: '@coder.bob.home', seq: 2, who: 'Bob', authorKind: 'human', authorId: 'bob', text: 'Bob: hello',
+    }),
+  }, actorB)
+  // A line that carries no speaker belongs to the Bot that sent it, not to the person who invited: the room
+  // identity fix must not re-attribute authorship.
+  await rt.applyInboundRoomShare({
+    ...delivery,
+    text: encodeRoomShare({
+      op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+      invitedHandle: '@coder.bob.home', seq: 3, authorKind: 'human', authorId: 'chief', text: 'no speaker',
+    }),
+  }, actorB)
+  const lines = rt.roomHistory(room.id, actorB)
+  assert.equal(lines.find(entry => /hello/.test(entry.text || ''))?.who, 'Bob')
+  assert.equal(lines.find(entry => /no speaker/.test(entry.text || ''))?.who, 'Chief')
+})
+
+test('#873: a share that names nobody anywhere still records the floor name', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'nameless', name: 'War room', inviterHome: '@alice.home',
+    invitedHandle: '@coder.bob.home', seq: 1,
+  })
+  const { room } = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterName, 'a friend')
 })
 
 test('leaveInboundShares hides the projection when the grant is revoked', async (t) => {
