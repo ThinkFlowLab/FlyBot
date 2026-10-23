@@ -610,6 +610,30 @@ test('#773: mint asks for a ticket and builds the link from the room id', async 
   })
 })
 
+test('#846: the invite preview reads the lead the server sends as a member object', async () => {
+  // The real GET /v1/face-rooms/invites/{ticket} names the lead with the member object the rest of
+  // the API uses, and String() of it is `[object Object]`.
+  const lead = async (answer) => {
+    const fetch = async () => new Response(JSON.stringify({
+      room_id: 'frm_1',
+      name: null,
+      status: 'open',
+      lead: answer,
+      member_count: 2,
+      max_members: 8,
+      expires_at: '2026-10-23T10:14:14.970Z',
+    }), { status: 200 })
+    const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch })
+    return (await api.previewInvite(INVITE_TICKET)).lead
+  }
+  const named = await lead({ handle: '@chief.selftesta2.home', display_name: 'Chief', owner_name: 'SelfTest A2' })
+  assert.equal(named, 'Chief (SelfTest A2)', 'the label the member list draws, not the object')
+  assert.doesNotMatch(named, /object Object/i)
+  assert.equal(await lead({ handle: '@coder.bob.home' }), 'Coder', 'an object with only a handle still names a Bot')
+  assert.equal(await lead({}), '', 'an object that names nobody leaves the lead line out')
+  assert.equal(await lead('Chief'), 'Chief', 'a string answer keeps working')
+})
+
 test('#773: joining with a ticket is join-invite, and each refusal keeps its own sentence', async () => {
   const calls = []
   const refusals = { invite_not_found: 404, expired: 410, revoked: 410, room_full: 409, ended: 410, already_member: 409 }

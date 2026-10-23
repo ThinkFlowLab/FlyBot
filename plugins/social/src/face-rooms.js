@@ -262,6 +262,17 @@ export function faceMemberLabel(member) {
   return `${name} (${owner})`
 }
 
+// The invite endpoint names the room lead with the member object the rest of the API uses
+// (`{ handle, display_name, owner_name }`), while older builds and fixtures send the label as a
+// string. Reading the object with the member label rule is what keeps the preview card from
+// printing `object Object` (#846); an object that names nobody leaves the lead line out.
+function faceInviteLead(lead) {
+  if (typeof lead === 'string') return lead ? cleanFaceName(lead) : ''
+  if (!lead || typeof lead !== 'object') return ''
+  const label = faceMemberLabel(lead)
+  return label === 'Bot' ? '' : label
+}
+
 export const FACE_HUMAN_MARK = 'FLYBOT-FACE-HUMAN'
 
 export function encodeFaceHuman(payload = {}) {
@@ -686,7 +697,7 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     return {
       roomId: body?.room_id ?? body?.roomId,
       name: body?.name ? String(body.name) : '',
-      lead: body?.lead ? cleanFaceName(body.lead) : '',
+      lead: faceInviteLead(body?.lead),
       members: Number.isFinite(Number(members)) ? Number(members) : undefined,
       maxMembers: Number.isFinite(Number(maxMembers)) ? Number(maxMembers) : undefined,
       expiresAt: body?.expires_at ?? body?.expiresAt,
