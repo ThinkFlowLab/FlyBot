@@ -80,26 +80,48 @@ function localParts(tz, time) {
 
 const DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?(Z|[+-]\d{2}:\d{2})?$/
 
-// An instant from a date in the report's zone. Two passes settle a zone whose offset
-// itself depends on the instant (a DST boundary).
+const daysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate()
+const pad = value => String(value).padStart(2, '0')
+const cannotRead = (text, why) => die(`cannot read ${JSON.stringify(text)} as a date${why === undefined ? '' : ` (${why})`}`)
+
+// An instant from a date in the report's zone; `endOfDay` turns a bare date into the last
+// millisecond of that day. Two passes settle a zone whose offset itself depends on the
+// instant (a DST boundary). The next day is a calendar step, not 24 hours: the day a zone
+// falls back is 25 hours long, so adding a day in milliseconds stays inside the same one.
 function parseInstant(text, tz, endOfDay) {
   const match = DATE.exec(text)
-  if (match === null) die(`cannot read ${JSON.stringify(text)} as a date (YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS])`)
+  if (match === null) cannotRead(text, 'expected YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS]')
   const [, year, month, day, hour, minute, second, offset] = match
-  const time = `${hour ?? '00'}:${minute ?? '00'}:${second ?? '00'}`
-  if (offset !== undefined) return Date.parse(`${year}-${month}-${day}T${time}${offset}`)
-  const guess = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour ?? 0), Number(minute ?? 0), Number(second ?? 0))
+  const [y, mo, d] = [Number(year), Number(month), Number(day)]
+  const [h, mi, s] = [Number(hour ?? 0), Number(minute ?? 0), Number(second ?? 0)]
+  if (mo < 1 || mo > 12) cannotRead(text, `month ${mo} does not exist`)
+  if (d < 1 || d > daysInMonth(y, mo)) cannotRead(text, `day ${d} does not exist in ${year}-${month}`)
+  if (h > 23 || mi > 59 || s > 59) cannotRead(text, 'time out of range')
+  const start = instantOf(y, mo, d, h, mi, s, offset, tz, text)
+  if (!endOfDay || hour !== undefined) return start
+  const next = new Date(Date.UTC(y, mo - 1, d + 1))
+  const nextStart = instantOf(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0, 0, offset, tz, text)
+  return nextStart - 1
+}
+
+// The epoch of those wall-clock parts: in `offset` when the date states one, in `tz`
+// otherwise. Anything Date.parse refuses — or an offset outside the real range — is an
+// error rather than a NaN: a NaN binds as NULL, matches no row, and prints an empty report.
+function instantOf(y, mo, d, h, mi, s, offset, tz, text) {
+  const date = `${y}-${pad(mo)}-${pad(d)}T${pad(h)}:${pad(mi)}:${pad(s)}`
+  if (offset !== undefined) {
+    const instant = Date.parse(`${date}${offset}`)
+    if (!Number.isFinite(instant)) cannotRead(text, `offset ${offset}`)
+    return instant
+  }
+  const guess = Date.UTC(y, mo - 1, d, h, mi, s)
   let instant = guess
   for (let pass = 0; pass < 2; pass += 1) {
     const local = localParts(tz, instant)
     const asUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second)
     instant = guess - (asUtc - instant)
   }
-  if (endOfDay && hour === undefined) {
-    const next = localParts(tz, instant + 86_400_000)
-    const nextStart = parseInstant(`${next.year}-${String(next.month).padStart(2, '0')}-${String(next.day).padStart(2, '0')}`, tz, false)
-    return nextStart - 1
-  }
+  if (!Number.isFinite(instant)) cannotRead(text, `zone ${tz}`)
   return instant
 }
 
