@@ -1306,11 +1306,11 @@ diff --git a/src/client/index.js b/src/client/index.js
 -    landOn: async (id, last) => {
 -      if (last) await pull().catch(() => {})
 -      const bot = last ? roster.getSnapshot().byId[last.botId] : undefined
-+    landOn: async (id, last, { stay = false } = {}) => {
++    landOn: async (id, last, { stay = false, view = '' } = {}) => {
 +      if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
        setPlain(false)
 -      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id)
-+      const target = landingPart(roster.getSnapshot(), last, id, { stay })
++      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() })
 +      noteNavigation('landOn', target, last?.sessionId)
        expected = target
        ctx.uiWorkspace.openSession(target)
@@ -2300,13 +2300,15 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
        groups.map((group, index) => h(Fragment, { key: index },
          index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
          group.map(([label, Icon, run, hint]) => h('button', {
-@@ -556,7 +556,8 @@ function useLandOnMainBot(roster, useSessions, actions) {
+@@ -556,7 +556,10 @@ function useLandOnMainBot(roster, useSessions, actions) {
        return undefined
      }
      const last = lastBot.current
 -    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last), last ? 0 : 400)
 +    // An emptied view (id '') comes back to the chat it held; a blank New Session the user opened goes to the Main Bot.
-+    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === '' }), last ? 0 : 400)
++    // `view` goes along so a blank chat of the held session is told apart from a New Session the user
++    // opened, and the session list decides whether that chat still exists (#261).
++    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === '', view: id }), last ? 0 : 400)
      return () => clearTimeout(timer)
    }, [mainView, roster])
  }

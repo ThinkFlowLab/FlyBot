@@ -2645,10 +2645,12 @@ function relativeShort(ms) {
 var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
 var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
 var currentPart = (bot) => bot.sessionId ?? bot.id;
-function landingPart(roster, last, mainId, { stay = false } = {}) {
+function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
   const bot = last ? roster.byId[last.botId] : void 0;
   if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
   if (bot && stay) return last.sessionId;
+  const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
+  if (held) return last.sessionId;
   const main = roster.byId[mainId];
   return main ? currentPart(main) : mainId;
 }
@@ -8103,7 +8105,7 @@ function useLandOnMainBot(roster, useSessions, actions) {
       return void 0;
     }
     const last = lastBot.current;
-    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === "" }), last ? 0 : 400);
+    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === "", view: id }), last ? 0 : 400);
     return () => clearTimeout(timer);
   }, [mainView, roster]);
 }
@@ -17542,11 +17544,11 @@ function apply(ctx) {
     },
     // `last` is the Bot conversation the view held before it cleared: when that part
     // was archived for a fresh one, the view goes on in the fresh one.
-    landOn: async (id, last, { stay = false } = {}) => {
+    landOn: async (id, last, { stay = false, view = "" } = {}) => {
       if (last) await pull().catch(() => {
       });
       setPlain(false);
-      const target = landingPart(roster.getSnapshot(), last, id, { stay });
+      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() });
       noteNavigation("landOn", target, last?.sessionId);
       expected = target;
       ctx.uiWorkspace.openSession(target);

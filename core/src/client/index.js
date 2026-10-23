@@ -448,10 +448,10 @@ export function apply(ctx) {
     },
     // `last` is the Bot conversation the view held before it cleared: when that part
     // was archived for a fresh one, the view goes on in the fresh one.
-    landOn: async (id, last, { stay = false } = {}) => {
+    landOn: async (id, last, { stay = false, view = '' } = {}) => {
       if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
       setPlain(false)
-      const target = landingPart(roster.getSnapshot(), last, id, { stay })
+      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() })
       noteNavigation('landOn', target, last?.sessionId)
       expected = target
       ctx.uiWorkspace.openSession(target)

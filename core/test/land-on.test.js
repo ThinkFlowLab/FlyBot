@@ -23,9 +23,26 @@ test('a part archived for a fresh one goes on in the fresh part', () => {
 
 test('a blank New Session the user opened, a removed Bot, or no last chat goes to the Main Bot', () => {
   assert.equal(landingPart(roster, last, 'chief'), 'chief-2', 'not an emptied view')
-  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: true }), 'chief-2', 'the Bot is gone')
+  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: true }), 'chief-2', 'the Bot is gone and its session with it')
   assert.equal(landingPart(roster, null, 'chief', { stay: true }), 'chief-2')
   assert.equal(landingPart({ byId: {} }, null, 'chief'), 'chief', 'no roster entry for the Main Bot: its id')
+})
+
+// #261: the session list, not the roster, says whether that conversation still exists. The roster
+// drops a Bot when a friend revokes the share or removes it, while the chat itself stays open.
+const sessions = { byId: { 'friend-1': { id: 'friend-1' }, 'chief-2': { id: 'chief-2' } } }
+
+test('#261: a roster that lost the Bot keeps the held chat whose session still exists', () => {
+  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: true, sessions }), 'friend-1', 'the view emptied, the chat is still there')
+  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: false, view: 'friend-1', sessions }), 'friend-1', 'a blank chat of that same session stays')
+})
+
+test('#261: a session that is gone, or a New Session the user opened, still goes to the Main Bot', () => {
+  const gone = { byId: { 'chief-2': { id: 'chief-2' } } }
+  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: true, sessions: gone }), 'chief-2', 'the session went with the Bot')
+  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: false, view: 'new-1', sessions }), 'chief-2', 'a New Session is a different destination')
+  assert.equal(landingPart({ byId: { chief } }, last, 'chief', { stay: false, sessions }), 'chief-2', 'no view: not a held chat')
+  assert.equal(landingPart(roster, last, 'chief', { stay: true, sessions }), 'friend-1', 'with the roster intact nothing moves')
 })
 
 test('a navigation with no user activation behind it is noted, with where it went and from where; a click is not', () => {
