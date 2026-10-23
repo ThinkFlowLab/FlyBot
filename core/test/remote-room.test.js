@@ -483,22 +483,35 @@ test('#848: a group with no human participant names its owner and home in the sh
       { kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 0, joinedAt: 1 },
     ],
   }
-  // What plugins/social keeps after `whoami` (#848): the owner-level name and this home's handle.
+  // No human of this owner is in any room, which is the state the issue reports: the only name the
+  // envelope can carry is the owner-level one plugins/social keeps after `whoami` (#848).
+  state.rooms.war.participants = state.rooms.war.participants.filter(p => p.kind !== 'human')
   state.bots['chief-a'].fields = { social: { member: { bot_id: 'm1', handle: '@chief.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
-  // A room that does have a human participant is unchanged: the human still names the inviter.
-  state.rooms.war.participants.push({ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 0, joinedAt: 1 })
   const { rt, sent } = host(t, state)
   await rt.load()
   publish(rt)
   await grantToFriend(rt, 'chief-a')
   await rt.notifyRoomShare(rt.state.rooms.group, { op: 'join', handle: '@coder.bob.home' })
-  await rt.notifyRoomShare(rt.state.rooms.war, { op: 'join', handle: '@coder.bob.home' })
   const joins = sent.filter(msg => msg.via === 'room-share')
-  assert.equal(joins.length, 2)
+  assert.equal(joins.length, 1)
   const packed = parseRoomShare(joins[0].text)
   assert.equal(packed.inviterName, 'Alice', 'the owner who clicked, never `a friend`')
   assert.equal(packed.inviterHome, '@alice.home', 'the inviter Bot home, never an empty string')
-  assert.equal(parseRoomShare(joins[1].text).inviterName, 'Alice', 'a human participant still names the inviter')
+})
+
+test('#848: a room that does have a human participant still names that human', async (t) => {
+  const state = JSON.parse(JSON.stringify(TEAM))
+  state.rooms.war.participants.push({ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 0, joinedAt: 1 })
+  // The Bot's member record says something else on purpose: the person in the room wins.
+  state.bots['chief-a'].fields = { social: { member: { bot_id: 'm1', handle: '@chief.alice.home', home: '@alice.home', ownerName: 'Not Alice' } } }
+  const { rt, sent } = host(t, state)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await rt.notifyRoomShare(rt.state.rooms.war, { op: 'join', handle: '@coder.bob.home' })
+  const joins = sent.filter(msg => msg.via === 'room-share')
+  assert.equal(joins.length, 1)
+  assert.equal(parseRoomShare(joins[0].text).inviterName, 'Alice', 'the human in the room, never the owner-level name')
 })
 
 // #848 acceptance 3: an inbound projection forwards the inviter of the room it mirrors.
