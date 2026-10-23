@@ -133,7 +133,7 @@ async function grantTeam(flybot, grantee = '@bob.home') {
   }
 }
 
-async function team() {
+async function team({ rooms = {} } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'flybot-social-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify({
     version: 1, mainBotIds: ['a'],
@@ -141,7 +141,7 @@ async function team() {
       a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'a', createdAt: 1 },
       b: { id: 'b', name: 'Writer', role: 'Write', sessionId: 'b', createdAt: 2 },
     },
-    rooms: {}, agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0,
+    rooms, agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0,
   }))
   const ctx = fakeContext()
   const received = new Map()
@@ -10050,4 +10050,55 @@ test('#773: joining by ticket on a server without face_room_invites never reache
   assert.deepEqual(JSON.parse(JSON.stringify(joined.value)), { unsupported: true })
   assert.deepEqual(inviteCalls(server), [])
   assert.equal(server.calls.filter(c => /join-invite/.test(String(c.url))).length, 0)
+})
+
+// #883: a room that lives here seated a stranger's Bot through a link (#884). Its room shares go to
+// that Bot from the Bot the link named, under the room's id, and Bot Social's room reach carries them.
+// Nothing else reaches a Bot that is not on the roster: not a plain line, not another room, not another
+// of this home's Bots, not another Bot of the stranger's home.
+const SEATED = {
+  war: {
+    id: 'war', name: 'Launch plan', members: ['a', 'b'], admin: 'a', named: true, log: [], seq: 0, seen: {},
+    participants: [
+      { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', id: 'b', role: 'member', displayName: 'Writer', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', remote: true, id: '@guest.eve.home', handle: '@guest.eve.home', ownerHome: '@eve.home', ownerName: 'Eve', displayName: 'Guest', role: 'member', admittedBy: 'ticket', ticket: 'TktSeatAbCdEfGhIjKlMnO', hostBotId: 'a', joinedSeq: 1, joinedAt: 1 },
+    ],
+  },
+}
+
+test('#883: a room share reaches a seat a link opened, under that room only, and nothing else gets through', async (t) => {
+  const { ctx, home, stop } = await team({ rooms: SEATED })
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.deepEqual(ctx.flybot.rooms.ticketPeers(), [{ from: 'a', to: '@guest.eve.home', scope: 'war', ticket: 'TktSeatAbCdEfGhIjKlMnO' }])
+  const share = 'FLYBOT-ROOM-SHARE\n{"v":1,"op":"line","roomId":"war","text":"hi"}'
+  const sends = () => server.calls.filter(c => c.name === 'send_as_member')
+
+  const ok = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } })
+  assert.equal(ok.action, 'allow', JSON.stringify(ok))
+  assert.equal(sends().length, 1)
+  assert.equal(sends()[0].args.to, '@guest.eve.home')
+  assert.equal(sends()[0].args.room_id, 'war', 'it goes under the room id, which is what Bot Social reaches by')
+  assert.equal(sends()[0].args.from_bot_id, ctx.flybot.scope('social').fields.get('a', 'member').bot_id)
+
+  const refused = [
+    ['a plain line', { from: 'a', to: '@guest.eve.home', text: 'hello there' }],
+    ['another room', { from: 'a', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'other' } }],
+    ['no scope', { from: 'a', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war' } }],
+    ['another Bot of mine', { from: 'b', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
+    ['another Bot of theirs', { from: 'a', to: '@other.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
+  ]
+  for (const [why, msg] of refused) {
+    const out = await ctx.flybot.bot.send(msg)
+    assert.equal(out.action, 'deny', `${why}: ${JSON.stringify(out)}`)
+  }
+  assert.equal(sends().length, 1, 'none of those reached Bot Social')
 })

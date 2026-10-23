@@ -705,3 +705,43 @@ test('#773: joining with a ticket is join-invite, and each refusal keeps its own
   assert.equal(calls.length, before)
 })
 
+
+// #884 / Bot Social #60: a local room's ticket record, on the same token as the face-room routes.
+test('#884: the local room invite calls go to /v1/local-room-invites and keep Bot Social\'s refusal code', async () => {
+  const calls = []
+  const answers = {
+    'POST /v1/local-room-invites': [201, { kind: 'local_room', ticket: 'AbCdEfGhIjKlMnOpQrStUv', url: 'https://s/r/@chief.a.home/AbCdEfGhIjKlMnOpQrStUv', room_id: 'war', expires_at: '2026-10-23T16:00:00.000Z', inviter: { handle: '@chief.a.home', home: '@a.home' } }],
+    'GET /v1/local-room-invites/AbCdEfGhIjKlMnOpQrStUv': [200, { kind: 'local_room', room_id: 'war', name: 'Launch', lead: { handle: '@chief.a.home', display_name: 'Chief', owner_name: 'Ann' }, inviter: { handle: '@chief.a.home', home: '@a.home' }, expires_at: '2026-10-23T16:00:00.000Z', claimed: true, claimer: { home: '@b.home', bots: ['@chief.b.home'], members: [{ handle: '@chief.b.home', display_name: 'Chief', owner_name: 'Ben' }] } }],
+    'POST /v1/local-room-invites/AbCdEfGhIjKlMnOpQrStUv/claim': [200, { kind: 'local_room', room_id: 'war', inviter: { handle: '@chief.a.home', home: '@a.home' }, expires_at: '2026-10-23T16:00:00.000Z', claimed: true, bots: ['@chief.b.home'] }],
+    'DELETE /v1/local-room-invites/AbCdEfGhIjKlMnOpQrStUv': [204, null],
+    'POST /v1/local-room-invites/ZZZZZZZZZZZZZZZZZZZZZZ/claim': [409, { error: { code: 'already_claimed', message: 'this invite was already used by someone else' } }],
+  }
+  const api = createFaceRoomApi({
+    server: 'https://s',
+    token: 'otk_test',
+    fetch: async (url, init) => {
+      const key = `${init.method} ${new URL(url).pathname}`
+      calls.push({ key, body: init.body ? JSON.parse(init.body) : undefined, auth: init.headers.authorization })
+      const [status, body] = answers[key] ?? [404, { error: { code: 'not_found' } }]
+      return new Response(body === null ? null : JSON.stringify(body), { status })
+    },
+  })
+  const minted = await api.localInvites.mint({ roomId: 'war', name: 'Launch', handle: 'chief.a.home' })
+  assert.deepEqual(minted, { ticket: 'AbCdEfGhIjKlMnOpQrStUv', url: 'https://s/r/@chief.a.home/AbCdEfGhIjKlMnOpQrStUv', expiresAt: Date.parse('2026-10-23T16:00:00.000Z'), handle: '@chief.a.home' })
+  assert.deepEqual(calls[0].body, { room_id: 'war', name: 'Launch', bot_handle: '@chief.a.home' })
+  assert.equal(calls[0].auth, 'Bearer otk_test')
+  const seen = await api.localInvites.preview('AbCdEfGhIjKlMnOpQrStUv')
+  assert.equal(seen.roomId, 'war')
+  assert.deepEqual(seen.lead, { handle: '@chief.a.home', name: 'Chief', ownerName: 'Ann' })
+  assert.deepEqual(seen.claimer.bots, ['@chief.b.home'])
+  assert.equal(seen.claimer.home, '@b.home')
+  const claimed = await api.localInvites.claim('AbCdEfGhIjKlMnOpQrStUv', ['chief.b.home'])
+  assert.deepEqual(calls.at(-1).body, { bots: ['@chief.b.home'] })
+  assert.equal(claimed.roomId, 'war')
+  assert.equal(claimed.inviterHandle, '@chief.a.home')
+  assert.deepEqual(claimed.bots, ['@chief.b.home'])
+  await api.localInvites.revoke('AbCdEfGhIjKlMnOpQrStUv')
+  assert.equal(calls.at(-1).key, 'DELETE /v1/local-room-invites/AbCdEfGhIjKlMnOpQrStUv')
+  await assert.rejects(() => api.localInvites.claim('ZZZZZZZZZZZZZZZZZZZZZZ', ['@chief.b.home']), error => error.code === 'already_claimed')
+  await assert.rejects(() => api.localInvites.preview('short'), error => error.code === 'invalid_invite')
+})

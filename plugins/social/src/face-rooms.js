@@ -744,9 +744,64 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     return viewFaceRoom(body)
   }
 
+  // #884 / Bot Social #60: the ticket record of a room that lives in a FlyBot home. Same token as the
+  // face-room routes; refusals keep Bot Social's code on the error.
+  const localBase = `${origin}/v1/local-room-invites`
+  const localTicket = (value) => {
+    const clean = String(value ?? '').trim()
+    return /^[A-Za-z0-9_-]{16,64}$/.test(clean) ? clean : ''
+  }
+  const msOf = value => {
+    const at = typeof value === 'number' ? value : Date.parse(String(value ?? ''))
+    return Number.isFinite(at) ? at : undefined
+  }
+  const localView = body => ({
+    roomId: String(body?.room_id ?? ''),
+    name: body?.name ? String(body.name) : '',
+    lead: body?.lead ? { handle: normHandle(body.lead.handle), name: String(body.lead.display_name ?? ''), ownerName: String(body.lead.owner_name ?? '') } : undefined,
+    inviterHandle: normHandle(body?.inviter?.handle),
+    inviterHome: normHandle(body?.inviter?.home) || undefined,
+    expiresAt: msOf(body?.expires_at),
+    claimed: body?.claimed === true,
+    ...(body?.claimer !== undefined ? {
+      claimer: body.claimer ? {
+        home: normHandle(body.claimer.home) || undefined,
+        bots: (Array.isArray(body.claimer.bots) ? body.claimer.bots : []).map(normHandle).filter(Boolean),
+        members: (Array.isArray(body.claimer.members) ? body.claimer.members : []).map(m => ({ handle: normHandle(m?.handle), display_name: String(m?.display_name ?? ''), owner_name: String(m?.owner_name ?? '') })),
+      } : null,
+    } : {}),
+  })
+  const localInvites = {
+    async mint({ roomId, name, handle } = {}) {
+      const body = await callHttp('POST', localBase, { room_id: String(roomId ?? ''), ...(name ? { name: String(name) } : {}), ...(handle ? { bot_handle: normHandle(handle) } : {}) })
+      const ticket = localTicket(body?.ticket)
+      if (!ticket) throw new FaceRoomError('Bot Social did not return an invite. Try again.', 'invite_failed')
+      return { ticket, url: String(body?.url ?? ''), expiresAt: msOf(body?.expires_at), handle: normHandle(body?.inviter?.handle) || undefined }
+    },
+    // With this token the answer also names who claimed it, for the two owners the ticket binds.
+    async preview(ticket) {
+      const clean = localTicket(ticket)
+      if (!clean) throw new FaceRoomError('That is not an invite link.', 'invalid_invite')
+      return localView(await callHttp('GET', `${localBase}/${encodeURIComponent(clean)}`))
+    },
+    async claim(ticket, bots = []) {
+      const clean = localTicket(ticket)
+      if (!clean) throw new FaceRoomError('That is not an invite link.', 'invalid_invite')
+      const handles = (Array.isArray(bots) ? bots : [bots]).map(normHandle).filter(Boolean)
+      const body = await callHttp('POST', `${localBase}/${encodeURIComponent(clean)}/claim`, { bots: handles })
+      return { ...localView(body), bots: (Array.isArray(body?.bots) ? body.bots : []).map(normHandle).filter(Boolean) }
+    },
+    async revoke(ticket) {
+      const clean = localTicket(ticket)
+      if (!clean) return
+      await callHttp('DELETE', `${localBase}/${encodeURIComponent(clean)}`)
+    },
+  }
+
   return {
     // Bot Social's clock minus ours, as last seen (0 unless the skew is real).
     clockOffsetMs: () => clockOffsetMs,
+    localInvites,
     async join({ code, bots } = {}) {
       const digits = String(code ?? '').trim()
       if (!isJoinCode(digits)) throw mapFaceError({ error: { code: 'invalid_code' } }, 400)

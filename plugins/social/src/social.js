@@ -1432,6 +1432,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     priority: flybot.bot.send.priority?.APPROVAL ?? 900,
     async handle(msg) {
       if (msg.target?.remote !== true || (msg.to?.transport ?? 'bot-social') !== 'bot-social') return undefined
+      // #883: a room share to a seat a link opened (or, from a guest, to the room's inviter) is the
+      // room's own traffic: it passes, under that room's scope only. Anything else to someone off the
+      // roster — a plain line, another Bot, another room — keeps the refusal below.
+      if (ticketPair(msg)) return undefined
       const bot = await sendTarget(msg)
       if (bot === undefined) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
       if (home && typeof msg.from === 'string' && !covered(await friendEntry(bot.home), msg.from)) {
@@ -1535,12 +1539,38 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     return new Error(`${short}. Try again.`)
   }
+  // #883: the one pair a room link opened for this send, if it is one: a room share (`via` room or
+  // room-share, never a plain line), from the exact local Bot, to the exact handle, under the room id
+  // the link names (`meta.scope`). The pairs are the host's (flybot.rooms.ticketPeers), not the text's.
+  function ticketPair(msg) {
+    if (msg.via !== 'room' && msg.via !== 'room-share') return undefined
+    const scope = typeof msg.meta?.scope === 'string' ? msg.meta.scope : ''
+    if (!scope || typeof msg.from !== 'string' || msg.attachments?.length) return undefined
+    const to = norm(msg.target?.handle)
+    return (flybot.rooms?.ticketPeers?.() ?? []).find(peer => peer.from === msg.from && peer.scope === scope && norm(peer.to) === to)
+  }
+  // Sent under the room's id: Bot Social's room reach (the claim's grant pair) carries it, and refuses
+  // it once the link is withdrawn or given back.
+  async function sendTicketShare(msg, pair) {
+    if (!home) throw new Error('Bot Social is not connected on this machine yet')
+    const member = activeMember(msg.from)
+    if (!member) throw new Error(`${flybot.bot.get(msg.from)?.name ?? 'This Bot'} has no Bot Social identity yet`)
+    const to = norm(msg.target.handle)
+    const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to, text: msg.text, room_id: pair.scope })
+      .catch((error) => { if (isPaused(error)) notePaused(to, error); throw error })
+    clearPaused(to)
+    if (sent?.message?.status === 'pending_approval') await autoSendRoomEnvelope(sent)
+    return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
+  }
+
   disposers.push(flybot.transports.add('bot-social', {
     async send(msg) {
       try { return await sendOut(msg) } catch (error) { throw mapSendError(error, msg.target?.handle ?? msg.to?.handle) } finally { dropStaged(msg.attachments) }
     },
   }))
   async function sendOut(msg) {
+      const pair = ticketPair(msg)
+      if (pair) return sendTicketShare(msg, pair)
       const bot = await sendTarget(msg)
       if (bot === undefined) throw new Error(`${msg.target.handle} is no longer reachable`)
       if (home) {
@@ -1684,7 +1714,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // The probe is shared: while one is in flight every caller awaits its result (#234) — an early
   // "not attesting" from a probe that has not finished would render forgeable envelopes as person
   // lines and mark the events seen, with no self-heal once the probe lands.
-  const typed = { supported: false, forbidden: false, mentions: false, presence: false, roles: false, invites: false, probedAt: 0, probeFailed: false, probing: undefined }
+  const typed = { supported: false, forbidden: false, mentions: false, presence: false, roles: false, invites: false, localInvites: false, probedAt: 0, probeFailed: false, probing: undefined }
   const TYPED_RECHECK_MS = 10 * 60_000
   // A probe that got no answer (features() → undefined: an unreachable or pre-platform server) is
   // not a "no": it is retried soon, not held for the recheck window.
@@ -1706,12 +1736,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (features?.includes('presence')) typed.presence = true
       if (features?.includes('member_roles')) typed.roles = true
       if (features?.includes(FACE_INVITE_FEATURE)) typed.invites = true
+      if (features?.includes('local_room_invites')) typed.localInvites = true
       return typed.supported
     } finally {
       typed.probing = undefined
     }
   }
   const canAttest = async () => !typed.forbidden && await serverAttests()
+  // Whether this server keeps a local room's invite tickets (Bot Social #60): the same probe. An older
+  // server, or one that has not answered, gets the friend-only link it had.
+  async function serverLocalInvites() {
+    if (typed.localInvites || !faceApi?.features) return typed.localInvites
+    if (typed.probing) await typed.probing
+    else if (!typed.probedAt || now() - typed.probedAt >= (typed.probeFailed ? TYPED_RETRY_MS : TYPED_RECHECK_MS)) await (typed.probing = probeTypedSupport())
+    return typed.localInvites
+  }
   // Whether this server carries the explicit mention list (Bot Social `mentions`, #293): learned from the
   // same feature probe, shared with it. An older server, or one that has not answered, gets no field,
   // and the other home reads the @ labels from the text as before.
@@ -3574,6 +3613,27 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     })
     return viewHostedFace(room, { status: 'open' })
   }
+  // #884: Bot Social's record of a local room's invite tickets, behind the host's link list and its
+  // seats. A server without `local_room_invites` mints nothing here, so the host keeps its friend-only
+  // link; verify is the same read with this home's token, which names the claimer to the minter only.
+  if (faceApi?.localInvites && typeof flybot.rooms?.serveInvites === 'function') {
+    disposers.push(flybot.rooms.serveInvites({
+      // A link's own Bots get a full identity (polled, so the room's lines arrive), like a Bot invited
+      // to a friend: the owner's click on the link is that consent. A room-only one is promoted.
+      identify: async (ids) => {
+        for (const id of ids) {
+          const bot = flybot.bot.get(id)
+          if (bot) await register(bot, { forInvite: true })
+        }
+      },
+      mint: async spec => ((await serverLocalInvites()) ? faceApi.localInvites.mint(spec) : undefined),
+      preview: ticket => faceApi.localInvites.preview(ticket),
+      claim: (ticket, handles) => faceApi.localInvites.claim(ticket, handles),
+      verify: ticket => faceApi.localInvites.preview(ticket),
+      revoke: ticket => faceApi.localInvites.revoke(ticket),
+    }))
+  }
+
   if (flybot.rooms?.onFaceLine) {
     disposers.push(flybot.rooms.onFaceLine(async (room, line, { mentions = [] } = {}) => {
       const serverId = room?.face?.roomId
