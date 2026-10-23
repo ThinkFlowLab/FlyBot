@@ -3610,6 +3610,52 @@ test('#847: a room-share hold card says what the envelope does, never the envelo
   assert.equal(draft(card(packed)), 'the group says FLYBOT-ROOM-SHARE is a marker')
 })
 
+test('#855: a "}" inside a room-share body is text, not the end of the object', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[], [], ''])
+  const card = (text) => walk(plugin.ChatApproval({
+    item: { id: 'apr-room', kind: 'outbound_message', from: 'Chief', toName: 'Chief (SelfTest B2)', text, summary: text },
+    canDecide: true,
+  }))
+  const draft = (tree) => tree.find(n => n.props.className === 'fs-draft')?.children.join('')
+  const line = (text) => `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'session-e2439f82', name: 'You, Chief, Chief', text, seq: 3 })}`
+
+  assert.equal(draft(card(line('a } b'))), 'Group message to Chief (SelfTest B2): a } b')
+
+  // An absent, truncated or unparsable tail still answers a plain sentence and never throws.
+  assert.equal(draft(card('FLYBOT-ROOM-SHARE')), 'Group update for Chief (SelfTest B2) in a group chat')
+  assert.equal(draft(card('FLYBOT-ROOM-SHARE\n{"v":1,"op":"line"')), 'Group update for Chief (SelfTest B2) in a group chat')
+})
+
+test('#855: an escaped quote in a room-share body does not swallow the closing brace', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[], [], ''])
+  const card = (text) => walk(plugin.ChatApproval({
+    item: { id: 'apr-room', kind: 'outbound_message', from: 'Chief', toName: 'Chief (SelfTest B2)', text, summary: text },
+    canDecide: true,
+  }))
+  const draft = (tree) => tree.find(n => n.props.className === 'fs-draft')?.children.join('')
+  // One quote in the text reaches the wire as `\"`: read as the end of the string, the scan would
+  // then treat the object's own `}` as text and answer nothing.
+  const line = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'session-e2439f82', name: 'You, Chief, Chief', text: 'say "hi', seq: 3 })}`
+  assert.equal(draft(card(line)), 'Group message to Chief (SelfTest B2): say "hi')
+})
+
+test('#855: a malformed face envelope still drops its "To the room:" prefix', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[], [], ''])
+  const card = (text) => walk(plugin.ChatApproval({
+    item: { id: 'apr-face', kind: 'face_room_message', from: 'You', toName: 'the room', text, summary: text },
+    canDecide: true,
+  }))
+  const draft = (tree) => tree.find(n => n.props.className === 'fs-draft')?.children.join('')
+
+  assert.equal(draft(card('To the room: hello FLYBOT-FACE-HUMAN\n{not json')), 'hello')
+  assert.equal(draft(card('To face room: hello FLYBOT-FACE-HUMAN')), 'hello')
+  // Same contract as above: a tail that does not parse is a sentence, not an exception.
+  assert.equal(draft(card('To the room: hello')), 'hello')
+})
+
 test('#159: a face-room hold never shows the FLYBOT-FACE-HUMAN envelope', () => {
   const packed = encodeFaceHuman({ who: 'BoxA', text: 'hello from the owner' })
   const { walk, pluginOf } = loadSocialClient(async () => ({}))

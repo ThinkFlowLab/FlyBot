@@ -1470,7 +1470,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // The owner already approved this very send on a FlyBot card (the host says so, never the
           // text): Bot Social's own hold on it would ask the same question a second time, on a card
           // nobody sees in the Bot's chat, and the reply would never leave (#258). Room lines are
-          // different (the friend's owner decides those), so they keep their hold.
+          // different (the friend's owner decides those), so this branch leaves them alone; a blanket
+          // hold on a room's own envelope is cleared below by autoSendRoomEnvelope (#847).
           if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
           // Auto-send (#417) let this line out without a FlyBot card, so Bot Social's own hold would
           // park it with nobody left to decide it: the owner's switch already answered the same

@@ -1048,15 +1048,26 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits),
         h(FaceQr, { code: digits, at: qrAt, offsetMs: qrOffsetMs }))
     }
-    // The JSON tail of a fenced envelope, by brace matching so a `}` inside a string does not end it
-    // early. An absent or unparsable tail answers undefined and each caller keeps its own fallback.
+    // The JSON tail of a fenced envelope, by brace matching that knows strings and escapes, so a `}`
+    // inside a string — even one right after a `\"` — does not end the object early (#855). An absent
+    // or unparsable tail answers undefined and each caller keeps its own fallback.
     function envelopeTail(raw, at) {
       const start = raw.indexOf('{', at)
       if (start < 0) return undefined
       let depth = 0
+      let inString = false
+      let escaped = false
       for (let i = start; i < raw.length; i += 1) {
-        if (raw[i] === '{') depth += 1
-        else if (raw[i] === '}') {
+        const ch = raw[i]
+        if (inString) {
+          if (escaped) escaped = false
+          else if (ch === '\\') escaped = true
+          else if (ch === '"') inString = false
+          continue
+        }
+        if (ch === '"') inString = true
+        else if (ch === '{') depth += 1
+        else if (ch === '}') {
           depth -= 1
           if (depth > 0) continue
           try { return JSON.parse(raw.slice(start, i + 1)) } catch { return undefined }
@@ -1088,7 +1099,7 @@ window.__ModuleLoader__.load({
       const at = faceAt
       if (at < 0) return stripHoldPrefix(raw)
       const parsed = envelopeTail(raw, at)
-      if (parsed === undefined) return raw.slice(0, at).trim()
+      if (parsed === undefined) return stripHoldPrefix(raw.slice(0, at).trim())
       const text = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
       if (text) return stripHoldPrefix(text)
       return stripHoldPrefix(raw.slice(0, at).trim())
