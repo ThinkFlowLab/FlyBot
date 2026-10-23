@@ -470,6 +470,58 @@ test('fanout to remotes fences peer text and never names unpublished specialists
   assert.doesNotMatch(lines[0].text, /Writer A/)
 })
 
+// #848: a sidebar-made group has no human participant, so the share envelope said "a friend". The
+// owner-level name and home the social plugin stores on the Bot's member record name that person.
+test('#848: a group with no human participant names its owner and home in the share envelope', async (t) => {
+  const state = JSON.parse(JSON.stringify(TEAM))
+  state.rooms.group = {
+    id: 'group', name: 'You, Chief, Chief', members: ['chief-a', 'chief-b'], admin: 'chief-a',
+    named: true, log: [], seq: 0, seen: {},
+    participants: [
+      { kind: 'bot', id: 'chief-a', role: 'admin', displayName: 'Chief A', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', id: 'chief-b', role: 'member', displayName: 'Chief B', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 0, joinedAt: 1 },
+    ],
+  }
+  // What plugins/social keeps after `whoami` (#848): the owner-level name and this home's handle.
+  state.bots['chief-a'].fields = { social: { member: { bot_id: 'm1', handle: '@chief.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  // A room that does have a human participant is unchanged: the human still names the inviter.
+  state.rooms.war.participants.push({ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 0, joinedAt: 1 })
+  const { rt, sent } = host(t, state)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await rt.notifyRoomShare(rt.state.rooms.group, { op: 'join', handle: '@coder.bob.home' })
+  await rt.notifyRoomShare(rt.state.rooms.war, { op: 'join', handle: '@coder.bob.home' })
+  const joins = sent.filter(msg => msg.via === 'room-share')
+  assert.equal(joins.length, 2)
+  const packed = parseRoomShare(joins[0].text)
+  assert.equal(packed.inviterName, 'Alice', 'the owner who clicked, never `a friend`')
+  assert.equal(packed.inviterHome, '@alice.home', 'the inviter Bot home, never an empty string')
+  assert.equal(parseRoomShare(joins[1].text).inviterName, 'Alice', 'a human participant still names the inviter')
+})
+
+// #848 acceptance 3: an inbound projection forwards the inviter of the room it mirrors.
+test('#848: an inbound-share room forwards the original inviter, never the local owner', async (t) => {
+  const state = JSON.parse(JSON.stringify(TEAM))
+  state.rooms.mirror = {
+    id: 'mirror', name: 'War room', members: ['chief-b'], admin: 'chief-b', named: true, log: [], seq: 0, seen: {},
+    origin: 'inbound-share',
+    sharedFrom: { inviterName: 'Alice', inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@chief.bob.home', localBotId: 'chief-b', remoteRoomId: 'alice-war', invitedAt: 1 },
+    participants: [{ kind: 'bot', id: 'chief-b', role: 'admin', displayName: 'Chief B', joinedSeq: 0, joinedAt: 1 }],
+  }
+  // The local owner here is Bob: forwarding with scope 'room' must not relabel A's invite as Bob's.
+  state.bots['chief-b'].fields = { social: { member: { bot_id: 'm2', handle: '@chief.bob.home', home: '@bob.home', ownerName: 'Bob' } } }
+  const { rt, sent } = host(t, state)
+  await rt.load()
+  await rt.fanoutRoomLine(rt.state.rooms.mirror, { seq: 2, who: 'Bob', text: 'hello', authorKind: 'human', authorId: 'owner-1' })
+  const lines = sent.filter(msg => msg.via === 'room')
+  assert.equal(lines.length, 1)
+  const packed = parseRoomShare(lines[0].text)
+  assert.equal(packed.inviterName, 'Alice')
+  assert.equal(packed.inviterHome, '@alice.home')
+})
+
 test('@ menu in a room lists humans, Chiefs and published remotes', () => {
   const roster = indexRoster({
     bots: [

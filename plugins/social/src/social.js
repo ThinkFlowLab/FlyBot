@@ -617,11 +617,39 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // One registration per Bot at a time; a taken handle retries with the Bot's id suffix;
   // a Bot removed while it was registering has its new identity revoked.
   const registering = new Map()
+  // Who this home is, read once from `whoami` (#848): the owner-level name and the home ride on every
+  // share envelope so the invited home names the person who invited it, not `a friend`. A home that
+  // answers neither keeps the old fallback, so this is additive.
+  let ownerIdentity
+  async function meIdentity() {
+    if (ownerIdentity !== undefined) return ownerIdentity
+    if (!client) {
+      ownerIdentity = { ownerName: '', home: '' }
+      return ownerIdentity
+    }
+    try {
+      const me = viewMe(await client.callTool('whoami'))
+      ownerIdentity = { ownerName: me?.ownerName || '', home: me?.home || '' }
+    } catch (error) {
+      warn('whoami not read', error)
+      ownerIdentity = { ownerName: '', home: '' }
+    }
+    return ownerIdentity
+  }
+  // The member record the host reads when it writes a share envelope (#848): `home` and `ownerName`
+  // are what `shareInviter` needs, next to the identity the plugin already keeps.
+  const memberFields = (member, { home: homeHandle = home?.handle, ownerName = '', roomOnly = false } = {}) => ({
+    bot_id: member.bot_id,
+    handle: member.handle,
+    ...(homeHandle ? { home: norm(homeHandle) } : {}),
+    ...(ownerName ? { ownerName } : {}),
+    ...(roomOnly ? { roomOnly: true } : {}),
+  })
   function register(bot, { forFace = false, forInvite = false } = {}) {
     if (!bot) return Promise.resolve(undefined)
     const existing = memberOf(bot.id)
     if (existing) {
-      if (forInvite && existing.roomOnly) flybot.fields.set(bot.id, 'member', { bot_id: existing.bot_id, handle: existing.handle })
+      if (forInvite && existing.roomOnly) flybot.fields.set(bot.id, 'member', memberFields(existing))
       return Promise.resolve(memberOf(bot.id))
     }
     if (!forFace && !forInvite && !hasPersonGrant(bot.id)) return Promise.resolve(undefined)
@@ -655,11 +683,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     // Room-only: face-to-face join of a Bot that has no person-grant. A later grant
     // reuses the handle and drops the flag so leave no longer revokes it.
-    flybot.fields.set(bot.id, 'member', {
-      bot_id: member.bot_id,
-      handle: member.handle,
-      ...(forFace ? { roomOnly: true } : {}),
-    })
+    const me = await meIdentity()
+    flybot.fields.set(bot.id, 'member', memberFields(member, { ownerName: me.ownerName, home: home?.handle || me.home, roomOnly: forFace }))
     // Before the identity joins anything, so the other home's first members[] already carries
     // the owner's look and never paints a handle-seeded one first (#182).
     await syncBotLook(bot).catch(error => warn('look not synced', error))
@@ -668,6 +693,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // Existing identities and granted Bots at startup, once ds-bot's team is loaded.
   async function registerAll() {
     await flybot.ready?.()
+    // Identities saved before #848 carry no `home`/`ownerName`, so the share envelope would still say
+    // `a friend`. Read the home once and fill them in instead of re-registering every Bot.
+    if (!flybot.readOnly?.() && home && flybot.bot.list().some(bot => {
+      const member = memberOf(bot.id)
+      return member && (!member.home || !member.ownerName)
+    })) {
+      const me = await meIdentity()
+      for (const bot of flybot.bot.list()) {
+        const member = memberOf(bot.id)
+        if (!member || (member.home && member.ownerName)) continue
+        if (!(home?.handle || me.home) && !me.ownerName) continue
+        flybot.fields.set(bot.id, 'member', memberFields(member, {
+          home: member.home || home?.handle || me.home,
+          ownerName: member.ownerName || me.ownerName,
+          roomOnly: member.roomOnly === true,
+        }))
+      }
+    }
     // Repair Bots saved with a shared identity: the first keeps it, the others re-register.
     const owners = new Map()
     const repaired = new Set()

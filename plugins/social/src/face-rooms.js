@@ -210,9 +210,27 @@ export function mapFaceError(data, status) {
   return new FaceRoomError(message, code || 'face_room_error', { retryAfter, scope: payload.scope, status, confirmCode })
 }
 
+// The owner-level name and the home this connector belongs to (#848). Bot Social keeps the name on
+// `display_name`; the home is a top-level `home` on a newer server (bot-social#44), else the first
+// connector handle (`@danyang.home`), else the `flybot-home` entry in `bots[]` (`danyang.home`, no
+// `@`). Every whoami-shaped answer goes through this one mapping, so none of it is thrown away.
 export function viewMe(body) {
   if (!body || typeof body !== 'object') return undefined
-  return { autoApproveFaceRooms: body.auto_approve_face_rooms === true }
+  return {
+    autoApproveFaceRooms: body.auto_approve_face_rooms === true,
+    ownerName: cleanFaceName(body.display_name, ''),
+    home: meHome(body),
+  }
+}
+
+function meHome(body) {
+  const listed = typeof body?.home === 'string' ? body.home : body?.home?.handle
+  const identity = Array.isArray(body?.connector_identity?.bot_handles) ? body.connector_identity.bot_handles[0] : ''
+  const homeBot = (Array.isArray(body?.bots) ? body.bots : [])
+    .find(bot => bot?.integration_type === 'flybot-home' || bot?.integrationType === 'flybot-home')
+  const raw = String(listed || identity || homeBot?.handle || '').trim()
+  if (!raw) return ''
+  return raw.startsWith('@') ? raw : `@${raw}`
 }
 
 // Face join of my own Bot is a room-scoped grant. True when this Bot has no person-grant.

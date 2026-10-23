@@ -281,8 +281,36 @@ test('#90: an ungranted Bot (Chief included) is not registered or polled; invite
   await ctx.flybot.grants.set('b', [])
   // Revoking the grant keeps the identity (invite already registered it) but reach() denies.
   await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'hi' }, 'b'), /is not shared with that friend|has not been granted/)
-  assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm2', handle: '@writer.danyang.home' })
+  assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm2', handle: '@writer.danyang.home', home: '@danyang.home' })
   assert.deepEqual(received.get('b') ?? [], [])
+})
+
+test('#848: registration keeps the owner-level name and home the share envelope carries', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  // The live `whoami` shape (#848): the owner name is top-level `display_name`, the home is the
+  // first connector handle, and a server that later sends a top-level `home` wins over both.
+  server.tools.whoami = () => ({
+    kind: 'owner',
+    display_name: 'SelfTest A2',
+    auto_approve_face_rooms: false,
+    connector_identity: { bot_handles: ['@selftesta2.home', '@chief.selftesta2.home'] },
+    bots: [{ handle: 'selftesta2.home', integration_type: 'flybot-home' }],
+  })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const scope = ctx.flybot.scope('social')
+  const member = scope.fields.get('a', 'member')
+  assert.equal(member.ownerName, 'SelfTest A2')
+  assert.equal(member.home, '@selftesta2.home')
+  // An identity saved before this change gains both from the same single `whoami`, with no
+  // re-registration: that is what an existing home runs on the next start.
+  scope.fields.set('b', 'member', { bot_id: 'm-old', handle: '@writer.selftesta2.home' })
+  await social.registerAll()
+  assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm-old', handle: '@writer.selftesta2.home', home: '@selftesta2.home', ownerName: 'SelfTest A2' })
 })
 
 test('any local Bot can message any Bot of a friend home; the send is held, then signed as the member', async (t) => {
@@ -4224,7 +4252,7 @@ test('face-to-face join of an ungranted Bot is room-only', async (t) => {
   assert.equal(status.bots.find(b => b.id === 'b').granted, false)
   const listed = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
   assert.equal(listed.joinedAs.botId, 'a')
-  assert.deepEqual(ctx.flybot.scope('social').fields.get('a', 'member'), { bot_id: 'm1', handle: '@chief.danyang.home', roomOnly: true })
+  assert.deepEqual(ctx.flybot.scope('social').fields.get('a', 'member'), { bot_id: 'm1', handle: '@chief.danyang.home', home: '@danyang.home', roomOnly: true })
 })
 
 test('face-to-face join registers an ungranted Bot for that room only', async (t) => {
@@ -4248,7 +4276,7 @@ test('face-to-face join registers an ungranted Bot for that room only', async (t
   assert.equal(joined.joinedAs.botId, 'b')
   assert.equal(joined.joinedAs.handle, '@writer.danyang.home')
   assert.equal(ctx.flybot.bot.get('b').granted, false, 'join does not grant the Bot to friends')
-  assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm1', handle: '@writer.danyang.home', roomOnly: true })
+  assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm1', handle: '@writer.danyang.home', home: '@danyang.home', roomOnly: true })
   const status = (await call('flybot/social/status', {})).value
   assert.equal(status.bots.find(bot => bot.id === 'b').granted, false)
   assert.equal(status.bots.find(bot => bot.id === 'b').handle, undefined, 'room-only identity is not advertised as reachable')

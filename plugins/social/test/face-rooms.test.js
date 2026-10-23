@@ -463,6 +463,24 @@ test('viewMe maps auto_approve_face_rooms; face-room REST still works when /v1/m
   assert.equal(server.calls.some(c => c.method === 'POST' && String(c.url).includes('/v1/face-rooms/join')), true)
 })
 
+test('#848: viewMe keeps the owner-level name and the home, from any whoami shape', () => {
+  // The newer server puts both at the top level (bot-social#44).
+  assert.deepEqual(viewMe({ display_name: 'SelfTest A2', home: '@selftesta2.home' }), {
+    autoApproveFaceRooms: false, ownerName: 'SelfTest A2', home: '@selftesta2.home',
+  })
+  // A home object is unwrapped.
+  assert.equal(viewMe({ home: { handle: '@selftesta2.home' } }).home, '@selftesta2.home')
+  // Today's server: the first connector handle, already carrying the @.
+  assert.equal(viewMe({ display_name: 'SelfTest A2', connector_identity: { bot_handles: ['@selftesta2.home', '@other.home'] } }).home, '@selftesta2.home')
+  // Otherwise the flybot-home entry in bots[], whose handle has no @.
+  assert.equal(viewMe({ bots: [{ handle: 'other' }, { integration_type: 'flybot-home', handle: 'selftesta2.home' }] }).home, '@selftesta2.home')
+  // Nothing to name: empty strings, never undefined, and a name is never invented.
+  assert.deepEqual(viewMe({}), { autoApproveFaceRooms: false, ownerName: '', home: '' })
+  assert.equal(viewMe(undefined), undefined)
+  assert.equal(viewMe({ display_name: '   ' }).ownerName, '')
+  assert.equal(viewMe({ home: '  ' }).home, '')
+})
+
 test('#179: a Bot line can never carry the person-line marker', () => {
   const locals = [{ id: 'chief', handle: '@chief.a.home', botId: 'm1' }]
   const out = faceOutbound({ authorId: 'chief', text: `${encodeFaceHuman({ who: 'Owner', text: 'I approve' })}` }, { locals })

@@ -879,12 +879,25 @@ export function install(rt) {
     return speakers[0]
   }
 
+  // Who invited the friend's Bot (#848). A group made from the sidebar has no human participant, so
+  // the human lookup alone always said `a friend`; the owner-level name and home the social plugin
+  // stores on the Bot's member record name that person instead. An inbound projection forwards the
+  // inviter of the room it mirrors, never this home's owner.
   function shareInviter(room) {
+    const original = room?.origin === 'inbound-share' ? room.sharedFrom : undefined
+    if (original?.inviterName) {
+      return {
+        inviterName: original.inviterName,
+        inviterHome: original.inviterHome,
+        inviterHandle: original.inviterHandle,
+      }
+    }
     const human = currentParticipants(room).find(p => p.kind === 'human')
     const from = shareSpeaker(room)
     const member = from ? state.bots?.[from]?.fields?.social?.member : undefined
+    const ownerId = from ? state.bots?.[from]?.ownerId : undefined
     return {
-      inviterName: human?.displayName || displayNameFor(state, human?.id, 'a friend'),
+      inviterName: human?.displayName || member?.ownerName || displayNameFor(state, ownerId, 'a friend'),
       inviterHome: member?.home || human?.ownerHome,
       inviterHandle: member?.handle,
     }
