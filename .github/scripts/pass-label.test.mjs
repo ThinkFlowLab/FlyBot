@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PASS_LABEL, namesHead, planBackfill, planComment, verdictOf, historyFrom } from './pass-label.mjs'
+import { PASS_LABEL, STRANGER_MARK, historyFrom, namesHead, planBackfill, planComment, planCommentRun, planStrangerComment, verdictOf } from './pass-label.mjs'
 import { loadPolicy } from './review-gate.mjs'
 
 const repo = join(import.meta.dirname, '..', '..')
@@ -88,4 +88,63 @@ test('#739: a 12-character tip names the head, a different one does not', () => 
   assert.equal(namesHead(head, head.slice(0, 12)), true)
   assert.equal(namesHead('aaaaaaaaaaaa', head), false)
   assert.equal(namesHead(null, head), false)
+})
+
+// #767: the gates refuse a PASS whose `Written-by:` names someone the policy does not list, and the one
+// place that already knew the answer said it in a log line. Now the author is told, once per tip.
+const stranger = (writer = 'Reviewer3') => conclusion('PASS', head, writer)
+
+test('#767: a PASS from someone outside writers leaves one note naming the author, the tip and the file', () => {
+  const plan = planStrangerComment({ pr: 7, body: stranger(), association: 'MEMBER', writers })
+  assert.equal(plan.add, true)
+  assert.equal(plan.writer, 'Reviewer3')
+  assert.equal(plan.tip, head)
+  assert.ok(plan.body.startsWith(`${STRANGER_MARK} tip:${head}`), 'the marker carries the tip')
+  assert.match(plan.body, /Written-by: Reviewer3/)
+  assert.match(plan.body, /\.github\/agent\/review-policy\.json/, 'names the file to edit')
+  assert.match(plan.body, /`writers`/, 'names the key to edit')
+  // The label path is unchanged: no label for this comment, ever.
+  assert.equal(planComment({ pr: 7, body: stranger(), association: 'MEMBER', writers }).add, false)
+})
+
+test('#767: the note is idempotent per tip, and a moved tip may speak once', () => {
+  const first = planStrangerComment({ pr: 7, body: stranger(), association: 'MEMBER', writers })
+  const again = planStrangerComment({ pr: 7, body: stranger(), association: 'MEMBER', writers, comments: [{ body: first.body }] })
+  assert.equal(again.add, false)
+  assert.match(again.reason, /already noted/)
+  const moved = 'f'.repeat(40)
+  const next = planStrangerComment({ pr: 7, body: conclusion('PASS', moved, 'Reviewer3'), association: 'MEMBER', writers, comments: [{ body: first.body }] })
+  assert.equal(next.add, true, 'a note about another tip is not this tip')
+  assert.equal(next.tip, moved)
+})
+
+test('#767: everything that is not a stranger PASS stays silent', () => {
+  const plan = (body, extra = {}) => planStrangerComment({ pr: 7, body, association: 'MEMBER', writers, ...extra })
+  assert.equal(plan(conclusion()).add, false, 'a listed writer labels, and is not told anything')
+  assert.equal(plan(conclusion('INC', head, 'Reviewer3')).add, false, 'an INC is not the case, whoever writes it')
+  assert.equal(plan(conclusion('PASS', head, 'Reviewer3'), { association: 'NONE' }).add, false, 'a passer-by is not a conclusion')
+  assert.equal(plan(`Written-by: Reviewer3\n\nWhat I ran: nothing.`).add, false, 'no verdict line, nothing to say')
+  assert.equal(plan(`Verdict: PASS at ${head}`).add, false, 'a PASS with no Written-by names no one to tell')
+  assert.equal(plan(`Correction from Reviewer: the PASS at ${head} was written by Reviewer3.`).add, false, 'a correction is not a conclusion')
+})
+
+test('#767: one run picks the label, the note, or silence — and never both', () => {
+  const run = (body, extra = {}) => planCommentRun({ pr: 7, body, association: 'MEMBER', writers, ...extra })
+  const labelled = run(conclusion())
+  assert.equal(labelled.write, 'label', 'a listed writer still just labels')
+  const noted = run(stranger())
+  assert.equal(noted.write, 'comment')
+  assert.equal(noted.writer, 'Reviewer3')
+  assert.ok(noted.body.startsWith(`${STRANGER_MARK} tip:${head}`))
+  assert.equal(noted.labelled, undefined, 'the note path never labels')
+  const again = run(stranger(), { comments: () => [{ body: noted.body }] })
+  assert.equal(again.write, 'none', 'a second run on the same tip writes nothing')
+  const silent = run(conclusion('INC', head, 'Reviewer3'))
+  assert.equal(silent.write, 'none')
+  // The thread is read only when a stranger's PASS is really on the table.
+  let reads = 0
+  run(conclusion(), { comments: () => { reads += 1; return [] } })
+  assert.equal(reads, 0, 'a plain PASS does not read the thread')
+  run(stranger(), { comments: () => { reads += 1; return [] } })
+  assert.equal(reads, 1)
 })

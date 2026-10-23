@@ -14,6 +14,13 @@
 //     `parseReport` would happily find the `Verdict:` it quotes;
 //   - the label is only ever added. A later INC or a moved tip does not remove it: it records that a
 //     PASS was given, and `hold` stays the one manual stop.
+//
+// And one rule that keeps the refusal from being silent (#767): a PASS whose `Written-by:` names someone
+// the policy does not list is not a conclusion — `review-gate` and `merge-gate` both refuse it — but the
+// author who wrote it is told nothing, so the pull request simply never reaches the queue. This job knows
+// that answer (it is the same `writers` check the gates make) and throws it away, so it now leaves ONE
+// comment naming the author, the tip and the file to fix, and adds no label. The comment carries a marker
+// per tip, so a second run adds nothing and a moved tip may speak once about the new one.
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -21,6 +28,8 @@ import { parseReport, loadPolicy } from './review-gate.mjs'
 
 export const PASS_LABEL = 'pass'
 export const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
+// The marker that makes the note idempotent: one per tip, so a second run on the same tip adds nothing.
+export const STRANGER_MARK = '<!-- pass-label: writer-not-listed -->'
 const POLICY = '.github/agent/review-policy.json'
 const SHORT = 12
 
@@ -50,6 +59,54 @@ export function planComment({ pr, body, association, writers, labels = [] }) {
   if (!report) return { add: false, reason: 'not a PASS by a writer the policy lists' }
   if (labels.map((l) => String(l.name ?? l).toLowerCase()).includes(PASS_LABEL)) return { add: false, reason: `already labelled ${PASS_LABEL}` }
   return { add: true, pr, tip: report.tip }
+}
+
+// The gates' refusal seen from the other side: a PASS at a tip whose `Written-by:` names someone the
+// policy does not list. `verdictOf` answers `null` for it — that is right for a label and useless for the
+// author — so this keeps the stranger's PASS as a value of its own. A missing `Written-by:` line is not
+// this case: nothing names a Bot to tell, and the gates' message already covers it.
+export function strangerPassOf(body, { writers = [], association } = {}) {
+  if (!ASSOCIATIONS.has(String(association ?? '').toUpperCase())) return null
+  if (/^Correction\b/i.test(firstLine(body))) return null
+  const report = parseReport(body)
+  if (report.verdict !== 'PASS' || !report.tip || !report.writer) return null
+  const listed = new Set(writers.map((w) => String(w).toLowerCase()))
+  if (listed.has(String(report.writer).toLowerCase())) return null
+  return { writer: report.writer, tip: report.tip }
+}
+
+// The note for one stranger's PASS: who wrote it, which tip it names, and the one edit that makes the
+// next one count. It never claims the pull request is unmergeable — a listed writer's PASS still is.
+export function strangerCommentBody({ writer, tip }) {
+  return `${STRANGER_MARK} tip:${tip}
+A PASS at \`${tip}\` was posted with \`Written-by: ${writer}\`, and **${writer} is not in the \`writers\` list** of \`.github/agent/review-policy.json\`, so this conclusion does not count: \`review-gate\` and \`merge-gate\` both refuse it, and a T2/T3 pull request waits for a PASS that cannot arrive while every other check is green.
+
+What makes the next one count: add the name to \`writers\` in \`.github/agent/review-policy.json\`. That file is T3 — the edit goes with the roster test and the owner's approval, not into the reviewing pull request.
+
+This note is left once per tip by the \`pass\` label job, which only records verdicts: it adds no label here and never turns this pull request red.
+`
+}
+
+// One note per tip, and no note at all unless this really is a stranger's PASS.
+export function planStrangerComment({ pr, body, association, writers, comments = [] }) {
+  const stranger = strangerPassOf(body, { writers, association })
+  if (!stranger) return { add: false, reason: 'not a PASS from a writer the policy does not list' }
+  const marker = `${STRANGER_MARK} tip:${stranger.tip}`
+  if (comments.some((comment) => String(comment?.body ?? comment ?? '').includes(marker))) {
+    return { add: false, reason: `already noted at ${stranger.tip}` }
+  }
+  return { add: true, pr, tip: stranger.tip, writer: stranger.writer, body: strangerCommentBody(stranger) }
+}
+
+// What one `--comment` run does, before any write: the label, else the note, else nothing. `comments`
+// is a thunk so the thread is read only when a stranger's PASS actually needs it.
+export function planCommentRun({ pr, body, association, writers, labels = [], comments = () => [] }) {
+  const label = planComment({ pr, body, association, writers, labels })
+  if (label.add) return { write: 'label', pr, tip: label.tip }
+  if (!strangerPassOf(body, { writers, association })) return { write: 'none', reason: label.reason }
+  const note = planStrangerComment({ pr, body, association, writers, comments: comments() })
+  if (note.add) return { write: 'comment', pr, tip: note.tip, writer: note.writer, body: note.body }
+  return { write: 'none', reason: `${label.reason}; ${note.reason}` }
 }
 
 // Merged pull requests whose history carries a PASS at the head that merged, and which do not have the
@@ -95,12 +152,26 @@ export function main({ gh = realGh, env = process.env } = {}) {
   if (!repo) throw new Error('set GH_REPO')
   const writers = loadPolicy(POLICY).writers ?? []
   const add = (pr) => gh('api', '-X', 'POST', `repos/${repo}/issues/${pr}/labels`, '-f', `labels[]=${PASS_LABEL}`)
+  const comment = (pr, text) => gh('api', '-X', 'POST', `repos/${repo}/issues/${pr}/comments`, '-f', `body=${text}`)
 
   if (process.argv.includes('--comment')) {
     const pr = Number(env.PR)
     if (!pr) throw new Error('set PR')
-    const plan = planComment({ pr, body: env.COMMENT_BODY ?? '', association: env.ASSOCIATION, writers })
-    if (!plan.add) {
+    const plan = planCommentRun({
+      pr,
+      body: env.COMMENT_BODY ?? '',
+      association: env.ASSOCIATION,
+      writers,
+      comments: () => list(gh, `repos/${repo}/issues/${pr}/comments?per_page=100`),
+    })
+    if (plan.write === 'comment') {
+      // The one refusal worth a comment (#767): the gates refuse a stranger's PASS too, and until now
+      // only a log line said so. It is left once per tip, and no label is ever added for it.
+      comment(pr, plan.body)
+      console.log(`pass-label: #${pr} told that ${plan.writer} is not in writers (PASS at ${plan.tip})`)
+      return { ok: true, added: [], noted: [pr] }
+    }
+    if (plan.write === 'none') {
       console.log(`pass-label: #${pr} not labelled — ${plan.reason}`)
       return { ok: true, added: [] }
     }
