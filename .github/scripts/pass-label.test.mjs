@@ -148,3 +148,16 @@ test('#767: one run picks the label, the note, or silence — and never both', (
   run(stranger(), { comments: () => { reads += 1; return [] } })
   assert.equal(reads, 1)
 })
+
+test('#767: one note per commit, whether the tip is written 12 characters or 40', () => {
+  const long = 'a'.repeat(40)
+  assert.equal(long.length, 40)
+  const short = long.slice(0, 12)
+  const first = planStrangerComment({ pr: 7, body: conclusion('PASS', short, 'Reviewer3'), association: 'MEMBER', writers })
+  assert.equal(first.add, true)
+  const again = planStrangerComment({ pr: 7, body: conclusion('PASS', long, 'Reviewer3'), association: 'MEMBER', writers, comments: [{ body: first.body }] })
+  assert.equal(again.add, false, 'the same commit named two ways is one note')
+  const other = 'b'.repeat(40)
+  const next = planStrangerComment({ pr: 7, body: conclusion('PASS', other, 'Reviewer3'), association: 'MEMBER', writers, comments: [{ body: first.body }] })
+  assert.equal(next.add, true, 'a different commit may speak once')
+})

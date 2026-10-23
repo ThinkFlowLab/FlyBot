@@ -30,6 +30,7 @@ export const PASS_LABEL = 'pass'
 export const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 // The marker that makes the note idempotent: one per tip, so a second run on the same tip adds nothing.
 export const STRANGER_MARK = '<!-- pass-label: writer-not-listed -->'
+const STRANGER_NOTE = /<!-- pass-label: writer-not-listed -->\s+tip:([0-9a-f]{7,40})/i
 const POLICY = '.github/agent/review-policy.json'
 const SHORT = 12
 
@@ -91,10 +92,13 @@ This note is left once per tip by the \`pass\` label job, which only records ver
 export function planStrangerComment({ pr, body, association, writers, comments = [] }) {
   const stranger = strangerPassOf(body, { writers, association })
   if (!stranger) return { add: false, reason: 'not a PASS from a writer the policy does not list' }
-  const marker = `${STRANGER_MARK} tip:${stranger.tip}`
-  if (comments.some((comment) => String(comment?.body ?? comment ?? '').includes(marker))) {
-    return { add: false, reason: `already noted at ${stranger.tip}` }
-  }
+  // The same commit may be named by a 12-character tip in one run and by 40 in the next: compare the
+  // tips the way `namesHead` compares a report's tip with a head, not as whole strings.
+  const noted = comments.some((comment) => {
+    const match = STRANGER_NOTE.exec(String(comment?.body ?? comment ?? ''))
+    return match !== null && namesHead(match[1], stranger.tip)
+  })
+  if (noted) return { add: false, reason: `already noted at ${stranger.tip}` }
   return { add: true, pr, tip: stranger.tip, writer: stranger.writer, body: strangerCommentBody(stranger) }
 }
 
