@@ -908,31 +908,11 @@ window.__ModuleLoader__.load({
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, ROOM_NAME_MAX) || fallback
-    // A count is only what reads as one (#823): `Number('')` is 0, which would draw an unknown room
-    // as empty, so an empty or non-numeric string is "not sent", like null.
-    const roomCount = (value) => {
-      if (typeof value === 'number') return Number.isFinite(value) ? value : NaN
-      if (typeof value !== 'string') return NaN
-      const text = value.trim()
-      if (!text) return NaN
-      const count = Number(text)
-      return Number.isFinite(count) ? count : NaN
-    }
-    // What the card can honestly say, and nothing else: a room with no field worth showing is no
-    // card at all, so the join below runs as before.
-    const faceInvitePreview = (seen) => {
-      if (!seen || typeof seen !== 'object' || seen.unsupported === true) return null
-      const name = cleanRoomName(seen.name)
-      const lead = cleanRoomName(seen.lead)
-      const members = roomCount(seen.members)
-      const maxMembers = roomCount(seen.maxMembers)
-      const people = Number.isFinite(members) && Number.isFinite(maxMembers)
-        ? `${members} / ${maxMembers} in the room`
-        : Number.isFinite(members) ? `${members} in the room` : ''
-      const expiresAt = typeof seen.expiresAt === 'string' ? seen.expiresAt : ''
-      if (!name && !lead && !people && !expiresAt) return null
-      return { name, lead, people, expiresAt, clockOffsetMs: Number(seen.clockOffsetMs) || 0 }
-    }
+    // The card is core's, not this plugin's (#876): `invitePreviewOf` and `RoomInvitePreview` are
+    // registered by ds-bot's client bundle, so the face-room paste flow and the member-invite dialog
+    // draw one tree of elements. This file keeps no copy of the markup.
+    const invitePreview = (seen) => globalThis.__flybot__?.invitePreviewOf?.(seen) ?? null
+    const InvitePreviewCard = (props) => h(globalThis.__flybot__?.RoomInvitePreview ?? (() => null), { h, ...props })
     const qrPath = (modules) => {
       const parts = []
       for (let y = 0; y < modules.length; y += 1) {
@@ -1418,7 +1398,7 @@ window.__ModuleLoader__.load({
           setInvite({ link: text, status: { tone: 'error', text: INVITE_UNSUPPORTED } })
           return
         }
-        const card = faceInvitePreview(seen)
+        const card = invitePreview(seen)
         if (card) {
           setInvite({ link: text, status: null, preview: { ...card, ticket } })
           return
@@ -1540,20 +1520,11 @@ window.__ModuleLoader__.load({
               invite.status ? h('div', {
                 className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-link-status', 'data-tone': invite.status.tone, role: 'status',
               }, invite.status.text) : null),
-            preview ? h('div', { className: 'fs-preview', 'data-flybot': 'face-link-preview', role: 'status' },
-              h('div', { className: 'fs-preview-name', 'data-flybot': 'face-link-preview-name' }, preview.name || 'Face-to-face room'),
-              preview.lead ? h('div', { className: 'fs-preview-meta', 'data-flybot': 'face-link-preview-lead' }, `Lead: ${preview.lead}`) : null,
-              preview.people ? h('div', { className: 'fs-preview-meta', 'data-flybot': 'face-link-preview-members' }, preview.people) : null,
-              preview.expiresAt ? h('div', { className: 'fs-preview-meta', 'data-flybot': 'face-link-preview-expiry' }, countdown(preview.expiresAt, preview.clockOffsetMs)) : null,
-              h('div', { className: 'fs-preview-foot' },
-                h('button', {
-                  type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-link-preview-clear',
-                  disabled: !!busy, onClick: clearInvite,
-                }, 'Clear'),
-                h('button', {
-                  type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'face-link-preview-join',
-                  disabled: !!busy, onClick: () => joinTicket(preview.link ?? invite.link, preview.ticket),
-                }, 'Join'))) : null,
+            preview ? h(InvitePreviewCard, {
+              preview, busy, kind: 'face-link-preview',
+              onClear: clearInvite,
+              onJoin: () => joinTicket(preview.link ?? invite.link, preview.ticket),
+            }) : null,
             h('div', { className: 'fs-scan-row' },
               h('button', {
                 type: 'button', className: 'fs-btn', 'data-flybot': 'face-scan', disabled: !!busy,

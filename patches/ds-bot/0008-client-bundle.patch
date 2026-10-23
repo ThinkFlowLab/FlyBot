@@ -1089,7 +1089,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,162 +1242,526 @@ function maskOf(shape) {
+@@ -1242,162 +1242,610 @@ function maskOf(shape) {
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1439,6 +1439,87 @@ diff --git a/client.js b/client.js
 +  );
 +}
 +
++// src/client/room-invite-preview.js
++var INVITE_PREVIEW_NAME_MAX = 60;
++function stripInviteMarkers(text) {
++  let out = String(text ?? "");
++  for (let previous; previous !== out; ) {
++    previous = out;
++    out = out.replace(/<\/?\s*untrusted-(?:file|message)/gi, "");
++  }
++  return out;
++}
++function cleanInviteName(value, fallback = "") {
++  return stripInviteMarkers(value).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"<>`@]/g, "").replace(/\s+/g, " ").trim().slice(0, INVITE_PREVIEW_NAME_MAX) || fallback;
++}
++function inviteMemberCount(value) {
++  if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
++  if (typeof value !== "string") return NaN;
++  const text = value.trim();
++  if (!text) return NaN;
++  const count = Number(text);
++  return Number.isFinite(count) ? count : NaN;
++}
++function invitePreviewOf(seen) {
++  if (!seen || typeof seen !== "object" || seen.unsupported === true) return null;
++  const name = cleanInviteName(seen.name);
++  const lead = cleanInviteName(seen.lead);
++  const members = inviteMemberCount(seen.members);
++  const maxMembers = inviteMemberCount(seen.maxMembers);
++  const people2 = Number.isFinite(members) && Number.isFinite(maxMembers) ? `${members} / ${maxMembers} in the room` : Number.isFinite(members) ? `${members} in the room` : "";
++  const expiresAt = typeof seen.expiresAt === "string" ? seen.expiresAt : "";
++  if (!name && !lead && !people2 && !expiresAt) return null;
++  return { name, lead, people: people2, expiresAt, clockOffsetMs: Number(seen.clockOffsetMs) || 0 };
++}
++function inviteCountdown(expiresAt, offsetMs = 0) {
++  const at = Date.parse(expiresAt) - (Number(offsetMs) || 0);
++  if (!Number.isFinite(at)) return "Open while the room is open";
++  const left = Math.max(0, at - Date.now());
++  if (left <= 0) return "This link has expired";
++  const total = Math.max(1, Math.ceil(left / 1e3));
++  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
++}
++function RoomInvitePreview({ h: h42, preview, kind = "face-link-preview", busy = false, joinLabel = "Join", clearLabel = "Clear", showClear = true, onJoin, onClear, now } = {}) {
++  if (!preview || typeof h42 !== "function") return null;
++  const at = `${kind}`;
++  const child = (name) => `${at}-${name}`;
++  const countdown = now === void 0 ? inviteCountdown(preview.expiresAt, preview.clockOffsetMs) : inviteCountdownAt(preview.expiresAt, preview.clockOffsetMs, now);
++  return h42(
++    "div",
++    { className: "fs-preview", "data-flybot": at, role: "status" },
++    h42("div", { className: "fs-preview-name", "data-flybot": child("name") }, preview.name || "Face-to-face room"),
++    preview.lead ? h42("div", { className: "fs-preview-meta", "data-flybot": child("lead") }, `Lead: ${preview.lead}`) : null,
++    preview.people ? h42("div", { className: "fs-preview-meta", "data-flybot": child("members") }, preview.people) : null,
++    preview.expiresAt ? h42("div", { className: "fs-preview-meta", "data-flybot": child("expiry") }, countdown) : null,
++    onJoin || onClear ? h42(
++      "div",
++      { className: "fs-preview-foot", "data-flybot": child("foot") },
++      showClear && onClear ? h42("button", {
++        type: "button",
++        className: "fs-btn fs-btn-sm",
++        "data-flybot": child("clear"),
++        disabled: !!busy,
++        onClick: onClear
++      }, clearLabel) : null,
++      onJoin ? h42("button", {
++        type: "button",
++        className: "fs-btn fs-btn-sm fs-btn-primary",
++        "data-flybot": child("join"),
++        disabled: !!busy,
++        onClick: onJoin
++      }, joinLabel) : null
++    ) : null
++  );
++}
++function inviteCountdownAt(expiresAt, offsetMs, now) {
++  const at = Date.parse(expiresAt) - (Number(offsetMs) || 0);
++  if (!Number.isFinite(at)) return "Open while the room is open";
++  const left = Math.max(0, at - Number(now || 0));
++  if (left <= 0) return "This link has expired";
++  const total = Math.max(1, Math.ceil(left / 1e3));
++  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
++}
++
 +// src/client/approval-claims.js
 +var claims = /* @__PURE__ */ new Map();
 +var claimListeners = /* @__PURE__ */ new Set();
@@ -1487,6 +1568,9 @@ diff --git a/client.js b/client.js
 +  globalThis.__flybot__.BotMark ??= BotMark;
 +  globalThis.__flybot__.BotAvatar ??= BotAvatar;
 +  globalThis.__flybot__.lookOf ??= lookOf;
++  globalThis.__flybot__.RoomInvitePreview ??= RoomInvitePreview;
++  globalThis.__flybot__.invitePreviewOf ??= invitePreviewOf;
++  globalThis.__flybot__.inviteCountdown ??= inviteCountdown;
 +  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner };
 +  return slots;
 +}
@@ -1898,7 +1982,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,47 +1624,226 @@ function usageOf(list, ids) {
+@@ -1624,33 +1624,212 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -1967,17 +2051,6 @@ diff --git a/client.js b/client.js
 -var QUICK_EDGES = { lead: springEasing(900, 51), trail: springEasing(400, 34) };
 -var spring = (curve, ...properties) => properties.map((property) => `${property} ${curve.duration}ms ${curve.easing}`).join(",");
 -function liveSprings(apply2) {
--  const values = /* @__PURE__ */ new Map();
--  let frame = 0;
--  let last = 0;
--  const read = () => Object.fromEntries([...values].map(([key, value]) => [key, value.x]));
--  const step = (now) => {
--    const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
--    last = now;
--    const steps = Math.ceil(dt * 240);
--    const h34 = dt / steps;
--    let moving = false;
--    for (const value of values.values()) {
 +var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 +var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
 +function indexRoster(value) {
@@ -2143,17 +2216,17 @@ diff --git a/client.js b/client.js
 +var QUICK_EDGES = { lead: springEasing(900, 51), trail: springEasing(400, 34) };
 +var spring = (curve, ...properties) => properties.map((property) => `${property} ${curve.duration}ms ${curve.easing}`).join(",");
 +function liveSprings(apply2) {
-+  const values = /* @__PURE__ */ new Map();
-+  let frame = 0;
-+  let last = 0;
-+  const read = () => Object.fromEntries([...values].map(([key, value]) => [key, value.x]));
-+  const step = (now) => {
-+    const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
-+    last = now;
-+    const steps = Math.ceil(dt * 240);
+   const values = /* @__PURE__ */ new Map();
+   let frame = 0;
+   let last = 0;
+@@ -1659,12 +1659,12 @@ function liveSprings(apply2) {
+     const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
+     last = now;
+     const steps = Math.ceil(dt * 240);
+-    const h34 = dt / steps;
 +    const h42 = dt / steps;
-+    let moving = false;
-+    for (const value of values.values()) {
+     let moving = false;
+     for (const value of values.values()) {
        for (let index = 0; index < steps; index += 1) {
 -        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h34;
 -        value.x += value.v * h34;
@@ -2593,10 +2666,6 @@ diff --git a/client.js b/client.js
 -    onAnimationEnd: poked ? (event) => {
 -      if (/^bt-poke/.test(event.animationName)) setPoked(false);
 -    } : void 0
--  };
--  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
--  const box = shapeOf(look.shape).size;
--  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -2630,13 +2699,7 @@ diff --git a/client.js b/client.js
 +  if (people2.length) bits.push(people2.join(", "));
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
- }
--function StarIcon({ size = 8 }) {
--  return (0, import_react2.createElement)(
--    "svg",
--    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
--  );
++}
 +
 +// src/client/brand.js
 +var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
@@ -2662,9 +2725,7 @@ diff --git a/client.js b/client.js
 +  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
 +  if (room2) return room2.displayName || (room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : room2.name) || "";
 +  return bot?.name || "";
- }
--function AdminStar() {
--  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
++}
 +function installTabTitle(sessions, roster, doc = globalThis.document) {
 +  if (!doc || !sessions || !roster) return () => {
 +  };
@@ -2681,11 +2742,59 @@ diff --git a/client.js b/client.js
 +  return () => {
 +    offSessions?.();
 +    offRoster?.();
+   };
+-  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+-  const box = shapeOf(look.shape).size;
+-  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
+ }
+-function StarIcon({ size = 8 }) {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
+-  );
++function installBrandChrome() {
++  if (typeof document === "undefined") return () => {
 +  };
++  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
++  let link = document.getElementById("flybot-favicon");
++  if (!link) {
++    link = document.createElement("link");
++    link.id = "flybot-favicon";
++    link.rel = "icon";
++    link.type = "image/svg+xml";
++    document.head.appendChild(link);
++  }
++  link.href = href;
++  const retitle = () => {
++    const next = brandTitle(document.title);
++    if (next !== document.title) document.title = next;
++  };
++  retitle();
++  const observer = typeof MutationObserver === "function" ? new MutationObserver(retitle) : null;
++  const node = document.querySelector("title") ?? document.head;
++  observer?.observe(node, { childList: true, characterData: true, subtree: true });
++  return () => {
++    observer?.disconnect();
++    link.remove();
++  };
+ }
+-function AdminStar() {
+-  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
++
++// src/client/icons.js
++var import_react4 = require("react");
++function PlusIcon() {
++  return (0, import_react4.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react4.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
  }
 -function MainStar() {
 -  return (0, import_react2.createElement)(
--    "svg",
++function SearchIcon() {
++  return (0, import_react4.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react4.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react4.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
++}
++function PeopleIcon() {
++  return (0, import_react4.createElement)(
+     "svg",
 -    { viewBox: "0 0 20 20", "aria-hidden": true },
 -    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
 -  );
@@ -2763,52 +2872,24 @@ diff --git a/client.js b/client.js
 -      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 -    })
 -  );
-+function installBrandChrome() {
-+  if (typeof document === "undefined") return () => {
-+  };
-+  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
-+  let link = document.getElementById("flybot-favicon");
-+  if (!link) {
-+    link = document.createElement("link");
-+    link.id = "flybot-favicon";
-+    link.rel = "icon";
-+    link.type = "image/svg+xml";
-+    document.head.appendChild(link);
-+  }
-+  link.href = href;
-+  const retitle = () => {
-+    const next = brandTitle(document.title);
-+    if (next !== document.title) document.title = next;
-+  };
-+  retitle();
-+  const observer = typeof MutationObserver === "function" ? new MutationObserver(retitle) : null;
-+  const node = document.querySelector("title") ?? document.head;
-+  observer?.observe(node, { childList: true, characterData: true, subtree: true });
-+  return () => {
-+    observer?.disconnect();
-+    link.remove();
-+  };
- }
- 
- // src/client/icons.js
+-}
+-
+-// src/client/icons.js
 -var import_react3 = require("react");
-+var import_react4 = require("react");
- function PlusIcon() {
+-function PlusIcon() {
 -  return (0, import_react3.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
-+  return (0, import_react4.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react4.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
- }
- function SearchIcon() {
+-}
+-function SearchIcon() {
 -  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react3.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
-+  return (0, import_react4.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react4.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react4.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
- }
- function PeopleIcon() {
+-}
+-function PeopleIcon() {
 -  return (0, import_react3.createElement)(
-+  return (0, import_react4.createElement)(
-     "svg",
-     { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
+-    "svg",
+-    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
 -    (0, import_react3.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
 -    (0, import_react3.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
 -    (0, import_react3.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
++    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react4.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
 +    (0, import_react4.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
 +    (0, import_react4.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
@@ -3907,7 +3988,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,230 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
+@@ -3940,79 +3940,248 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
          whole: true
        });
      }),
@@ -4102,8 +4183,14 @@ diff --git a/client.js b/client.js
 -    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 +    (0, import_react8.createElement)(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react8.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
-+  );
-+}
+   );
+ }
+-function GroupEvent({ prefix, room: room2, name, roster, actions }) {
+-  return (0, import_react6.createElement)(
+-    "div",
+-    { className: "bt-event" },
+-    (0, import_react6.createElement)("span", null, prefix),
+-    room2 ? (0, import_react6.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react6.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react6.createElement)("span", null, name) : null
 +function FirstContact({ source, roster, sessionId }) {
 +  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
 +  const who = person || remoteSpeaker(source, roster).name;
@@ -4116,8 +4203,17 @@ diff --git a/client.js b/client.js
 +    { width: 10, height: 10, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react8.createElement)("circle", { cx: 12, cy: 12, r: 9 }),
 +    (0, import_react8.createElement)("path", { d: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" })
-+  );
-+}
+   );
+ }
+-function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
+-  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
+-  const self = roster.byId[sessionId];
+-  const team = /^(team|团队|共享)$/i.test(String(scope ?? "").trim());
+-  const other = team || !scope ? void 0 : findBot(scope);
+-  const target = other && other.id !== self?.id ? other : self;
+-  if (!target) return null;
+-  const label = team ? t("Team memory updated") : target === self ? t("Memory updated") : t("Updated {name}'s memory", { name: target.name });
+-  return (0, import_react6.createElement)(
 +function RemoteFiles({ files, plugin, botId }) {
 +  const [busy, setBusy] = (0, import_react8.useState)("");
 +  const [error, setError] = (0, import_react8.useState)("");
@@ -4147,25 +4243,24 @@ diff --git a/client.js b/client.js
 +      `📎 ${file.name} · ${fileSize(file.size)}`
 +    )),
 +    error ? (0, import_react8.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
-   );
- }
- function GroupEvent({ prefix, room: room2, name, roster, actions }) {
--  return (0, import_react6.createElement)(
++  );
++}
++function GroupEvent({ prefix, room: room2, name, roster, actions }) {
 +  return (0, import_react8.createElement)(
-     "div",
-     { className: "bt-event" },
--    (0, import_react6.createElement)("span", null, prefix),
--    room2 ? (0, import_react6.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react6.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react6.createElement)("span", null, name) : null
++    "div",
++    { className: "bt-event" },
 +    (0, import_react8.createElement)("span", null, prefix),
 +    room2 ? (0, import_react8.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react8.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react8.createElement)("span", null, name) : null
-   );
- }
- function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
-@@ -4005,14 +4005,14 @@ function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
-   const target = other && other.id !== self?.id ? other : self;
-   if (!target) return null;
-   const label = team ? t("Team memory updated") : target === self ? t("Memory updated") : t("Updated {name}'s memory", { name: target.name });
--  return (0, import_react6.createElement)(
++  );
++}
++function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
++  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
++  const self = roster.byId[sessionId];
++  const team = /^(team|团队|共享)$/i.test(String(scope ?? "").trim());
++  const other = team || !scope ? void 0 : findBot(scope);
++  const target = other && other.id !== self?.id ? other : self;
++  if (!target) return null;
++  const label = team ? t("Team memory updated") : target === self ? t("Memory updated") : t("Updated {name}'s memory", { name: target.name });
 +  return (0, import_react8.createElement)(
      "div",
      { className: "bt-event" },

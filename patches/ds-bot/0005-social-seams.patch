@@ -567,7 +567,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(room)
          }
          case 'update-room': {
-@@ -175,8 +175,28 @@ export function install(rt) {
+@@ -175,8 +175,48 @@ export function install(rt) {
              add: Array.isArray(body.add) ? body.add : undefined,
              remove: Array.isArray(body.remove) ? body.remove : undefined,
              workDir: body.workDir,
@@ -595,6 +595,26 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +            displayName: body.displayName,
 +          }, actor)
 +          return ok(line)
++        }
++        // #876: the room's own link. Reading it is what the Members card shows (copy and the
++        // countdown); minting replaces the live ticket, withdrawing stops answering at once.
++        case 'room-invite': {
++          await rt.load()
++          const invite = rt.localInviteOf(String(body.roomId ?? body.id ?? ''))
++          return ok({ invite: invite ?? null })
++        }
++        case 'room-invite-mint': {
++          await rt.load()
++          return ok({ invite: await rt.mintRoomInvite(String(body.roomId ?? body.id ?? '')) })
++        }
++        case 'room-invite-revoke': {
++          await rt.load()
++          return ok(await rt.revokeRoomInvite(String(body.roomId ?? body.id ?? '')))
++        }
++        // The invitee's side: a knock at the link (and, on Join, the accepting knock).
++        case 'room-invite-ask': {
++          await rt.load()
++          return ok(await rt.askLocalInvite(String(body.link ?? body.url ?? ''), { accept: body.accept === true }, actor))
          }
          case 'folders':
          case 'folder-pick':

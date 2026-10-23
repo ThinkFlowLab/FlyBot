@@ -2142,6 +2142,87 @@ function RoomAvatar({ room: room2, roster, size = 36 }) {
   );
 }
 
+// src/client/room-invite-preview.js
+var INVITE_PREVIEW_NAME_MAX = 60;
+function stripInviteMarkers(text) {
+  let out = String(text ?? "");
+  for (let previous; previous !== out; ) {
+    previous = out;
+    out = out.replace(/<\/?\s*untrusted-(?:file|message)/gi, "");
+  }
+  return out;
+}
+function cleanInviteName(value, fallback = "") {
+  return stripInviteMarkers(value).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"<>`@]/g, "").replace(/\s+/g, " ").trim().slice(0, INVITE_PREVIEW_NAME_MAX) || fallback;
+}
+function inviteMemberCount(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
+  if (typeof value !== "string") return NaN;
+  const text = value.trim();
+  if (!text) return NaN;
+  const count = Number(text);
+  return Number.isFinite(count) ? count : NaN;
+}
+function invitePreviewOf(seen) {
+  if (!seen || typeof seen !== "object" || seen.unsupported === true) return null;
+  const name = cleanInviteName(seen.name);
+  const lead = cleanInviteName(seen.lead);
+  const members = inviteMemberCount(seen.members);
+  const maxMembers = inviteMemberCount(seen.maxMembers);
+  const people2 = Number.isFinite(members) && Number.isFinite(maxMembers) ? `${members} / ${maxMembers} in the room` : Number.isFinite(members) ? `${members} in the room` : "";
+  const expiresAt = typeof seen.expiresAt === "string" ? seen.expiresAt : "";
+  if (!name && !lead && !people2 && !expiresAt) return null;
+  return { name, lead, people: people2, expiresAt, clockOffsetMs: Number(seen.clockOffsetMs) || 0 };
+}
+function inviteCountdown(expiresAt, offsetMs = 0) {
+  const at = Date.parse(expiresAt) - (Number(offsetMs) || 0);
+  if (!Number.isFinite(at)) return "Open while the room is open";
+  const left = Math.max(0, at - Date.now());
+  if (left <= 0) return "This link has expired";
+  const total = Math.max(1, Math.ceil(left / 1e3));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
+}
+function RoomInvitePreview({ h: h42, preview, kind = "face-link-preview", busy = false, joinLabel = "Join", clearLabel = "Clear", showClear = true, onJoin, onClear, now } = {}) {
+  if (!preview || typeof h42 !== "function") return null;
+  const at = `${kind}`;
+  const child = (name) => `${at}-${name}`;
+  const countdown = now === void 0 ? inviteCountdown(preview.expiresAt, preview.clockOffsetMs) : inviteCountdownAt(preview.expiresAt, preview.clockOffsetMs, now);
+  return h42(
+    "div",
+    { className: "fs-preview", "data-flybot": at, role: "status" },
+    h42("div", { className: "fs-preview-name", "data-flybot": child("name") }, preview.name || "Face-to-face room"),
+    preview.lead ? h42("div", { className: "fs-preview-meta", "data-flybot": child("lead") }, `Lead: ${preview.lead}`) : null,
+    preview.people ? h42("div", { className: "fs-preview-meta", "data-flybot": child("members") }, preview.people) : null,
+    preview.expiresAt ? h42("div", { className: "fs-preview-meta", "data-flybot": child("expiry") }, countdown) : null,
+    onJoin || onClear ? h42(
+      "div",
+      { className: "fs-preview-foot", "data-flybot": child("foot") },
+      showClear && onClear ? h42("button", {
+        type: "button",
+        className: "fs-btn fs-btn-sm",
+        "data-flybot": child("clear"),
+        disabled: !!busy,
+        onClick: onClear
+      }, clearLabel) : null,
+      onJoin ? h42("button", {
+        type: "button",
+        className: "fs-btn fs-btn-sm fs-btn-primary",
+        "data-flybot": child("join"),
+        disabled: !!busy,
+        onClick: onJoin
+      }, joinLabel) : null
+    ) : null
+  );
+}
+function inviteCountdownAt(expiresAt, offsetMs, now) {
+  const at = Date.parse(expiresAt) - (Number(offsetMs) || 0);
+  if (!Number.isFinite(at)) return "Open while the room is open";
+  const left = Math.max(0, at - Number(now || 0));
+  if (left <= 0) return "This link has expired";
+  const total = Math.max(1, Math.ceil(left / 1e3));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
+}
+
 // src/client/approval-claims.js
 var claims = /* @__PURE__ */ new Map();
 var claimListeners = /* @__PURE__ */ new Set();
@@ -2183,6 +2264,9 @@ function registry2() {
   globalThis.__flybot__.BotMark ??= BotMark;
   globalThis.__flybot__.BotAvatar ??= BotAvatar;
   globalThis.__flybot__.lookOf ??= lookOf;
+  globalThis.__flybot__.RoomInvitePreview ??= RoomInvitePreview;
+  globalThis.__flybot__.invitePreviewOf ??= invitePreviewOf;
+  globalThis.__flybot__.inviteCountdown ??= inviteCountdown;
   globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner };
   return slots;
 }

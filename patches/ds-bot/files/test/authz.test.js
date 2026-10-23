@@ -104,6 +104,17 @@ test('owner cannot touch another owner Bot or room', async (t) => {
     assert.equal(gate.code, 'bot/forbidden', ep)
   }
 
+  // #876: a room's link is a member's read, and minting or withdrawing it is the room admin's call.
+  for (const ep of ['room-invite', 'room-invite-mint', 'room-invite-revoke']) {
+    assert.equal(rt.authorize(actorA, ep, { id: 'ra' }).ok, true, ep)
+    const gate = rt.authorize(actorA, ep, { id: 'rb' })
+    assert.equal(gate.ok, false, ep)
+    assert.equal(gate.code, 'bot/forbidden', ep)
+  }
+  // A knock at another FlyBot's link carries no authority here, so a signed-in actor may always ask.
+  assert.equal(rt.authorize(actorA, 'room-invite-ask', { link: 'https://social.botawaken.com/r/@chief.b.home/AbCdEfGhIjKlMnOpQrStUv' }).ok, true)
+  assert.equal(rt.authorize(null, 'room-invite-ask', {}).ok, false, 'a signed-in actor is still required')
+
   const mixed = rt.authorize(actorA, 'create-room', { members: ['a1', 'b1'] })
   assert.equal(mixed.ok, false)
   assert.equal(mixed.code, 'bot/forbidden')

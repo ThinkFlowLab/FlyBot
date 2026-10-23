@@ -47,7 +47,10 @@ const BOT_TARGETED = new Set([
 ])
 
 // Endpoints whose body names a room.
-const ROOM_TARGETED = new Set(['update-room', 'delete-room', 'room-progress', 'create-room', 'room-history', 'room-post'])
+const ROOM_TARGETED = new Set(['update-room', 'delete-room', 'room-progress', 'create-room', 'room-history', 'room-post',
+  // #876: the room's own link. Reading it is a member's read; minting and withdrawing hand out
+  // or kill a way in, so they follow the room's admin rule.
+  'room-invite', 'room-invite-mint', 'room-invite-revoke'])
 
 // Endpoints whose body names a Session.
 const SESSION_TARGETED = new Set(['earlier', 'send', 'answer-question', 'dismiss-question', 'approval-answer', 'exchange'])
@@ -334,6 +337,19 @@ export function install(rt) {
         const id = body?.id ?? body?.roomId
         return roomMemberOf(actor, id) || roomOwnedBy(actor, id) ? ALLOW : deny('bot/forbidden', 'You are not a member of that room')
       }
+      if (ep === 'room-invite') {
+        const id = body?.id ?? body?.roomId
+        const room = state.rooms?.[id]
+        const me = currentParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)
+        return roomOwnedBy(actor, id) || roomMemberOf(actor, id) || me?.role === 'admin' ? ALLOW : deny('bot/forbidden', 'You are not a member of that room')
+      }
+      if (ep === 'room-invite-mint' || ep === 'room-invite-revoke') {
+        const id = body?.id ?? body?.roomId
+        if (roomOwnedBy(actor, id)) return ALLOW
+        const room = state.rooms?.[id]
+        const me = currentParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)
+        return me?.role === 'admin' ? ALLOW : deny('bot/forbidden', 'You do not own that room')
+      }
       if (ep === 'delete-room') {
         const id = body?.id ?? body?.roomId
         if (roomOwnedBy(actor, id)) return ALLOW
@@ -370,6 +386,9 @@ export function install(rt) {
     // Sharing a member Bot's brief is the Bot owner's decision, checked on the record
     // in room-membership (#53); the endpoint itself only needs a signed-in actor.
     if (ep === 'share-brief') return ALLOW
+    // #876: knocking at another FlyBot's room link is not authority over anything here. The knock
+    // carries a ticket that the inviter's record decides on, and the sender is the actor's own Bot.
+    if (ep === 'room-invite-ask') return ALLOW
     // Task transitions are requester-checked on the record in tasks.js (#54) — the
     // endpoint only needs a signed-in actor, like held-send decisions. Create is
     // grant-aware there (owner, matching grant, or the named room). Explicit set:

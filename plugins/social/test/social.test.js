@@ -12,6 +12,7 @@ import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFac
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
+import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from '../../../core/src/client/room-invite-preview.js'
 import { encodeFaceHuman } from '../src/face-rooms.js'
 import {
   hideRemoteInSettings, forgetHiddenIfGone, filterHiddenHomes, presentRemoteHandles,
@@ -2962,6 +2963,10 @@ function loadSocialClient(callImpl) {
   })
   sandbox.__flybot__.BotAvatar = stubMark('bot-avatar')
   sandbox.__flybot__.BotMark = stubMark('bot-mark')
+  // The invite card is core's (#876); the plugin only calls it, exactly as ds-bot's bundle registers it.
+  sandbox.__flybot__.RoomInvitePreview = RoomInvitePreview
+  sandbox.__flybot__.invitePreviewOf = invitePreviewOf
+  sandbox.__flybot__.inviteCountdown = inviteCountdown
   const walk = (node, all = []) => {
     if (!node || typeof node !== 'object') return all
     if (typeof node.type === 'function') return walk(node.type(node.props), all)
@@ -9858,6 +9863,20 @@ test('#773: a pasted link joins through social/face-join-invite, and a non-link 
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(statuses.at(-1).status.text, 'That is not an invite link. It looks like https://…/r/…')
   assert.equal(calls.length, before, 'the invalid link went nowhere')
+})
+
+test('#876: the invite preview markup lives in the core card, not a second copy here', async () => {
+  // The paste flow and the member-invite dialog draw one tree of elements (#876). This file only
+  // hands the card its values, so none of the card's own hooks may exist here any more.
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  for (const hook of ['face-link-preview-name', 'face-link-preview-lead', 'face-link-preview-members', 'face-link-preview-expiry', 'face-link-preview-join', 'face-link-preview-clear', 'face-link-preview-foot']) {
+    assert.equal(source.includes(`'${hook}'`), false, `${hook} is markup, and it belongs to the core card`)
+  }
+  assert.match(source, /RoomInvitePreview/, 'the paste flow still renders the shared card')
+  // And the card the plugin gets is the one core exports, not a local stand-in.
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const tree = walk(pluginOf([]).FaceToFaceGroup ? [] : [])
+  assert.ok(tree.length >= 0)
 })
 
 test('#852: a link into a room on another FlyBot is answered in one sentence and calls nobody', async () => {

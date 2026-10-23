@@ -1337,6 +1337,55 @@ test('#852: a local link is not a face-room link, and a shared or face room has 
   room.face = { roomId: 'frm_1', members: [] }
   await assert.rejects(() => rt.mintRoomInvite('war'), /its own invitation/)
 })
+test('#876: the invitee knocks on the link, and Join is the same knock with accept', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  rt.state.bots['chief-b'].fields = { social: { member: { home: '@bob.home', handle: '@chief.b.home' } } }
+  const link = 'https://social.botawaken.com/r/@chief.a.home/AbCdEfGhIjKlMnOpQrStUv'
+
+  // The preview knock: the ticket and the Bot to knock on, and no room id — this home has no room.
+  const knock = await rt.askLocalInvite(link + '/', {}, actorB)
+  assert.deepEqual(
+    { handle: knock.handle, ticket: knock.ticket, accept: knock.accept, sent: knock.sent },
+    { handle: '@chief.a.home', ticket: 'AbCdEfGhIjKlMnOpQrStUv', accept: false, sent: 'hold' },
+  )
+  const first = sent.at(-1)
+  assert.equal(first.to, '@chief.a.home', 'the link names who is knocked on')
+  assert.equal(first.from, 'chief-b', "the knock leaves from the actor's own Bot, never a body field")
+  assert.equal(first.via, 'room-share')
+  const asked = parseRoomShare(first.text)
+  assert.equal(asked.op, 'ask')
+  assert.equal(asked.ticket, 'AbCdEfGhIjKlMnOpQrStUv')
+  assert.equal(asked.accept, undefined, 'the preview asks without accepting')
+  assert.equal(asked.roomId, undefined, 'the invitee cannot name a room it has never seen')
+
+  // Join is the same knock with the one flag the answering side reads.
+  const accepted = await rt.askLocalInvite(link, { accept: true }, actorB)
+  assert.equal(accepted.accept, true)
+  assert.equal(parseRoomShare(sent.at(-1).text).accept, true)
+  assert.equal(parseRoomShare(sent.at(-1).text).ticket, asked.ticket)
+
+  // A face-room link and a bare ticket are not this knock: one sentence, and nothing is sent.
+  const before = sent.length
+  await assert.rejects(() => rt.askLocalInvite('https://social.botawaken.com/r/AbCdEfGhIjKlMnOpQrStUv', {}, actorB), /not a room link on another FlyBot/)
+  await assert.rejects(() => rt.askLocalInvite('AbCdEfGhIjKlMnOpQrStUv', {}, actorB), /not a room link on another FlyBot/)
+  await assert.rejects(() => rt.askLocalInvite('https://social.botawaken.com/r/@chief.a.home/short', {}, actorB), /not a room link on another FlyBot/)
+  assert.equal(sent.length, before, 'a refused link knocks on nothing')
+
+  // No Bot Social identity on this side: the refusal names that, not the link.
+  const kept = rt.state.bots['chief-b'].fields
+  delete rt.state.bots['chief-b'].fields
+  await assert.rejects(() => rt.askLocalInvite(link, {}, actorB), /no Bot Social identity yet/)
+  rt.state.bots['chief-b'].fields = kept
+  // Without a transport installed there is nothing to knock with.
+  const send = rt.flybotSend
+  rt.flybotSend = undefined
+  await assert.rejects(() => rt.askLocalInvite(link, {}, actorB), /Bot Social is not connected/)
+  rt.flybotSend = send
+})
+
 test('#852: the knock asks the room record, and only the accept admits one home', async (t) => {
   const { rt, sent } = host(t, TEAM)
   await rt.load()

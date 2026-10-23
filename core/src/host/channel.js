@@ -383,6 +383,26 @@ export function install(rt) {
           }, actor)
           return ok(line)
         }
+        // #876: the room's own link. Reading it is what the Members card shows (copy and the
+        // countdown); minting replaces the live ticket, withdrawing stops answering at once.
+        case 'room-invite': {
+          await rt.load()
+          const invite = rt.localInviteOf(String(body.roomId ?? body.id ?? ''))
+          return ok({ invite: invite ?? null })
+        }
+        case 'room-invite-mint': {
+          await rt.load()
+          return ok({ invite: await rt.mintRoomInvite(String(body.roomId ?? body.id ?? '')) })
+        }
+        case 'room-invite-revoke': {
+          await rt.load()
+          return ok(await rt.revokeRoomInvite(String(body.roomId ?? body.id ?? '')))
+        }
+        // The invitee's side: a knock at the link (and, on Join, the accepting knock).
+        case 'room-invite-ask': {
+          await rt.load()
+          return ok(await rt.askLocalInvite(String(body.link ?? body.url ?? ''), { accept: body.accept === true }, actor))
+        }
         case 'folders':
         case 'folder-pick':
         case 'folder-list':

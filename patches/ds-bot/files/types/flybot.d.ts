@@ -614,6 +614,9 @@ export interface FlyBotClientRegistry {
 export type FlyBotBotMark = (props: { bot?: any; look?: { shape?: string; color?: string; image?: string; emoji?: string }; size?: number; [key: string]: unknown }) => any
 export type FlyBotBotAvatar = (props: { bot?: any; size?: number; badge?: boolean; live?: boolean; [key: string]: unknown }) => any
 export type FlyBotLookOf = (bot?: any) => { shape: string; color: string; image?: string }
+/** One room-invite preview card, for every surface that shows an invite (#876). */
+export type FlyBotRoomInvitePreview = (props: any) => any
+export type FlyBotInvitePreview = (seen?: any) => { name: string; lead: string; people: string; expiresAt: string; clockOffsetMs: number } | null
 
 declare global {
   // eslint-disable-next-line no-var
@@ -626,6 +629,10 @@ declare global {
     /** Sidebar avatar (mark plus optional badges). Prefer this at 24px with badge: false. */
     BotAvatar?: FlyBotBotAvatar
     lookOf?: FlyBotLookOf
+    /** The invite card the face-room paste flow and the member-invite dialog both render (#876). */
+    RoomInvitePreview?: FlyBotRoomInvitePreview
+    invitePreviewOf?: FlyBotInvitePreview
+    inviteCountdown?: (expiresAt: string, offsetMs?: number) => string
     /** A friend's Bot chat (a roster Bot with `remote`): its one name, "Chief (Bob)", and its owner, "Bob" (#498). */
     names?: { friendBotTitle(bot?: any): string; friendBotOwner(bot?: any): string }
   } | undefined

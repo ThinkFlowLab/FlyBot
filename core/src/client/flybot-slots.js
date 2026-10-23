@@ -34,6 +34,7 @@ import { call as callHost } from './api.js'
 import { friendBotOwner, friendBotTitle, isListedRemoteChat } from '../shared/remote-label.js'
 import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
+import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from './room-invite-preview.js'
 import { t } from './i18n.js'
 import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
 import { isApprovalWaiting, WAITING_STATUSES } from '../shared/approval-waiting.js'
@@ -54,6 +55,11 @@ export function registry() {
   globalThis.__flybot__.BotMark ??= BotMark
   globalThis.__flybot__.BotAvatar ??= BotAvatar
   globalThis.__flybot__.lookOf ??= lookOf
+  // One room-invite preview card for every surface that shows an invite (#876): the face-room paste
+  // flow and the member-invite dialog render this, so the markup is not written twice.
+  globalThis.__flybot__.RoomInvitePreview ??= RoomInvitePreview
+  globalThis.__flybot__.invitePreviewOf ??= invitePreviewOf
+  globalThis.__flybot__.inviteCountdown ??= inviteCountdown
   // The same for a friend's Bot's one name and its owner (#498), so the social plugin says it as the sidebar does.
   globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner }
   return slots

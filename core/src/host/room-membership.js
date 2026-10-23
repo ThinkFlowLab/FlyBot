@@ -36,7 +36,7 @@
 import { randomBytes } from 'node:crypto'
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
-import { encodeRoomShare, LOCAL_INVITE_TTL_MS, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
+import { encodeRoomShare, LOCAL_INVITE_TTL_MS, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
@@ -1010,6 +1010,40 @@ export function install(rt) {
     delete room.localInvite
     await rt.save?.()
     return { revoked: true }
+  }
+
+  // #876: the invitee's side of a local link. The link names the Bot to knock on, and the knock
+  // carries the ticket and nothing else; the accepting click is the same knock with `accept: true`.
+  // Nothing here decides the seat: the inviter's room record answers, and its offer comes back as
+  // `invite` through applyInboundRoomShare (rt.onLocalInviteOffer). The knock goes out from a Bot of
+  // the actor's whose home has a Bot Social identity — the link cannot name the sender, so the
+  // transport does, exactly as on the answering side.
+  function localSpeaker(actor) {
+    const usable = Object.values(state.bots ?? {}).filter(bot => bot && bot.remote === undefined
+      && typeof bot?.fields?.social?.member?.handle === 'string'
+      && bot.fields.social.member.handle.startsWith('@'))
+    const mine = actor?.memberId ? usable.filter(bot => bot.ownerId === actor.memberId) : usable
+    const list = mine.length > 0 ? mine : usable
+    const chief = actor?.memberId ? state.members?.[actor.memberId]?.designatedChiefId : undefined
+    return (chief !== undefined ? list.find(bot => bot.id === chief) : undefined)?.id ?? list[0]?.id
+  }
+
+  rt.askLocalInvite = async function askLocalInvite(link, opts = {}, actor) {
+    const parsed = parseRoomInviteLink(typeof link === 'string' ? link : '')
+    if (!parsed || parsed.kind !== 'local') throw invalid('That is not a room link on another FlyBot')
+    if (!rt.flybotSend) throw invalid('Bot Social is not connected on this machine yet')
+    const from = localSpeaker(actor)
+    if (from === undefined) throw invalid('This machine has no Bot Social identity yet')
+    const accept = opts?.accept === true
+    const sent = await rt.flybotSend({
+      from,
+      to: parsed.handle,
+      text: encodeRoomShare({ op: 'ask', ticket: parsed.ticket, ...(accept ? { accept: true } : {}) }),
+      role: 'request',
+      via: 'room-share',
+      meta: { share: 'ask', ticket: parsed.ticket },
+    })
+    return { sent: sent?.action ?? 'sent', handle: parsed.handle, ticket: parsed.ticket, accept }
   }
 
   // #852: a knock at a local room's link. The invitee's host sends `ask` (the accepting knock carries
