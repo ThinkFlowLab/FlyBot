@@ -10201,3 +10201,97 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
   const seat = ctx.flybot.rooms.list().find(r => r.id === 'war').participants.find(p => p.handle === '@guest.eve.home')
   assert.equal(seat.leftSeq, undefined, 'the seat stays: its link decides, not the roster')
 })
+
+
+// #881 (bot-social #43/#50): a 1:1 line between two Bots that are both live in one open room names
+// that room, so the platform's room-scoped reach decides instead of "these Bots are strangers". The
+// room a local share (#852) lives in has no id on the server, so those sends keep naming none.
+function roomServer({ send } = {}) {
+  const server = withFaceRooms(mockServer())
+  // The far end answers the way bot-social #43 does (#881 scope 1): two Bots that meet in one open
+  // room reach each other only when the send names that room. A pair with no room, or one whose room
+  // is closed, keeps the plain 1:1 the mock always answered.
+  const openRooms = () => [...server.face.rooms.values()].filter(room => room.status !== 'closed' && room.status !== 'ended')
+  const delivered = a => ({ conversation_id: 'c1', message: { message_id: `msg-${a.from_bot_id}`, status: 'delivered' } })
+  const refuse = code => { throw Object.assign(new Error(`Bot Social send_as_member: ${code}`), { code }) }
+  server.tools.send_as_member = send ?? ((a) => {
+    const here = openRooms().filter(room => room.members.some(m => m.handle === a.to))
+    if (a.room_id) {
+      if (!here.some(room => room.room_id === a.room_id)) refuse('room_not_shared')
+      return delivered(a)
+    }
+    if (here.length) refuse('no_relationship')
+    return delivered(a)
+  })
+  return server
+}
+
+async function roomTeam(t, server, { autoAccept = false } = {}) {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  return { ctx, call, social }
+}
+
+test('#881: a line between two Bots in one room names that room', async (t) => {
+  const server = roomServer()
+  const peerRoom = server.face.peer('123456')
+  peerRoom.members[0].published = true // a shared friend's Bot; the room-only guest case is #853
+  const { ctx, call, social } = await roomTeam(t, server, { autoAccept: true })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
+  assert.ok(ctx.flybot.rooms.ofFace('frm_123456'), 'the room is hosted here')
+  // The reply to a Bot that wrote to us (`replyTarget`): the path a home uses for its first line back.
+  await ctx.flybot.grants.set('a', [{ grantee: '@coder.bob.home' }])
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'first line back', role: 'reply' })).action, 'allow')
+  const sent = server.calls.filter(c => c.name === 'send_as_member').at(-1)
+  assert.equal(sent.args.room_id, 'frm_123456')
+  // The owner's own typed line names the same room.
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'my line' }), '')
+  const typed = server.calls.filter(c => c.name === 'send_as_member' && c.args.typed_by_owner === true).at(-1)
+  assert.equal(typed.args.room_id, 'frm_123456')
+})
+
+test('#881: a line with no shared room names none', async (t) => {
+  const server = roomServer()
+  const { ctx, social } = await roomTeam(t, server, { autoAccept: true })
+  await ctx.flybot.grants.set('a', [{ grantee: '@coder.bob.home' }])
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'plain 1:1', role: 'reply' })).action, 'allow')
+  assert.equal('room_id' in server.calls.filter(c => c.name === 'send_as_member').at(-1).args, false, 'a send outside a room names no room')
+  assert.equal(await social.sendChat({ handle: '@writer.bob.home', text: 'to another Bot' }), '')
+  assert.equal('room_id' in server.calls.filter(c => c.name === 'send_as_member').at(-1).args, false)
+})
+
+test('#881: after leaving the room the next line names none again', async (t) => {
+  const server = roomServer()
+  const peerRoom = server.face.peer('123456')
+  peerRoom.members[0].published = true
+  const { ctx, call, social } = await roomTeam(t, server, { autoAccept: true })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
+  await ctx.flybot.grants.set('a', [{ grantee: '@coder.bob.home' }])
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'in the room', role: 'reply' })).action, 'allow')
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').at(-1).args.room_id, 'frm_123456')
+  await call('flybot/social/face-leave', { faceRoomId: 'frm_123456' })
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'after leaving', role: 'reply' })).action, 'allow')
+  assert.equal('room_id' in server.calls.filter(c => c.name === 'send_as_member').at(-1).args, false)
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'typed after leaving' }), '')
+  assert.equal('room_id' in server.calls.filter(c => c.name === 'send_as_member').at(-1).args, false)
+})
+
+test('#881: the two room refusals reach the person as sentences', async (t) => {
+  const refused = code => { throw Object.assign(new Error(`Bot Social send_as_member: ${code}`), { code }) }
+  let code = 'room_not_shared'
+  const server = roomServer({ send: () => refused(code) })
+  const peerRoom = server.face.peer('123456')
+  peerRoom.members[0].published = true // a shared friend's Bot, not a room-only guest (see #853)
+  const { call, social } = await roomTeam(t, server)
+  await call('flybot/social/face-join', { start: true, code: '123456' })
+  await assert.rejects(social.sendChat({ handle: '@coder.bob.home', text: 'into the room' }), /that room is closed between these Bots now/)
+  code = 'no_relationship'
+  await assert.rejects(social.sendChat({ handle: '@coder.bob.home', text: 'into the room' }), /the room no longer lets these Bots reach each other/)
+})

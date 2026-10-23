@@ -1515,6 +1515,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
     const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
     const blob = `${raw} ${error?.code ?? ''}`
+    // A line that named its room and was refused because the room no longer covers it (#881): the
+    // room's own sentence, so the person does not read "you are not friends" about a room they are in.
+    if (/room_not_shared/i.test(blob)) {
+      return new Error('that room is closed between these Bots now. Send again from the room, or join it again.')
+    }
+    if (error?.roomScoped && /no_relationship|no active relationship/i.test(blob)) {
+      return new Error('the room no longer lets these Bots reach each other. Join the room together again.')
+    }
     if (/no Bot of yours is friends|no_relationship|no active relationship/i.test(blob)) {
       return new Error('you are not friends with this Bot. Add them from + Add friend.')
     }
@@ -1607,8 +1615,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           throw new Error(`${bot.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.`)
         }
         const attachments = await uploadAll(msg.attachments, member.bot_id)
-        const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}) })
-          .catch((error) => { if (isPaused(error)) notePaused(bot.handle, error); throw error })
+        // A 1:1 line between two Bots that are in one open room here names that room (#881): the
+        // room is the reach the server can check, and it is the consent that lifts its own hold. Room
+        // lines themselves are the group's record and name no room: a local room has no id on the
+        // server, so naming one would be a lie it refuses.
+        const roomId = msg.via === 'room' || msg.via === 'room-share' ? undefined : roomContextFor(msg.from, bot.handle)
+        const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}), ...(roomId ? { room_id: roomId } : {}) })
+          .catch((error) => {
+            if (isPaused(error)) notePaused(bot.handle, error)
+            // The refusal a room-scoped send earns needs a sentence of its own, so the mapping can
+            // tell "these Bots share no room any more" from "you are not friends with this Bot".
+            if (roomId && error && typeof error === 'object') error.roomScoped = true
+            throw error
+          })
         clearPaused(bot.handle)
         if (sent?.message?.status === 'pending_approval') {
           pendingCache.at = 0
@@ -1832,8 +1851,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       tried.add(bot.id)
       const member = activeMember(bot.id) ?? await register(bot).catch(() => undefined)
       if (!member) continue
+      // The owner's own line names the room too when both Bots are in it (#881): same rule as the
+      // transport, so a typed line and a Bot line reach each other by the same reach.
+      const roomId = roomContextFor(bot.id, target)
       try {
-        const sent = await sendTypedAsMember({ from_bot_id: member.bot_id, to: target, text })
+        const sent = await sendTypedAsMember({ from_bot_id: member.bot_id, to: target, text, ...(roomId ? { room_id: roomId } : {}) })
         if (settings.via[target] !== bot.id) { settings.via[target] = bot.id; saveSettings() }
         await approveTypedLine(sent)
         clearPaused(target)
@@ -1842,7 +1864,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // A pause belongs to the conversation, not to this member: another Bot cannot send either.
         if (isPaused(error)) { notePaused(target, error); throw mapSendError(error) }
         lastError = error
-        if (!/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw userFacingSendError(error, target)
+        // A room-scoped refusal is the room's answer, not this member's: another Bot in the same home
+        // would name the same room and hear the same thing, so it is reported instead of retried.
+        if (roomId && error && typeof error === 'object') error.roomScoped = true
+        if (roomId || !/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw userFacingSendError(error, target)
       }
     }
     throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`), target)
@@ -3177,6 +3202,28 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   function faceRoomsUsing(handle) {
     const key = norm(handle)
     return Object.entries(settings.faceRooms).filter(([, meta]) => asBotsOf(meta).includes(key))
+  }
+  // The room a 1:1 line may name (#881, Bot Social #43/#50): this Bot and the friend's Bot are both
+  // live in one face room this home has not left, so Bot Social holds a room-scoped grant for it. It
+  // is the only room id the platform can check at all: a local room (#852) has no face_rooms row,
+  // so naming one there would only earn `room_not_shared`. A room that is left, closed or gone from
+  // `settings` stops answering, and the next send is back to the plain per-grant rules.
+  function roomContextFor(fromBotId, handle) {
+    const target = norm(handle)
+    if (!target || !fromBotId || typeof flybot.rooms?.ofFace !== 'function') return undefined
+    const mine = new Set([norm(memberOf(fromBotId)?.handle)].filter(Boolean))
+    for (const faceId of Object.keys(settings.faceRooms ?? {})) {
+      const room = flybot.rooms.ofFace(faceId)
+      if (!room) continue
+      const status = room.face?.status
+      if (status === 'closed' || status === 'left') continue
+      const live = (room.participants ?? []).filter(participant => participant.leftSeq === undefined)
+      const iAmIn = live.some(participant => participant.id === fromBotId
+        || (participant.remote !== true && mine.has(norm(participant.handle))))
+      if (!iAmIn || mine.has(target)) continue
+      if (live.some(participant => participant.remote === true && norm(participant.handle) === target)) return faceId
+    }
+    return undefined
   }
   // Room-only identities exist so Bot Social can name the Bot in a face room. They must not
   // linger as reachable home members: revoke when the Bot is in no face room and still has no person-grant.
