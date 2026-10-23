@@ -914,6 +914,13 @@ export function install(rt) {
 
   // A line as written, for a link's seat (#884): the far home fences it once with `who`, so a fence
   // stored here is opened first, never nested (a nested one reads as markup to the person).
+  // Who a person's own line is said by on a link's seat: a name they gave stays; this home's own
+  // placeholder (`You`, or the bare member id) becomes the owner's Bot Social name.
+  const seatSayer = (line, who, botId) => {
+    if (line.authorKind !== 'human' || line.remote === true) return who
+    if (who !== 'You' && who !== cleanName(String(line.authorId ?? ''))) return who
+    return cleanPeerName(state.bots?.[botId]?.fields?.social?.member?.ownerName, who)
+  }
   const seatText = line => (!line.text ? `[${cleanName(line.kind || 'event')}]` : isFencedUntrusted(line.text) ? unwrapUntrusted(line.text) : String(line.text))
 
   // #884: a seat a ticket admitted is reached from the Bot its link named, under that room's scope only,
@@ -1554,8 +1561,7 @@ export function install(rt) {
       // A link's room (#884): the owner's own line is said under their Bot Social name, never this
       // home's "You", and the text goes as written: the inviter's home fences it once, on arrival.
       const ticketed = Boolean(room.sharedFrom?.ticket)
-      const ownLine = ticketed && line.authorKind === 'human' && line.remote !== true
-      const sayer = ownLine ? cleanPeerName(state.bots?.[sender]?.fields?.social?.member?.ownerName, who) : who
+      const sayer = ticketed ? seatSayer(line, who, sender) : who
       const result = await sendShareTo(room, { handle: inviter, id: inviter }, {
         op: 'line',
         roomId: room.sharedFrom?.remoteRoomId,
@@ -1597,7 +1603,7 @@ export function install(rt) {
           name: room.name,
           invitedHandle: remote.handle,
           seq: line.seq,
-          who,
+          who: seatSayer(line, who, seat.botId),
           kind: line.kind || 'message',
           authorKind: line.authorKind,
           authorId: line.authorId,

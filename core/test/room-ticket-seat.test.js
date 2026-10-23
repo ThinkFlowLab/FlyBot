@@ -396,9 +396,10 @@ test('#884: the guest writes in the room the link opened, under its own name, an
   // One link admits the person with their Bot (#878): Bob is in the room it opened on his side.
   assert.ok(mirror.participants.some(p => p.kind === 'human' && p.id === 'owner-1' && p.leftSeq === undefined), 'the guest owner has a seat to write from')
 
-  const line = await a.rt.postRoomMessage('war', { text: 'Ship on Friday?', authorId: 'owner-1', authorKind: 'human', displayName: 'Alice' })
+  const line = await a.rt.postRoomMessage('war', { text: 'Ship on Friday?', authorId: 'owner-1', authorKind: 'human' })
   await settle()
   const arrived = mirror.log.find(entry => String(entry.text).includes('Ship on Friday?'))
+  assert.equal(arrived.who, 'Alice', 'the host owner with no name here is said by their Bot Social name, not "owner-1" or "You"')
   assert.equal(unwrapUntrusted(arrived.text), 'Ship on Friday?', 'fenced once on arrival, with nothing nested or prefixed (live run: a garbled fence)')
   assert.equal((String(arrived.text).match(/untrusted-message/g) ?? []).length, 2)
   assert.ok(line)
