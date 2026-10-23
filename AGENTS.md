@@ -183,7 +183,7 @@ The Bot team:
 
 - Every Bot is a DSH Session and runs through the normal DSH agent loop, tools and model routes.
 - The team works together: Bots message each other, share group chats and can see what the other Bots are doing. Each Bot still runs on its own and does not disturb the others.
-- Bots have clear, different roles. A Main Bot has the highest rights: it changes and removes other Bots, and can create them. Other Bots do not get those management rights. There can be more than one Main Bot.
+- Bots have clear, different roles. A Main Bot has the highest rights: it creates and changes other Bots, and can stop a running turn. `stop_bot` ends that turn; it does not remove the Bot. Deleting a Bot is the person's action in the UI (`delete-bot`), and #638 tracks whether a Bot may retire one instead. Other Bots do not get those management rights. There can be more than one Main Bot.
 - **Tree child creation (#16, Option B).** A tree Bot (not only the Main/root) may call `create_child_bot` to create a child directly under itself. The tool takes no parent argument; `maxChildren` and depth limits stay in force. The new child is usable only by its creator's owner; sharing it with another person still requires an independent per-Bot grant (default deny). There is no publish mechanism. See [docs/subsystems/tree.md](docs/subsystems/tree.md).
 - The multi-human authority contract (human owner ↔ designated Chief ↔ specialists) is documented in [docs/subsystems/team.md](docs/subsystems/team.md) as **planned, not shipped**: team mode stays disabled until its authorization gates pass. Issue #16 is resolved (Option B); do not re-open Main-only child creation.
 - Users customize each Bot (name, role label, instructions, model, character).
