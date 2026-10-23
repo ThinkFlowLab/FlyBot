@@ -382,6 +382,27 @@ test('#863: promotion fills a name the room-only record never had, instead of wa
   assert.equal(member.roomOnly, undefined, 'only roomOnly is dropped')
 })
 
+// The other direction of the promotion fallback (#868): a record that already carries the owner-level name
+// keeps it, whatever `whoami` answers now. The stored name is the identity this home already shared with
+// the peer (`shareInviter`, #848); `whoami` is only the account's current answer, so it must not rename a
+// record that has one. The case above cannot catch this: it starts without a name, so it passes under
+// either order of the `existing.ownerName || me.ownerName` fallback.
+test('#868: a promotion keeps a stored owner name when whoami answers a different one', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.whoami = () => ({ kind: 'owner', display_name: 'Whoami Name', auto_approve_face_rooms: false, connector_identity: { bot_handles: ['@whoami.home'] } })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const scope = ctx.flybot.scope('social')
+  scope.fields.set('a', 'member', { bot_id: 'm1', handle: '@chief.danyang.home', home: '@alice.home', ownerName: 'Alice', roomOnly: true })
+  await social.register(ctx.flybot.bot.get('a'), { forInvite: true })
+  const member = scope.fields.get('a', 'member')
+  assert.equal(member.ownerName, 'Alice', 'the stored owner name wins over a later whoami answer')
+  assert.equal(member.home, '@alice.home', 'the stored home is kept as well')
+  assert.equal(member.roomOnly, undefined, 'only roomOnly is dropped')
+})
+
 test('any local Bot can message any Bot of a friend home; the send is held, then signed as the member', async (t) => {
   const { ctx, tool, stop } = await team()
   t.after(stop)
