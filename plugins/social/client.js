@@ -1048,29 +1048,49 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits),
         h(FaceQr, { code: digits, at: qrAt, offsetMs: qrOffsetMs }))
     }
-    function shownHoldText(value) {
-      const raw = String(value ?? '')
-      const mark = 'FLYBOT-FACE-HUMAN'
-      const at = raw.indexOf(mark)
-      if (at < 0) return stripHoldPrefix(raw)
+    // The JSON tail of a fenced envelope, by brace matching so a `}` inside a string does not end it
+    // early. An absent or unparsable tail answers undefined and each caller keeps its own fallback.
+    function envelopeTail(raw, at) {
       const start = raw.indexOf('{', at)
-      if (start < 0) return raw.slice(0, at).trim()
+      if (start < 0) return undefined
       let depth = 0
-      let end = -1
       for (let i = start; i < raw.length; i += 1) {
-        const ch = raw[i]
-        if (ch === '{') depth += 1
-        else if (ch === '}') {
+        if (raw[i] === '{') depth += 1
+        else if (raw[i] === '}') {
           depth -= 1
-          if (depth === 0) { end = i; break }
+          if (depth > 0) continue
+          try { return JSON.parse(raw.slice(start, i + 1)) } catch { return undefined }
         }
       }
-      if (end < 0) return stripHoldPrefix(raw.slice(0, at).trim())
-      try {
-        const parsed = JSON.parse(raw.slice(start, end + 1))
-        const text = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
-        if (text) return stripHoldPrefix(text)
-      } catch { /* fall through */ }
+      return undefined
+    }
+    // A room-share envelope is the group record a friend's FlyBot reads, never a line for a person
+    // (#847): the card says what it does in one sentence, and never prints the JSON or a local id.
+    // `to` is the name the card's own header already shows, so both name that Bot the same way.
+    function shownRoomShareText(raw, at, to) {
+      const who = cleanRoomName(to, '') || 'the invited Bot'
+      const parsed = envelopeTail(raw, at)
+      const name = typeof parsed?.name === 'string' ? cleanRoomName(parsed.name, '') : ''
+      const group = name ? `the group "${name}"` : 'a group chat'
+      const op = typeof parsed?.op === 'string' ? parsed.op : ''
+      const line = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
+      if (op === 'join') return `Invite ${who} to ${group}`
+      if (op === 'leave') return `Remove ${who} from ${group}`
+      if (op === 'line') return line ? `Group message to ${who}: ${line}` : `Group message to ${who}`
+      return `Group update for ${who} in ${group}`
+    }
+    function shownHoldText(value, to) {
+      const raw = String(value ?? '')
+      // Two envelopes can carry the other's marker in their own text, so the earlier one wins.
+      const roomAt = raw.indexOf('FLYBOT-ROOM-SHARE')
+      const faceAt = raw.indexOf('FLYBOT-FACE-HUMAN')
+      if (roomAt >= 0 && (faceAt < 0 || roomAt < faceAt)) return shownRoomShareText(raw, roomAt, to)
+      const at = faceAt
+      if (at < 0) return stripHoldPrefix(raw)
+      const parsed = envelopeTail(raw, at)
+      if (parsed === undefined) return raw.slice(0, at).trim()
+      const text = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
+      if (text) return stripHoldPrefix(text)
       return stripHoldPrefix(raw.slice(0, at).trim())
     }
     function stripHoldPrefix(text) {
@@ -1718,7 +1738,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')))
       }
       const { from, to } = holdParties(item)
-      const text = shownHoldText(item.text || item.summary || '')
+      const text = shownHoldText(item.text || item.summary || '', to)
       const long = text.length > 160 || text.split(/\n/).length > 3
       const reasonLine = holdReasonLine(item.reasons, t)
       return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },

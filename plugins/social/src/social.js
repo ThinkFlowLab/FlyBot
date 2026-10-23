@@ -1474,10 +1474,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
           // Auto-send (#417) let this line out without a FlyBot card, so Bot Social's own hold would
           // park it with nobody left to decide it: the owner's switch already answered the same
-          // question (#737). Room lines stay with the friend's owner, and a hold with a finding of
-          // its own keeps its card. Only Auto-send on this pair reaches here unapproved: the chain
-          // holds every other send before the transport runs.
+          // question (#737). A hold with a finding of its own keeps its card. Only Auto-send on this
+          // pair reaches here unapproved: the chain holds every other send before the transport runs.
           else if (msg.via !== 'room' && msg.via !== 'room-share' && typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto') await autoSendRemoteLine(sent)
+          // A room's own envelope is the click that added the Bot, not a line whose text the friend's
+          // owner reads first (#847): Bot Social's blanket hold on it asks the same question again, in
+          // a chat nobody opens, and the group never reaches the invited home. Only a hold with no
+          // finding of its own is cleared; anything else keeps its card.
+          else if ((msg.via === 'room' || msg.via === 'room-share') && !msg.attachments?.length) await autoSendRoomEnvelope(sent)
         }
         return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
       }
@@ -1519,6 +1523,33 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     pendingCache.at = 0
     await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       .catch(error => warn('direct-chat owner line not approved yet; the next poll retries', error))
+  }
+
+  // The room's own envelope clears Bot Social's blanket hold by itself (#847): the click on "Add
+  // member" is the owner's consent for the room, and `docs/subsystems/social.md` already promises the
+  // invited home sees the group as soon as the Bot is added. The allow-list is the face-room one
+  // (#737, #766): a reason this build does not know, another DLP category or a risk flag is a
+  // finding, so that envelope keeps its card and its owner still decides it.
+  async function autoSendRoomEnvelope(sent) {
+    const approvalId = sent?.message?.approval_id ?? sent?.approval_id
+    if (!approvalId) return false
+    try {
+      // Read straight from the server, like `autoSendRemoteLine`: the poll path would post a waiting
+      // notice for a hold this is about to clear.
+      const result = await client.callTool('list_approvals', { status: 'pending' })
+      const raw = result?.approvals ?? (Array.isArray(result) ? result : [])
+      const held = raw.find(item => String(item?.approval_id ?? item?.id ?? '') === String(approvalId))
+      if (!held) {
+        warn(`room envelope: Bot Social has not listed the hold ${approvalId} yet; it waits on its card`)
+        return false
+      }
+      if (!holdIsBlanket(held)) return false
+      await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
+      return true
+    } catch (error) {
+      warn('room envelope hold not cleared; it waits on its card', error)
+      return false
+    }
   }
   // Approves the Bot Social hold on a line Auto-send (#417) let out with no FlyBot card (#737), only
   // when Bot Social held it for no finding of its own (no DLP category on the hold). Anything else

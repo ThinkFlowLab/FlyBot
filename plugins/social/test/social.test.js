@@ -1137,6 +1137,46 @@ test('#227: an owner line whose approve call failed is finished by the poll, nev
   await waitUntil(() => server.queue.length === 0)
 })
 
+test('#847: a room envelope clears Bot Social\'s blanket hold: the add click is the consent', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const envelope = (op, extra = {}) => `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op, roomId: 'session-e2439f82', name: 'You, Chief, Chief', invitedHandle: '@coder.bob.home', seq: 0, ...extra })}`
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: envelope('join'), via: 'room-share' })).action, 'allow')
+  await waitUntil(() => server.queue.length === 0)
+  const first = server.calls.filter(c => c.name === 'decide_approval').at(-1)
+  assert.equal(first?.args.decision, 'approved', 'the join is approved by the host, not by the owner')
+  assert.match(String(first?.args.approval_id), /^apr-1-/)
+  assert.deepEqual((await call('flybot/social/status', {})).value.approvals, [], 'no card for the join')
+  // A line in the same room carries the same consent: one approval, not one per line.
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: envelope('line', { text: 'SelfTest A2: hello', seq: 1 }), via: 'room' })).action, 'allow')
+  await waitUntil(() => server.queue.length === 0)
+  assert.equal(server.calls.filter(c => c.name === 'decide_approval').length >= 2, true, 'the room line is cleared too')
+})
+
+test('#847: a room envelope held with a finding of its own keeps its card', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer({ reasons: ['mvp.all_outbound_requires_approval', 'dlp.commitment'] })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const join = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'join', roomId: 'session-e2439f82', name: 'You, Chief, Chief', invitedHandle: '@coder.bob.home', seq: 0 })}`
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: join, via: 'room-share' })).action, 'allow')
+  for (let i = 0; i < 50 && !server.calls.some(c => c.name === 'list_approvals'); i += 1) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(server.calls.some(c => c.name === 'list_approvals'), true, 'the hold was looked at')
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, 'a hold with a finding waits for its owner')
+  assert.equal(server.queue.length, 1)
+  const pending = (await call('flybot/social/status', {})).value.approvals
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0].text.startsWith('FLYBOT-ROOM-SHARE'), true, 'the card still carries the envelope for the host to read')
+})
+
 test('#258: a Bot\'s reply the owner approved on its card leaves at once: no second hold on Bot Social', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
@@ -3542,6 +3582,32 @@ test('#188: holds of a left room or with no known room stay out of the list and 
   await social.registerAll()
   const ids = (await social.pendingApprovals({ fresh: true })).map(item => item.id)
   assert.deepEqual(ids, ['apr-live'])
+})
+
+test('#847: a room-share hold card says what the envelope does, never the envelope', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[], [], ''])
+  const card = (text) => walk(plugin.ChatApproval({
+    item: { id: 'apr-room', kind: 'outbound_message', from: 'Chief', toName: 'Chief (SelfTest B2)', text, summary: text },
+    canDecide: true,
+  }))
+  const draft = (tree) => tree.find(n => n.props.className === 'fs-draft')?.children.join('')
+  const join = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'join', roomId: 'session-e2439f82-0c89-4bba-a7d7-7d60572c19fd', name: 'You, Chief, Chief', inviterName: 'a friend', invitedHandle: '@chief.selftestb2.home', seq: 0 })}`
+  const joined = card(join)
+  assert.equal(draft(joined), 'Invite Chief (SelfTest B2) to the group "You, Chief, Chief"')
+  assert.equal(JSON.stringify(joined).includes('FLYBOT-ROOM-SHARE'), false, 'the wire marker never reaches a person')
+  assert.equal(JSON.stringify(joined).includes('session-e2439f82'), false, 'a local session id never reaches a person')
+
+  const line = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'session-e2439f82', name: 'You, Chief, Chief', text: 'SelfTest A2: hello', seq: 3 })}`
+  assert.equal(draft(card(line)), 'Group message to Chief (SelfTest B2): SelfTest A2: hello')
+
+  // A broken or unknown shape is still a sentence, never the JSON tail.
+  assert.equal(draft(card('FLYBOT-ROOM-SHARE\n{not json')), 'Group update for Chief (SelfTest B2) in a group chat')
+  assert.equal(draft(card(`FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'join', roomId: 'session-1' })}`)), 'Invite Chief (SelfTest B2) to a group chat')
+
+  // The face-room envelope keeps its own answer, even when its text mentions the other marker.
+  const packed = encodeFaceHuman({ who: 'BoxA', text: 'the group says FLYBOT-ROOM-SHARE is a marker' })
+  assert.equal(draft(card(packed)), 'the group says FLYBOT-ROOM-SHARE is a marker')
 })
 
 test('#159: a face-room hold never shows the FLYBOT-FACE-HUMAN envelope', () => {
