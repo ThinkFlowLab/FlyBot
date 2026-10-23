@@ -1058,6 +1058,10 @@ export function install(rt) {
     if (room === undefined) throw invalid('Unknown group chat')
     // A shared or face room has its own invitation; this one is for a room that lives in FlyBot.
     if (room.origin === 'inbound-share' || isFaceRoom(room)) throw invalid('This room has its own invitation')
+    // A link is the owner's consent to show this room outside: the Bot it knocks on gets a Bot Social
+    // identity now if it has none (a home with no friends has none yet).
+    const lead = [room.admin, ...(room.members ?? [])].find(id => id && rt.botOf?.(id))
+    if (lead && !memberHandleOf(lead)) await identify([lead])
     const botId = inviteBotOf(room)
     const handle = botId ? memberHandleOf(botId) : shareInviter(room).inviterHandle
     if (!handle) throw invalid('This machine has no Bot Social identity yet')
@@ -1119,6 +1123,13 @@ export function install(rt) {
       if (invite.server === true) void endServerTicket(invite.ticket)
     }
     return { revoked: true, ...(wanted === undefined && gone.length > 1 ? { count: gone.length } : {}) }
+  }
+
+  async function identify(ids) {
+    if (typeof rt.roomInviteServer?.identify !== 'function') return
+    try { await rt.roomInviteServer.identify(ids) } catch (error) {
+      throw invalid(`Bot Social could not give this Bot an identity right now: ${String(error?.message ?? error).slice(0, 160)}`)
+    }
   }
 
   async function endServerTicket(ticket) {
@@ -1211,13 +1222,13 @@ export function install(rt) {
     const parsed = parseRoomInviteLink(typeof link === 'string' ? link : '')
     if (!parsed || parsed.kind !== 'local') throw invalid('That is not a room link on another FlyBot')
     if (!rt.flybotSend) throw invalid('Bot Social is not connected on this machine yet')
-    const from = localSpeaker(actor)
-    if (from === undefined) throw invalid('This machine has no Bot Social identity yet')
     const accept = opts?.accept === true
     if (accept && typeof rt.roomInviteServer?.claim === 'function') {
       const claimed = await claimTicket(parsed, opts, actor)
       if (claimed) return claimed
     }
+    const from = localSpeaker(actor)
+    if (from === undefined) throw invalid('This machine has no Bot Social identity yet')
     const sent = await rt.flybotSend({
       from,
       to: parsed.handle,
@@ -1233,13 +1244,20 @@ export function install(rt) {
   // none), then the first of them knocks with the claim; the inviter's home reads the claim back from
   // the server before it seats anyone. A link the server never minted falls back to the friend's knock.
   async function claimTicket(parsed, opts, actor) {
-    const own = socialBotsOf(actor)
+    // The actor's own Bots, by owner (a Bot with no Bot Social identity yet gets one below: Join is the
+    // consent, as accepting a friend's invite is).
+    const own = Object.values(state.bots ?? {}).filter(bot => bot && bot.remote === undefined && (!actor?.memberId || bot.ownerId === actor.memberId))
     const asked = Array.isArray(opts?.bots) ? opts.bots.map(String) : []
-    const picked = asked.length > 0 ? own.filter(bot => asked.includes(bot.id)) : own.filter(bot => bot.id === localSpeaker(actor))
+    const chief = actor?.memberId ? state.members?.[actor.memberId]?.designatedChiefId : undefined
+    const fallback = own.find(bot => bot.id === chief) ?? own.find(bot => memberHandleOf(bot.id)) ?? own[0]
+    const picked = asked.length > 0 ? own.filter(bot => asked.includes(bot.id)) : (fallback ? [fallback] : [])
     if (asked.length > 0 && picked.length !== new Set(asked).size) throw invalid('Pick Bots of your own to bring')
     if (picked.length === 0) throw invalid('This machine has no Bot Social identity yet')
     if (picked.length > TICKET_SEATS_MAX) throw invalid(`A link brings at most ${TICKET_SEATS_MAX} Bots`)
+    const missing = picked.filter(bot => !memberHandleOf(bot.id)).map(bot => bot.id)
+    if (missing.length > 0) await identify(missing)
     const handles = picked.map(bot => memberHandleOf(bot.id))
+    if (handles.some(handle => !handle)) throw invalid('This machine has no Bot Social identity yet')
     let claim
     try {
       claim = await rt.roomInviteServer.claim(parsed.ticket, handles)

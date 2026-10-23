@@ -360,3 +360,25 @@ test('#884: a server without local room invites keeps the friend-only link', asy
   a.rt.roomInviteServer = { mint: async () => { throw new Error('502 Bad Gateway') } }
   await assert.rejects(() => a.rt.mintRoomInvite('war', { memberId: 'owner-1' }), /could not make a link/, 'a server that fails is not silently replaced')
 })
+
+test('#884: a home with no Bot Social identity yet gets one for the link it makes and the link it joins', async (t) => {
+  const { a, b } = await twoHomes(t)
+  const asked = []
+  const giveIdentity = (rt, home) => async (ids) => {
+    asked.push(...ids)
+    for (const id of ids) rt.state.bots[id].fields = { social: { member: { home, handle: `@${id}.${home.slice(1)}` } } }
+  }
+  for (const id of Object.keys(a.rt.state.bots)) delete a.rt.state.bots[id].fields
+  for (const id of Object.keys(b.rt.state.bots)) delete b.rt.state.bots[id].fields
+  a.rt.roomInviteServer.identify = giveIdentity(a.rt, '@alice.home')
+  b.rt.roomInviteServer.identify = giveIdentity(b.rt, '@bob.home')
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  assert.deepEqual(asked, ['chief-a'], 'only the Bot the link knocks on')
+  assert.equal(invite.handle, '@chief-a.alice.home')
+  const joined = await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['helper-b'] }, { memberId: 'owner-1' })
+  assert.deepEqual(asked, ['chief-a', 'helper-b'], 'and only the Bot the guest brings')
+  assert.deepEqual(joined.bots, ['@helper-b.bob.home'])
+  b.rt.roomInviteServer.identify = async () => { throw new Error('503') }
+  delete b.rt.state.bots['chief-b'].fields
+  await assert.rejects(() => b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' }), /could not give this Bot an identity/)
+})

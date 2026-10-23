@@ -1122,7 +1122,8 @@ export function install(rt) {
       applyInbound: (event, actor) => rt.applyInboundRoomShare?.(event, actor),
       leaveInbound: spec => rt.leaveInboundShares?.(spec),
       // #884: Bot Social's record of a local room's invite tickets. `impl` is
-      // { mint({ roomId, name, handle }) → { ticket, expiresAt } | undefined (no server support),
+      // { identify(botIds) (give those local Bots a Bot Social identity if they have none),
+      //   mint({ roomId, name, handle }) → { ticket, expiresAt } | undefined (no server support),
       //   preview(ticket), claim(ticket, handles), verify(ticket) → { roomId, claimer }, revoke(ticket) };
       // a refusal throws an Error whose `code` is Bot Social's. Returns the unregister function.
       serveInvites(impl) {
