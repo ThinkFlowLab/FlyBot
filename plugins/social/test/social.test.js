@@ -301,8 +301,12 @@ test('#848: registration keeps the owner-level name and home the share envelope 
   const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '' } })
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
-  await social.registerAll()
+  // No saved identity, so the registration itself is the only writer of the name and home; the
+  // fill-in path for an identity saved before #848 is exercised on `b` further down.
   const scope = ctx.flybot.scope('social')
+  scope.fields.set('a', 'member', undefined)
+  scope.fields.set('b', 'member', undefined)
+  await social.registerAll()
   const member = scope.fields.get('a', 'member')
   assert.equal(member.ownerName, 'SelfTest A2')
   assert.equal(member.home, '@selftesta2.home')
@@ -311,6 +315,37 @@ test('#848: registration keeps the owner-level name and home the share envelope 
   scope.fields.set('b', 'member', { bot_id: 'm-old', handle: '@writer.selftesta2.home' })
   await social.registerAll()
   assert.deepEqual(scope.fields.get('b', 'member'), { bot_id: 'm-old', handle: '@writer.selftesta2.home', home: '@selftesta2.home', ownerName: 'SelfTest A2' })
+})
+
+test('#848: a whoami that fails once is read again, so the name is not lost until restart', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let reads = 0
+  let failing = true
+  server.tools.whoami = () => {
+    reads += 1
+    if (failing) throw Object.assign(new Error('whoami: 401 unauthorized'), { code: 'unauthorized' })
+    return {
+      kind: 'owner', display_name: 'SelfTest A2', auto_approve_face_rooms: false,
+      connector_identity: { bot_handles: ['@selftesta2.home'] },
+    }
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  const scope = ctx.flybot.scope('social')
+  scope.fields.set('a', 'member', undefined)
+  scope.fields.set('b', 'member', undefined)
+  await social.registerAll()
+  assert.equal(scope.fields.get('a', 'member').ownerName, undefined, 'a failed read invents no name')
+  const before = reads
+  // The next start reads again instead of keeping the empty answer for the life of the process.
+  failing = false
+  await social.registerAll()
+  assert.equal(reads > before, true, 'whoami is asked again')
+  assert.equal(scope.fields.get('a', 'member').ownerName, 'SelfTest A2')
+  assert.equal(scope.fields.get('a', 'member').home, '@selftesta2.home')
 })
 
 test('any local Bot can message any Bot of a friend home; the send is held, then signed as the member', async (t) => {

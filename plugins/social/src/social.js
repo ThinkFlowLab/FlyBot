@@ -621,20 +621,30 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // share envelope so the invited home names the person who invited it, not `a friend`. A home that
   // answers neither keeps the old fallback, so this is additive.
   let ownerIdentity
+  let ownerReading
+  // A failed read is not cached (#848 review): a whoami that answers 401 once at startup would
+  // otherwise leave every share envelope saying "a friend" until the process restarts. Only an
+  // answer is kept; callers that arrive while a read is in flight share that one read.
   async function meIdentity() {
     if (ownerIdentity !== undefined) return ownerIdentity
     if (!client) {
       ownerIdentity = { ownerName: '', home: '' }
       return ownerIdentity
     }
-    try {
-      const me = viewMe(await client.callTool('whoami'))
-      ownerIdentity = { ownerName: me?.ownerName || '', home: me?.home || '' }
-    } catch (error) {
-      warn('whoami not read', error)
-      ownerIdentity = { ownerName: '', home: '' }
+    if (!ownerReading) {
+      ownerReading = (async () => {
+        try {
+          const me = viewMe(await client.callTool('whoami'))
+          ownerIdentity = { ownerName: me?.ownerName || '', home: me?.home || '' }
+        } catch (error) {
+          warn('whoami not read', error)
+        } finally {
+          ownerReading = undefined
+        }
+      })()
     }
-    return ownerIdentity
+    await ownerReading
+    return ownerIdentity ?? { ownerName: '', home: '' }
   }
   // The member record the host reads when it writes a share envelope (#848): `home` and `ownerName`
   // are what `shareInviter` needs, next to the identity the plugin already keeps.
