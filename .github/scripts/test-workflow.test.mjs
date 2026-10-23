@@ -59,18 +59,75 @@ const live = readFileSync(new URL('../workflows/live-e2e.yml', import.meta.url),
 // a single `}` and stops only at the closing `}}` (#813 review, INC at 823cff45).
 const SECRET = /\$\{\{(?:(?!\}\})[\s\S])*?\bsecrets\b/
 
-// A trailing `#` comment on a non-scalar line is YAML syntax, dropped before interpolation, so it is
-// not a carrier — but only when the `#` is outside quotes: in `run: echo "a # ${{ secrets.X }}"`
-// the `#` is inside the double quotes, the line is a real shell command, and the secret arrives.
-const withoutTrailingComment = line => {
+// A trailing `#` comment is YAML syntax: it is dropped before interpolation, so it is not a carrier.
+// Where a comment starts depends on the kind of the scalar, not on quotes that merely appear inside
+// it (#834): in a plain scalar ` #` opens a comment whatever the quotes around it are, a quoted
+// scalar keeps its `#` as text (a backslash escapes the closing quote in `"…"`, and `''` is a
+// quote in `'…'`), and a flow collection has the same quoted rules inside its braces.
+const scalarStart = line => {
+  const mapping = /^(\s*(?:-\s+)?)(?:"[^"]*"|'[^']*'|[^\s#][^:]*?):(?=\s|$)/.exec(line)
+  if (mapping) return mapping[0].length
+  const item = /^\s*-\s+(?=\S)/.exec(line)
+  return item ? item[0].length : -1
+}
+
+// The index of the `#` that starts a comment, or -1. `quotes` says whether the context reads quote
+// characters at all: a plain scalar does not, so `echo "tag # x"` ends at that `#`.
+const commentStart = (text, quotes) => {
   let quote = ''
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (quote) { if (ch === quote) quote = ''; continue }
-    if (ch === "'" || ch === '"') { quote = ch; continue }
-    if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i).trimEnd()
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (quote) {
+      if (quote === '"' && ch === '\\') { i += 1; continue }
+      if (ch === quote) {
+        if (quote === "'" && text[i + 1] === "'") { i += 1; continue }
+        quote = ''
+      }
+      continue
+    }
+    if (quotes && (ch === '"' || ch === "'")) { quote = ch; continue }
+    if (ch === '#' && (i === 0 || /\s/.test(text[i - 1]))) return i
   }
-  return line
+  return -1
+}
+
+// The closing quote of a scalar that starts with one, or -1 while it is still open.
+const closingQuote = text => {
+  const quote = text[0]
+  for (let i = 1; i < text.length; i += 1) {
+    if (quote === '"' && text[i] === '\\') { i += 1; continue }
+    if (text[i] === quote) {
+      if (quote === "'" && text[i + 1] === "'") { i += 1; continue }
+      return i
+    }
+  }
+  return -1
+}
+
+const withoutTrailingComment = line => {
+  const start = scalarStart(line)
+  if (start < 0) return line
+  const value = line.slice(start)
+  const lead = value.length - value.replace(/^\s+/, '').length
+  const text = value.slice(lead)
+  if (!text) return line
+  if (text[0] === '|' || text[0] === '>') return line
+  let cut = -1
+  if (text[0] === '"' || text[0] === "'") {
+    const close = closingQuote(text)
+    if (close < 0) return line
+    const after = commentStart(text.slice(close + 1), false)
+    if (after >= 0) cut = lead + close + 1 + after
+  } else if (text[0] === '{' || text[0] === '[') {
+    const at = commentStart(text, true)
+    if (at >= 0) cut = lead + at
+  } else {
+    // A plain scalar: a quote character in it is just a character, so a ` #` always starts the comment.
+    const at = commentStart(text, false)
+    if (at >= 0) cut = lead + at
+  }
+  if (cut < 0) return line
+  return line.slice(0, start + cut).trimEnd()
 }
 
 // Inside a `run: |` or a `with:` block scalar, a `#` line is literal text that GitHub interpolates
@@ -115,7 +172,7 @@ export const inheritsSecret = (text, indent) => {
   return false
 }
 
-const liveSteps = live
+export const stepsOf = text => text
   .split(/^ {6}- /m)
   .slice(1)
   .map(block => ({
@@ -126,6 +183,7 @@ const liveSteps = live
     // Any carrier in the step's own block — `env:`, `with:` or an inline expression.
     mapsSecret: mapsSecret(block),
   }))
+const liveSteps = stepsOf(live)
 const KEYED = [
   'npm ci (core)',
   'Install the pinned DSH runtime',
@@ -175,14 +233,27 @@ test('#813: mapsSecret sees every carrier, and a comment naming the secret is no
     'join() in an inline run:': '        run: node check.mjs --key "${{ join(secrets.DEEPSEEK_API_KEY, \',\') }}"\n',
     // Interpolated before the shell reads the line, so a comment inside a script is a carrier too.
     'comment inside a run: block': '        run: |\n          # the key arrives here\n          echo "${{ secrets.DEEPSEEK_API_KEY }}"\n',
-    // A `#` inside quotes is not a comment: it stays part of the command and the key arrives.
-    'a quoted # before the secret': '        run: echo "tag # ${{ secrets.DEEPSEEK_API_KEY }}"\n',
+    // A quoted scalar keeps its `#`: the backslash escapes the closing quote, so the expression is
+    // inside the value Actions interpolates (#834, the false green this test used to pin as green).
+    'an escaped quote before # in a double-quoted run:': '        run: "echo \\"x # ${{ secrets.DEEPSEEK_API_KEY }}\\""\n',
+    'an escaped quote before # in a double-quoted env: value': '        env:\n          DEEPSEEK_API_KEY: "a\\"b # ${{ secrets.DEEPSEEK_API_KEY }}"\n',
+    // The flow form of `env:` has the same quoting rules inside its braces.
+    'an escaped quote before # in a flow env: value': '        env: { DEEPSEEK_API_KEY: "a\\"b # ${{ secrets.DEEPSEEK_API_KEY }}" }\n',
+    // A single-quoted scalar keeps its `#` as well, and `''` is a quote inside it.
+    'a quoted # inside a single-quoted scalar': "        run: 'echo ''quoted'' # ${{ secrets.DEEPSEEK_API_KEY }}'\n",
   }
   for (const [label, body] of Object.entries(carriers)) {
     assert.equal(mapsSecret(step(body)), true, `${label} carries the secret and must be detected`)
   }
   const nonCarriers = {
     'a YAML comment naming the secret': '        run: node check.mjs\n        # this step never reads ${{ secrets.DEEPSEEK_API_KEY }}\n',
+    // The negative control of the escaped-quote pair: the scalar closes before the `#`, so the
+    // expression is a comment and never reaches the shell (#834).
+    'a value closed before a # comment': '        run: "echo hi" # ${{ secrets.DEEPSEEK_API_KEY }}\n',
+    // And the plain scalar the old fixture pinned the other way round: inside a plain scalar the
+    // quote characters are text, so ` #` opens the comment whatever precedes it (#834).
+    'a plain scalar where # opens the comment': '        run: echo "tag # ${{ secrets.DEEPSEEK_API_KEY }}"\n',
+    'a plain scalar whose comment follows a single quote': "        run: echo 'tag # ${{ secrets.DEEPSEEK_API_KEY }}'\n",
     'a trailing YAML comment on the run: line': '        run: echo hi  # ${{ secrets.DEEPSEEK_API_KEY }}\n',
     'a trailing YAML comment on a with: value': '        with:\n          name: evidence  # not ${{ secrets.DEEPSEEK_API_KEY }}\n',
     'a with: input that is not a secret': '        with:\n          node-version: 24\n          cache: npm\n',
@@ -191,6 +262,41 @@ test('#813: mapsSecret sees every carrier, and a comment naming the secret is no
   for (const [label, body] of Object.entries(nonCarriers)) {
     assert.equal(mapsSecret(step(body)), false, `${label} is not a carrier and cannot demand a gate`)
   }
+})
+
+// #834: the two shapes the issue measured on a YAML parser. A step is a carrier when the value
+// Actions interpolates holds the expression, not when a hand-scanned line happens to keep it.
+test('#834: a plain scalar keeps nothing of a # comment, and an escaped quote keeps the expression', () => {
+  // Appended the way the issue reproduced it: one step at the end of the real workflow, no gate.
+  const withProbe = body => stepsOf(`${live}\n      - name: probe\n${body}`)
+  const probe = body => withProbe(body).find(step => step.name === 'probe')
+  const carriers = body => withProbe(body).filter(step => step.mapsSecret).map(step => step.name)
+
+  // Case 1: `run:` is a plain scalar, so ` #` opens a comment whatever quotes precede it and the
+  // expression never reaches the shell. It must stay out of the carrier list (the old scanner put it
+  // in, and the two #811 tests then failed on a step that reads nothing).
+  const plain = probe('        run: echo "tag # ${{ secrets.DEEPSEEK_API_KEY }}"\n')
+  assert.equal(plain.mapsSecret, false, 'a plain scalar whose # opens a comment is not a carrier')
+  assert.equal(
+    carriers('        run: echo "tag # ${{ secrets.DEEPSEEK_API_KEY }}"\n').length,
+    liveSteps.filter(step => step.mapsSecret).length,
+    'the plain-scalar probe adds no carrier to the ones the workflow really has',
+  )
+
+  // Case 2: the scalar is double-quoted, so `\"` is an escaped quote, the `#` is text, and an
+  // ungated step really does hold the key. It must be a carrier, and the #811 rule must catch it.
+  const escaped = probe('        run: "echo \\"x # ${{ secrets.DEEPSEEK_API_KEY }}\\""\n')
+  assert.equal(escaped.mapsSecret, true, 'an escaped quote leaves the expression inside the value')
+  assert.equal(escaped.gate, '', 'the probe carries no gate, so the #811 rule has something to catch')
+
+  // The `env:` spelling of the same shape: the matcher #830 replaced caught it, this one must too.
+  const env = probe('        env:\n          DEEPSEEK_API_KEY: "a\\"b # ${{ secrets.DEEPSEEK_API_KEY }}"\n')
+  assert.equal(env.mapsSecret, true, 'an escaped quote in an env: value is still a carrier')
+  assert.ok(carriers('        env:\n          DEEPSEEK_API_KEY: "a\\"b # ${{ secrets.DEEPSEEK_API_KEY }}"\n').includes('probe'))
+
+  // The negative control of case 2: the same quoting, but closed before the `#`, is a comment.
+  const closed = probe('        run: "echo hi" # ${{ secrets.DEEPSEEK_API_KEY }}\n')
+  assert.equal(closed.mapsSecret, false, 'a comment after a closed scalar is not a carrier')
 })
 
 test('#813: the secret reaches exactly three steps, and the preflight alone stays ungated', () => {
