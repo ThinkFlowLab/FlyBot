@@ -41,6 +41,7 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 | `patches/ds-bot/` | Ordered patch topics. |
 | `scripts/ds-bot-patches.mjs` | generate / check patches. |
 | `core/dev/eval/` | User-scenario runner (#358): pure rubrics (`rubric.mjs`), canonical journey specs (`specs.mjs`), optional model judge (`judge.mjs`), grader hashing (#398, `guard.mjs`) and a CLI (`run.mjs`). Dev only, not part of `npm test`. |
+| `core/dev/token-report.mjs` | Reads the usage ledger into per-Bot, per-Session and per-day token numbers and each Session's prompt growth, keeping fresh input, cache read and cache write apart (#799). Read-only; `--db`, `--from`, `--to`, `--tz`, `--bot`, `--top`, `--growth`, `--json`. |
 | `core/src/host/hooks.js` (approvals) | Held sends bound to their owner — provenance, owner-bound decisions, stale revalidation. Chief replacement invalidates sender-side holds eagerly on `setMain` (not via `staleReason`). The authority contract lives in [team](team.md) (#52). |
 
 ## Entry points
@@ -78,6 +79,21 @@ a symlinked temp root (macOS `/var` → `/private/var`) would otherwise deny eve
 real `dev/bench.sh` bench: actual DSH sessions, the scripted mock model, real shell
 tool writes and test runs, and the task API lifecycle to `accepted`. It is a manual,
 CI-optional smoke, still deterministic and token-free, not a real-model trial.
+
+## Token report
+
+The usage ledger (`src/host/usage.js`) is read outside the Usage page by
+`core/dev/token-report.mjs` (#799): per Bot, per Session and per day it prints calls, fresh
+input, cache read, cache write, output and their sum as a separate `prompt` column, the
+per-call prompt percentiles (nearest rank), the top Sessions by prompt, and each Session's
+prompt growth between consecutive calls. A prompt that shrinks inside a Session is a
+compaction, a checkpoint or a new part, so it starts a new run instead of counting as a
+negative delta. Fresh input and cache read are never summed into one figure. It opens the
+ledger read-only, defaults `--db` to `$DSH_HOME/usage.sqlite`, and exits non-zero naming the
+path when it is missing. The report it produced and its sample are in
+[docs/reports/2026-10-23-token-spend.md](../../docs/reports/2026-10-23-token-spend.md);
+`core/test/token-report.test.js` asserts hand-computed sums on a fixture ledger, the
+missing-`--db` exit, and that every row of that report still carries its provenance.
 
 ## Common mistakes
 
