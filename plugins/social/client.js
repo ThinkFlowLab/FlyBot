@@ -1084,8 +1084,10 @@ window.__ModuleLoader__.load({
         setOthers(openOf(value).filter(item => item.ticket !== shown?.ticket).length)
       }
       // How many open links there are besides the one on screen (none shown: all of them).
+      // A count that cannot be read keeps the one on screen: the mint or withdraw itself already landed.
       const recount = async (shownTicket) => {
-        const value = await host('room-invite', { roomId })
+        let value
+        try { value = await host('room-invite', { roomId }) } catch { return }
         setOthers(openOf(value).filter(item => item.ticket !== shownTicket).length)
       }
       useEffect(() => {
@@ -1109,12 +1111,12 @@ window.__ModuleLoader__.load({
           return
         }
         setInvite(value.invite)
-        await recount(value.invite.ticket).catch(() => {})
+        await recount(value.invite.ticket)
       })
       const revoke = () => run(async () => {
         await host('room-invite-revoke', { roomId, ticket: invite?.ticket })
         setInvite(null)
-        await recount(undefined).catch(() => {})
+        await recount(undefined)
         setNote({ tone: 'hint', text: tr('The link was withdrawn. Nobody can join with it now.') })
       })
       const revokeAll = () => run(async () => {
