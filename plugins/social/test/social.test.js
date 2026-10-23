@@ -2714,7 +2714,7 @@ test('#456: a face-room event read twice (two polls at once) reaches the room on
 function loadSocialClient(callImpl) {
   const registered = []
   const entries = []
-  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, setInterval, clearInterval, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = {
     slots: { register: (slot, entry) => { entries.push([slot, entry]); return () => {} } },
@@ -3337,7 +3337,7 @@ test('#306: the waiting dialog asks before Leave, lands on the main Bot, and the
   assert.equal(overview, null)
   // Answering Leave → Leave leaves on Bot Social and opens the main Bot.
   const asked = walk(loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
-    .pluginOf(['waiting', [], [], '482913', false, null, [], room, 0, true]).FaceToFaceGroup({ actions, roster, onClose() {} }))
+    .pluginOf(['waiting', [], [], '482913', false, null, [], room, 0, null, null, true]).FaceToFaceGroup({ actions, roster, onClose() {} }))
   await asked.find(n => n.props['data-flybot'] === 'face-leave-yes').props.onClick()
   await new Promise(resolve => setImmediate(resolve))
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
@@ -8930,4 +8930,415 @@ test('#500: Share with a friend lists candidates and shares on click', async () 
   await btn.props.onClick()
   await new Promise(r => setTimeout(r, 0))
   assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.botId === 'b' && payload.home === '@bob.home' && payload.friendBotId === 'pb-bob'))
+})
+
+// ---- #773: a room code shown as a QR image, and scanning one back ----------------------
+// The reference matrix comes from an independent encoder (node-qrcode) for the same payload in
+// byte mode, level M: every module is pinned, not just "something was drawn".
+const FACE_QR_482913 = [
+  '111111101001101111111',
+  '100000101000001000001',
+  '101110100101101011101',
+  '101110101111001011101',
+  '101110100011001011101',
+  '100000100001101000001',
+  '111111101010101111111',
+  '000000001011100000000',
+  '101101110111101001011',
+  '111011000010110011000',
+  '000101100011001001011',
+  '101111010111110111011',
+  '101000101100111011110',
+  '000000001110100011101',
+  '111111101010010011000',
+  '100000101011100101110',
+  '101110100111010101010',
+  '101110101111110110010',
+  '101110101000101000000',
+  '100000100100001110001',
+  '111111101010101100000',
+]
+// The waiting dialog's state order: step, bots, selected, code, busy, status, failures, room, tick, scan.
+function faceWaiting(overrides = {}) {
+  const base = { step: 'waiting', bots: [], selected: [], code: '482913', busy: false, status: null, failures: [], room: null, tick: 0, scan: null }
+  const state = { ...base, ...overrides }
+  return [state.step, state.bots, state.selected, state.code, state.busy, state.status, state.failures, state.room, state.tick, state.scan]
+}
+
+test('#773: the room QR is a real QR code — byte mode, level M, version 1, every module pinned', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const room = { roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z', members: [] }
+  const tree = walk(pluginOf(faceWaiting({ room })).FaceToFaceGroup({ onClose() {} }))
+  const qr = tree.find(n => n.props['data-flybot'] === 'face-qr')
+  assert.ok(qr, 'the waiting room draws a QR under the number')
+  assert.equal(qr.props['data-code'], '482913')
+  assert.equal(qr.props['data-modules'], 21)
+  const svg = tree.find(n => n.props.className === 'fs-qr-svg')
+  assert.ok(svg)
+  assert.equal(svg.props.viewBox, '0 0 21 21')
+  assert.match(String(svg.props['aria-label']), /482913/)
+  const path = svg.children.find(child => child?.type === 'path').props.d
+  const expected = []
+  FACE_QR_482913.forEach((row, y) => {
+    for (let x = 0; x < row.length; x += 1) if (row[x] === '1') expected.push('M' + x + ' ' + y + 'h1v1h-1z')
+  })
+  assert.equal(path, expected.join(''), 'every module matches the reference matrix')
+})
+
+test('#773: the image is drawn locally — no request, no third-party image service', () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const room = { roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2099-01-01T00:00:00.000Z', members: [] }
+  walk(pluginOf(faceWaiting({ room })).FaceToFaceGroup({ onClose() {} }))
+  assert.deepEqual(calls, [], 'drawing the code asks nobody for anything')
+  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(client, /qrserver|chart\.googleapis|goqr\.me|api\.qrserver/, 'no third-party image service')
+})
+
+test('#773: the QR goes when joining ends and while the room is already open', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const draw = (room) => walk(pluginOf(faceWaiting({ room })).FaceToFaceGroup({}))
+  const ended = draw({ roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt: '2000-01-01T00:00:00.000Z', members: [] })
+  assert.equal(ended.some(n => n.props['data-flybot'] === 'face-qr'), false, 'no code for a number that no longer works')
+  assert.ok(ended.some(n => n.props['data-flybot'] === 'face-wait-count' && n.children.includes('Joining has ended')))
+  const started = draw({ roomId: 'g1', faceRoomId: 'frm_1', status: 'open', joinCode: '482913', members: [] })
+  assert.equal(started.some(n => n.props['data-flybot'] === 'face-qr'), false, 'the room is open, so the number is void')
+  const open = draw({ roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode: '482913', members: [] })
+  assert.ok(open.some(n => n.props['data-flybot'] === 'face-qr'), 'no deadline means the number still works')
+})
+
+test('#773: the room panel draws the same block, so it shows the same QR', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const panel = (expiresAt) => walk(pluginOf([]).FaceRoomOverview({
+    room: { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status: 'candidate', joinCode: '482913', expiresAt }, participants: [] },
+    roster: { byId: {} },
+  }))
+  const qr = panel('2099-01-01T00:00:00.000Z').find(n => n.props['data-flybot'] === 'face-qr')
+  assert.ok(qr)
+  assert.equal(qr.props['data-code'], '482913')
+  assert.equal(panel('2000-01-01T00:00:00.000Z').some(n => n.props['data-flybot'] === 'face-qr'), false)
+})
+
+// One Bot picked, a camera and a decoder the test controls, and every state write recorded.
+async function scanCase({ detector, media } = {}) {
+  const calls = []
+  const { registered, sandbox, walk } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    return endpoint === 'social/face-join' ? { roomId: 'g1', joinCode: payload.code, joinedAs: { handle: '@chief.me.home' } } : {}
+  })
+  if (detector) sandbox.BarcodeDetector = detector
+  if (media) sandbox.navigator = { mediaDevices: media }
+  const setters = []
+  let index = 0
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect() {},
+    useMemo: fn => fn(),
+    useRef: value => ({ current: value }),
+    useState: (value) => {
+      const at = index++
+      const initial = at === 0 ? 'setup' : at === 1 ? [{ id: 'a', name: 'Chief', isMain: true }] : at === 2 ? ['a'] : value
+      return [initial, next => setters.push({ at, value: typeof next === 'function' ? next(initial) : next })]
+    },
+  }))
+  const tree = walk(plugin.FaceToFaceGroup({}))
+  const button = tree.find(n => n.props['data-flybot'] === 'face-scan')
+  assert.ok(button, 'the join form offers a scan')
+  button.props.onClick()
+  for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve))
+  const last = (at) => setters.filter(item => item.at === at).at(-1)?.value
+  return { calls, setters, last, tree }
+}
+
+test('#773: without a platform decoder the scan says so, and the number field stays', async () => {
+  let asked = 0
+  const media = { getUserMedia: async () => { asked += 1; return { getTracks: () => [] } } }
+  const { calls, last } = await scanCase({ media })
+  assert.equal(asked, 0, 'no camera prompt when the browser cannot decode')
+  assert.deepEqual(JSON.parse(JSON.stringify(last(9))), { tone: 'error', text: 'This browser cannot scan codes. Type the 6-digit number instead.' })
+  assert.deepEqual(calls, [], 'nothing was joined')
+})
+
+test('#773: a camera the owner refuses gets one sentence, not a silent stop', async () => {
+  const denied = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' })
+  const { calls, last } = await scanCase({
+    detector: class { detect() { return Promise.resolve([]) } },
+    media: { getUserMedia: async () => { throw denied } },
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(last(9))), { tone: 'error', text: 'FlyBot cannot use the camera. Allow the camera for this page, or type the 6-digit number instead.' })
+  assert.deepEqual(calls, [])
+})
+
+test('#773: a QR from somewhere else is not a room code', async () => {
+  const stopped = []
+  const stream = { getTracks: () => [{ stop: () => stopped.push('stopped') }] }
+  const { calls, last } = await scanCase({
+    detector: class { detect() { return Promise.resolve([{ rawValue: 'https://example.com/join/42' }]) } },
+    media: { getUserMedia: async () => stream },
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(last(9))), { tone: 'error', text: 'That is not a FlyBot room code. Ask for the 6-digit number instead.' })
+  assert.deepEqual(calls, [], 'a foreign code cannot join anything')
+  assert.deepEqual(stopped, ['stopped'], 'the camera is released')
+})
+
+test('#773: a scanned code joins through the same social/face-join the number field uses', async () => {
+  const scanned = await scanCase({
+    detector: class { detect() { return Promise.resolve([{ rawValue: 'FLYBOT-482913' }]) } },
+    media: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+  })
+  assert.equal(scanned.last(3), '482913', 'the scan fills the same number field')
+  // Only the shared join moves the dialog on: a scan that joined by itself would leave the
+  // room state untouched, so this is what tells one path from two.
+  assert.ok(scanned.setters.some(item => item.at === 4 && item.value === true), 'the shared join ran (busy)')
+  assert.equal(scanned.last(7)?.roomId, 'g1', 'the shared join set the room')
+  assert.deepEqual(JSON.parse(JSON.stringify(scanned.last(9))), { tone: 'ok', text: 'Scanned 482913.' })
+  assert.deepEqual(JSON.parse(JSON.stringify(scanned.calls)), [['social/face-join', { code: '482913', botId: 'a' }]])
+
+  // Typing the same number and pressing Join must produce the identical request.
+  const typed = []
+  const { registered, walk } = loadSocialClient(async (endpoint, payload) => { typed.push([endpoint, payload]); return {} })
+  const states = ['setup', [{ id: 'a', name: 'Chief', isMain: true }], ['a'], '482913']
+  let index = 0
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect() {},
+    useMemo: fn => fn(),
+    useRef: value => ({ current: value }),
+    useState: value => [index < states.length ? states[index++] : value, () => {}],
+  }))
+  const form = walk(plugin.FaceToFaceGroup({})).find(n => n.props['data-flybot'] === 'face-join')
+  await form.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(JSON.parse(JSON.stringify(typed)), JSON.parse(JSON.stringify(scanned.calls)), 'one join path, not two')
+})
+
+// ---- #773: invites into a room that already exists (link + QR, bot-social#39) ----------
+
+const INVITE_TICKET = 'AbCdEfGhIjKlMnOpQrStUv'
+const INVITE_URL = 'https://bot-social.example.com/r/' + INVITE_TICKET
+// sha256 of the SVG path for that URL in byte mode, level M, version 4 (mask 2), from an
+// independent encoder — the same pin the room number's matrix test uses, one hash for 33x33.
+const INVITE_PATH_HASH = '0f68cc1a0189eb0ad979b5e19357b2caf2ca66eb59e61fd87da4b2be4ca58025'
+
+// The room panel's hook order, as one array for the fake useState: busy, note, tick, snapshot,
+// dialog tick, then Leave's confirm flag, then the Auto-send switch's on/busy/error, then the
+// invite card's invite/busy/copied/tick.
+function faceOpenRoom(states = {}) {
+  const base = { busy: '', note: null, tick: 0, snapshot: null, dialogTick: 0, leaveAsk: false, auto: {}, toggleBusy: '', autoError: '', invite: null, cardBusy: false, copied: false, cardTick: 0 }
+  const value = { ...base, ...states }
+  return [value.busy, value.note, value.tick, value.snapshot, value.dialogTick, value.leaveAsk, value.auto, value.toggleBusy, value.autoError, value.invite, value.cardBusy, value.copied, value.cardTick]
+}
+const openFaceRoom = { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm_1', status: 'open' }, participants: [] }
+
+test('#773: the invite QR is the link itself, drawn locally, with copy and withdraw beside it', async () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const tree = walk(pluginOf(faceOpenRoom({ invite: { url: INVITE_URL, ticket: INVITE_TICKET, expiresAt: '2099-01-01T00:00:00.000Z' } }))
+    .FaceRoomOverview({ room: openFaceRoom, roster: { byId: {} } }))
+  const qr = tree.find(n => n.props['data-flybot'] === 'face-invite-qr')
+  assert.ok(qr, 'the open room offers a scannable invite')
+  assert.equal(qr.props['data-url'], INVITE_URL)
+  assert.equal(qr.props['data-modules'], 33)
+  const svg = tree.find(n => n.props.className === 'fs-qr-svg' && n.props.viewBox === '0 0 33 33')
+  assert.ok(svg)
+  const path = svg.children.find(child => child?.type === 'path').props.d
+  assert.equal(createHash('sha256').update(path).digest('hex'), INVITE_PATH_HASH, 'every module matches the reference encoder')
+  assert.equal(tree.find(n => n.props['data-flybot'] === 'face-invite-url').children.join(''), INVITE_URL)
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-invite-copy' && n.children.includes('Copy link')))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-invite-revoke' && n.children.includes('Withdraw link')))
+  // A live link is not minted twice: the button says so and is disabled.
+  const mint = tree.find(n => n.props['data-flybot'] === 'face-invite-mint')
+  assert.equal(mint.children[0], 'Link ready')
+  assert.equal(mint.props.disabled, true)
+})
+
+test('#773: Create link asks the host once, with the room id', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    return endpoint === 'social/face-invite'
+      ? { ticket: INVITE_TICKET, url: INVITE_URL, expiresAt: '2099-01-01T00:00:00.000Z' }
+      : {}
+  })
+  const tree = walk(pluginOf(faceOpenRoom()).FaceRoomOverview({ room: openFaceRoom, roster: { byId: {} } }))
+  const button = tree.find(n => n.props['data-flybot'] === 'face-invite-mint')
+  assert.equal(button.children[0], 'Create link')
+  button.props.onClick()
+  for (let i = 0; i < 4; i += 1) await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['social/face-invite', { roomId: 'frm_1' }]])
+})
+
+test('#773: an older Bot Social says so in one sentence, and offers no image', async () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const tree = walk(pluginOf(faceOpenRoom({ invite: { unsupported: true } })).FaceRoomOverview({ room: openFaceRoom, roster: { byId: {} } }))
+  const said = tree.find(n => n.props['data-flybot'] === 'face-invite-unsupported')
+  assert.ok(said)
+  assert.equal(said.children.join(''), 'Invites need a newer Bot Social. The 6-digit number still works.')
+  assert.equal(tree.some(n => n.props['data-flybot'] === 'face-invite-qr'), false)
+})
+
+test('#773: a pasted link joins through social/face-join-invite, and a non-link never does', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    return {}
+  })
+  const bots = [{ id: 'a', name: 'Chief', isMain: true }]
+  const dialog = (link) => walk(pluginOf(['setup', bots, ['a'], '', false, null, [], null, 0, null, { link, status: null }]).FaceToFaceGroup({}))
+  const good = dialog(INVITE_URL)
+  good.find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
+  for (let i = 0; i < 4; i += 1) await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['social/face-join-invite', { ticket: INVITE_TICKET, botId: 'a' }]])
+
+  // A friend-invite link, or nothing at all, is answered in the panel and calls nobody.
+  const statuses = []
+  let index = 0
+  const states = ['setup', bots, ['a'], '', false, null, [], null, 0, null, { link: 'https://bot-social.example.com/i/INV123', status: null }]
+  const { registered } = loadSocialClient(async () => ({}))
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect() {},
+    useMemo: fn => fn(),
+    useRef: value => ({ current: value }),
+    useState: value => {
+      const at = index++
+      const initial = at < states.length ? states[at] : value
+      return [initial, next => { if (at === 10) statuses.push(next) }]
+    },
+  }))
+  const tree = walk(plugin.FaceToFaceGroup({}))
+  tree.find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(statuses.at(-1).status.text, 'That is not an invite link. It looks like https://…/r/…')
+  assert.equal(calls.length, 1, 'the invalid link went nowhere')
+})
+
+test('#773: scanning a room invite link joins that room with its ticket', async () => {
+  const scanned = await scanCase({
+    detector: class { detect() { return Promise.resolve([{ rawValue: INVITE_URL }]) } },
+    media: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(scanned.calls)), [['social/face-join-invite', { ticket: INVITE_TICKET, botId: 'a' }]])
+  assert.deepEqual(JSON.parse(JSON.stringify(scanned.last(9))), { tone: 'ok', text: 'Scanned an invite link.' })
+})
+
+
+// ---- #773: the feature switch for room invites, on the host side ---------------------------
+
+async function inviteServer(t, features, { mint = true } = {}) {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const text = String(url)
+    if (text.endsWith('/v1/platform')) {
+      server.calls.push({ url, name: 'REST GET /v1/platform' })
+      return new Response(JSON.stringify({ name: 'Bot Social', features }), { status: 200 })
+    }
+    if (init?.method === 'POST' && text.endsWith('/invites')) {
+      server.calls.push({ url, name: 'REST POST /invites', args: init.body ? JSON.parse(init.body) : undefined })
+      if (!mint) return new Response(JSON.stringify({ error: { code: 'not_found' } }), { status: 404 })
+      // The server's own url is deliberately somewhere else: the host builds the link from the base.
+      return new Response(JSON.stringify({ ticket: 'AbCdEfGhIjKlMnOpQrStUv', url: 'https://elsewhere.test/r/AbCdEfGhIjKlMnOpQrStUv', expires_at: '2099-01-01T00:00:00.000Z' }), { status: 201 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  server.face.peer('123456')
+  await call('flybot/social/face-join', { start: true, code: '123456' })
+  return { ctx, call, server }
+}
+const inviteCalls = server => server.calls.filter(c => /\/invites/.test(String(c.url)))
+
+test('#773: a server without face_room_invites is never sent to an invite route', async (t) => {
+  const { call, server } = await inviteServer(t, ['typed_by_owner'])
+  const answer = await call('flybot/social/face-invite', { roomId: 'frm_123456' })
+  assert.deepEqual(JSON.parse(JSON.stringify(answer.value)), { unsupported: true })
+  assert.deepEqual(inviteCalls(server), [], 'no request to a route the server does not have')
+  assert.deepEqual(JSON.parse(JSON.stringify((await call('flybot/social/face-invite-revoke', { roomId: 'frm_123456', ticket: 'AbCdEfGhIjKlMnOpQrStUv' })).value)), { unsupported: true })
+  assert.deepEqual(inviteCalls(server), [])
+})
+
+test('#773: with face_room_invites the room mints the link from its own base', async (t) => {
+  const { call, server } = await inviteServer(t, ['face_room_invites'])
+  const minted = (await call('flybot/social/face-invite', { roomId: 'frm_123456' })).value
+  assert.equal(minted.ticket, 'AbCdEfGhIjKlMnOpQrStUv')
+  assert.equal(minted.url, 'https://s/r/AbCdEfGhIjKlMnOpQrStUv', 'the link is built here, not taken from the reply')
+  assert.equal(minted.expiresAt, '2099-01-01T00:00:00.000Z')
+  const [sent] = inviteCalls(server)
+  assert.match(sent.url, /\/v1\/face-rooms\/frm_123456\/invites$/)
+})
+
+test('#773: an expired invite draws no image, and Withdraw asks the host for that ticket', async () => {
+  const past = { url: INVITE_URL, ticket: INVITE_TICKET, expiresAt: '2000-01-01T00:00:00.000Z' }
+  {
+    const { walk, pluginOf } = loadSocialClient(async () => ({}))
+    const tree = walk(pluginOf(faceOpenRoom({ invite: past })).FaceRoomOverview({ room: openFaceRoom, roster: { byId: {} } }))
+    assert.equal(tree.some(n => n.props['data-flybot'] === 'face-invite-qr'), false, 'nothing to scan once the link is dead')
+    assert.equal(tree.find(n => n.props['data-flybot'] === 'face-invite-ended').children.join(''), 'This link has expired.')
+    assert.equal(tree.find(n => n.props['data-flybot'] === 'face-invite-mint').children[0], 'Create link', 'a new link can be made')
+  }
+  {
+    const calls = []
+    const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return { revoked: true } })
+    const tree = walk(pluginOf(faceOpenRoom({ invite: { url: INVITE_URL, ticket: INVITE_TICKET, expiresAt: '2099-01-01T00:00:00.000Z' } }))
+      .FaceRoomOverview({ room: openFaceRoom, roster: { byId: {} } }))
+    await tree.find(n => n.props['data-flybot'] === 'face-invite-revoke').props.onClick()
+    assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['social/face-invite-revoke', { roomId: 'frm_1', ticket: INVITE_TICKET }]])
+  }
+  {
+    const { walk, pluginOf } = loadSocialClient(async () => ({}))
+    const tree = walk(pluginOf(faceOpenRoom({ invite: { revoked: true } })).FaceRoomOverview({ room: openFaceRoom, roster: { byId: {} } }))
+    assert.equal(tree.some(n => n.props['data-flybot'] === 'face-invite-qr'), false)
+    assert.equal(tree.find(n => n.props['data-flybot'] === 'face-invite-revoked').children.join(''), 'The link was withdrawn. Nobody can join with it now.')
+  }
+})
+
+test('#773: a decoder that refuses the qr_code format releases the camera and says so', async () => {
+  const stopped = []
+  const stream = { getTracks: () => [{ stop: () => stopped.push('stopped') }] }
+  const { calls, last } = await scanCase({
+    // A platform with BarcodeDetector but no qr_code: the spec makes the constructor throw.
+    detector: class { constructor() { throw new TypeError('qr_code is not a supported format') } },
+    media: { getUserMedia: async () => stream },
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(last(9))), { tone: 'error', text: 'This browser cannot scan codes. Type the 6-digit number instead.' }, 'one sentence, not a stuck prompt')
+  assert.deepEqual(stopped, ['stopped'], 'the camera the constructor failure left open is released')
+  assert.deepEqual(calls, [], 'nothing was joined')
+})
+
+test('#773: tapping Scan twice releases the camera the first tap opened', async () => {
+  let opened = 0
+  const stopped = []
+  const stream = () => {
+    opened += 1
+    return { getTracks: () => [{ stop: () => stopped.push(opened) }] }
+  }
+  const { tree } = await scanCase({
+    detector: class { detect() { return Promise.resolve([]) } },
+    media: { getUserMedia: async () => stream() },
+  })
+  assert.equal(opened, 1)
+  const button = tree.find(n => n.props['data-flybot'] === 'face-scan')
+  button.props.onClick()
+  for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(opened, 2, 'the second tap opens a second camera')
+  assert.deepEqual(stopped, [1], 'and the first one is released instead of leaking')
+})
+
+test('#773: joining by ticket on a server without face_room_invites never reaches the route', async (t) => {
+  const { call, server } = await inviteServer(t, ['typed_by_owner'])
+  const joined = await call('flybot/social/face-join-invite', { ticket: 'AbCdEfGhIjKlMnOpQrStUv', botId: 'a' })
+  assert.deepEqual(JSON.parse(JSON.stringify(joined.value)), { unsupported: true })
+  assert.deepEqual(inviteCalls(server), [])
+  assert.equal(server.calls.filter(c => /join-invite/.test(String(c.url))).length, 0)
 })

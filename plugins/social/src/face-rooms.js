@@ -34,6 +34,27 @@ export class FaceRoomError extends Error {
 
 export const isJoinCode = (value) => FACE_JOIN_CODE.test(String(value ?? '').trim())
 
+// Room invites (#773): a link into an established room. Shape is fixed by the client contract —
+// `/r/<ticket>` — so a scanned code and a pasted link are the same thing. The server's own `url`
+// is used as it comes, but it must be this shape to be handed to a person.
+export const FACE_INVITE_FEATURE = 'face_room_invites'
+export const FACE_INVITE_PATH = '/r/'
+export const FACE_INVITE_TICKET = /^[A-Za-z0-9_-]{16,64}$/
+export const faceInviteUrl = (origin, ticket) => {
+  const clean = String(ticket ?? '').trim()
+  if (!FACE_INVITE_TICKET.test(clean)) return ''
+  return `${String(origin ?? '').replace(/\/+$/, '')}${FACE_INVITE_PATH}${clean}`
+}
+export const FACE_INVITE_UNSUPPORTED = 'Invites need a newer Bot Social. The 6-digit number still works.'
+export const invalidInviteLink = () => new FaceRoomError('That is not an invite link. It looks like https://…/r/…', 'invalid_invite')
+// A ticket is never accepted on its own: whoever reads "r/…" on a screen gets a link, and a bare
+// string could be anything. Unknown shapes answer '' and the caller says so in one sentence.
+export function parseFaceInviteLink(value) {
+  const text = String(value ?? '').trim()
+  const match = text.match(/^(?:https?:)?\/\/[^\s/]+\/r\/([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i)
+  return match ? match[1] : ''
+}
+
 // Same class of sanitizer as core cleanName / cleanPeerName: one line, no controls,
 // brackets, markup or @, capped. Used for every peer-controlled name and for platform
 // system copy that embeds those names.
@@ -116,6 +137,13 @@ const FRIENDLY = {
   bot_not_found: 'That Bot is not one of yours on Bot Social.',
   face_room_not_found: 'That room is not available.',
   room_full: 'This room already has 8 Bots. Nobody else can join with this number.',
+  // Invite refusals (#773, bot-social#39): each result its own sentence — never one generic
+  // "cannot join", because each one has a different next step.
+  invite_not_found: 'That invite is not valid. Ask for a new one.',
+  expired: 'That invite has expired. Ask for a new one.',
+  revoked: 'That invite was withdrawn. Ask for a new one.',
+  ended: 'That room has closed.',
+  already_member: 'You are already in that room.',
   code_void: 'This number is no longer valid. The room already started.',
   room_closed: 'This room has closed.',
   not_a_member: 'You are no longer in this room.',
@@ -631,6 +659,47 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     return callHttp(method, `${base}${path}`, body)
   }
 
+  const inviteTicket = (value) => {
+    const clean = String(value ?? '').trim()
+    return FACE_INVITE_TICKET.test(clean) ? clean : ''
+  }
+  // Mint: the server hands back `{ ticket, url, expires_at }`. Only the room lead may ask, so a
+  // refusal (403 not_room_creator) is reported, not swallowed.
+  async function mintInvite(roomId) {
+    const body = await request('POST', `/${encodeURIComponent(String(roomId ?? ''))}/invites`)
+    const ticket = inviteTicket(body?.ticket)
+    if (!ticket) throw new FaceRoomError('Bot Social did not return an invite. Try again.', 'invite_failed')
+    return { ticket, url: faceInviteUrl(origin, ticket) || String(body?.url ?? ''), expiresAt: body?.expires_at ?? body?.expiresAt }
+  }
+  async function revokeInvite(roomId, ticket) {
+    const clean = inviteTicket(ticket)
+    if (!clean) throw new FaceRoomError('That is not an invite link.', 'invalid_invite')
+    await request('DELETE', `/${encodeURIComponent(String(roomId ?? ''))}/invites/${encodeURIComponent(clean)}`)
+    return { revoked: true }
+  }
+  async function previewInvite(ticket) {
+    const clean = inviteTicket(ticket)
+    if (!clean) throw new FaceRoomError('That is not an invite link.', 'invalid_invite')
+    const body = await request('GET', `/invites/${encodeURIComponent(clean)}`)
+    const members = body?.member_count ?? body?.members
+    const maxMembers = body?.max_members ?? body?.maxMembers
+    return {
+      roomId: body?.room_id ?? body?.roomId,
+      name: body?.name ? String(body.name) : '',
+      lead: body?.lead ? cleanFaceName(body.lead) : '',
+      members: Number.isFinite(Number(members)) ? Number(members) : undefined,
+      maxMembers: Number.isFinite(Number(maxMembers)) ? Number(maxMembers) : undefined,
+      expiresAt: body?.expires_at ?? body?.expiresAt,
+    }
+  }
+  async function joinInvite({ ticket, bots } = {}) {
+    const clean = inviteTicket(ticket)
+    if (!clean) throw new FaceRoomError('That is not an invite link.', 'invalid_invite')
+    const handles = (Array.isArray(bots) ? bots : bots ? [bots] : []).map(normHandle).filter(Boolean)
+    const body = await request('POST', '/join-invite', { ticket: clean, ...(handles.length ? { bots: handles } : {}) })
+    return viewFaceRoom(body)
+  }
+
   return {
     // Bot Social's clock minus ours, as last seen (0 unless the skew is real).
     clockOffsetMs: () => clockOffsetMs,
@@ -679,15 +748,18 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
       return viewFaceRoom(body)
     },
     // Bot Social features (GET /v1/platform): what this server can do. An older server, or any
-    // failure, is an empty list, so callers keep the behaviour they had.
-    async features() {
-      try {
-        const info = await callHttp('GET', `${origin}/v1/platform`)
-        return Array.isArray(info?.features) ? info.features.map(String) : []
-      } catch {
-        return undefined
-      }
+    // failure, is undefined, so callers keep the behaviour they had.
+    // The probe policy (shared, throttled, retried) lives where the other feature flags live; this
+    // answers the raw list and an older server's 404 is "unknown", never an exception.
+    features() {
+      return callHttp('GET', `${origin}/v1/platform`)
+        .then(info => (Array.isArray(info?.features) ? info.features.map(String) : undefined))
+        .catch(() => undefined)
     },
+    mintInvite,
+    revokeInvite,
+    previewInvite,
+    joinInvite,
     // `typedByOwner`: the person typed this line. Bot Social stamps it for the receiver only when this
     // token may attest; otherwise it answers 403 typed_attestation_forbidden.
     // `mentions`: the Bot handles the line @-names (#293); sent only when the server lists the feature.

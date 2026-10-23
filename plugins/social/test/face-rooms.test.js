@@ -25,6 +25,9 @@ import {
   roomOnlyForJoin,
   publishedForJoin,
   createFaceRoomApi,
+  parseFaceInviteLink,
+  faceInviteUrl,
+  FACE_INVITE_UNSUPPORTED,
   FaceRoomError,
   mapRegisterError,
   encodeFaceHuman,
@@ -551,3 +554,92 @@ test('#476: setLead and setRoles call Bot Social and map its refusals', async ()
   assert.equal(await api.setRoles('frm_1', {}), undefined)
   assert.equal(calls.length, before)
 })
+
+// ---- #773: invite links into a room that already exists (bot-social#39) ------------------
+
+const INVITE_TICKET = 'AbCdEfGhIjKlMnOpQrStUv'
+const INVITE_URL = 'https://bot-social.example.com/r/' + INVITE_TICKET
+
+test('#773: only a /r/<ticket> link is an invite — a bare ticket or another path is not', () => {
+  assert.equal(parseFaceInviteLink(INVITE_URL), INVITE_TICKET)
+  assert.equal(parseFaceInviteLink(INVITE_URL + '/'), INVITE_TICKET)
+  assert.equal(parseFaceInviteLink(INVITE_URL + '?from=chat'), INVITE_TICKET)
+  assert.equal(parseFaceInviteLink('http://localhost:8080/r/' + INVITE_TICKET), INVITE_TICKET)
+  // Not invites: the friend-invite path, a raw ticket, a short ticket, an empty string.
+  assert.equal(parseFaceInviteLink('https://bot-social.example.com/i/INV123'), '')
+  assert.equal(parseFaceInviteLink(INVITE_TICKET), '')
+  assert.equal(parseFaceInviteLink('https://bot-social.example.com/r/short'), '')
+  assert.equal(parseFaceInviteLink('FLYBOT-482913'), '')
+  assert.equal(parseFaceInviteLink(''), '')
+  // The link this client hands out is exactly the shape it accepts.
+  assert.equal(faceInviteUrl('https://bot-social.example.com/', INVITE_TICKET), INVITE_URL)
+  assert.equal(faceInviteUrl('https://bot-social.example.com', 'nope'), '')
+  assert.match(FACE_INVITE_UNSUPPORTED, /newer Bot Social/)
+  assert.match(FACE_INVITE_UNSUPPORTED, /6-digit number still works/)
+})
+
+test('#773: mint asks for a ticket and builds the link from the room id', async () => {
+  const calls = []
+  const fetch = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method })
+    if (String(url).endsWith('/invites')) {
+      return new Response(JSON.stringify({ ticket: INVITE_TICKET, url: INVITE_URL, expires_at: '2026-10-22T10:10:00.000Z' }), { status: 200 })
+    }
+    if (String(url).includes('/invites/')) {
+      return new Response(JSON.stringify({ room_id: 'frm_1', name: 'Tuesday standup', lead: 'Coder · Bob', member_count: 3, max_members: 8, expires_at: '2026-10-22T10:10:00.000Z' }), { status: 200 })
+    }
+    return new Response(JSON.stringify({}), { status: 200 })
+  }
+  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch })
+  const invite = await api.mintInvite('frm_1')
+  assert.deepEqual(calls.at(-1), { url: 'https://s/v1/face-rooms/frm_1/invites', method: 'POST' })
+  assert.equal(invite.ticket, INVITE_TICKET)
+  assert.equal(invite.url, 'https://s/r/' + INVITE_TICKET, 'the link is this server, not whatever the answer said')
+  assert.equal(invite.expiresAt, '2026-10-22T10:10:00.000Z')
+  // Revoke is the ticket on that room, and only that ticket.
+  const revoked = await api.revokeInvite('frm_1', INVITE_TICKET)
+  assert.deepEqual(calls.at(-1), { url: 'https://s/v1/face-rooms/frm_1/invites/' + INVITE_TICKET, method: 'DELETE' })
+  assert.equal(revoked.revoked, true)
+  await assert.rejects(() => api.revokeInvite('frm_1', 'short'), (e) => e.code === 'invalid_invite')
+  // Preview is public: the counts come straight from the server's own field names.
+  const seen = await api.previewInvite(INVITE_TICKET)
+  assert.deepEqual(calls.at(-1), { url: 'https://s/v1/face-rooms/invites/' + INVITE_TICKET, method: 'GET' })
+  assert.deepEqual(JSON.parse(JSON.stringify(seen)), {
+    roomId: 'frm_1', name: 'Tuesday standup', lead: 'Coder · Bob',
+    members: 3, maxMembers: 8, expiresAt: '2026-10-22T10:10:00.000Z',
+  })
+})
+
+test('#773: joining with a ticket is join-invite, and each refusal keeps its own sentence', async () => {
+  const calls = []
+  const refusals = { invite_not_found: 404, expired: 410, revoked: 410, room_full: 409, ended: 410, already_member: 409 }
+  let refusal = ''
+  const fetch = async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : undefined
+    calls.push({ url: String(url), method: init?.method, body })
+    if (refusal) return new Response(JSON.stringify({ error: { code: refusal } }), { status: refusals[refusal] })
+    return new Response(JSON.stringify({ room_id: 'frm_1', status: 'open', members: [{ handle: '@chief.alice.home' }], created_by_me: true }), { status: 200 })
+  }
+  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch })
+  const joined = await api.joinInvite({ ticket: INVITE_TICKET, bots: ['Chief.Alice.Home'] })
+  assert.deepEqual(calls.at(-1), { url: 'https://s/v1/face-rooms/join-invite', method: 'POST', body: { ticket: INVITE_TICKET, bots: ['@chief.alice.home'] } })
+  assert.equal(joined.roomId, 'frm_1')
+  const expected = {
+    invite_not_found: /That invite is not valid/,
+    expired: /That invite has expired/,
+    revoked: /That invite was withdrawn/,
+    room_full: /8 Bots/,
+    ended: /That room has closed/,
+    already_member: /already in that room/,
+  }
+  for (const [code, pattern] of Object.entries(expected)) {
+    refusal = code
+    await assert.rejects(() => api.joinInvite({ ticket: INVITE_TICKET }), (e) => e.code === code && pattern.test(e.message), code)
+  }
+  // A wrong ticket is not a room number and never reaches Bot Social.
+  refusal = ''
+  const before = calls.length
+  await assert.rejects(() => api.joinInvite({ ticket: 'FLYBOT-482913' }), (e) => e.code === 'invalid_invite')
+  assert.equal(calls.length, before)
+})
+

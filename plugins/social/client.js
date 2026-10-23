@@ -227,6 +227,20 @@ window.__ModuleLoader__.load({
 .fs-wait-code{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0 2px}
 .fs-wait-code-label{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 .fs-wait-code-digits{font-size:28px;line-height:34px;font-weight:600;letter-spacing:.28em;font-variant-numeric:tabular-nums;color:var(--bt-ink,#141414)}
+.fs-qr{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 2px}
+.fs-qr-svg{width:128px;height:128px;background:#fff;border-radius:8px;padding:6px;box-shadow:0 0 0 1px var(--bt-line-2,rgba(20,20,20,.15))}
+.fs-qr-hint{font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-scan-row{flex:none;display:flex;align-items:center;gap:8px;padding:2px 0 0}
+.fs-scan-hint{flex:1 1 auto;padding:0}
+.fs-link-row{flex:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 0}
+.fs-link-input{flex:1 1 180px;min-width:0;height:28px;padding:0 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:12px;outline:none}
+.fs-link-input:focus{border-color:var(--bt-accent,#4d6bfe)}
+.fs-invite{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 0 2px}
+.fs-invite-head{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.fs-label-inline{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-invite-live{display:flex;flex-direction:column;align-items:center;gap:4px}
+.fs-invite-link{display:flex;align-items:center;gap:8px;max-width:100%}
+.fs-invite-url{font-size:11px;line-height:15px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-wait-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
 .fs-wait-foot{display:flex;align-items:stretch;gap:8px;flex:none}
 .fs-wait-foot .fs-btn{height:36px}
@@ -562,12 +576,416 @@ window.__ModuleLoader__.load({
       const fromTyped = String(typed || '').replace(/\D/g, '').slice(0, 6)
       return fromTyped.length === 6 ? fromTyped : ''
     }
-    function FaceWaitCode({ code } = {}) {
+    // QR code in byte mode, error correction level M, versions 1-10 (#773): a room number is 13
+    // bytes and an invite link is 40-70, so the version is picked from the payload. Everything is
+    // computed here — no network, no dependency, no third-party image service.
+    // network, no dependency, no third-party image service.
+    const QR_EC_M = 0
+    const QR_GF_EXP = new Uint8Array(512)
+    const QR_GF_LOG = new Uint8Array(256)
+    ;(() => {
+      let x = 1
+      for (let i = 0; i < 255; i += 1) {
+        QR_GF_EXP[i] = x
+        QR_GF_LOG[x] = i
+        x <<= 1
+        if (x & 0x100) x ^= 0x11d
+      }
+      for (let i = 255; i < 512; i += 1) QR_GF_EXP[i] = QR_GF_EXP[i - 255]
+    })()
+    const qrMul = (a, b) => (a === 0 || b === 0 ? 0 : QR_GF_EXP[QR_GF_LOG[a] + QR_GF_LOG[b]])
+    function qrRsGenerator(degree) {
+      let poly = [1]
+      for (let i = 0; i < degree; i += 1) {
+        const next = new Array(poly.length + 1).fill(0)
+        for (let j = 0; j < poly.length; j += 1) {
+          next[j] ^= poly[j]
+          next[j + 1] ^= qrMul(poly[j], QR_GF_EXP[i])
+        }
+        poly = next
+      }
+      return poly
+    }
+    function qrRsRemainder(bytes, degree) {
+      const gen = qrRsGenerator(degree)
+      const res = new Array(bytes.length + degree).fill(0)
+      for (let i = 0; i < bytes.length; i += 1) res[i] = bytes[i]
+      for (let i = 0; i < bytes.length; i += 1) {
+        const factor = res[i]
+        if (!factor) continue
+        for (let j = 0; j < gen.length; j += 1) res[i + j] ^= qrMul(gen[j], factor)
+      }
+      return res.slice(bytes.length)
+    }
+    // Version, level M: [EC codewords per block, blocks of data codewords, data codewords per block,
+    // second block group count, its data codewords]. Versions 1-10 hold every payload this needs.
+    const QR_M_BLOCKS = [
+      [10, 1, 16, 0, 0], [16, 1, 28, 0, 0], [26, 1, 44, 0, 0], [18, 2, 32, 0, 0], [24, 2, 43, 0, 0],
+      [16, 4, 27, 0, 0], [18, 4, 31, 0, 0], [22, 2, 38, 2, 39], [22, 3, 36, 2, 37], [26, 4, 43, 1, 44],
+    ]
+    const QR_ALIGN = [[], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]]
+    const QR_REMAINDER = [0, 7, 7, 7, 7, 7, 0, 0, 0, 0]
+    function qrDataCodewords(version) {
+      const [, b1, d1, b2, d2] = QR_M_BLOCKS[version - 1]
+      return b1 * d1 + b2 * d2
+    }
+    function qrUtf8(text) {
+      const bytes = []
+      for (const char of String(text)) {
+        const point = char.codePointAt(0)
+        if (point < 0x80) bytes.push(point)
+        else if (point < 0x800) bytes.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f))
+        else if (point < 0x10000) bytes.push(0xe0 | (point >> 12), 0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f))
+        else bytes.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 0x3f), 0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f))
+      }
+      return bytes
+    }
+    function qrVersionFor(byteLength) {
+      for (let version = 1; version <= 10; version += 1) {
+        const bits = 4 + (version < 10 ? 8 : 16) + byteLength * 8
+        if (bits <= qrDataCodewords(version) * 8) return version
+      }
+      return 0
+    }
+    function qrCodewords(text) {
+      const bytes = qrUtf8(text)
+      const version = qrVersionFor(bytes.length)
+      if (!version) throw new Error('qr: payload too long')
+      const bits = []
+      const push = (value, width) => { for (let i = width - 1; i >= 0; i -= 1) bits.push((value >> i) & 1) }
+      push(0b0100, 4)
+      push(bytes.length, version < 10 ? 8 : 16)
+      for (const byte of bytes) push(byte, 8)
+      const capacity = qrDataCodewords(version) * 8
+      for (let i = 0; i < 4 && bits.length < capacity; i += 1) bits.push(0)
+      while (bits.length % 8) bits.push(0)
+      const data = []
+      for (let i = 0; i < bits.length; i += 8) data.push(bits.slice(i, i + 8).reduce((acc, bit) => (acc << 1) | bit, 0))
+      for (let pad = 0; data.length < qrDataCodewords(version); pad += 1) data.push(pad % 2 ? 0x11 : 0xec)
+      const [ecPerBlock, b1, d1, b2, d2] = QR_M_BLOCKS[version - 1]
+      const blocks = []
+      let at = 0
+      for (let i = 0; i < b1; i += 1) { blocks.push({ data: data.slice(at, at + d1), ec: [] }); at += d1 }
+      for (let i = 0; i < b2; i += 1) { blocks.push({ data: data.slice(at, at + d2), ec: [] }); at += d2 }
+      for (const block of blocks) block.ec = qrRsRemainder(block.data, ecPerBlock)
+      const out = []
+      const maxData = Math.max(...blocks.map(block => block.data.length))
+      for (let i = 0; i < maxData; i += 1) for (const block of blocks) if (i < block.data.length) out.push(block.data[i])
+      for (let i = 0; i < ecPerBlock; i += 1) for (const block of blocks) out.push(block.ec[i])
+      return { version, codewords: out, remainder: QR_REMAINDER[version - 1] }
+    }
+    function qrFormatBits(mask) {
+      const data = (QR_EC_M << 3) | mask
+      let value = data << 10
+      for (let i = 14; i >= 10; i -= 1) if ((value >>> i) & 1) value ^= 0x537 << (i - 10)
+      return ((data << 10) | value) ^ 0x5412
+    }
+    function qrSkeleton(version) {
+      const size = version * 4 + 17
+      const modules = Array.from({ length: size }, () => new Array(size).fill(0))
+      const fixed = Array.from({ length: size }, () => new Array(size).fill(false))
+      const set = (x, y, dark) => { modules[y][x] = dark ? 1 : 0; fixed[y][x] = true }
+      const finder = (cx, cy) => {
+        for (let dy = -4; dy <= 4; dy += 1) {
+          for (let dx = -4; dx <= 4; dx += 1) {
+            const x = cx + dx
+            const y = cy + dy
+            if (x < 0 || y < 0 || x >= size || y >= size) continue
+            const d = Math.max(Math.abs(dx), Math.abs(dy))
+            set(x, y, d !== 2 && d !== 4)
+          }
+        }
+      }
+      finder(3, 3)
+      finder(size - 4, 3)
+      finder(3, size - 4)
+      for (let i = 8; i < size - 8; i += 1) {
+        set(i, 6, i % 2 === 0)
+        set(6, i, i % 2 === 0)
+      }
+      const centers = QR_ALIGN[version - 1]
+      for (const cy of centers) {
+        for (const cx of centers) {
+          // Only the three that sit on a finder are dropped; the ones on the timing lines belong
+          // there and overwrite those modules (the spec places them, it does not skip them).
+          if ((cx === 6 && cy === 6) || (cx === 6 && cy === size - 7) || (cx === size - 7 && cy === 6)) continue
+          for (let dy = -2; dy <= 2; dy += 1) {
+            for (let dx = -2; dx <= 2; dx += 1) set(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1)
+          }
+        }
+      }
+      // The format and version blocks are function patterns too: reserve them before the data
+      // snake, or data bits would land under them and shift every codeword after.
+      for (let i = 0; i < 9; i += 1) {
+        if (i !== 6) fixed[8][i] = true
+        if (i !== 6) fixed[i][8] = true
+      }
+      for (let i = 0; i < 8; i += 1) { fixed[8][size - 1 - i] = true; fixed[size - 1 - i][8] = true }
+      if (version >= 7) {
+        for (let i = 0; i < 6; i += 1) {
+          for (let j = 0; j < 3; j += 1) { fixed[i][size - 11 + j] = true; fixed[size - 11 + j][i] = true }
+        }
+      }
+      set(8, size - 8, true)
+      return { size, modules, fixed }
+    }
+    function qrPlaceFormat(modules, fixed, mask) {
+      const size = modules.length
+      const bits = qrFormatBits(mask)
+      for (let i = 0; i < 15; i += 1) {
+        const dark = ((bits >> i) & 1) === 1
+        // Around the top-left finder, skipping the timing line.
+        if (i < 6) { modules[i][8] = dark ? 1 : 0; fixed[i][8] = true }
+        else if (i === 6) { modules[7][8] = dark ? 1 : 0; fixed[7][8] = true }
+        else if (i === 7) { modules[8][8] = dark ? 1 : 0; fixed[8][8] = true }
+        else if (i === 8) { modules[8][7] = dark ? 1 : 0; fixed[8][7] = true }
+        else { modules[8][14 - i] = dark ? 1 : 0; fixed[8][14 - i] = true }
+      }
+      for (let i = 0; i < 15; i += 1) {
+        const dark = ((bits >> i) & 1) === 1
+        if (i < 8) { modules[8][size - 1 - i] = dark ? 1 : 0; fixed[8][size - 1 - i] = true }
+        else { modules[size - 15 + i][8] = dark ? 1 : 0; fixed[size - 15 + i][8] = true }
+      }
+    }
+    function qrPlaceVersion(modules, fixed, version) {
+      if (version < 7) return
+      const size = modules.length
+      let rem = version
+      for (let i = 0; i < 12; i += 1) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25)
+      const bits = (version << 12) | rem
+      for (let i = 0; i < 18; i += 1) {
+        const dark = ((bits >> i) & 1) === 1
+        const a = size - 11 + (i % 3)
+        const b = Math.floor(i / 3)
+        modules[b][a] = dark ? 1 : 0
+        fixed[b][a] = true
+        modules[a][b] = dark ? 1 : 0
+        fixed[a][b] = true
+      }
+    }
+    function qrPlaceData(modules, fixed, codewords, remainder) {
+      const size = modules.length
+      const bits = []
+      for (const byte of codewords) for (let i = 7; i >= 0; i -= 1) bits.push((byte >> i) & 1)
+      for (let i = 0; i < remainder; i += 1) bits.push(0)
+      let index = 0
+      let upward = true
+      for (let right = size - 1; right >= 1; right -= 2) {
+        if (right === 6) right = 5
+        for (let step = 0; step < size; step += 1) {
+          const y = upward ? size - 1 - step : step
+          for (let pair = 0; pair < 2; pair += 1) {
+            const x = right - pair
+            if (fixed[y][x]) continue
+            modules[y][x] = bits[index] ?? 0
+            index += 1
+          }
+        }
+        upward = !upward
+      }
+    }
+    const QR_MASKS = [
+      (x, y) => (x + y) % 2 === 0,
+      (x, y) => y % 2 === 0,
+      (x) => x % 3 === 0,
+      (x, y) => (x + y) % 3 === 0,
+      (x, y) => (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0,
+      (x, y) => ((x * y) % 2) + ((x * y) % 3) === 0,
+      (x, y) => (((x * y) % 2) + ((x * y) % 3)) % 2 === 0,
+      (x, y) => (((x + y) % 2) + ((x * y) % 3)) % 2 === 0,
+    ]
+    function qrMasked(fixed, modules, mask) {
+      const size = modules.length
+      const rule = QR_MASKS[mask]
+      const out = modules.map(row => row.slice())
+      for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) if (!fixed[y][x] && rule(x, y)) out[y][x] ^= 1
+      return out
+    }
+    function qrPenalty(modules) {
+      const size = modules.length
+      let score = 0
+      const runs = (line) => {
+        let total = 0
+        let run = 1
+        for (let i = 1; i < line.length; i += 1) {
+          if (line[i] === line[i - 1]) run += 1
+          else { if (run >= 5) total += 3 + (run - 5); run = 1 }
+        }
+        if (run >= 5) total += 3 + (run - 5)
+        return total
+      }
+      const finderLike = (line) => {
+        let total = 0
+        const text = line.join('')
+        for (const pattern of ['10111010000', '00001011101']) {
+          let at = text.indexOf(pattern)
+          while (at >= 0) { total += 40; at = text.indexOf(pattern, at + 1) }
+        }
+        return total
+      }
+      for (let y = 0; y < size; y += 1) { const row = modules[y]; score += runs(row) + finderLike(row) }
+      for (let x = 0; x < size; x += 1) { const col = modules.map(row => row[x]); score += runs(col) + finderLike(col) }
+      for (let y = 0; y < size - 1; y += 1) {
+        for (let x = 0; x < size - 1; x += 1) {
+          const value = modules[y][x]
+          if (value === modules[y][x + 1] && value === modules[y + 1][x] && value === modules[y + 1][x + 1]) score += 3
+        }
+      }
+      let dark = 0
+      for (const row of modules) for (const value of row) dark += value
+      const percent = (dark * 100) / (size * size)
+      score += Math.floor(Math.abs(percent - 50) / 5) * 10
+      return score
+    }
+    function qrMatrix(text) {
+      const { version, codewords, remainder } = qrCodewords(String(text))
+      const { size, modules, fixed } = qrSkeleton(version)
+      qrPlaceData(modules, fixed, codewords, remainder)
+      qrPlaceVersion(modules, fixed, version)
+      let best = null
+      for (let mask = 0; mask < 8; mask += 1) {
+        const framed = modules.map(row => row.slice())
+        const framedFixed = fixed.map(row => row.slice())
+        qrPlaceFormat(framed, framedFixed, mask)
+        const maskedModules = qrMasked(framedFixed, framed, mask)
+        const score = qrPenalty(maskedModules)
+        if (!best || score < best.score) best = { mask, score, modules: maskedModules }
+      }
+      return { version, size, mask: best.mask, modules: best.modules.map(row => row.map(Boolean)) }
+    }
+
+    // The payload is the room number and nothing else: a prefix so a foreign code is easy to
+    // tell apart, no deadline and no name (the number next to it already ticks, #773).
+    const FACE_QR_PREFIX = 'FLYBOT-'
+    const faceQrText = (code) => {
+      const digits = String(code ?? '').replace(/\D/g, '').slice(0, 6)
+      return digits.length === 6 ? `${FACE_QR_PREFIX}${digits}` : ''
+    }
+    // Only our own payload is a room number: a QR carrying a website is not a way in.
+    const faceQrCode = (text) => String(text ?? '').trim().toUpperCase().match(/^FLYBOT-(\d{6})$/)?.[1] ?? ''
+    // A room invite is a link into an established room (#773, bot-social#39): the only shape this
+    // client hands out and accepts, so a scanned code and a pasted link are the same thing.
+    const faceInviteTicket = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i)?.[1] ?? ''
+    const INVITE_UNSUPPORTED = 'Invites need a newer Bot Social. The 6-digit number still works.'
+    const INVITE_LINK_COPY = 'That is not an invite link. It looks like https://…/r/…'
+    const qrPath = (modules) => {
+      const parts = []
+      for (let y = 0; y < modules.length; y += 1) {
+        for (let x = 0; x < modules[y].length; x += 1) if (modules[y][x]) parts.push(`M${x} ${y}h1v1h-1z`)
+      }
+      return parts.join('')
+    }
+    // Joining stops at Bot Social's deadline (#458), so the QR goes with the number: a code on
+    // screen is never a code that no longer works. 'open' means no deadline to compare.
+    const qrJoinable = (at, now) => {
+      if (at === 'open') return true
+      const until = Date.parse(String(at ?? ''))
+      return Number.isFinite(until) && until > now
+    }
+    function QrImage({ text, label, hint, kind, attrs, at, offsetMs } = {}) {
+      if (!text || !qrJoinable(at, Date.now() + (Number(offsetMs) || 0))) return null
+      let matrix
+      try { matrix = qrMatrix(text) } catch { return null }
+      const size = matrix.size
+      return h('div', { className: 'fs-qr', 'data-flybot': kind, 'data-modules': size, ...(attrs ?? {}) },
+        h('svg', {
+          className: 'fs-qr-svg', width: size, height: size, viewBox: `0 0 ${size} ${size}`,
+          role: 'img', 'aria-label': label, shapeRendering: 'crispEdges',
+        },
+          h('rect', { width: size, height: size, fill: '#ffffff' }),
+          h('path', { d: qrPath(matrix.modules), fill: '#000000' })),
+        h('div', { className: 'fs-qr-hint', 'data-flybot': `${kind}-hint` }, hint))
+    }
+    function FaceQr({ code, at, offsetMs } = {}) {
+      const digits = faceQrCode(faceQrText(code))
+      if (!digits) return null
+      return h(QrImage, {
+        text: faceQrText(digits), kind: 'face-qr', at, offsetMs,
+        attrs: { 'data-code': digits }, label: `QR code for room number ${digits}`,
+        hint: 'Scan this with FlyBot to join',
+      })
+    }
+    // An invite into a room that already exists: the QR is the link, so a phone camera opens it and
+    // FlyBot's own scan joins with the same ticket. Nothing here is minted by the browser.
+    function FaceInviteCard({ roomId } = {}) {
+      const [invite, setInvite] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [copied, setCopied] = useState(false)
+      const [tick, setTick] = useState(0)
+      useEffect(() => {
+        if (!invite?.expiresAt) return undefined
+        return everySecond(() => setTick(n => n + 1))
+      }, [invite?.expiresAt])
+      if (!roomId) return null
+      const mint = async () => {
+        setBusy(true)
+        try {
+          const value = await call('social/face-invite', { roomId })
+          if (value?.unsupported) setInvite({ unsupported: true })
+          else if (value?.url) setInvite({ url: String(value.url), ticket: value.ticket, expiresAt: value.expiresAt })
+          else setInvite({ error: 'Bot Social did not send an invite. Try again.' })
+        } catch (e) {
+          setInvite({ error: errorText(e) })
+        } finally { setBusy(false) }
+      }
+      const revoke = async () => {
+        setBusy(true)
+        try {
+          await call('social/face-invite-revoke', { roomId, ticket: invite?.ticket })
+          setInvite({ revoked: true })
+        } catch (e) {
+          setInvite({ error: errorText(e) })
+        } finally { setBusy(false) }
+      }
+      const copy = async () => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+        try {
+          await clip?.writeText?.(invite.url)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: the link is on screen to select */ }
+      }
+      const live = invite?.url && qrJoinable(invite.expiresAt || 'open', Date.now())
+      return h('div', { className: 'fs-invite', 'data-flybot': 'face-invite', 'data-tick': tick },
+        h('div', { className: 'fs-invite-head' },
+          h('span', { className: 'fs-label-inline' }, 'Invite by link'),
+          invite?.url && !live
+            ? h('span', { className: 'fs-hint', 'data-flybot': 'face-invite-ended' }, 'This link has expired.')
+            : null,
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-invite-mint',
+            disabled: !!busy || (!!invite?.url && live), onClick: mint,
+          }, invite?.url && live ? 'Link ready' : 'Create link')),
+        invite?.unsupported
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, INVITE_UNSUPPORTED)
+          : null,
+        invite?.revoked
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-revoked', role: 'status' }, 'The link was withdrawn. Nobody can join with it now.')
+          : null,
+        invite?.error
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-fail', 'data-tone': 'error', role: 'status' }, invite.error)
+          : null,
+        live
+          ? h('div', { className: 'fs-invite-live', 'data-flybot': 'face-invite-live' },
+            h(QrImage, {
+              text: invite.url, kind: 'face-invite-qr', at: invite.expiresAt || 'open', attrs: { 'data-url': invite.url },
+              label: 'QR code for this room invite', hint: 'Scan to open this room',
+            }),
+            h('div', { className: 'fs-invite-link' },
+              h('code', { className: 'fs-invite-url', 'data-flybot': 'face-invite-url' }, invite.url),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-copy', onClick: copy }, copied ? 'Copied' : 'Copy link')),
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-count' },
+              invite.expiresAt ? countdown(invite.expiresAt) : 'Anyone with the link can join while the room is open.'),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-revoke', disabled: !!busy, onClick: revoke }, 'Withdraw link'))
+          : null)
+    }
+    function FaceWaitCode({ code, qrAt, qrOffsetMs } = {}) {
       const digits = String(code || '').replace(/\D/g, '').slice(0, 6)
       if (digits.length !== 6) return null
       return h('div', { className: 'fs-wait-code', 'data-flybot': 'face-wait-code', 'aria-label': `Room number ${digits}` },
         h('div', { className: 'fs-wait-code-label' }, 'Room number'),
-        h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits))
+        h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits),
+        h(FaceQr, { code: digits, at: qrAt, offsetMs: qrOffsetMs }))
     }
     function shownHoldText(value) {
       const raw = String(value ?? '')
@@ -649,11 +1067,15 @@ window.__ModuleLoader__.load({
       const [failures, setFailures] = useState([])
       const [room, setRoom] = useState(null)
       const [tick, setTick] = useState(0)
+      const [scan, setScan] = useState(null)
+      const [invite, setInvite] = useState({ link: '', status: null })
       const opened = useRef(false)
       useEffect(() => {
         faceDialog.show(step === 'waiting' ? room?.roomId : null)
         return () => faceDialog.show(null)
       }, [step, room?.roomId])
+      // Leaving the dialog must not leave the camera light on (#773).
+      useEffect(() => () => stopFaceScan(), [])
       useEffect(() => {
         call('social/status', {}).then(value => {
           const list = value?.bots ?? []
@@ -708,9 +1130,10 @@ window.__ModuleLoader__.load({
         return undefined
       }, [step, room?.status, room?.roomId])
       // `start`: the owner chose to start a room with a number nobody uses yet (#458).
-      const join = async (event, { start = false } = {}) => {
+      // `code`: the number a scan read, so a scanned code joins through this same path (#773).
+      const join = async (event, { start = false, code: typed } = {}) => {
         event?.preventDefault?.()
-        const digits = String(code).replace(/\D/g, '').slice(0, 6)
+        const digits = String(typed ?? code).replace(/\D/g, '').slice(0, 6)
         if (digits.length !== 6) {
           setStatus({ tone: 'error', text: 'Enter a 6-digit number.' })
           return
@@ -805,6 +1228,60 @@ window.__ModuleLoader__.load({
       const toggle = (id) => {
         setSelected(list => list.includes(id) ? list.filter(item => item !== id) : [...list, id])
       }
+      // A link is the other way in (#773): same pipeline in the host, same waiting dialog after it.
+      const joinLink = async (typed) => {
+        const text = String(typed ?? invite.link ?? '').trim()
+        const ticket = faceInviteTicket(text)
+        if (!ticket) {
+          setInvite({ link: text, status: { tone: 'error', text: INVITE_LINK_COPY } })
+          return
+        }
+        if (!selected.length) {
+          setInvite({ link: text, status: { tone: 'error', text: 'Pick a Bot first.' } })
+          return
+        }
+        setBusy(true)
+        setFailures([])
+        setInvite({ link: text, status: { tone: 'hint', text: 'Joining with that link…' } })
+        try {
+          const result = await call('social/face-join-invite', { ticket, botId: selected[0] })
+          if (result?.unsupported) {
+            setInvite({ link: text, status: { tone: 'error', text: INVITE_UNSUPPORTED } })
+            return
+          }
+          setInvite({ link: text, status: null })
+          setRoom({ ...result, mineHandles: [], mineBots: [], joinCode: result?.joinCode })
+          setStep('waiting')
+          if (result?.roomId && typeof actions?.openSession === 'function') actions.openSession(result.roomId)
+        } catch (e) {
+          setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
+        } finally { setBusy(false) }
+      }
+      // One sentence per way a scan can fail, and the number field is untouched either way.
+      const beginScan = () => {
+        setScan({ tone: 'hint', text: 'Point the camera at a FlyBot room code.' })
+        startFaceScan((result) => {
+          if (result?.fail) {
+            setScan({ tone: 'error', text: FACE_SCAN_COPY[result.fail] ?? FACE_SCAN_COPY.camera })
+            return
+          }
+          const raw = String(result?.raw ?? '')
+          if (faceInviteTicket(raw)) {
+            setScan({ tone: 'ok', text: 'Scanned an invite link.' })
+            void joinLink(raw)
+            return
+          }
+          const digits = faceQrCode(raw)
+          if (!digits) {
+            setScan({ tone: 'error', text: FACE_SCAN_COPY.foreign })
+            return
+          }
+          setCode(digits)
+          setScan({ tone: 'ok', text: `Scanned ${digits}.` })
+          if (selected.length) void join(null, { code: digits })
+          else setStatus({ tone: 'hint', text: `Scanned ${digits}. Pick a Bot to join.` })
+        })
+      }
       const members = room?.members ?? []
       const candidate = room?.status === 'candidate'
       const waiting = step === 'waiting' && room
@@ -825,7 +1302,11 @@ window.__ModuleLoader__.load({
             h('div', { className: 'fs-wait-foot' },
               h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-nobody-cancel', disabled: busy, onClick: cancelNobody }, 'Cancel'),
               h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-nobody-start', disabled: busy, onClick: () => join(null, { start: true }) }, 'Start a room'))) : waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
-            h(FaceWaitCode, { code: faceWaitCode(room, code) }),
+            h(FaceWaitCode, {
+              code: faceWaitCode(room, code),
+              qrAt: candidate ? (room.expiresAt || 'open') : null,
+              qrOffsetMs: room.clockOffsetMs,
+            }),
             h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
               ? (room.expiresAt ? countdown(room.expiresAt, room.clockOffsetMs) : 'Anyone with the number can still join.')
               : 'The room is open. The number is no longer valid.'),
@@ -873,6 +1354,28 @@ window.__ModuleLoader__.load({
                 disabled: busy || !selected.length || !digitsTyped,
                 title: !selected.length ? 'Pick a Bot first.' : digitsTyped ? undefined : 'Enter all 6 digits.',
               }, 'Join')),
+            h('div', { className: 'fs-link-row', 'data-flybot': 'face-link-join' },
+              h('input', {
+                className: 'fs-link-input', value: invite.link, type: 'url', autoComplete: 'off', spellCheck: false,
+                placeholder: 'Invite link (https://…/r/…)', 'aria-label': 'Invite link',
+                onChange: e => setInvite({ link: String(e.target.value), status: null }),
+              }),
+              h('button', {
+                type: 'button', className: 'fs-btn', 'data-flybot': 'face-link-join-go', disabled: !!busy,
+                onClick: () => joinLink(),
+              }, 'Join with link'),
+              invite.status ? h('div', {
+                className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-link-status', 'data-tone': invite.status.tone, role: 'status',
+              }, invite.status.text) : null),
+            h('div', { className: 'fs-scan-row' },
+              h('button', {
+                type: 'button', className: 'fs-btn', 'data-flybot': 'face-scan', disabled: !!busy,
+                onClick: beginScan,
+              }, 'Scan a code'),
+              scan ? h('div', {
+                className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-scan-status',
+                'data-tone': scan.tone, role: 'status',
+              }, scan.text) : null),
             !selected.length && bots.length ? h('div', { className: 'fs-hint', 'data-flybot': 'face-join-pick' }, 'Pick a Bot first.') : null,
             failures.length ? h('div', { className: 'fs-status fs-fail', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
               failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
@@ -1449,6 +1952,99 @@ window.__ModuleLoader__.load({
       const total = Math.max(1, Math.ceil(left / 1000))
       return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} left to join`
     }
+    // ---- Scanning a room code (#773) -------------------------------------------------
+    // No camera, no platform decoder, or a camera the owner refused: one sentence each, and
+    // typing the number keeps working. FlyBot never decodes pixels itself.
+    const FACE_SCAN_COPY = {
+      'no-detector': 'This browser cannot scan codes. Type the 6-digit number instead.',
+      'no-camera': 'This browser cannot use a camera here. Type the 6-digit number instead.',
+      denied: 'FlyBot cannot use the camera. Allow the camera for this page, or type the 6-digit number instead.',
+      foreign: 'That is not a FlyBot room code. Ask for the 6-digit number instead.',
+      camera: 'The camera stopped before it read a code. Type the 6-digit number instead.',
+    }
+    const faceScanSupport = () => {
+      if (typeof globalThis.BarcodeDetector !== 'function') return 'no-detector'
+      const media = globalThis.navigator?.mediaDevices
+      return typeof media?.getUserMedia === 'function' ? '' : 'no-camera'
+    }
+    let faceScanStop = null
+    const stopFaceScan = () => {
+      const stop = faceScanStop
+      faceScanStop = null
+      try { stop?.() } catch { /* the camera was already released */ }
+    }
+    // Answers once with { code } ('' for a foreign code) or { fail: <reason> }, then releases the
+    // camera. The caller joins through the same path the number field uses.
+    function startFaceScan(onResult) {
+      const missing = faceScanSupport()
+      if (missing) {
+        onResult?.({ fail: missing })
+        return () => {}
+      }
+      // One scan at a time (#773): a second tap restarts the scan, so the camera the first tap
+      // opened is released here rather than left with nobody holding its stop handle.
+      stopFaceScan()
+      let stopped = false
+      let timer
+      let stream
+      const end = () => {
+        if (stopped) return
+        stopped = true
+        clearInterval(timer)
+        try { stream?.getTracks?.().forEach(track => track.stop?.()) } catch { /* tracks are gone */ }
+        if (faceScanStop === end) faceScanStop = null
+      }
+      const finish = (result) => {
+        if (stopped) return
+        end()
+        onResult?.(result)
+      }
+      faceScanStop = end
+      globalThis.navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((next) => {
+        if (stopped) {
+          try { next?.getTracks?.().forEach(track => track.stop?.()) } catch { /* nothing to stop */ }
+          return
+        }
+        stream = next
+        if (typeof globalThis.BarcodeDetector !== 'function') { finish({ fail: 'no-detector' }); return }
+        const video = document.createElement('video')
+        video?.setAttribute?.('playsinline', '')
+        if (video) {
+          video.muted = true
+          video.srcObject = stream
+        }
+        const started = video?.play?.()
+        // A play() the browser refuses shows up as no frames, which the loop below reports in one
+        // sentence; the rejection itself has nothing left to do.
+        if (started?.catch) started.catch(() => {})
+        // A platform can have the decoder and still refuse the format: the constructor throws, and
+        // the camera is already open, so answer one sentence and let `finish` release it.
+        let detector
+        try {
+          detector = new globalThis.BarcodeDetector({ formats: ['qr_code'] })
+        } catch {
+          finish({ fail: 'no-detector' })
+          return
+        }
+        // The camera often has a frame before the loop starts, so read once right away.
+        const read = async () => {
+          if (stopped) return
+          try {
+            const found = await detector.detect(video)
+            const raw = found?.find?.(item => item?.rawValue)?.rawValue
+            if (raw) finish({ raw })
+          } catch { /* one frame that cannot be read is not a failure */ }
+        }
+        void read()
+        if (typeof setInterval === 'function') {
+          timer = setInterval(read, 300)
+          timer?.unref?.()
+        }
+      }, (error) => {
+        finish({ fail: String(error?.name ?? '') === 'NotAllowedError' ? 'denied' : 'camera' })
+      })
+      return end
+    }
     // A one-second tick that also catches up the moment the page is shown again, so a tab that
     // sat in the background never shows a stale countdown (#458).
     function everySecond(fn) {
@@ -1568,7 +2164,11 @@ window.__ModuleLoader__.load({
         // The open dialog already shows this waiting room: one card, not two (#306).
         if (room.id && faceDialog.roomId === room.id) return null
         return h('div', { className: 'fs-wait-overview', 'data-flybot': 'face-overview', 'data-wait': true },
-          h(FaceWaitCode, { code: faceWaitCode(snapshot || face || room) }),
+          h(FaceWaitCode, {
+            code: faceWaitCode(snapshot || face || room),
+            qrAt: expiresAt || 'open',
+            qrOffsetMs: snapshot?.clockOffsetMs,
+          }),
           h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
             expiresAt ? countdown(expiresAt, snapshot?.clockOffsetMs) : 'Anyone with the number can still join.'),
           h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
@@ -1628,6 +2228,7 @@ window.__ModuleLoader__.load({
               }),
             }))),
         h(FaceAutoSendControl, { bots: mineBots }),
+        h(FaceInviteCard, { roomId: face?.roomId || snapshot?.faceRoomId }),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
     }
 

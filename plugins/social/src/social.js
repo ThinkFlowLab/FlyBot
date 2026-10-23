@@ -53,6 +53,11 @@ import {
   faceRoomTitle,
   parseFaceHuman,
   cleanFaceRole,
+  parseFaceInviteLink,
+  FACE_INVITE_TICKET,
+  FACE_INVITE_FEATURE,
+  FACE_INVITE_UNSUPPORTED,
+  invalidInviteLink,
 } from './face-rooms.js'
 import {
   hideRemoteInSettings,
@@ -382,6 +387,7 @@ export const SOCIAL_UI_ENDPOINTS = [
   'social/attachment',
   'social/face-join', 'social/face-rooms', 'social/face-leave', 'social/face-start', 'social/face-send',
   'social/face-auto', 'social/face-lead',
+  'social/face-invite', 'social/face-invite-revoke', 'social/face-invite-preview', 'social/face-join-invite',
   'social/hide-remote',
   'social/access', 'social/revoke-grant',
   'social/share-friends', 'social/share-with-friend',
@@ -1550,7 +1556,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // The probe is shared: while one is in flight every caller awaits its result (#234) — an early
   // "not attesting" from a probe that has not finished would render forgeable envelopes as person
   // lines and mark the events seen, with no self-heal once the probe lands.
-  const typed = { supported: false, forbidden: false, mentions: false, presence: false, roles: false, probedAt: 0, probeFailed: false, probing: undefined }
+  const typed = { supported: false, forbidden: false, mentions: false, presence: false, roles: false, invites: false, probedAt: 0, probeFailed: false, probing: undefined }
   const TYPED_RECHECK_MS = 10 * 60_000
   // A probe that got no answer (features() → undefined: an unreachable or pre-platform server) is
   // not a "no": it is retried soon, not held for the recheck window.
@@ -1571,6 +1577,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (features?.includes('mentions')) typed.mentions = true
       if (features?.includes('presence')) typed.presence = true
       if (features?.includes('member_roles')) typed.roles = true
+      if (features?.includes(FACE_INVITE_FEATURE)) typed.invites = true
       return typed.supported
     } finally {
       typed.probing = undefined
@@ -1594,6 +1601,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (typed.probing) await typed.probing
     else if (!typed.probedAt || now() - typed.probedAt >= (typed.probeFailed ? TYPED_RETRY_MS : TYPED_RECHECK_MS)) await (typed.probing = probeTypedSupport())
     return typed.presence
+  }
+  // Whether this server can mint and accept room invite links (#773, bot-social#39): the same
+  // shared probe. Until it says yes the browser is never sent to a route that would 404 — the
+  // answer is `{ unsupported: true }` and one sentence, and the 6-digit number keeps working.
+  async function serverInvites() {
+    if (typed.invites) return true
+    if (typed.probing) { await typed.probing; return typed.invites }
+    if (!faceApi?.features) return false
+    await (typed.probing = probeTypedSupport())
+    return typed.invites
   }
   const isAttestRefused = error => error?.code === 'typed_attestation_forbidden' || /typed_attestation_forbidden/.test(String(error?.message ?? ''))
   // The owner's own typed line, as Bot Social's send_as_member with the attestation; falls back
@@ -3302,9 +3319,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   // `start`: the owner chose to start a room with this number. Without it, a number nobody else is
   // using answers `nobody` and opens no room (#458).
-  async function joinFaceRoom({ code, botId, start = false } = {}) {
+  async function joinFaceRoom({ code, ticket, botId, start = false } = {}) {
+    // An invite link is the other way into a room (#773): one pipeline, one grant write, one
+    // answer — the only difference is which Bot Social call produced the snapshot.
+    const raw = String(ticket ?? '').trim()
+    const invite = raw ? (parseFaceInviteLink(raw) || (FACE_INVITE_TICKET.test(raw) ? raw : '')) : ''
+    if (raw && !invite) throw invalidInviteLink()
     const digits = String(code ?? '').trim()
-    if (!isJoinCode(digits)) throw mapFaceError({ error: { code: 'invalid_code' } }, 400)
+    if (!invite && !isJoinCode(digits)) throw mapFaceError({ error: { code: 'invalid_code' } }, 400)
     const bot = pickJoiner(botId, { needHandle: false })
     if (!bot) throw new Error('Choose which of your Bots joins')
     const local = flybot.bot.get(bot.id)
@@ -3319,10 +3341,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         unclaimed.delete(held[0])
         snapshot = await faceNeed().get(held[0], { as: ready.handle }).catch(() => undefined)
       }
-      snapshot ??= await faceNeed().join({ code: digits, bots: [ready.handle] })
+      snapshot ??= invite
+        ? await faceNeed().joinInvite({ ticket: invite, bots: [ready.handle] })
+        : await faceNeed().join({ code: digits, bots: [ready.handle] })
+      if (snapshot?.unsupported) throw new FaceRoomError(FACE_INVITE_UNSUPPORTED, 'invites_unsupported')
       const locals = new Set(bringable().map(item => item.handle).filter(Boolean))
       const others = (snapshot.members ?? []).some(member => member.handle && !locals.has(norm(member.handle)))
-      if (start !== true && !others && !settings.faceRooms[snapshot.roomId]) {
+      if (!invite && start !== true && !others && !settings.faceRooms[snapshot.roomId]) {
         unclaimed.set(snapshot.roomId, { code: digits, botId: ready.id, handle: ready.handle, hadIdentity, at: now() })
         return { nobody: true, faceRoomId: snapshot.roomId, joinCode: digits }
       }
@@ -3517,6 +3542,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return { roomId: room.id, faceRoomId: serverId }
   }
   disposers.push(flybot.api.handle('social/face-join', async ({ code, botId, start } = {}) => joinFaceRoom({ code, botId, start: start === true })))
+  // Room invites (#773): the client asks this host layer, and this layer asks Bot Social only when
+  // the server advertises the feature — an older server answers `{ unsupported: true }`, so no
+  // 404 ever reaches the browser (#773, bot-social#39).
+  disposers.push(flybot.api.handle('social/face-invite', async ({ roomId } = {}) => (await serverInvites()) ? faceNeed().mintInvite(roomId) : { unsupported: true }))
+  disposers.push(flybot.api.handle('social/face-invite-revoke', async ({ roomId, ticket } = {}) => (await serverInvites()) ? faceNeed().revokeInvite(roomId, ticket) : { unsupported: true }))
+  disposers.push(flybot.api.handle('social/face-invite-preview', async ({ ticket } = {}) => (await serverInvites()) ? faceNeed().previewInvite(ticket) : { unsupported: true }))
+  // Joining by ticket is the same feature as minting one: an older server answers one sentence
+  // instead of trying a route it does not serve.
+  disposers.push(flybot.api.handle('social/face-join-invite', async ({ ticket, botId } = {}) => (await serverInvites()) ? joinFaceRoom({ ticket, botId }) : { unsupported: true }))
   disposers.push(flybot.api.handle('social/face-open', async (payload) => openFaceRoom(payload), { read: true }))
   disposers.push(flybot.api.handle('social/face-rooms', async (payload) => {
     if (payload?.poll !== false) await pollFaceRooms().catch(() => { /* a failed poll shows the rooms as last polled */ })
