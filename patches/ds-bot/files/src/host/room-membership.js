@@ -33,9 +33,10 @@
 // Inbound shared rooms (`origin: 'inbound-share'`) are the remote owner's projection
 // of a friend's room that invited their granted Bot.
 
+import { randomBytes } from 'node:crypto'
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
-import { encodeRoomShare, parseRoomShare } from '../shared/room-share.js'
+import { encodeRoomShare, LOCAL_INVITE_TTL_MS, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
@@ -930,6 +931,66 @@ export function install(rt) {
         ...from,
       }, 'room-share')
     }
+  }
+
+  // #852: the link invitation for a room that lives here. The room record holds the one live ticket;
+  // the link is not authority on its own — every knock and every accept is read back against this
+  // record, and the ticket stops answering the moment it is withdrawn, replaced, expired, or the room
+  // is gone. Ten minutes, like the face-room window.
+  const ROOM_INVITE_ORIGIN = 'https://social.botawaken.com'
+
+  function liveLocalInvite(room, at = Date.now()) {
+    const invite = room?.localInvite
+    if (!invite || typeof invite.ticket !== 'string' || !invite.ticket) return undefined
+    const expiresAt = Number(invite.expiresAt)
+    if (!Number.isFinite(expiresAt) || expiresAt <= at) return undefined
+    return {
+      ticket: invite.ticket,
+      handle: invite.handle,
+      expiresAt,
+      ...(typeof invite.consumedBy === 'string' && invite.consumedBy ? { consumedBy: invite.consumedBy } : {}),
+    }
+  }
+
+  rt.localInviteOf = function localInviteOf(roomId) {
+    const live = liveLocalInvite(rt.roomOf(roomId))
+    if (!live) return undefined
+    const origin = rt.roomInviteOrigin || ROOM_INVITE_ORIGIN
+    return { ...live, url: roomInviteUrl(live.handle, live.ticket, origin) }
+  }
+
+  rt.roomOfLocalInvite = function roomOfLocalInvite(ticket) {
+    const wanted = String(ticket ?? '')
+    if (!wanted) return undefined
+    for (const room of Object.values(state.rooms || {})) {
+      if (room?.localInvite?.ticket === wanted) return room
+    }
+    return undefined
+  }
+
+  rt.mintRoomInvite = async function mintRoomInvite(roomId) {
+    const room = rt.roomOf(roomId)
+    if (room === undefined) throw invalid('Unknown group chat')
+    // A shared or face room has its own invitation; this one is for a room that lives in FlyBot.
+    if (room.origin === 'inbound-share' || isFaceRoom(room)) throw invalid('This room has its own invitation')
+    const handle = shareInviter(room).inviterHandle
+    if (!handle) throw invalid('Sign in first')
+    const expiresAt = Date.now() + LOCAL_INVITE_TTL_MS
+    // 16 random bytes in base64url are 22 characters, the shape the invite field already accepts.
+    const ticket = randomBytes(16).toString('base64url')
+    // One live ticket per room: minting again replaces the last one, and the old link stops working.
+    room.localInvite = { ticket, handle, expiresAt, mintedAt: Date.now() }
+    await rt.save?.()
+    return rt.localInviteOf(room.id)
+  }
+
+  rt.revokeRoomInvite = async function revokeRoomInvite(roomId) {
+    const room = rt.roomOf(roomId)
+    if (room === undefined) throw invalid('Unknown group chat')
+    if (!room.localInvite) return { revoked: false }
+    delete room.localInvite
+    await rt.save?.()
+    return { revoked: true }
   }
 
   // Room lines go out to the friends' Bots in the room, checked per author and per recipient

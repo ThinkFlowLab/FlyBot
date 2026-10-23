@@ -21,7 +21,7 @@ import {
 } from '../src/host/room-membership.js'
 import { install as installReach, reach } from '../src/host/reach.js'
 import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
-import { encodeRoomShare, parseRoomShare } from '../src/shared/room-share.js'
+import { encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
 import { mentionRows } from '../src/client/at-menu.js'
 import { indexRoster } from '../src/client/sources.js'
@@ -1111,4 +1111,61 @@ test('#825: an answer held for approval shows up as one line in the room, not as
   rt.flybotSend = async msg => { sent.push(msg); return { action: 'hold' } }
   await rt.fanoutRoomLine(room, { seq: 10, who: 'Writer B', botId: 'spec-b', authorId: 'spec-b', authorKind: 'bot', text: 'held answer' })
   assert.ok(room.log.some(line => line.kind === 'notice' && /held for approval/.test(line.text || '')), 'the room says so once')
+})
+
+test('#852: a room link is one live ticket — ten minutes, one per room, replaced, withdrawn, gone with the room', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  await rt.authenticate(alice.sessionToken)
+  await grantToFriend(rt, 'chief-a')
+  rt.state.bots['chief-a'].fields = { social: { member: { home: '@alice.home', handle: '@chief.a.home' } } }
+  assert.equal(rt.localInviteOf('war'), undefined, 'a room starts without a link')
+
+  const first = await rt.mintRoomInvite('war')
+  assert.match(first.ticket, /^[A-Za-z0-9_-]{22}$/, '22 random characters, the shape the invite field accepts')
+  // The link answers "who do I knock on" by naming the inviter Bot in its own path segment.
+  assert.deepEqual(parseRoomInviteLink(first.url), { kind: 'local', handle: '@chief.a.home', ticket: first.ticket })
+  assert.equal(roomInviteUrl('@chief.a.home', first.ticket, 'https://social.botawaken.com/'), first.url, 'one builder, no trailing slash')
+  const window = first.expiresAt - Date.now()
+  assert.ok(window > 9 * 60 * 1000 && window <= 10 * 60 * 1000, `ten minutes, the face-room window (got ${window} ms)`)
+  assert.equal(rt.roomOfLocalInvite(first.ticket).id, 'war')
+
+  // One live ticket per room: minting again replaces the last one, and the old link stops answering.
+  const second = await rt.mintRoomInvite('war')
+  assert.notEqual(second.ticket, first.ticket)
+  assert.equal(rt.roomOfLocalInvite(first.ticket), undefined, 'the replaced link answers nothing')
+  assert.equal(rt.roomOfLocalInvite(second.ticket).id, 'war')
+
+  // Ten minutes is the whole life: past the deadline the room offers no preview, and a fresh mint works.
+  rt.state.rooms.war.localInvite.expiresAt = Date.now() - 1
+  assert.equal(rt.localInviteOf('war'), undefined, 'an expired ticket offers nothing')
+  assert.notEqual(await rt.mintRoomInvite('war'), undefined, 'the room can hand out a fresh one')
+
+  // Withdraw clears it for good, and deleting the room takes its link with it.
+  const third = await rt.mintRoomInvite('war')
+  assert.deepEqual(await rt.revokeRoomInvite('war'), { revoked: true })
+  assert.equal(rt.localInviteOf('war'), undefined)
+  assert.equal(rt.roomOfLocalInvite(third.ticket), undefined, 'a withdrawn link answers nothing')
+  assert.deepEqual(await rt.revokeRoomInvite('war'), { revoked: false })
+  const last = await rt.mintRoomInvite('war')
+  delete rt.state.rooms.war
+  assert.equal(rt.roomOfLocalInvite(last.ticket), undefined, 'deleting the room takes its link with it')
+})
+
+test('#852: a local link is not a face-room link, and a shared or face room has its own invitation', async (t) => {
+  // One field, two shapes: the face-room link the server owns, and the local one that names the Bot to knock on.
+  assert.deepEqual(parseRoomInviteLink('https://social.botawaken.com/r/AbCdEfGhIjKlMnOpQrStUv'), { kind: 'face', ticket: 'AbCdEfGhIjKlMnOpQrStUv' })
+  assert.deepEqual(parseRoomInviteLink('https://social.botawaken.com/r/@chief.a.home/AbCdEfGhIjKlMnOpQrStUv/'), { kind: 'local', handle: '@chief.a.home', ticket: 'AbCdEfGhIjKlMnOpQrStUv' })
+  assert.equal(parseRoomInviteLink('AbCdEfGhIjKlMnOpQrStUv'), undefined, 'a bare ticket is not a link')
+  assert.equal(parseRoomInviteLink('https://social.botawaken.com/r/@chief.a.home/short'), undefined, 'the ticket keeps its own length')
+  assert.equal(roomInviteUrl('@chief.a.home', 'short'), '', 'no link is built from a ticket that cannot work')
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const room = rt.state.rooms.war
+  room.origin = 'inbound-share'
+  await assert.rejects(() => rt.mintRoomInvite('war'), /its own invitation/)
+  room.origin = 'face-to-face'
+  room.face = { roomId: 'frm_1', members: [] }
+  await assert.rejects(() => rt.mintRoomInvite('war'), /its own invitation/)
 })

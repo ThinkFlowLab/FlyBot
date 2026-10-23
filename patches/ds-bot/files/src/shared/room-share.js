@@ -37,6 +37,29 @@ export function encodeRoomShare(payload = {}) {
   return `${ROOM_SHARE_MARK}\n${JSON.stringify(body)}`
 }
 
+// #852: a link invitation for a room that lives in FlyBot itself. No server knows this ticket: the
+// inviter's host mints it and the room record keeps it. The link carries the inviter Bot's handle as
+// its own path segment, because that handle is the only address the invitee can knock on — a ticket
+// inside the 64-character shape cannot hold one. Ten minutes, like the face-room window, and never
+// authority on its own: the room record decides.
+export const LOCAL_INVITE_TTL_MS = 10 * 60 * 1000
+const INVITE_LINK = /^(?:https?:)?\/\/[^\s/]+\/r\/(?:(@[A-Za-z0-9._-]{1,120})\/)?([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i
+
+// Two shapes, one field: the face-room link the server owns, and the local one that names the Bot to
+// knock on. Nothing here decides which is legitimate — the caller does, by kind.
+export function parseRoomInviteLink(value) {
+  const match = String(value ?? '').trim().match(INVITE_LINK)
+  if (!match) return undefined
+  return match[1] ? { kind: 'local', handle: match[1], ticket: match[2] } : { kind: 'face', ticket: match[2] }
+}
+
+export function roomInviteUrl(handle, ticket, origin = 'https://social.botawaken.com') {
+  const who = String(handle ?? '').trim()
+  const clean = String(ticket ?? '').trim()
+  if (!/^@[A-Za-z0-9._-]{1,120}$/.test(who) || !/^[A-Za-z0-9_-]{16,64}$/.test(clean)) return ''
+  return `${String(origin || '').replace(/\/+$/, '')}/r/${who}/${clean}`
+}
+
 export function parseRoomShare(text) {
   const raw = String(text ?? '')
   const at = raw.indexOf(ROOM_SHARE_MARK)
