@@ -71,10 +71,17 @@ export const currentPart = bot => bot.sessionId ?? bot.id
 // one: the chat goes on in the fresh part. The view emptied while that part is still current (a session
 // list reload, not the user leaving): the same chat again, never the Main Bot (#261). Anything else:
 // the Main Bot.
-export function landingPart(roster, last, mainId, { stay = false } = {}) {
+// The session list, not the roster, says whether that chat still exists (#261): a Bot a friend revokes
+// (or removes) drops out of `roster.byId` while its session stays open, and the view must stay on that
+// conversation rather than jump to the Main Bot. `view` is the id the main view holds now, so a blank
+// chat of that same session stays too, while a New Session the user opened is a different destination
+// and still goes to the Main Bot.
+export function landingPart(roster, last, mainId, { stay = false, view = '', sessions } = {}) {
   const bot = last ? roster.byId[last.botId] : undefined
   if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot)
   if (bot && stay) return last.sessionId
+  const held = last !== null && last !== undefined && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== undefined
+  if (held) return last.sessionId
   const main = roster.byId[mainId]
   return main ? currentPart(main) : mainId
 }

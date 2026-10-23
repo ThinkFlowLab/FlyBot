@@ -670,7 +670,9 @@ function useLandOnMainBot(roster, useSessions, actions) {
     }
     const last = lastBot.current
     // An emptied view (id '') comes back to the chat it held; a blank New Session the user opened goes to the Main Bot.
-    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === '' }), last ? 0 : 400)
+    // `view` goes along so a blank chat of the held session is told apart from a New Session the user
+    // opened, and the session list decides whether that chat still exists (#261).
+    const timer = setTimeout(() => actions.landOn(roster.mainBotId, last, { stay: id === '', view: id }), last ? 0 : 400)
     return () => clearTimeout(timer)
   }, [mainView, roster])
 }
