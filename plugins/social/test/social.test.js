@@ -9220,6 +9220,24 @@ test('#798: a pasted link shows the room before any Bot joins, and the card is w
   assert.ok(dialog.has('face-wait'), 'the join moved on to the waiting pane it always had')
 })
 
+test('#859: a preview with no server name names the kind of room, not the missing field', async () => {
+  for (const name of ['', null]) {
+    const dialog = dialogWithState(async endpoint => {
+      if (endpoint === 'social/face-invite-preview') {
+        return { roomId: 'frm_9', name, lead: 'Chief (SelfTest A2)', members: 2, maxMembers: 8, expiresAt: '2099-01-01T00:00:00.000Z' }
+      }
+      return { roomId: 'r_1', status: 'open' }
+    })
+    dialog.find('face-link-join-go').props.onClick()
+    await dialog.settle()
+    dialog.render()
+    assert.equal(dialog.text(dialog.find('face-link-preview-name')), 'Face-to-face room', `name: ${JSON.stringify(name)} draws the kind of room`)
+    assert.equal(dialog.text(dialog.find('face-link-preview-lead')), 'Lead: Chief (SelfTest A2)', 'the lead still names the person')
+    assert.equal(dialog.text(dialog.find('face-link-preview-members')), '2 / 8 in the room', 'the count is unchanged')
+    assert.match(dialog.text(dialog.find('face-link-preview-expiry')), /left to join$/, 'the expiry is unchanged')
+  }
+})
+
 test('#824: pressing Join with link over the card on screen asks for nothing and keeps the card', async () => {
   let previews = 0
   const calls = []

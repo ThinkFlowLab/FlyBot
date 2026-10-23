@@ -1,0 +1,1 @@
+A face-room invite preview now names what kind of room it is when Bot Social has no name for it: the card's first line reads `Face-to-face room` instead of `A room with no name`, which was the first thing a person saw before deciding to join. The lead, the `n / 8 in the room` count and the deadline are unchanged ([#859](https://github.com/ThinkFlowLab/FlyBot/issues/859)).

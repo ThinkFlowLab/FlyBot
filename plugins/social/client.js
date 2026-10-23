@@ -1529,7 +1529,7 @@ window.__ModuleLoader__.load({
                 className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-link-status', 'data-tone': invite.status.tone, role: 'status',
               }, invite.status.text) : null),
             preview ? h('div', { className: 'fs-preview', 'data-flybot': 'face-link-preview', role: 'status' },
-              h('div', { className: 'fs-preview-name', 'data-flybot': 'face-link-preview-name' }, preview.name || 'A room with no name'),
+              h('div', { className: 'fs-preview-name', 'data-flybot': 'face-link-preview-name' }, preview.name || 'Face-to-face room'),
               preview.lead ? h('div', { className: 'fs-preview-meta', 'data-flybot': 'face-link-preview-lead' }, `Lead: ${preview.lead}`) : null,
               preview.people ? h('div', { className: 'fs-preview-meta', 'data-flybot': 'face-link-preview-members' }, preview.people) : null,
               preview.expiresAt ? h('div', { className: 'fs-preview-meta', 'data-flybot': 'face-link-preview-expiry' }, countdown(preview.expiresAt, preview.clockOffsetMs)) : null,
