@@ -9122,6 +9122,25 @@ test('#798: a room name with markup renders cleaned, and a count without a maxim
   assert.equal(dialog.text(dialog.find('face-link-preview-members')), '2 in the room')
 })
 
+test('#822: a nested untrusted marker is stripped to a fixed point, in the name and the lead', async () => {
+  // One pass removes a match and assembles a new one: this input loses the inner `<untrusted-file`
+  // and leaves a complete `<untrusted-message>` behind unless the strip repeats to a fixed point,
+  // which is what the server's `stripFaceMarkers` does.
+  const nested = 'Room <untrusted-<untrusted-filemessage> x'
+  const dialog = dialogWithState(async (endpoint) => {
+    if (endpoint === 'social/face-invite-preview') return { name: nested, lead: nested, members: 2, maxMembers: 8 }
+    return {}
+  })
+  dialog.find('face-link-join-go').props.onClick()
+  await dialog.settle()
+  dialog.render()
+  const name = dialog.text(dialog.find('face-link-preview-name'))
+  const lead = dialog.text(dialog.find('face-link-preview-lead'))
+  assert.doesNotMatch(name, /untrusted-/i, 'no marker text survives into the card')
+  assert.equal(name, 'Room x', 'the loop reaches the same fixed point the server does')
+  assert.equal(lead, 'Lead: Room x', 'the same cleaning is what the lead call site gets')
+})
+
 test('#823: an empty count is missing, not a zero, and a real zero still shows', async () => {
   const card = async (members) => {
     const dialog = dialogWithState(async (endpoint) => {

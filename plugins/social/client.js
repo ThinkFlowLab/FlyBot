@@ -886,8 +886,19 @@ window.__ModuleLoader__.load({
     // cleans it: one line, no controls, brackets, markup or @, capped — the same rules as the
     // server's cleanFaceName, applied to the one value the server hands over uncleaned.
     const ROOM_NAME_MAX = 60
-    const cleanRoomName = (value, fallback = '') => String(value ?? '')
-      .replace(/<\/?\s*untrusted-(?:file|message)/gi, '')
+    // Strip the untrusted markers to a fixed point, exactly as the server's `stripFaceMarkers` does
+    // (#822): one pass can remove a match and assemble a new one -- `<untrusted-<untrusted-filemessage>`
+    // loses the inner match and leaves a complete `<untrusted-message>` behind -- and the room's own
+    // string is only cleaned on this side before a person reads it.
+    const stripUntrustedMarkers = (text) => {
+      let out = String(text ?? '')
+      for (let previous; previous !== out;) {
+        previous = out
+        out = out.replace(/<\/?\s*untrusted-(?:file|message)/gi, '')
+      }
+      return out
+    }
+    const cleanRoomName = (value, fallback = '') => stripUntrustedMarkers(value)
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
       .replace(/[[\]"<>`@]/g, '')
       .replace(/\s+/g, ' ')
