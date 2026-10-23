@@ -49,11 +49,26 @@ export const FACE_INVITE_UNSUPPORTED = 'Invites need a newer Bot Social. The 6-d
 export const invalidInviteLink = () => new FaceRoomError('That is not an invite link. It looks like https://…/r/…', 'invalid_invite')
 // A ticket is never accepted on its own: whoever reads "r/…" on a screen gets a link, and a bare
 // string could be anything. Unknown shapes answer '' and the caller says so in one sentence.
-export function parseFaceInviteLink(value) {
+// Since #852 the one invite field carries two shapes. Bot Social's link is `/r/<ticket>`; a room on
+// another FlyBot names the Bot to knock on — `/r/@handle/<ticket>` — and its ticket belongs to that
+// FlyBot, not to this server. Callers that must know which one they hold ask here; `parseFaceInviteLink`
+// keeps answering only the face-room ticket, so a local link is never handed to Bot Social as its own.
+export function parseInviteLink(value) {
   const text = String(value ?? '').trim()
-  const match = text.match(/^(?:https?:)?\/\/[^\s/]+\/r\/([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i)
-  return match ? match[1] : ''
+  const match = text.match(/^(?:https?:)?\/\/[^\s/]+\/r\/(?:(@[A-Za-z0-9._-]{1,120})\/)?([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i)
+  if (!match) return undefined
+  return match[1] ? { kind: 'local', handle: match[1], ticket: match[2] } : { kind: 'face', ticket: match[2] }
 }
+
+export function parseFaceInviteLink(value) {
+  const parsed = parseInviteLink(value)
+  return parsed?.kind === 'face' ? parsed.ticket : ''
+}
+
+// A local room's link is not refused because it is malformed: it is well formed and means something
+// this server cannot do. One sentence says which, so the person does not go looking for a typo.
+export const LOCAL_INVITE_COPY = 'That link opens a room on another FlyBot. It does not join a face-to-face room.'
+export const localInviteHandle = value => parseInviteLink(value)?.handle ?? ''
 
 // Same class of sanitizer as core cleanName / cleanPeerName: one line, no controls,
 // brackets, markup or @, capped. Used for every peer-controlled name and for platform

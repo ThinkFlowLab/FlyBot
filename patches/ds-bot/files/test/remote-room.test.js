@@ -1205,7 +1205,14 @@ test('#852: a room link is one live ticket — ten minutes, one per room, replac
   // Ten minutes is the whole life: past the deadline the room offers no preview, and a fresh mint works.
   rt.state.rooms.war.localInvite.expiresAt = Date.now() - 1
   assert.equal(rt.localInviteOf('war'), undefined, 'an expired ticket offers nothing')
+  assert.equal(rt.roomOfLocalInvite(rt.state.rooms.war.localInvite.ticket), undefined, 'an expired ticket resolves no room, so accept cannot open one')
   assert.notEqual(await rt.mintRoomInvite('war'), undefined, 'the room can hand out a fresh one')
+  // A handle the link cannot carry must not leave a ticket behind, and must not replace a live one.
+  const kept = rt.localInviteOf('war')
+  rt.state.bots['chief-a'].fields.social.member.handle = 'not a handle'
+  await assert.rejects(() => rt.mintRoomInvite('war'), /no Bot handle a link can carry/)
+  assert.equal(rt.localInviteOf('war').ticket, kept.ticket, 'the refused mint left the live ticket alone')
+  rt.state.bots['chief-a'].fields.social.member.handle = first.handle
 
   // Withdraw clears it for good, and deleting the room takes its link with it.
   const third = await rt.mintRoomInvite('war')
@@ -1228,9 +1235,80 @@ test('#852: a local link is not a face-room link, and a shared or face room has 
   const { rt } = host(t, TEAM)
   await rt.load()
   const room = rt.state.rooms.war
+  // No Bot Social identity on this machine yet: the refusal has to say that, not "sign in".
+  await assert.rejects(() => rt.mintRoomInvite('war'), /no Bot Social identity yet/)
   room.origin = 'inbound-share'
   await assert.rejects(() => rt.mintRoomInvite('war'), /its own invitation/)
   room.origin = 'face-to-face'
   room.face = { roomId: 'frm_1', members: [] }
   await assert.rejects(() => rt.mintRoomInvite('war'), /its own invitation/)
+})
+test('#852: the knock asks the room record, and only the accept admits one home', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  rt.state.bots['chief-a'].fields = { social: { member: { home: '@alice.home', handle: '@chief.a.home' } } }
+  const invite = await rt.mintRoomInvite('war')
+  // Both envelopes parse by op: a knock needs a ticket and carries no room id, an offer needs the room.
+  const askText = encodeRoomShare({ op: 'ask', ticket: invite.ticket })
+  assert.equal(JSON.parse(askText.split('\n')[1]).roomId, undefined, 'a knock carries no room id')
+  assert.equal(parseRoomShare(askText).op, 'ask')
+  assert.equal(parseRoomShare(encodeRoomShare({ op: 'ask', ticket: 'short' })), undefined, 'a ticket keeps its own length')
+  assert.equal(parseRoomShare(encodeRoomShare({ op: 'invite', ticket: invite.ticket })), undefined, 'an offer names its room')
+
+  const knock = (payload, fromHandle = '@coder.bob.home', fromHome = '@bob.home') => rt.applyInboundRoomShare({
+    text: encodeRoomShare(payload), fromHandle, fromHome, fromName: 'Coder',
+  })
+  const roomsBefore = Object.keys(rt.state.rooms).length
+  const seats = () => rt.state.rooms.war.participants.filter(p => p.remote === true)
+
+  // The knock alone: an offer goes back, nothing is created, nobody joins, the ticket is not consumed.
+  const offer = await knock({ op: 'ask', ticket: invite.ticket })
+  assert.equal(offer.handled, true)
+  const answered = sent.map(m => parseRoomShare(m.text)).filter(d => d?.op === 'invite')
+  assert.equal(answered.length, 1, 'the host answers the knock with one offer')
+  assert.equal(answered[0].ticket, invite.ticket)
+  assert.equal(answered[0].roomId, 'war')
+  assert.equal(answered[0].name, 'War room')
+  assert.ok(answered[0].expiresAt > Date.now(), 'the offer carries the deadline the inviter clock set')
+  assert.equal(Object.keys(rt.state.rooms).length, roomsBefore, 'a knock creates no room on either side')
+  assert.equal(seats().length, 0, 'a knock adds nobody')
+  assert.equal(rt.state.rooms.war.localInvite.acceptedBy, undefined, 'the offer does not consume the ticket')
+
+  // The accept: consume, seat once, and the join goes back; the same home retrying adds no second seat.
+  const accepted = await knock({ op: 'ask', ticket: invite.ticket, accept: true })
+  assert.equal(accepted.accepted, true)
+  assert.equal(rt.state.rooms.war.localInvite.acceptedBy, '@coder.bob.home')
+  assert.equal(seats().length, 1, 'the accept seats the asker once')
+  assert.equal(seats()[0].handle, '@coder.bob.home')
+  const joins = () => sent.filter(m => m.text.includes('"op":"join"'))
+  const before = joins().length
+  const again = await knock({ op: 'ask', ticket: invite.ticket, accept: true })
+  assert.equal(again.accepted, true, 'the same home retrying is idempotent success')
+  assert.equal(seats().length, 1, 'no second seat')
+  assert.ok(joins().length > before, 'the lost join reply is sent again')
+
+  // Another home cannot take the seat the ticket already gave one home.
+  const other = await knock({ op: 'ask', ticket: invite.ticket, accept: true }, '@coder.eve.home', '@eve.home')
+  assert.equal(other.refused, 'consumed')
+  assert.equal(seats().length, 1, 'the refused home seats nobody')
+
+  // Unknown, expired and sender-less knocks change nothing and say why.
+  assert.equal((await knock({ op: 'ask', ticket: 'A'.repeat(22) })).refused, 'unknown')
+  const { expiresAt } = rt.state.rooms.war.localInvite
+  rt.state.rooms.war.localInvite.expiresAt = Date.now() - 1
+  assert.equal((await knock({ op: 'ask', ticket: invite.ticket })).refused, 'expired')
+  rt.state.rooms.war.localInvite.expiresAt = expiresAt
+  assert.equal((await knock({ op: 'ask', ticket: invite.ticket }, '')).refused, 'no-sender')
+  assert.equal(seats().length, 1, 'no refusal seats anyone')
+  // An add the room refuses must not burn the ticket: the claim is rolled back with the seat.
+  const fresh = await rt.mintRoomInvite('war')
+  const refusedAdd = await knock({ op: 'ask', ticket: fresh.ticket, accept: true }, '@stranger.eve.home', '@eve.home')
+  assert.equal(refusedAdd.refused, 'not-addable', 'a Bot the room cannot seat is refused')
+  assert.equal(rt.state.rooms.war.localInvite.acceptedBy, undefined, 'the refused add left the ticket unconsumed')
+  assert.equal(seats().length, 1, 'and seated nobody')
 })

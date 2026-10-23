@@ -9791,6 +9791,33 @@ test('#773: a pasted link joins through social/face-join-invite, and a non-link 
   assert.equal(calls.length, before, 'the invalid link went nowhere')
 })
 
+test('#852: a link into a room on another FlyBot is answered in one sentence and calls nobody', async () => {
+  const LOCAL_URL = 'https://bot-social.example.com/r/@chief.alice.home/AbCdEfGhIjKlMnOpQrStUv'
+  const calls = []
+  const statuses = []
+  let index = 0
+  const bots = [{ id: 'a', name: 'Chief', isMain: true }]
+  const states = ['setup', bots, ['a'], '', false, null, [], null, 0, null, { link: LOCAL_URL, status: null }]
+  const { registered, walk } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect() {},
+    useMemo: fn => fn(),
+    useRef: value => ({ current: value }),
+    useState: value => {
+      const at = index++
+      const initial = at < states.length ? states[at] : value
+      return [initial, next => { if (at === 10) statuses.push(next) }]
+    },
+  }))
+  const tree = walk(plugin.FaceToFaceGroup({}))
+  tree.find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(statuses.at(-1).status.text, 'That link opens a room on another FlyBot. It does not join a face-to-face room.')
+  assert.deepEqual(calls, [], 'no preview and no join: the ticket is not this server\'s')
+})
+
 test('#773: scanning a room invite link joins that room with its ticket', async () => {
   const scanned = await scanCase({
     detector: class { detect() { return Promise.resolve([{ rawValue: INVITE_URL }]) } },
@@ -9912,6 +9939,21 @@ test('#773: tapping Scan twice releases the camera the first tap opened', async 
   for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve))
   assert.equal(opened, 2, 'the second tap opens a second camera')
   assert.deepEqual(stopped, [1], 'and the first one is released instead of leaking')
+})
+
+test('#852: the host refuses a local room link before the feature gate, and sends nothing', async (t) => {
+  const { call, server } = await inviteServer(t, ['face_room_invites'])
+  const before = server.calls.length
+  const failed = await call('flybot/social/face-join-invite', {
+    ticket: 'https://bot-social.example.com/r/@chief.alice.home/AbCdEfGhIjKlMnOpQrStUv', botId: 'a',
+  })
+  assert.equal(failed.error.message, 'That link opens a room on another FlyBot. It does not join a face-to-face room.')
+  assert.equal(server.calls.length, before, 'no request at all: not an invite, not a join')
+  // The same route still answers the face shape and still gates on the feature.
+  const { call: call2, server: server2 } = await inviteServer(t, ['typed_by_owner'])
+  const older = await call2('flybot/social/face-join-invite', { ticket: 'AbCdEfGhIjKlMnOpQrStUv', botId: 'a' })
+  assert.deepEqual(JSON.parse(JSON.stringify(older.value)), { unsupported: true })
+  assert.deepEqual(inviteCalls(server2), [])
 })
 
 test('#773: joining by ticket on a server without face_room_invites never reaches the route', async (t) => {

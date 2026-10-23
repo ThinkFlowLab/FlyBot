@@ -961,7 +961,7 @@ export function install(rt) {
       ticket: invite.ticket,
       handle: invite.handle,
       expiresAt,
-      ...(typeof invite.consumedBy === 'string' && invite.consumedBy ? { consumedBy: invite.consumedBy } : {}),
+      ...(typeof invite.acceptedBy === 'string' && invite.acceptedBy ? { acceptedBy: invite.acceptedBy } : {}),
     }
   }
 
@@ -976,7 +976,10 @@ export function install(rt) {
     const wanted = String(ticket ?? '')
     if (!wanted) return undefined
     for (const room of Object.values(state.rooms || {})) {
-      if (room?.localInvite?.ticket === wanted) return room
+      if (room?.localInvite?.ticket !== wanted) continue
+      // An expired ticket resolves nothing: the room record is the authority, and a dead link must
+      // not be able to open a room through the accept path.
+      return liveLocalInvite(room) ? room : undefined
     }
     return undefined
   }
@@ -987,10 +990,13 @@ export function install(rt) {
     // A shared or face room has its own invitation; this one is for a room that lives in FlyBot.
     if (room.origin === 'inbound-share' || isFaceRoom(room)) throw invalid('This room has its own invitation')
     const handle = shareInviter(room).inviterHandle
-    if (!handle) throw invalid('Sign in first')
+    if (!handle) throw invalid('This machine has no Bot Social identity yet')
     const expiresAt = Date.now() + LOCAL_INVITE_TTL_MS
     // 16 random bytes in base64url are 22 characters, the shape the invite field already accepts.
     const ticket = randomBytes(16).toString('base64url')
+    // Build the link before the record is written: a handle the link cannot carry must not leave a
+    // ticket behind that no invitee could ever use.
+    if (!roomInviteUrl(handle, ticket, rt.roomInviteOrigin || ROOM_INVITE_ORIGIN)) throw invalid('This room has no Bot handle a link can carry')
     // One live ticket per room: minting again replaces the last one, and the old link stops working.
     room.localInvite = { ticket, handle, expiresAt, mintedAt: Date.now() }
     await rt.save?.()
@@ -1004,6 +1010,60 @@ export function install(rt) {
     delete room.localInvite
     await rt.save?.()
     return { revoked: true }
+  }
+
+  // #852: a knock at a local room's link. The invitee's host sends `ask` (the accepting knock carries
+  // `accept: true`); this side answers from the room record only, and a knock never creates a room,
+  // adds a participant, or writes a line. The asker is the transport's sender, never a field of the
+  // payload. Verify → consume → add → the join goes back from addRoomParticipant.
+  async function answerLocalInvite(data, event, actor) {
+    const ticket = String(data.ticket ?? '')
+    const asker = String(event.fromHandle ?? '')
+    if (!asker) return { handled: true, refused: 'no-sender' }
+    const room = Object.values(state.rooms || {}).find(record => record?.localInvite?.ticket === ticket)
+    if (room === undefined) return { handled: true, refused: 'unknown' }
+    const invite = room.localInvite
+    if (!(Number(invite.expiresAt) > Date.now())) return { handled: true, refused: 'expired' }
+    if (invite.acceptedBy && invite.acceptedBy !== asker) return { handled: true, refused: 'consumed' }
+    if (data.accept !== true) {
+      // The offer is information, not authority: the ticket is not consumed, and no member joins.
+      await sendShareTo(room, { handle: asker }, {
+        op: 'invite',
+        ticket,
+        roomId: room.id,
+        name: room.name,
+        lead: room.admin ? state.bots?.[room.admin]?.name : undefined,
+        expiresAt: invite.expiresAt,
+        ...shareInviter(room),
+      }, 'room-share')
+      return { handled: true, offer: { ticket, roomId: room.id, name: room.name, expiresAt: invite.expiresAt } }
+    }
+    // The claim lands here, once: the room record keeps the one home the ticket admitted.
+    const claimed = invite.acceptedBy !== asker
+    if (claimed) {
+      invite.acceptedBy = asker
+      invite.acceptedAt = Date.now()
+    }
+    try {
+      const seated = currentParticipants(room).some(p => p.remote === true && (p.handle === asker || p.id === asker))
+      if (seated) {
+        // The usual retry: the join reply was lost. Success without a second seat, and say it again.
+        await rt.save?.()
+        void rt.notifyRoomShare?.(room, { op: 'join', handle: asker })
+      } else {
+        const ownerId = actor?.memberId ?? Object.keys(state.members || {})[0]
+        await rt.addRoomParticipant(room.id, { kind: 'bot', handle: asker }, actor ?? (ownerId ? { memberId: ownerId } : undefined))
+      }
+    } catch (error) {
+      // Nothing was added, so the ticket must not be burnt either.
+      if (claimed) {
+        delete invite.acceptedBy
+        delete invite.acceptedAt
+      }
+      rt.warn?.('ds-bot: a room invite accept from %s was refused: %s', asker, error)
+      return { handled: true, refused: 'not-addable' }
+    }
+    return { handled: true, room, accepted: true }
   }
 
   // Room lines go out to the friends' Bots in the room, checked per author and per recipient
@@ -1217,6 +1277,13 @@ export function install(rt) {
     const fromName = cleanPeerName(event.fromName || data.inviterName, 'a friend')
     const localBotId = event.localBotId && state.bots?.[event.localBotId] ? event.localBotId : undefined
     const ownerId = actor?.memberId ?? event.ownerId ?? Object.keys(state.members || {})[0]
+    // #852: answered before the branch below, so a knock or an offer never projects a room here.
+    if (data.op === 'ask') return answerLocalInvite(data, event, actor)
+    if (data.op === 'invite') {
+      // The dialog shows the offer; it admits nobody and creates nothing on this side.
+      void rt.onLocalInviteOffer?.(data, { fromHandle, fromHome, fromName })
+      return { handled: true, offer: data }
+    }
     let room = inboundOf(data.roomId, fromHome, fromHandle)
     if (data.op === 'leave') {
       if (!room) return { handled: true, room: undefined }

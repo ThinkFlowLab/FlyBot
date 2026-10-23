@@ -881,6 +881,10 @@ window.__ModuleLoader__.load({
     const faceInviteTicket = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i)?.[1] ?? ''
     const INVITE_UNSUPPORTED = 'Invites need a newer Bot Social. The 6-digit number still works.'
     const INVITE_LINK_COPY = 'That is not an invite link. It looks like https://…/r/…'
+    // Two shapes in one field (#852): the local one names the Bot to knock on, and its ticket is not a
+    // face-room invite. Same regex as the host's parseInviteLink; the sentence is shown here too.
+    const localInviteHandle = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/(@[A-Za-z0-9._-]{1,120})\/[A-Za-z0-9_-]{16,64}\/?(?:[?#].*)?$/i)?.[1] ?? ''
+    const LOCAL_INVITE_COPY = 'That link opens a room on another FlyBot. It does not join a face-to-face room.'
     // The preview card names a room the person has not entered (#798). `name` is that room's own
     // string and the host passes it through as sent, so the last place before a person reads it
     // cleans it: one line, no controls, brackets, markup or @, capped — the same rules as the
@@ -1384,6 +1388,10 @@ window.__ModuleLoader__.load({
       const clearInvite = () => setInvite({ link: '', status: null })
       const previewLink = async (typed) => {
         const text = String(typed ?? invite.link ?? '').trim()
+        if (localInviteHandle(text)) {
+          setInvite({ link: text, status: { tone: 'error', text: LOCAL_INVITE_COPY } })
+          return
+        }
         const ticket = faceInviteTicket(text)
         if (!ticket) {
           setInvite({ link: text, status: { tone: 'error', text: INVITE_LINK_COPY } })
@@ -1426,6 +1434,10 @@ window.__ModuleLoader__.load({
             return
           }
           const raw = String(result?.raw ?? '')
+          if (localInviteHandle(raw)) {
+            setScan({ tone: 'error', text: LOCAL_INVITE_COPY })
+            return
+          }
           if (faceInviteTicket(raw)) {
             setScan({ tone: 'ok', text: 'Scanned an invite link.' })
             void previewLink(raw)

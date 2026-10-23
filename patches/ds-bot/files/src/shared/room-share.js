@@ -4,7 +4,11 @@
 
 export const ROOM_SHARE_MARK = 'FLYBOT-ROOM-SHARE'
 
-const OPS = new Set(['join', 'leave', 'line'])
+// #852: `ask` is the invitee knocking at a local room's link (or accepting it with `accept: true`);
+// `invite` is the inviter's answer with the room's name and the ticket's deadline. Neither creates a
+// room on the receiving side, and neither is authority: only the room record decides.
+const OPS = new Set(['join', 'leave', 'line', 'ask', 'invite'])
+const TICKET_SHAPE = /^[A-Za-z0-9_-]{16,64}$/
 
 function clip(value, max = 60) {
   return String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, max)
@@ -22,6 +26,12 @@ export function encodeRoomShare(payload = {}) {
     invitedHandle: clip(payload.invitedHandle, 120),
     seq: Number.isFinite(Number(payload.seq)) ? Number(payload.seq) : 0,
   }
+  // #852: the link's ticket, the second (accepting) knock, and the inviter's answer fields.
+  if (payload.ticket) body.ticket = clip(payload.ticket, 64)
+  if (payload.accept === true) body.accept = true
+  if (payload.lead) body.lead = clip(payload.lead)
+  if (Number.isFinite(Number(payload.expiresAt)) && Number(payload.expiresAt) > 0) body.expiresAt = Math.floor(Number(payload.expiresAt))
+  if (body.op === 'ask' && !payload.roomId) delete body.roomId
   if (payload.who) body.who = clip(payload.who)
   if (payload.kind) body.kind = clip(payload.kind, 32)
   if (payload.authorKind) body.authorKind = clip(payload.authorKind, 16)
@@ -79,7 +89,11 @@ export function parseRoomShare(text) {
   if (end < 0) return undefined
   try {
     const data = JSON.parse(raw.slice(start, end + 1))
-    if (data?.v !== 1 || !OPS.has(data.op) || !data.roomId) return undefined
+    if (data?.v !== 1 || !OPS.has(data.op)) return undefined
+    // A knock names the ticket and nothing else; an offer must also name the room it is for.
+    if (data.op === 'ask') return TICKET_SHAPE.test(String(data.ticket ?? '')) ? data : undefined
+    if (data.op === 'invite') return TICKET_SHAPE.test(String(data.ticket ?? '')) && data.roomId ? data : undefined
+    if (!data.roomId) return undefined
     return data
   } catch {
     return undefined

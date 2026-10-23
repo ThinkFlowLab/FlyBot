@@ -57,6 +57,8 @@ import {
   FACE_INVITE_TICKET,
   FACE_INVITE_FEATURE,
   FACE_INVITE_UNSUPPORTED,
+  LOCAL_INVITE_COPY,
+  localInviteHandle,
   invalidInviteLink,
 } from './face-rooms.js'
 import {
@@ -3655,7 +3657,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   disposers.push(flybot.api.handle('social/face-invite-preview', async ({ ticket } = {}) => (await serverInvites()) ? faceNeed().previewInvite(ticket) : { unsupported: true }))
   // Joining by ticket is the same feature as minting one: an older server answers one sentence
   // instead of trying a route it does not serve.
-  disposers.push(flybot.api.handle('social/face-join-invite', async ({ ticket, botId } = {}) => (await serverInvites()) ? joinFaceRoom({ ticket, botId }) : { unsupported: true }))
+  disposers.push(flybot.api.handle('social/face-join-invite', async ({ ticket, botId } = {}) => {
+    // A link into a room on another FlyBot is answered before the feature gate: its ticket was never
+    // this server's, so answering "needs a newer Bot Social" would point at the wrong thing (#852).
+    const local = localInviteHandle(ticket)
+    if (local) throw new FaceRoomError(LOCAL_INVITE_COPY, 'local_invite')
+    return (await serverInvites()) ? joinFaceRoom({ ticket, botId }) : { unsupported: true }
+  }))
   disposers.push(flybot.api.handle('social/face-open', async (payload) => openFaceRoom(payload), { read: true }))
   disposers.push(flybot.api.handle('social/face-rooms', async (payload) => {
     if (payload?.poll !== false) await pollFaceRooms().catch(() => { /* a failed poll shows the rooms as last polled */ })

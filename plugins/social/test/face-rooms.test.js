@@ -26,6 +26,9 @@ import {
   publishedForJoin,
   createFaceRoomApi,
   parseFaceInviteLink,
+  parseInviteLink,
+  localInviteHandle,
+  LOCAL_INVITE_COPY,
   faceInviteUrl,
   FACE_INVITE_UNSUPPORTED,
   FaceRoomError,
@@ -594,6 +597,23 @@ test('#773: only a /r/<ticket> link is an invite — a bare ticket or another pa
   assert.equal(faceInviteUrl('https://bot-social.example.com', 'nope'), '')
   assert.match(FACE_INVITE_UNSUPPORTED, /newer Bot Social/)
   assert.match(FACE_INVITE_UNSUPPORTED, /6-digit number still works/)
+})
+
+test('#852: two link shapes in one field — a local room link names the Bot to knock on', () => {
+  const LOCAL_URL = 'https://bot-social.example.com/r/@chief.alice.home/' + INVITE_TICKET
+  assert.deepEqual(parseInviteLink(INVITE_URL), { kind: 'face', ticket: INVITE_TICKET })
+  assert.deepEqual(parseInviteLink(LOCAL_URL), { kind: 'local', handle: '@chief.alice.home', ticket: INVITE_TICKET })
+  assert.deepEqual(parseInviteLink(LOCAL_URL + '/?from=chat'), { kind: 'local', handle: '@chief.alice.home', ticket: INVITE_TICKET })
+  assert.equal(parseInviteLink(INVITE_TICKET), undefined, 'a bare ticket is not a link')
+  assert.equal(parseInviteLink('https://bot-social.example.com/r/@chief.alice.home/short'), undefined)
+  assert.equal(parseInviteLink('https://bot-social.example.com/r/@chief.alice.home'), undefined, 'the ticket is not optional')
+  // The face parser must never answer a ticket a local link carries: that ticket is another FlyBot's.
+  assert.equal(parseFaceInviteLink(LOCAL_URL), '')
+  assert.equal(parseFaceInviteLink(INVITE_URL), INVITE_TICKET, 'the face shape still answers its ticket')
+  assert.equal(localInviteHandle(LOCAL_URL), '@chief.alice.home')
+  assert.equal(localInviteHandle(INVITE_URL), '', 'a face link names no Bot to knock on')
+  assert.match(LOCAL_INVITE_COPY, /opens a room on another FlyBot/)
+  assert.match(LOCAL_INVITE_COPY, /does not join a face-to-face room/)
 })
 
 test('#773: mint asks for a ticket and builds the link from the room id', async () => {
