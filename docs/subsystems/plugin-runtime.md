@@ -82,6 +82,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 ### Inbound shared rooms on `flybot.rooms`
 
 - `flybot.rooms.applyInbound` turns a Bot Social inbox envelope into the owner's inbound-share projection; `leaveInbound` hides those rooms when the invited Bot is removed or its grant is revoked. Face-to-face methods are unchanged. Still not team mode.
+- `flybot.rooms.serveInvites({ mint, preview, claim, verify, revoke })` registers Bot Social's record of a local room's invite tickets (#884; `rt.roomInviteServer`, see core-host's "A local room's invite link"); it returns the unregister function. `mint` answers `undefined` when the server has no `local_room_invites`, and a refusal throws an Error whose `code` is Bot Social's. `flybot.rooms.ticketPeers()` lists the pairs a link opens (`{ from, to, scope, ticket }`, reach.js `ticketPeers`), so a transport can let a room share through to exactly those, under `scope`, and to nobody else off its roster.
 
 ### Face-to-face owner lines
 

@@ -1252,13 +1252,20 @@ export function install(rt) {
     const roomId = String(claim.roomId ?? '')
     const inviter = String(claim.inviterHandle ?? parsed.handle)
     const first = picked[0].id
+    // The claim is this home's one way to the inviter's Bot before the room exists here: the accepting
+    // knock leaves under it (reach.js ticketPeers), and nothing else does. A day old and never answered,
+    // it is dropped.
+    const at = Date.now()
+    state.roomClaims = Object.fromEntries(Object.entries(state.roomClaims ?? {}).filter(([, item]) => at - Number(item?.claimedAt) < 24 * 60 * 60 * 1000))
+    state.roomClaims[parsed.ticket] = { inviterHandle: inviter, roomId, bots: picked.map(bot => bot.id), claimedAt: at }
+    await rt.save?.()
     const sent = await rt.flybotSend({
       from: first,
       to: inviter,
       text: encodeRoomShare({ op: 'ask', ticket: parsed.ticket, accept: true, roomId, bots: handles }),
       role: 'request',
       via: 'room-share',
-      meta: { share: 'ask', ticket: parsed.ticket, roomId, claimed: true },
+      meta: { share: 'ask', ticket: parsed.ticket, scope: roomId, claimed: true },
     })
     return { sent: sent?.action ?? 'sent', handle: inviter, ticket: parsed.ticket, accept: true, claimed: true, bots: handles }
   }
@@ -1459,7 +1466,13 @@ export function install(rt) {
       }, 'room-share', me.id, scope)
     }
     const stays = currentParticipants(room).some(p => p.kind === 'bot' && !p.remote)
-    if (!stays) await endServerTicket(room.sharedFrom.ticket)
+    if (!stays) {
+      if (state.roomClaims?.[room.sharedFrom.ticket]) {
+        delete state.roomClaims[room.sharedFrom.ticket]
+        await rt.save?.()
+      }
+      await endServerTicket(room.sharedFrom.ticket)
+    }
   }
 
   // A seat of this home's own room that the sender is, for a share addressed to that room.

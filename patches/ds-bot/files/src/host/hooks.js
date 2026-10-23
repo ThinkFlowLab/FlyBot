@@ -1131,11 +1131,10 @@ export function install(rt) {
         rt.roomInviteServer = wrapped
         return () => { if (rt.roomInviteServer === wrapped) rt.roomInviteServer = undefined }
       },
-      // The rooms of this home a ticket seat is in, and the stranger's Bot each seat is: the
-      // transport lets a room share through to exactly these, and to nobody else off the roster.
-      ticketSeats: () => Object.values(state.rooms || {}).flatMap(room => (room.participants ?? [])
-        .filter(p => p.remote === true && p.admittedBy === 'ticket' && p.leftSeq === undefined)
-        .map(p => ({ roomId: room.id, handle: p.handle, hostBotId: p.hostBotId }))),
+      // The pairs a room link opens, `[{ from, to, scope, ticket }]` (reach.js ticketPeers): the
+      // transport lets a room share through to exactly these, under `scope`, and to nobody else off
+      // the roster.
+      ticketPeers: () => rt.ticketPeers?.() ?? [],
     },
     remote: {
       publish: list => remoteMembers.publish(plugin, list),

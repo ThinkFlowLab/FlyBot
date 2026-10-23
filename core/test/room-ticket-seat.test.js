@@ -209,16 +209,16 @@ test('#884: a stranger claims a room link with two of its Bots, both are seated,
   assert.deepEqual(joined.bots, ['@chief.bob.home', '@helper.bob.home'])
   const knock = log.find(m => parseRoomShare(m.text)?.op === 'ask')
   assert.equal(knock.from, 'chief-b', 'the first Bot the claim brought knocks')
-  assert.equal(knock.meta.scope, undefined, 'the knock rides the claim, not a room scope')
-  await settle()
-
-  // The knock rides the claim's reach in the real transport; here it is the plugin's call to make, so
-  // deliver it the way #883's exception does: to the inviter's Bot, for that room.
+  assert.equal(knock.meta.scope, 'war', "the knock goes under the claimed room's scope")
+  assert.equal(knock.delivered, true, 'the claim opened the one way to the inviter')
   const asked = parseRoomShare(knock.text)
   assert.equal(asked.roomId, 'war')
   assert.deepEqual(asked.bots, ['@chief.bob.home', '@helper.bob.home'])
-  const seated = await a.rt.applyInboundRoomShare({ text: knock.text, fromHandle: '@chief.bob.home', fromHome: '@bob.home', fromName: 'Chief' })
-  assert.equal(seated.accepted, true, JSON.stringify(seated))
+  // The claim is the guest's reach before the room exists there: to the inviter's Bot, in that room only.
+  assert.equal(b.rt.reach({ from: 'chief-b', to: { kind: 'remote', handle: '@chief.alice.home' }, meta: { scope: 'war' } }).action, 'allow')
+  assert.equal(b.rt.reach({ from: 'chief-b', to: { kind: 'remote', handle: '@writer.alice.home' }, meta: { scope: 'war' } }).action, 'deny', 'not any Bot of that home')
+  assert.equal(b.rt.reach({ from: 'chief-b', to: { kind: 'remote', handle: '@chief.alice.home' } }).action, 'deny', 'not outside the room')
+  assert.equal(b.rt.reach({ from: 'chief-b', to: { kind: 'remote', handle: '@chief.alice.home' }, meta: { scope: 'other' } }).action, 'deny', 'not under another room')
   await settle()
 
   const room = a.rt.state.rooms.war
@@ -273,6 +273,8 @@ test('#884: the accept is read back from Bot Social, and each way it fails has i
   })
   const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
   const seats = () => a.rt.state.rooms.war.participants.filter(p => p.remote === true && p.leftSeq === undefined)
+  // The guest's own knock is held back here, so each crafted one below is judged alone.
+  b.rt.flybotSend = async (msg) => { log.push(msg); return { action: 'sent' } }
 
   assert.equal((await knockFrom(invite.ticket)).refused, 'unclaimed', 'a knock without a claim seats nobody')
   await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
@@ -339,6 +341,8 @@ test('#884: the guest leaving gives the claim back; deleting the room withdraws 
   await b.rt.removeRoomParticipant(mirror.id, { kind: 'bot', id: 'chief-b' }, { memberId: 'owner-1' })
   await settle()
   assert.equal(server.tickets.get(invite.ticket).released, true, 'the claim was given back')
+  assert.equal(b.rt.state.roomClaims?.[invite.ticket], undefined, 'and its way out is gone')
+  assert.equal(b.rt.reach({ from: 'chief-b', to: { kind: 'remote', handle: '@chief.alice.home' }, meta: { scope: 'war' } }).action, 'deny')
   assert.equal(a.rt.state.rooms.war.participants.filter(p => p.remote === true && p.leftSeq === undefined).length, 0, 'the host room lost the seat')
   assert.equal(a.rt.localInvitesOf('war').length, 0)
 

@@ -202,7 +202,42 @@ function remoteInRoom(state, roomId, peer) {
   })
 }
 
-export function reach(state, { from, to, roomId } = {}) {
+// #883, #884: the only pairs a room link opens, as { from: local Bot id, to: remote handle, scope:
+// the room id Bot Social knows the room by, ticket? }. A seat in a room of this home is reached from
+// the Bot its link named; a room of another home that a ticket seated Bots of mine in is reached from
+// those Bots, to its inviter; a claim this home made is the accepting knock's one way out. Nothing
+// else: a stranger is never on the roster, and these pairs are not friendships.
+export function ticketPeers(state) {
+  const peers = []
+  const handleOf = p => String(p?.handle || p?.id || '')
+  for (const room of Object.values(state.rooms ?? {})) {
+    const live = currentParticipants(room)
+    if (room.origin === 'inbound-share') {
+      const from = room.sharedFrom ?? {}
+      if (!from.ticket || !from.inviterHandle || !from.remoteRoomId || room.hidden) continue
+      for (const p of live) {
+        if (p.kind === 'bot' && !p.remote && state.bots?.[p.id]) peers.push({ from: p.id, to: from.inviterHandle, scope: String(from.remoteRoomId), ticket: from.ticket })
+      }
+      continue
+    }
+    for (const p of live) {
+      if (p.kind !== 'bot' || p.remote !== true || p.admittedBy !== 'ticket' || !p.hostBotId) continue
+      if (!(room.members ?? []).includes(p.hostBotId)) continue
+      peers.push({ from: p.hostBotId, to: handleOf(p), scope: String(room.id), ticket: p.ticket })
+    }
+  }
+  for (const [ticket, claim] of Object.entries(state.roomClaims ?? {})) {
+    if (!claim?.inviterHandle || !claim.roomId) continue
+    for (const id of claim.bots ?? []) if (state.bots?.[id]) peers.push({ from: id, to: claim.inviterHandle, scope: String(claim.roomId), ticket })
+  }
+  return peers
+}
+
+// The exact Bot, never "any Bot of that home": a link opens one pair, not a friendship.
+const handleKey = ref => normGrantee(ref && typeof ref === 'object' ? ref.handle : ref)
+const samePeer = (a, b) => handleKey(a) !== '' && handleKey(a) === handleKey(b)
+
+export function reach(state, { from, to, roomId, scope } = {}) {
   const fromRemote = isRemoteRef(from)
   const toRemote = isRemoteRef(to)
   if (fromRemote && toRemote) return deny('one side must be a local Bot')
@@ -219,6 +254,8 @@ export function reach(state, { from, to, roomId } = {}) {
     if (hasGrant(state, from, to, roomId) || (roomId !== undefined && isCodeJoined(state, roomId, from))) return ALLOW
     // The owner already put this friend's Bot in the room: talking to it here is that share.
     if (roomId !== undefined && inRoom(state, roomId, from) && remoteInRoom(state, roomId, to)) return ALLOW
+    // A room link's pair, under that room's scope only (#883).
+    if (scope !== undefined && ticketPeers(state).some(peer => peer.from === from && peer.scope === String(scope) && samePeer(peer.to, to))) return ALLOW
     // Name the step that exists (#273): the sending Bot is the one not shared with that friend.
     return deny(`${sender.name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${sender.name} with them in its settings → Sharing.`)
   }
@@ -256,7 +293,9 @@ export function install(rt) {
     from: msg.remote?.handle ? { kind: 'remote', handle: msg.remote.handle } : (msg.from ?? msg.fromId),
     to: msg.to ?? msg.toId,
     roomId: msg.meta?.roomId ?? msg.roomId ?? msg.fromRoomId ?? msg.deliverArgs?.roomId ?? msg.deliverArgs?.fromRoomId,
+    scope: msg.meta?.scope,
   })
+  rt.ticketPeers = () => ticketPeers(state)
 
   rt.setGrants = async (botId, list) => {
     const bot = state.bots?.[botId]
