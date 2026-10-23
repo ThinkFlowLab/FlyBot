@@ -290,6 +290,10 @@ export const FLYBOT_CSS = `
 .bt-file-chip { font-size: 12px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--bt-line, rgba(0,0,0,.15)); background: transparent; cursor: pointer; }
 
 .bt-flybot-section { margin-top: 8px; border-top: 1px solid var(--bt-line, rgba(0,0,0,.08)); padding-top: 6px; }
+/* A section whose component renders null leaves the wrapper empty, and an empty wrapper must not draw
+   the separator: #818's "no border" held for the component but not for the box around it. Keyed on
+   emptiness, not on a section id, so the next null-rendering section is covered too. */
+.bt-flybot-section:empty { margin-top: 0; border-top: 0; padding-top: 0; }
 .bt-flybot-approvals { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; max-width: 360px; max-height: calc(100vh - 32px); overflow-y: auto; }
 .bt-flybot-approval-error { color: var(--bt-danger, #d33); font-size: 12px; }
 .bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }

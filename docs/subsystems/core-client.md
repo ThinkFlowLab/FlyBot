@@ -44,6 +44,7 @@ Add a new invariant under the heading it belongs to (or a new heading), not at t
 ### Generated bundle
 
 - `client.js` matches `core/src/client/`; `npm run build` + `--check` (also invariant 3 of [ds-bot-core](ds-bot-core.md)).
+- The bundle carries the slot wrapper's empty rule: `.bt-flybot-section:empty { margin-top: 0; border-top: 0; padding-top: 0; }` sits beside the base `.bt-flybot-section` rule in `FLYBOT_CSS` (`flybot-slots.js`), so a `flybot.sidebar.section` entry whose component renders `null` leaves no separator behind while a section with rows keeps the base rule (#818). Behavior is specified on [plugin-runtime](plugin-runtime.md).
 
 ### Host Bot look in the bundle
 
