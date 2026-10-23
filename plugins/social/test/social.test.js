@@ -10091,6 +10091,7 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
 
   const refused = [
     ['a plain line', { from: 'a', to: '@guest.eve.home', text: 'hello there' }],
+    ['a plain line under the room scope', { from: 'a', to: '@guest.eve.home', text: 'hello there', via: 'message_bot', meta: { roomId: 'war', scope: 'war' } }],
     ['another room', { from: 'a', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'other' } }],
     ['no scope', { from: 'a', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war' } }],
     ['another Bot of mine', { from: 'b', to: '@guest.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
