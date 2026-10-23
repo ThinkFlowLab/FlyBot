@@ -152,18 +152,24 @@ test('an impossible date is an error, never an empty report', () => {
 })
 
 test('a day a zone falls back is 25 hours, and --to covers all of it', () => {
-  // 2025-11-02 in America/New_York is 01:30 EDT and then 01:30 EST, 25 hours of local day.
+  // 2025-11-02 in America/New_York is 25 hours: it starts at 04:00Z (EDT) and ends at
+  // 05:00Z the next day (EST). 15:00Z is 10:00 EST, after the fall-back at 06:00Z.
   const { path, dir } = fixture([
-    ['session-dst', Date.parse('2025-11-02T05:30:00Z'), 'turn', 10, 0, 0, 1],
-    ['session-dst', Date.parse('2025-11-02T06:30:00Z'), 'turn', 10, 0, 0, 1],
+    ['session-dst', Date.parse('2025-11-02T15:00:00Z'), 'turn', 10, 0, 0, 1],
+    ['session-dst', Date.parse('2025-11-02T17:30:00Z'), 'turn', 10, 0, 0, 1],
   ])
   try {
     const day = JSON.parse(run(path, '--json', '--tz', 'America/New_York', '--from', '2025-11-02', '--to', '2025-11-02').stdout)
+    // The bound itself, not just "the two values differ": local 23:59:59.999 on the 2nd.
+    assert.equal(day.to, 1762145999999)
+    assert.equal(new Date(day.to).toISOString(), '2025-11-03T04:59:59.999Z')
     assert.equal(day.calls, 2)
     assert.deepEqual(day.days.map(row => [row.day, row.calls]), [['2025-11-02', 2]])
 
-    // The day before it ends before them: the fall-back day is not truncated to 24 hours.
+    // The day before it ends 25 hours earlier, and holds none of them.
     const earlier = JSON.parse(run(path, '--json', '--tz', 'America/New_York', '--to', '2025-11-01').stdout)
+    assert.equal(earlier.to, 1762055999999)
+    assert.equal(earlier.to - day.to, -90_000_000)
     assert.equal(earlier.calls, 0)
 
     // And a bare --to on a normal day still ends at that day's last millisecond.
