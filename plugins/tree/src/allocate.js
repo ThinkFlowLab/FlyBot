@@ -117,6 +117,11 @@ export function createAllocator({ fb, limits, snapshot, childrenOf, depthOf, tra
     const first = keysOf(profileFor(String(name ?? '').trim(), role))[0]
     const key = burst && kindOf(first) !== 'area' && !(typeof parentRef === 'string' && parentRef.trim()) ? first : undefined
     if (!key) return placeAlone(callerId, name, role, parentRef)
+    // A call that will reuse an existing Bot creates nothing, so it is not a member of the group: taking
+    // a seat for it made the lead's roster name a Bot it never held (#819). planChild is a read;
+    // placeAlone and joinGroup plan again under the lock they take.
+    const plan = planChild(callerId, name, role, parentRef)
+    if (plan.reused) return plan
     const seat = { key, name: String(name ?? '').trim(), group: undefined }
     const seats = burstSeats.get(callerId) ?? []
     seats.push(seat)

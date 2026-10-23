@@ -1,0 +1,1 @@
+A lead created for two simultaneous `create_child_bot` calls no longer claims a Bot it does not hold: a call that only reuses an existing Bot creates nothing, so it is no longer counted as a member of the group, and a burst of one new Bot plus one reused one makes no lead at all ([#819](https://github.com/ThinkFlowLab/FlyBot/issues/819)).

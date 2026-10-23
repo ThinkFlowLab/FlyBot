@@ -2046,3 +2046,35 @@ test('#816: one roster read per tick, shared by the structure entry and the arch
   stop()
   for (const stopEffect of cleanups.splice(0)) { try { stopEffect?.() } catch { /* already gone */ } }
 })
+
+// #819: a call that reuses an existing Bot creates nothing, so it is not a member of the burst's
+// group. It used to take a seat before the reuse was known, so the lead's roster named a Bot it never
+// held: `FlyBot Lead` was made for "FlyBot Programmer, FlyBot Tester" with only the Tester under it.
+test('#819: a burst whose member is reused does not seat it, so the lead never names a Bot it does not hold', async () => {
+  const f = fakeAdapter()
+  // The Bot the burst will reuse: already under Dev Lead, so 'FlyBot Programmer' has a namesake.
+  const reusedId = 'b90'
+  f.bots.set(reusedId, { id: reusedId, name: 'FlyBot Programmer', isMain: false, systemPrompt: '', fields: { parent: f.devLead, treeRole: 'writes the code' } })
+  const tree = createTree(f.fb, { limits: { maxDepth: 5, maxChildren: 8 } })
+  const releaseNew = f.hold('FlyBot Tester')
+  const a = tree.allocateChild(f.chief, 'FlyBot Programmer', 'writes code', undefined)
+  const b = tree.allocateChild(f.chief, 'FlyBot Tester', 'tests code', undefined)
+  await until('the new create to start', () => byName(f, 'FlyBot Tester'))
+  releaseNew()
+  const [reused, created] = await Promise.all([a, b])
+  // The reuse is a reuse, not a create: its own parent and fields are untouched.
+  assert.ok(reused.reused, 'the existing Bot is reused')
+  assert.match(reused.note ?? '', /already exists/)
+  assert.equal(f.fb.getField(reusedId, 'parent'), f.devLead, 'the reused Bot keeps its parent')
+  assert.equal(f.bots.size, 5, 'only the Tester was created: Chief, Dev Lead, Existing Programmer, FlyBot Programmer, FlyBot Tester')
+  // Nothing in the tree claims a member it does not hold.
+  for (const bot of f.bots.values()) {
+    const names = bot.fields?.lead?.memberNames
+    if (!Array.isArray(names)) continue
+    const children = new Set(childrenIn(f, bot.id).map(x => x.name))
+    for (const name of names) assert.ok(children.has(name), `${bot.name} names ${name}, which is not its child`)
+  }
+  // One new member is not a group: the lead is not made, and the Tester takes today's placement.
+  assert.equal(byName(f, 'FlyBot Lead'), undefined, 'a burst of one new member makes no lead')
+  assert.equal(created.created.parent.id, f.devLead)
+})
