@@ -12,7 +12,7 @@ import { systemPrompt, withTreeBlock, hasTreeBlock } from './prompt.js'
 import { forestOf } from './forest.js'
 import { createOrganizer } from './organize.js'
 import { createAllocator } from './allocate.js'
-import { createLoadTracker, loadLine } from './load.js'
+import { createLoadTracker } from './load.js'
 export { forestOf }
 
 export const TREE_KEYS = new Set(['parent', 'treeRole'])
@@ -50,7 +50,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
 
   const promptFor = (id, nodes = snapshot()) => {
     const n = nodes[id]
-    return n && systemPrompt({ name: n.name, role: n.role, trace: traceOf(nodes, id), children: childrenOf(nodes, id), root: n.root, notes: [...notesFor(id, n), ...loadNotes(id, nodes)], limits })
+    return n && systemPrompt({ name: n.name, role: n.role, trace: traceOf(nodes, id), children: childrenOf(nodes, id), root: n.root, notes: notesFor(id, n), limits })
   }
   const stamp = at => { const d = new Date(at); const p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` }
   // The Main Bot hears what the last reorganization did (the owner sees it in the tree view); a kept
@@ -67,12 +67,6 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     const merged = fb.getField(id, 'mergedFrom')
     if (Array.isArray(merged) && merged.length) notes.push(`You took over the role of ${merged.map(m => m.name).join(', ')} (merged into you; the old Bot is archived with its own chat history).`)
     return notes
-  }
-  // The runtime load of a coordinator's direct children (#507), as one prompt line, so it can
-  // send a new part to a free child instead of a busy one.
-  function loadNotes(id, nodes) {
-    const line = loadLine(childrenOf(nodes, id), childId => load.of(childId), childId => load.openFor(childId))
-    return line === undefined ? [] : [line]
   }
   // Prompt injection: only the tree's marked block is replaced; other text (e.g. Chief's own) stays.
   const writeBlock = (id, block) => {

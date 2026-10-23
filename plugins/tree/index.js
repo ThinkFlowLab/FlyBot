@@ -16,8 +16,9 @@ export function apply(ctx, config = {}) {
   const logger = typeof ctx.logger === 'function' ? ctx.logger('flybot-tree') : ctx.logger
   const warn = (...args) => (logger?.warn ?? console.warn)(...args)
   const tree = createTree(fb, { limits: resolveLimits(config), rootName: config.rootName, rootBotId: config.rootBotId, adoptExisting: config.adoptExisting !== false, warn, classify: config.classify, tidy: config.tidy, burstGrouping: config.burstGrouping, now: typeof config.now === 'function' ? config.now : undefined })
-  // A child's turn boundary changes its load; rewrite its parent's prompt so the Child-load line a
-  // coordinator reads is current (#507). writeBlock skips an unchanged block, so nothing churns.
+  // A child's turn boundary rewrites its parent's prompt, so a rename or role edit reaches the
+  // coordinator's child list. The block carries no load (#895: list_children reads that live), so
+  // writeBlock finds it unchanged and nothing churns.
   const refreshParentPrompt = (id) => {
     const parent = tree.parentOf(id)
     if (typeof parent === 'string' && tree.isMember(parent)) tree.refreshPrompt(parent)
@@ -51,9 +52,8 @@ export function apply(ctx, config = {}) {
     // Recent activity (when, which tools) feeds idle detection and role grouping (#446).
     fb.onFeed('turn.start', e => tree.noteActivity(e?.botId)),
     fb.onFeed('tool.start', e => tree.noteActivity(e?.botId, e?.name)),
-    // Runtime load: how many turns each Bot runs now, so a coordinator routes to a free child (#507).
-    // A change is also written into the child's parent prompt, so the Child-load line a coordinator
-    // reads stays current (writeBlock only rewrites the block when the line really changed).
+    // Runtime load: how many turns each Bot runs now, so a coordinator routes to a free child (#507);
+    // list_children reads it live, and the prompt never carries it (#895).
     // The feed names the turn it is about (turnId); dropping it made an end close whichever turn was
     // oldest, so with two open and the later one ending first, openFor reported the newer age (#696).
     fb.onFeed('turn.start', e => { tree.noteTurnStart(e?.botId, e?.turnId); reconcileRoot(); refreshPrompts(e?.botId) }),

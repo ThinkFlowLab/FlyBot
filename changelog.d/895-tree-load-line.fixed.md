@@ -1,0 +1,1 @@
+A tree coordinator no longer gets its whole system prompt re-sent every time one of its children starts or ends a turn: children's load is read with `list_children` instead of a prompt line that changed at each boundary ([#895](https://github.com/ThinkFlowLab/FlyBot/issues/895)).

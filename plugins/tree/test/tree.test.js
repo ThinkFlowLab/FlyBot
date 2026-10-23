@@ -1534,18 +1534,24 @@ test('#447: without parent, a new Bot goes only down leads of groups it belongs 
   assert.equal(f(m, (await child(m, team.team.lead.id, 'Style Checker', 'checks code style')).created.id, 'parent'), quality)
 })
 
-test('#507: a child\'s running turns show as load in the coordinator\'s stored prompt and list_children', async () => {
+test('#507, #895: a child\'s running turns show as load in list_children, and the coordinator\'s prompt stays byte-stable', async () => {
   const m = await setup()
   const work = await make(m, m.root, 'Work')
+  const before = sp(m, m.root)
+  // The coordinator is told where load is, once, in words that do not change with it.
+  assert.match(before, /Before you send a new part, call list_children: it shows each child's load right now/)
   m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 1 })
   m.feed('turn.start', { botId: work, place: 'chat', sessionId: 's', turnId: 't2', turn: 2, time: 2 })
-  // The coordinator's prompt is rewritten at the child's turn boundary, not only read live.
-  assert.match(sp(m, m.root), /Child load right now — Work: busy \(2 running\)/)
+  // A child's turn boundary leaves the system prompt alone: a load line there changed the whole
+  // prompt at every boundary, and DSH re-sent all of it on the coordinator's next step.
+  assert.equal(sp(m, m.root), before)
+  assert.doesNotMatch(sp(m, m.root), /Child load/)
   assert.deepEqual((await m.call(m.root, 'list_children')).children.map(c => [c.name, c.load]), [['Work', 2]])
   m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 3 })
   m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't2', turn: 2, time: 4 })
   assert.equal(m.tree.loadOf(work), 0)
-  assert.match(sp(m, m.root), /Child load right now — Work: idle/)
+  assert.deepEqual((await m.call(m.root, 'list_children')).children.map(c => [c.name, c.load]), [['Work', 0]])
+  assert.equal(sp(m, m.root), before)
 })
 
 test('#624: a turn that never ends shows how long it has been open, and load stays a number', async () => {
@@ -1560,14 +1566,14 @@ test('#624: a turn that never ends shows how long it has been open, and load sta
   assert.equal(item.openForMs, 3 * 60_000)
   assert.equal(item.stalled, undefined, 'three minutes is an ordinary turn')
   m.tree.refreshPrompt(m.root)
-  assert.match(sp(m, m.root), /Work: working\./)
+  assert.doesNotMatch(sp(m, m.root), /Work: (working|busy|idle)/, 'load and age are list_children\'s, never the prompt\'s (#895)')
   // 44 minutes later the turn is still open and now reads as what the issue is about.
   clock += 44 * 60_000
   item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
   assert.equal(item.openForMs, 47 * 60_000)
   assert.equal(item.stalled, true)
   m.tree.refreshPrompt(m.root)
-  assert.match(sp(m, m.root), /Work: working \(47 min, no turn ended\)/)
+  assert.doesNotMatch(sp(m, m.root), /Work: (working|busy|idle)/, 'load and age are list_children\'s, never the prompt\'s (#895)')
   m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 't1', turn: 1, time: 2 })
   item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
   assert.equal(item.load, 0)
@@ -1619,7 +1625,7 @@ test('#696: two turns open, the later one ends, and the age left is the older tu
   assert.equal(item.openForMs, 12 * 60_000, 'not the 2 minutes of the turn that ended')
   assert.equal(item.stalled, true)
   m.tree.refreshPrompt(m.root)
-  assert.match(sp(m, m.root), /Work: working \(12 min, no turn ended\)/)
+  assert.doesNotMatch(sp(m, m.root), /Work: (working|busy|idle)/, 'load and age are list_children\'s, never the prompt\'s (#895)')
   m.feed('turn.end', { botId: work, place: 'chat', sessionId: 's', turnId: 's#1', turn: 1, time: 4 })
   item = (await m.call(m.root, 'list_children')).children.find(c => c.id === work)
   assert.equal(item.load, 0)

@@ -41,6 +41,9 @@ export function systemPrompt({ name, role, trace, children, root = false, notes 
     '1. Split the request into parts. Delegate a part only to a child whose stated scope fits it; generic abilities do not make a child fit another domain. Do not plan for grandchildren: each child decomposes its own part.',
     '2. Create a Bot ONLY when no existing Bot in your branch fits (check find_bots first). Never create duplicates or overlapping scopes. If creation is rejected by limits, create it under the descendant whose scope fits (parent), or delegate the part to the closest child.',
     '3. Send each child only its own self-contained part, all in parallel, then wait.',
+    // #895: load is read through list_children, not written here: a line that changed at every child turn boundary
+    // changed this whole system prompt, and DSH then re-sent all of it.
+    '   Before you send a new part, call list_children: it shows each child\'s load right now (turns running, and how long an open turn has been open). Send it to a child that is idle or working before one that is busy.',
     '4. Aggregate the answers into one concise answer for your parent (or the user). If only one child answered, pass its answer through unchanged.',
     `5. ${traceRule(trace, root)}`,
     'You may message only your parent and your direct children.', ...(root ? [limitRule] : [OUTSIDE_RULE]), ...placementRules(limits), tools, ...notes].join('\n')
