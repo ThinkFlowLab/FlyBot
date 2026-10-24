@@ -248,6 +248,13 @@ merged without `agent-pr`.
 - **One definition.** The script calls `decidePull` in [`enqueue-guard.mjs`](../.github/scripts/enqueue-guard.mjs) — the
   same function behind the command the guard prints — so a rule added to the merge gate is enforced by the check without
   being restated. Green means exactly "the printed command would say ALLOW".
+- **The queue entry reads the body too, best effort.** The merge queue does not require `enqueue-guard` today, so the
+  required `merge-gate` check calls the same `guard()` for the pull request behind the entry: a body with no
+  `Fixes #<n>`, no `Owner:`/`Reviewer:`, or no `agent-pr` refuses the entry, and `fork` comes from
+  `pull.head.repo.full_name` so an external pull request keeps its exemption (#960). When the entry names no pull
+  request, or the API no longer returns it, the run logs one line and lets it through: a wedged queue is worse than a
+  missed judgement. `enqueue-guard.yml` runs on `merge_group` too and writes its check on the entry commit, which is
+  what makes the context available to a queue rule; the ruleset itself is unchanged until that is proven.
 - **It flips without a commit.** A verdict is a comment and a label is a label: neither starts a `pull_request` run for
   the head being judged, which is why the check is written through the API instead of being a job's own result.
   `external_id` is the head, so a re-judgement PATCHes that one run; a new commit is a new head and therefore a new run,

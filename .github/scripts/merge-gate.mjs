@@ -26,6 +26,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { adminsFor, decide, loadPolicy } from './review-gate.mjs'
 import { createGate, loadRules } from './risk-gate.mjs'
+import { guard } from './enqueue-rules.mjs'
 
 const SHORT = 12
 const HOLD = 'hold'
@@ -168,14 +169,40 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const list = (path) => gh('api', '--paginate', '--jq', '.[]', path).split('\n').filter(Boolean).map((line) => JSON.parse(line))
   const repo = repoOption || env.GH_REPO || arg('--repo')
   if (!repo) throw new Error('set GH_REPO or pass --repo owner/name')
+  // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`
+  // reports (#639). MODE (or `--report`) is there for a hand run and for the tests.
+  const mode = (env.MODE || (process.argv.includes('--report') ? 'report' : 'queue')) === 'report' ? 'report' : 'queue'
   const headRef = headRefOption ?? (arg('--head-ref') || env.HEAD_REF)
   const fromRef = headRef ? prFromHeadRef(headRef) : null
-  if (headRef && !fromRef) throw new Error(`cannot read a pull request from head_ref "${headRef}" (expected gh-readonly-queue/<base>/pr-<N>-<sha>)`)
+  // #960: an entry whose branch names no pull request is recorded and let through. Before this, the run
+  // threw and the required check went red on every entry whose ref spelling we had not seen — a wedged
+  // queue is a worse failure than a missed judgement, so the fallback below is best-effort by design.
+  const skip = (reason, skipped, message) => {
+    console.log(`merge-gate: ${message}`)
+    if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `### Merge gate: ${message}\n`)
+    return { ok: true, skipped, head: String(env.ENTRY_SHA ?? ''), reasons: [reason], mode, message }
+  }
+  if (headRef && !fromRef) {
+    return skip('the queue branch names no pull request', 'no-pull-request',
+      `cannot read a pull request from head_ref "${headRef}"; recording it and letting the entry through`)
+  }
   const pr = prOption || arg('--pr') || env.PR || fromRef?.pr
   if (!pr) throw new Error('set HEAD_REF, PR or pass --pr N')
 
   const policyPath = arg('--policy') || env.REVIEW_POLICY || fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
-  const pull = JSON.parse(gh('api', `repos/${repo}/pulls/${pr}`))
+  let pull
+  try {
+    pull = JSON.parse(gh('api', `repos/${repo}/pulls/${pr}`))
+  } catch (error) {
+    // The pull request may have been closed while its entry was in the queue; the entry is dropped, not
+    // judged. Only the queue path may pass: a report has nothing to fail either way, and a hand run wants
+    // the error.
+    if (mode === 'queue' && /404|Not Found/.test(String(error?.message ?? ''))) {
+      return skip(`pull request ${pr} is gone`, 'pull-request-gone',
+        `pull request ${pr} is gone (404); recording it and letting the entry through`)
+    }
+    throw error
+  }
   const head = pull.head?.sha
   const author = pull.user?.login
   const labels = (pull.labels ?? []).map((l) => l.name)
@@ -186,26 +213,46 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
       .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association })),
   ]
 
-  // The workflow passes both events through this same entry point: `merge_group` judges, `pull_request`
-  // reports (#639). MODE (or `--report`) is there for a hand run and for the tests.
-  const mode = (env.MODE || (process.argv.includes('--report') ? 'report' : 'queue')) === 'report' ? 'report' : 'queue'
   // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the
   // base copy of risk-gate.mjs (see exemptFromPass).
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
   const policy = loadPolicy(policyPath)
   const result = judge({ labels, files, head, author, reports, policy, gh, repo, expectedHead: arg('--sha'), mode })
+  // #960 (B): `enqueue-guard` is not a required context today, so `merge-gate` is the only gate on a
+  // queue entry — and `judge` reads neither the body nor the labels. The fallback runs the guard's own
+  // `guard()` over the same pull request, so a body with no `Owner:`/`Reviewer:`, no `Fixes #<n>`, or no
+  // `agent-pr` is refused here too, instead of merging under a green check. It answers only for the
+  // queue: the `pull_request` run is a report and never fails (#639).
+  const decision = mode === 'queue'
+    ? guard({
+        pr,
+        head,
+        labels,
+        body: pull.body,
+        mechanicalRelease: isMechanicalRelease(files.map((f) => f.filename)),
+        // #711/#713: the fork flag must come from the head's repository. Any other source would refuse
+        // every external pull request for a body rule we do not ask of it.
+        fork: String(pull.head?.repo?.full_name ?? '').toLowerCase() !== String(repo).toLowerCase(),
+        draft: pull.draft,
+        merged: pull.merged,
+        result,
+        reports,
+        policy,
+      })
+    : null
+  const outcome = decision ?? result
   // The entry's own commit and its base are logged, never judged: neither is a head a Verifier names.
   const base = env.BASE_SHA || fromRef?.base
   const entry = env.ENTRY_SHA || (fromRef ? env.GITHUB_SHA : '')
   console.log(`merge-gate: PR #${pr} head ${short(head)}${base ? `, queue base ${short(base)}` : ''}${entry ? `, entry ${short(entry)}` : ''}, labels [${labels.join(', ')}], mode ${mode}`)
   console.log(`merge-gate: newest conclusion at ${short(result.head)} — ${result.verdict?.verdict ?? 'none'}${result.verdict?.by ? ` by ${result.verdict.by}` : ''}`)
   console.log(mode === 'report'
-    ? `merge-gate: report — ${result.reasons.length ? `the queue entry would refuse: ${result.reasons.join('; ')}` : 'the queue entry would pass'}`
-    : `merge-gate: ${result.ok ? 'PASS' : `REFUSE — ${result.reasons.join('; ')}`}`)
-  const text = render(result, { pr, labels })
+    ? `merge-gate: report — ${outcome.reasons.length ? `the queue entry would refuse: ${outcome.reasons.join('; ')}` : 'the queue entry would pass'}`
+    : `merge-gate: ${outcome.ok ? 'PASS' : `REFUSE — ${outcome.reasons.join('; ')}`}`)
+  const text = render(outcome, { pr, labels })
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, text + '\n')
   else console.log('\n' + text)
-  return result
+  return outcome
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

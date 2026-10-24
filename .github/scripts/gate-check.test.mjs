@@ -258,3 +258,49 @@ test('#812: --dry-run judges the live head and writes nothing', () => {
   assert.equal(state.writes.length, 0)
   assert.equal(state.runs.length, 0)
 })
+
+// ---- #960 (A'): a `merge_group` entry carries no pull request number, only the queue branch, and the
+// check has to sit on the entry commit the queue is about to merge. Both are read here, from HEAD_REF and
+// ENTRY_SHA, so the same decision can become a required context on the queue later.
+const ENTRY = 'ee1739effa52cd97a6ec9fa100a28cf3aee7fca1'
+const queueRun = (state, headRef = 'refs/heads/gh-readonly-queue/main/pr-812-' + HEAD) => main({
+  gh: state.gh,
+  env: { REVIEW_POLICY: POLICY, GH_REPO: REPO, HEAD_REF: headRef, ENTRY_SHA: ENTRY },
+  repo: REPO,
+})
+
+test('#960: a merge_group run judges the pull request and writes the check on the entry commit', () => {
+  const state = world({ comments: [comment()] })
+  const r = queueRun(state)
+  assert.equal(r.applied.conclusion, 'success')
+  assert.equal(state.writes.length, 1)
+  // The check is required on the entry the queue merges, not on the pull request head: a context on the
+  // head would never turn the queue entry green.
+  assert.equal(state.writes[0].sent.head_sha, ENTRY)
+  assert.equal(state.writes[0].sent.external_id, ENTRY)
+  assert.match(state.runs[0].output.summary, /queue entry/)
+  assert.match(state.runs[0].output.summary, /#812/)
+})
+
+test('#960: the merge_group check is red for a body the guard refuses, and names the line', () => {
+  const state = world({ body: 'Fixes #812\n', comments: [comment()] })
+  const r = queueRun(state)
+  assert.equal(r.applied.conclusion, 'failure')
+  assert.equal(state.runs[0].head_sha, ENTRY)
+  assert.match(state.runs[0].output.summary, /missing line: Owner:/)
+})
+
+test('#960: a merge_group head that carries the check already PATCHes it, not a second run', () => {
+  const state = world({ comments: [comment()] })
+  queueRun(state)
+  const again = queueRun(state)
+  assert.equal(again.applied.action, 'update')
+  assert.equal(state.runs.length, 1)
+})
+
+test('#960: the workflow runs on merge_group and hands the entry its head_ref and entry sha', () => {
+  const workflow = readFileSync(new URL('../workflows/enqueue-guard.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /^\s+merge_group:$/m)
+  assert.match(workflow, /HEAD_REF: \$\{\{ github\.event\.merge_group\.head_ref \}\}/)
+  assert.match(workflow, /ENTRY_SHA: \$\{\{ github\.event\.merge_group\.head_sha \}\}/)
+})

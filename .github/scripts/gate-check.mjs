@@ -31,6 +31,7 @@ import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { decidePull } from './enqueue-guard.mjs'
+import { prFromHeadRef } from './merge-gate.mjs'
 
 export const CHECK_NAME = 'enqueue-guard'
 // `output.title` is capped by the API at 255 characters; a refusal that names several defects is
@@ -42,7 +43,7 @@ const short = (s) => String(s ?? '').slice(0, SHORT)
 // The check run's body, for `POST /check-runs` and for the fields `PATCH` may change. `conclusion` is
 // the decision: `success` only when the guard allows the merge, so every refusal — a `hold`, a tip with
 // no PASS, a missing `agent-pr`, a PASS that lists no `Ran:` — is one red required check.
-export function payloadFor({ decision, head }) {
+export function payloadFor({ decision, head, entry }) {
   const refused = !decision?.ok
   const message = decision?.message ?? (refused ? 'the guard refused this head' : 'the guard allows this head')
   return {
@@ -53,7 +54,7 @@ export function payloadFor({ decision, head }) {
     external_id: String(head ?? ''),
     output: {
       title: message.length > TITLE_MAX ? message.slice(0, TITLE_MAX - 1) + '…' : message,
-      summary: summaryOf({ decision, head }),
+      summary: summaryOf({ decision, head, entry }),
     },
   }
 }
@@ -70,13 +71,13 @@ export function planCheck({ runs, head } = {}) {
 }
 
 // The evidence under the check: same decision, same words, one place to read why it is red.
-export function summaryOf({ decision, head, pr } = {}) {
+export function summaryOf({ decision, head, pr, entry } = {}) {
   const ok = Boolean(decision?.ok)
   const labels = (decision?.labels ?? []).map((l) => `\`${l}\``).join(', ') || '(none)'
   const lines = [
     `### \`${CHECK_NAME}\`: ${ok ? 'this head may merge' : 'this head must not merge'}`,
     '',
-    `Pull request${pr ? ` #${pr}` : ''}, head \`${head ?? ''}\`. ${ok
+    `Pull request${pr ? ` #${pr}` : ''}, head \`${decision?.head ?? head ?? ''}\`.${entry && entry !== (decision?.head ?? head) ? ` The queue entry built on it is \`${entry}\`.` : ''} ${ok
       ? 'The ruleset on `main` lets this merge once `tests-ok` is green here too.'
       : 'While this check is red, a merge of this head through the API is refused.'}`,
     '',
@@ -104,12 +105,12 @@ const realGh = (...a) => {
 
 // `gh` is injectable so a test drives the whole write path without the network: it is called as
 // `gh(args, input)`, the way controller.mjs calls `ghRaw`, because the checks API takes a JSON body.
-export function applyCheck({ gh = realGh, repo, head, decision } = {}) {
+export function applyCheck({ gh = realGh, repo, head, decision, entry } = {}) {
   if (!repo) throw new Error('set GH_REPO or pass --repo owner/name')
   const runs = gh(['api', '--paginate', '--jq', '.check_runs[]', `repos/${repo}/commits/${head}/check-runs?filter=all&per_page=100`])
     .split('\n').filter(Boolean).map((line) => JSON.parse(line))
   const plan = planCheck({ runs, head })
-  const body = payloadFor({ decision, head })
+  const body = payloadFor({ decision, head, entry })
   if (plan.action === 'update') {
     // `status` goes with `conclusion`: the API rejects a conclusion that is not paired with a completed
     // run, and this run always is one.
@@ -123,10 +124,16 @@ export function applyCheck({ gh = realGh, repo, head, decision } = {}) {
   return { action: 'create', id, conclusion: body.conclusion }
 }
 
-export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prOption, dryRun } = {}) {
+export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prOption, dryRun, headRef: headRefOption, entry: entryOption } = {}) {
   const repo = repoOption || env.GH_REPO
-  const pr = prOption || env.PR
   if (!repo) throw new Error('set GH_REPO or pass --repo owner/name')
+  // #960 (A'): a `merge_group` run has no pull request number, only the queue branch, and the check has to
+  // sit on the entry commit the queue merges. Both are optional so every existing caller is unchanged.
+  const headRef = headRefOption ?? env.HEAD_REF
+  const fromRef = headRef ? prFromHeadRef(headRef) : null
+  if (headRef && !fromRef) throw new Error(`cannot read a pull request from head_ref "${headRef}" (expected gh-readonly-queue/<base>/pr-<N>-<sha>)`)
+  const entry = entryOption ?? env.ENTRY_SHA ?? (fromRef ? env.GITHUB_SHA : undefined)
+  const pr = prOption || env.PR || fromRef?.pr
   if (!pr) throw new Error('set PR or pass --pr N')
   const dry = dryRun ?? (Boolean(env.DRY_RUN) || process.argv.includes('--dry-run'))
   let decided
@@ -143,10 +150,14 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
     throw error
   }
   const { decision, pull } = decided
-  const head = pull.head?.sha
-  if (!head) throw new Error(`pull request ${pr} has no head sha`)
-  const applied = dry ? { action: 'dry-run', id: null, conclusion: payloadFor({ decision, head }).conclusion } : applyCheck({ gh, repo, head, decision })
-  const summary = summaryOf({ decision, head, pr })
+  const liveHead = pull.head?.sha
+  if (!liveHead) throw new Error(`pull request ${pr} has no head sha`)
+  // The decision is always about the pull request's live head; the check goes on the entry commit when
+  // this run came from `merge_group`, so the required context exists where the queue looks for it.
+  const head = fromRef ? String(entry ?? '') : liveHead
+  if (!head) throw new Error('a merge_group run must carry the entry commit (ENTRY_SHA)')
+  const applied = dry ? { action: 'dry-run', id: null, conclusion: payloadFor({ decision, head, entry }).conclusion } : applyCheck({ gh, repo, head, decision, entry })
+  const summary = summaryOf({ decision, head, pr, entry })
   console.log(`gate-check: PR #${pr} head ${short(head)} — ${CHECK_NAME}: ${applied.conclusion} (${applied.action}${applied.id != null ? ` run ${applied.id}` : ''})`)
   console.log(`gate-check: ${decision.message}`)
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, summary + '\n')

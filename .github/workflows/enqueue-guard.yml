@@ -17,6 +17,11 @@ name: Enqueue guard
 # no longer names it), a label added or removed (`agent-pr`, `hold`), a comment or a review body (a
 # `Verdict:`), and a manual run. Each one re-judges the live head and PATCHes the same check run, so the
 # check turns green without a new commit and back red when the tip moves.
+#
+# #960 (A'): `merge_group` is the one event where this decision can become a required context of the queue
+# itself — the merge queue does not read this check today, so `merge-gate` is still the only gate on an
+# entry. The run takes the entry's commit and the queue branch, judges the pull request through the same
+# `decidePull`, and writes the check on the entry commit; nothing here changes the required contexts.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
@@ -24,6 +29,7 @@ on:
     types: [submitted, edited, dismissed]
   issue_comment:
     types: [created, edited, deleted]
+  merge_group:
   workflow_dispatch:
     inputs:
       pr:
@@ -34,7 +40,7 @@ on:
 # One judgement per pull request at a time: a label and a comment can arrive together, and two runs
 # alternating the same check run is a state no one can read.
 concurrency:
-  group: enqueue-guard-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: enqueue-guard-${{ github.event.pull_request.number || github.event.issue.number || github.event.merge_group.head_sha || github.run_id }}
   cancel-in-progress: true
 
 # `checks: write` is what creates the required context — the same write token `pass-label.yml` already
@@ -67,4 +73,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+          # #960 (A'): a merge_group event carries no PR number, only the queue branch and the entry
+          # commit, and the check has to sit on the commit the queue merges.
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          ENTRY_SHA: ${{ github.event.merge_group.head_sha }}
         run: node .github/scripts/gate-check.mjs

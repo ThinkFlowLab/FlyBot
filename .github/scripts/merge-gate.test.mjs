@@ -141,9 +141,12 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const fakeGh = ({ comments, reviews = [], labels = [], files = [], head = HEAD }) => (...args) => {
+// #960 (B): the required merge-gate check now also reads the body and the labels, so the fixtures carry
+// a body the guard accepts and the label a routine pull request has; a test overrides either on purpose.
+const HEADERS = 'Owner: Reviewer\nReviewer: reviewer-agent\n'
+const fakeGh = ({ comments, reviews = [], labels = ['agent-pr'], files = [], head = HEAD, body = HEADERS + 'Fixes #637\n', headRepo = 'ThinkFlowLab/FlyBot', draft = false, merged = false }) => (...args) => {
   const path = args[args.length - 1]
-  const pull = { head: { sha: head }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })) }
+  const pull = { head: { sha: head, repo: { full_name: headRepo } }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })), body, draft, merged }
   if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
   if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
   if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
@@ -188,7 +191,7 @@ test('#637: a verdict Chief posts for the Reviewer parses like the Reviewer wrot
 
 test('#925: a CONTRIBUTOR review by a repo admin passes the queue entry, and a failed lookup does not', () => {
   const body = firstLine('PASS')
-  const pull = JSON.stringify({ head: { sha: HEAD }, user: { login: 'opener' }, labels: [] })
+  const pull = JSON.stringify({ head: { sha: HEAD, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: 'opener' }, labels: [{ name: 'agent-pr' }], body: 'Owner: Reviewer\nReviewer: reviewer-agent\nFixes #925\n' })
   const review = JSON.stringify({ user: { login: 'reviewer-agent' }, body, submitted_at: '2026-10-24T03:42:31Z', author_association: 'CONTRIBUTOR' })
   const gh = (permission) => (...args) => {
     const path = args[args.length - 1]
@@ -387,7 +390,7 @@ const queueReal = (fx, body = fx.comment.body) => main({
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
     if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
     if (path.includes('/reviews')) return ''
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head }, user: { login: fx.author }, labels: [] })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: ['Owner: Reviewer', 'Reviewer: Birfy', 'Fixes #' + fx.pr, ''].join('\n') })
     throw new Error('fake gh: unexpected ' + path)
   },
   env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: REAL_POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', HEAD_REF: `refs/heads/gh-readonly-queue/main/pr-${fx.pr}-c74e1207${'0'.repeat(32)}`, MODE: 'queue' },
@@ -480,4 +483,81 @@ test('#943: a bot account\'s Verdict: does not let a queue entry through', () =>
   const shared = { login: 'Birfy', body: report(), at: '2026-10-24T07:45:10Z', kind: 'comment', association: 'MEMBER', type: 'User' }
   const r = judge({ labels: [], head: HEAD, author: 'opener', reports: [bot, shared], policy: { ...policy, reviewers: ['Birfy'], selfReview: ['Birfy'] }, expectedHead: HEAD })
   assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// ---- #960 (B): on `merge_group` the required check is `merge-gate` alone (`enqueue-guard` is not one of
+// the required contexts today), and it read only `hold` and the newest conclusion. A body with no
+// `Owner:`/`Reviewer:`, no `Fixes`, or a pull request with no `agent-pr` could therefore enter main
+// through a green check. The fallback calls the guard's own `guard()` for the same pull request; when the
+// entry cannot name its pull request it logs one line and lets it through, because a wedged queue is
+// worse than a missed judgement.
+const passAt = (tip = HEAD, at = '2026-10-24T12:00:00Z') => apiComment(firstLine('PASS', tip), at)
+const queueEntry = (fixture = {}) => runGate({ comments: [passAt()], ...fixture })
+
+test('#960: the required check refuses a queue entry whose body has no Owner: line', () => {
+  const result = queueEntry({ body: 'Fixes #960\n' })
+  assert.equal(result.ok, false, result.reasons.join('; '))
+  assert.match(result.reasons.join('; '), /missing line: Owner:/)
+})
+
+test('#960: the required check refuses a Reviewer: outside both vocabularies', () => {
+  const result = queueEntry({ body: 'Owner: Reviewer\nReviewer: Somebody\nFixes #960\n' })
+  assert.equal(result.ok, false, result.reasons.join('; '))
+  assert.match(result.reasons.join('; '), /not a reviewers login/)
+})
+
+test('#960: the required check refuses a body with no issue reference and a pull request with no agent-pr', () => {
+  const noIssue = queueEntry({ body: 'Owner: Reviewer\nReviewer: reviewer-agent\n' })
+  assert.equal(noIssue.ok, false, noIssue.reasons.join('; '))
+  assert.match(noIssue.reasons.join('; '), /no issue reference/)
+  const noLabel = queueEntry({ labels: [] })
+  assert.equal(noLabel.ok, false, noLabel.reasons.join('; '))
+  assert.match(noLabel.reasons.join('; '), /missing label: agent-pr/)
+})
+
+test('#960: an entry whose head_ref names no pull request is recorded and let through, never wedged', () => {
+  const result = main({
+    gh: () => { throw new Error('fake gh: a ref that names no pull request is never read') },
+    env: { GITHUB_STEP_SUMMARY: '' },
+    repo: 'ThinkFlowLab/FlyBot',
+    headRef: 'gh-readonly-queue/main/not-a-pull-request',
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.skipped, 'no-pull-request')
+  assert.match(result.message, /letting the entry through/)
+})
+
+test('#960: a pull request the API no longer returns is recorded and let through, never wedged', () => {
+  const policyPath = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policyPath, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
+  const result = main({
+    gh: () => { throw new Error('gh: Not Found (HTTP 404)') },
+    env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policyPath, GH_REPO: 'ThinkFlowLab/FlyBot', HEAD_REF: ENTRY },
+    repo: 'ThinkFlowLab/FlyBot',
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.skipped, 'pull-request-gone')
+})
+
+test('#960: the fork flag comes from pull.head.repo, so a fork is not refused for its body', () => {
+  // #711/#713: we cannot push to a fork's head and its owner keeps their own workflow there. Reading the
+  // fork flag from anywhere but `pull.head.repo.full_name` would refuse every external pull request.
+  const foreign = queueEntry({ headRepo: 'someone/FlyBot', body: '', labels: [] })
+  assert.equal(foreign.ok, true, foreign.reasons.join('; '))
+  const ours = queueEntry({ headRepo: 'ThinkFlowLab/FlyBot', body: '', labels: [] })
+  assert.equal(ours.ok, false)
+  assert.match(ours.reasons.join('; '), /missing line: Owner:/)
+})
+
+test('#960: the pull_request report is unchanged and still never fails on the body', () => {
+  const policyPath = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policyPath, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
+  const result = main({
+    gh: fakeGh({ body: '', labels: [], comments: [apiComment(firstLine('PASS'), '2026-10-24T12:00:00Z')] }),
+    env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policyPath, MODE: 'report', PR: '960' },
+    repo: 'ThinkFlowLab/FlyBot',
+    pr: 960,
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.mode, 'report')
 })
