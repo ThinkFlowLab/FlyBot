@@ -84,17 +84,26 @@ const headerNames = (line, pattern) => line.replace(pattern, '').split(',').map(
 function headerReasons(body, policy) {
   const lines = String(body ?? '').split(/\r?\n/).slice(0, HEADER_LINES)
   const reasons = []
+  const logins = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
+  const bots = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
+  const sharedLogin = logins.has(SHARED_WRITE_LOGIN.toLowerCase())
+  // A line with no value names nobody, which is the same defect as a missing line — for either header.
+  // The owner speaks the same `writers` vocabulary: a name the policy does not know makes the line a
+  // claim with no name behind it, and an unknown name is also how "Owner: Somebody" cleared the
+  // duplicate check (#951 INC).
   const owner = lines.find((line) => OWNER_LINE.test(line))
-  if (!owner) reasons.push('missing line: Owner:')
-  const owners = new Set(owner ? headerNames(owner, OWNER_LINE) : [])
+  const ownerNames = owner ? [...new Set(headerNames(owner, OWNER_LINE))] : []
+  if (!ownerNames.length) reasons.push('missing line: Owner:')
+  for (const name of ownerNames) {
+    if (!bots.has(name)) reasons.push(`Owner names "${name}", who is not a writers Bot name`)
+  }
+  const owners = new Set(ownerNames)
   const reviewer = lines.find((line) => REVIEWER_LINE.test(line))
   if (!reviewer) reasons.push('missing line: Reviewer:')
   else {
-    const names = headerNames(reviewer, REVIEWER_LINE)
+    // One name twice is one name: `Reviewer: Dev, Dev` must not print the same refusal twice.
+    const names = [...new Set(headerNames(reviewer, REVIEWER_LINE))]
     if (!names.length) reasons.push('missing line: Reviewer:')
-    const logins = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
-    const bots = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
-    const sharedLogin = logins.has(SHARED_WRITE_LOGIN.toLowerCase())
     let passable = false
     for (const name of names) {
       if (logins.has(name)) {

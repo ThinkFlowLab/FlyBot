@@ -218,7 +218,9 @@ exits 1 on a `hold`, on a newest conclusion that is not a PASS, and on a report 
 PASS is never a queue permit on its own (#602); on a live, non-draft pull request of ours it also refuses a body with no
 `Owner:`/`Reviewer:` line in its first 20 lines (or a `Reviewer:` that is neither a `reviewers` login nor a `writers`
 Bot name, or a Bot name whose shared `Birfy` identity is not in `reviewers`, #947, or a `Reviewer:` naming the same Bot as
-the `Owner:`, compared per name after commas, `@` and case, #951), naming the missing line or the word
+the `Owner:`, compared per name after commas, `@` and case, #951; both lines need a value the policy knows — an `Owner:`
+outside `writers` is refused and a line with no value is the missing line, so an empty `Owner:` cannot clear the
+comparison, #951), naming the missing line or the word
 that missed both lists (#943) — a merged pull request is not re-judged, because this check also runs on every comment; on success it prints the command and never runs it. Enqueue with
 `gh pr merge <n> --auto --squash --match-head-commit <sha>` (gh has no `--merge-queue` flag). gh may still print the
 strategy line, or `! Pull request #<n> is already queued to merge`; the PR is
