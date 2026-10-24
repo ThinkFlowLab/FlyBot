@@ -183,6 +183,22 @@ its report can satisfy the gate on a pull request the same account opened — th
 the implementer ([`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)). Nothing here blocks or merges: it is evidence an
 agent reads, and the record a later enforcement step is checked against.
 
+**Silent revert (#914).** A pull request built on an old copy of `main` re-uploads whole files, and work `main`
+merged after the branch was cut disappears — with `mergeable: true` and `tests-ok` green, because the deletion *is*
+the pull request (`#887` deleted `#869`'s 84 test lines the same hour; `#907` deleted `#909`'s whole fix 40 minutes
+after it merged). [`.github/scripts/silent-revert.mjs`](.github/scripts/silent-revert.mjs) reads the rule off git:
+`base = merge-base(origin/main, HEAD)`, `A` = the lines `origin/main` added after `base`, `D` = the lines the pull
+request deletes from `origin/main`, and `A ∩ D ≠ ∅` is a silent revert — reported per file with the count and the
+commit that added the line to `main`. It runs as a step of `merge-gate.yml` on `pull_request` only, from the
+**base** copy of the script, with a full-history checkout of the head (`fetch-depth: 0` plus an explicit
+`origin/main` fetch), and writes one `::warning` per file and a total line `silent-revert: N finding(s) on M
+file(s)` to the job summary — including `silent-revert: 0 finding(s) on M file(s)` when it is clean, so a run that
+read nothing is not confused with a run that found nothing. Report only: `continue-on-error`, never a comment, a
+label or a required check, so a legitimate revert carries the report and a Reviewer decides. A pull request already
+rebased onto `main` has `A` empty and reports zero by construction — which is also this rule's boundary: a **rebase
+that resolves a conflict by keeping the older side** deletes the same lines but has `main` as its base, and stays
+invisible to it (`#907`'s `d6e143a8` is that case). The check catches the stale copy, not the bad merge.
+
 ## Merge plumbing: `merge_group`, merge queue, auto-merge
 
 `main` requires a **merge queue** (repository ruleset `main merge queue`, active since 2026-10-17). `test.yml` has a

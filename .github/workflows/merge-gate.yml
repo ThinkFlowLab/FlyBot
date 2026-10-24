@@ -55,6 +55,33 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 24
+      # #914: a pull request built on an old copy of main re-uploads whole files, and the work main
+      # merged after the branch was cut disappears while CI stays green — the deletion is the pull
+      # request (#887 deleted #869's 84 test lines the same hour; #907 deleted #909's fix 40 minutes
+      # after it merged, mergeable with tests-ok green). Its own checkout of the head, full history:
+      # the rule needs merge-base(origin/main, HEAD) and the commits main added after it.
+      # The script still comes from `base`, so a pull request cannot change the check that judges it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          fetch-depth: 0
+          persist-credentials: false
+      # Report only: a finding is a Reviewer's read, never a red check (#914's own scope), so it
+      # cannot fail the job, and it stays out of branch protection and out of tests-ok's needs.
+      - name: Report work main merged that this pull request deletes
+        if: github.event_name == 'pull_request'
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          git -C head fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          # The pull request that adds this script has no base copy yet, so that one run uses its own
+          # (read-only, same fallback review-gate.yml documents). Once the base has it, the base wins.
+          script=base/.github/scripts/silent-revert.mjs
+          [ -f "$script" ] || script=head/.github/scripts/silent-revert.mjs
+          node "$script" --repo-dir head
       # The script and the policy come from the base commit, so a pull request cannot weaken the gate
       # that judges it. On `pull_request` that also means the base copy may be older than this
       # workflow and refuse for lack of a conclusion — never fail the check over that: the report is

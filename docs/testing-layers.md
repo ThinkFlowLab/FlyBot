@@ -90,7 +90,7 @@ The tables below are generated: edit `docs/testing-layers.json`, then run
 | Workflow | Kind | Layer | Gate | Runs on | What it guarantees, or why it is not a layer |
 | --- | --- | --- | --- | --- | --- |
 | `test.yml` | gate | L2 | yes | push to main, pull_request, merge_group | Runs every L1 suite, the packaging and patch-pin checks, the strict typecheck, the changelog check and the workflow lint on `push`, `pull_request` and `merge_group`, and aggregates them as `tests-ok`, which `main` requires. |
-| `merge-gate.yml` | gate | L2 | yes | merge_group (reports on pull_request) | Re-reads `hold` and the newest conclusion at the entry's head, and fails the queue entry when either refuses it. |
+| `merge-gate.yml` | gate | L2 | yes | merge_group (reports on pull_request) | Re-reads `hold` and the newest conclusion at the entry's head, and fails the queue entry when either refuses it. On `pull_request` it also reports work `main` merged that the branch deletes (silent-revert, #914) — report only. |
 | `enqueue-guard.yml` | gate | L2 | yes | pull_request_target, pull_request_review, issue_comment, workflow_dispatch | Writes the `enqueue-guard` check run a merge on the fork requires: the decision of `enqueue-guard.mjs`, on the live head, from code taken from `main`. The ruleset refuses a merge while it is red (#812). |
 | `docker.yml` | workflow-only | L2 | yes | pull_request that touches the image | Builds the container image and starts it, so a packaging change cannot merge without the image proving it starts. |
 | `live-e2e.yml` | workflow-only | L3 | no | daily on main | Drives the real end-to-end suite with a real model against `main`; it is the automation behind the self-test layer, and it never gates a merge. |

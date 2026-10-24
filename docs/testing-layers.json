@@ -124,7 +124,7 @@
       "layer": "L2",
       "gate": true,
       "runs": "merge_group (reports on pull_request)",
-      "role": "Re-reads `hold` and the newest conclusion at the entry's head, and fails the queue entry when either refuses it."
+      "role": "Re-reads `hold` and the newest conclusion at the entry's head, and fails the queue entry when either refuses it. On `pull_request` it also reports work `main` merged that the branch deletes (silent-revert, #914) — report only."
     },
     {
       "id": "enqueue-guard",
