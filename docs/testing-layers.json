@@ -228,6 +228,15 @@
       "gate": false,
       "runs": "pull_request_review (submitted)",
       "reason": "Says, in one warning and the run summary, that a PASS posted as a review body whose Written-by names someone outside the policy's writers does not count (#801). Read-only by construction (permissions: contents: read), so a pull request that edits it can only change what its own review job prints; a workflow-only layer with no gate."
+    },
+    {
+      "id": "agent-audience",
+      "workflow": ".github/workflows/agent-audience.yml",
+      "kind": "workflow-only",
+      "layer": "none",
+      "gate": false,
+      "runs": "pull_request (opened, edited, synchronize, reopened, ready_for_review), issue_comment (created) and workflow_dispatch",
+      "reason": "Reads the body's Owner:/Reviewer: lines and the calls written after the current tip, and prints where they disagree (#911). Report only: continue-on-error, read-only permissions, no comment and no label, so it gates nothing."
     }
   ]
 }

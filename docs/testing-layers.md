@@ -103,5 +103,6 @@ The tables below are generated: edit `docs/testing-layers.json`, then run
 | `release.yml` | not-a-layer | none | no | — | The mechanical release: preflight, release PR, tag. It runs no tests of its own. |
 | `pass-label.yml` | workflow-only | none | no | issue_comment (created) and workflow_dispatch | Applies the `pass` label to a pull request whose conclusion was a PASS, and backfills merged ones (#739). A workflow-only layer with no test file of its own, and it gates nothing. |
 | `review-verdict.yml` | workflow-only | none | no | pull_request_review (submitted) | Says, in one warning and the run summary, that a PASS posted as a review body whose Written-by names someone outside the policy's writers does not count (#801). Read-only by construction (permissions: contents: read), so a pull request that edits it can only change what its own review job prints; a workflow-only layer with no gate. |
+| `agent-audience.yml` | workflow-only | none | no | pull_request (opened, edited, synchronize, reopened, ready_for_review), issue_comment (created) and workflow_dispatch | Reads the body's Owner:/Reviewer: lines and the calls written after the current tip, and prints where they disagree (#911). Report only: continue-on-error, read-only permissions, no comment and no label, so it gates nothing. |
 
 <!-- generated:testing-layers:end -->

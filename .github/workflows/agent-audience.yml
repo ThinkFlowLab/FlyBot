@@ -1,0 +1,54 @@
+name: Agent audience
+
+# A pull request names its owner and its reviewer in the body, and the review round calls that
+# reviewer. A round that calls somebody else — or a body that names nobody — leaves the pull request
+# waiting for a verdict while it looks like review is in flight (#911: #907 sat that way for four
+# tips, and every call went to a member who was not the declared reviewer).
+#
+# This is a report, not a gate: `continue-on-error` keeps the check green whatever it finds, it only
+# reads, and it writes the findings into the job summary. It never comments and never labels.
+# Silence itself is not detectable (the repository has no "who read this" field); only a call to the
+# wrong member, or a missing declaration, is.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+concurrency:
+  group: agent-audience-${{ github.event.pull_request.number || github.event.issue.number || 'all' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  audience:
+    name: agent-audience
+    # A comment on a plain issue is not a pull request.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+      - name: Read the declared audience against the calls written this round
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          if [ -n "$PR" ]; then
+            node .github/scripts/agent-audience.mjs --pr "$PR"
+          else
+            node .github/scripts/agent-audience.mjs
+          fi
