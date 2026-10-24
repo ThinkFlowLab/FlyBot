@@ -10379,3 +10379,78 @@ test('#881: the two room refusals reach the person as sentences', async (t) => {
   code = 'no_relationship'
   await assert.rejects(social.sendChat({ handle: '@coder.bob.home', text: 'into the room' }), /the room no longer lets these Bots reach each other/)
 })
+
+
+// #882: the room envelope's hold rule is code and docs only — nothing reds when it is widened. These
+// cases pin the two rules: a hold with a finding of its own keeps its card, and an envelope that
+// carries an attachment is never cleared even when its hold is a clean blanket one (#847 stays pinned
+// by the test above).
+test('#882: a room envelope held with a finding of its own never clears itself', async (t) => {
+  for (const holdReason of ['attachment', 'policy', 'risk']) {
+    const { ctx, call, stop } = await team()
+    t.after(stop)
+    const server = holdingServer({ holdReason })
+    const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+    t.after(() => social.dispose())
+    await grantTeam(ctx.flybot)
+    await social.registerAll()
+    const envelope = (op, extra = {}) => `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op, roomId: 'session-e2439f82', name: 'You, Chief, Chief', invitedHandle: '@coder.bob.home', seq: 0, ...extra })}`
+    assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: envelope('join'), via: 'room-share' })).action, 'allow')
+    for (let i = 0; i < 50 && !server.calls.some(c => c.name === 'list_approvals'); i += 1) await new Promise(resolve => setTimeout(resolve, 10))
+    assert.equal(server.calls.some(c => c.name === 'list_approvals'), true, `${holdReason}: the hold was looked at`)
+    assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, `${holdReason}: the owner still decides this one`)
+    assert.equal(server.queue.length, 1, `${holdReason}: the hold is still pending`)
+    assert.equal((await call('flybot/social/status', {})).value.approvals.length, 1, `${holdReason}: its card is listed`)
+  }
+})
+
+test('#882: an envelope carrying an attachment is not cleared even on a clean blanket hold', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer({ holdReason: 'blanket_outbound' })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const envelope = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'join', roomId: 'session-e2439f82', name: 'You, Chief, Chief', invitedHandle: '@coder.bob.home', seq: 0 })}`
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-att-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }))
+  const noted = join(dir, 'notes.txt')
+  writeFileSync(noted, 'a note')
+  const file = { name: 'notes.txt', size: 6, mime: 'text/plain', path: noted }
+  // A Bot's file is shown to the owner before it leaves, so the local card comes first; approving it
+  // is what would let the transport clear Bot Social's blanket hold — and the guard must stop that.
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: envelope, attachments: [file], via: 'room-share' })).action, 'hold')
+  const card = ctx.flybot.approvals.list().at(-1)
+  assert.equal(card.request.attachments.length, 1, 'the owner sees the file first')
+  await ctx.flybot.approvals.decide(card.id, 'approve')
+  for (let i = 0; i < 50 && server.calls.filter(c => c.name === 'send_as_member').length === 0; i += 1) await new Promise(resolve => setTimeout(resolve, 10))
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.ok(server.calls.filter(c => c.name === 'send_as_member').at(-1).args.attachments?.length, 'the file went with it')
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, 'a file-carrying envelope waits for the owner')
+  assert.equal(server.queue.length, 1, 'its hold is still pending')
+  assert.equal((await call('flybot/social/status', {})).value.approvals.length, 1)
+})
+
+// #881 follow-up (Reviewer's request on #886): the local-room guard had no case — dropping it kept the
+// whole suite green. A room line names no room even when both Bots are also in one open face room.
+test('#881: a room line names no room, even when both Bots share a face room too', async (t) => {
+  const server = roomServer()
+  const peerRoom = server.face.peer('123456')
+  peerRoom.members[0].published = true
+  const { ctx, call, social } = await roomTeam(t, server, { autoAccept: true })
+  await call('flybot/social/face-join', { start: true, code: '123456' })
+  await ctx.flybot.grants.set('a', [{ grantee: '@coder.bob.home' }])
+  await social.remoteBots({ fresh: true })
+  for (const via of ['room', 'room-share']) {
+    // The local room's line is the group's own record: it names no room, so the far end answers the
+    // plain 1:1 refusal. That refusal is the guard working — what this case pins is the missing
+    // `room_id` on the wire.
+    await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: `a ${via} line`, via, role: 'reply' }))
+    const sent = server.calls.filter(c => c.name === 'send_as_member').at(-1)
+    assert.equal('room_id' in sent.args, false, `via: ${via} names no room`)
+  }
+  // The control: the same pair over a plain 1:1 line does name it.
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'plain line', role: 'reply' })).action, 'allow')
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').at(-1).args.room_id, 'frm_123456')
+})
