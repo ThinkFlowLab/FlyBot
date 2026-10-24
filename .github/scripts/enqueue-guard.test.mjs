@@ -3,6 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { main, recordOnlyAt } from './enqueue-guard.mjs'
@@ -17,7 +18,7 @@ const HEADERS = 'Owner: Dev\nReviewer: reviewer-agent\n'
 
 const policyFile = (overrides = {}) => {
   const path = join(mkdtempSync(join(tmpdir(), 'enqueue-guard-policy-')), 'review-policy.json')
-  writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Reviewer2', 'Birfy'], ...overrides }))
+  writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Reviewer2', 'Birfy', 'Dev', 'Dev2', 'Dev3'], ...overrides }))
   return path
 }
 const POLICY = policyFile()
@@ -469,4 +470,132 @@ test('#943 INC: a merged pull request is not re-judged when a comment arrives', 
   assert.equal(live.ok, false)
   assert.ok(live.reasons.includes('missing line: Owner:'), live.reasons.join('; '))
   assert.ok(live.reasons.includes('missing line: Reviewer:'), live.reasons.join('; '))
+})
+
+// #951: `Owner:` and `Reviewer:` were read as two independent lines (#943/#950), so a body could name the
+// same Bot in both and pass: `Reviewer: Dev` is accepted because `Dev` is a `writers` Bot name (:99-101),
+// and nothing compared the values (:84). One Bot owning and reviewing one pull request is the shape #940
+// had with no lines at all — the check exists so the queue knows who reviews, not so a word appears twice.
+// The comparison is the same normalisation the reviewer side already uses: split on commas, strip a
+// leading `@`, lowercase, then compare name by name, so a list that overlaps in either direction refuses.
+const selfReviewRefusals = (r) => r.reasons.filter((reason) => /who is also the Owner of this pull request/.test(reason))
+
+test('#951: Owner and Reviewer naming the same Bot is refused, and the reason says it is the Owner', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Dev\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(selfReviewRefusals(r), ['Reviewer names "dev", who is also the Owner of this pull request'])
+})
+
+test('#951: a reviewer that is not the owner is accepted (the check compares the two lines)', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Reviewer\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.deepEqual(selfReviewRefusals(r), [])
+})
+
+test('#951: overlap in either direction, in a list, or through @ and case is refused', () => {
+  for (const header of [
+    'Owner: Dev, Dev2\nReviewer: Dev2\n',
+    'Owner: Dev\nReviewer: Dev, Reviewer\n',
+    'Owner: @Dev\nReviewer: dev\n',
+    'Owner: DEV\nReviewer: @dev\n',
+  ]) {
+    const r = run({ body: header + 'Fixes #951\n', comments: [comment()] })
+    assert.equal(r.ok, false, `${header}: ${r.reasons.join('; ')}`)
+    assert.equal(selfReviewRefusals(r).length, 1, `${header}: ${r.reasons.join('; ')}`)
+  }
+  // A list that shares no name with the owner still passes, so the comparison is per name and not per line.
+  const ok = run({ body: 'Owner: Dev\nReviewer: Reviewer2, Reviewer\nFixes #951\n', comments: [comment()] })
+  assert.equal(ok.ok, true, ok.reasons.join('; '))
+})
+
+// `Birfy` is both a `reviewers` login and the one identity every Bot writes as, so it is the sharpest
+// fixture: each line alone is perfectly valid, and only the comparison can refuse it.
+test('#951: a name that is both a login and a writers name is refused on both lines', () => {
+  const r = run({ body: 'Owner: Birfy\nReviewer: Birfy\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(selfReviewRefusals(r), ['Reviewer names "birfy", who is also the Owner of this pull request'])
+})
+
+// #943's messages and #950's vocabularies are the same check, not rewritten by this one.
+test('#951: the missing-line and vocabulary refusals are unchanged', () => {
+  const missing = run({ body: 'Fixes #951\n', comments: [comment()] })
+  assert.ok(missing.reasons.includes('missing line: Owner:'), missing.reasons.join('; '))
+  assert.ok(missing.reasons.includes('missing line: Reviewer:'), missing.reasons.join('; '))
+  const empty = run({ body: 'Owner: Dev\nReviewer:\nFixes #951\n', comments: [comment()] })
+  assert.ok(empty.reasons.includes('missing line: Reviewer:'), empty.reasons.join('; '))
+  const unknown = run({ body: 'Owner: Dev\nReviewer: Nonexistent\nFixes #951\n', comments: [comment()] })
+  assert.ok(unknown.reasons.includes('Reviewer names "nonexistent", who is not a reviewers login'), unknown.reasons.join('; '))
+  assert.ok(unknown.reasons.includes('Reviewer names "nonexistent", who is not a writers Bot name'), unknown.reasons.join('; '))
+  assert.deepEqual(selfReviewRefusals(unknown), [])
+})
+
+// History is not a request: this check runs on every comment, so a merged pull request that names one
+// Bot twice must stay exactly as it is (:150, #943 INC at 87b49961).
+test('#951: a merged pull request naming one Bot twice is not re-judged', () => {
+  const merged = run({ body: 'Owner: Dev\nReviewer: Dev\nFixes #951\n', merged: true, comments: [comment()] })
+  assert.equal(merged.ok, true, merged.reasons.join('; '))
+  assert.deepEqual(selfReviewRefusals(merged), [])
+})
+
+// #951 INC: refusing only an overlap can be switched off by leaving `Owner:` empty — an empty set has
+// nothing to overlap with, so `Owner:` + `Reviewer: Dev` was `ok: true`. The line names nobody, which is
+// the same defect as a missing line, and the vocabulary is the same `writers` list: an unknown owner name
+// made the duplicate check unpassable to reason about ("Owner: Somebody" cleared it too).
+test('#951 INC: an Owner: line with no value is the missing line, not an empty overlap', () => {
+  for (const body of ['Owner:\nReviewer: Dev\nFixes #951\n', 'Owner:   \nReviewer: Dev\nFixes #951\n', 'Owner: @\nReviewer: Dev\nFixes #951\n']) {
+    const r = run({ body, comments: [comment()] })
+    assert.equal(r.ok, false, body)
+    assert.ok(r.reasons.includes('missing line: Owner:'), `${body}: ${r.reasons.join('; ')}`)
+    assert.equal(r.reasons.some((reason) => /who is also the Owner/.test(reason)), false, `${body}: ${r.reasons.join('; ')}`)
+  }
+})
+
+test('#951 INC: an Owner: name outside the writers vocabulary is refused', () => {
+  const r = run({ body: 'Owner: Somebody\nReviewer: Dev\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('Owner names "somebody", who is not a writers Bot name'), r.reasons.join('; '))
+  // The negative control: a name the policy lists as a writers Bot is accepted on the same line.
+  const ok = run({ body: 'Owner: Dev3\nReviewer: Reviewer\nFixes #951\n', comments: [comment()] })
+  assert.equal(ok.ok, true, ok.reasons.join('; '))
+})
+
+// Two different Bots are the normal shape: the rule is "not the same Bot", not "the owner may not be a
+// writer" — `Dev` reviewing `Dev3`'s pull request is exactly what the pipeline does every day.
+test('#951 INC: a different Bot as reviewer is accepted, writers name or login', () => {
+  for (const line of ['Reviewer: Dev', 'Reviewer: Reviewer', 'Reviewer: reviewer-agent', 'Reviewer: Reviewer2, Dev']) {
+    const r = run({ body: `Owner: Dev3\n${line}\nFixes #951\n`, comments: [comment()] })
+    assert.equal(r.ok, true, `${line}: ${r.reasons.join('; ')}`)
+  }
+})
+
+test('#951 INC: Reviewer: Dev, Dev is one name and prints one refusal', () => {
+  const r = run({ body: 'Owner: Dev3\nReviewer: Dev, Dev\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  const same = run({ body: 'Owner: Dev\nReviewer: Dev, Dev\nFixes #951\n', comments: [comment()] })
+  assert.equal(same.ok, false)
+  assert.deepEqual(selfReviewRefusals(same), ['Reviewer names "dev", who is also the Owner of this pull request'])
+})
+
+// #962: `Docs` is a team member who opens documentation pull requests, and the `Owner:` line reads the
+// `writers` roster (#953) — so that name has to be registered before such a pull request can enter the
+// queue. The test reads the real policy, not a fixture: a fixture would keep passing while the file that
+// the guard loads on main still refused the name. Registering a name grants no permission: `reviewers` and
+// `selfReview` remain the two permission lists.
+const REAL_POLICY = fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
+
+test('#962: Docs is registered in writers; Owner: Docs passes and an unknown owner still fails', () => {
+  const policy = JSON.parse(readFileSync(REAL_POLICY, 'utf8'))
+  assert.ok(policy.writers.includes('Docs'), 'writers lists Docs')
+  const pass = {
+    user: { login: 'Birfy' },
+    body: [`Verdict: PASS at ${HEAD}`, 'Written-by: Birfy', '', 'Ran: npm run verify → pass', 'Not run: smoke'].join('\n'),
+    created_at: '2026-10-24T11:30:00Z',
+    author_association: 'COLLABORATOR',
+  }
+  const ok = run({ body: 'Owner: Docs\nReviewer: Reviewer\nFixes #962\n', comments: [pass], policy: REAL_POLICY })
+  assert.equal(ok.ok, true, ok.reasons.join('; '))
+  // The negative control on the same policy: the roster is still closed, so an unregistered name is refused.
+  const refused = run({ body: 'Owner: Somebody\nReviewer: Reviewer\nFixes #962\n', comments: [pass], policy: REAL_POLICY })
+  assert.equal(refused.ok, false)
+  assert.ok(refused.reasons.includes('Owner names "somebody", who is not a writers Bot name'), refused.reasons.join('; '))
 })

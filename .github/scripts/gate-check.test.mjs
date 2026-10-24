@@ -18,7 +18,7 @@ const HEADERS = 'Owner: Dev\nReviewer: reviewer-agent\n'
 
 const policyFile = () => {
   const path = join(mkdtempSync(join(tmpdir(), 'gate-check-policy-')), 'review-policy.json')
-  writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Birfy'] }))
+  writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Birfy', 'Dev'] }))
   return path
 }
 const POLICY = policyFile()

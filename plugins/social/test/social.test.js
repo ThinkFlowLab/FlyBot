@@ -2180,6 +2180,33 @@ test('a paused conversation explains the pause with steps a FlyBot owner can tak
   await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), /paused that chat .*Send your message again/)
 })
 
+test('#954: a line to a Bot that no longer exists says one sentence, once, and is not retryable', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'bot_not_found', message: 'no such remote bot' }) }] } }), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const error = await social.sendChat({ handle: '@coder.bob.home', text: 'one more line' }).then(() => null, e => e)
+  assert.equal(error?.message, 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.')
+  assert.equal(error?.noRetry, true, 'the host draws no Retry for it')
+  assert.doesNotMatch(error.message, /no such remote bot|Try again/)
+  // The transport a Bot's reply uses says the same thing, not the server's wording.
+  const viaBot = await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'reply' }).then(() => null, e => e)
+  assert.match(viaBot?.message ?? '', /^Coder \(Bob\) \(@coder\.bob\.home\) is no longer shared with you, so messages to it cannot be delivered\. Ask its owner for a new invite\.$/)
+  assert.equal(viaBot?.noRetry, true)
+})
+
 test('sendChat failures are short English with a next step', async (t) => {
   const { ctx, stop } = await team()
   t.after(stop)
@@ -3703,6 +3730,18 @@ test('#52: a failed local hold reads Not sent with its error and offers Retry', 
   assert.ok(retry, 'Retry is offered')
   await retry.props.onClick()
   assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide').map(([, payload]) => [payload.id, payload.decision]), [['f1', 'retry']])
+})
+
+test('#954: a failed hold that can never succeed offers no Retry', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const friend = { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' } }
+  const roster = { bots: [friend] }
+  const hold = { id: 'f2', kind: 'outbound_message', source: 'local', status: 'failed', retry: false, error: 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.', from: 'Chief', to: '@coder.bob.home', toName: 'Bob', text: 'x' }
+  const tree = walk(pluginOf([[], [hold], '']).ChatApprovalDock({ bot: friend, roster }))
+  const card = tree.find(node => node.props['data-flybot'] === 'chat-approval')
+  assert.equal(card?.props['data-state'], 'failed')
+  assert.ok(tree.some(node => node.props['data-flybot'] === 'hold-error' && node.children.includes(hold.error)))
+  assert.equal(tree.some(node => node.props['data-flybot'] === 'hold-retry'), false, 'no Retry on a failure that cannot succeed')
 })
 
 test('#126: a face-room hold shows in that chat with a readable name', () => {
@@ -10471,4 +10510,91 @@ test('#881: a room line names no room, even when both Bots share a face room too
   // The control: the same pair over a plain 1:1 line does name it.
   assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'plain line', role: 'reply' })).action, 'allow')
   assert.equal(server.calls.filter(c => c.name === 'send_as_member').at(-1).args.room_id, 'frm_123456')
+})
+
+// #955: "People with access" joined every room a share is used in into one line, so a long-lived share printed
+// 15 rooms / 362 characters inside a settings row. The hint names at most three rooms, says how many are left,
+// and the tooltip keeps every name. Dedupe is by room id, so the same face-to-face room is not printed twice in
+// one card (once per grant, once under "This room only").
+const accessClientPlugin = () => {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call: async () => [] }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
+  plugin.apply({})
+  return plugin
+}
+
+test('#955: the access hint names three rooms and a count, inside one line', () => {
+  const plugin = accessClientPlugin()
+  const rooms = Array.from({ length: 15 }, (_, i) => ({ id: `session-r${i}`, name: `Face-to-face · SelfTest A2, SelfTest B2 · ${856400 + i}` }))
+  const hint = plugin.roomHint('use', rooms)
+  assert.ok(hint.text.length <= 80, `the hint is ${hint.text.length} characters: ${hint.text}`)
+  assert.match(hint.text, /^In use in 15 rooms: /)
+  assert.match(hint.text, /\+12 more$/, 'the count says how many are left')
+  assert.equal((hint.text.match(/,/g) ?? []).length, 2, 'three names at most')
+  assert.equal(hint.title.split('\n').length, 15, 'the tooltip carries every room')
+  assert.equal(hint.title.split('\n')[14], rooms[14].name)
+})
+
+test('#955: no room is named twice in one card, and a short list stays literal', () => {
+  const plugin = accessClientPlugin()
+  const shared = { id: 'session-shared', name: 'Face-to-face · A2, B2 · 490512' }
+  const other = { id: 'session-other', name: 'Face-to-face · A2, B2 · 856467' }
+  const listed = plugin.roomList([shared]).map(row => row.id)
+  const only = plugin.roomHint('only', [shared, other], listed)
+  assert.equal(only.text, `This room only: ${other.name}`, 'the room already named in a grant row is not repeated')
+  const single = plugin.roomHint('use', [other])
+  assert.equal(single.text, `In use in 1 room: ${other.name}`, 'one room prints as it is, with no +0 more')
+  assert.equal(single.text.includes('+0 more'), false)
+  assert.equal(plugin.roomHint('use', []), null, 'a grant with no rooms renders no hint')
+  assert.equal(plugin.roomHint('use', [other, { ...other }, other]).text, single.text, 'the same room id counts once')
+})
+
+test('#955: the rendered access row keeps one short line and the repeat is gone', () => {
+  const rooms = Array.from({ length: 15 }, (_, i) => ({ id: `session-r${i}`, name: `Face-to-face · SelfTest A2, SelfTest B2 · ${856400 + i}`, origin: 'face-to-face' }))
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = {
+    slots: { register: () => () => {} },
+    call: async (endpoint, payload) => {
+      if (endpoint === 'social/access') {
+        return { botId: payload.botId, botName: 'Writer', granted: true, grants: [{ id: 'g1', grantee: '@bob.home', name: 'Bob', home: '@bob.home', person: 'Bob', autoSend: false, rooms }], rooms }
+      }
+      return {}
+    },
+  }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const walk = (node, all = []) => {
+    if (!node || typeof node !== 'object') return all
+    if (typeof node.type === 'function') return walk(node.type(node.props), all)
+    all.push(node)
+    for (const child of node.children ?? []) walk(child, all)
+    return all
+  }
+  const store = [{ botId: 'b', botName: 'Writer', granted: true, grants: [{ id: 'g1', grantee: '@bob.home', name: 'Bob', home: '@bob.home', person: 'Bob', autoSend: false, rooms }], rooms }]
+  let cursor = 0
+  const plugin = registered[0].factory(() => ({
+    createElement: h, Fragment: 'F',
+    useEffect(fn) { fn() },
+    useState: v => { const i = cursor++; if (store[i] === undefined) store[i] = v; return [store[i], n => { store[i] = typeof n === 'function' ? n(store[i]) : n }] },
+    useRef: v => ({ current: v }), useMemo: f => f(),
+  }))
+  cursor = 0
+  const tree = walk(plugin.ManageAccess({ bot: { id: 'b', name: 'Writer' } }))
+  const hints = tree.filter(n => typeof n.children?.[0] === 'string' && /In use in/.test(n.children[0]))
+  assert.equal(hints.length, 1, 'one usage hint per person')
+  const hint = hints[0]
+  const line = hint.children[0]
+  assert.ok(line.length <= 80, `the rendered hint is ${line.length} characters: ${line}`)
+  assert.match(line, /^In use in 15 rooms: /)
+  assert.match(line, /\+12 more$/)
+  assert.equal((line.match(/,/g) ?? []).length, 2, 'three room names at most')
+  assert.equal(String(hint.props.title ?? '').split('\n').length, 15, 'the tooltip carries all 15')
+  const repeated = tree.filter(n => typeof n.children?.[0] === 'string' && /This room only:/.test(n.children[0]))
+  assert.equal(repeated.length, 0, 'a room the grant row already named is not printed again')
 })

@@ -22,6 +22,48 @@ window.__ModuleLoader__.load({
     const ALREADY_HAVE = "You already have this friend's Bot."
     // A friend's Bot with its owner: `Chief (SelfA1233)`, Bot first (#384).
     const botWithOwner = (name, owner) => (name && owner && owner !== name ? `${name} (${owner})` : name || '')
+    // One row per person must stay one readable line (#955): the access card used to join every room a share
+    // is used in, so a long-lived share printed 15 rooms / 362 characters inside a settings row. The hint names
+    // at most three rooms, says how many are left, and keeps every name in the tooltip.
+    const ROOM_HINT_LIMIT = 80
+    const ROOM_HINT_NAMES = 3
+    const ROOM_HINT_CLIP = 14
+    const roomKey = room => String(room?.id ?? room?.name ?? '')
+    const clipRoom = name => (name.length > ROOM_HINT_CLIP ? `${name.slice(0, ROOM_HINT_CLIP - 1)}…` : name)
+    // Dedupe by room id: the same face-to-face room arrives once per grant and once in view.rooms.
+    const roomList = (rooms, skip) => {
+      const seen = new Set(skip ?? [])
+      const out = []
+      for (const room of rooms ?? []) {
+        const key = roomKey(room)
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        const label = String(room?.name || room?.id || '').trim()
+        if (label) out.push({ id: key, label })
+      }
+      return out
+    }
+    // `use` counts ("In use in 15 rooms: a, b, c +12 more"); `only` keeps its own words.
+    const roomHint = (kind, rooms, skip) => {
+      const rows = roomList(rooms, skip)
+      if (!rows.length) return null
+      const head = kind === 'use' ? `In use in ${rows.length} room${rows.length === 1 ? '' : 's'}: ` : 'This room only: '
+      const build = (count, clip) => {
+        const pick = rows.slice(0, count).map(row => (clip ? clipRoom(row.label) : row.label))
+        const rest = rows.length - pick.length
+        return head + pick.join(', ') + (rest > 0 ? ` +${rest} more` : '')
+      }
+      const top = Math.min(ROOM_HINT_NAMES, rows.length)
+      // Short lists print whole names; a long-lived share falls back to clipped names so the count still shows.
+      let text = build(top, false)
+      if (text.length > ROOM_HINT_LIMIT) {
+        for (let count = top; count >= 1; count -= 1) {
+          text = build(count, true)
+          if (text.length <= ROOM_HINT_LIMIT) break
+        }
+      }
+      return { text, title: rows.map(row => row.label).join('\n'), ids: rows.map(row => row.id) }
+    }
     const errorText = (e) => {
       const code = String(e?.code ?? '')
       const http = code.match(/^HTTP_(\d+)$/)
@@ -1934,7 +1976,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-label' }, 'Not sent'),
           item.from || item.to || item.toName ? h('div', { className: 'fs-sub' }, `${parties.from} → ${parties.to}`) : null,
           item.error ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-error' }, item.error) : null,
-          h('div', { className: 'fs-actions fs-chat-actions' },
+          // A failure the sender marked as never retryable (#954) offers no Retry: the Bot is gone, so the button
+          // could only repeat the same card.
+          item.retry === false ? null : h('div', { className: 'fs-actions fs-chat-actions' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')))
       }
       const { from, to } = holdParties(item)
@@ -2944,17 +2988,22 @@ window.__ModuleLoader__.load({
         finally { setBusy('') }
       }
       const grants = view?.grants ?? []
+      // A room the grant rows already named must not come back under "This room only" (#955).
+      const listedRoomIds = grants.flatMap(grant => roomList(grant.rooms).map(row => row.id))
+      const roomOnlyUsage = roomHint('only', (view?.rooms ?? []).filter(room => room.origin === 'face-to-face'), listedRoomIds)
       return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
         h('div', { className: 'fs-name' }, 'People with access'),
         h('div', { className: 'fs-hint fs-face-note' }, ACCESS_NOTE),
         grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
-        grants.map(grant => h('div', { key: grant.id || grant.grantee, className: 'fs-line', 'data-flybot': 'access-grant' },
+        grants.map((grant) => {
+          const grantUsage = roomHint('use', grant.rooms)
+          return h('div', { key: grant.id || grant.grantee, className: 'fs-line', 'data-flybot': 'access-grant' },
           h('div', { className: 'fs-col' },
             h('span', { className: 'fs-name' }, grant.name || grant.grantee),
             grant.home && grant.name && !String(grant.name).includes(grant.home)
               ? h('span', { className: 'fs-sub' }, grant.home)
               : null,
-            (grant.rooms ?? []).length ? h('span', { className: 'fs-hint' }, `In use: ${(grant.rooms ?? []).map(room => room.name || room.id).join(', ')}`) : null),
+            grantUsage ? h('span', { className: 'fs-hint', title: grantUsage.title }, grantUsage.text) : null),
           grant.home ? h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
             h('input', {
               type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
@@ -2966,10 +3015,9 @@ window.__ModuleLoader__.load({
             type: 'button', className: 'fs-btn', disabled: Boolean(busy),
             'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
             onClick: () => revoke(grant),
-          }, busy === grant.id ? 'Revoking…' : 'Revoke'))),
-        (view?.rooms ?? []).filter(room => room.origin === 'face-to-face').length
-          ? h('div', { className: 'fs-hint' }, `This room only: ${(view.rooms ?? []).filter(room => room.origin === 'face-to-face').map(room => room.name || room.id).join(', ')}`)
-          : null,
+          }, busy === grant.id ? 'Revoking…' : 'Revoke'))
+        }),
+        roomOnlyUsage ? h('div', { className: 'fs-hint', title: roomOnlyUsage.title }, roomOnlyUsage.text) : null,
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
@@ -3325,6 +3373,8 @@ window.__ModuleLoader__.load({
       ChatApproval,
       holdReasonLine,
       listedFriendChat,
+      roomHint,
+      roomList,
       ChatApprovalDock,
       HeldReplyCard,
       approvalsForOpenChat,

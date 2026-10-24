@@ -154,6 +154,15 @@ test('a failed 1:1 send is one short English line with a next step', () => {
     // The plugin's pause says to send again: the next send opens a fresh chat; nothing names Extend or turns.
     assert.equal(notSentLine(Object.assign(new Error('Bot Social paused that chat (loop detected). Send your message again: it starts a new chat.'), { code: 'conversation_paused', resend: true })), 'Not sent: Bot Social paused that chat. Send your message again: it starts a new chat.')
     assert.doesNotMatch(notSentLine(Object.assign(new Error('paused'), { resend: true })), /Extend|turns/)
+    // #954: a Bot that no longer exists says one sentence with the next step, names the Bot when the sender
+    // knows which one it is, and never repeats "Try again." (the plugin's sentence already ended the line).
+    const gone = notSentLine(Object.assign(new Error('Bot Social send_as_member: no such remote bot'), { code: 'bot_not_found', handle: '@coder.bob.home' }))
+    assert.equal(gone, 'Not sent: @coder.bob.home is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.')
+    assert.doesNotMatch(gone, /no such remote bot|Try again/)
+    const relayed = notSentLine(Object.assign(new Error('Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.'), { code: 'bot_not_found', handle: '@coder.bob.home' }))
+    assert.equal(relayed, 'Not sent: Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.')
+    // One "Try again." only, whatever the layer below already wrote (#954).
+    assert.equal(notSentLine(new Error('Bot Social send_as_member: gateway hiccup. Try again.')), 'Not sent: gateway hiccup. Try again.')
     assert.equal(notSentLine(new Error('Bot Social send_as_member: weird_code')), 'Not sent: the message could not leave. Try again.')
     assert.doesNotMatch(notSentLine(new Error('something odd happened')), /console/)
 });

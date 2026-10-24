@@ -78,18 +78,32 @@ const labelNames = (labels) => (labels ?? []).map((l) => String(typeof l === 'st
 // A Bot name can only through the one identity every Bot writes as, `Birfy`, so it names a reviewer only
 // while that account is in `reviewers`; with it gone the name is vocabulary and the line is refused.
 const SHARED_WRITE_LOGIN = 'Birfy'
+// One line's names: split on commas, strip a leading `@`, compare case-insensitively. Both header lines
+// read their values this way so `@Dev`, `dev` and `DEV` are one name wherever they appear (#951).
+const headerNames = (line, pattern) => line.replace(pattern, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
 function headerReasons(body, policy) {
   const lines = String(body ?? '').split(/\r?\n/).slice(0, HEADER_LINES)
   const reasons = []
-  if (!lines.some((line) => OWNER_LINE.test(line))) reasons.push('missing line: Owner:')
+  const logins = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
+  const bots = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
+  const sharedLogin = logins.has(SHARED_WRITE_LOGIN.toLowerCase())
+  // A line with no value names nobody, which is the same defect as a missing line — for either header.
+  // The owner speaks the same `writers` vocabulary: a name the policy does not know makes the line a
+  // claim with no name behind it, and an unknown name is also how "Owner: Somebody" cleared the
+  // duplicate check (#951 INC).
+  const owner = lines.find((line) => OWNER_LINE.test(line))
+  const ownerNames = owner ? [...new Set(headerNames(owner, OWNER_LINE))] : []
+  if (!ownerNames.length) reasons.push('missing line: Owner:')
+  for (const name of ownerNames) {
+    if (!bots.has(name)) reasons.push(`Owner names "${name}", who is not a writers Bot name`)
+  }
+  const owners = new Set(ownerNames)
   const reviewer = lines.find((line) => REVIEWER_LINE.test(line))
   if (!reviewer) reasons.push('missing line: Reviewer:')
   else {
-    const names = reviewer.replace(REVIEWER_LINE, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
+    // One name twice is one name: `Reviewer: Dev, Dev` must not print the same refusal twice.
+    const names = [...new Set(headerNames(reviewer, REVIEWER_LINE))]
     if (!names.length) reasons.push('missing line: Reviewer:')
-    const logins = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
-    const bots = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
-    const sharedLogin = logins.has(SHARED_WRITE_LOGIN.toLowerCase())
     let passable = false
     for (const name of names) {
       if (logins.has(name)) {
@@ -104,6 +118,12 @@ function headerReasons(body, policy) {
       // being sent to fix a spelling that was never the problem.
       reasons.push(`Reviewer names "${name}", who is not a reviewers login`)
       reasons.push(`Reviewer names "${name}", who is not a writers Bot name`)
+    }
+    // #951: the two lines are two roles. Reading them separately let one Bot own and review the same pull
+    // request — `Reviewer: Dev` passed on `Dev` being a `writers` name — which is the shape #940 had with
+    // no lines at all. The comparison is per name, so a list that overlaps in either direction refuses.
+    for (const name of names) {
+      if (owners.has(name)) reasons.push(`Reviewer names "${name}", who is also the Owner of this pull request`)
     }
     // Every name is a known Bot name and none of them can pass: refused, because the line would
     // otherwise read as reviewed.
