@@ -632,11 +632,14 @@ window.__ModuleLoader__.load({
       return (bots ?? []).some(bot => bot.handle === handle)
     }
 
+    // #1005: a room number is exactly six digits. A stored value that is not one is no number at
+    // all — cutting 1234567 down to 123456 would name a different room, not fall back.
+    function sixRoomDigits(value) {
+      const digits = String(value ?? '').replace(/\D/g, '')
+      return digits.length === 6 ? digits : ''
+    }
     function faceWaitCode(room, typed) {
-      const fromRoom = String(room?.joinCode || room?.code || '').replace(/\D/g, '').slice(0, 6)
-      if (fromRoom.length === 6) return fromRoom
-      const fromTyped = String(typed || '').replace(/\D/g, '').slice(0, 6)
-      return fromTyped.length === 6 ? fromTyped : ''
+      return sixRoomDigits(room?.joinCode || room?.code) || sixRoomDigits(typed)
     }
     // QR code in byte mode, error correction level M, versions 1-10 (#773): a room number is 13
     // bytes and an invite link is 40-70, so the version is picked from the payload. Everything is
@@ -1835,11 +1838,11 @@ window.__ModuleLoader__.load({
       rows.sort((a, b) => a.sort.localeCompare(b.sort))
       const owners = rows.slice(0, 3).map(row => row.owner)
       const stored = named.match(/ · (\d{6})$/)?.[1]
-      const code = String(room?.joinCode || room?.code || stored || '').replace(/\D/g, '').slice(0, 6)
+      const code = sixRoomDigits(room?.joinCode || room?.code || stored)
       const bits = ['Face-to-face']
       if (owners.length) bits.push(owners.join(', '))
       const storedWhen = named.match(/ · ([A-Z][a-z]{2} \d{1,2} \d{2}:\d{2})$/)?.[1]
-      if (code.length === 6) bits.push(code)
+      if (code) bits.push(code)
       else if (storedWhen) bits.push(storedWhen)
       else {
         // Created = the joining deadline minus the 10-minute window, never the deadline itself.
@@ -3433,6 +3436,8 @@ window.__ModuleLoader__.load({
       FaceRoomCard,
       FaceRooms,
       FaceAutoSend,
+      faceWaitCode,
+      shownFaceTitle,
       ConfirmLeave,
       PausedChat,
       autoSendToast,

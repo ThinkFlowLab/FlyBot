@@ -11297,3 +11297,94 @@ test('#994: the share receipt names the Bot the click granted and never the home
   assert.equal(bare.message, 'Shared Chief with your friend. They can decline; you can Revoke in People with access.')
   assert.doesNotMatch(bare.message, /selftestb2/i)
 })
+
+// ---- #1005: a room number is exactly six digits, and one card names one room ----------------
+
+// A stored value that is not six digits is not a room number: cutting '1234567' to '123456' would
+// name a different room. The card falls back to the room's own title instead.
+test('#1005: a stored code that is not six digits is not a room number; the hold card reads the title', async (t) => {
+  const { ctx, call, stop, home } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.tools.list_approvals = () => ({
+    approvals: [{
+      approval_id: 'apr-face-7', kind: 'face_room_message', status: 'pending', bot_id: 'm1',
+      room_id: 'frm_1234ab', message: { payload: { text: 'hold me' } }, summary: 'To the room: hold me',
+    }],
+  })
+  // The room is live on Bot Social too: the startup poll closes a stored room the server never heard of.
+  server.face.rooms.set('frm_1234ab', { room_id: 'frm_1234ab', status: 'candidate', expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), members: [], events: [], event_cursor: 0, my_bots: ['@chief.danyang.home'] })
+  const settingsPath = join(home, 'face-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ faceRooms: { frm_1234ab: { joinCode: '1234567', status: 'candidate' } } }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  // Let the one startup poll finish first: it is what would rewrite a room's title.
+  await settle()
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_1234ab', status: 'candidate', name: 'Loft' })
+  const approvals = (await call('flybot/social/approvals', {})).value.approvals
+  assert.equal(approvals.length, 1)
+  // The title alone: a single link-joined room still reads by its name (#991).
+  assert.equal(approvals[0].toName, 'the room Loft', 'the title, never 123456 cut out of 1234567')
+})
+
+// Two live rooms with no code share a title: the title can no longer be the whole label, so each
+// gets a short, stable fragment of its own id.
+test('#1005: two live rooms with no code and the same title read as two different labels, and keep them', async (t) => {
+  const { ctx, call, stop, home } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.tools.list_approvals = () => ({
+    approvals: [
+      { approval_id: 'apr-a', kind: 'face_room_message', status: 'pending', bot_id: 'm1', room_id: 'frm_a3f1', message: { payload: { text: 'first' } }, summary: 'To the room: first' },
+      { approval_id: 'apr-b', kind: 'face_room_message', status: 'pending', bot_id: 'm1', room_id: 'frm_b7c2', message: { payload: { text: 'second' } }, summary: 'To the room: second' },
+    ],
+  })
+  for (const id of ['frm_a3f1', 'frm_b7c2']) server.face.rooms.set(id, { room_id: id, status: 'candidate', expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), members: [], events: [], event_cursor: 0, my_bots: ['@chief.danyang.home'] })
+  const settingsPath = join(home, 'face-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ faceRooms: { frm_a3f1: { status: 'candidate' }, frm_b7c2: { status: 'candidate' } } }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await settle()
+  // Two rooms, each with its own local id: the same title must not merge them (that is #1005's subject, not a session name clash).
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_a3f1', localId: 'face-a3f1', status: 'candidate', name: 'Loft' })
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_b7c2', localId: 'face-b7c2', status: 'candidate', name: 'Loft' })
+  const first = (await call('flybot/social/approvals', {})).value.approvals.map(item => item.toName)
+  assert.equal(first.length, 2)
+  assert.notEqual(first[0], first[1], 'two live rooms never share one label')
+  assert.ok(first.every(name => name.includes('Loft')), JSON.stringify(first))
+  const second = (await call('flybot/social/approvals', {})).value.approvals.map(item => item.toName)
+  assert.deepEqual(second, first, 'a second render keeps each room on its own label')
+})
+
+// The client decides what the owner reads: the waiting card's number and the room row's title.
+test('#1005: the client refuses a stored code that is not six digits, on the card and in the row title', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const api = pluginOf([])
+  assert.equal(api.faceWaitCode({ joinCode: '123456' }, ''), '123456')
+  assert.equal(api.faceWaitCode({ joinCode: '1234567' }, ''), '', '1234567 is not 123456')
+  assert.equal(api.faceWaitCode({ joinCode: '1234567' }, '482913'), '482913', 'falls back to the code that was typed')
+  assert.equal(api.faceWaitCode({ code: '1234567' }, ''), '', 'nor from `code`')
+  // A stored auto name is trusted as it stands; the builder is where a code gets appended, so the
+  // row is built from its members (Alice is in the room).
+  const alice = [{ handle: '@coder.bob.home', ownerName: 'Alice' }]
+  const titled = api.shownFaceTitle({ joinCode: '1234567', members: alice, createdAt: '2026-10-24T10:00:00.000Z' })
+  assert.doesNotMatch(titled, /123456/, titled)
+  assert.match(titled, /^Face-to-face · Alice · /, titled)
+  assert.match(api.shownFaceTitle({ joinCode: '123456', members: alice }), /· 123456$/)
+  // The waiting dialog draws a room number only when the stored value really is one.
+  const draw = (room, code) => walk(pluginOf(faceWaiting({ room, code })).FaceToFaceGroup({ onClose() {} }))
+  const room = joinCode => ({ roomId: 'g1', faceRoomId: 'frm_1', status: 'candidate', joinCode, expiresAt: '2099-01-01T00:00:00.000Z', members: [] })
+  assert.equal(draw(room('1234567'), '').some(n => n.props['data-flybot'] === 'face-wait-code-digits'), false, 'no truncated number')
+  const six = draw(room('123456'), '')
+  assert.ok(six.some(n => n.props['data-flybot'] === 'face-wait-code-digits' && n.children.includes('123456')))
+})

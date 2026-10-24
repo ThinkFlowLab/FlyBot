@@ -2950,12 +2950,26 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // "the room" while the owner is deciding where the line lands. The number the owner typed is the
   // shortest thing they can match to the room on screen; a guest that joined by link has no code yet,
   // so the room's own title stands in. Undefined keeps `approvalView`'s "the room" for an older shape.
+  // A room number is exactly six digits (#1005): a stored value that is not one is no number at
+  // all, because cutting 1234567 down to 123456 would name a different room.
+  const sixDigits = (value) => {
+    const digits = String(value ?? '').replace(/\D/g, '')
+    return digits.length === 6 ? digits : ''
+  }
+  const roomCode = (roomId) => sixDigits(settings.faceRooms?.[roomId]?.joinCode)
+  const roomTitle = (roomId) => cleanText(flybot.rooms?.ofFace?.(roomId)?.name)
+  // The last four alphanumerics of the id: stable for one room, fixed forever, and nobody types it.
+  const roomTag = (roomId) => String(roomId ?? '').replace(/[^a-z0-9]/gi, '').slice(-4).toLowerCase()
   const holdRoomName = (roomId) => {
     if (!roomId) return undefined
-    const code = String(settings.faceRooms?.[roomId]?.joinCode ?? '').replace(/\D/g, '').slice(0, 6)
-    if (code.length === 6) return `the room ${code}`
-    const title = cleanText(flybot.rooms?.ofFace?.(roomId)?.name)
-    return title ? `the room ${title}` : undefined
+    const code = roomCode(roomId)
+    if (code) return `the room ${code}`
+    const title = roomTitle(roomId)
+    // Without a code the title is the whole label only while no other live room reads the same way:
+    // two rooms joined by link keep no number, so the tag has to tell them apart (#1005).
+    const clash = Object.keys(settings.faceRooms ?? {}).some(id => id !== roomId && !roomCode(id) && faceHoldLive(id) && roomTitle(id) === title)
+    if (!title) return undefined
+    return clash ? `the room ${title} · ${roomTag(roomId)}` : `the room ${title}`
   }
   const ownLineApproving = new Set()
   async function approveOwnLine(item) {
