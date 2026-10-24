@@ -9,6 +9,12 @@ name: Agent audience
 # reads, and it writes the findings into the job summary. It never comments and never labels.
 # Silence itself is not detectable (the repository has no "who read this" field); only a call to the
 # wrong member, or a missing declaration, is.
+#
+# The one way this check can lie is by passing without reading anything: `continue-on-error` turns a
+# crash into a green check, so the script must always be found. It is therefore checked out from the
+# BASE commit -- a pull request must not be able to change the checker that audits it -- with the
+# first-run fallback review-gate.yml uses: the pull request that introduces the script has no copy on
+# the base yet, so that one run reads the copy in the pull request, under the same read-only token.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
@@ -35,7 +41,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: hashFiles('base/.github/scripts/agent-audience.mjs') == ''
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.repository.default_branch }}
+          path: pr
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
@@ -47,8 +60,18 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
+          dir="base"
+          if [ ! -f base/.github/scripts/agent-audience.mjs ]; then
+            echo "::notice::The base commit has no agent-audience script yet; using the copy in this pull request."
+            dir="pr"
+          fi
+          if [ ! -f "$dir/.github/scripts/agent-audience.mjs" ]; then
+            # Loud on purpose: a green check that read nothing is the failure this job exists to catch.
+            echo "::error::agent-audience: the checker is on neither the base commit nor this pull request; nothing was read."
+            exit 1
+          fi
           if [ -n "$PR" ]; then
-            node .github/scripts/agent-audience.mjs --pr "$PR"
+            node "$dir/.github/scripts/agent-audience.mjs" --pr "$PR"
           else
-            node .github/scripts/agent-audience.mjs
+            node "$dir/.github/scripts/agent-audience.mjs"
           fi

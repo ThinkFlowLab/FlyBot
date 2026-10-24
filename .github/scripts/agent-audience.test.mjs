@@ -6,6 +6,7 @@
 // them as comment bodies; the live run sees only the GitHub comments, and reports the missing lines.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { evaluate, loadPolicy, main, mentionsIn, parseDeclarations, rosterOf } from './agent-audience.mjs'
 
 const policy = loadPolicy()
@@ -111,4 +112,20 @@ test('#911: the run prints one line per finding and exits success by design', ()
   }
   assert.match(lines[0], /^#907 @0c7b33a: /)
   assert.match(lines.at(-1), /2 finding\(s\) on 1 pull request\(s\); report only/)
+})
+
+// #912: this check passed on its own pull request while reading nothing. The workflow checked the
+// script out of `main`, where it does not exist yet, `node` could not load it, and `continue-on-error`
+// turned that crash into a green check -- a check that passes without reading is the failure this job
+// exists to report. It now reads the script from the base commit (a pull request must not swap the
+// checker that audits it) and falls back to the pull request for the run that introduces it. Either
+// half disappearing turns this red, so the guard names both.
+test('#911: the workflow cannot pass without having read the checker', () => {
+  const yml = readFileSync(new URL('../workflows/agent-audience.yml', import.meta.url), 'utf8')
+  assert.match(yml, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.repository\.default_branch \}\}/)
+  assert.match(yml, /if: hashFiles\('base\/\.github\/scripts\/agent-audience\.mjs'\) == ''/)
+  assert.match(yml, /dir="pr"/)
+  assert.match(yml, /node "\$dir\/\.github\/scripts\/agent-audience\.mjs"/)
+  assert.doesNotMatch(yml, /node \.github\/scripts\/agent-audience\.mjs/)
+  assert.doesNotMatch(yml, /^\s+ref: main$/m)
 })
