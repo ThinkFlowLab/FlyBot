@@ -5306,8 +5306,10 @@ test('social/access labels an object-shaped list_bot_grants grantee, not @object
   const row = access.grants.find(g => g.home === '@bob.home' || g.grantee === '@bob.home' || /coder\.bob/.test(String(g.grantee)))
   assert.ok(row, `expected a Bob grant, got ${JSON.stringify(access.grants)}`)
   assert.equal(row.home, '@bob.home')
-  // The owner's display name from Bot Social, not the handle in lowercase (#275).
-  assert.equal(row.name, 'Bob (@bob.home)')
+  // The Bot the grant is for is named, the way the share list names it (#995); the owner keeps the name
+  // Bot Social sent (#275), not the handle in lowercase.
+  assert.equal(row.name, 'Coder (Bob)')
+  assert.equal(row.handle, '@coder.bob.home')
   assert.doesNotMatch(String(row.name), /object/i)
   assert.doesNotMatch(String(row.grantee), /object/i)
 })
@@ -6158,13 +6160,15 @@ test('#383: a possible talk-through grant from an older join keeps its own row, 
   assert.equal(revoked.some(args => args.includes('g-tt')), false, 'the chat with Helper keeps working')
 })
 
-test('#383: People with access shows one row per person; its Revoke removes each of their grants', async (t) => {
+test('#383 + #995: People with access is one row per Bot; a row keeps the batch Revoke for its own grants', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
   const server = mockServer()
-  // Two invites for our Chief, joined by two of Bob's Bots: two real shares to one person.
+  // Two invites for our Chief, joined by two of Bob's Bots: two real shares to one person, one per Bot
+  // (#995). The first Bot holds two invites' grants, so a row can still be a batch (#383).
   let listed = [
     { id: 'g-1', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+    { id: 'g-1b', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r2' },
     { id: 'g-2', grantee: '@coder.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r3' },
     { id: 'g-3', grantee: '@carol.home', name: 'Carol (@carol.home)', relationship_id: 'r4' },
   ]
@@ -6181,9 +6185,13 @@ test('#383: People with access shows one row per person; its Revoke removes each
   await social.registerAll()
   const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
   const access = (await call('flybot/social/access', { botId: chief.id })).value
-  assert.deepEqual(access.grants.map(row => row.grantee), ['@bob.home', '@carol.home'])
+  // One row per Bot (#995), and Carol's person-level grant keeps the row it had.
+  assert.deepEqual(access.grants.map(row => [row.handle ?? null, row.home, row.grantIds]), [
+    ['@chief.bob.home', '@bob.home', ['g-1', 'g-1b']],
+    ['@coder.bob.home', '@bob.home', ['g-2']],
+    [null, '@carol.home', ['g-3']],
+  ])
   const bob = access.grants[0]
-  assert.deepEqual(bob.grantIds, ['g-1', 'g-2'])
   const before = server.calls.length
   assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: bob.id, grantIds: bob.grantIds })).ok, true)
   // One roster refresh for the whole batch, started after the last delete (Codex P1).
@@ -6192,11 +6200,12 @@ test('#383: People with access shows one row per person; its Revoke removes each
   const lastDelete = batch.findLastIndex(name => /revoke|DELETE/i.test(name))
   assert.equal(batch.slice(0, lastDelete).includes('list_remote_bots'), false, 'no refresh between the deletes')
   const revoked = server.calls.slice(before).filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
-  assert.equal(revoked.some(args => args.includes('g-1')), true)
-  assert.equal(revoked.some(args => args.includes('g-2')), true)
+  assert.equal(revoked.some(args => args.includes('g-1"')), true)
+  assert.equal(revoked.some(args => args.includes('g-1b')), true)
+  assert.equal(revoked.some(args => args.includes('g-2')), false, "Bob's other Bot keeps its access")
   assert.equal(revoked.some(args => args.includes('g-3')), false, 'Carol keeps her access')
-  listed = listed.filter(grant => grant.id === 'g-3')
-  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'])
+  listed = listed.filter(grant => grant.id === 'g-2' || grant.id === 'g-3')
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-2', 'g-3'])
 })
 
 // #495: both friends joined each other's invite, so Bot Social regranted the second invite into the FIRST
@@ -6299,7 +6308,7 @@ test('#495: a reply-only grant alone is never listed as a share, even with no jo
   assert.equal((ctx.flybot.grants.of(chief.id) ?? []).length, 0, 'the reply-only grant is not stored as ours')
 })
 
-test('#495: with reply_only, the #383 case keeps one row per person and Revoke leaves the talk-through grant', async (t) => {
+test('#495: with reply_only, the #383 case keeps one row per Bot and Revoke leaves the talk-through grant', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
   const server = mockServer()
@@ -6334,13 +6343,14 @@ test('#495: with reply_only, the #383 case keeps one row per person and Revoke l
   await social.remoteBots({ fresh: true })
   const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
   const access = (await call('flybot/social/access', { botId: chief.id })).value
-  assert.deepEqual(access.grants.map(row => [row.grantee, row.grantIds]), [['@bob.home', ['g-share', 'g-share-2']]], 'one row for Bob')
+  assert.deepEqual(access.grants.map(row => [row.handle, row.grantIds]), [['@chief.bob.home', ['g-share']], ['@helper.bob.home', ['g-share-2']]], 'one row per Bot (#995)')
   assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.id === 'g-tt'), false, 'the talk-through grant is not stored as ours')
   const before = server.calls.length
-  assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: access.grants[0].id, grantIds: access.grants[0].grantIds })).ok, true)
+  // Revoking Bob's Helper takes that Bot's share only; the chat with Bob's Chief keeps working.
+  assert.equal((await call('flybot/social/revoke-grant', { botId: chief.id, grantId: access.grants[1].id, grantIds: access.grants[1].grantIds })).ok, true)
   const revoked = server.calls.slice(before).filter(c => /revoke|DELETE/i.test(c.name)).map(c => JSON.stringify(c.args))
-  assert.equal(revoked.some(args => args.includes('g-share"')), true)
   assert.equal(revoked.some(args => args.includes('g-share-2')), true)
+  assert.equal(revoked.some(args => args.includes('g-share"')), false, "Bob's Chief keeps the share")
   assert.equal(revoked.some(args => args.includes('g-tt')), false, 'the chat with Helper keeps working')
 })
 
@@ -6381,10 +6391,11 @@ test('#383: a grant list taken while a merged Revoke runs is not written back (M
   const server = mockServer()
   let listed = [
     { id: 'g-1', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' },
+    { id: 'g-1b', grantee: '@chief.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r2' },
     { id: 'g-2', grantee: '@coder.bob.home', name: 'Bob (@bob.home)', relationship_id: 'r3' },
     { id: 'g-3', grantee: '@carol.home', name: 'Carol (@carol.home)', relationship_id: 'r4' },
   ]
-  // The next list answer is held: it is taken now (all three grants) and lands only when released.
+  // The next list answer is held: it is taken now (all four grants) and lands only when released.
   let hold
   server.tools.list_bot_grants = () => {
     const snapshot = { grants: [...listed] }
@@ -6403,7 +6414,7 @@ test('#383: a grant list taken while a merged Revoke runs is not written back (M
   await social.registerAll()
   const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
   const bob = (await call('flybot/social/access', { botId: chief.id })).value.grants[0]
-  assert.deepEqual(bob.grantIds, ['g-1', 'g-2'])
+  assert.deepEqual(bob.grantIds, ['g-1', 'g-1b'], "Bob's first Bot holds both of its grants (#995 row, #383 batch)")
   // The open dialog's 5-second loader asks again; its list is in flight when Revoke starts.
   hold = {}
   const loader = call('flybot/social/access', { botId: chief.id })
@@ -6415,14 +6426,14 @@ test('#383: a grant list taken while a merged Revoke runs is not written back (M
   server.tools.revoke_bot_grant = (args) => { listed = listed.filter(grant => grant.id !== args.grant_id); return { ok: true } }
   const batch = await call('flybot/social/revoke-grant', { botId: chief.id, grantId: bob.id, grantIds: bob.grantIds })
   assert.equal(batch.ok, true)
-  listed = listed.filter(grant => grant.id === 'g-3')
+  listed = listed.filter(grant => grant.id === 'g-2' || grant.id === 'g-3')
   for (let n = 0; n < 20; n++) await new Promise(resolve => setTimeout(resolve, 5))
-  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'])
-  // The stale answer (still naming g-1 and g-2) lands after the batch: it must not bring Bob back.
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-2', 'g-3'])
+  // The stale answer (still naming g-1 and g-1b) lands after the batch: it must not bring them back.
   release()
   assert.equal((await loader).ok, true)
   for (let n = 0; n < 20; n++) await new Promise(resolve => setTimeout(resolve, 5))
-  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-3'], 'Bob stays revoked')
+  assert.deepEqual((ctx.flybot.grants.of(chief.id) ?? []).map(grant => grant.id), ['g-2', 'g-3'], "Bob's first Bot stays revoked")
 })
 
 test('#140: respond Auto-send follows the accepted relationship, not the first roster home', async (t) => {
@@ -11256,6 +11267,104 @@ test('#991: a held room line names the room it will go to, so two open rooms are
   assert.match(card, /the room 482913/)
   // `approvalView` keeps its fallback for a card built by an older shape that carries no room.
   assert.equal(approvalView({ approval_id: 'apr-old', kind: 'face_room_message' }).toName, 'the room')
+})
+
+// #995: sharing is per Bot (#973), so People with access has to be too. Two Bot-level grants to one
+// friend were a single row keyed by the person's home, and its Revoke deleted both.
+function perBotGrants() {
+  let grants = [
+    { grant_id: 'g-coder', grantee: { bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' }, relationship_id: 'r1' },
+    { grant_id: 'g-writer', grantee: { bot_id: 'x2', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' }, relationship_id: 'r1' },
+  ]
+  return {
+    listed: () => grants.map(grant => ({ ...grant })),
+    revoke: (grantId) => { grants = grants.filter(grant => grant.grant_id !== grantId); return { grants } },
+    left: () => grants.map(grant => grant.grant_id),
+  }
+}
+
+test('#995: People with access is one row per Bot, and Revoke takes only that row', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const state = perBotGrants()
+  server.tools.list_bot_grants = () => ({ grants: state.listed() })
+  server.tools.revoke_bot_grant = a => state.revoke(a.grant_id)
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0 }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const access = (await call('flybot/social/access', { botId: 'b' })).value
+  // One row per Bot, labelled the way the share list labels it (#973), each carrying its own grant.
+  assert.deepEqual(access.grants.map(row => row.name), ['Coder (Bob)', 'Writer (Bob)'])
+  assert.deepEqual(access.grants.map(row => row.grantIds), [['g-coder'], ['g-writer']])
+  assert.deepEqual(access.grants.map(row => row.handle), ['@coder.bob.home', '@writer.bob.home'])
+  assert.deepEqual(access.grants.map(row => row.home), ['@bob.home', '@bob.home'])
+  // Revoke as the panel does it: that row's grant only. The other Bot keeps its access.
+  const first = access.grants[0]
+  await call('flybot/social/revoke-grant', { botId: 'b', grantId: first.id, relationshipId: first.relationshipId, grantee: first.grantee })
+  assert.deepEqual(state.left(), ['g-writer'], 'one Revoke took one Bot, not the friend')
+  const after = (await call('flybot/social/access', { botId: 'b' })).value
+  assert.deepEqual(after.grants.map(row => row.name), ['Writer (Bob)'])
+})
+
+test('#995: a single-Bot friend is still one row and one Revoke, and a person-level grant keeps its row', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let grants = [{ grant_id: 'g-coder', grantee: { bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' }, relationship_id: 'r1' }]
+  server.tools.list_bot_grants = () => ({ grants })
+  server.tools.revoke_bot_grant = a => { grants = grants.filter(grant => grant.grant_id !== a.grant_id); return { grants } }
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, autoAccept: false, inboxPollMs: 0 }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const one = (await call('flybot/social/access', { botId: 'b' })).value.grants
+  assert.deepEqual(one.map(row => [row.name, row.grantIds]), [['Coder (Bob)', ['g-coder']]])
+  // A grant that names no Bot (an older person-level share) keeps its own row, as #981 decided for the
+  // share list: there is no Bot to name, so it is not merged into a Bot row that might be someone else.
+  grants = [...grants, { grant_id: 'g-person', grantee: '@bob.home', name: 'Bob (@bob.home)', relationship_id: 'r1' }]
+  const both = (await call('flybot/social/access', { botId: 'b' })).value.grants
+  assert.deepEqual(both.map(row => row.name), ['Coder (Bob)', 'Bob (@bob.home)'])
+  assert.equal(both[1].handle, undefined, 'only a per-Bot row names a Bot')
+})
+
+test('#995: the access panel draws one Revoke per Bot, one Auto-send per person, and the Bot handle', async (t) => {
+  const calls = []
+  const row = (id, name, handle, grantId) => ({ id: grantId, grantIds: [grantId], grantee: '@bob.home', name, home: '@bob.home', handle, person: 'Bob', autoSend: false, relationshipId: 'r1', rooms: [] })
+  const payload = {
+    botId: 'b', botName: 'Chief', granted: true, rooms: [],
+    grants: [row('g-coder', 'Coder (Bob)', '@coder.bob.home', 'g-coder'), row('g-writer', 'Writer (Bob)', '@writer.bob.home', 'g-writer')],
+  }
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, body) => {
+    calls.push([endpoint, body])
+    if (endpoint === 'social/access') return payload
+    return { botId: 'b', revoked: body?.grantId, grants: [payload.grants[1]] }
+  })
+  const plugin = pluginOf([payload, '', '', 0])
+  const tree = walk(plugin.ManageAccess({ bot: { id: 'b', name: 'Chief' } }))
+  const rows = tree.filter(node => node.props['data-flybot'] === 'access-grant')
+  assert.equal(rows.length, 2)
+  assert.deepEqual(tree.filter(node => node.props.className === 'fs-name' || node.className === 'fs-name').map(node => node.children?.[0]).filter(value => typeof value === 'string'), ['People with access', 'Coder (Bob)', 'Writer (Bob)'])
+  // Each row carries the Bot's own handle, not the shared home twice.
+  assert.deepEqual(tree.filter(node => node.props.className === 'fs-sub').map(node => node.children?.[0]), ['@coder.bob.home', '@writer.bob.home'])
+  // Auto-send is one setting for the pair: one switch, on the first of the friend's rows.
+  const autos = tree.filter(node => node.props['data-flybot'] === 'access-auto-send')
+  assert.equal(autos.length, 1)
+  assert.ok(rows[0].children.some(node => node?.props?.['data-flybot'] === 'access-auto-send'))
+  assert.equal(rows[1].children.some(node => node?.props?.['data-flybot'] === 'access-auto-send'), false)
+  const revokes = tree.filter(node => node.props['data-flybot'] === 'revoke-grant')
+  assert.equal(revokes.length, 2)
+  await revokes[1].props.onClick()
+  const sent = calls.find(([endpoint]) => endpoint === 'social/revoke-grant')
+  assert.equal(sent[1].grantId, 'g-writer')
+  assert.equal('grantIds' in sent[1], false, 'a one-grant row revokes that grant alone')
 })
 
 // #994: on this deployment `grant_bot_to_friend` answers with the grant id and the status only — no `friend`,

@@ -1364,6 +1364,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   // Per Bot, the grant ids Bot Social confirmed as full shares (`reply_only: false`) at the last sync (#495).
   const confirmedShares = new Map()
+  // Per Bot handle, the name Bot Social gave in the grant list. The host's grants store keeps only
+  // id/grantee/name/relationshipId/roomId, so a per-Bot row cannot read the Bot's own name back from it
+  // (#995); the sync that just listed the grants fills this instead.
+  const botNames = new Map()
   // `only`: one Bot's grants (an open People with access refreshes just that Bot). `roster`: the
   // friends' homes to classify talk-through grants against, when they are newer than `remote`.
   // Resolves true only when every Bot's grants were listed and stored; a failure is warned, not thrown.
@@ -1385,6 +1389,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // the sync as not fresh so a roster refresh withholds unseen Bots (fail closed); the revoke's
         // own refresh lists again once it is done (Codex P1/P2 on #387).
         if (revoking.get(bot.id) || grantEpoch(bot.id) !== epoch) { ok = false; return }
+        for (const grant of listed) {
+          const view = grantPersonView(grant)
+          const handle = norm(view.member)
+          if (!handle || handle === norm(view.home)) continue
+          const botName = typeof grant.botName === 'string' ? grant.botName : ''
+          const ownerName = typeof grant.ownerName === 'string' ? grant.ownerName : ''
+          if (botName || ownerName) botNames.set(handle, { ...(botName ? { bot: botName } : {}), ...(ownerName ? { owner: ownerName } : {}) })
+        }
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
         const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
           const view = grantPersonView(grant)
@@ -2501,21 +2513,26 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const entry = pausedChats.get(norm(handle))
     return { paused: entry ? { reason: entry.reason, at: entry.at } : null }
   }, { read: true }))
-  // People with access is one row per person (#383): two grants of one Bot to the same person
-  // (two invites, joined by two of their Bots) are one row, and its Revoke removes both.
+  // People with access is one row per grant (#383), and one row per Bot since sharing is per Bot
+  // (#995): a friend who runs two Bots used to be a single row, so one Revoke took both grants. A
+  // grant that names a Bot (the member, not the person's home) gets its own row, labelled the way the
+  // share list labels it (`Bot (Owner)`, #973), and its Revoke takes that grant alone. A grant that
+  // names only the person — and #387's unsure talk-through grant — keep the row they had.
   function accessRows(botId, grants) {
     const rows = new Map()
     for (const grant of grants) {
       const view = grantPersonView(grant)
       const home = view.home || grant.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : '')
       const grantee = home || view.member || (typeof grant.grantee === 'string' ? grant.grantee : '')
+      const member = norm(view.member)
+      const perBot = Boolean(member && member !== norm(home))
       // A grant to a Bot shared with us, in a relationship not recorded as joined here, may be a
       // talk-through grant from a join made before that record (#383): it keeps a row of its own, so
       // Revoke on the person's row never takes it along and breaks that chat (Codex P1 on #387).
       // A grant Bot Social confirmed as a full share is never unsure (#495).
       const toInbound = Boolean(settings.inboundBots?.[memberHandleOf(grant.grantee)]) && !confirmedShares.get(botId)?.has(grant.id)
       const unsure = toInbound && !(grant.relationshipId && settings.joinedRelationships?.[grant.relationshipId])
-      const key = unsure ? `grant:${grant.id}` : (norm(grantee) || String(grant.id))
+      const key = unsure ? `grant:${grant.id}` : perBot ? `bot:${member}` : (norm(grantee) || String(grant.id))
       const rooms = roomsUsing(botId, view.member || grant.grantee)
       const row = rows.get(key)
       if (row) {
@@ -2523,12 +2540,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         for (const room of rooms) if (!row.rooms.some(seen => seen.id === room.id)) row.rooms.push(room)
         continue
       }
+      // The Bot's own name is known only from the grant list the sync just read (#995); without it the
+      // row still names the Bot by the handle the grant carries, never two identical person rows.
+      const named = perBot ? botNames.get(member) : undefined
+      const owner = named?.owner || view.person
+      const botLabel = named?.bot ? (owner && owner !== named.bot ? `${named.bot} (${owner})` : named.bot) : ''
+      const personLabel = view.label || (typeof grant.name === 'string' ? grant.name : '')
       rows.set(key, {
         id: grant.id,
         grantIds: [grant.id],
         grantee,
-        name: view.label || (typeof grant.name === 'string' ? grant.name : ''),
+        name: perBot
+          ? botLabel || `${owner || member.replace(/^@/, '').replace(/\.home$/i, '')} (${member})`
+          : personLabel,
         home,
+        ...(perBot ? { handle: member } : {}),
         // Auto-send for this pair (this Bot → that person), shown and changed on the row (#417).
         ...(home ? { person: view.person || home, autoSend: approvalFor(botId, home) === 'auto' } : {}),
         relationshipId: grant.relationshipId,

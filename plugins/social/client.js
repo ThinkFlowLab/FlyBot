@@ -2945,7 +2945,7 @@ window.__ModuleLoader__.load({
     }
 
     const ACCESS_POLL_MS = 5000
-    const ACCESS_NOTE = 'One row per person. Revoke anyone without affecting the rest. Default: nobody, Chief included.'
+    const ACCESS_NOTE = 'One row per Bot. Revoke one without affecting the rest. Default: nobody, Chief included.'
     function ManageAccess({ bot, onGrants }) {
       const [view, setView] = useState(null)
       const [busy, setBusy] = useState('')
@@ -2994,6 +2994,8 @@ window.__ModuleLoader__.load({
         finally { setBusy('') }
       }
       const grants = view?.grants ?? []
+      // One Auto-send switch per person, however many of their Bots are rows (#995).
+      const autoShown = new Set()
       // A room the grant rows already named must not come back under "This room only" (#955).
       const listedRoomIds = grants.flatMap(grant => roomList(grant.rooms).map(row => row.id))
       const roomOnlyUsage = roomHint('only', (view?.rooms ?? []).filter(room => room.origin === 'face-to-face'), listedRoomIds)
@@ -3003,14 +3005,21 @@ window.__ModuleLoader__.load({
         grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
         grants.map((grant) => {
           const grantUsage = roomHint('use', grant.rooms)
+          // Auto-send is one setting for the pair (this Bot → that person), so a friend whose two Bots
+          // are two rows still gets one switch (#995), on the first of their rows.
+          const autoKey = grant.person || grant.home
+          const showAuto = Boolean(grant.home) && !autoShown.has(autoKey)
+          if (showAuto) autoShown.add(autoKey)
           return h('div', { key: grant.id || grant.grantee, className: 'fs-line', 'data-flybot': 'access-grant' },
           h('div', { className: 'fs-col' },
             h('span', { className: 'fs-name' }, grant.name || grant.grantee),
-            grant.home && grant.name && !String(grant.name).includes(grant.home)
-              ? h('span', { className: 'fs-sub' }, grant.home)
-              : null,
+            grant.handle && grant.handle !== grant.home
+              ? h('span', { className: 'fs-sub' }, grant.handle)
+              : grant.home && grant.name && !String(grant.name).includes(grant.home)
+                ? h('span', { className: 'fs-sub' }, grant.home)
+                : null,
             grantUsage ? h('span', { className: 'fs-hint', title: grantUsage.title }, grantUsage.text) : null),
-          grant.home ? h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
+          showAuto ? h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
             h('input', {
               type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
               'aria-label': `Auto-send ${bot.name || 'this Bot'} → ${grant.person || grant.home}`,

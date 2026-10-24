@@ -257,6 +257,18 @@ export function grantPersonView(grant) {
   return { home, member, person, label }
 }
 
+// #995: a per-Bot grant names the Bot, so People with access can name it too. Bot Social sends the
+// grantee as that Bot (handle + display_name + owner_display_name); a server that decorates the handle
+// instead ("Chief@chief.bob.home") still carries the Bot name in front of it.
+function grantBotNames(item, grantee) {
+  const source = [grantee, item?.bot, item?.peer].find(value => value && typeof value === 'object')
+  const pick = value => (typeof value === 'string' ? value.trim() : '')
+  const botName = pick(source?.display_name) || pick(source?.displayName)
+    || (typeof grantee === 'string' ? (grantee.match(/^(.+?)\s*@[^@\s]+$/) ?? [])[1]?.trim() : '')
+  const ownerName = pick(source?.owner_display_name) || pick(source?.ownerName)
+  return { ...(botName ? { botName } : {}), ...(ownerName ? { ownerName } : {}) }
+}
+
 export function normalizeGrant(item) {
   if (!item || typeof item !== 'object') return undefined
   const grantee = item.grantee ?? item.peer ?? item.handle ?? item.home
@@ -269,6 +281,9 @@ export function normalizeGrant(item) {
   const view = grantPersonView({ grantee, name })
   const canonical = view.member || view.home || memberHandleOf(grantee)
   if (!canonical) return undefined
+  // Only a grant that names a Bot (the member, not just the person's home) has a Bot name to show.
+  const perBot = Boolean(view.member && view.member !== view.home)
+  const names = perBot ? grantBotNames(item, grantee) : {}
   return {
     ...(id ? { id: String(id) } : {}),
     // Canonical @handle for core grants.set / normGrantee (not decorated Chief@…).
@@ -276,6 +291,7 @@ export function normalizeGrant(item) {
     ...(view.label ? { name: view.label } : {}),
     ...(view.home ? { home: view.home } : {}),
     ...(view.member ? { member: view.member } : {}),
+    ...names,
     ...(item.relationship_id || item.relationshipId ? { relationshipId: String(item.relationship_id ?? item.relationshipId) } : {}),
     ...(item.room_id || item.roomId ? { roomId: String(item.room_id ?? item.roomId) } : {}),
     // Bot Social says which grants only let the grantee answer (the join's talk-through grant, bot-social
