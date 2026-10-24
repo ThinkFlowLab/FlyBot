@@ -1499,7 +1499,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const who = friendBotTitle(handle)
     return Object.assign(new Error(`${lead}${who} is not shared with your Bots yet, so the message was not delivered. Bot Social told its owner, who can share it with you. Sending again will not help until then.`), { code: 'bot_not_shared' })
   }
+  // The friend's Bot itself stopped existing (its owner removed it): Bot Social answers 404 bot_not_found,
+  // "no such remote bot". Nothing can be delivered, and sending again cannot help until that owner shares a Bot
+  // with us again, so the line names the Bot, says what to do, and is marked not retryable (#954).
+  const isBotGone = error => error?.code === "bot_not_found" || /bot_not_found|no such remote bot/i.test(String(error?.message ?? error))
+  const botGoneError = (handle) => {
+    const key = norm(handle)
+    const who = friendBotTitle(key)
+    const named = who === key ? who : `${who} (${key})`
+    return Object.assign(new Error(`${named} is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.`), { code: "bot_not_found", handle: key, noRetry: true })
+  }
   const mapSendError = (error, handle) => {
+    if (isBotGone(error)) return botGoneError(handle)
     if (isNotShared(error)) return notSharedError(handle, { lead: 'Not delivered: ' })
     if (!isPaused(error)) return error
     // Only steps a FlyBot owner can take (#404), never the Bot Social website. The pause belongs to that
@@ -1510,6 +1521,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // remote-chat host prefixes "Not sent:". Keep the Bot Social tool name out of the UI.
   const userFacingSendError = (error, handle) => {
     if (isPaused(error)) return mapSendError(error)
+    if (isBotGone(error)) return botGoneError(handle)
     // The host prefixes "Not sent:"; the sentence keeps its own capital (a Bot's name).
     if (isNotShared(error)) return notSharedError(handle)
     const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
@@ -1544,7 +1556,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (/timeout|no answer/i.test(blob)) {
       return new Error('Bot Social did not answer. Try again.')
     }
-    const short = (body || raw).slice(0, 100).replace(/\.$/, '')
+    // One "Try again." only: an earlier layer may already have said it (#954), and two reads as a stutter.
+    const short = (body || raw).slice(0, 100).replace(/\.$/, '').replace(/\.?\s*Try again\.?$/i, '').replace(/\.$/, '')
     if (!short || /^[a-z0-9_]+$/i.test(short)) {
       return new Error('the message could not leave. Try again.')
     }
