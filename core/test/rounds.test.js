@@ -182,6 +182,57 @@ test('a message the composer queues mid-round joins the round and leaves the Ses
   assert.deepEqual(inboxOf(room.id).nextTurn, [])
 })
 
+test('a display-only shared line is not logged again and calls no Bot', async (t) => {
+  const { call, emit, relay, stop, sent, rt } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+  const live = rt.state.rooms[room.id]
+  live.log ??= []
+  live.seq ??= 0
+  const before = live.log.length
+  sent.length = 0
+  await rt.showSharedLine(live, {
+    who: 'Alice', text: 'hello @Writer', senderSessionId: '@chief.alice.home', remoteSeq: 4, via: 'war:@chief.alice.home',
+    remote: { handle: '@chief.alice.home', typedBy: 'Alice' },
+  })
+  const posted = sent.find(entry => entry.sessionId === room.id && entry.message.source?.displayOnly === true)
+  assert.ok(posted, 'the line is a followup in the room session')
+  assert.equal(posted.message.source.remote.handle, '@chief.alice.home')
+  assert.equal(posted.message.source.remote.typedBy, 'Alice')
+  assert.match(posted.message.content[0].text, /hello @Writer/)
+  assert.doesNotMatch(posted.message.content[0].text, /untrusted-message/)
+  await emit(room.id, { type: 'user/message', data: { source: posted.message.source, content: posted.message.content } })
+  const result = JSON.parse(await relay(room.id, 'relay-display'))
+  assert.deepEqual(result.replies, [], 'a display-only line opens no round')
+  assert.equal(sent.filter(entry => entry.message.source?.role === 'room').length, 0, 'no Bot is called, not even one the text names')
+  assert.equal(live.log.length, before, 'the line was already logged; the session post does not log it again')
+})
+
+test('a guest Bot\'s reply in a projected room is shown in that room\'s session', async (t) => {
+  const { call, answer, stop, sent, rt } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+  const chief = rt.state.mainBotIds[0]
+  const live = rt.state.rooms[room.id]
+  live.log ??= []
+  live.seq ??= 0
+  live.seen ??= {}
+  live.origin = 'inbound-share'
+  live.sharedFrom = { inviterName: 'Alice', inviterHandle: '@chief.alice.home', remoteRoomId: 'war', localBotId: chief, ticket: 'Tkt0001AbCdEfGhIjKlMnO' }
+  sent.length = 0
+  const running = rt.startInboundTurn({ room: live, botId: chief, seq: 1, who: 'Alice' })
+  const prompt = await turnFor(sent)
+  await answer(prompt.sessionId, prompt.message.source.exchangeId, 'I got it.', 1)
+  const result = await running
+  assert.match(result.text, /I got it/)
+  const shown = sent.find(entry => entry.sessionId === room.id && entry.message.source?.displayOnly === true)
+  assert.ok(shown, 'the reply is in the room session')
+  assert.match(shown.message.content[0].text, /I got it/)
+  assert.equal(shown.message.source.remote, undefined, 'it is this home\'s own Bot')
+  assert.equal(shown.message.source.senderSessionId, chief)
+  assert.equal(live.log.filter(line => String(line.text).includes('I got it.')).length, 1, 'the reply is logged once')
+})
+
 test('#180: another member\'s line is a bubble from that person and starts no Bot turn', async (t) => {
   const { call, emit, relay, stop, sent } = start()
   t.after(stop)

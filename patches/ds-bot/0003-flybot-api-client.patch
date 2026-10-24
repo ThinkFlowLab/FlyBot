@@ -1852,11 +1852,12 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
 diff --git a/src/client/palette.js b/src/client/palette.js
 --- a/src/client/palette.js
 +++ b/src/client/palette.js
-@@ -7,6 +7,7 @@ import { BotAvatar, RoomAvatar } from './mark.js'
+@@ -7,6 +7,8 @@ import { BotAvatar, RoomAvatar } from './mark.js'
  import { useEscape } from './overlay-hooks.js'
  import { QUICK_EDGES, useFlip, useGlide } from './motion.js'
  import { t } from './i18n.js'
 +import { isListedRemoteChat, pickerBotLabel } from '../shared/remote-label.js'
++import { seatedCount } from './group-settings.js'
  
  // Search is a command palette: a 560px dialog, a search header, and 49px
  // rows (24px avatar, title, subtitle). Bots and groups match on name and role; past
@@ -1873,7 +1874,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
      })),
      ...roster.rooms.filter(room => matchesName(room.name)).map(room => ({
 -      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t('{count} members', { count: room.members.length }),
-+      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t(room.members.length === 1 ? '{count} member' : '{count} members', { count: room.members.length }),
++      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t(seatedCount(room) === 1 ? '{count} member' : '{count} members', { count: seatedCount(room) }),
        badge: room.hidden ? t('Hidden') : undefined,
        run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),

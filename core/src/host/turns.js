@@ -433,6 +433,8 @@ export function install(rt) {
             ...(source.human ? { human: source.human } : {}),
             // Shown (and logged) by the round that was running when it arrived (groups.js, #455).
             ...(source.shown === true ? { shown: true } : {}),
+            // Already in the room log; the relay must not append it again or call the Bots it names.
+            ...(source.displayOnly === true ? { displayOnly: true } : {}),
             // The round that was running already called the members this line names (#932).
             ...(source.called === true ? { called: true } : {}),
             ...(source.plain ? { plain: true } : {}),

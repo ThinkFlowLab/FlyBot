@@ -28,7 +28,7 @@ import { failureLine } from './turns.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, faceRoster, isFaceLead } from './face-lead.js'
 import { faceMentions } from './face-mentions.js'
-import { cleanName, stripSessionChips } from './delivery.js'
+import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createDshRoomParticipant } from './room-participant.js'
 
 const ROOM_LOG_MAX = 60
@@ -624,7 +624,7 @@ export function install(rt) {
       // stopped is an event of the round.
       const event = item => item.failed || item.resumed || item.stopped || item.notice || item.botId === 'face-notice'
       // A post a running round already showed and logged when it arrived (#455) is not logged again.
-      for (const post of posts.filter(item => !event(item) && !item.shown)) {
+      for (const post of posts.filter(item => !event(item) && !item.shown && !item.displayOnly)) {
         // Image readings go into the log only; `@` names are picked from what the user typed.
         const text = post.images === undefined ? post.text : [post.text, ...await rt.imagesForGroup(post.images, room.id)].filter(Boolean).join('\n')
         // A face-room line the send path already logged and sent is not logged or sent again (#287).
@@ -738,6 +738,10 @@ export function install(rt) {
     if (typeof reply !== 'string' || reply.trim() === '') return reply
     const posted = appendRoom(room, rt.authoredRoomLine?.(room, { who: member.name, botId, authorId: botId, authorKind: 'bot', text: reply }) ?? { who: member.name, botId, text: reply })
     void rt.save().catch(() => {})
+    // The reply is in the log and on its way back. The pane is this room's Session, which that append does not touch.
+    await rt.showSharedLine?.(room, {
+      who: member.name, text: reply, local: true, senderSessionId: botId, remoteSeq: posted.seq, via: 'local-reply',
+    }).catch(error => rt.warn('ds-bot: a reply in %s was not shown: %s', room.name, error))
     return { seq: posted.seq, text: reply }
   }
 
@@ -843,6 +847,8 @@ export function install(rt) {
   }
 
   function openingSpeakers(room, opener) {
+    // A line already in the log, posted so the pane can draw it. `@` in it is not a new call.
+    if (opener.displayOnly === true) return []
     const everyone = room.members.map(rt.botOf).filter(Boolean)
     const members = everyone.filter(bot => bot.id !== opener.botId)
     const admin = members.find(bot => rt.isAdminOf(room, bot.id))
@@ -914,6 +920,15 @@ export function install(rt) {
   function showInRound(room, sender, text, extra) {
     const round = [...rt.roomProgress.values()].findLast(entry => entry.roomId === room.id)
     if (round === undefined || text === '') return false
+    // Already logged by the share path. Draw it in this round; the later followup is marked shown.
+    if (extra.displayOnly === true) {
+      if (extra.remote?.handle) {
+        round.replies.push({ kind: 'remote', remote: true, botId: sender.id, handle: extra.remote.handle, name: sender.name, text, time: Date.now() })
+      } else if (rt.botOf(sender.id)) {
+        round.replies.push({ botId: sender.id, name: sender.name, color: rt.botOf(sender.id)?.color, text, time: Date.now() })
+      }
+      return true
+    }
     if (extra.human) {
       round.replies.push(personReply(extra.human, text))
       return true
@@ -970,6 +985,23 @@ export function install(rt) {
     await ctx.sessions.flush(agent.session)
   }
   rt.postToRoom = postToRoom
+
+  // A shared-room or ticket-seat line is already in room.log. Put it in the Session so the pane
+  // draws it, without logging it again (that would fan it out) and without opening a round.
+  rt.showSharedLine = async function showSharedLine(room, spec = {}) {
+    const text = unwrapUntrusted(String(spec.text ?? '')).trim()
+    if (!room || text === '') return
+    const local = spec.local === true
+    const handle = typeof spec.remote?.handle === 'string' ? spec.remote.handle : undefined
+    const sender = {
+      id: spec.senderSessionId || handle || 'shared',
+      name: cleanName(spec.who || 'member'),
+    }
+    await postToRoom(room, sender, text, {
+      displayOnly: true,
+      ...(local || !handle ? {} : { remote: { handle, ...(typeof spec.remote.typedBy === 'string' && spec.remote.typedBy ? { typedBy: spec.remote.typedBy } : {}) } }),
+    })
+  }
 
   // A member the round moved on from (it went on working, went quiet or waited for an
   // approval) posts what its turn ended with. The member that asked for it and anyone

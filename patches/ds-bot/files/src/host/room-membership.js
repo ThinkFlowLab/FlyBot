@@ -36,7 +36,7 @@
 import { randomBytes } from 'node:crypto'
 import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
-import { encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
+import { HISTORY_MAX, HISTORY_TEXT, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted, unwrapUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
@@ -1061,6 +1061,99 @@ export function install(rt) {
     return text
   }
 
+  // Chat lines the join copies to a guest. Events (joined, left, notices) are not messages.
+  // A handle is this home's Bot Social identity for a local Bot, or the seat a remote line came from.
+  function shareHistory(room) {
+    const lines = (room.log ?? []).filter(line => !line.kind && line.text)
+    return lines.slice(-HISTORY_MAX).map((line) => {
+      const botId = line.authorKind === 'bot' ? (line.authorId ?? line.botId) : undefined
+      const carried = typeof line.via === 'string' && line.via.startsWith('@') ? line.via : undefined
+      const claimed = typeof line.authorId === 'string' && line.authorId.startsWith('@') ? line.authorId : undefined
+      const own = botId ? state.bots?.[botId]?.fields?.social?.member?.handle : undefined
+      const handle = carried || claimed || own
+      return {
+        who: cleanName(line.who || 'member'),
+        text: seatText(line).slice(0, HISTORY_TEXT),
+        seq: line.seq ?? 0,
+        ...(line.authorKind === 'human' || line.authorKind === 'bot' ? { authorKind: line.authorKind } : {}),
+        ...(line.authorId ? { authorId: String(line.authorId).slice(0, 120) } : {}),
+        ...(typeof handle === 'string' && handle.startsWith('@') ? { handle } : {}),
+      }
+    })
+  }
+
+  // One show per remote line. A redelivery still appends (a second turn is already refused);
+  // it must not draw a second bubble.
+  const SHOWN_KEPT = 200
+  function claimShow(room, key) {
+    if (!key) return true
+    room.shownShare ??= []
+    if (room.shownShare.includes(key)) return false
+    room.shownShare = [...room.shownShare, key].slice(-SHOWN_KEPT)
+    return true
+  }
+
+  // The conversation pane is the room Session. `room.log` only feeds the sidebar preview.
+  // Post the line there once, display-only, so it is not logged again and opens no Bot round.
+  async function showShareLine(room, spec) {
+    if (!room || typeof rt.showSharedLine !== 'function') return
+    const text = unwrapUntrusted(String(spec.text ?? '')).trim()
+    if (!text) return
+    const seq = Number.isFinite(Number(spec.remoteSeq)) ? Number(spec.remoteSeq) : undefined
+    const key = seq === undefined ? undefined : `${spec.via || 'line'}:${seq}`
+    if (!claimShow(room, key)) return
+    try {
+      await rt.showSharedLine(room, { ...spec, text })
+    } catch (error) {
+      rt.warn?.('ds-bot: a shared line was not shown in %s: %s', room.name, error)
+    }
+  }
+
+  // History is stranger-written, like the notice: only this mirror's room, only its inviter.
+  function historyOf(data, room, event) {
+    if (data?.op !== 'join' || !Array.isArray(data.history)) return undefined
+    const bound = room?.sharedFrom ?? {}
+    const same = (a, b) => {
+      const left = String(a ?? '').trim().toLowerCase()
+      return left !== '' && left === String(b ?? '').trim().toLowerCase()
+    }
+    if (bound.remoteRoomId && !same(data.roomId, bound.remoteRoomId)) return undefined
+    if (bound.inviterHome && !same(event?.fromHome, bound.inviterHome)) return undefined
+    if (bound.inviterHandle && !same(event?.fromHandle, bound.inviterHandle)) return undefined
+    return data.history.slice(-HISTORY_MAX).filter(entry => entry && entry.who && entry.text)
+  }
+
+  // Copy those lines into a mirror that has no chat lines yet. No turn: they were already said.
+  async function applyShareHistory(room, entries, event, data) {
+    if (!room || !Array.isArray(entries) || entries.length === 0) return
+    if ((room.log ?? []).some(line => !line.kind && line.text)) return
+    const fromHandle = String(event?.fromHandle ?? '')
+    for (const entry of entries) {
+      const who = cleanPeerName(entry.who, 'a friend')
+      const human = entry.authorKind !== 'bot'
+      const handle = typeof entry.handle === 'string' && entry.handle.startsWith('@') ? entry.handle : fromHandle
+      const authorId = human
+        ? `history#${String(entry.authorId || 'person').slice(0, 40)}`
+        : String(handle || entry.authorId || who).slice(0, 120)
+      append(room, rt.authoredRoomLine(room, {
+        who,
+        text: String(entry.text).slice(0, HISTORY_TEXT),
+        authorId,
+        authorKind: human ? 'human' : 'bot',
+        remote: true,
+        ...(human ? {} : { botId: authorId }),
+      }))
+      await showShareLine(room, {
+        who,
+        text: entry.text,
+        remoteSeq: entry.seq,
+        via: `${data.roomId}:${fromHandle}`,
+        senderSessionId: handle || fromHandle,
+        remote: { handle: handle || fromHandle, ...(human ? { typedBy: who } : {}) },
+      })
+    }
+  }
+
   // #904: one remote participant per roster entry. A roster is the whole list, so an entry it drops is a
   // Bot the host no longer keeps here: it leaves this mirror's list, and nothing of it stays addressable.
   function applyRoster(room, entries) {
@@ -1161,7 +1254,7 @@ export function install(rt) {
           invitedHandle: remote.handle,
           seq: room.seq ?? 0,
           ticket: remote.ticket,
-          ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '' } : {}),
+          ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '', history: shareHistory(room) } : {}),
           ...seat.from,
         }, 'room-share', seat.botId, room.id)
         continue
@@ -1173,7 +1266,7 @@ export function install(rt) {
         name: room.name,
         invitedHandle: remote.handle,
         seq: room.seq ?? 0,
-        ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '' } : {}),
+        ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '', history: shareHistory(room) } : {}),
         ...from,
       }, 'room-share')
     }
@@ -1679,6 +1772,14 @@ export function install(rt) {
       ownerName: ownerNameSafe(seat),
       kind: data.kind === 'message' ? undefined : data.kind,
     }))
+    await showShareLine(room, {
+      who,
+      text: data.text || '',
+      remoteSeq: data.seq,
+      via: seat.handle,
+      senderSessionId: seat.handle,
+      remote: { handle: seat.handle, ...(human ? { typedBy: who } : {}) },
+    })
     await rt.save?.()
     // The other homes in the room see it too; the home it came from already has it.
     void rt.fanoutRoomLine?.(room, posted)
@@ -2163,6 +2264,7 @@ export function install(rt) {
       if (typeof notice === 'string') room.notice = notice
       syncMembers(room)
     }
+    if (data.op === 'join') await applyShareHistory(room, historyOf(data, room, event), event, data)
     let called = []
     if (data.op === 'line') {
       const who = cleanPeerName(data.who || transportName, transportName)
@@ -2182,6 +2284,15 @@ export function install(rt) {
         ...(author.authorKind === 'bot' ? { botId: author.authorId } : {}),
         kind: data.kind === 'message' ? undefined : data.kind,
       }))
+      const speaker = author.authorKind === 'bot' && String(author.authorId).startsWith('@') ? author.authorId : fromHandle
+      await showShareLine(room, {
+        who,
+        text: data.text || '',
+        remoteSeq: data.seq,
+        via: `${data.roomId}:${fromHandle}`,
+        senderSessionId: speaker || fromHandle,
+        remote: { handle: speaker || fromHandle, ...(author.authorKind !== 'bot' ? { typedBy: who } : {}) },
+      })
       // #825: the line names Bots, and one of them is mine. The remote home resolved the call where
       // mentions are resolved, so this side never reads @names out of the text.
       const named = localCalls(room, data.calls)

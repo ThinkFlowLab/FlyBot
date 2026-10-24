@@ -9,7 +9,7 @@ import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
 import { useEscape } from './overlay-hooks.js'
 import { BotSettingsForm, SwitchRow } from './bot-settings.js'
 import { Segmented, useGlide } from './motion.js'
-import { GroupSettingsForm, NewGroupForm } from './group-settings.js'
+import { GroupSettingsForm, NewGroupForm, seatedCount } from './group-settings.js'
 import { CreateBot } from './create-bot.js'
 import { KeyIcon, SecretsPage } from './secret-card.js'
 import { UsagePage } from './usage-page.js'
@@ -158,7 +158,7 @@ function GroupsPage({ roster, actions, run }) {
               h('span', { className: 'bt-set-bot' },
                 h(RoomAvatar, { room, roster, size: 28 }),
                 h('span', { className: 'bt-row-title' }, room.name),
-                h('span', { className: 'bt-tag' }, t('{count} members', { count: room.members.length })),
+                h('span', { className: 'bt-tag' }, t(seatedCount(room) === 1 ? '{count} member' : '{count} members', { count: seatedCount(room) })),
                 admin ? h('span', { className: 'bt-tag bt-tag-admin' }, h(AdminStar), admin.name) : null,
                 room.hidden ? h('span', { className: 'bt-tag' }, t('Hidden')) : null),
               h('span', { className: 'bt-chevron' }, h(ChevronRightIcon)))

@@ -19,6 +19,10 @@ function clip(value, max = 60) {
 export const ROSTER_MAX = 32
 // The group notice's own limit in the room editor (core/src/client/group-settings.js).
 export const NOTICE_MAX = 2000
+// Recent chat lines a join may carry so a guest's mirror is not empty. Absent means don't
+// backfill (an older host); an empty list means the room had no chat lines.
+export const HISTORY_MAX = 20
+export const HISTORY_TEXT = 2000
 
 // #904: a handle is unique only inside its home, so an entry carries the home it belongs to: two homes
 // can keep Bots with the same local name, and a guest has to tell them apart when it attributes a line.
@@ -32,6 +36,20 @@ function rosterEntry(entry = {}) {
   const ownerName = clip(entry.ownerName)
   if (ownerName) out.ownerName = ownerName
   if (!handle) out.connected = false
+  return out
+}
+
+// A chat line the join copies across. Text keeps its line breaks; other control characters go.
+function historyLine(entry = {}) {
+  const who = clip(entry.who)
+  const text = String(entry.text ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '').trim().slice(0, HISTORY_TEXT)
+  if (!who || !text) return undefined
+  const out = { who, text, seq: Number.isFinite(Number(entry.seq)) ? Math.max(0, Math.floor(Number(entry.seq))) : 0 }
+  if (entry.authorKind === 'human' || entry.authorKind === 'bot') out.authorKind = entry.authorKind
+  const authorId = clip(entry.authorId, 120)
+  if (authorId) out.authorId = authorId
+  const handle = clip(entry.handle, 120)
+  if (/^@[A-Za-z0-9._-]{1,120}$/.test(handle)) out.handle = handle
   return out
 }
 
@@ -82,6 +100,10 @@ export function encodeRoomShare(payload = {}) {
   // empty. It is text the room displays, never authority. A present notice is encoded even when empty:
   // empty means the host cleared it, while an absent field means "change nothing" (an older host).
   if (body.op === 'join' && typeof payload.notice === 'string') body.notice = clip(payload.notice, NOTICE_MAX)
+  // Same rule as the roster: a present list is encoded even when empty, an absent field changes nothing.
+  if (body.op === 'join' && Array.isArray(payload.history)) {
+    body.history = payload.history.map(historyLine).filter(Boolean).slice(-HISTORY_MAX)
+  }
   return `${ROOM_SHARE_MARK}\n${JSON.stringify(body)}`
 }
 

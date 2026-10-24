@@ -8,6 +8,7 @@ import { useEscape } from './overlay-hooks.js'
 import { QUICK_EDGES, useFlip, useGlide } from './motion.js'
 import { t } from './i18n.js'
 import { isListedRemoteChat, pickerBotLabel } from '../shared/remote-label.js'
+import { seatedCount } from './group-settings.js'
 
 // Search is a command palette: a 560px dialog, a search header, and 49px
 // rows (24px avatar, title, subtitle). Bots and groups match on name and role; past
@@ -56,7 +57,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
       run: async () => { if (bot.hidden) await actions.setFlags(bot.id, { hidden: false }); actions.openSession(bot.id) },
     })),
     ...roster.rooms.filter(room => matchesName(room.name)).map(room => ({
-      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t(room.members.length === 1 ? '{count} member' : '{count} members', { count: room.members.length }),
+      key: room.id, avatar: h(RoomAvatar, { room, roster, size: 24 }), title: room.name, subtitle: t(seatedCount(room) === 1 ? '{count} member' : '{count} members', { count: seatedCount(room) }),
       badge: room.hidden ? t('Hidden') : undefined,
       run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
     })),

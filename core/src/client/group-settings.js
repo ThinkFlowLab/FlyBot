@@ -93,10 +93,19 @@ export function FaceLead({ room, roster, pick }) {
     error ? h('div', { className: 'bt-set-hint', role: 'alert' }, error) : null)
 }
 
+// Humans, this home's Bots, and remote Bots still seated. The same people the Members card lists.
+export function seatedCount(room) {
+  const live = room?.presentedParticipants ?? room?.participants ?? []
+  const humans = live.filter(p => p.kind === 'human' && p.leftSeq === undefined).length
+  const remotes = live.filter(p => p.remote && p.leftSeq === undefined).length
+  return humans + remotes + (room?.members?.length ?? 0)
+}
+
 export function roomSubtitle(room, roster) {
   if (room.origin === 'face-to-face') return faceRoomCount(room, roster)
   const admin = roster.byId[room.admin]
-  return [t('{count} members', { count: room.members.length }), admin ? t('Admin {name}', { name: admin.name }) : t('No admin')].join(' · ')
+  const count = seatedCount(room)
+  return [t(count === 1 ? '{count} member' : '{count} members', { count }), admin ? t('Admin {name}', { name: admin.name }) : t('No admin')].join(' · ')
 }
 
 // A group chat's settings as grouped cards: its name and notice, who answers, its
@@ -214,7 +223,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
           : null,
       h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
         // The host checks for two members on every change, even a rename.
-        members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
+        members.length + humans.length + remotes.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
           : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
             : t('No admin yet. An admin can call members with @Name, change the group, and post here.'))),
       // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after

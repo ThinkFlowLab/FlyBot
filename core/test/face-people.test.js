@@ -65,6 +65,20 @@ test('another person\'s face-room line is their own received bubble with name an
   assert.equal(find(drawn, node => node.props?.className === 'bt-ubody').length, 0, 'not the sent-bubble style')
 })
 
+test('a shared room\'s subtitle counts remote Bots that are still in the room', () => {
+  const roster = { byId: { 'chief-b': { id: 'chief-b', name: 'Chief' } } }
+  const room = {
+    origin: 'inbound-share', admin: 'chief-b', members: ['chief-b'],
+    participants: [
+      { kind: 'human', id: 'owner', displayName: 'You' },
+      { kind: 'bot', id: 'chief-b' },
+      { kind: 'bot', remote: true, handle: '@chief.alice.home', displayName: 'Chief' },
+      { kind: 'bot', remote: true, handle: '@writer.alice.home', displayName: 'Writer', leftSeq: 3 },
+    ],
+  }
+  assert.equal(roomSubtitle(room, roster), '3 members · Admin Chief')
+})
+
 test('a face room lists people, each with the Bot they brought, named one way', () => {
   const roster = {
     self: { memberId: 'm1', displayName: 'SelfB0333' },

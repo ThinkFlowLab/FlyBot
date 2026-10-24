@@ -500,6 +500,48 @@ test('#899: a room-only identity is promoted for the link it makes and the link 
   assert.equal((await b.rt.previewLocalInvite(invite.url)).joined, true)
 })
 
+test('a ticket seat shows the other home\'s lines in the room session, including lines from before the join', async (t) => {
+  const { a, b, log, settle } = await twoHomes(t)
+  const shown = { a: [], b: [] }
+  for (const home of [a, b]) {
+    const key = home === a ? 'a' : 'b'
+    home.rt.showSharedLine = async (room, spec) => { shown[key].push({ roomId: room.id, ...spec }) }
+  }
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  await a.rt.postRoomMessage('war', { text: 'Before you joined', authorId: 'owner-1', authorKind: 'human', displayName: 'Alice' })
+  await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  await settle()
+
+  const mirror = guestRoomOf(b.rt)
+  assert.ok(mirror, 'the join projected the room')
+  assert.ok(mirror.log.some(entry => String(entry.text).includes('Before you joined')), 'lines from before the join are in the guest log')
+  assert.ok(shown.b.some(item => item.roomId === mirror.id && item.text.includes('Before you joined') && item.remote?.typedBy === 'Alice'), 'and in the guest session')
+  const joins = log.filter(entry => parseRoomShare(entry.text)?.op === 'join')
+  assert.ok(joins.some(entry => parseRoomShare(entry.text).history?.some(line => line.text.includes('Before you joined'))), 'the join carries that history')
+
+  const room = a.rt.state.rooms.war
+  const line = await a.rt.postRoomMessage('war', { text: 'Ship on Friday?', authorId: 'owner-1', authorKind: 'human', displayName: 'Alice' })
+  await a.rt.fanoutRoomLine(room, line)
+  await settle()
+  const guestShows = () => shown.b.filter(item => item.text.includes('Ship on Friday?'))
+  assert.equal(guestShows().length, 1, 'the host line is shown once on the guest')
+  assert.equal(guestShows()[0].remote.typedBy, 'Alice')
+  assert.equal(guestShows()[0].remote.handle, '@chief.alice.home')
+
+  const reply = { who: 'Chief', botId: 'chief-b', authorId: 'chief-b', authorKind: 'bot', text: 'Friday works.', seq: (mirror.seq ?? 0) + 1 }
+  await b.rt.fanoutRoomLine(mirror, reply)
+  await settle()
+  const hostShows = shown.a.filter(item => item.text.includes('Friday works.'))
+  assert.equal(hostShows.length, 1, 'the guest line is shown once on the host')
+  assert.equal(hostShows[0].roomId, 'war')
+  assert.equal(hostShows[0].remote.handle, '@chief.bob.home')
+  assert.equal(hostShows[0].remote.typedBy, undefined, 'a Bot line is the Bot\'s, not a person\'s')
+
+  await a.rt.fanoutRoomLine(room, line)
+  await settle()
+  assert.equal(guestShows().length, 1, 'a redelivery does not show the host line again')
+})
+
 test('#899: a link minted on a room-only Bot is promoted when the host wires the server in', async (t) => {
   const { a } = await twoHomes(t)
   const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
