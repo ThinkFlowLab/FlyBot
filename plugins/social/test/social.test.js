@@ -8904,7 +8904,7 @@ test('#458: a room stays open while two or more people are in it; it closes when
   assert.equal(past?.status, 'closed', 'a real meeting stays in Past rooms')
 })
 
-test('#458: a number nobody uses shows "Nobody is using … yet." with Cancel and Start a room, never a waiting room', async () => {
+test('#999: a code nobody is waiting under says so without claiming nobody uses it, names the invite link, and offers a *new* room', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
   const bots = [{ id: 'a', name: 'Chief', isMain: true }]
@@ -8914,7 +8914,14 @@ test('#458: a number nobody uses shows "Nobody is using … yet." with Cancel an
   const tree = walk(pluginOf(['nobody', bots, ['a'], '111111', false, null, [], held, 0]).FaceToFaceGroup({ onClose: () => closed.push(true) }))
   const box = tree.find(n => n.props['data-flybot'] === 'face-nobody')
   assert.ok(box)
-  assert.ok(tree.some(n => n.children.includes('Nobody is using 111111 yet.')))
+  // #999: `nobody` only means the join answer held no other home — never that the number is unused. A code
+  // whose room already opened answers the same way, so the title must not assert nobody uses it.
+  assert.ok(tree.some(n => n.children.includes('Nobody is waiting under 111111.')), 'the title says nobody is waiting, not that nobody uses the number')
+  assert.equal(tree.some(n => /nobody is using/i.test(JSON.stringify(n.children))), false, 'never claims nobody uses the number (#999)')
+  // The late joiner is told the way in once the room has opened: an invite link.
+  const hint = tree.find(n => n.props?.['data-flybot'] === 'face-nobody').children
+  assert.match(String([].concat(...hint.map(node => node?.children ?? [])).join(' ')), /invite link/i, 'the hint names the invite link (#999)')
+  assert.equal(tree.find(n => n.props['data-flybot'] === 'face-nobody-start').children.join(''), 'Start a new room', 'the button says the room is new (#999)')
   assert.equal(tree.some(n => n.props['data-flybot'] === 'face-wait' || n.props['data-flybot'] === 'face-wait-code'), false)
   await tree.find(n => n.props['data-flybot'] === 'face-nobody-start').props.onClick()
   assert.deepEqual(JSON.parse(JSON.stringify(calls.filter(([endpoint]) => endpoint === 'social/face-join').map(([, payload]) => payload))), [{ code: '111111', botId: 'a', start: true }])
