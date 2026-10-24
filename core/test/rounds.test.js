@@ -1670,3 +1670,122 @@ test('#913: a called member that never answers is reported apart from a member t
   assert.equal((text3.match(/No answer to your @/g) ?? []).length, 1, 'reported once, not twice')
   assert.match(text3, /Stayed silent: Writer\./)
 })
+
+// #932: a Bot's own line that names a member must call it, in the round that is running or on the line
+// itself. Two shapes lost the call: a `post_to_group` line that arrived mid-round (only the bubble was
+// drawn, the call waited for a round after the report), and a late line past ROOM_LATE_ROUNDS whose
+// `quiet` was read before its `@`.
+const botLine = (senderId, name, text, extra = {}) => ({ type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: senderId, senderName: name, ...extra }, content: [{ type: 'text', text }] } })
+
+test('#932: a mid-round Bot line that names a member calls it exactly once, and its re-delivery calls nobody', async (t) => {
+  const env = start()
+  const { call, emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
+  t.after(stop)
+  const room = await team(call, sent)
+  await call('update-room', { id: room.id, mode: 'admin' })
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  const queued = []
+  let busy = true
+  let markIdle
+  const idle = new Promise(resolve => { markIdle = resolve })
+  t.after(() => {
+    busy = false
+    markIdle()
+  })
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async sessionId => sessionId !== room.id ? resolve(sessionId) : ({
+    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: message => queued.push(message) },
+  })
+  sent.length = 0
+  await emit(room.id, userMessage('Plan the release.'))
+  const controller = new AbortController()
+  t.after(() => controller.abort())
+  const running = relay(room.id, 'r932', controller.signal)
+  const turn = await turnFor(sent)
+  assert.equal(turn.sessionId, rt.roomOf(room.id).sessions?.[chief], 'the admin answers first')
+
+  await rt.postToRoom(rt.roomOf(room.id), { id: chief, name: 'Chief' }, '@Writer draft the notes for 0.3.', { late: true, origin: 'other' })
+  const live = [...rt.roomProgress.values()].find(entry => entry.roomId === room.id)
+  assert.equal(live.calls?.length, 1, 'the mention is queued as a call for the round that is running')
+
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'Notes come from Writer.', 1)
+  const called = await turnFor(sent, turn)
+  assert.equal(called?.sessionId, rt.roomOf(room.id).sessions?.[writer], 'Writer is called by the line that named it')
+  assert.match(promptOf(called), /Chief mentioned you/)
+  await answer(called.sessionId, called.message.source.exchangeId, 'Drafting the notes.', 2)
+  JSON.parse(await running)
+  assert.equal(roomTurns(sent).filter(entry => entry.sessionId === rt.roomOf(room.id).sessions?.[writer]).length, 1, 'exactly once, not twice')
+
+  // The held line is delivered once the turn ends, marked as already called in its round: it calls nobody.
+  busy = false
+  markIdle()
+  const redelivered = await waitFor(() => queued[0])
+  assert.equal(redelivered?.source.called, true, 'the re-delivery carries the call it already made')
+  sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', '@Writer draft the notes for 0.3.', { late: true, called: true }))
+  JSON.parse(await relay(room.id, 'r932-again'))
+  assert.equal(roomTurns(sent).length, 0, 'the line that already called Writer does not call it again')
+})
+
+test('#932: a mid-round line calls only named members of the room, never a name outside it and never its sender', async (t) => {
+  const env = start()
+  const { call, emit, userMessage, relay, answer, stop, sent, rt, ctx } = env
+  t.after(stop)
+  const room = await team(call, sent)
+  await call('update-room', { id: room.id, mode: 'admin' })
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  let busy = true
+  let markIdle
+  const idle = new Promise(resolve => { markIdle = resolve })
+  t.after(() => {
+    busy = false
+    markIdle()
+  })
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async sessionId => sessionId !== room.id ? resolve(sessionId) : ({
+    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: () => {} },
+  })
+  sent.length = 0
+  await emit(room.id, userMessage('Plan the release.'))
+  const controller = new AbortController()
+  t.after(() => controller.abort())
+  const running = relay(room.id, 'r932-neg', controller.signal)
+  const turn = await turnFor(sent)
+  await rt.postToRoom(rt.roomOf(room.id), { id: chief, name: 'Chief' }, '@Nobody take this one, @Chief and me will check.', { late: true, origin: 'other' })
+  const live = [...rt.roomProgress.values()].find(entry => entry.roomId === room.id)
+  assert.equal(live.calls, undefined, 'neither a name outside the room nor the sender itself is a call')
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'Nobody then.', 1)
+  JSON.parse(await running)
+  assert.equal(roomTurns(sent).length, 1, 'only the admin spoke')
+})
+
+test('#932: a quiet late line still calls the member it names; an unnamed quiet line calls nobody', async (t) => {
+  const env = start()
+  const { call, emit, relay, answer, stop, sent, rt } = env
+  t.after(stop)
+  const room = await team(call, sent)
+  await call('update-room', { id: room.id, mode: 'admin' })
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  sent.length = 0
+  // Past ROOM_LATE_ROUNDS a late line is quiet; the @Name is still a call.
+  await emit(room.id, botLine(chief, 'Chief', '@Writer check the notes.', { late: true, quiet: true }))
+  const controller = new AbortController()
+  t.after(() => controller.abort())
+  const running = relay(room.id, 'q932', controller.signal)
+  const turn = await turnFor(sent)
+  assert.ok(turn, 'a quiet late line still calls the member it names')
+  assert.equal(turn.sessionId, rt.roomOf(room.id).sessions?.[writer], 'the named member answers, not the admin')
+  await answer(turn.sessionId, turn.message.source.exchangeId, 'Checked.', 1)
+  JSON.parse(await running)
+  assert.equal(roomTurns(sent).length, 1)
+
+  sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', 'Nothing else from me today.', { late: true, quiet: true }))
+  JSON.parse(await relay(room.id, 'q932-quiet', controller.signal))
+  assert.equal(roomTurns(sent).length, 0, 'a quiet line that names nobody calls nobody')
+})

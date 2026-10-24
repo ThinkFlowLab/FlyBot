@@ -665,7 +665,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  
  const ROOM_LOG_MAX = 60
  const ROOM_FIRST_LOOK = 12
-@@ -31,6 +31,10 @@ const ROOM_EXTRA_TURNS = 4
+@@ -31,6 +39,10 @@
  const ROOM_ADMIN_EXTRA_TURNS = 4
  const ROOM_TURNS_EACH = 2
  const ROOM_ADMIN_TURNS_EACH = 4
@@ -676,7 +676,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  
  // Logs written before rooms were versioned get sequence numbers in place.
  const ensureRoomLog = (room) => {
-@@ -41,9 +41,64 @@ const ensureRoomLog = (room) => {
+@@ -41,11 +53,66 @@
    room.seen ??= {}
  }
  
@@ -691,8 +691,8 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +  room.log = [...room.log, stamped].slice(-ROOM_LOG_MAX)
 +  void fanoutRoomLine(room, stamped)
 +  return stamped
-+}
-+
+ }
+ 
 +// One answer per Bot to a person's plain line in a face-to-face room (#295, #456). The room keeps the
 +// line's seq, the Bots that answered it and the turns it asked for; a Bot asked again for the same line
 +// (the line delivered twice, or a turn that went on working and posts late after a second one) passes.
@@ -739,10 +739,12 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +  if (at === -1) return false
 +  postedLines.set(roomId, list.toSpliced(at, 1))
 +  return true
- }
- 
++}
++
  // A member's own lines are already in its Session, so only the others' are news.
-@@ -58,6 +58,9 @@ const lineText = (line) => {
+ const unseenLines = (room, memberId) => {
+   const since = room.seen[memberId]
+@@ -58,6 +125,9 @@
    if (line.kind === 'resumed') return `[${line.who}'s work here was cut off when DeepSeek Harness restarted; it is picking it back up and posts when done]`
    if (line.kind === 'cut') return `[${line.who}'s work here was cut off by a restart again, so it stopped; ask it to go on if it still matters]`
    if (line.kind === 'stopped') return `[The user stopped ${line.who}'s work here]`
@@ -752,7 +754,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    return `${line.who}: ${line.text}`
  }
  const transcript = lines => lines.map(lineText).join('\n')
-@@ -86,6 +86,11 @@ export const referenceNote = references => (references?.length
+@@ -86,6 +156,11 @@
    : '')
  
  const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
@@ -764,7 +766,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -100,52 +100,138 @@ const slotLabel = (slot) => {
+@@ -100,52 +175,138 @@
    return slot.name
  }
  
@@ -930,7 +932,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      const lines = unseenLines(room, member.id)
      const earlier = lines.filter(line => line.seq < round.startSeq).slice(-ROOM_EARLIER_MAX)
      const current = lines.filter(line => line.seq >= round.startSeq)
-@@ -153,14 +153,9 @@ export function install(rt) {
+@@ -153,14 +314,9 @@
      const index = round.slots.findIndex(slot => slot.status === 'speaking')
      const before = index
      const after = round.slots.length - index - 1
@@ -946,7 +948,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
        current.length
          ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${transcript(current)}`
-@@ -169,90 +169,27 @@ export function install(rt) {
+@@ -169,90 +325,27 @@
        working.length > 0 ? `Still at work on what they were asked; each posts here when done: ${working.map(item => `${item.bot.name} (${minutesSince(item.since)} min)`).join(', ')}.` : '',
        `Speaking order for this round: ${round.slots.map(slotLabel).join(' → ')}.`,
        `You are number ${index + 1} of ${round.slots.length}. ${before === 0 ? 'Nobody spoke before you' : `${before} went before you`}${after === 0 ? ', and you are the last.' : `; ${after} after you will see your message.`}`,
@@ -1044,7 +1046,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        const waiting = round.slots.findIndex((other, at) => at > index && other.id === peer.id && other.status === 'waiting')
        const called = waiting === -1 ? { id: peer.id, name: peer.name, status: 'waiting' } : round.slots.splice(waiting, 1)[0]
        called.note = note
-@@ -285,34 +285,120 @@ export function install(rt) {
+@@ -285,34 +378,138 @@
    // Session's inbox, so it does not open another round when this one ends. Returns
    // the number of turns added, which the round's limit allows for.
    function drainRoomInbox(room, round, turns, index, agent) {
@@ -1154,15 +1156,33 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +  }
 +  const originOfPosts = posts => posts.reduce((verdict, post) => combine(verdict, postOrigin(post)), undefined)
 +
++  // A member's own line that arrived while this round ran named other members (#932): the call happens here,
++  // inside this round and under the same cap, instead of waiting for the held post to open a round of its own.
++  // Returns the number of turns added, which the round's limit allows for.
++  function drainMidCalls(room, round, turns, index) {
++    const calls = round.calls?.splice(0) ?? []
++    if (calls.length === 0) return 0
++    const before = round.slots.length
++    for (const call of calls) {
++      const callees = call.callees.filter(bot => room.members.includes(bot.id))
++      if (callees.length === 0) continue
++      const leads = rt.isAdminOf(room, call.by)
++      const uncapped = new Set(callees.filter(bot => rt.isAdminOf(room, bot.id)).map(bot => bot.id))
++      callMembers(round, turns, index - 1, callees, `${call.name} mentioned you`, leads ? ROOM_ADMIN_TURNS_EACH : ROOM_TURNS_EACH, call.by, uncapped)
++    }
++    return round.slots.length - before
++  }
++
    async function runRound(room, round, signal, agent) {
      let limit = round.slots.length + ROOM_EXTRA_TURNS + (room.admin ? ROOM_ADMIN_EXTRA_TURNS : 0)
      const turns = new Map()
      // The inbox check keeps a message sent during the last speaker's turn inside
      // this round: it drains at the loop's head even once the slots ran out.
 -    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0) && round.turns < limit; index += 1) {
-+    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(room, round)) && round.turns < limit; index += 1) {
++    for (let index = 0; (index < round.slots.length || (round.calls?.length ?? 0) > 0 || waitingLines(agent).length > 0 || fallbackDue(room, round)) && round.turns < limit; index += 1) {
        if (signal.aborted) break
        limit += drainRoomInbox(room, round, turns, index, agent)
++      limit += drainMidCalls(room, round, turns, index)
 +      // Everyone passed on the owner's own plain line: the first Bot that passed answers, so the user is never ignored (#299).
 +      if (index >= round.slots.length && fallbackDue(room, round)) {
 +        const first = round.slots.find(slot => slot.status === 'passed' || slot.status === 'missed')
@@ -1173,7 +1193,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        if (index >= round.slots.length) break
        const slot = round.slots[index]
        const member = rt.botOf(slot.id)
-@@ -321,6 +321,13 @@ export function install(rt) {
+@@ -321,6 +518,13 @@
          slot.status = 'left'
          continue
        }
@@ -1187,7 +1207,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        slot.status = 'speaking'
        round.speaking = member.id
        round.turns += 1
-@@ -339,7 +339,13 @@ export function install(rt) {
+@@ -339,7 +543,13 @@
        const prompt = roomPrompt(room, member, round)
        round.shown?.push(member.id)
        const text = session.brief === undefined ? prompt : `${session.brief}\n\n${prompt}`
@@ -1202,7 +1222,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        round.speaking = null
        if (reply?.failure !== undefined) {
          // Not a pass: the user sees why the member is silent, and the round goes on.
-@@ -366,9 +366,18 @@ export function install(rt) {
+@@ -366,9 +576,18 @@
          if (reply?.missed) round.replies.push({ kind: 'missed', botId: member.id, name: member.name, color: member.color, time: Date.now() })
          continue
        }
@@ -1223,7 +1243,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        void rt.save().catch(() => {})
        // Only the admin's "@all" calls everyone, so a member cannot set off a storm.
        const leads = rt.isAdminOf(room, member.id)
-@@ -377,7 +377,11 @@ export function install(rt) {
+@@ -377,7 +596,11 @@
        const { all, found: named } = mentionsIn(reply, everyone)
        const found = named.filter(other => other.id !== member.id)
        const callees = leads && all ? [...found, ...others.filter(other => !found.includes(other))] : found
@@ -1236,7 +1256,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      }
    }
  
-@@ -397,38 +397,45 @@ export function install(rt) {
+@@ -397,38 +620,45 @@
        rt.roomInbox.delete(room.id)
        const posts = queued.length > 0 ? queued : [{ text: '' }]
        const startSeq = room.seq + 1
@@ -1259,11 +1279,10 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -      if (posts.some(post => !post.botId && !post.kickoff)) {
 -        room.botRounds = 0
 -        room.lateRounds = 0
--      }
 +        // A face-room line the send path already logged and sent is not logged or sent again (#287).
 +        if (!post.botId && takePosted(room.id, post.text)) continue
 +        logPost(room, post, text)
-+      }
+       }
 +      if (posts.some(post => !post.botId)) room.lateRounds = 0
        await rt.save()
 -      // An event post never picks the speakers over a message queued with it.
@@ -1303,7 +1322,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
          speaking: null,
          turns: 0,
          replies: [],
-@@ -436,6 +436,7 @@ export function install(rt) {
+@@ -436,6 +666,7 @@
          failed: [],
          started: [],
        }
@@ -1311,7 +1330,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        for (const post of posts.filter(item => item.failed)) {
          const bot = rt.botOf(post.botId)
          const { code, status, message } = post.failed
-@@ -450,17 +450,25 @@ export function install(rt) {
+@@ -450,17 +681,25 @@
          appendRoom(room, { who: name, botId: post.botId, kind, text: '' })
          round.replies.push({ kind, botId: post.botId, name, color: bot?.color, time: Date.now() })
        }
@@ -1338,7 +1357,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        }
        await rt.save()
        for (const post of posts) {
-@@ -471,6 +471,37 @@ export function install(rt) {
+@@ -471,6 +710,37 @@
      },
    }))
  
@@ -1376,7 +1395,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // Private context enters a group only through this tool, and the group sees each use.
    ctx.tools.register(defineTool({
      name: 'read_own_chat',
-@@ -539,7 +539,9 @@ export function install(rt) {
+@@ -539,7 +809,9 @@
        const { room, error } = rt.pickRoom(args.group, self)
        if (error) return error
        ensureRoomLog(room)
@@ -1387,7 +1406,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        return lines.length === 0 ? `"${room.name}" has no messages yet.` : `Latest in "${room.name}" (oldest first):\n${transcript(lines)}`
      },
    }))
-@@ -548,25 +548,138 @@ export function install(rt) {
+@@ -548,25 +820,151 @@
    // the admin answers alone in admin mode, or first of everyone. What a member posts
    // after its round moved on is answered by the member that asked for it; work the
    // user asked for is left for the user to read.
@@ -1418,15 +1437,21 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      const members = everyone.filter(bot => bot.id !== opener.botId)
      const admin = members.find(bot => rt.isAdminOf(room, bot.id))
 -    if (opener.kickoff) return admin ? [admin] : []
+-    if (opener.quiet) return []
 +    // A friend's own typed line that @-calls Bots here (#287): only those Bots answer. The caller
 +    // resolved the names and only passes lines the server attests as typed by that person.
 +    if (opener.callIds?.length > 0) return members.filter(bot => opener.callIds.includes(bot.id))
 +    // A friend's own attested plain line (or their @all): this home's Bots answer too (#295). The caller only
 +    // sets `plain` on lines the server attests as typed by that person; a Bot's line never does.
 +    if (opener.plain && isFaceRoom(room)) return plainSpeakers(members, admin)
-     if (opener.quiet) return []
++    // An event post (a member's failure, stop or resume notice) opens no round, and a line a running round
++    // already called (#932) is not called again when it is re-delivered after that round.
++    if (isEvent(opener) || opener.called === true) return []
      const { all, found: named } = mentionsIn(opener.text, everyone, opener.references)
      const found = named.filter(bot => bot.id !== opener.botId)
++    // A quiet line still calls the member it names (#932): `quiet` caps how far a line spreads when nobody
++    // is named (a late round past ROOM_LATE_ROUNDS), it never swallows a name that was written.
++    if (opener.quiet) return found
      if (opener.late) return found.length > 0 ? found : members.filter(bot => bot.id === opener.askedBy)
 +    // Face-to-face, the room's own person typing (#167, #287): @Name, the label the picker shows
 +    // ("Friend's Chief") or a handle picks that local Bot; a line to a friend's Bot starts none
@@ -1500,6 +1525,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    const posted = logPost(room, { botId: sender.id, name: sender.name }, text)
 +    void rt.save().catch(() => {})
 +    round.replies.push({ botId: sender.id, name: sender.name, color: rt.botOf(sender.id)?.color, text, time: Date.now(), ...(posted?.seq === undefined ? {} : { seq: posted.seq }) })
++    // The members this line names are called by the round that is running (#932): drawing the bubble alone
++    // left them uncalled until the held post opened a round after the report. `called` keeps the re-delivery
++    // of the held post from calling them a second time.
++    const callees = mentionsIn(text, room.members.map(rt.botOf).filter(Boolean)).found.filter(bot => bot.id !== sender.id)
++    if (callees.length > 0) {
++      round.calls = [...(round.calls ?? []), { by: sender.id, name: sender.name, callees }]
++      extra.called = true
++    }
 +    return true
 +  }
 +  function holdPost(room, agent, sender, text, extra) {
@@ -1528,7 +1561,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        source: { kind: SOURCE_KIND, form: 'relay', role: 'post', exchangeId: randomUUID(), senderName: sender.name, senderSessionId: sender.id, roomId: room.id, hop: 0, ...extra },
      }))
      await ctx.sessions.flush(agent.session)
-@@ -577,17 +577,24 @@ export function install(rt) {
+@@ -577,17 +975,24 @@
    // approval) posts what its turn ended with. The member that asked for it and anyone
    // it names answer; past the late round limit nobody does, so late posts cannot keep a
    // group talking.
@@ -1555,7 +1588,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        .catch(error => rt.warn('ds-bot: late group reply from %s failed: %s', member.name, error))
    }
    rt.lateRoomReply = lateRoomReply
-@@ -599,9 +599,8 @@ export function install(rt) {
+@@ -599,9 +1004,8 @@
      const room = rt.roomOf(roomId)
      const member = rt.botOf(botId)
      const sessionId = room?.sessions?.[botId]
@@ -1567,7 +1600,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      await postToRoom(room, member, '', { quiet: true, stopped: true })
      return true
    }
-@@ -615,25 +615,15 @@ export function install(rt) {
+@@ -615,37 +1019,42 @@
      const member = rt.botOf(owner?.botId)
      if (room === undefined || member === undefined || !room.members.includes(member.id)) return
      const { code, status, message } = failure
@@ -1597,7 +1630,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    async function reportRound(room, post, round) {
      const lines = round.replies.filter(reply => reply.kind === undefined).map(reply => `${reply.name}: ${reply.text}`)
      const waiting = round.replies.filter(reply => reply.kind === 'approval').map(reply => reply.name)
-@@ -641,11 +641,26 @@ export function install(rt) {
+     const working = round.replies.filter(reply => reply.kind === 'working').map(reply => reply.name)
 +    // A turn that ended without a line: a pass, or no reply at all. A member the round's line named
 +    // and that ended this way was addressed and did not answer — not the same thing as a member that
 +    // read the line and had nothing to add (#913). `addressed` is the person's line, `by` the member
@@ -1626,7 +1659,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        .catch(error => rt.warn('ds-bot: group report to %s failed: %s', post.name, error))
    }
  
-@@ -665,7 +665,7 @@ export function install(rt) {
+@@ -665,7 +1074,7 @@
        // message from the user, a scheduled task, or a Bot's post after the last model or
        // tool step starts a relay.
        const opens = message => message.role === 'user'

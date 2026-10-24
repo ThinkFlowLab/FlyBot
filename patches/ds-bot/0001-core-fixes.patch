@@ -4113,7 +4113,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
-@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
+@@ -24,7 +25,7 @@
  // A group's own Session never reaches a model, so the snapshot DSH prepared there
  // rides with the user's queued message to the members who answer it.
  export function attachReference(queued, source, text) {
@@ -4122,7 +4122,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -51,9 +51,10 @@ export function install(rt) {
+@@ -51,9 +52,10 @@
  
    // The retry goes where the turn's trigger came from: a group round's waiter or a
    // Bot's request keeps its exchange; anything else is a nudge in the Bot's own chat.
@@ -4134,7 +4134,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,13 +70,13 @@ export function install(rt) {
+@@ -70,13 +72,13 @@
      })
    }
  
@@ -4150,7 +4150,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const roomInbox = new Map()
    const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
    // Member turns of a group round the user stopped: what they end with stays out of the group.
-@@ -162,17 +162,30 @@ export function install(rt) {
+@@ -162,17 +164,30 @@
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -4182,7 +4182,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +196,33 @@ export function install(rt) {
+@@ -196,7 +211,33 @@
      return merged
    }
  
@@ -4217,7 +4217,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const workView = () => {
      const bots = {}
      for (const [id, entry] of live) {
-@@ -204,7 +204,9 @@ export function install(rt) {
+@@ -204,7 +245,9 @@
        const owner = rt.groupOwners.get(id)
        const botId = owner?.botId ?? rt.chatOwners.get(id)
        if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
@@ -4228,7 +4228,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      }
      return bots
    }
-@@ -221,6 +221,7 @@ export function install(rt) {
+@@ -221,6 +264,7 @@
          botId: owner.botId,
          since: entry.since,
          ...(entry.tool ? { tool: entry.tool } : {}),
@@ -4236,7 +4236,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -238,6 +238,45 @@ export function install(rt) {
+@@ -238,6 +282,45 @@
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
@@ -4282,7 +4282,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -266,6 +266,7 @@ export function install(rt) {
+@@ -266,6 +349,7 @@
        case 'tool/call': {
          const name = String(event.data?.name ?? '')
          startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
@@ -4290,7 +4290,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A program is as quick as the tools it runs, so its sub-calls decide.
          if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
          break
-@@ -288,11 +288,17 @@ export function install(rt) {
+@@ -288,11 +372,17 @@
          entry.since = event.time ?? Date.now()
          entry.texts = []
          entry.info = undefined
@@ -4308,7 +4308,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (entry.pending !== undefined) {
            claimTrigger(id, entry, entry.pending)
            entry.pending = undefined
-@@ -300,6 +300,14 @@ export function install(rt) {
+@@ -300,6 +390,14 @@
          break
        case 'user/message': {
          const source = event.data?.source
@@ -4323,7 +4323,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,14 +331,21 @@ export function install(rt) {
+@@ -331,14 +429,23 @@
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -4331,6 +4331,8 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +            ...(source.human ? { human: source.human } : {}),
 +            // Shown (and logged) by the round that was running when it arrived (groups.js, #455).
 +            ...(source.shown === true ? { shown: true } : {}),
++            // The round that was running already called the members this line names (#932).
++            ...(source.called === true ? { called: true } : {}),
 +            ...(source.plain ? { plain: true } : {}),
 +            ...(source.everyone ? { everyone: true } : {}),
 +            ...(Array.isArray(source.callIds) && source.callIds.length > 0 ? { callIds: source.callIds.filter(id => typeof id === 'string') } : {}),
@@ -4347,7 +4349,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          } else if (source?.kind === SOURCE_KIND) {
            if (entry.turn === undefined) entry.pending = source
            else if (!opened) claimTrigger(id, entry, source)
-@@ -363,12 +363,15 @@ export function install(rt) {
+@@ -363,12 +470,15 @@
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
                .filter(block => block?.type === 'image' && !block.offloaded).map(block => block.attachment)
@@ -4368,7 +4370,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              delete state.questions[id]
              void rt.save().catch(() => {})
            }
-@@ -386,11 +386,17 @@ export function install(rt) {
+@@ -386,11 +496,17 @@
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -4386,7 +4388,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -399,11 +399,14 @@ export function install(rt) {
+@@ -399,11 +515,14 @@
          entry.since = undefined
          entry.tool = undefined
          entry.calls = undefined
@@ -4401,7 +4403,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (switched) break
          // A model that writes its tool call as text ends the turn as if it were done,
          // though nothing ran. It gets one more turn on the same trigger, so a waiting
-@@ -411,7 +411,8 @@ export function install(rt) {
+@@ -411,7 +530,8 @@
          // the call.
          const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
          const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
@@ -4411,7 +4413,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +419,15 @@ export function install(rt) {
+@@ -419,6 +539,15 @@
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
@@ -4427,7 +4429,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
-@@ -434,6 +434,7 @@ export function install(rt) {
+@@ -434,6 +563,7 @@
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -4435,7 +4437,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,6 +446,7 @@ export function install(rt) {
+@@ -446,6 +576,7 @@
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -4443,7 +4445,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
-@@ -460,14 +460,14 @@ export function install(rt) {
+@@ -460,14 +591,14 @@
            } else if (!stopped && reason?.kind !== 'aborted') {
              // The round moved on without this member; how its turn ends still reaches the group.
              if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
@@ -4460,7 +4462,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,6 +488,7 @@ export function install(rt) {
+@@ -488,6 +619,7 @@
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
@@ -4468,7 +4470,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              deferred: true,
            }).catch(error => rt.warn('ds-bot: deferred request delivery failed: %s', error))
          }
-@@ -496,5 +496,15 @@ export function install(rt) {
+@@ -496,6 +628,16 @@
      }
    })
  
@@ -4485,6 +4487,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +
 +  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
  }
+ 
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
 +++ b/src/host/usage.js

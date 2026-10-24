@@ -477,14 +477,32 @@ export function install(rt) {
   }
   const originOfPosts = posts => posts.reduce((verdict, post) => combine(verdict, postOrigin(post)), undefined)
 
+  // A member's own line that arrived while this round ran named other members (#932): the call happens here,
+  // inside this round and under the same cap, instead of waiting for the held post to open a round of its own.
+  // Returns the number of turns added, which the round's limit allows for.
+  function drainMidCalls(room, round, turns, index) {
+    const calls = round.calls?.splice(0) ?? []
+    if (calls.length === 0) return 0
+    const before = round.slots.length
+    for (const call of calls) {
+      const callees = call.callees.filter(bot => room.members.includes(bot.id))
+      if (callees.length === 0) continue
+      const leads = rt.isAdminOf(room, call.by)
+      const uncapped = new Set(callees.filter(bot => rt.isAdminOf(room, bot.id)).map(bot => bot.id))
+      callMembers(round, turns, index - 1, callees, `${call.name} mentioned you`, leads ? ROOM_ADMIN_TURNS_EACH : ROOM_TURNS_EACH, call.by, uncapped)
+    }
+    return round.slots.length - before
+  }
+
   async function runRound(room, round, signal, agent) {
     let limit = round.slots.length + ROOM_EXTRA_TURNS + (room.admin ? ROOM_ADMIN_EXTRA_TURNS : 0)
     const turns = new Map()
     // The inbox check keeps a message sent during the last speaker's turn inside
     // this round: it drains at the loop's head even once the slots ran out.
-    for (let index = 0; (index < round.slots.length || waitingLines(agent).length > 0 || fallbackDue(room, round)) && round.turns < limit; index += 1) {
+    for (let index = 0; (index < round.slots.length || (round.calls?.length ?? 0) > 0 || waitingLines(agent).length > 0 || fallbackDue(room, round)) && round.turns < limit; index += 1) {
       if (signal.aborted) break
       limit += drainRoomInbox(room, round, turns, index, agent)
+      limit += drainMidCalls(room, round, turns, index)
       // Everyone passed on the owner's own plain line: the first Bot that passed answers, so the user is never ignored (#299).
       if (index >= round.slots.length && fallbackDue(room, round)) {
         const first = round.slots.find(slot => slot.status === 'passed' || slot.status === 'missed')
@@ -834,9 +852,14 @@ export function install(rt) {
     // A friend's own attested plain line (or their @all): this home's Bots answer too (#295). The caller only
     // sets `plain` on lines the server attests as typed by that person; a Bot's line never does.
     if (opener.plain && isFaceRoom(room)) return plainSpeakers(members, admin)
-    if (opener.quiet) return []
+    // An event post (a member's failure, stop or resume notice) opens no round, and a line a running round
+    // already called (#932) is not called again when it is re-delivered after that round.
+    if (isEvent(opener) || opener.called === true) return []
     const { all, found: named } = mentionsIn(opener.text, everyone, opener.references)
     const found = named.filter(bot => bot.id !== opener.botId)
+    // A quiet line still calls the member it names (#932): `quiet` caps how far a line spreads when nobody
+    // is named (a late round past ROOM_LATE_ROUNDS), it never swallows a name that was written.
+    if (opener.quiet) return found
     if (opener.late) return found.length > 0 ? found : members.filter(bot => bot.id === opener.askedBy)
     // Face-to-face, the room's own person typing (#167, #287): @Name, the label the picker shows
     // ("Friend's Chief") or a handle picks that local Bot; a line to a friend's Bot starts none
@@ -910,6 +933,14 @@ export function install(rt) {
     const posted = logPost(room, { botId: sender.id, name: sender.name }, text)
     void rt.save().catch(() => {})
     round.replies.push({ botId: sender.id, name: sender.name, color: rt.botOf(sender.id)?.color, text, time: Date.now(), ...(posted?.seq === undefined ? {} : { seq: posted.seq }) })
+    // The members this line names are called by the round that is running (#932): drawing the bubble alone
+    // left them uncalled until the held post opened a round after the report. `called` keeps the re-delivery
+    // of the held post from calling them a second time.
+    const callees = mentionsIn(text, room.members.map(rt.botOf).filter(Boolean)).found.filter(bot => bot.id !== sender.id)
+    if (callees.length > 0) {
+      round.calls = [...(round.calls ?? []), { by: sender.id, name: sender.name, callees }]
+      extra.called = true
+    }
     return true
   }
   function holdPost(room, agent, sender, text, extra) {

@@ -433,6 +433,8 @@ export function install(rt) {
             ...(source.human ? { human: source.human } : {}),
             // Shown (and logged) by the round that was running when it arrived (groups.js, #455).
             ...(source.shown === true ? { shown: true } : {}),
+            // The round that was running already called the members this line names (#932).
+            ...(source.called === true ? { called: true } : {}),
             ...(source.plain ? { plain: true } : {}),
             ...(source.everyone ? { everyone: true } : {}),
             ...(Array.isArray(source.callIds) && source.callIds.length > 0 ? { callIds: source.callIds.filter(id => typeof id === 'string') } : {}),
