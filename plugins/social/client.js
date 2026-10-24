@@ -2977,6 +2977,9 @@ window.__ModuleLoader__.load({
           setView(await call('social/revoke-grant', { botId: bot.id, grantId: grant.id, ...((grant.grantIds ?? []).length > 1 ? { grantIds: grant.grantIds } : {}), relationshipId: grant.relationshipId, grantee: grant.grantee }))
           const next = await call('social/access', { botId: bot.id })
           setView(next)
+          // The roster cache is being rebuilt from here; a share list read that started before this
+          // point saw the old roster, so it must not replace the list (#984).
+          shareListEpoch += 1
         } catch (e) { setError(errorText(e)) }
         finally { setBusy('') }
       }
@@ -3137,18 +3140,32 @@ window.__ModuleLoader__.load({
 
     // #500: share this Bot with an existing friend (no invite link). Lists friends who do not
     // already have it; one click each. Invite links for new people stay above.
+    // #984: the share list is read on a timer and can race a revoke, which drops the roster cache
+    // on the host side. A read is dated with the revoke epoch it started in, so a read that
+    // straddled a revoke is dropped instead of overwriting the list the revoke left behind.
+    let shareListEpoch = 0
+
     function ShareWithFriend({ bot }) {
       useStyles()
       const [friends, setFriends] = useState(null)
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
+      const readSeq = useRef(0)
       const load = async () => {
         if (!bot?.id) return
+        const seq = ++readSeq.current
+        const epoch = shareListEpoch
         try {
           const next = await call('social/share-friends', { botId: bot.id })
+          // A newer read started, or a revoke settled while this one was in flight: its answer is
+          // about a roster that no longer exists, so it is dropped, never written (#984).
+          if (readSeq.current !== seq || shareListEpoch !== epoch) return
           setFriends(Array.isArray(next?.friends) ? next.friends : [])
+          setNote(previous => (previous?.tone === 'error' ? null : previous))
         } catch (e) {
-          setFriends([])
+          if (readSeq.current !== seq || shareListEpoch !== epoch) return
+          // Keep the rows a successful read established: a failed read established nothing, so the
+          // card says it failed and offers a retry instead of claiming nobody is left (#984).
           setNote({ tone: 'error', text: errorText(e) })
         }
       }
@@ -3189,7 +3206,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-name' }, 'Share with a friend'),
         h('div', { className: 'fs-hint' }, `One click shares ${bot.name || 'this Bot'} with someone you already know. No invite link. They can decline; you can Revoke in People with access.`),
         loading ? h('div', { className: 'fs-hint' }, 'Loading friends…') : null,
-        !loading && list.length === 0
+        !loading && list.length === 0 && note?.tone !== 'error'
           ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
           : null,
         list.map(friend => h('div', { key: friendKey(friend), className: 'fs-line', 'data-flybot': 'share-friend-row' },
@@ -3206,7 +3223,10 @@ window.__ModuleLoader__.load({
             'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
             onClick: () => { void share(friend) },
           }, busy === friendKey(friend) ? 'Sharing…' : 'Share'))),
-        note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text) : null)
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text,
+          note.tone === 'error'
+            ? h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, 'Try again')
+            : null) : null)
     }
 
     // A friend chat Bot Social paused (#404): a quiet notice, no buttons. There is no turn limit and

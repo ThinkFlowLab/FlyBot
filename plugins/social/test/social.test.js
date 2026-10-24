@@ -10781,3 +10781,158 @@ test('#968: the social dock reads the shared predicate, not only the flag it use
   const retryableTree = walk(pluginOf([[], [retryable], '']).ChatApprovalDock({ bot: friend, roster }))
   assert.ok(retryableTree.some(node => node.props['data-flybot'] === 'hold-retry'), 'a retryable failure keeps Retry')
 })
+
+// #984: a stateful mini-renderer for the sharing panels. One bundle instance is evaluated per host
+// (as in the app, so module state such as the revoke epoch is shared), and each mounted component
+// gets its own hook store through a current-store dispatcher. `useState` re-renders for real, the
+// 5 s polls are captured instead of waited on, and effects run once — enough to drive a failed or
+// racing `social/share-friends` read without a browser or a fake clock.
+function sharingHost(call) {
+  const registered = []
+  const polls = []
+  const sandbox = {
+    window: { __ModuleLoader__: { load: r => registered.push(r) } },
+    setTimeout, clearTimeout, console,
+    setInterval: fn => { polls.push(fn); return { unref() {} } },
+    clearInterval: () => {},
+    document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } },
+  }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: { ...props, children: children.flat() } })
+  sandbox.__flybot__.BotAvatar = () => h('span', { 'data-flybot': 'bot-avatar' })
+  sandbox.__flybot__.BotMark = () => h('span', { 'data-flybot': 'bot-mark' })
+  sandbox.__flybot__.RoomInvitePreview = () => h('div', null)
+  sandbox.__flybot__.invitePreviewOf = () => null
+  sandbox.__flybot__.inviteCountdown = () => ''
+  sandbox.__flybot__.canRetry = () => true
+  let store = null
+  const hooks = {
+    createElement: h,
+    Fragment: 'F',
+    useState: init => store.useState(init),
+    useRef: value => store.useRef(value),
+    useMemo: fn => fn(),
+    useEffect: fn => store.useEffect(fn),
+  }
+  const plugin = registered[0].factory(() => hooks)
+  const all = (node, out = []) => { if (node && typeof node === 'object') { out.push(node); for (const child of node.props?.children ?? []) all(child, out) } return out }
+  const text = node => (typeof node === 'string' ? node : (node?.props?.children ?? []).map(text).join(''))
+  const mount = (component, props) => {
+    const self = { hook: 0, states: [], refs: [], effects: [], tree: null }
+    const pollStart = polls.length
+    const render = () => { const previous = store; store = self; self.hook = 0; self.tree = plugin[component](props); store = previous }
+    self.useState = (init) => {
+      const i = self.hook++
+      if (!(i in self.states)) self.states[i] = typeof init === 'function' ? init() : init
+      return [self.states[i], value => {
+        self.states[i] = typeof value === 'function' ? value(self.states[i]) : value
+        render()
+      }]
+    }
+    self.useRef = (value) => { const i = self.hook++; if (!(i in self.refs)) self.refs[i] = { current: value }; return self.refs[i] }
+    self.useEffect = (fn) => { const i = self.hook++; if (!(i in self.effects)) self.effects[i] = fn }
+    render()
+    for (const fn of [...self.effects]) { const previous = store; store = self; fn?.(); store = previous }
+    const nodes = () => all(self.tree)
+    const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0)) }
+    return {
+      nodes,
+      text: () => text(self.tree),
+      settle,
+      // One poll tick of this panel, exactly what the 5 s timer does.
+      poll: () => polls[pollStart]?.(),
+      click: async (name) => {
+        const node = nodes().find(n => n.type === 'button' && n.props?.['data-flybot'] === name)
+        if (!node) throw new Error(`no ${name} button`)
+        await node.props.onClick()
+      },
+      has: name => nodes().some(n => n.props?.['data-flybot'] === name),
+    }
+  }
+  return { mount, polls }
+}
+
+const shareCoder = { home: '@bob.home', handle: '@coder.bob.home', name: 'Coder (Bob)', peerBotId: 'pb-coder' }
+
+test('#984: a failed share-friends read keeps the rows and never claims nobody is left', async () => {
+  let fail = false
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') {
+      if (fail) throw new Error('social/share-friends: no answer from Bot Social')
+      return { friends: [shareCoder] }
+    }
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  assert.ok(panel.has('share-friend-row'), 'the first successful read draws the row')
+  fail = true
+  panel.poll()
+  await panel.settle()
+  assert.ok(panel.has('share-friend-row'), 'a failed read keeps the rows the last success established (#984)')
+  assert.equal(panel.has('share-with-friend-empty'), false, 'a failed read must not claim nobody is left (#984)')
+  assert.match(panel.text(), /no answer from Bot Social/, 'the failure is said out loud')
+  assert.ok(panel.has('share-list-retry'), 'and there is a way to retry')
+})
+
+test('#984: a first successful read that returns zero rows still says nobody is left', async () => {
+  const host = sharingHost(async (endpoint) => (endpoint === 'social/share-friends' ? { friends: [] } : {}))
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  assert.ok(panel.has('share-with-friend-empty'), 'a successful empty read keeps the empty sentence reachable')
+  assert.equal(panel.has('share-friend-row'), false)
+  assert.equal(panel.has('share-list-retry'), false, 'no error, no retry')
+})
+
+test('#984: a read that a newer read overtook is dropped, not written back', async () => {
+  const pending = []
+  let reads = 0
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint !== 'social/share-friends') return {}
+    reads += 1
+    if (reads === 1) return new Promise(resolve => pending.push(resolve))
+    if (reads === 2) return new Promise(resolve => pending.push(resolve))
+    return { friends: [shareCoder] }
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  panel.poll() // read #2 starts while #1 is still in flight
+  await panel.settle()
+  pending[1]({ friends: [shareCoder] })
+  await panel.settle()
+  assert.ok(panel.has('share-friend-row'), 'the newer read lands')
+  pending[0]({ friends: [] }) // the older read answers last with a stale empty list
+  await panel.settle()
+  assert.ok(panel.has('share-friend-row'), 'the overtaken read is dropped (#984)')
+  assert.equal(panel.has('share-with-friend-empty'), false)
+})
+
+test('#984: a share-list read that straddled a revoke is dropped, not written', async () => {
+  const pending = []
+  let reads = 0
+  let grants = [{ id: 'g1', grantee: '@bob.home', home: '@bob.home', name: 'Bob' }]
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') {
+      reads += 1
+      if (reads === 1) return { friends: [shareCoder] }
+      return new Promise(resolve => pending.push(resolve))
+    }
+    if (endpoint === 'social/access') return { grants }
+    if (endpoint === 'social/revoke-grant') { grants = []; return { grants: [] } }
+    return {}
+  })
+  const share = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await share.settle()
+  share.poll() // a read starts here
+  await share.settle()
+  const access = host.mount('ManageAccess', { bot: { id: 'b', name: 'Writer' } })
+  await access.settle()
+  await access.click('revoke-grant')
+  await access.settle()
+  pending.at(-1)({ friends: [] }) // answers with the roster the revoke just invalidated
+  await share.settle()
+  assert.ok(share.has('share-friend-row'), 'a read taken across the revoke does not empty the card (#984)')
+  assert.equal(share.has('share-with-friend-empty'), false)
+})
