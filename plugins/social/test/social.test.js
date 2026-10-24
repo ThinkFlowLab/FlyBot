@@ -2180,6 +2180,33 @@ test('a paused conversation explains the pause with steps a FlyBot owner can tak
   await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), /paused that chat .*Send your message again/)
 })
 
+test('#954: a line to a Bot that no longer exists says one sentence, once, and is not retryable', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'bot_not_found', message: 'no such remote bot' }) }] } }), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const error = await social.sendChat({ handle: '@coder.bob.home', text: 'one more line' }).then(() => null, e => e)
+  assert.equal(error?.message, 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.')
+  assert.equal(error?.noRetry, true, 'the host draws no Retry for it')
+  assert.doesNotMatch(error.message, /no such remote bot|Try again/)
+  // The transport a Bot's reply uses says the same thing, not the server's wording.
+  const viaBot = await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'reply' }).then(() => null, e => e)
+  assert.match(viaBot?.message ?? '', /^Coder \(Bob\) \(@coder\.bob\.home\) is no longer shared with you, so messages to it cannot be delivered\. Ask its owner for a new invite\.$/)
+  assert.equal(viaBot?.noRetry, true)
+})
+
 test('sendChat failures are short English with a next step', async (t) => {
   const { ctx, stop } = await team()
   t.after(stop)
@@ -3703,6 +3730,18 @@ test('#52: a failed local hold reads Not sent with its error and offers Retry', 
   assert.ok(retry, 'Retry is offered')
   await retry.props.onClick()
   assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide').map(([, payload]) => [payload.id, payload.decision]), [['f1', 'retry']])
+})
+
+test('#954: a failed hold that can never succeed offers no Retry', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const friend = { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' } }
+  const roster = { bots: [friend] }
+  const hold = { id: 'f2', kind: 'outbound_message', source: 'local', status: 'failed', retry: false, error: 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.', from: 'Chief', to: '@coder.bob.home', toName: 'Bob', text: 'x' }
+  const tree = walk(pluginOf([[], [hold], '']).ChatApprovalDock({ bot: friend, roster }))
+  const card = tree.find(node => node.props['data-flybot'] === 'chat-approval')
+  assert.equal(card?.props['data-state'], 'failed')
+  assert.ok(tree.some(node => node.props['data-flybot'] === 'hold-error' && node.children.includes(hold.error)))
+  assert.equal(tree.some(node => node.props['data-flybot'] === 'hold-retry'), false, 'no Retry on a failure that cannot succeed')
 })
 
 test('#126: a face-room hold shows in that chat with a readable name', () => {
