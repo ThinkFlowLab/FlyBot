@@ -1,12 +1,14 @@
-# Release runbook: the fork publishes, upstream follows
+# Release runbook: the release pull request merges upstream, and the tag follows it
 
-Every version is published twice: the fork `Birfy/FlyBot` cuts it, and upstream `ThinkFlowLab/FlyBot`
-is fast-forwarded to the fork's `main` and gets the same release. The second half needs the ruleset
-that protects upstream `main` switched off for a moment, so it is one window per version — never a
-second one later, and never a window that moves `main` without the tag.
+Every version is one pull request on `ThinkFlowLab/FlyBot`, opened from a branch on the current
+`main`, and it lands the way every other pull request lands: through the merge queue. The tag goes on
+that pull request's **merge commit**, and pushing the tag starts the `Release` workflow there, which
+publishes the release and its four assets. Nothing is published from the fork, and nothing requires
+the protection on `main` to be switched off for a moment: there is no window in this flow.
 
-This page is the sequence, written down so a run does not depend on the Bot that ran it last. The
-read-only half is a script: `node .github/scripts/upstream-sync.mjs --check`.
+This page is the sequence, written down so a run does not depend on the Bot that ran it last.
+`#1004` (v0.2.6, 2026-10-24) is the worked example of all of it: a release PR opened upstream, merged
+through the queue, tagged on its merge commit.
 
 **The token.** Every command below reads `$TOKEN`, opened once as:
 
@@ -15,156 +17,97 @@ export TOKEN=${DSH_SECRET_GITHUB_TOKEN:-$GITHUB_TOKEN}
 ```
 
 On a Bot box `GITHUB_TOKEN` is unset and the secret is `DSH_SECRET_GITHUB_TOKEN`; a `Bearer
-$GITHUB_TOKEN` there sends an empty string and every read answers 401 (or 404 on the ruleset, which
-`--check` then reports as unreadable). Whichever variable answers has to carry **admin on
-`ThinkFlowLab/FlyBot`** — the CI token does not, and it reads the ruleset as 404.
+$GITHUB_TOKEN` there sends an empty string and every read answers 401. Whichever variable answers has
+to carry write access to **contents and pull requests on `ThinkFlowLab/FlyBot`** — that is what
+creates the branch, the pull request and the tag. The ruleset is never touched, so no admin scope is
+needed.
 
 **The tools.** This box has `node` and no `curl` and no `jq` (`command -v curl jq` is empty), and
-`git push` to `github.com:443` dies with `GnuTLS recv error (-110)`. So the reads and the three
-window calls below are `node --input-type=module -e` snippets against `api.github.com`, not `curl`
-pipelines: copy-paste has to work on the machine the runbook is for.
+`git push` to `github.com:443` dies with `GnuTLS recv error (-110)`. So the branch, the pull request
+and the tag are written through `api.github.com` with `node --input-type=module -e` snippets, not
+`git` and not `curl`: copy-paste has to work on the machine the runbook is for. `gh` may not be
+installed, or may die on a certificate it does not know; where a command below names `gh`, the REST
+request beside it is the same call.
 
 ## The six steps, in this order
 
-1. The release pull request lands on the fork and `main`'s `Test` is green.
-2. The tag goes on the **release commit**, not on the tip.
-3. The fork's `Release` workflow produces the four assets; check the sha256 of each.
-4. Re-run the dry-run and its five gates.
-5. Open the window: `PUT` the ruleset to disabled → fast-forward with `force: false` → restore in
-   `finally` and read the ruleset back.
-6. Create the release upstream and upload the same asset bytes.
-
-Why the tag goes on the release commit: the workflow checks the tag out and repacks. A tag on a
-later `main` publishes different bytes under the same version number — the same version twice, with
-two answers, which is worse than a missing release. Every version leaves the fork ahead again once
-the next pull requests land, so this repeats with every version; that is why the window is tied to
-the version, not to the merge.
-
-## Preflight: the reads
-
-Nothing here writes. The first two are the script, the third saves the ruleset the restore is
-compared against.
-
-```sh
-export TOKEN=${DSH_SECRET_GITHUB_TOKEN:-$GITHUB_TOKEN}
-
-# both mains, ahead_by/behind_by, and the ruleset row — exit 0 only when it is already the state a
-# restore has to produce, so before the window it exits nonzero with the distance still printed
-node .github/scripts/upstream-sync.mjs --check
-
-# the third read: the commits the fast-forward would carry, oldest first
-node .github/scripts/upstream-sync.mjs --commits
-```
-
-```sh
-# the ruleset as it is now — this file is what the restore is compared against
-TOKEN="$TOKEN" node --input-type=module -e '
-import { writeFileSync } from "node:fs"
-const h = { authorization: `Bearer ${process.env.TOKEN}`, accept: "application/vnd.github+json" }
-const r = await fetch("https://api.github.com/repos/ThinkFlowLab/FlyBot/rulesets/25173372", { headers: h })
-if (r.status !== 200) { console.error(`cannot read the ruleset: HTTP ${r.status}`); process.exit(1) }
-const j = await r.json()
-writeFileSync("ruleset-25173372.before.json", JSON.stringify(j, null, 2) + "\n")
-console.log(`enforcement=${j.enforcement} bypass_actors=${(j.bypass_actors || []).length} current_user_can_bypass=${j.current_user_can_bypass}`)
-'
-```
-
-The dry-run's five gates (upstream `main` is still the commit the last sync left, that commit is an
-ancestor of the fork's, the tagged commit is reached by the fast-forward, the four assets reproduce
-digest for digest, upstream has no tag and no release for this version yet) are the release
-routine's own script. Re-run it here: a window opened on a stale reading is the failure this
-preflight exists to prevent.
-
-## The window
-
-One window, and the restore in a `finally` so no failure path can leave `main` unprotected. Run it as
-one block: a half-run window is the incident.
+1. Cut the version on a branch from the current `main`: `CHANGELOG.md`, `core/package.json`,
+   `core/package-lock.json`, the version patch under `patches/ds-bot/`, and the `changelog.d/`
+   fragments that went into the section, deleted. Push the branch through the API and open the pull
+   request **upstream** with its `Owner:` / `Reviewer:` lines and a `Fixes #<n>` line.
+2. A Reviewer reads the tip and writes one conclusion, `Verdict: PASS at <tip>`. The mechanical
+   release exception (below) covers the approval, but not this line: `enqueue-guard` refuses a head
+   with no `Verdict:` naming it.
+3. **Release enqueues its own pull request.** `node .github/scripts/enqueue-guard.mjs --pr <n>`
+   re-reads the live head and prints the command, already pinned to the tip it read:
+   `gh pr merge --auto --squash --match-head-commit <tip>`. Where `gh` is not usable, the same call is
+   `PUT /repos/ThinkFlowLab/FlyBot/pulls/<n>/merge` with the body
+   `{"merge_method":"squash","sha":"<tip>"}`. `main` requires the merge queue, so this enqueues the
+   pull request, and a plain squash merge is refused — do not retry, and do not push a ref to `main`
+   (the ruleset refuses that too).
+4. Read back that it entered: `isInMergeQueue` on the pull request, and a `merge_group` run on the
+   entry. The four required checks run again inside the queue.
+5. When it merges, read the **merge commit** `C` from the pull request (`merge_commit_sha`). The tag
+   goes on `C`, never on the tip.
+6. Tag `C` and let the workflow publish:
 
 ```sh
 export TOKEN=${DSH_SECRET_GITHUB_TOKEN:-$GITHUB_TOKEN}
-node --input-type=module -e '
-import { readFileSync } from "node:fs"
-const [T, UP, FORK, ID] = [process.env.TOKEN, "ThinkFlowLab/FlyBot", "Birfy/FlyBot", "25173372"]
-const call = async (method, path, body) => {
-  const r = await fetch("https://api.github.com" + path, {
-    method,
-    headers: { authorization: `Bearer ${T}`, accept: "application/vnd.github+json", "content-type": "application/json" },
-    body: body && JSON.stringify(body),
-  })
-  return { status: r.status, json: await r.json().catch(() => null) }
-}
-const snap = JSON.parse(readFileSync("ruleset-25173372.before.json", "utf8"))
-// only the writable fields, copied from the snapshot: nothing but enforcement can drift
-const body = (enforcement) => ({ name: snap.name, target: snap.target, enforcement, bypass_actors: snap.bypass_actors, conditions: snap.conditions, rules: snap.rules })
-try {
-  const fork = (await call("GET", `/repos/${FORK}/git/ref/heads/main`)).json.object.sha
-  const off = await call("PUT", `/repos/${UP}/rulesets/${ID}`, body("disabled"))
-  console.log("disabled ->", off.status, off.json?.enforcement)
-  if (off.status !== 200 || off.json?.enforcement !== "disabled") throw new Error("the window never opened; nothing was pushed")
-  const mv = await call("PATCH", `/repos/${UP}/git/refs/heads/main`, { sha: fork, force: false })
-  console.log("fast-forward ->", mv.status, mv.json?.object?.sha)
-  if (mv.status !== 200) throw new Error(`the push was refused: HTTP ${mv.status}`)
-} finally {
-  // restore on every path, including a thrown error, and never leave main unprotected
-  const on = await call("PUT", `/repos/${UP}/rulesets/${ID}`, body("active"))
-  console.log("restore ->", on.status, on.json?.enforcement)
-}
+TOKEN="$TOKEN" VERSION=0.2.6 COMMIT="$C" node --input-type=module -e '
+const h = { authorization: `Bearer ${process.env.TOKEN}`, accept: "application/vnd.github+json", "content-type": "application/json" }
+const body = { ref: `refs/tags/v${process.env.VERSION}`, sha: process.env.COMMIT }
+const r = await fetch("https://api.github.com/repos/ThinkFlowLab/FlyBot/git/refs", { method: "POST", headers: h, body: JSON.stringify(body) })
+console.log("tag ->", r.status, (await r.json().catch(() => ({}))).ref)
+if (r.status !== 201) process.exit(1)
 '
 ```
 
-**A ruleset update is `PUT`. `PATCH` returns 404 every time.** It reads like "no such ruleset" and
-it is not: the same `GET` right before answered 200.
+Pushing the tag starts `release.yml` on that commit. It waits for a green `Test` run on the tagged
+commit, checks the tag against `core/package.json` (`check-release-version.mjs`), packs the four
+assets, and creates the release from the `CHANGELOG.md` section for that version. Read it back before
+reporting: the tag's commit is `C`, four assets are attached, `latest` is this version, and
+`core/package.json` on `main` carries it.
 
-### The post-check: the restore is verified, not assumed
+A tag on a later `main` would publish different bytes under the same version number — the same
+version twice, with two answers, which is worse than a missing release. That is why the tag target is
+the merge commit of the release pull request and nothing else, and why `check-release-version.mjs`
+reads the tag's own commit instead of the branch head: never tag a tip that is not the release commit.
 
-```sh
-export TOKEN=${DSH_SECRET_GITHUB_TOKEN:-$GITHUB_TOKEN}
-# the one command that proves the restore: it exits nonzero when main is left unprotected
-node --input-type=module -e '
-const h = { authorization: `Bearer ${process.env.TOKEN}`, accept: "application/vnd.github+json" }
-const r = await fetch("https://api.github.com/repos/ThinkFlowLab/FlyBot/rulesets/25173372", { headers: h })
-const j = await r.json()
-const state = { enforcement: j.enforcement, bypass_actors: (j.bypass_actors || []).length, current_user_can_bypass: j.current_user_can_bypass }
-console.log(JSON.stringify(state))
-process.exit(r.status === 200 && state.enforcement === "active" && state.bypass_actors === 0 && state.current_user_can_bypass === "never" ? 0 : 1)
-'
+## The mechanical release exception, as it works now
 
-# and the whole picture, including both mains
-node .github/scripts/upstream-sync.mjs --check
-```
+The release pull request is mechanical (#1004 is the shape): `CHANGELOG.md`, `core/package.json`,
+`core/package-lock.json`, `patches/ds-bot/0007-version-and-tooling.patch`, and the deletion of the
+`changelog.d/` fragments that moved into the new section. Nothing else — no source, no docs, no
+workflow.
 
-Do not close the window on "it printed `active`" alone — a restore that wrote a different body also
-prints `active`, which is why the assertion covers the bypass list and `current_user_can_bypass` too,
-and why `--check` rereads the ruleset instead of trusting the window's own output.
+For that shape there is no human approval to wait for: the controller's `risk:T3` is covered by the
+standing approval in `AGENTS.md`, and the gate is the same as any other pull request's — every
+required check green on the tip plus **one** `Verdict:` naming that tip. **Release enqueues its own
+pull request** (step 3), reads the entry back, and after the merge tags the merge commit (step 6)
+instead of a tip. If a file outside that list changes, it is not a mechanical release and takes the
+ordinary path.
 
-## The write path, and the permission it needs
+## When the queue kicks the entry, or refuses it
 
-From a Bot box the write path is the REST API: `PATCH /repos/{owner}/{repo}/git/refs/heads/main`
-with the token in `authorization`, as above. `api.github.com` answers; `git push` to `github.com`
-does not (`GnuTLS recv error (-110)`), and `gh` dies on `x509: certificate signed by unknown
-authority`. That is why the calls above are `node`, and why the release window never depends on a
-shell tool that is not installed.
+The merge is the new failure surface: the queue builds a `merge_group` entry and can fail a check
+there that was green on the tip, in which case the entry is dropped and the pull request stays open.
 
-The token needs **admin on `ThinkFlowLab/FlyBot`** to touch the ruleset and the ref. Without it the
-ref update answers `403`, and the ruleset endpoints answer `404` — GitHub reports a resource the
-token may not administer as missing. So a 404 on a ruleset the preflight just read is a permission
-answer, not a deletion; `--check` prints `ruleset 25173372 cannot be read: HTTP 404` and names the id
-for exactly this reason.
+1. Read which check failed on the **entry** (`merge_group` run on the queue branch), not on the tip.
+   A known timing-flaky test is not a defect of this pull request: `#1004` lost its first entry to
+   `core/test/follow-through.test.js` (`settle` reported `condition not reached`), and the same head
+   passed after a re-enqueue.
+2. Re-enqueue the same head once, and read the entry back. Do not push a new tip to "fix" a queue
+   failure the tip does not have — a new tip voids the `Verdict:` and costs a second full review.
+3. If the entry is refused instead of failed (`merge-gate` names the reason: no `Fixes #<n>`, no
+   `Owner:`/`Reviewer:` lines, a missing `agent-pr`, a `hold`, a stale conclusion), fix the pull
+   request, not the queue: a body fix needs a fresh `Verdict:` only when the head changes.
+4. If the same entry fails twice on a real check, stop and report to the Chief with the run url and
+   the failing job — a release that cannot merge is not fixed by a third enqueue.
 
-## When the push fails after the disable
-
-Restore first, diagnose second. The window must never outlive the attempt:
-
-1. Run the restore call, then the post-check. If the post-check fails, say so loudly and do not retry
-   the push — an unprotected `main` is the incident, a late release is not.
-2. Only then read the push's error. `422` from the ref update means the fork's `main` is no longer a
-   descendant of upstream's (someone else pushed, or the fork moved); `403` means the token is not
-   admin. Neither is fixed by `force: true`.
-3. Report to the Chief with the two SHAs, the `compare` numbers and the ruleset row, and stop.
-
-**Stop rule:** if the fast-forward ancestry no longer holds — `ahead_by`/`behind_by` do not describe
-one straight line from upstream's `main` to the fork's — do not guess and do not force. Stop and
-report.
+There is no restore step and no clock: nothing was switched off, so a failed merge leaves `main`
+exactly as protected as it was. A ref push to `main` cannot happen any more either — the queue
+ruleset requires the merge queue — so a fast-forward is not an operation this flow has. Do not
+disable the ruleset to get a release out; the tag step does not need it.
 
 ## Reading the two red runs
 
@@ -175,9 +118,15 @@ name, which is the lock; a run that failed a step is a release problem. `cancel`
 in progress, so it does nothing for either of these. Both stay red until the lock lifts; re-run them
 then, and do not delete a release or a tag to make the picture look clean.
 
-## One window per version
+## Historical: the fork published before v0.2.5
 
-The window exists because upstream `main` has `bypass_actors: []` and `current_user_can_bypass:
-never` — a deliberate owner decision, not a defect to route around. That protection is worth more
-than the ceremony it costs, so the ceremony is written down here instead of loosened: for each
-version, one window, both the fast-forward and the tag, and the release created inside it.
+Until `v0.2.5` a version was published twice: the fork `Birfy/FlyBot` cut it, and upstream was
+fast-forwarded to the fork's `main` inside a short ruleset window (one window per version), then
+released upstream with the same four assets. That flow needed the protection on `main` switched off
+and a read-back proving the restore; `node .github/scripts/upstream-sync.mjs --check` and
+`--commits` were its dry run, and `Birfy/FlyBot` was the publishing step rather than an archive.
+
+It is **not** part of publishing today: no step disables a ruleset, no ref push to `main` happens,
+and `upstream-sync.mjs` is no longer part of the routine. Nothing in this file instructs a window;
+if `upstream-sync.mjs` is still in the tree, it is dead code for whoever removes it, not a step to
+run.
