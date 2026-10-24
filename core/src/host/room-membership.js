@@ -1757,6 +1757,22 @@ export function install(rt) {
     await rt.save()
   }
 
+  // Who may be shown as a line's author (#909). A handle is a claim the payload makes, so it is shown only
+  // when it can be traced here: the transport sender itself, a remote seat this room holds, or its inviter.
+  // Anything else is shown as the sender (a Bot), marked unverified. A non-handle id is a person or a Bot of
+  // the other home (#873): this side never resolves those, so the claim stands as it did before.
+  function verifiedAuthor(data, room, event) {
+    const claim = typeof data.authorId === 'string' ? data.authorId : ''
+    const kind = data.authorKind === 'bot' ? 'bot' : 'human'
+    const sender = String(event.fromHandle ?? '')
+    if (!claim) return sender ? { authorId: sender, authorKind: 'bot' } : { authorId: undefined, authorKind: 'human' }
+    if (!claim.startsWith('@')) return { authorId: claim, authorKind: kind }
+    const traced = claim === sender
+      || currentParticipants(room).some(p => p.remote === true && (p.handle === claim || p.id === claim))
+      || room.sharedFrom?.inviterHandle === claim
+    return traced ? { authorId: claim, authorKind: kind } : { authorId: sender || claim, authorKind: 'bot', unverified: true }
+  }
+
   function inboundOf(remoteRoomId, inviterHome, inviterHandle) {
     return Object.values(state.rooms || {}).find((room) => {
       if (room.origin !== 'inbound-share') return false
@@ -1802,11 +1818,11 @@ export function install(rt) {
   rt.applyInboundRoomShare = async function applyInboundRoomShare(event = {}, actor) {
     const data = parseRoomShare(event.text)
     if (!data) return undefined
-    // The envelope names the person who invited; the event names the Bot that carried the line here (#873).
-    // Prefer the envelope for the identity, and keep the transport only as the fallback, so the room reads
-    // "Shared room from Alice" rather than after the sender's Bot.
-    const fromHandle = data.inviterHandle || event.fromHandle
-    const fromHome = data.inviterHome || event.fromHome
+    // The transport names the Bot that delivered this, and that is the only identity this side can check:
+    // the envelope's inviter fields are display (#873 keeps its "Shared room from Alice"), never the gate
+    // that decides which room a share may touch (#909).
+    const fromHandle = String(event.fromHandle ?? '')
+    const fromHome = String(event.fromHome ?? '')
     const fromName = cleanPeerName(data.inviterName || event.fromName, 'a friend')
     // A chat line is attributed to its speaker (`who`) and otherwise to the sender, never to the inviter:
     // this fix is about the room's identity, not about who wrote inside it.
@@ -1827,16 +1843,16 @@ export function install(rt) {
     // A line for a room of mine from someone it does not seat is dropped: it must not open a copy here.
     const mine = rt.roomOf(String(data.roomId ?? ''))
     if (data.op === 'line' && mine && mine.origin !== 'inbound-share' && !isFaceRoom(mine)) return { handled: true, refused: 'not-seated' }
+    // Matched by the transport only (#909): a share that names a room of mine while arriving from a home
+    // that room does not belong to is refused, not merged in through a fallback lookup.
     let room = inboundOf(data.roomId, fromHome, fromHandle)
     if (!room) {
-      // A share recorded before this fix stores the transport's identity, so the envelope's home would not
-      // match it and the same remote room would fork into a second `inbound-share` room. Match the values
-      // the room already has as well; the envelope still wins for what gets recorded.
-      const storedHome = event.fromHome || ''
-      const storedHandle = event.fromHandle || ''
-      if ((storedHome && storedHome !== fromHome) || (storedHandle && storedHandle !== fromHandle)) {
-        room = inboundOf(data.roomId, storedHome, storedHandle)
-      }
+      const claimed = Object.values(state.rooms || {}).find(record => record.origin === 'inbound-share'
+        && String(record.sharedFrom?.remoteRoomId) === String(data.roomId))
+      if (claimed) return { handled: true, refused: 'not-inviter', room: claimed }
+      // Only a join projects a room here. A line for a remote room nobody shared with this home used to
+      // create one, named from its own payload (#909).
+      if (data.op !== 'join') return { handled: true, refused: 'unknown-room' }
     }
     const ticket = typeof data.ticket === 'string' && TICKET_SHAPE.test(data.ticket) ? data.ticket : undefined
     // #884: a join that says it comes through a link is one this home claimed: that inviter, that room,
@@ -1870,8 +1886,8 @@ export function install(rt) {
       room = await rt.recordInboundSharedRoom({
         name: data.name,
         inviterName: fromName,
-        inviterHome: fromHome,
-        inviterHandle: fromHandle,
+        inviterHome: fromHome || undefined,
+        inviterHandle: fromHandle || undefined,
         invitedHandle: data.invitedHandle,
         localBotId,
         ownerId,
@@ -1906,6 +1922,8 @@ export function install(rt) {
         }
       }
       if (data.name) room.name = cleanPeerName(data.name, room.name)
+      // The name is display and follows the envelope (#873); the identity follows the transport, so this
+      // path can never rewrite whose room it is (#909).
       room.sharedFrom = {
         ...room.sharedFrom,
         inviterName: fromName,
@@ -1920,14 +1938,19 @@ export function install(rt) {
     if (data.op === 'line') {
       const who = cleanPeerName(data.who || transportName, transportName)
       const hop = Number.isFinite(Number(data.hop)) ? Math.max(0, Math.floor(Number(data.hop))) : 0
+      // The author claim follows the same rule (#909): a handle this room cannot trace — to the transport
+      // sender, to one of its own remote seats, or to its inviter — is shown as the Bot that carried the
+      // envelope, never as that handle. The line itself is kept: a forged claim must not silence a message.
+      const author = verifiedAuthor(data, room, event)
       const posted = append(room, rt.authoredRoomLine(room, {
         who,
         text: data.text || '',
-        authorId: data.authorId || fromHandle,
-        authorKind: data.authorKind || 'human',
+        authorId: author.authorId,
+        authorKind: author.authorKind,
+        ...(author.unverified ? { unverified: true } : {}),
         remote: true,
         hop,
-        ...(data.authorKind === 'bot' ? { botId: data.authorId || fromHandle } : {}),
+        ...(author.authorKind === 'bot' ? { botId: author.authorId } : {}),
         kind: data.kind === 'message' ? undefined : data.kind,
       }))
       // #825: the line names Bots, and one of them is mine. The remote home resolved the call where

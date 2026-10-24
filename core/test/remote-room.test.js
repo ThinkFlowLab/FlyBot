@@ -1476,3 +1476,102 @@ test('#852: the knock asks the room record, and only the accept admits one home'
   assert.deepEqual(rt.state.rooms.war.localInvites.find(i => i.ticket === fresh.ticket).homes, {}, 'the refused add left no home on the link')
   assert.equal(seats().length, 1, 'and seated nobody')
 })
+
+
+// #909: an inbound envelope may say who invited a room for display, but it never decides which room it
+// may touch, which room gets created, or who wrote a line. The transport names the Bot that delivered it,
+// and that is the only identity this side can check.
+test('#909: a join from another home cannot rewrite or enter a mirror room it does not own', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 1,
+  })
+  const { room } = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: join, localBotId: 'spec-b',
+  }, actorB)
+  const seats = () => rt.state.rooms[room.id].participants.length
+  const before = seats()
+  const at = rt.state.rooms[room.id].sharedFrom.inviterName
+  // Same remote room id, claiming to be the room's inviter, delivered by a home that is not it.
+  const forged = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Mallory',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@mallory.bot.home', seq: 2,
+  })
+  const result = await rt.applyInboundRoomShare({
+    fromHandle: '@mallory.bot.home', fromHome: '@mallory.home', fromName: 'Mallory',
+    text: forged, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(result.refused, 'not-inviter', 'the transport home is not the inviter of this room')
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterName, at, 'the room still says who invited it')
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterHandle, '@chief.alice.home')
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterHome, '@alice.home')
+  assert.equal(seats(), before, 'nobody was seated by the refused share')
+  assert.equal(Object.values(rt.state.rooms).filter(r => r.origin === 'inbound-share' && r.sharedFrom?.remoteRoomId === 'alice-war').length, 1, 'still one mirror room')
+})
+
+test('#909: a bare line envelope projects no room', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const rooms = () => Object.values(rt.state.rooms).filter(room => room.origin === 'inbound-share').length
+  const before = rooms()
+  // A room id that exists only on the sender's side: a line must not open a copy here, whichever name it
+  // gives itself as the inviter.
+  const line = encodeRoomShare({
+    op: 'line', roomId: 'nobody-shared-this', name: 'Pantry', inviterName: 'Mallory',
+    inviterHome: '@mallory.home', inviterHandle: '@mallory.bot.home', invitedHandle: '@coder.bob.home',
+    seq: 1, who: 'Mallory', authorKind: 'bot', authorId: '@mallory.bot.home', text: 'Mallory: hi',
+  })
+  const result = await rt.applyInboundRoomShare({
+    fromHandle: '@mallory.bot.home', fromHome: '@mallory.home', fromName: 'Mallory',
+    text: line, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(result.refused, 'unknown-room')
+  assert.equal(result.room, undefined, 'nothing to write into')
+  assert.equal(rooms(), before, 'no room appeared')
+})
+
+test('#909: a line is never shown under a handle the room cannot trace', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 1,
+  })
+  const { room } = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: join, localBotId: 'spec-b',
+  }, actorB)
+  const delivery = { fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', localBotId: 'spec-b' }
+  // A handle that is neither the sender, a seat of this room, nor its inviter.
+  await rt.applyInboundRoomShare({
+    ...delivery,
+    text: encodeRoomShare({
+      op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+      invitedHandle: '@coder.bob.home', seq: 2, who: 'The CEO', authorKind: 'bot', authorId: '@ceo.alice.home', text: 'The CEO: ship it',
+    }),
+  }, actorB)
+  const forged = rt.state.rooms[room.id].log.find(entry => /ship it/.test(entry.text || ''))
+  assert.equal(forged.authorId, '@chief.alice.home', 'the Bot that delivered it, not the claimed handle')
+  assert.equal(forged.authorKind, 'bot')
+  assert.equal(forged.unverified, true, 'the claim is marked, and the line is still there')
+  // The sender's own claim is traced, so a room line still reads as its Bot wrote it.
+  await rt.applyInboundRoomShare({
+    ...delivery,
+    text: encodeRoomShare({
+      op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+      invitedHandle: '@coder.bob.home', seq: 3, authorKind: 'bot', authorId: '@chief.alice.home', text: 'mine',
+    }),
+  }, actorB)
+  const own = rt.state.rooms[room.id].log.find(entry => /mine/.test(entry.text || ''))
+  assert.equal(own.authorId, '@chief.alice.home')
+  assert.equal(own.unverified, undefined)
+})
