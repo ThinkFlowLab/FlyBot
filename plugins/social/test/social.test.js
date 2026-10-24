@@ -11412,6 +11412,11 @@ test('#994: the share receipt names the Bot the click granted and never the home
   const bare = (await call('flybot/social/share-with-friend', { botId: chief.id, home: writer.home, peerBotId: 'pb-writer' })).value
   assert.equal(bare.message, 'Shared Chief with your friend. They can decline; you can Revoke in People with access.')
   assert.doesNotMatch(bare.message, /selftestb2/i)
+  // A row whose own label really is the home's slug (a friend with no Bot name on the server) must not put it
+  // back in the receipt: the slug guard is the only thing between them (#1002 review).
+  const slugLabel = (await call('flybot/social/share-with-friend', { botId: chief.id, home: writer.home, peerBotId: 'pb-writer', friendName: 'selftestb2' })).value
+  assert.equal(slugLabel.message, 'Shared Chief with your friend. They can decline; you can Revoke in People with access.')
+  assert.doesNotMatch(slugLabel.message, /selftestb2/i)
 })
 
 // ---- #1005: a room number is exactly six digits, and one card names one room ----------------
