@@ -1,0 +1,11 @@
+{
+  "id": "generated-gates",
+  "repo": null,
+  "techStacks": ["node-host"],
+  "date": "2026-10-15",
+  "seen": 3,
+  "trigger": "An edit under core/ after the last patch generate, or before arch-docs runs.",
+  "wrong": "Trusting an earlier green check. arch-docs reports no changed files while the edit is still uncommitted.",
+  "right": "After the last core/ edit, build the client when src/client changed, regenerate ds-bot patches, then verify.",
+  "refs": ["#94", "#99", "#177"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "stale-base",
+  "repo": "ThinkFlowLab/FlyBot",
+  "techStacks": [],
+  "date": "2026-10-24",
+  "seen": 4,
+  "trigger": "Branching from a local main that this run did not fetch, then opening a pull request.",
+  "wrong": "Reading a green pull request page as proof the branch is current. Ghost files in the diff are the branch restoring an old main.",
+  "right": "git diff origin/main...HEAD --stat must list only files you changed. Anything else means start again from the fetched tip.",
+  "refs": ["#864", "#876", "#887"]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "one-conclusion",
+  "repo": "ThinkFlowLab/FlyBot",
+  "techStacks": [],
+  "date": "2026-10-24",
+  "trigger": "A tip already carries a Verdict.",
+  "wrong": "Posting a second Verdict at the same SHA, or editing the first when the answer changed.",
+  "right": "One Verdict per tip. A new commit voids the old one. A correction carries no Verdict line."
+}

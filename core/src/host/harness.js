@@ -13,9 +13,16 @@
 // HarnessPro is the offline check for that config. It names CI, core/dev/eval,
 // and rsi-baseline. It does not run them and it does not call a model.
 //
+// Step 2: harnessExperience reads the experience library (core/dev/experience/,
+// keyed by repo and tech stack). Lessons change only by a committed file. This
+// is not Option D: a tier is not rewritten while a task runs, and the library
+// does not call a model. resolveHarness does not attach the entries.
+//
 // Tree prompt exception: `@flybot/tree` keeps its own marked prompt under
 // `plugins/tree` (not one of the three mirrors). That injection stays outside
 // this file; eval `P3-tree-split` must keep passing.
+
+import { lookupExperience } from './experience.js'
 
 export const DEFAULT_HARNESS_ID = 'default'
 
@@ -218,8 +225,13 @@ export function harnessTierOrder() {
   return { ok: failures.length === 0, failures, axes }
 }
 
+export function harnessExperience(query = {}) {
+  return lookupExperience(query ?? {})
+}
+
 export function install(rt) {
   rt.harness = resolveHarness(DEFAULT_HARNESS_ID)
   rt.resolveHarness = resolveHarness
   rt.routeHarness = routeHarness
+  rt.harnessExperience = harnessExperience
 }
