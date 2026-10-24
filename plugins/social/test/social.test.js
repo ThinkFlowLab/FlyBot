@@ -6930,6 +6930,21 @@ test('#139: Remove asks once (inline, #230); Keep leaves the Bot', () => {
   assert.equal(hidden.length, 0)
 })
 
+test('#1001: removing one of a friend\'s Bots says which link keeps the friend', () => {
+  const { walk, pluginOf } = loadSocialClient(async (endpoint) => (endpoint === 'social/settings' ? { autoAccept: {} } : {}))
+  const chief = { name: 'Chief', remote: { handle: '@chief.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  const writer = { name: 'Writer', remote: { handle: '@writer.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  // Another Bot of the same friend is still listed: the friend stays because of that link, and the
+  // question says so instead of only saying the owner is not unfriended.
+  const both = walk(pluginOf([false, false, false, true, '']).FriendChatSettings({ bot: chief, roster: { remoteBots: [{ ...chief.remote, name: 'Chief' }, { ...writer.remote, name: 'Writer' }] } }))
+  const text = both.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm').children.flatMap(c => c.children ?? [c]).join(' ')
+  assert.match(text, /Remove Chief \(Bob\) from your list\? Bob stays a friend: still shared through Writer\./)
+  // No other Bot of theirs: nothing to name, so the copy stays the one #139 pins.
+  const alone = walk(pluginOf([false, false, false, true, '']).FriendChatSettings({ bot: chief, roster: { remoteBots: [{ ...chief.remote, name: 'Chief' }] } }))
+  const aloneText = alone.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm').children.flatMap(c => c.children ?? [c]).join(' ')
+  assert.match(aloneText, /Your own Bots stay shared\. Bob can share it again\./)
+})
+
 test('#138: join success copy names the person and the Bot', () => {
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(src, /shared \$\{shared\} with you/)

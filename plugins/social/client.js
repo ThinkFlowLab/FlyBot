@@ -3098,7 +3098,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function FriendChatSettings({ bot, actions } = {}) {
+    function FriendChatSettings({ bot, actions, roster } = {}) {
       const remote = bot?.remote
       const home = remote?.home
       const handle = remote?.handle
@@ -3127,6 +3127,17 @@ window.__ModuleLoader__.load({
       }
       const named = remote.homeName || remote.owner || ''
       const who = named || home || 'Your friend'
+      // #1001: a friend stays in the list while any of their Bots is still shared with any of mine, so
+      // removing this one leaves the friend behind with no reason given. Name the link that keeps them:
+      // the other Bots of the same friend the roster still lists. With none, there is nothing to name and
+      // the question stays the one #139 pinned. Copy only: the roster's own names, no new data.
+      const stillLinked = (Array.isArray(roster?.remoteBots) ? roster.remoteBots : [])
+        .filter(other => typeof other?.handle === 'string' && other.handle !== handle && (other.home ?? other.handle) === (home ?? handle))
+        .map(other => String(other.name ?? '').trim())
+        .filter(name => name !== '')
+      const keepLine = stillLinked.length > 0
+        ? `${who} stays a friend: still shared through ${stillLinked.join(', ')}.`
+        : `Your own Bots stay shared. ${who} can share it again.`
       // Asked inline, like Leave on a face room (#230), not with the browser's confirm box.
       const removeBot = async () => {
         setAsking(false)
@@ -3150,7 +3161,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`)),
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
-            h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? Your own Bots stay shared. ${who} can share it again.`),
+            h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? ${keepLine}`),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, 'Remove'),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, 'Keep'))
           : h('button', {
@@ -3166,11 +3177,11 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
-    function BotSocialDetails({ bot, actions } = {}) {
+    function BotSocialDetails({ bot, actions, roster } = {}) {
       useStyles()
       if (bot?.remote) {
         return h('div', { 'data-flybot': 'bot-social-details' },
-          h(FriendChatSettings, { bot, actions }))
+          h(FriendChatSettings, { bot, actions, roster }))
       }
       return h(OwnBotSharing, { bot })
     }

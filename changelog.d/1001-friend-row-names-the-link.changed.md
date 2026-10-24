@@ -1,0 +1,1 @@
+Removing one of a friend's Bots now says which link keeps the friend in the list: the question names the Bots of theirs that are still shared ("Bob stays a friend: still shared through Writer."), instead of only saying the owner is not unfriended and leaving the row unexplained ([#1001](https://github.com/ThinkFlowLab/FlyBot/issues/1001)).
