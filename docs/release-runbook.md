@@ -26,8 +26,8 @@ needed.
 `git push` to `github.com:443` dies with `GnuTLS recv error (-110)`. So the branch, the pull request
 and the tag are written through `api.github.com` with `node --input-type=module -e` snippets, not
 `git` and not `curl`: copy-paste has to work on the machine the runbook is for. `gh` may not be
-installed, or may die on a certificate it does not know; where a command below names `gh`, the REST
-request beside it is the same call.
+installed, or may die on a certificate it does not know; where a command below names `gh`, the API
+call beside it is the same request.
 
 ## The six steps, in this order
 
@@ -40,13 +40,16 @@ request beside it is the same call.
    with no `Verdict:` naming it.
 3. **Release enqueues its own pull request.** `node .github/scripts/enqueue-guard.mjs --pr <n>`
    re-reads the live head and prints the command, already pinned to the tip it read:
-   `gh pr merge --auto --squash --match-head-commit <tip>`. Where `gh` is not usable, the same call is
-   `PUT /repos/ThinkFlowLab/FlyBot/pulls/<n>/merge` with the body
-   `{"merge_method":"squash","sha":"<tip>"}`. `main` requires the merge queue, so this enqueues the
-   pull request, and a plain squash merge is refused — do not retry, and do not push a ref to `main`
-   (the ruleset refuses that too).
+   `gh pr merge --auto --squash --match-head-commit <tip>`. Where `gh` is not usable, the queue is
+   entered through the GraphQL `enqueuePullRequest` mutation pinned to the same tip — the call
+   `#1004`, `#1009`, `#1010` and `#1011` all went in through, each read back as `state: QUEUED`; the
+   snippet is [below](#the-enqueue-call-without-gh). `main` requires the merge queue, so a merge
+   requested by hand does not land the pull request — do not retry it, and do not push a ref to
+   `main` (the ruleset refuses that too).
 4. Read back that it entered: `isInMergeQueue` on the pull request, and a `merge_group` run on the
-   entry. The four required checks run again inside the queue.
+   entry. Three checks are required on the entry — `ubuntu-latest · Node 24 · DSH 0.2.0-rc.2`,
+   `tests-ok` and `merge-gate` — and `enqueue-guard` runs there too, though it is not on the
+   required list.
 5. When it merges, read the **merge commit** `C` from the pull request (`merge_commit_sha`). The tag
    goes on `C`, never on the tip.
 6. Tag `C` and let the workflow publish:
@@ -73,6 +76,43 @@ version twice, with two answers, which is worse than a missing release. That is 
 the merge commit of the release pull request and nothing else, and why `check-release-version.mjs`
 reads the tag's own commit instead of the branch head: never tag a tip that is not the release commit.
 
+### The enqueue call, without `gh`
+
+```sh
+export TOKEN=${DSH_SECRET_GITHUB_TOKEN:-$GITHUB_TOKEN}
+TOKEN="$TOKEN" PR=1004 TIP=<tip> node --input-type=module -e '
+const call = async (query, variables) => {
+  const r = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: { authorization: `Bearer ${process.env.TOKEN}`, "content-type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  })
+  return { status: r.status, json: await r.json().catch(() => null) }
+}
+const id = await call(
+  `query($owner: String!, $name: String!, $n: Int!) {
+    repository(owner: $owner, name: $name) { pullRequest(number: $n) { id } }
+  }`,
+  { owner: "ThinkFlowLab", name: "FlyBot", n: Number(process.env.PR) },
+)
+const pullRequestId = id.json?.data?.repository?.pullRequest?.id
+if (!pullRequestId) { console.error("cannot read the pull request", JSON.stringify(id.json)); process.exit(1) }
+const out = await call(
+  `mutation($input: EnqueuePullRequestInput!) {
+    enqueuePullRequest(input: $input) { mergeQueueEntry { position state } }
+  }`,
+  { input: { pullRequestId, expectedHeadOid: process.env.TIP } },
+)
+const entry = out.json?.data?.enqueuePullRequest?.mergeQueueEntry
+console.log("enqueue ->", JSON.stringify(entry ?? out.json))
+if (!entry) process.exit(1)
+'
+```
+
+`expectedHeadOid` is the tip the `Verdict:` names, so the entry is built from the commit that was
+reviewed. If the head moved after the verdict, stop and take a new one; do not enqueue a commit
+nobody read.
+
 ## The mechanical release exception, as it works now
 
 The release pull request is mechanical (#1004 is the shape): `CHANGELOG.md`, `core/package.json`,
@@ -89,8 +129,9 @@ ordinary path.
 
 ## When the queue kicks the entry, or refuses it
 
-The merge is the new failure surface: the queue builds a `merge_group` entry and can fail a check
-there that was green on the tip, in which case the entry is dropped and the pull request stays open.
+The merge is the failure surface this flow has: the queue builds a `merge_group` entry and can fail a
+check there that was green on the tip, in which case the entry is dropped and the pull request stays
+open.
 
 1. Read which check failed on the **entry** (`merge_group` run on the queue branch), not on the tip.
    A known timing-flaky test is not a defect of this pull request: `#1004` lost its first entry to
@@ -98,9 +139,9 @@ there that was green on the tip, in which case the entry is dropped and the pull
    passed after a re-enqueue.
 2. Re-enqueue the same head once, and read the entry back. Do not push a new tip to "fix" a queue
    failure the tip does not have — a new tip voids the `Verdict:` and costs a second full review.
-3. If the entry is refused instead of failed (`merge-gate` names the reason: no `Fixes #<n>`, no
-   `Owner:`/`Reviewer:` lines, a missing `agent-pr`, a `hold`, a stale conclusion), fix the pull
-   request, not the queue: a body fix needs a fresh `Verdict:` only when the head changes.
+3. If the entry is refused instead of failed (`merge-gate` names the reason: an unknown issue
+   reference, no `Owner:`/`Reviewer:` lines in the first 20 lines, a missing `agent-pr`, a `hold`, a
+   stale conclusion), fix the pull request, not the queue.
 4. If the same entry fails twice on a real check, stop and report to the Chief with the run url and
    the failing job — a release that cannot merge is not fixed by a third enqueue.
 
