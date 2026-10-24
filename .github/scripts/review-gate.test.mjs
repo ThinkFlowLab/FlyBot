@@ -638,27 +638,31 @@ test('#925: OWNER, MEMBER and COLLABORATOR still count, and a bare CONTRIBUTOR d
   assert.match(bare.reason, /author association CONTRIBUTOR/)
 })
 
-// A selfReview login who is not this pull request's author is not covered by selfOnly (#928).
-// The permission API is what can qualify that CONTRIBUTOR stamp, and it must actually be asked.
-// The own-pull-request PASS is selfOnly (#926, #928); this lookup does not recover it.
-test('#925: a selfReview login judging someone else\'s pull request counts when the API reports admin', () => {
-  const p = { reviewers: ['hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer'] }
-  const body = report()
-  const reports = [{ login: 'hsliuustc0106', association: 'CONTRIBUTOR', body }]
+// The pair to #931's negative case. Same policy shape, same login in `selfReview`, same
+// `CONTRIBUTOR` report on **someone else's** pull request — the only difference is the admin
+// evidence `adminsFor` collected, and the comment below says so at both ends. That case stays
+// `false` (a non-admin `selfReview` login has no right on another author's pull request); this one
+// is `true` because repository admin is a separate qualification, not a widening of `selfReview`.
+test('#928 pair: the same report counts once the API reports admin, and the lookup is asked once', () => {
+  const selfPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer', 'hsliuustc0106'] }
+  const reports = [comment('hsliuustc0106', report({ writer: 'hsliuustc0106' }), '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')]
   const calls = []
   const gh = (_cmd, path) => { calls.push(path); return JSON.stringify({ permission: 'admin', role_name: 'admin' }) }
-  const admins = adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy: p, author: 'opener' })
-  assert.deepEqual(admins, ['hsliuustc0106'])
-  assert.deepEqual(calls, ['repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission'])
+  const admins = adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy: selfPolicy, author: 'opener' })
+  assert.deepEqual(admins, ['hsliuustc0106'], 'a selfReview login on someone else\'s pull request is looked up')
+  assert.deepEqual(calls, ['repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission'], 'asked exactly once')
 
-  const r = decide({ head: HEAD, author: 'opener', reports: [comment('hsliuustc0106', body, '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')], policy: p, admins })
+  const r = decide({ head: HEAD, author: 'opener', reports, policy: selfPolicy, admins })
   assert.equal(r.ok, true, r.reason)
   assert.equal(r.by, 'hsliuustc0106')
 
-  // On its own pull request the carve-out already qualifies it, so the lookup is skipped — that is
-  // the shape #931 pins, and this test must not restate it (the #931 case stays the only red there).
+  // Identical fixture, no admin evidence: this is exactly #931's negative case (asserted there, not
+  // restated here, so that case stays the single red when the carve-out is widened).
+  assert.deepEqual(adminsFor({ gh: (_cmd, path) => { calls.push(path); return JSON.stringify({ permission: 'write' }) }, repo: 'ThinkFlowLab/FlyBot', reports, policy: selfPolicy, author: 'opener' }), [])
+
+  // Their own pull request: the `selfReview` carve-out already qualifies the report, so no lookup.
   const ownCalls = []
-  const own = adminsFor({ gh: (_cmd, path) => { ownCalls.push(path); return JSON.stringify({ permission: 'admin' }) }, repo: 'ThinkFlowLab/FlyBot', reports, policy: p, author: 'hsliuustc0106' })
+  const own = adminsFor({ gh: (_cmd, path) => { ownCalls.push(path); return JSON.stringify({ permission: 'admin' }) }, repo: 'ThinkFlowLab/FlyBot', reports, policy: selfPolicy, author: 'hsliuustc0106' })
   assert.deepEqual(own, [])
   assert.deepEqual(ownCalls, [])
 })
