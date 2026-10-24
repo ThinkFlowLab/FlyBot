@@ -1560,10 +1560,11 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
  test('a message sent between rounds still opens a full round', async (t) => {
    const { call, emit, userMessage, relay, answer, stop, sent } = start()
    t.after(stop)
-@@ -348,3 +714,1079 @@
+@@ -347,3 +713,1079 @@
+   const result = JSON.parse(await running)
    assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer'])
  })
- 
++
 +// A face-to-face room with my Chief and Writer and a friend's Chief; `plain` helpers for #299.
 +async function routedRoom(ctxs, id) {
 +  const { call, rt, sent } = ctxs
@@ -2639,4 +2640,3 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
 +  JSON.parse(await relay(room.id, 'q932-quiet', controller.signal))
 +  assert.equal(roomTurns(sent).length, 0, 'a quiet line that names nobody calls nobody')
 +})
-+

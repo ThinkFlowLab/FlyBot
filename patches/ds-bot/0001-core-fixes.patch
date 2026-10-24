@@ -4470,7 +4470,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              deferred: true,
            }).catch(error => rt.warn('ds-bot: deferred request delivery failed: %s', error))
          }
-@@ -496,6 +628,16 @@
+@@ -496,5 +628,15 @@
      }
    })
  
@@ -4487,7 +4487,6 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +
 +  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
  }
- 
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
 +++ b/src/host/usage.js
