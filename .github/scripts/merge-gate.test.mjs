@@ -457,3 +457,14 @@ test('#925: admin does not skip the own-author rule, and selfReview does not car
   assert.equal(other.ok, false, 'a selfReview login judging someone else\'s pull request is not exempt (#931)')
   assert.match(other.reasons.join('; '), /author association CONTRIBUTOR/)
 })
+
+test('#925: a selfReview login with admin on someone else\'s pull request lets the entry through', () => {
+  const listed = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer'] }
+  const other = { login: 'hsliuustc0106', body: report(), at: '2026-10-24T03:42:31Z', kind: 'comment', association: 'CONTRIBUTOR' }
+  const refused = judge({ labels: [], head: HEAD, author: 'opener', reports: [other], policy: listed, admins: [] })
+  assert.equal(refused.ok, false)
+  assert.match(refused.reasons.join('; '), /author association CONTRIBUTOR/)
+  const allowed = judge({ labels: [], head: HEAD, author: 'opener', reports: [other], policy: listed, admins: ['hsliuustc0106'] })
+  assert.equal(allowed.ok, true, allowed.reasons.join('; '))
+  assert.equal(allowed.verdict.by, 'hsliuustc0106')
+})

@@ -119,7 +119,7 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   // A tier that needs no PASS also needs no permission lookup.
   const verdict = exempt
     ? { ok: true, verdict: null, by: null, exempt: true }
-    : decide({ head: target, author, reports, policy, admins: admins ?? adminsFor({ gh, repo, reports, policy }) })
+    : decide({ head: target, author, reports, policy, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }) })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a

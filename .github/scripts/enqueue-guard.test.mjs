@@ -319,3 +319,11 @@ test('#602: the instructions that enqueue point at the guard', () => {
   const plumbing = readFileSync(new URL('../../docs/autonomous-dev.md', import.meta.url), 'utf8')
   for (const text of [agents, fixIssue, plumbing]) assert.match(text, /enqueue-guard\.mjs/)
 })
+
+test('#925: a selfReview login with admin on someone else\'s pull request is accepted, and the lookup is asked once', () => {
+  const gh = fakeGh({ files: [HOST_FILE], author: 'opener', reviews: [contributor('Birfy')], permission: 'admin' })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.verdict.by, 'Birfy')
+  assert.equal(gh.calls.filter((path) => path.includes('/permission')).length, 1)
+})

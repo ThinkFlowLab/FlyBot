@@ -38,23 +38,28 @@ const SHORT = 12
 // could hold a merge. A comment from anyone else is not a conclusion: it can neither pass nor block.
 const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 
-// A conclusion GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR, or
-// `selfReview`), from a login in `reviewers`, asked once via the collaborator permission
-// API. Anyone else can never pass the reviewers check, so they are not looked up. A
-// comment with no Tip SHA and Verdict is not a conclusion. Metadata read on the token
+// A conclusion GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR), from a login
+// in `reviewers`, asked once via the collaborator permission API. Anyone else can never pass the
+// reviewers check, so they are not looked up. A `selfReview` login is already qualified on its own
+// pull request (#928), so only that shape is skipped; on anyone else's pull request the permission
+// API is the one thing that can qualify it. Skipping every `selfReview` login left this rule dead —
+// today every reviewer is also in `selfReview`. A comment with no Tip SHA and Verdict is not a
+// conclusion. Metadata read on the token
 // the job already has. Fail closed: no repo, no `gh`, a 403/404, or a body that is not
 // the permission object is not admin. `permission: admin` or `permissions.admin` counts.
-export function adminsFor({ gh, repo, reports, policy } = {}) {
+export function adminsFor({ gh, repo, reports, policy, author } = {}) {
   if (!repo || typeof gh !== 'function') return []
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
   const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
+  const authorLogin = String(author ?? '').toLowerCase()
   const admins = []
   const seen = new Set()
   for (const r of reports ?? []) {
     if (ASSOCIATIONS.has(String(r.association ?? '').toUpperCase())) continue
     const name = String(r.login ?? '').trim()
     const key = name.toLowerCase()
-    if (!name || selfReview.has(key) || !reviewers.has(key)) continue
+    if (!name || !reviewers.has(key)) continue
+    if (selfReview.has(key) && key === authorLogin) continue
     const parsed = parseReport(r.body)
     if (!parsed.tip || !parsed.verdict) continue
     if (seen.has(key)) continue
@@ -304,7 +309,7 @@ function main() {
   ]
 
   const policy = loadPolicy(policyPath)
-  const result = decide({ head, author, reports, policy, admins: adminsFor({ gh, repo, reports, policy }) })
+  const result = decide({ head, author, reports, policy, admins: adminsFor({ gh, repo, reports, policy, author }) })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')
