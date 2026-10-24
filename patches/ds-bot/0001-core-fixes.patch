@@ -4486,6 +4486,85 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
 +++ b/src/host/usage.js
+@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto'
+ import { mkdir, unlink } from 'node:fs/promises'
+ import { join } from 'node:path'
+ 
+-const LEDGER_VERSION = 2
++const LEDGER_VERSION = 3
+ const PAGE_MESSAGES = 400
+ const PAGE_TIMEOUT_MS = 20_000
+ const SCAN_TIMEOUT_MS = 180_000
+@@ -45,6 +45,31 @@ const tokensOf = usage => ({
+   output: count(usage.outputTokens),
+ })
+ 
++
++// Step 0 (#903): every recorded call carries harness, issue·PR, tool-call count, wall clock,
++// and token in/out (token columns reused). Missing any of these fields fails the unit tests.
++export const USAGE_CALL_FIELDS = ['harness', 'issuePr', 'toolCalls', 'wallMs', 'input', 'output']
++
++export function withUsageFields(row, extras = {}) {
++  return {
++    ...row,
++    harness: extras.harness ?? row.harness ?? 'default',
++    issuePr: extras.issuePr ?? row.issuePr ?? '',
++    toolCalls: Number.isFinite(extras.toolCalls) ? extras.toolCalls : (Number.isFinite(row.toolCalls) ? row.toolCalls : 0),
++    wallMs: Number.isFinite(extras.wallMs) ? extras.wallMs : (Number.isFinite(row.wallMs) ? row.wallMs : 0),
++  }
++}
++
++export function missingUsageFields(row) {
++  const missing = []
++  if (typeof row?.harness !== 'string' || row.harness === '') missing.push('harness')
++  if (typeof row?.issuePr !== 'string') missing.push('issuePr')
++  if (!Number.isFinite(row?.toolCalls)) missing.push('toolCalls')
++  if (!Number.isFinite(row?.wallMs)) missing.push('wallMs')
++  if (!Number.isFinite(row?.input) || !Number.isFinite(row?.output)) missing.push('tokens')
++  return missing
++}
++
+ // Folds Session events, oldest first, into one row per billed attempt, as DSH's own
+ // tokenUsage projection counts them: a later sample of one attempt replaces the earlier
+ // one, and `llm/retry-started` begins a new attempt. The model is the one the latest
+@@ -82,7 +82,7 @@ export function foldCalls(events, from = {}) {
+         if (usage === undefined || usage === null) break
+         const attempt = state.retry?.turn === data.turn && state.retry.step === data.step ? state.retry.count : 0
+         const key = `${data.turn}:${data.step}:${attempt}`
+-        rows.set(key, { key, time: Number.isFinite(event.time) ? event.time : 0, provider: state.provider, model: state.model, ...tokensOf(usage) })
++        rows.set(key, withUsageFields({ key, time: Number.isFinite(event.time) ? event.time : 0, provider: state.provider, model: state.model, ...tokensOf(usage) }))
+         break
+       }
+       default:
+@@ -144,14 +144,14 @@ function sqliteLedger(DatabaseSync, path) {
+         DROP TABLE IF EXISTS marks;
+         DROP TABLE IF EXISTS owners;
+         DROP TABLE IF EXISTS kinds;
+-        CREATE TABLE calls (key TEXT PRIMARY KEY, session TEXT NOT NULL, time INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, live INTEGER NOT NULL, input INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, output INTEGER NOT NULL);
++        CREATE TABLE calls (key TEXT PRIMARY KEY, session TEXT NOT NULL, time INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, live INTEGER NOT NULL, input INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, output INTEGER NOT NULL, harness TEXT NOT NULL, issue_pr TEXT NOT NULL, tool_calls INTEGER NOT NULL, wall_ms INTEGER NOT NULL);
+         CREATE INDEX calls_session ON calls (session);
+         CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, fold TEXT NOT NULL, sealed INTEGER NOT NULL);
+         CREATE TABLE owners (session TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL);
+         CREATE TABLE kinds (session TEXT PRIMARY KEY, kind TEXT NOT NULL);
+         PRAGMA user_version = ${LEDGER_VERSION};`)
+     }
+-    const put = db.prepare('INSERT OR REPLACE INTO calls (key, session, time, provider, model, kind, live, input, cache_read, cache_write, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
++    const put = db.prepare('INSERT OR REPLACE INTO calls (key, session, time, provider, model, kind, live, input, cache_read, cache_write, output, harness, issue_pr, tool_calls, wall_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+     const dropLogged = db.prepare('DELETE FROM calls WHERE session = ? AND live = 0')
+     const getMark = db.prepare('SELECT through, fold, sealed FROM marks WHERE session = ?')
+     const setMark = db.prepare('INSERT OR REPLACE INTO marks (session, through, fold, sealed) VALUES (?, ?, ?, ?)')
+@@ -160,7 +160,10 @@ function sqliteLedger(DatabaseSync, path) {
+     const allKinds = db.prepare('SELECT session, kind FROM kinds')
+     const putKind = db.prepare('INSERT OR REPLACE INTO kinds (session, kind) VALUES (?, ?)')
+     const grouped = db.prepare(`SELECT session, provider, model, kind, time / ${SLOT_MS} AS slot, SUM(input) AS input, SUM(cache_read) AS cacheRead, SUM(cache_write) AS cacheWrite, SUM(output) AS output, COUNT(*) AS calls FROM calls GROUP BY session, provider, model, kind, slot`)
+-    const insert = (row, live) => put.run(row.key, row.session, row.time, row.provider, row.model, row.kind, live ? 1 : 0, row.input, row.cacheRead, row.cacheWrite, row.output)
++    const insert = (row, live) => {
++      const full = withUsageFields(row)
++      put.run(full.key, full.session, full.time, full.provider, full.model, full.kind, live ? 1 : 0, full.input, full.cacheRead, full.cacheWrite, full.output, full.harness, full.issuePr, full.toolCalls, full.wallMs)
++    }
+     return {
+       mark(session) {
+         const row = getMark.get(session)
 @@ -250,7 +250,7 @@ export function install(rt) {
        const damaged = error => /malformed|not a database|corrupt/i.test(String(error?.message ?? error))
        for (const fresh of [false, true]) {
@@ -4495,6 +4574,62 @@ diff --git a/src/host/usage.js b/src/host/usage.js
            return sqliteLedger(DatabaseSync, path)
          } catch (error) {
            if (fresh || !damaged(error)) {
+@@ -369,7 +369,7 @@ export function install(rt) {
+     if (events.length > 0 && events[0].seq !== from + 1) throw new Error(`the history of ${sessionId} came back with a gap`)
+     const fold = foldCalls(events, mark?.fold)
+     ledger.commit(sessionId, {
+-      rows: fold.rows.map(row => ({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' })),
++      rows: fold.rows.map(row => withUsageFields({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' })),
+       reset: fold.reset,
+       mark: { through, fold: fold.state, sealed: sealable },
+     })
+@@ -556,9 +556,17 @@ export function install(rt) {
+       try { journal(book, sessionId) } catch (error) { rt.warn('ds-bot: usage could not journal %s: %s', sessionId, error) }
+     })()
+   }
+-  function record({ sessionId, kind, provider, model, usage }) {
++  function record({ sessionId, kind, provider, model, usage, issuePr, toolCalls, wallMs, harness }) {
+     noteSession(sessionId)
+-    const row = { key: `live:${randomUUID()}`, session: sessionId ?? '', time: Date.now(), provider: provider ?? '', model: model ?? '', kind, ...tokensOf(usage) }
++    const row = withUsageFields({
++      key: `live:${randomUUID()}`,
++      session: sessionId ?? '',
++      time: Date.now(),
++      provider: provider ?? '',
++      model: model ?? '',
++      kind,
++      ...tokensOf(usage),
++    }, { harness, issuePr, toolCalls, wallMs })
+     if (ledger !== undefined) {
+       try { ledger.add(row) } catch (error) { rt.warn('ds-bot: usage could not record a call: %s', error) }
+       return
+@@ -579,6 +579,7 @@ export function install(rt) {
+     }
+     return (async function* meter() {
+       let usage
++      const started = Date.now()
+       try {
+         for await (const chunk of next()) {
+           if (chunk?.type === 'usage' && chunk.usage && typeof chunk === 'object' && !counted.has(chunk)) {
+@@ -588,7 +588,17 @@ export function install(rt) {
+           yield chunk
+         }
+       } finally {
+-        if (usage !== undefined) record({ sessionId: tag?.sessionId ?? options.sessionId, kind: tag?.kind ?? options.purpose ?? 'other', provider: options.provider, model: options.model, usage })
++        if (usage !== undefined) record({
++          sessionId: tag?.sessionId ?? options.sessionId,
++          kind: tag?.kind ?? options.purpose ?? 'other',
++          provider: options.provider,
++          model: options.model,
++          usage,
++          issuePr: tag?.issuePr ?? options.issuePr ?? '',
++          toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : 0,
++          wallMs: Math.max(0, Date.now() - started),
++          harness: tag?.harness ?? rt.harness?.id ?? 'default',
++        })
+       }
+     })()
+   })
 diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 --- a/src/shared/mentions.js
 +++ b/src/shared/mentions.js
