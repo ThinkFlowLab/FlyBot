@@ -2888,7 +2888,8 @@ test('face-to-face send pending_approval uses decide_approval', async (t) => {
   const status = (await call('flybot/social/status', {})).value
   assert.equal(status.pendingApprovals, 1)
   assert.equal(status.approvals[0].kind, 'face_room_message')
-  assert.equal(status.approvals[0].toName, 'the room')
+  // The number the room was joined by, not the bare sentence (#991).
+  assert.equal(status.approvals[0].toName, 'the room 123456')
   const decided = (await call('flybot/social/decide-approval', { approvalId: 'apr-face-1', decision: 'approve' })).value
   assert.equal(decided.status, 'approved')
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
@@ -11167,4 +11168,46 @@ test('#992: a fresh mount starts with no note of either kind', async () => {
   await panel.settle()
   assert.equal(panel.has('share-note'), false)
   assert.equal(panel.has('share-list-error'), false)
+})
+
+test('#991: a held room line names the room it will go to, so two open rooms are never both "the room"', async (t) => {
+  const { ctx, home, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  // Three live rooms on the fake server, so the plugin's own face poll keeps them live instead of
+  // filing them as past rooms; each hosted room keeps the name it was given, and the numbers the
+  // owners typed live in settings (#991 reads the same two fields the room title is built from).
+  for (const id of ['frm_a', 'frm_b', 'frm_c']) server.face.rooms.set(id, { room_id: id, status: 'open', members: [], events: [], event_cursor: 0 })
+  const settingsPath = join(home, 'settings-991.json')
+  writeFileSync(settingsPath, JSON.stringify({ faceRooms: { frm_a: { joinCode: '482913' }, frm_b: { joinCode: '117042' }, frm_c: {} } }))
+  const hold = (id, roomId) => ({ approval_id: id, kind: 'face_room_message', status: 'pending', bot_id: 'm1', message: { payload: { text: id }, ...(roomId ? { room_id: roomId } : {}) }, summary: `To the room: ${id}` })
+  server.tools.list_approvals = () => ({ approvals: [hold('apr-a', 'frm_a'), hold('apr-b', 'frm_b'), hold('apr-c', 'frm_c'), hold('apr-legacy')] })
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_a', localId: 'g-a', name: 'Kitchen', status: 'open', members: [] })
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_b', localId: 'g-b', name: 'Study', status: 'open', members: [] })
+  await ctx.flybot.rooms.upsertFace({ roomId: 'frm_c', localId: 'g-c', name: 'Loft', status: 'open', members: [] })
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const items = await social.pendingApprovals({ fresh: true })
+  const byId = Object.fromEntries(items.map(item => [item.id, item]))
+  // Two live rooms, two cards: each carries its own number instead of the bare sentence.
+  assert.equal(byId['apr-a'].toName, 'the room 482913')
+  assert.equal(byId['apr-b'].toName, 'the room 117042')
+  // One open room names it too (acceptance 2): not "only when ambiguous".
+  assert.notEqual(byId['apr-a'].toName, 'the room')
+  // No number known here (joined by link): the room's own title stands in, still not the bare sentence.
+  assert.equal(byId['apr-c'].toName, 'the room Loft')
+  // A hold with no known room keeps today's rule: no card anywhere (acceptance 3).
+  assert.equal(byId['apr-legacy'], undefined)
+  // The renderers print `toName` as it is, so the card body names the room (acceptance 4: a plain string).
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const plugin = pluginOf([[], [], ''])
+  const card = JSON.stringify(walk(plugin.ChatApproval({ item: byId['apr-a'], canDecide: true })))
+  assert.match(card, /the room 482913/)
+  // `approvalView` keeps its fallback for a card built by an older shape that carries no room.
+  assert.equal(approvalView({ approval_id: 'apr-old', kind: 'face_room_message' }).toName, 'the room')
 })

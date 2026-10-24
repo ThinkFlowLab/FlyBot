@@ -2938,6 +2938,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (hosted?.face?.status === 'left' || hosted?.face?.status === 'closed') return false
     return !(settings.pastFaceRooms ?? []).some(item => item.faceRoomId === roomId)
   }
+  // #991: a held room line's card names the room it will go to, so two open rooms are never both
+  // "the room" while the owner is deciding where the line lands. The number the owner typed is the
+  // shortest thing they can match to the room on screen; a guest that joined by link has no code yet,
+  // so the room's own title stands in. Undefined keeps `approvalView`'s "the room" for an older shape.
+  const holdRoomName = (roomId) => {
+    if (!roomId) return undefined
+    const code = String(settings.faceRooms?.[roomId]?.joinCode ?? '').replace(/\D/g, '').slice(0, 6)
+    if (code.length === 6) return `the room ${code}`
+    const title = cleanText(flybot.rooms?.ofFace?.(roomId)?.name)
+    return title ? `the room ${title}` : undefined
+  }
   const ownLineApproving = new Set()
   async function approveOwnLine(item) {
     if (!item?.id || ownLineApproving.has(item.id)) return
@@ -2975,6 +2986,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // A held room line belongs to one live room only (#188): no known room (legacy) or a room
         // that is left / closed here means no card and no waiting dot anywhere.
         .map(item => (item.kind === 'face_room_message' && !item.roomId && holdRooms()[item.id]?.roomId ? { ...item, roomId: holdRooms()[item.id].roomId } : item))
+        // #991: the room is known here (the line above just filled a legacy hold's id), so the card
+        // says which room it is; `toName` stays the plain string the two renderers already print.
+        .map(item => (item.kind === 'face_room_message' && item.roomId ? { ...item, toName: holdRoomName(item.roomId) ?? item.toName } : item))
         .filter(item => item.kind !== 'face_room_message' || (ownLineIds()[item.id] || (item.roomId && faceHoldLive(item.roomId))))
       const own = items.filter(item => ownLineIds()[item.id])
       const held = items.filter(item => !ownLineIds()[item.id])
