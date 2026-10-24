@@ -1029,7 +1029,7 @@ export function install(rt) {
 
   // #904: the host room's notice rides the join like the roster (the guest's group settings were empty).
   // It is stranger-written text too, so it is read only for the room this mirror is bound to and only
-  // from that room's own inviter; an empty value is not encoded, so it never wipes a notice.
+  // from that room's own inviter; a present empty value clears the notice, an absent field leaves it.
   function noticeOf(data, room, event) {
     if (data?.op !== 'join' || typeof data.notice !== 'string') return undefined
     const text = data.notice.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, 2000)
