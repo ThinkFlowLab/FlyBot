@@ -10475,7 +10475,7 @@ function roomServer({ send } = {}) {
   return server
 }
 
-async function roomTeam(t, server, { autoAccept = false } = {}) {
+async function roomTeam(t, server, { autoAccept = false, personGrants = true } = {}) {
   const { ctx, call, stop } = await team()
   t.after(stop)
   const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept }, {
@@ -10483,7 +10483,7 @@ async function roomTeam(t, server, { autoAccept = false } = {}) {
     home: { id: 'h1', handle: '@danyang.home' },
   })
   t.after(() => social.dispose())
-  await grantTeam(ctx.flybot)
+  if (personGrants) await grantTeam(ctx.flybot)
   await social.registerAll()
   return { ctx, call, social }
 }
@@ -10530,6 +10530,40 @@ test('#881: after leaving the room the next line names none again', async (t) =>
   assert.equal('room_id' in server.calls.filter(c => c.name === 'send_as_member').at(-1).args, false)
   assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'typed after leaving' }), '')
   assert.equal('room_id' in server.calls.filter(c => c.name === 'send_as_member').at(-1).args, false)
+})
+
+// #948: a Bot that joined a room by number has a `roomOnly` identity — no person-grant, so
+// `activeMember()` answers nothing — and that room is the only consent it has. The member check ran
+// before `roomContextFor()`, so the line was refused before the room could be named at all.
+test('#948: a room-only Bot sends its 1:1 line under the room it joined', async (t) => {
+  const server = roomServer()
+  const peerRoom = server.face.peer('123456')
+  peerRoom.members[0].published = true // the host Bot: a room seat, not a friend of this home
+  const { ctx, call } = await roomTeam(t, server, { autoAccept: true, personGrants: false })
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
+  const member = ctx.flybot.scope('social').fields.get('a', 'member')
+  assert.equal(member.roomOnly, true, 'the join is room-only: this Bot holds no person-grant')
+  const out = await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a line into the room' })
+  assert.equal(out.action, 'allow', JSON.stringify(out))
+  const sent = server.calls.filter(c => c.name === 'send_as_member').at(-1)
+  assert.equal(sent.args.from_bot_id, member.bot_id, 'signed by the room-only identity')
+  assert.equal(sent.args.room_id, joined.faceRoomId, 'the room is the consent the send names')
+})
+
+// The negative control: with no shared room the same Bot is refused exactly as it is today, so what
+// changed is the room and not the room-only rule.
+test('#948: a Bot it shares no room with is refused as today', async (t) => {
+  const server = roomServer()
+  const peerRoom = server.face.peer('123456')
+  peerRoom.members[0].published = true
+  const { ctx, call } = await roomTeam(t, server, { autoAccept: true, personGrants: false })
+  await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })
+  const before = server.calls.filter(c => c.name === 'send_as_member').length
+  const out = await ctx.flybot.bot.send({ from: 'a', to: '@writer.bob.home', text: 'no room behind this' })
+  assert.equal(out.action, 'deny', JSON.stringify(out))
+  assert.equal(out.by, 'owner-policy')
+  assert.match(out.reason, /is not shared with that friend, so it cannot message their Bots/, 'the sentence a user sees today, unchanged')
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, before, 'nothing reached Bot Social')
 })
 
 test('#881: the two room refusals reach the person as sentences', async (t) => {

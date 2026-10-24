@@ -237,6 +237,54 @@ test('an ungranted Bot cannot message a friend\'s Bot; a granted one can', async
   assert.equal(out.length, 2)
 })
 
+// #948: a Bot that joined a room by its number holds a `roomOnly` identity and no person-grant, so a
+// 1:1 line to the seat it shares that room with was refused before any transport could name the room.
+// The room is that identity's whole consent, so the policy reads it instead of waiting for the caller
+// to pass it: the same allowance reach() applies to an explicit `roomId`, discovered and exact.
+test('#948: a room-only Bot may line the seat it shares a room with, and the room is the only consent', async (t) => {
+  const state = team()
+  state.rooms.r = {
+    id: 'r', origin: 'face-to-face', members: ['a2'], participants: [
+      { kind: 'human', id: 'alice', role: 'admin', joinedSeq: 0 },
+      { kind: 'bot', id: 'a2', role: 'member', joinedSeq: 0, viaCode: true },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home', joinedSeq: 0 },
+    ],
+  }
+  const { fb, state: live } = await start(t, { state })
+  const out = []
+  fb.transports.add('bot-social', { send: async msg => { out.push(msg.to.handle); return { exchangeId: `r${out.length}` } } })
+  const seat = { kind: 'remote', handle: '@coder.bob.home' }
+  const refused = 'A2 is not shared with that friend, so it cannot message their Bots. To allow it, share A2 with them in its settings → Sharing.'
+  assert.equal((await fb.bot.send({ from: 'a2', to: seat, text: 'the line into our room' })).action, 'allow')
+  assert.deepEqual(out, ['@coder.bob.home'], 'it left, and the transport named the room it belongs to')
+  out.length = 0
+  const other = await fb.bot.send({ from: 'a2', to: { kind: 'remote', handle: '@writer.bob.home' }, text: 'not seated here' })
+  assert.equal(other.action, 'deny', 'the exact Bot, never any Bot of that home')
+  assert.equal(other.reason, refused, 'and the sentence a user sees is the one from before #948, word for word')
+  assert.deepEqual(out, [])
+  live.rooms.r.participants[2].leftSeq = 3
+  const left = await fb.bot.send({ from: 'a2', to: seat, text: 'after the seat left' })
+  assert.equal(left.action, 'deny', 'the seat it shares is the consent, and it is gone with the seat')
+  assert.equal(left.reason, refused)
+  assert.deepEqual(out, [])
+  // #948's scope is the face-to-face room, whose seats are admitted by a number or a link: a room of
+  // this home is opened and closed by its members, and that path keeps asking for a grant or an
+  // explicit roomId. Same pair, same handles, only the room's kind differs.
+  live.rooms.g = {
+    id: 'g', members: ['a2'], participants: [
+      { kind: 'human', id: 'alice', role: 'admin', joinedSeq: 0 },
+      { kind: 'bot', id: 'a2', role: 'member', joinedSeq: 0 },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home', joinedSeq: 0 },
+    ],
+  }
+  const group = await fb.bot.send({ from: 'a2', to: seat, text: 'a room of this home' })
+  assert.equal(group.action, 'deny', 'only a face-to-face room is read here')
+  assert.equal(group.reason, refused)
+  assert.deepEqual(out, [])
+  assert.equal(reach(live, { from: 'a2', to: seat, roomId: 'g' }).action, 'allow',
+    'an explicit roomId still names its room, face-to-face or not')
+})
+
 test('a held message is judged again when it is approved: revoke while it waited means refused', async (t) => {
   const state = team()
   grant(state, 'a', 'bob')

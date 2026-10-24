@@ -1204,6 +1204,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return false
   }
   const sendTarget = async msg => (await remoteBot(msg.target.handle)) ?? replyTarget(msg)
+  // #948: what a line's target is, and the room that is its consent. A seat in a face-to-face room is
+  // not on the roster — the room is the only place it exists — and a Bot that joined a room by its
+  // number holds a `roomOnly` identity with no person-grant. The open room the two are still in is the
+  // whole consent for that line, and the transport names it outbound.
+  const roomFor = (msg, handle) => (typeof msg.from === 'string' && msg.via !== 'room' && msg.via !== 'room-share' ? roomContextFor(msg.from, handle) : undefined)
+  const pairFor = async (msg) => {
+    const roomId = roomFor(msg, msg.target?.handle)
+    const listed = await sendTarget(msg)
+    const bot = listed ?? (roomId === undefined ? undefined : { handle: norm(msg.target.handle), home: homeOfPeer(msg.target.handle), name: norm(msg.target.handle) })
+    return { bot, roomId }
+  }
   // Hide a friend's Bot: decline the grant on Bot Social when we have a grant_id so the
   // owner's Manage access drops it; an older server (no decline tool) falls back to a
   // local hide. It stays hidden across refresh while it remains granted. If the owner
@@ -1439,7 +1450,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // room's own traffic: it passes, under that room's scope only. Anything else to someone off the
       // roster — a plain line, another Bot, another room — keeps the refusal below.
       if (ticketPair(msg)) return undefined
-      const bot = await sendTarget(msg)
+      // #948: the room is resolved before the pair is judged: a ticket-claimed Bot holds a `roomOnly`
+      // identity, which is not a person-grant, and the seat it shares a room with is off the roster.
+      const { bot, roomId } = await pairFor(msg)
       if (bot === undefined) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
       if (home && typeof msg.from === 'string' && !covered(await friendEntry(bot.home), msg.from)) {
         return { action: 'deny', reason: `${flybot.bot.get(msg.from)?.name ?? 'this Bot'} is not friends with ${bot.home}: that friendship is with ${(await friendEntry(bot.home)).via.join(', ')} only` }
@@ -1457,7 +1470,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (msg.via === 'room' || msg.via === 'room-share') return undefined
       // The friendship may be gone since the roster was cached (#666): deny now, never ask the owner
       // to approve a line that can no longer leave, and let the row go with it.
-      if (!(await friendshipActive(bot.home, msg.from))) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
+      if (!roomId && !(await friendshipActive(bot.home, msg.from))) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
       // Auto-send on for this pair (#417): it leaves without a card, and the chat marks it Auto-sent.
       if (approvalFor(msg.from, bot.home) === 'auto') return { action: 'allow', autoSent: true, ...named }
       return { action: 'hold', reason: `messages to ${bot.home}'s Bots need your approval`, ...named }
@@ -1617,10 +1630,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   async function sendOut(msg) {
       const pair = ticketPair(msg)
       if (pair) return sendTicketShare(msg, pair)
-      const bot = await sendTarget(msg)
+      const { bot, roomId } = await pairFor(msg)
       if (bot === undefined) throw new Error(`${msg.target.handle} is no longer reachable`)
       if (home) {
-        const member = typeof msg.from === 'string' ? activeMember(msg.from) : undefined
+        // #948: the room is resolved before the member is: a `roomOnly` identity signs a send that
+        // names an open room it is in, and nothing else (the refusal below stays).
+        const member = typeof msg.from === 'string' ? activeMember(msg.from) ?? (roomId ? memberOf(msg.from) : undefined) : undefined
         if (!member) {
           const name = flybot.bot.get(msg.from)?.name ?? 'This Bot'
           throw new Error(`${name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${name} with them in its settings → Sharing.`)
@@ -1630,7 +1645,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // consent, not this pair's, so they are left alone.
         // Asked fresh, not from the two-second cache: the answer that matters is the one at the
         // moment the owner approves, and the card may have waited far longer than that cache.
-        if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share' && !(await friendshipActive(bot.home, msg.from, { fresh: true }))) {
+        if (!roomId && msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share' && !(await friendshipActive(bot.home, msg.from, { fresh: true }))) {
           throw new Error(`${bot.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.`)
         }
         const attachments = await uploadAll(msg.attachments, member.bot_id)
@@ -1638,7 +1653,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // room is the reach the server can check, and it is the consent that lifts its own hold. A
         // room line names no room here, and the room's id is not what is missing — the link's own
         // pair names it (sendTicketShare). This path has no pair, so it has no grant to name.
-        const roomId = msg.via === 'room' || msg.via === 'room-share' ? undefined : roomContextFor(msg.from, bot.handle)
         const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}), ...(roomId ? { room_id: roomId } : {}) })
           .catch((error) => {
             if (isPaused(error)) notePaused(bot.handle, error)

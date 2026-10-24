@@ -204,6 +204,27 @@ function remoteInRoom(state, roomId, peer) {
   })
 }
 
+// #948: the room a send already belongs to, when the caller names none. A Bot that joined a room by
+// its number holds a `roomOnly` identity: no person-grant, and the one face-to-face room it came into
+// that way is its whole consent. A 1:1 line to the seat it shares that room with was refused by a
+// policy that can read only grants, because reach() reads a room only when the caller names one and the
+// id is worked out later, in the transport. This is that room discovered instead of passed — reach()'s
+// own allowance (`inRoom` + `remoteInRoom`) behind the same identity test the plugin uses
+// (`isCodeJoined` and no grant at all, its `roomOnly`), and exact: that Bot, never any Bot of that home,
+// only while the seat is still in the room, and only a face-to-face room, whose seats a number or a link
+// admitted. A Bot that holds a grant is judged as it always was, and an explicit `roomId` still wins.
+export function sharedRoom(state, botId, peer) {
+  if (typeof botId !== 'string' || state.bots?.[botId] === undefined) return undefined
+  if (hasAnyGrant(state, botId)) return undefined
+  const key = handleKey(peer)
+  if (!key) return undefined
+  const room = Object.values(state.rooms ?? {}).find(candidate => candidate?.origin === 'face-to-face'
+    && (candidate.members ?? []).includes(botId)
+    && isCodeJoined(state, candidate.id, botId)
+    && remotesInRoom(candidate).some(seat => handleKey(seat.handle || seat.id) === key))
+  return room === undefined ? undefined : String(room.id)
+}
+
 // The seats each link of this room admitted: the invite's own `homes` (home → the handles it seated)
 // is written on the accept and survives even when the seat record itself did not keep the ticket.
 // #929: a link accepted before that field was written keeps the same fact in `acceptedBy` + `seats`, and
@@ -321,12 +342,15 @@ export function install(rt) {
   rt.isGranted = (botId, peer, roomId) => isGranted(state, botId, peer, roomId)
   rt.isCodeJoined = (roomId, botId) => isCodeJoined(state, roomId, botId)
   rt.mayShareRoom = (room, botId) => mayShareRoom(state, room, botId)
-  rt.reach = (msg = {}) => reach(state, {
-    from: msg.remote?.handle ? { kind: 'remote', handle: msg.remote.handle } : (msg.from ?? msg.fromId),
-    to: msg.to ?? msg.toId,
-    roomId: msg.meta?.roomId ?? msg.roomId ?? msg.fromRoomId ?? msg.deliverArgs?.roomId ?? msg.deliverArgs?.fromRoomId,
-    scope: msg.meta?.scope,
-  })
+  rt.reach = (msg = {}) => {
+    const from = msg.remote?.handle ? { kind: 'remote', handle: msg.remote.handle } : (msg.from ?? msg.fromId)
+    const to = msg.to ?? msg.toId
+    const named = msg.meta?.roomId ?? msg.roomId ?? msg.fromRoomId ?? msg.deliverArgs?.roomId ?? msg.deliverArgs?.fromRoomId
+    // #948: a local Bot's line to a friend's Bot is judged under the room the two of them are still in,
+    // even when the send names no room: that room is the consent, and the transport names it outbound.
+    const roomId = named ?? (isRemoteRef(to) && !isRemoteRef(from) ? sharedRoom(state, from, to) : undefined)
+    return reach(state, { from, to, roomId, scope: msg.meta?.scope })
+  }
   rt.ticketPeers = () => ticketPeers(state)
 
   rt.setGrants = async (botId, list) => {
