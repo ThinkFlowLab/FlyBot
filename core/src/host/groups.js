@@ -404,6 +404,8 @@ export function install(rt) {
         }
       }
       callMembers(round, turns, index - 1, speakers, note, ROOM_ADMIN_TURNS_EACH)
+      // The line names them, so the report says "no answer" rather than "stayed silent" (#913).
+      for (const slot of round.slots) if (slot.by === undefined && found.some(bot => bot.id === slot.id)) slot.addressed = true
     }
     // The user spoke in this room, so late replies may be answered again.
     room.lateRounds = 0
@@ -617,8 +619,9 @@ export function install(rt) {
       // this home's Bots to answer is a person's line, not an event (#462).
       const opener = posts.findLast(post => !event(post) || friendAsks(post)) ?? posts.at(-1)
       const references = posts.flatMap(post => post.references ?? [])
-      // A member a Bot's post calls by name works for that Bot.
-      const named = opener.botId === undefined ? [] : mentionsIn(opener.text ?? '', room.members.map(rt.botOf).filter(Boolean)).found
+      // The members the opening line names: a Bot's post calls them to work for that Bot, a person's
+      // line addresses them. The report keeps that apart from a plain pass (#913).
+      const named = mentionsIn(opener.text ?? '', room.members.map(rt.botOf).filter(Boolean), opener.references ?? []).found
       // A person's plain line (not @all) in a face-to-face room: the Bots decide who answers (#299). The
       // owner's own line is never left unanswered; a friend's attested line is answered by their home too.
       const route = routeFor(room, opener, startSeq)
@@ -632,7 +635,7 @@ export function install(rt) {
         ...(references.length > 0 ? { references, shown: [] } : {}),
         slots: speakers.map(member => ({
           id: member.id, name: member.name, status: 'waiting',
-          ...(named.includes(member) ? { by: opener.botId } : {}),
+          ...(named.includes(member) ? (opener.botId === undefined ? { addressed: true } : { by: opener.botId }) : {}),
         })),
         // One pass: a plain line's speakers do not call each other on (#295), so Bots in two homes cannot loop.
         ...(isPlainFaceLine(room, opener) ? { single: true } : {}),
@@ -998,11 +1001,22 @@ export function install(rt) {
     const lines = round.replies.filter(reply => reply.kind === undefined).map(reply => `${reply.name}: ${reply.text}`)
     const waiting = round.replies.filter(reply => reply.kind === 'approval').map(reply => reply.name)
     const working = round.replies.filter(reply => reply.kind === 'working').map(reply => reply.name)
+    // A turn that ended without a line: a pass, or no reply at all. A member the round's line named
+    // and that ended this way was addressed and did not answer — not the same thing as a member that
+    // read the line and had nothing to add (#913). `addressed` is the person's line, `by` the member
+    // that called it; the poster's own call is the "your @" one.
+    const silentTurn = slot => slot.status === 'passed' || slot.status === 'missed'
+    const mine = slot => slot.addressed === true || (slot.by !== undefined && slot.by === post.botId)
+    const addressed = round.slots.filter(slot => mine(slot) && silentTurn(slot)).map(slot => slot.name)
+    const called = round.slots.filter(slot => !mine(slot) && slot.by !== undefined && silentTurn(slot)).map(slot => slot.name)
+    const silent = round.passed.filter(name => !addressed.includes(name) && !called.includes(name))
     const text = [
       lines.length > 0 ? `Replies to your post (oldest first):\n${lines.join('\n')}` : 'Nobody replied to your post.',
       working.length > 0 ? `Still working on it: ${working.join(', ')}. Each posts its result in the group when done, not to you; read_group_chat shows it.` : '',
       waiting.length > 0 ? `Waiting for the user's approval: ${waiting.join(', ')}. What they say afterwards is posted in the group, not sent to you; read_group_chat shows it.` : '',
-      round.passed.length > 0 ? `Stayed silent: ${round.passed.join(', ')}.` : '',
+      silent.length > 0 ? `Stayed silent: ${silent.join(', ')}.` : '',
+      addressed.length > 0 ? `No answer to your @: ${addressed.join(', ')}.` : '',
+      called.length > 0 ? `Called, but no answer: ${called.join(', ')}.` : '',
       round.failed.length > 0 ? `Could not answer because their model call failed: ${round.replies.filter(reply => reply.kind === 'failed').map(reply => `${reply.name} (${failureLine({ code: reply.code, status: reply.status, message: reply.text })})`).join(', ')}.` : '',
     ].filter(Boolean).join('\n\n')
     // The replies are what the room's members said, so the report is the owner's request only when the

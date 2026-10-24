@@ -1603,3 +1603,70 @@ test('a face room\'s roster and routing rule stand in its section; a routed turn
   }
   assert.ok(turns.some(turn => turn.sessionId === hosted.sessions[writer]))
 })
+
+// #913: the closing report wrote a member the line called with `@` and that never answered into the
+// same sentence as a member that read the line and answered [PASS], so the person could not tell "he
+// had nothing to add" from "he was addressed and said nothing". The round already knows which of its
+// slots the line addressed; the report now says so on its own sentence and leaves the rest where it was.
+test('#913: a called member that never answers is reported apart from a member that merely stayed silent', async (t) => {
+  const { call, emit, compose, relay, answer, stop, sent } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+  const chief = (await call('state', {})).value.mainBotId
+  const editor = (await call('create-bot', { name: 'Editor' })).value
+  await call('update-room', { id: room.id, add: [editor.id] })
+  sent.length = 0
+  // A Bot posts with report_back, so the round's closing report comes back to it. The post names
+  // nobody, so the room's order answers it: the Writer first, the Editor next.
+  const post = async (text) => emit(room.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: chief, senderName: 'Chief', reportBack: true }, content: [{ type: 'text', text }] } })
+  const reportAfter = async (at) => waitFor(() => sent.filter(entry => entry.message?.source?.role === 'report')[at])
+
+  // Round one: the Writer passes without being called; the Editor is called with `@` and passes too.
+  await post('please check the draft')
+  const running = relay(room.id, 'r913-1')
+  const first = await turnFor(sent)
+  await compose(room.id, '@Editor ping')
+  await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
+  const second = await turnFor(sent, first)
+  assert.match(second.message.content[0].text, /the user mentioned you/)
+  await answer(second.sessionId, second.message.source.exchangeId, '[PASS]', 2)
+  const done = JSON.parse(await running)
+  assert.deepEqual(done.passed, ['Writer', 'Editor'], 'both turns ended without a line')
+  const report = await reportAfter(0)
+  assert.ok(report, 'the round reported back to the Bot that posted')
+  const text = report.message.content[0].text
+  assert.match(text, /Stayed silent: Writer\./, 'a pass nobody called stays in that sentence')
+  assert.match(text, /No answer to your @: Editor\./, 'a called member that did not answer gets its own sentence')
+  assert.doesNotMatch(text, /Stayed silent: [^.]*Editor/, 'the two outcomes are never written into one sentence')
+
+  // Round two: the same call, answered. No "no answer" sentence at all.
+  await post('one more look')
+  const running2 = relay(room.id, 'r913-2')
+  const third = await turnFor(sent, first, second)
+  await compose(room.id, '@Editor ping')
+  await answer(third.sessionId, third.message.source.exchangeId, '[PASS]', 3)
+  const fourth = await turnFor(sent, first, second, third)
+  assert.match(fourth.message.content[0].text, /the user mentioned you/)
+  await answer(fourth.sessionId, fourth.message.source.exchangeId, 'Here it is.', 4)
+  await running2
+  const text2 = (await reportAfter(1)).message.content[0].text
+  assert.match(text2, /Stayed silent: Writer\./)
+  assert.doesNotMatch(text2, /No answer to your @/, 'a called member that answered is not reported as missing')
+
+  // Round three: the called member's turn ends with no reply at all (missed, not a passing string).
+  // It lands on the same sentence as a pass, once, and never twice.
+  await post('last one')
+  const controller = new AbortController()
+  const running3 = relay(room.id, 'r913-3', controller.signal)
+  const fifth = await turnFor(sent, first, second, third, fourth)
+  await compose(room.id, '@Editor ping')
+  await answer(fifth.sessionId, fifth.message.source.exchangeId, '[PASS]', 5)
+  const sixth = await turnFor(sent, first, second, third, fourth, fifth)
+  assert.match(sixth.message.content[0].text, /the user mentioned you/)
+  controller.abort()
+  await running3.catch(() => {})
+  const text3 = (await reportAfter(2)).message.content[0].text
+  assert.match(text3, /No answer to your @: Editor\./, 'a turn that ended with no reply is reported the same way')
+  assert.equal((text3.match(/No answer to your @/g) ?? []).length, 1, 'reported once, not twice')
+  assert.match(text3, /Stayed silent: Writer\./)
+})
