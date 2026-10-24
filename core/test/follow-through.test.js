@@ -101,11 +101,24 @@ const mockTimers = (t) => {
   mockedTimers = t.mock.timers
   t.after(() => { if (mockedTimers === t.mock.timers) mockedTimers = undefined })
 }
-// Bounded by rounds, never by wall-clock: a passing run does not depend on how slow the runner is,
-// and a genuine failure names the condition rather than a timeout.
+// How long a wait may take on the real clock, and how finely it steps.
+const REAL_WAIT_MS = 5000
+const REAL_WAIT_STEP_MS = 5
+// A wait is bounded by rounds when the test mocks the clock, because only a tick moves that clock
+// and a wall-clock deadline would decide a race the test controls (#821).
 const waitFor = async (check, rounds = 20000) => {
+  if (mockedTimers === undefined) {
+    // Bounded by the real clock, in real time: a round is one `setImmediate` (a few microseconds), so
+    // 20000 rounds are ~100 ms while the relay path does real work (state.json writes, the Session
+    // flush, resolving the Agent) and a loaded runner stretches that to more (#1012: the merge_group
+    // failure burned all 20000 rounds in 149 ms, so `openRoomTurn` never saw its call). A genuinely
+    // lost call still ends the run rather than stalling it.
+    const deadline = Date.now() + REAL_WAIT_MS
+    while (!check() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, REAL_WAIT_STEP_MS))
+    return check()
+  }
   for (let i = 0; i < rounds && !check(); i++) {
-    mockedTimers?.tick(1)
+    mockedTimers.tick(1)
     await new Promise(resolve => setImmediate(resolve))
   }
   return check()
@@ -480,6 +493,18 @@ test('in its own chat, a Bot that wrote a tool call as text is asked to make it'
   const retry = host.agentOf('b').calls[0]
   assert.deepEqual([retry.source.role, retry.source.retried], ['retry', true])
   assert.match(text(retry), /^\[Your last reply wrote a tool call as text, so nothing ran\]/)
+})
+
+test('a real-clock wait outlives its round budget (#1012)', async () => {
+  // Today the wait on a real clock is 20000 setImmediate rounds: about 100 ms on a runner, and the
+  // relay chain that has to hand a line over can take longer than that while nothing is wrong.
+  let ready = false
+  setTimeout(() => { ready = true }, 300)
+  await settle(() => ready)
+  // The bound is the clock's, not the round count's: the same wait with a tiny budget still waits.
+  let later = false
+  setTimeout(() => { later = true }, 50)
+  assert.equal(await waitFor(() => later, 5), true)
 })
 
 test('a written tool call is told apart from text about one', () => {
