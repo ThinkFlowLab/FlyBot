@@ -50,8 +50,36 @@ const RECORD_ONLY = /^[\s>*+-]*(?:record only\s*[—–-]+\s*do not (?:merge|que
 // The rules only hold where the branch is ours: a fork is exempt, because we cannot push to its head
 // and the owner keeps their own workflow there (#711/#713).
 const ISSUE_REF = /^[\s>#-]*(?:fixes|closes)\s*(?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#\d+/im
+// #943: the body says who owns the pull request and who reviews it. `Owner:`/`Reviewer:` were a
+// sentence in AGENTS.md that nothing read: #940 went from opened to merged in about seven minutes with
+// the largest diff of the day, and its body carried neither line.
+//
+// The first 20 lines, not the first two: an agent's body opens with its own HTML comment (the open #941
+// carries `Owner:` on line 4), and a check that only read the top would refuse every one of them.
+const HEADER_LINES = 20
+const OWNER_LINE = /^\s*Owner:/i
+const REVIEWER_LINE = /^\s*Reviewer:/i
 const short = (s) => String(s ?? '').slice(0, SHORT)
 const labelNames = (labels) => (labels ?? []).map((l) => String(typeof l === 'string' ? l : l?.name ?? '').toLowerCase())
+
+// The refusal names the line, not just the defect, so the fix is "add this line" rather than "something
+// about the body". A `Reviewer:` line with no value names nobody, which is the same defect as a missing
+// line: the queue is meant to know who reviews, not to see the word. A value is one login, with or
+// without a leading `@`, compared case-insensitively against the policy's `reviewers`.
+function headerReasons(body, policy) {
+  const lines = String(body ?? '').split(/\r?\n/).slice(0, HEADER_LINES)
+  const reasons = []
+  if (!lines.some((line) => OWNER_LINE.test(line))) reasons.push('missing line: Owner:')
+  const reviewer = lines.find((line) => REVIEWER_LINE.test(line))
+  if (!reviewer) reasons.push('missing line: Reviewer:')
+  else {
+    const names = reviewer.replace(REVIEWER_LINE, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
+    if (!names.length) reasons.push('missing line: Reviewer:')
+    const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
+    for (const name of names) if (!reviewers.has(name)) reasons.push(`Reviewer names "${name}", who is not in reviewers`)
+  }
+  return reasons
+}
 
 // The newest conclusion that names this head, if it carries the record-only marker. Only a body that
 // parses as a conclusion counts, so ordinary prose quoting the phrase is no marker; only the newest
@@ -69,7 +97,7 @@ export function recordOnlyAt(reports, head) {
 }
 
 // The decision, without the network: `result` is merge-gate's `judge` output for this head.
-export function guard({ pr, head, labels, body, mechanicalRelease, fork, result, reports }) {
+export function guard({ pr, head, labels, body, mechanicalRelease, fork, draft, merged, result, reports, policy }) {
   const quiet = recordOnlyAt(reports, result.head ?? head)
   const reasons = [...result.reasons]
   if (quiet) reasons.push('the newest conclusion at this head says "record only — do not merge"')
@@ -81,6 +109,11 @@ export function guard({ pr, head, labels, body, mechanicalRelease, fork, result,
   if (!mechanicalRelease && !fork) {
     if (!ISSUE_REF.test(String(body ?? ''))) reasons.push('no issue reference in the pull request body: add "Fixes #<n>" or "Fixes owner/repo#<n>"')
     if (!labelNames(labels).includes('agent-pr')) reasons.push('missing label: agent-pr')
+    // #943: only a request to enter the queue. A draft is not entering it, and a merged pull request is
+    // never re-judged: this check runs again on every comment (enqueue-guard.yml), so without the second
+    // half a sentence on an old merged pull request would turn its check red over a body nobody can edit
+    // any more (#926, #925, #908 and others merged without these lines).
+    if (!draft && !merged) reasons.push(...headerReasons(body, policy))
   }
   const ok = result.ok && !quiet && reasons.length === 0
   return {
@@ -90,6 +123,8 @@ export function guard({ pr, head, labels, body, mechanicalRelease, fork, result,
     recordOnly: Boolean(quiet),
     mechanicalRelease: Boolean(mechanicalRelease),
     fork: Boolean(fork),
+    draft: Boolean(draft),
+    merged: Boolean(merged),
     labels: labels ?? [],
     // One loud sentence: a refusal says what to do ("do not enqueue") and why, so it cannot be read
     // as a warning that some other step may override.
@@ -126,11 +161,12 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   const labels = (pull.labels ?? []).map((l) => l.name)
   // #676: the association travels with the report, the way review-gate.mjs reads the same two APIs. Without
   // it every conclusion is refused as "not tied to this repository", so a PASS could never clear the guard.
+  // #943: the account type travels too, for the same reason — a bot account writes no conclusion.
   const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at, association: c.author_association })),
+    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association })),
+      .map((v) => ({ kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
   ]
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
 
@@ -144,7 +180,7 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   // which is not ours either. Both sides are lower-cased because the repository name in the API paths is
   // case-insensitive: `--repo thinkflowlab/flybot` used to read our own branch as a fork and print ALLOW.
   const fork = String(pull.head?.repo?.full_name ?? '').toLowerCase() !== String(repo).toLowerCase()
-  const decision = guard({ pr, head, labels, body: pull.body, mechanicalRelease, fork, result, reports })
+  const decision = guard({ pr, head, labels, body: pull.body, mechanicalRelease, fork, draft: pull.draft, merged: pull.merged, result, reports, policy })
   return { decision, pull, repo, pr }
 }
 

@@ -666,3 +666,39 @@ test('#928 pair: the same report counts once the API reports admin, and the look
   assert.deepEqual(own, [])
   assert.deepEqual(ownCalls, [])
 })
+
+// #943, part 2: the gate does not read the writer's account type today, so a bot account's `Verdict:` is
+// a conclusion — `cursor[bot]` wrote one at #940's tip beside the Reviewer's. Membership of `reviewers`
+// cannot express the rule: `Birfy` is the one account every Bot writes as, so a login list that refused
+// bot accounts would refuse every conclusion. The rule is the account type, not the name.
+const botReport = (login, { tip = HEAD, verdict = 'PASS', at = '2026-10-24T07:40:42Z', kind = 'comment', association = 'NONE', type = 'Bot' } = {}) =>
+  ({ login, body: report({ tip, verdict }), at, kind, association, type })
+
+test('#943: a GitHub bot account writes no conclusion, and the reason names the account', () => {
+  const r = decide({ head: HEAD, author: 'opener', reports: [botReport('cursor[bot]')], policy })
+  assert.equal(r.ok, false)
+  assert.equal(r.by, null)
+  const entry = r.judged.find((e) => e.login === 'cursor[bot]')
+  assert.equal(entry.counts, false)
+  assert.match(String(entry.why ?? r.reason), /bot account/)
+  assert.match(String(r.reason), /cursor\[bot\]/)
+})
+
+test('#943: the login ending in [bot] is the same rule when the API reports no account type', () => {
+  for (const type of ['User', undefined]) {
+    const r = decide({ head: HEAD, author: 'opener', reports: [botReport('dependabot[bot]', { type })], policy: { ...policy, reviewers: ['dependabot[bot]'] } })
+    assert.equal(r.ok, false, String(type))
+    assert.match(String(r.judged.find((e) => e.login === 'dependabot[bot]').why), /bot account/)
+  }
+})
+
+test('#943: at one tip the bot report does not count and the shared account\'s report does (#940)', () => {
+  const cursor = botReport('cursor[bot]')
+  const birfy = { login: 'Birfy', body: report({ writer: 'Reviewer' }), at: '2026-10-24T07:45:10Z', kind: 'comment', association: 'MEMBER', type: 'User' }
+  const r = decide({ head: HEAD, author: 'opener', reports: [cursor, birfy], policy: { ...policy, reviewers: ['Birfy'], selfReview: ['Birfy'] } })
+  assert.equal(r.ok, true, r.reason)
+  assert.equal(r.by, 'Birfy')
+  const entry = r.judged.find((e) => e.login === 'cursor[bot]')
+  assert.equal(entry.counts, false)
+  assert.match(String(entry.why), /bot account/)
+})

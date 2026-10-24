@@ -468,3 +468,16 @@ test('#925: a selfReview login with admin on someone else\'s pull request lets t
   assert.equal(allowed.ok, true, allowed.reasons.join('; '))
   assert.equal(allowed.verdict.by, 'hsliuustc0106')
 })
+
+// #943, part 2: the queue entry reads the same `decide`, so a bot account's `Verdict:` refuses the entry
+// and a PASS from the shared account at the same tip lets it through.
+test('#943: a bot account\'s Verdict: does not let a queue entry through', () => {
+  const bot = { login: 'cursor[bot]', body: report(), at: '2026-10-24T07:40:42Z', kind: 'comment', association: 'NONE', type: 'Bot' }
+  const refused = judgeAt({ reports: [bot] })
+  assert.equal(refused.ok, false)
+  assert.match(refused.reasons.join('; '), /bot account/)
+
+  const shared = { login: 'Birfy', body: report(), at: '2026-10-24T07:45:10Z', kind: 'comment', association: 'MEMBER', type: 'User' }
+  const r = judge({ labels: [], head: HEAD, author: 'opener', reports: [bot, shared], policy: { ...policy, reviewers: ['Birfy'], selfReview: ['Birfy'] }, expectedHead: HEAD })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})

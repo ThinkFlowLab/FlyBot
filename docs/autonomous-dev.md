@@ -149,6 +149,11 @@ What counts as a reviewed tip, all of it:
    counting; that report is then listed as "not counted", with the sha it named.
 5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
    earlier PASS, and a later PASS at the same tip replaces a FAIL.
+6. **A GitHub bot account writes no conclusion** (#943): `user.type` is `Bot`, or the login ends `[bot]`, and the
+   report joins `judged` with `counts: false` and a reason naming the account, whatever its body says — the real
+   Reviewer voids it at that tip with `Correction from Reviewer:`. The rule is the account type and not a login
+   list: every Bot writes as the shared `Birfy` account, so a list containing it would void the whole pipeline.
+   `cursor[bot]`'s report at #940's tip is the case (`Correction from Reviewer`, [comment `6381646389`](https://github.com/ThinkFlowLab/FlyBot/pull/940#issuecomment-6381646389)).
 
 **Attribution (#627).** Every state-changing write says who wrote it: `Written-by: <Bot>` is its first
 line, and a conclusion puts it on the second, under the fixed verdict line. `decide` refuses a report
@@ -210,7 +215,9 @@ entry — are in [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates). This s
 **How to merge.** A direct `gh pr merge <n> --squash` is refused with `! The merge strategy for main is set by the merge
 queue`; that is not a failure. Run `node .github/scripts/enqueue-guard.mjs --pr <n>` first — it re-reads the live head and
 exits 1 on a `hold`, on a newest conclusion that is not a PASS, and on a report marked "record only — do not merge", so a
-PASS is never a queue permit on its own (#602); on success it prints the command and never runs it. Enqueue with
+PASS is never a queue permit on its own (#602); on a live, non-draft pull request of ours it also refuses a body with no
+`Owner:`/`Reviewer:` line in its first 20 lines (or a `Reviewer:` outside `reviewers`), naming the missing line or the
+login (#943) — a merged pull request is not re-judged, because this check also runs on every comment; on success it prints the command and never runs it. Enqueue with
 `gh pr merge <n> --auto --squash --match-head-commit <sha>` (gh has no `--merge-queue` flag). gh may still print the
 strategy line, or `! Pull request #<n> is already queued to merge`; the PR is
 then in the queue (`gh api graphql` → `pullRequest.isInMergeQueue`). The queue, not the agent, performs the squash merge

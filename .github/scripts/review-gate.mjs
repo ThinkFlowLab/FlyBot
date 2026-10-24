@@ -183,6 +183,13 @@ function ranCommands(raw, lines, at, inline) {
 
 const login = (r) => String(r.login ?? '').toLowerCase()
 const where = (r) => `${r.kind === 'review' ? 'review' : 'comment'} by ${r.login}`
+// #943: a GitHub bot account writes no conclusion, whatever its body says. `reviewers` cannot express
+// this — every Bot writes as the shared `Birfy` account, which is a `User`, so a login list that refused
+// bot accounts would void the whole pipeline — so the test is the account type, plus the login shape the
+// API has always used for them (`cursor[bot]`). At #940's tip such a `Verdict:` sat beside the
+// Reviewer's; what voids it is the real Reviewer's `Correction from Reviewer:`, not a second read here.
+const isBotAccount = (r) => String(r.type ?? '').toLowerCase() === 'bot' || /\[bot\]$/i.test(login(r))
+const botKind = (r) => (String(r.type ?? '').toLowerCase() === 'bot' ? 'account type Bot' : 'login ends with [bot]')
 
 // reports: [{ login, body, at, kind, id }] from the comments and review bodies of one PR.
 export function decide({ head, author, reports, policy, admins } = {}) {
@@ -207,6 +214,13 @@ export function decide({ head, author, reports, policy, admins } = {}) {
       continue
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
+    // #943: refused before the association test, with its own reason: a bot account is not a
+    // conclusion for a reason unlisted logins cannot explain, and the log has to say which defect fired.
+    if (isBotAccount(r)) {
+      entry.why = `${where(r)}: written by a bot account (${botKind(r)}), so it is not a conclusion`
+      reasons.push(entry.why)
+      continue
+    }
     const association = String(r.association ?? '').toUpperCase()
     // #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR
     // and still count, but only on its own pull request. That is one exception for one person, not a
@@ -302,10 +316,10 @@ function main() {
   if (!head) throw new Error(`pull request ${pr} has no head sha`)
 
   const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, body: c.body, at: c.created_at, association: c.author_association, url: c.html_url })),
+    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association, url: c.html_url })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association, url: v.html_url })),
+      .map((v) => ({ kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association, url: v.html_url })),
   ]
 
   const policy = loadPolicy(policyPath)

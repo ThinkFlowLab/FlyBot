@@ -12,6 +12,9 @@ const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
 const HOST_FILE = 'core/src/host/turns.js' // T2: needs a PASS
 const TEST_FILE = 'core/test/enqueue-guard.test.js' // T1: needs none
 
+// #943: a pull request that may enter the queue says who owns it and who reviews it, in its body.
+const HEADERS = 'Owner: Dev\nReviewer: reviewer-agent\n'
+
 const policyFile = () => {
   const path = join(mkdtempSync(join(tmpdir(), 'enqueue-guard-policy-')), 'review-policy.json')
   writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Birfy'] }))
@@ -29,7 +32,7 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [] } = {}) =>
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
-const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined } = {}) => {
+const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false } = {}) => {
   const calls = []
   const gh = (...args) => {
     const path = args[args.length - 1]
@@ -41,7 +44,7 @@ const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = [
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head, repo: { full_name: headRepo } }, user: { login: author }, body, labels: labels.map((name) => ({ name })) })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head, repo: { full_name: headRepo } }, user: { login: author }, body, labels: labels.map((name) => ({ name })), draft, merged })
     // Anything else — `gh pr merge` above all — is the guard doing more than checking.
     throw new Error('fake gh: unexpected ' + path)
   }
@@ -190,7 +193,7 @@ test('#718: a pull request without the agent-pr label is not enqueued', () => {
 })
 
 test('#718: a Closes reference and the agent-pr label let it through', () => {
-  const gh = fakeGh({ body: 'Closes #714\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
+  const gh = fakeGh({ body: HEADERS + 'Closes #714\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
   const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.command, `gh pr merge 566 --auto --squash --match-head-commit ${HEAD}`)
@@ -200,13 +203,13 @@ test('#718: a Closes reference and the agent-pr label let it through', () => {
 // `Fixes ThinkFlowLab/FlyBot#801`. The bare spelling there points at a number the fork does not have, so
 // the guard has to accept the qualified one or every fork pull request is refused at the last step.
 test('a cross-repository Fixes reference is an issue reference', () => {
-  const gh = fakeGh({ body: 'Fixes ThinkFlowLab/FlyBot#801\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
+  const gh = fakeGh({ body: HEADERS + 'Fixes ThinkFlowLab/FlyBot#801\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
   const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
 
 test('the bare Fixes #<n> spelling still counts next to the cross-repository one', () => {
-  const gh = fakeGh({ body: 'Fixes #801\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
+  const gh = fakeGh({ body: HEADERS + 'Fixes #801\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
   const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
@@ -214,7 +217,7 @@ test('the bare Fixes #<n> spelling still counts next to the cross-repository one
 // The space after the keyword was optional before the cross-repository form existed and stays optional:
 // widening the pattern must not quietly drop a spelling that used to count.
 test('a Fixes reference with no space before the hash still counts', () => {
-  const gh = fakeGh({ body: 'Fixes#801\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
+  const gh = fakeGh({ body: HEADERS + 'Fixes#801\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
   const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
@@ -326,4 +329,95 @@ test('#925: a selfReview login with admin on someone else\'s pull request is acc
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.verdict.by, 'Birfy')
   assert.ok(gh.calls.includes('repos/ThinkFlowLab/FlyBot/collaborators/Birfy/permission'))
+})
+
+// #943, part 1: the two lines the pipeline has been described with everywhere, read before the queue.
+// #940 went from opened to merged in about seven minutes with the largest diff of the day and its body
+// carried neither line, so the convention was a sentence nothing checked. Both lines present is not
+// enough on its own — the Reviewer named has to be someone who may write a conclusion at all.
+test('#943: a body with no Owner: line is refused, and the refusal names that line', () => {
+  const r = run({ body: 'Reviewer: reviewer-agent\nFixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('missing line: Owner:'), r.reasons.join('; '))
+  assert.equal(r.reasons.some((reason) => /missing line: Reviewer:/.test(reason)), false, 'only the line that is missing is named')
+})
+
+test('#943: a body with no Reviewer: line is refused, and the refusal names that line', () => {
+  const r = run({ body: 'Owner: Dev\nFixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('missing line: Reviewer:'), r.reasons.join('; '))
+  assert.equal(r.reasons.some((reason) => /missing line: Owner:/.test(reason)), false, 'only the line that is missing is named')
+})
+
+test('#943: a Reviewer: naming a login outside `reviewers` is refused, and the refusal names the login', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: someone-else\nFixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('Reviewer names "someone-else", who is not in reviewers'), r.reasons.join('; '))
+})
+
+test('#943: an @ and any case are fine on a login `reviewers` lists', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: @Reviewer-Agent, BIRFY\nFixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// #941's shape: the body starts with the agent's own HTML comment, so the lines sit on the 4th and 5th
+// line, not on the first two. Reading only the first two would refuse every agent pull request.
+test('#943: the lines are found in the first 20 lines, not only the first two', () => {
+  const r = run({ body: '<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n\n' + HEADERS + 'Fixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#943: lines after the first 20 do not count', () => {
+  const far = 'Fixes #943\n' + 'filler\n'.repeat(19) + HEADERS
+  const r = run({ body: far, comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('missing line: Owner:'), r.reasons.join('; '))
+  assert.ok(r.reasons.includes('missing line: Reviewer:'), r.reasons.join('; '))
+})
+
+// A draft is not entering the queue, and history is never re-read: the check runs on the enqueue request
+// for a live head only, so #940's merged record stays exactly as it is.
+test('#943: a draft is not refused by the body check', () => {
+  const r = run({ body: 'Fixes #943\n', draft: true, comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// #943, part 2: a GitHub bot account writes no conclusion. The shared account every Bot writes as
+// (`Birfy`) is a `User` and keeps counting, which is why this is a rule about account type and not a
+// login list — a list containing `Birfy` would void the whole pipeline.
+test('#943: a Verdict: written by a bot account is not a conclusion here either', () => {
+  const bot = { user: { login: 'cursor[bot]', type: 'Bot' }, body: report(), created_at: '2026-10-24T07:40:42Z', author_association: 'NONE' }
+  const shared = { user: { login: 'Birfy', type: 'User' }, body: report().replace('reviewer-agent', 'Birfy'), created_at: '2026-10-24T07:45:10Z', author_association: 'MEMBER' }
+
+  const alone = run({ comments: [bot] })
+  assert.equal(alone.ok, false)
+  assert.match(alone.reasons.join('; '), /cursor\[bot\].*bot account/)
+  assert.equal(alone.verdict.judged.find((e) => e.login === 'cursor[bot]').counts, false)
+
+  const both = run({ comments: [bot, shared] })
+  assert.equal(both.ok, true, both.reasons.join('; '))
+  assert.equal(both.verdict.by, 'Birfy')
+})
+
+test('#943: a Reviewer: line with no login names nobody, so it is the missing line', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer:\nFixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('missing line: Reviewer:'), r.reasons.join('; '))
+})
+
+// #943 INC at 87b49961: this check runs again on every comment (enqueue-guard.yml, `issue_comment`),
+// so "a merged pull request is never re-judged" was only true of the code that never read `merged`.
+// A sentence on #926/#925/#908 — merged without these lines, their bodies uneditable now — turned
+// their check red. A merged pull request is history; only a live request is judged.
+test('#943 INC: a merged pull request is not re-judged when a comment arrives', () => {
+  const body = 'Fixes #602\n\nthe detail' // no Owner:/Reviewer:, the shape #926/#925/#908 merged with
+  const merged = run({ body, merged: true, comments: [comment()] })
+  assert.equal(merged.ok, true, merged.reasons.join('; '))
+  assert.equal(merged.reasons.some((reason) => /missing line:/.test(reason)), false)
+  // The negative control: the same body on an open, non-draft pull request is still refused, so the
+  // exemption is `merged` and not a missing fixture field.
+  const live = run({ body, comments: [comment()] })
+  assert.equal(live.ok, false)
+  assert.ok(live.reasons.includes('missing line: Owner:'), live.reasons.join('; '))
+  assert.ok(live.reasons.includes('missing line: Reviewer:'), live.reasons.join('; '))
 })

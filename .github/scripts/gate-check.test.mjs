@@ -13,6 +13,9 @@ const HOST_FILE = 'core/src/host/turns.js' // T2: needs a PASS
 const TEST_FILE = 'core/test/gate-check.test.js' // T1: needs none
 const REPO = 'Birfy/FlyBot'
 
+// #943: a live, non-draft pull request carries the two lines that say who owns and reviews it.
+const HEADERS = 'Owner: Dev\nReviewer: reviewer-agent\n'
+
 const policyFile = () => {
   const path = join(mkdtempSync(join(tmpdir(), 'gate-check-policy-')), 'review-policy.json')
   writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Birfy'] }))
@@ -27,7 +30,7 @@ const comment = (body = report(), at = '2026-10-23T07:00:00Z') =>
 
 // A repository with one pull request and the check runs written on it so far. `gh` answers both call
 // shapes the scripts use: variadic reads (`gh('api', …, path)`) and writes (`gh([args], json)`).
-const world = ({ head = HEAD, labels = ['agent-pr'], body = 'Fixes #812\n', comments = [], files = [HOST_FILE], author = 'opener', headRepo = REPO } = {}) => {
+const world = ({ head = HEAD, labels = ['agent-pr'], body = HEADERS + 'Fixes #812\n', comments = [], files = [HOST_FILE], author = 'opener', headRepo = REPO } = {}) => {
   const state = { head, labels, body, comments, files, author, headRepo, runs: [], writes: [], nextId: 100 }
   const pull = () => ({ head: { sha: state.head, repo: { full_name: state.headRepo } }, user: { login: state.author }, body: state.body, labels: state.labels.map((name) => ({ name })) })
   const handle = (args, input) => {
@@ -183,7 +186,7 @@ test('#812: a comment arriving after a refusal PATCHes the same run green', () =
 })
 
 test('#812: a T0/T1 head is green without a PASS, and the summary says why', () => {
-  const state = world({ body: 'Fixes #812\n', files: [TEST_FILE], comments: [] })
+  const state = world({ body: HEADERS + 'Fixes #812\n', files: [TEST_FILE], comments: [] })
   const r = run(state)
   assert.equal(r.applied.conclusion, 'success')
   assert.equal(state.runs[0].conclusion, 'success')
