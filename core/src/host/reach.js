@@ -24,7 +24,7 @@
 //                     grant, or both are current members of the room the message belongs to
 //   no sender         the owner or the system: allowed
 
-import { currentParticipants } from './room-membership.js'
+import { currentParticipants, homesOf } from './room-membership.js'
 
 export const POLICY = 'owner-policy'
 
@@ -206,12 +206,15 @@ function remoteInRoom(state, roomId, peer) {
 
 // The seats each link of this room admitted: the invite's own `homes` (home → the handles it seated)
 // is written on the accept and survives even when the seat record itself did not keep the ticket.
+// #929: a link accepted before that field was written keeps the same fact in `acceptedBy` + `seats`, and
+// `homesOf` in `room-membership.js` is the one reading of it — ask that, never `invite.homes` directly,
+// or a room that predates the field enumerates no pair and its envelopes fall back to a friendship.
 function linkSeats(room) {
   const out = new Map()
   const invites = [room?.localInvite, ...(Array.isArray(room?.localInvites) ? room.localInvites : [])]
   for (const invite of invites) {
     if (!invite || typeof invite.ticket !== 'string' || !invite.ticket) continue
-    for (const handles of Object.values(invite.homes ?? {})) {
+    for (const handles of Object.values(homesOf(invite))) {
       for (const handle of Array.isArray(handles) ? handles : []) {
         if (typeof handle === 'string' && handle && !out.has(handle)) out.set(handle, invite)
       }

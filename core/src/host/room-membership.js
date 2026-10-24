@@ -358,6 +358,16 @@ function permittedBot(state, room, botId, humans, { viaCode = false } = {}) {
   return bot.ownerId === [...owners][0]
 }
 
+// The homes a link seated, `{ [home]: [seat handles] }`. A record from before `homes` was written keeps
+// its one `acceptedBy` (the writer deletes it once `homes` exists), and an older one still keeps the
+// handles it seated in `seats`. #929: this is the one reading of that fact — `reach.js` `linkSeats` asks
+// it too, so a room whose link predates the field enumerates the pair its seat is.
+export function homesOf(invite) {
+  const homes = invite?.homes && typeof invite.homes === 'object' ? { ...invite.homes } : {}
+  if (typeof invite?.acceptedBy === 'string' && invite.acceptedBy && !homes[invite.acceptedBy]) homes[invite.acceptedBy] = [...(invite.seats ?? [invite.acceptedBy])]
+  return homes
+}
+
 export function install(rt) {
   const { state } = rt
 
@@ -1201,12 +1211,6 @@ export function install(rt) {
   // A link a new person can still use: not withdrawn and not out of date. A link admits anyone it is
   // given to (owner decision, 2026-10-24), so a home that joined does not close it.
   const openInvite = (invite, at = Date.now()) => unexpired(invite, at) && !invite.withdrawnAt
-  // The homes a link seated, `{ [home]: [seat handles] }`; a record from before keeps its one `acceptedBy`.
-  const homesOf = (invite) => {
-    const homes = invite?.homes && typeof invite.homes === 'object' ? { ...invite.homes } : {}
-    if (typeof invite?.acceptedBy === 'string' && invite.acceptedBy && !homes[invite.acceptedBy]) homes[invite.acceptedBy] = [...(invite.seats ?? [invite.acceptedBy])]
-    return homes
-  }
   const seatedBy = invite => Object.keys(homesOf(invite)).length > 0
 
   function inviteView(invite) {

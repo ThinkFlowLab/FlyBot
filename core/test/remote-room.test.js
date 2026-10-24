@@ -9,6 +9,7 @@ import { install as installStore } from '../src/host/store.js'
 import { install as installMemberAuth } from '../src/host/member-auth.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import {
+  homesOf,
   install as installRooms,
   isFaceRoom,
   implicitRoomOwner,
@@ -1516,6 +1517,75 @@ test('#923: a link-admitted seat is the pair the link opened, and a hand-added f
   void bob
 })
 
+
+// #929: `homes` is a field #904 introduced, so a room whose link was accepted before it kept the same
+// fact in `acceptedBy` + `seats` only. `homesOf` (room-membership) already reads both; `linkSeats` read
+// only `homes`, so such a seat enumerated no pair and its envelopes fell back to a friendship the two
+// homes never had — the symptom #923 closed, surviving on every room that predates the field.
+test('#929: a link accepted before homes was written still enumerates its pair, and both halves read one fixture', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  rt.state.bots['chief-a'].fields = { social: { member: { home: '@alice.home', handle: '@chief.a.home' } } }
+  const invite = await rt.mintRoomInvite('war')
+  const accepted = await rt.applyInboundRoomShare({
+    text: encodeRoomShare({ op: 'ask', ticket: invite.ticket, accept: true }),
+    fromHandle: '@coder.bob.home', fromHome: '@bob.home', fromName: 'Coder',
+  })
+  assert.equal(accepted.accepted, true)
+  const seat = rt.state.rooms.war.participants.find(p => p.remote === true && p.handle === '@coder.bob.home')
+  assert.ok(seat, 'the accept seated the guest')
+  const record = () => rt.state.rooms.war.localInvites.find(i => i.ticket === invite.ticket)
+  const pairs = () => ticketPeers(rt.state).filter(p => p.to === '@coder.bob.home')
+
+  // Today's shape, as written by the accept: the pair comes from `homes`.
+  assert.deepEqual(homesOf(record()), { '@coder.bob.home': ['@coder.bob.home'] })
+  assert.deepEqual(pairs(), [{ from: 'chief-a', to: '@coder.bob.home', scope: 'war', ticket: invite.ticket }])
+
+  // The seat kept the ticket too (#923's other trace). Drop it here, so everything below measures the link
+  // record alone — otherwise a seat that kept `admittedBy: 'ticket'` would enumerate on its own account.
+  delete seat.admittedBy
+  delete seat.ticket
+  delete seat.hostBotId
+  assert.deepEqual(pairs().map(p => [p.from, p.ticket]), [['chief-a', invite.ticket]], 'the link record alone opens the pair')
+
+  // The shape a link accepted before #904 has: no `homes`, the one home in `acceptedBy`, its handles in
+  // `seats`. The writer deletes those once `homes` is written, so a record carrying them never had it.
+  const older = record()
+  delete older.homes
+  older.acceptedBy = '@coder.bob.home'
+  older.seats = ['@coder.bob.home']
+  assert.equal(older.homes, undefined)
+  assert.deepEqual(homesOf(older), { '@coder.bob.home': ['@coder.bob.home'] }, 'the older record keeps the same fact')
+  assert.deepEqual(pairs(), [{ from: 'chief-a', to: '@coder.bob.home', scope: 'war', ticket: invite.ticket }], 'the older link enumerates its seat too')
+
+  // #923's negative control cannot be weakened by this: a friend's Bot named by no link is not a pair.
+  rt.state.rooms.war.participants.push({ kind: 'bot', remote: true, id: '@friend.eve.home', handle: '@friend.eve.home', joinedSeq: 999, joinedAt: 2 })
+  assert.equal(ticketPeers(rt.state).some(p => p.to === '@friend.eve.home'), false, 'a hand-added friend is not a room pair')
+
+  // The two readings cannot drift apart: on one fixture, a record `homesOf` can name a home for is exactly
+  // a record whose seat enumerates a pair, and a record neither field describes enumerates nothing.
+  const fixtures = [
+    { homes: { '@coder.bob.home': ['@coder.bob.home'] }, expected: true, why: 'today' },
+    { acceptedBy: '@coder.bob.home', seats: ['@coder.bob.home'], expected: true, why: 'before homes' },
+    { acceptedBy: '@coder.bob.home', expected: true, why: 'before homes and seats: one home, its own handle' },
+    { homes: {}, expected: false, why: 'nothing recorded' },
+    { expected: false, why: 'empty record' },
+  ]
+  for (const fixture of fixtures) {
+    const { expected, why, ...record } = fixture
+    record.ticket = invite.ticket
+    const names = Object.keys(homesOf(record))
+    rt.state.rooms.war.localInvites = [record]
+    const enumerated = ticketPeers(rt.state).some(p => p.to === '@coder.bob.home')
+    assert.equal(names.length > 0, expected, `homesOf on ${why}`)
+    assert.equal(enumerated, names.length > 0, `linkSeats agrees with homesOf on ${why}`)
+  }
+})
 
 // #909: an inbound envelope may say who invited a room for display, but it never decides which room it
 // may touch, which room gets created, or who wrote a line. The transport names the Bot that delivered it,
