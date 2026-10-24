@@ -152,6 +152,44 @@ test('#271: no pointer for an approval whose chat is the open one, whatever the 
   } finally { off() }
 })
 
+// #998: a group with nothing said yet gets no session header from the host, so a dock that stands in for
+// that header has to know the same fact, narrowed the way the host narrows it: nothing said and nothing sent.
+// The session's own snapshot carries it as `blank` plus `promptAttempted`; the dock passes the combined
+// answer to every slot so a plugin can draw the header the host is missing — and never a second one.
+test('#998: the session dock tells a slot whether the chat is still blank', async () => {
+  const { FlyBotSessionDock, registry } = await import('../src/client/flybot-slots.js')
+  const probe = () => null
+  const off = registry().register('flybot.session.dock', { id: 'probe-blank', component: probe })
+  // The renderer below the dock is a boundary component, so the slot's props sit on its element.
+  const find = node => {
+    if (!node || typeof node !== 'object') return undefined
+    if (node.props?.entry?.id === 'probe-blank') return node.props.props
+    for (const child of node.children ?? []) {
+      const hit = find(child)
+      if (hit) return hit
+    }
+    return undefined
+  }
+  try {
+    const roster = { roomsById: { 'room-1': { id: 'room-1', name: 'Launch plan' } } }
+    for (const [session, want] of [
+      [{ blank: true }, true],
+      // The host draws its own header from the first send on (its phase reads `engaging`), so a dock that
+      // stood in for the header then would show two of them — until the first turn, or forever after a
+      // failed first send, which never makes the session blank again.
+      [{ blank: true, promptAttempted: true }, false],
+      [{ blank: false }, false],
+      [undefined, false],
+    ]) {
+      const inst = { hooks: {}, effects: [], rendered: false, props: { sessionId: 'room-1', useRoster: pick => pick(roster), session, actions: {} } }
+      const props = find(render(FlyBotSessionDock, inst))
+      assert.ok(props, 'the slot is rendered')
+      assert.equal(props.blank, want, JSON.stringify(session))
+      assert.equal(props.room?.id, 'room-1', 'the room still reaches the slot')
+    }
+  } finally { off() }
+})
+
 // #968: the approval card in the dock is the second surface that used to ignore the flag. A terminal failure
 // draws no Retry; the retryable one keeps it.
 test('#968: a terminal failed approval draws no Retry in the dock card', async () => {

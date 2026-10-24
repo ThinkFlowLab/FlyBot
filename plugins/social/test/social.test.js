@@ -741,7 +741,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.approvals#social-held-reply', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.room.members#social-room-invite', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking', 'flybot.session.dock#social-paused'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.approvals#social-held-reply', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.room.members#social-room-invite', 'flybot.session.dock#social-group-strip', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking', 'flybot.session.dock#social-paused'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -6639,6 +6639,32 @@ test('#297/#443: a face room\'s Bots thinking show as one quiet line above the c
   assert.equal(plugin.thinkingLine(['A']), 'A is thinking…')
   assert.equal(plugin.thinkingLine(['A', 'B']), 'A and B are thinking…')
   assert.equal(plugin.thinkingLine(['A', 'B', 'C', 'D']), 'A, B and 2 more are thinking…')
+})
+
+// #998: a group with nothing said yet is a zero-turn Session, and the host draws no session header until
+// the first turn — so the chat itself names the group and offers the invite, and hands over on message one.
+test('#998: a zero-turn group draws its own strip above the composer, and drops it at the first turn', () => {
+  const registered = []
+  const entries = []
+  const flybot = { slots: { register: (slot, entry) => { entries.push([slot, entry]); return () => {} } }, call: async () => ({}) }
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = flybot
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}] }))
+  const roster = { byId: { b1: { id: 'b1', name: 'Chief' }, b2: { id: 'b2', name: 'Writer' } }, bots: [] }
+  const room = { id: 'room-1', name: 'Launch plan', members: ['b1', 'b2'] }
+  const strip = plugin.GroupStrip({ room, roster, blank: true })
+  const json = JSON.stringify(strip)
+  assert.match(json, /Launch plan/, 'the group names itself')
+  assert.match(json, /Chief, Writer/, 'and says who is in it')
+  assert.match(json, /Invite by link/, 'with the one way to add someone')
+  assert.match(json, /group-strip/)
+  assert.equal(plugin.GroupStrip({ room, roster, blank: false }), null, 'the first message: the host header takes over, never two')
+  assert.equal(plugin.GroupStrip({ room, roster }), null, 'a dock that is not told the chat is blank draws nothing')
+  assert.equal(plugin.GroupStrip({ room: { ...room, face: { status: 'open' } }, roster, blank: true }), null, 'a face room keeps its own line')
+  assert.equal(plugin.GroupStrip({ room: undefined, roster, blank: true }), null, 'a Bot chat has no group strip')
 })
 
 test('#297: the thinking line is a plain session dock below the approval card, styled like the other quiet notes', () => {

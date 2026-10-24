@@ -573,7 +573,7 @@ export interface FlyBotSlots {
   'flybot.approvals': { id: string; order?: number; policy?: string; component(props: ApprovalCardProps): any }
   'flybot.room.overview': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall }): any }
   'flybot.room.members': { id: string; order?: number; component(props: { room: any; roster: any; actions: any; call: FlyBotCall; host: FlyBotCall }): any }
-  'flybot.session.dock': { id: string; order?: number; /** The `by` of the approvals this dock draws; the overlay then draws no second card for the ids it claims. */ policy?: string; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall; /** Report the approval ids this dock shows (a plugin's own policy). */ claim?: (ids: string[]) => void }): any }
+  'flybot.session.dock': { id: string; order?: number; /** The `by` of the approvals this dock draws; the overlay then draws no second card for the ids it claims. */ policy?: string; component(props: { sessionId?: string; roster?: any; room?: any; bot?: any; actions?: any; call: FlyBotCall; /** True only while the host draws no session header: nothing said yet and nothing sent yet (`session.blank && !session.promptAttempted`, #998). */ blank?: boolean; /** Report the approval ids this dock shows (a plugin's own policy). */ claim?: (ids: string[]) => void }): any }
   'flybot.account.header': { id: string; order?: number; component(props: { actions?: any; call: FlyBotCall }): any }
   'flybot.settings.page': {
     id: string

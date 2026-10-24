@@ -151,6 +151,12 @@ window.__ModuleLoader__.load({
 .fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
 .fs-thinking{margin:0 12px 6px;padding-inline-start:8px;font-size:13px;line-height:20px;min-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fs-room-end{display:flex;align-items:center;gap:8px;margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
+/* #998: the stand-in for a group header the host has not drawn yet (zero turns). */
+.fs-group-strip{display:flex;flex-direction:column;gap:4px;margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));font-size:12px;line-height:17px}
+.fs-group-strip-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}
+.fs-group-strip-name{font-size:13px;font-weight:600;color:var(--bt-ink)}
+.fs-group-strip-members{color:var(--bt-ink-3,rgba(20,20,20,.45))}
+.fs-group-strip-invite{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .fs-room-end-close{margin-left:auto;flex:none}
 /* A left or closed face room is read-only (#197): its end line replaces the composer. */
 [class*="_composerStack"]:has([data-flybot="face-room-end"]) [class*="_root"]:has(> [data-composer-card]){display:none!important}
@@ -2137,6 +2143,49 @@ window.__ModuleLoader__.load({
       return 'Room closed.'
     }
     // A room that closed around you is no dead end (#458): one Close goes back to where you were.
+    // #998: a group made just now is a zero-turn Session, and the host hides the whole session header
+    // until the first turn, so a new group showed only its sidebar row. This strip stands in for that
+    // header while — and only while — the chat is still blank: the group's name, who is in it, and the
+    // way to invite someone. The first message ends it and the host's own header takes over.
+    function GroupStrip({ room, roster, blank } = {}) {
+      useStyles()
+      const [invite, setInvite] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState(null)
+      const [copied, setCopied] = useState(false)
+      if (blank !== true || !room?.id || room?.face) return null
+      const memberNames = (Array.isArray(room.members) ? room.members : [])
+        .map(id => oneLine(roster?.byId?.[id]?.name ?? roster?.bots?.find?.(bot => bot.id === id)?.name ?? ''))
+        .filter(Boolean)
+      const mint = async () => {
+        setBusy(true)
+        setNote(null)
+        try {
+          const value = await host('room-invite-mint', { roomId: room.id })
+          if (value?.invite?.url) setInvite(value.invite)
+          else setNote(tr('No link came back. Try again.'))
+        } catch (error) { setNote(errorText(error)) } finally { setBusy(false) }
+      }
+      const copy = async () => {
+        try {
+          await (typeof navigator !== 'undefined' ? navigator.clipboard : undefined)?.writeText?.(invite?.url ?? '')
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: the link is on screen to select */ }
+      }
+      return h('div', { className: 'fs-group-strip', 'data-flybot': 'group-strip' },
+        h('div', { className: 'fs-group-strip-head' },
+          h('span', { className: 'fs-group-strip-name', 'data-flybot': 'group-strip-name' }, oneLine(room.name) || tr('New group')),
+          memberNames.length > 0 ? h('span', { className: 'fs-group-strip-members', 'data-flybot': 'group-strip-members' }, memberNames.join(', ')) : null),
+        h('div', { className: 'fs-group-strip-invite' },
+          invite?.url
+            ? h(Fragment, null,
+              h('code', { className: 'fs-invite-url', 'data-flybot': 'group-strip-url' }, invite.url),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'group-strip-copy', onClick: copy }, copied ? tr('Copied') : tr('Copy link')))
+            : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'group-strip-invite', disabled: busy, onClick: mint }, tr('Invite by link'))),
+        note ? h('div', { className: 'fs-hint', 'data-flybot': 'group-strip-note', role: 'status' }, note) : null)
+    }
+
     function FaceRoomStatus({ room, sessionId, roster, actions } = {}) {
       noteChat(sessionId, room)
       const text = faceEndLine(room)
@@ -3435,6 +3484,7 @@ window.__ModuleLoader__.load({
       localHoldView,
       friendPerson,
       MyHandle,
+      GroupStrip,
       FaceRoomStatus,
       PeerThinking,
       thinkingLine,
@@ -3491,6 +3541,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
             // An older host has no Members-card slot: the row is simply not drawn there.
             (() => { try { return slots().register('flybot.room.members', { id: 'social-room-invite', order: 50, component: LocalInviteRow }) } catch { return () => {} } })(),
+            slots().register('flybot.session.dock', { id: 'social-group-strip', order: 30, component: GroupStrip }),
             slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
             slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
             slots().register('flybot.session.dock', { id: 'social-thinking', order: 60, component: PeerThinking }),

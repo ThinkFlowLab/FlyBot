@@ -17,7 +17,9 @@
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
 //   flybot.room.members     { id, order, component({ room, roster, actions, call, host }) }  rows at the foot of a local group's
 //                            Members card (#876: Invite by link); `host(endpoint, payload)` calls a core endpoint, which `call` cannot
-//   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim, t }) }  above the composer;
+//   flybot.session.dock     { id, order, policy?, component({ sessionId, roster, room, bot, actions, call, claim, t, blank }) }  above the composer;
+//                            `blank` is true only while the host draws no session header: nothing said yet and nothing
+//                            sent yet (`session.blank && !session.promptAttempted`), #998;
 //                            a dock that draws the cards of one approval policy sets `policy` and calls claim(ids) with the
 //                            approval ids it shows: the overlay then draws no second card for them (#260)
 //   flybot.new-chat.action  { id, order, label, hint?, icon?, visible?, run({ close, actions, roster }) }   a row in the sidebar '+' menu (after New group chat; Face-to-face room, Add friend)
@@ -151,7 +153,7 @@ function useClaimed() {
   return claimed
 }
 
-export function FlyBotSessionDock({ sessionId, useRoster, actions }) {
+export function FlyBotSessionDock({ sessionId, useRoster, actions, session }) {
   const entries = useSlot('flybot.session.dock')
   useEffect(() => {
     if (!sessionId) return undefined
@@ -162,8 +164,16 @@ export function FlyBotSessionDock({ sessionId, useRoster, actions }) {
   if (entries.length === 0) return null
   const room = roster?.roomsById?.[sessionId]
   const bot = room ? undefined : roster?.byId?.[sessionId]
+  // #998: the host hides a session's whole header until its first turn, so a group made a moment ago
+  // shows only its sidebar row. A dock that stands in for that header has to know exactly when the host
+  // draws no header at all, which is narrower than "has said nothing": the host checks its own phase,
+  // `session.blank && conversationPhase(...) === 'blank'` (dsh-client-ui-conversation), and a session that
+  // has been sent to already reads `engaging` there, so its header is on screen. `promptAttempted` is
+  // that fact on the snapshot, and a failed first send never turns it back off, so standing in for a
+  // header the host is already drawing cannot happen.
+  const blank = session?.blank === true && session?.promptAttempted !== true
   return h(Fragment, null, entries.map(entry => h('div', { key: entry.id, className: 'bt-flybot-session-dock', 'data-flybot': entry.id },
-    h(Safe, { entry, props: { sessionId, roster, room, bot, actions, call, t, claim: ids => claimApprovals(`${entry.id}:${sessionId}`, ids) } }))))
+    h(Safe, { entry, props: { sessionId, roster, room, bot, actions, call, t, blank: blank === true, claim: ids => claimApprovals(`${entry.id}:${sessionId}`, ids) } }))))
 }
 
 export function FlyBotRoomOverview({ room, roster, actions }) {

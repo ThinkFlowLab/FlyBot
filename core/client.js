@@ -2811,7 +2811,7 @@ function useClaimed() {
   }, []);
   return claimed;
 }
-function FlyBotSessionDock({ sessionId, useRoster, actions }) {
+function FlyBotSessionDock({ sessionId, useRoster, actions, session }) {
   const entries2 = useSlot("flybot.session.dock");
   (0, import_react2.useEffect)(() => {
     if (!sessionId) return void 0;
@@ -2822,10 +2822,11 @@ function FlyBotSessionDock({ sessionId, useRoster, actions }) {
   if (entries2.length === 0) return null;
   const room2 = roster?.roomsById?.[sessionId];
   const bot = room2 ? void 0 : roster?.byId?.[sessionId];
+  const blank3 = session?.blank === true && session?.promptAttempted !== true;
   return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
     "div",
     { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
-    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, t, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
+    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, t, blank: blank3 === true, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
   )));
 }
 function FlyBotRoomOverview({ room: room2, roster, actions }) {
