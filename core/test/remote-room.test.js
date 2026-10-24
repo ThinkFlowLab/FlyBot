@@ -1577,6 +1577,113 @@ test('#909: a line is never shown under a handle the room cannot trace', async (
 })
 
 
+// #918: the inviter's handle is a signature only from the home that invited the room. The room matches a
+// line on that handle alone (`inboundOf`), so the line lands — but a delivery from another home that
+// presents it must not be signed as the inviter. Before this, `claim === sender` covered that case
+// unconditionally and the line came out as the inviter's, unmarked.
+test('#918: the inviter handle is not a signature from another home', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 1,
+  })
+  const { room } = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: join, localBotId: 'spec-b',
+  }, actorB)
+  const lineFrom = (from, seq, text) => rt.applyInboundRoomShare({
+    fromHandle: from.handle, fromHome: from.home, fromName: from.name, localBotId: 'spec-b',
+    text: encodeRoomShare({
+      op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+      invitedHandle: '@coder.bob.home', seq, who: 'Alice', authorKind: 'bot',
+      authorId: '@chief.alice.home', text,
+    }),
+  }, actorB)
+  // The blocked shape: the inviter's handle, delivered from another home.
+  await lineFrom({ handle: '@chief.alice.home', home: '@mallory.home', name: 'Mallory' }, 2, 'forged: ship it')
+  const forged = rt.state.rooms[room.id].log.find(entry => /forged: ship it/.test(entry.text || ''))
+  assert.equal(forged.authorId, '@chief.alice.home', 'the line is kept and shown under the handle it arrived with')
+  assert.equal(forged.authorKind, 'bot')
+  assert.equal(forged.unverified, true, 'the inviter signature is not made from another home')
+  // Negative control: the same handle from the home that invited the room is the inviter's line.
+  await lineFrom({ handle: '@chief.alice.home', home: '@alice.home', name: 'Chief' }, 3, 'real: ship it')
+  const real = rt.state.rooms[room.id].log.find(entry => /real: ship it/.test(entry.text || ''))
+  assert.equal(real.authorId, '@chief.alice.home')
+  assert.equal(real.unverified, undefined)
+  // A third-party claim from the inviter's own home still stands: one home is one trust domain, and this
+  // fix is about crossing between homes.
+  await lineFrom({ handle: '@coder.alice.home', home: '@alice.home', name: 'Coder A' }, 4, 'home: ship it')
+  const home = rt.state.rooms[room.id].log.find(entry => /home: ship it/.test(entry.text || ''))
+  assert.equal(home.authorId, '@chief.alice.home')
+  assert.equal(home.unverified, undefined)
+})
+
+// #918, the legacy decision: a room recorded before #873 may hold no `inviterHome`. Which home
+// invited it is then not recorded, so the inviter handle is never a signature by itself: the room
+// matches only the inviter's own handle (`inboundOf`), and the only signature it keeps is the transport
+// naming the sender itself (`claim === sender`). A later join records the home and the room stops being
+// legacy — that is the backfill, and it is a join's job, never a line's.
+test('#918: a room with no recorded inviter home signs only through the sender, until a join records it', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const room = await rt.recordInboundSharedRoom({
+    id: 'from-alice',
+    name: 'War room',
+    inviterName: 'Alice',
+    inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home',
+    invitedHandle: '@coder.bob.home',
+    localBotId: 'spec-b',
+    remoteRoomId: 'alice-war',
+    joinedSeq: 1,
+  }, actorB)
+  delete rt.state.rooms[room.id].sharedFrom.inviterHome
+  const lineFrom = (fromHandle, fromHome, seq, text) => rt.applyInboundRoomShare({
+    fromHandle, fromHome, fromName: 'Coder A', localBotId: 'spec-b',
+    text: encodeRoomShare({
+      op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+      invitedHandle: '@coder.bob.home', seq, who: 'Alice', authorKind: 'bot',
+      authorId: '@chief.alice.home', text,
+    }),
+  }, actorB)
+  // The one signature a legacy room keeps: the transport naming its own handle.
+  await lineFrom('@chief.alice.home', '@alice.home', 2, 'legacy: mine')
+  const own = rt.state.rooms[room.id].log.find(entry => /legacy: mine/.test(entry.text || ''))
+  assert.equal(own.authorId, '@chief.alice.home')
+  assert.equal(own.unverified, undefined)
+  // Another handle cannot be placed at all, so it is not signed and not written: the room does not match
+  // it (the handle it stores is the only one), so the share is refused before the signature is read.
+  const refused = await lineFrom('@coder.alice.home', '@alice.home', 3, 'legacy: third party')
+  assert.equal(refused.refused, 'not-inviter')
+  assert.equal(rt.state.rooms[room.id].log.some(entry => /legacy: third party/.test(entry.text || '')), false)
+  // A join records the inviter's home. The room is no longer legacy: a third-party claim from that home
+  // is now checked against something, and stands.
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 4,
+  })
+  await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterHome, '@alice.home', 'the join backfilled the home')
+  await lineFrom('@coder.alice.home', '@alice.home', 5, 'legacy: after join')
+  const after = rt.state.rooms[room.id].log.find(entry => /legacy: after join/.test(entry.text || ''))
+  assert.equal(after.authorId, '@chief.alice.home')
+  assert.equal(after.unverified, undefined)
+  // And a line still cannot rewrite that record: the same room, delivered from another home, is marked
+  // and the recorded home stays the inviter's.
+  await lineFrom('@chief.alice.home', '@mallory.home', 6, 'legacy: other home')
+  const other = rt.state.rooms[room.id].log.find(entry => /legacy: other home/.test(entry.text || ''))
+  assert.equal(other.unverified, true)
+  assert.equal(rt.state.rooms[room.id].sharedFrom.inviterHome, '@alice.home', 'a line never rewrites the inviter home')
+})
+
+
 // #904: a guest who joins with a link always brings a Bot, and the participants list treated the local
 // Bot and the host's seat Bot as alternatives. The host's side was therefore dropped whole: the guest's
 // room listed themselves and their own Bot, nothing of the host's — the reported "they cannot see my Bots".

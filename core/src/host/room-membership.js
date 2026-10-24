@@ -1950,14 +1950,32 @@ export function install(rt) {
       const a = String(left ?? '').trim().toLowerCase()
       return a !== '' && a === String(right ?? '').trim().toLowerCase()
     }
-    const traced = claim === sender
+    // #918: the inviter's handle is a signature only from the home that invited the room. The room
+    // matches a line on that handle alone (`inboundOf`), so the line still lands — but a delivery that
+    // presents the handle from another home is not the inviter's line, and neither is a claim the room
+    // cannot place at all.
+    // A room recorded before #873 may hold no `inviterHome`: which home invited it is then not recorded,
+    // so the inviter handle is never a signature by itself and the transport naming the sender is the
+    // only signature such a room keeps. Either way the line is kept and only marked (#909: a failed
+    // check never drops a line).
+    const inviterHandle = room.sharedFrom?.inviterHandle
+    const inviterHome = room.sharedFrom?.inviterHome
+    const claimsInviter = !!inviterHandle && inviterHandle === claim
+    const inviterHomeDiffers = claimsInviter && !!inviterHome && !sameHome(inviterHome, event.fromHome)
+    const inviterSignature = claimsInviter && !inviterHomeDiffers && (!!inviterHome || claim === sender)
+    const traced = (claim === sender && !inviterHomeDiffers)
       || currentParticipants(room).some(p => p.remote === true && p.leftSeq === undefined
         && p.verified === true && (p.handle === claim || p.id === claim)
         && sameHome(p.ownerHome ?? room.sharedFrom?.inviterHome, event.fromHome))
-      || room.sharedFrom?.inviterHandle === claim
+      || inviterSignature
     return traced ? { authorId: claim, authorKind: kind } : { authorId: sender || claim, authorKind: 'bot', unverified: true }
   }
 
+  // #918: this matches the *room*, by its remote id plus the inviter's handle, and deliberately not the
+  // home: another home's Bot carrying the same handle still names this room, so the line lands instead of
+  // being refused as an unknown room. Which home invited it is decided in `verifiedAuthor`, and a line
+  // whose claim that home cannot back is the sender's, marked unverified — that is the pair of rules, and
+  // they agree: a room may match where a signature does not.
   function inboundOf(remoteRoomId, inviterHome, inviterHandle) {
     return Object.values(state.rooms || {}).find((room) => {
       if (room.origin !== 'inbound-share') return false
@@ -2114,12 +2132,14 @@ export function install(rt) {
       }
       if (data.name) room.name = cleanPeerName(data.name, room.name)
       // The name is display and follows the envelope (#873); the identity follows the transport, so this
-      // path can never rewrite whose room it is (#909).
+      // path can never rewrite whose room it is (#909). Only a join says who invited the room: a line
+      // follows whatever identity the last share recorded, or every message would let its sender become
+      // the inviter of the room (#918 — the room's own inviter home was rewritten by a line before, which
+      // made the inviter signature check unanswerable).
       room.sharedFrom = {
         ...room.sharedFrom,
         inviterName: fromName,
-        inviterHome: fromHome || room.sharedFrom?.inviterHome,
-        inviterHandle: fromHandle || room.sharedFrom?.inviterHandle,
+        ...(data.op === 'join' ? { inviterHome: fromHome || room.sharedFrom?.inviterHome, inviterHandle: fromHandle || room.sharedFrom?.inviterHandle } : {}),
         invitedHandle: data.invitedHandle || room.sharedFrom?.invitedHandle,
         remoteRoomId: data.roomId,
       }
