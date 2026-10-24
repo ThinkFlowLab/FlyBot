@@ -493,3 +493,26 @@ test('#676: a conclusion from outside the repository counts for nothing', () => 
   assert.equal(missing.ok, false, 'an association the API did not send is not assumed')
   assert.match(missing.reason, /author association missing/)
 })
+
+// #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR and
+// still count, but only on its own pull request. One exception for one person, never a second
+// reviewers list: the same login on someone else's pull request stays outside the association rule,
+// and #676 still refuses everyone nobody listed.
+test('#928: a listed self-reviewer who is a CONTRIBUTOR counts, only on their own pull request', () => {
+  const selfPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer', 'hsliuustc0106'] }
+  const own = (login = 'hsliuustc0106') => comment(login, report({ writer: 'hsliuustc0106' }), '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')
+
+  const mine = decide({ head: HEAD, author: 'hsliuustc0106', reports: [own()], policy: selfPolicy })
+  assert.equal(mine.ok, true, 'listed in selfReview on its own pull request: the PASS counts')
+  assert.equal(mine.by, 'hsliuustc0106')
+  assert.equal(mine.judged[0].counts, true)
+
+  const unlisted = decide({ head: HEAD, author: 'opener', reports: [own('passer-by')], policy: selfPolicy })
+  assert.equal(unlisted.ok, false, 'a CONTRIBUTOR nobody listed is still not a conclusion')
+  assert.match(unlisted.reason, /author association CONTRIBUTOR/)
+  assert.equal(unlisted.judged[0].counts, false)
+
+  const elsewhere = decide({ head: HEAD, author: 'opener', reports: [own()], policy: selfPolicy })
+  assert.equal(elsewhere.ok, false, 'a listed self-reviewer judging someone else\'s pull request is not exempt')
+  assert.equal(elsewhere.judged[0].counts, false)
+})

@@ -159,7 +159,12 @@ export function decide({ head, author, reports, policy }) {
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
     const association = String(r.association ?? '').toUpperCase()
-    if (!ASSOCIATIONS.has(association)) {
+    // #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR
+    // and still count, but only on its own pull request. That is one exception for one person, not a
+    // second reviewers list: the same login judging someone else's pull request keeps every rule
+    // below, and #676 still refuses a login nobody listed.
+    const selfOnly = selfReview.has(login(r)) && login(r) === authorLogin
+    if (!ASSOCIATIONS.has(association) && !selfOnly) {
       reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, so it is not a conclusion`)
       continue
     }
