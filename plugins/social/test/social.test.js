@@ -11335,7 +11335,7 @@ test('#995: a single-Bot friend is still one row and one Revoke, and a person-le
   assert.equal(both[1].handle, undefined, 'only a per-Bot row names a Bot')
 })
 
-test('#995: the access panel draws one Revoke per Bot, one Auto-send per person, and the Bot handle', async (t) => {
+test('#995: the access panel draws one Revoke per Bot, one Auto-send per person, and the Bot handle', async () => {
   const calls = []
   const row = (id, name, handle, grantId) => ({ id: grantId, grantIds: [grantId], grantee: '@bob.home', name, home: '@bob.home', handle, person: 'Bob', autoSend: false, relationshipId: 'r1', rooms: [] })
   const payload = {
