@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decide, loadPolicy, loginsNeedingAdmin, parseReport, render, repoAdminLogins } from './review-gate.mjs'
+import { adminsFor, decide, loadPolicy, parseReport, render } from './review-gate.mjs'
 
 const HEAD = 'a4d506a1b2c3d4e5f60718293a4b5c6d7e8f9012'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
@@ -537,9 +537,6 @@ test('#925: repo admin qualifies a CONTRIBUTOR, and does not skip the reviewers 
   assert.equal(accepted.ok, true, accepted.reason)
   assert.equal(accepted.by, 'hsliuustc0106')
 
-  const flagged = decide({ head: HEAD, author: 'opener', reports: [{ ...pass, admin: true }], policy: adminPolicy })
-  assert.equal(flagged.ok, true, 'admin: true on the report is the same grant')
-
   const notAdmin = decide({ head: HEAD, author: 'opener', reports: [pass], policy: adminPolicy })
   assert.equal(notAdmin.ok, false)
   assert.match(notAdmin.reason, /author association CONTRIBUTOR/)
@@ -566,21 +563,23 @@ test('#925: the permission API is asked only for logins the association and self
     { login: 'Birfy', association: 'CONTRIBUTOR' },
     { login: 'hsliuustc0106', association: 'CONTRIBUTOR' },
     { login: 'hsliuustc0106', association: 'NONE' },
+    { login: 'writer', association: 'CONTRIBUTOR' },
+    { login: 'custom', association: 'CONTRIBUTOR' },
+    { login: 'broken', association: 'CONTRIBUTOR' },
+    { login: 'missing', association: 'CONTRIBUTOR' },
     { login: '', association: 'NONE' },
   ]
-  assert.deepEqual(loginsNeedingAdmin(reports, policy), ['hsliuustc0106'])
-
   const calls = []
   const gh = (_cmd, path) => {
     calls.push(path)
     const login = decodeURIComponent(path.split('/collaborators/')[1].split('/')[0])
-    if (login === 'hsliuustc0106') return JSON.stringify({ permission: 'admin', role_name: 'admin', permissions: { admin: true } })
+    if (login === 'hsliuustc0106') return JSON.stringify({ permission: 'admin', role_name: 'admin' })
     if (login === 'writer') return JSON.stringify({ permission: 'write', role_name: 'write', permissions: { admin: false } })
     if (login === 'custom') return JSON.stringify({ permission: 'write', permissions: { admin: true } })
     if (login === 'broken') return 'not-json'
     throw new Error('HTTP 404')
   }
-  assert.deepEqual(repoAdminLogins({ gh, repo: 'ThinkFlowLab/FlyBot', logins: ['hsliuustc0106', 'hsliuustc0106', 'writer', 'custom', 'broken', 'missing', ''] }), ['hsliuustc0106', 'custom'])
+  assert.deepEqual(adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy }), ['hsliuustc0106', 'custom'])
   assert.deepEqual(calls, [
     'repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission',
     'repos/ThinkFlowLab/FlyBot/collaborators/writer/permission',
@@ -588,5 +587,6 @@ test('#925: the permission API is asked only for logins the association and self
     'repos/ThinkFlowLab/FlyBot/collaborators/broken/permission',
     'repos/ThinkFlowLab/FlyBot/collaborators/missing/permission',
   ])
-  assert.deepEqual(repoAdminLogins({ gh, logins: ['hsliuustc0106'] }), [])
+  assert.deepEqual(adminsFor({ gh, reports, policy }), [])
+  assert.equal(calls.length, 5, 'no repo means no lookup')
 })

@@ -11,10 +11,9 @@
 //   - it is not the pull request author's own report, unless the author is listed in the policy's
 //     `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, acting as Birfy, may PASS
 //     its own pull requests; any other author still needs someone else);
-//   - the login is tied to this repository (#676): `author_association` is OWNER, MEMBER or
-//     COLLABORATOR, or the login is in `selfReview`, or it has admin on the repo. Org repositories
-//     do not report OWNER. GitHub stamps a repo admin as CONTRIBUTOR (#925); that stamp is not a
-//     refusal for one of those logins. A CONTRIBUTOR who is none of them is not a conclusion;
+//   - the login is tied to this repository (#676, #925): `author_association` is OWNER, MEMBER or
+//     COLLABORATOR, or the login is in `selfReview`, or `adminsFor` found repo admin. A CONTRIBUTOR
+//     who is none of those is not a conclusion;
 //   - it carries the Verifier block review-pr already writes, with a `Tip SHA:` that is the
 //     head being judged and a `Verdict:`;
 //   - it names its writer in the header: `Written-by: <Bot>` (the older prose `Written by: …` reads
@@ -39,12 +38,14 @@ const SHORT = 12
 // could hold a merge. A comment from anyone else is not a conclusion: it can neither pass nor block.
 const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 
-// Logins whose association is not already OWNER, MEMBER or COLLABORATOR, and which `selfReview`
-// does not already qualify. `decide` still applies every other check; this only picks who the
-// permission API has to be asked about. A listed self-reviewer needs no lookup.
-export function loginsNeedingAdmin(reports, policy) {
+// Logins GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR, or `selfReview`),
+// asked once via `GET /repos/{owner}/{repo}/collaborators/{username}/permission`. Metadata read
+// on the token the job already has. Fail closed: no repo, no `gh`, a 403/404, or a body that is
+// not the permission object is not admin. `permission: admin` or `permissions.admin` counts.
+export function adminsFor({ gh, repo, reports, policy } = {}) {
+  if (!repo || typeof gh !== 'function') return []
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
-  const out = []
+  const admins = []
   const seen = new Set()
   for (const r of reports ?? []) {
     if (ASSOCIATIONS.has(String(r.association ?? '').toUpperCase())) continue
@@ -52,29 +53,11 @@ export function loginsNeedingAdmin(reports, policy) {
     const key = name.toLowerCase()
     if (!name || seen.has(key) || selfReview.has(key)) continue
     seen.add(key)
-    out.push(name)
-  }
-  return out
-}
-
-// `GET /repos/{owner}/{repo}/collaborators/{username}/permission` — metadata read, which the
-// job's token already has. No new secret. Fail closed: a 403, a 404 or a body that is not the
-// permission object is not admin (#676). `permission: admin` is the legacy role; `permissions.admin`
-// covers a custom role that still grants admin.
-export function repoAdminLogins({ gh, repo, logins } = {}) {
-  if (!repo || typeof gh !== 'function') return []
-  const admins = []
-  const seen = new Set()
-  for (const raw of logins ?? []) {
-    const name = String(raw ?? '').trim()
-    const key = name.toLowerCase()
-    if (!name || seen.has(key)) continue
-    seen.add(key)
     let text
     try {
       text = gh('api', `repos/${repo}/collaborators/${encodeURIComponent(name)}/permission`)
     } catch {
-      // Fail closed. A 403 or 404 is not admin, and this lookup must not become a grant.
+      // Fail closed. A 403 or 404 is not admin.
       continue
     }
     let data
@@ -84,8 +67,7 @@ export function repoAdminLogins({ gh, repo, logins } = {}) {
       // A body that is not the permission object is not admin.
       continue
     }
-    const level = String(data?.permission ?? '').toLowerCase()
-    if (level === 'admin' || data?.permissions?.admin === true) admins.push(name)
+    if (String(data?.permission ?? '').toLowerCase() === 'admin' || data?.permissions?.admin === true) admins.push(name)
   }
   return admins
 }
@@ -215,16 +197,9 @@ export function decide({ head, author, reports, policy, admins } = {}) {
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
     const association = String(r.association ?? '').toUpperCase()
-    // #676, widened after #925. Org repositories never report OWNER; MEMBER (and COLLABORATOR,
-    // where GitHub sends it) is the association bar. GitHub stamps a repo admin's review
-    // CONTRIBUTOR — on #925 that discarded hsliuustc0106's PASS, and listing the login in
-    // selfReview (#926) did not clear the stamp while this check still required the association.
-    // A login in selfReview, or one the caller resolved as repo admin (`admins`, or `admin: true`
-    // on the report), is tied to this repository anyway. A CONTRIBUTOR who is neither is not a
-    // conclusion. A failed permission lookup is not admin. The own-author and reviewers checks
-    // below are unchanged: admin is not a self-PASS and not a second reviewers list.
+    // #676 / #925. `admins` is whatever `adminsFor` resolved; it does not skip the checks below.
     const listedSelf = selfReview.has(login(r))
-    const isAdmin = r.admin === true || adminSet.has(login(r))
+    const isAdmin = adminSet.has(login(r))
     if (!ASSOCIATIONS.has(association) && !listedSelf && !isAdmin) {
       reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, and ${r.login} is not in selfReview and was not shown as a repo admin, so it is not a conclusion`)
       continue
@@ -318,8 +293,7 @@ function main() {
   ]
 
   const policy = loadPolicy(policyPath)
-  const admins = repoAdminLogins({ gh, repo, logins: loginsNeedingAdmin(reports, policy) })
-  const result = decide({ head, author, reports, policy, admins })
+  const result = decide({ head, author, reports, policy, admins: adminsFor({ gh, repo, reports, policy }) })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')

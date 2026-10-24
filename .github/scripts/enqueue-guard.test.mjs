@@ -298,8 +298,14 @@ test('#925: a selfReview login stamped CONTRIBUTOR is accepted without an admin 
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.verdict.by, 'Birfy')
   assert.equal(gh.calls.some((path) => path.includes('/permission')), false)
-  const own = run({ author: 'Birfy', reviews: [contributor('Birfy')], permission: 'throw' })
-  assert.equal(own.ok, true, own.reasons.join('; '))
+})
+
+test('#925: a tier that needs no PASS does not ask the permission API', () => {
+  const gh = fakeGh({ files: [TEST_FILE], reviews: [contributor('reviewer-agent')], permission: 'throw' })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.exempt, true)
+  assert.equal(gh.calls.some((path) => path.includes('/permission')), false)
 })
 
 test('#602: the instructions that enqueue point at the guard', () => {
