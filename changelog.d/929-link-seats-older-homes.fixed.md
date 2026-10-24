@@ -1,1 +1,0 @@
-A shared room whose invite link was accepted before the link recorded which homes it seated now reaches that guest again: the pair is read from the link's own record of who it admitted, so a room that predates `homes` no longer falls back to a friendship the two homes never had ([#929](https://github.com/ThinkFlowLab/FlyBot/issues/929)).

@@ -1,1 +1,0 @@
-An @ of a Bot in a room joined by invite link now starts that Bot's turn. The name the @ menu inserts (`Chief (owner)`, `Data (Friend)`) is a call, including for a Bot that has no Bot Social handle; a fenced or quoted @ stays literal text ([#949](https://github.com/ThinkFlowLab/FlyBot/issues/949)).

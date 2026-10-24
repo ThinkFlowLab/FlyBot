@@ -1,1 +1,0 @@
-Two `create_child_bot` calls that are in flight at the same time and belong to the same project or domain become one group: a single lead for that group, reused when it exists, with both new Bots under it, instead of each landing in whatever broader group it fits ([#810](https://github.com/ThinkFlowLab/FlyBot/issues/810)).

@@ -1,1 +1,0 @@
-The sidebar gets an `Archived (N)` section: archived Bots still stay out of the default Bot list and out of the tree, but one collapsed list opens their chats like any other row, and says `archived · merged into <name>` for a Bot a merge replaced ([#810](https://github.com/ThinkFlowLab/FlyBot/issues/810)).

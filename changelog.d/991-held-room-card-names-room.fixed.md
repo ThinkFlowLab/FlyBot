@@ -1,1 +1,0 @@
-A held face-to-face line's approval card now names the room it will go to: `Chief → the room 482913` when this home knows the number the room was joined by, else `Chief → the room <title>` for a room entered by link, so two open rooms never both read `the room` while the owner is deciding which one gets the line ([#991](https://github.com/ThinkFlowLab/FlyBot/issues/991)).

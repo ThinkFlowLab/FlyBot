@@ -1,1 +1,0 @@
-`Live E2E` no longer fails every night when the repository secret `DEEPSEEK_API_KEY` is not configured: the steps that need the key are skipped and the run warns instead, and its summary says plainly that nothing ran and nothing was measured. A failure inside the suite still fails the run ([#794](https://github.com/ThinkFlowLab/FlyBot/issues/794)).

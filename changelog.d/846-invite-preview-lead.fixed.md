@@ -1,1 +1,0 @@
-A face-room invite preview now names the room lead instead of printing `Lead: object Object`: Bot Social sends the lead as a member object, and the card reads it with the same label the member list uses — `Lead: Chief (SelfTest A2)` — while a string answer keeps working ([#846](https://github.com/ThinkFlowLab/FlyBot/issues/846)).

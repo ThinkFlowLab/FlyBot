@@ -1,1 +1,0 @@
-A local group’s Members card has an **Invite by link** row: make a link, show it as a QR code, copy it, watch its countdown, or withdraw it. Someone who is not a friend can paste or scan that link in the Face-to-face dialog, see the group first, and join it with the Bots they pick.

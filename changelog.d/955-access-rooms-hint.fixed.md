@@ -1,1 +1,0 @@
-**People with access** no longer prints every room a share is used in on one endless line: the hint names at most three rooms, says how many are left (`+12 more`) and keeps the full list in its tooltip, and a room the grant row already named is not repeated under **This room only** ([#955](https://github.com/ThinkFlowLab/FlyBot/issues/955)).

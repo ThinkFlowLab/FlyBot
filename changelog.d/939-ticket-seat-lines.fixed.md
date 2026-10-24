@@ -1,1 +1,0 @@
-A group joined through an invite link now shows the other home's messages in the conversation, on both sides, including the host's recent lines from before the guest joined ([#939](https://github.com/ThinkFlowLab/FlyBot/issues/939)). The member count includes the remote Bots the roster already lists.

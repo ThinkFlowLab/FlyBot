@@ -1,1 +1,0 @@
-Group chats use fewer tokens per turn: a member's group conversation now reads the group's notice, members and rules from its standing instructions instead of receiving them again with every turn, and a turn after a notice edit says only that the notice changed ([#894](https://github.com/ThinkFlowLab/FlyBot/issues/894)).

@@ -1,1 +1,0 @@
-A refusal that a peer has not granted a capability other than chat, such as profile.read, stays a normal error you can retry, instead of the "not shared with your Bots" line. A withdrawn chat share (*peer has not granted chat.public*) still reads as that one line, with no Retry ([#988](https://github.com/ThinkFlowLab/FlyBot/issues/988)).

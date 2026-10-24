@@ -1,1 +1,0 @@
-An invite card no longer shows an unknown member count as `0 / 8 in the room`: an empty or non-numeric value is treated as missing, while a real `0` still shows as a real count ([#823](https://github.com/ThinkFlowLab/FlyBot/issues/823)).
