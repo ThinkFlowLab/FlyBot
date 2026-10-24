@@ -8397,12 +8397,51 @@ test('#336: the sender is told a refused first message was not delivered (403 bo
   // The owner's direct chat (the host adds "Not sent:").
   const typed = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
   assert.equal(typed?.code, 'bot_not_shared')
-  assert.match(typed.message, /^Coder \(Bob\) is not shared with your Bots yet, so the message was not delivered\. Bot Social told its owner, who can share it with you\. Sending again will not help until then\.$/)
+  assert.match(typed.message, /^Coder \(Bob\) is not shared with your Bots, so the message was not delivered\. Bot Social told its owner, who can share it with you\. Sending again will not help until then\.$/)
+  // Nothing about it changes until that owner shares the Bot, so no Retry is offered (#971).
+  assert.equal(typed?.noRetry, true)
   assert.doesNotMatch(typed.message, /Try again|delivered\.$/)
   assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1, 'not retried with another member')
   // A Bot's send through the transport (message_friend_bot): the error, never "Sent".
   await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hello from chief' }), (error) => {
-    assert.match(error.message, /^Not delivered: Coder \(Bob\) is not shared with your Bots yet/)
+    assert.equal(error.noRetry, true)
+    assert.match(error.message, /^Not delivered: Coder \(Bob\) is not shared with your Bots,/)
+    return true
+  })
+})
+
+// #971: after a revoke Bot Social refuses with \`capability_not_granted\` ("peer has not granted chat.public").
+// That is the same fact as \`bot_not_shared\` — the owner's share is gone — so it takes the same sentence and
+// the same "no retry" mark, instead of the server's words plus a "Try again." the person cannot use.
+const notGrantedToolError = (id) => ({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'capability_not_granted', message: 'peer has not granted chat.public' }) }] } })
+
+test('#971: a revoked share is one human line with no retry, never "peer has not granted chat.public"', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify(notGrantedToolError(body.id)), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const typed = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
+  assert.equal(typed?.code, 'bot_not_shared')
+  assert.equal(typed?.noRetry, true)
+  assert.match(typed.message, /^Coder \(Bob\) is not shared with your Bots, so the message was not delivered\./)
+  assert.doesNotMatch(typed.message, /chat\.public|capability_not_granted|Try again|send_as_member/)
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1, 'not retried with another member')
+  // A Bot's reply through the transport takes the same road, with the "Not delivered: " lead.
+  await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hi' }), (error) => {
+    assert.equal(error.noRetry, true)
+    assert.match(error.message, /^Not delivered: Coder \(Bob\) is not shared with your Bots, so the message was not delivered\./)
     return true
   })
 })

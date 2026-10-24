@@ -1484,8 +1484,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   const isPaused = error => error?.code === 'conversation_paused' || /conversation_paused|turn budget exhausted|loop detected|conversation paused/i.test(String(error?.message ?? error))
   // Bot Social refuses a first message to a friend's Bot that is not shared with the sender (its
   // owner only joined an invite, #336): 403 bot_not_shared, nothing stored or delivered, and that
-  // Bot's owner gets a share.requested card. Sending again cannot help until they share it.
-  const isNotShared = error => error?.code === 'bot_not_shared' || /bot_not_shared/.test(String(error?.message ?? error))
+  // Bot's owner gets a share.requested card. A share that was taken back arrives from the other side as
+  // 403 capability_not_granted ("peer has not granted chat.public", #971) — the same fact with the same
+  // answer, so one predicate, one sentence and one no-retry mark cover both. Sending again cannot help
+  // until that owner shares it.
+  const isNotShared = error => error?.code === 'bot_not_shared' || error?.code === 'capability_not_granted' ||
+    /bot_not_shared|capability_not_granted|has not granted [a-z0-9_.]+/i.test(String(error?.message ?? error))
   // A friend's Bot by its one name, "Coder (Bob)" (#384), else its handle.
   const friendBotTitle = (handle) => {
     const key = norm(handle)
@@ -1497,7 +1501,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   const notSharedError = (handle, { lead = '' } = {}) => {
     const who = friendBotTitle(handle)
-    return Object.assign(new Error(`${lead}${who} is not shared with your Bots yet, so the message was not delivered. Bot Social told its owner, who can share it with you. Sending again will not help until then.`), { code: 'bot_not_shared' })
+    // noRetry: nothing about this changes until that owner shares the Bot, so a Retry button would only
+    // repeat the same refusal (#971, #954).
+    return Object.assign(new Error(`${lead}${who} is not shared with your Bots, so the message was not delivered. Bot Social told its owner, who can share it with you. Sending again will not help until then.`), { code: 'bot_not_shared', noRetry: true })
   }
   // The friend's Bot itself stopped existing (its owner removed it): Bot Social answers 404 bot_not_found,
   // "no such remote bot". Nothing can be delivered, and sending again cannot help until that owner shares a Bot

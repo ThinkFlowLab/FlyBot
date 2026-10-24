@@ -190,6 +190,17 @@ test('a time-context snapshot appended after the typed text does not swallow it'
     assert.equal(t.messageId, 'm1');
 });
 
+// #971: the peer withdrew `chat.public` — the same situation as "not shared", so the same one line,
+// with no internal capability name and no "Try again." (nothing about it can change until the owner acts).
+test('#971: a send the peer no longer grants reads as one line with no retry, never the server wording', () => {
+    const shared = new Error('Coder (Bob) is not shared with your Bots, so the message was not delivered. Bot Social told its owner, who can share it with you. Sending again will not help until then.')
+    assert.equal(notSentLine(shared), 'Not sent: ' + shared.message)
+    const raw = Object.assign(new Error('Bot Social send_as_member: peer has not granted chat.public'), { code: 'capability_not_granted' })
+    const line = notSentLine(raw)
+    assert.doesNotMatch(line, /chat\.public|Try again|capability_not_granted|send_as_member/)
+    assert.match(line, /no longer shared with you/)
+})
+
 test('a failed 1:1 send is one short English line with a next step', () => {
     assert.equal(
         notSentLine(Object.assign(new Error('Bot Social send_as_member: HTTP 403'), { code: 'http_403' })),
