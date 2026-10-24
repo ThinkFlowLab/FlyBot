@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { copiedToClipboard, listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, splitRoomPicks, ungrantedLocalFix } from '../src/shared/remote-label.js'
+import { copiedToClipboard, listedChatBots, pickerBotLabel, isHomeLevelRemote, isListedRemoteChat, isShownRemoteChat, splitRoomPicks, ungrantedLocalFix } from '../src/shared/remote-label.js'
 import { DICTIONARY } from '../src/client/i18n.js'
 
 test('picker hides gone, hidden, and home-level remotes; labels include the owner', () => {
@@ -56,7 +56,10 @@ test('the sidebar + menu wires plugin actions in after New group chat', () => {
   const slots = readFileSync(new URL('../src/client/flybot-slots.js', import.meta.url), 'utf8')
   assert.match(slots, /isListedRemoteChat/)
   const sidebar = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8')
-  assert.match(sidebar, /isListedRemoteChat\(bot\)/)
+  // #956: the sidebar keeps a row for a chat we hid because the Bot left; every other reader
+  // (pickers, @ menu, the model's friend list) keeps the stricter isListedRemoteChat.
+  assert.match(sidebar, /isShownRemoteChat\(bot\)/)
+  assert.match(sidebar, /isShownRemoteChat\(bot\)\)\.map/)
   assert.match(sidebar, /!isPastFaceRoom\(room\)/)
   assert.match(sidebar, /Number\(foreign\(a\)\) - Number\(foreign\(b\)\)/)
   // With @flybot/tree on, a friend's Bot is not a tree node under Main; it stays in the flat list.
@@ -197,4 +200,26 @@ test('#645: a line typed in the composer is the new Bot\'s first turn, not its i
   assert.match(src, /import \{ afterCreate \} from '\.\/bot-draft\.js'/)
   assert.match(src, /onCreated: created/)
   assert.match(card, /await onCreated\(bot\)/)
+})
+
+// #956: two hides, two flags. `remote.gone` says the Bot left the published list; `hidden` is only
+// ever the user's own hide (#611). A chat we hid because it left keeps its row, marked; the user's
+// hide wins over everything, and a returned chat is an ordinary row again.
+test('#956: a row is kept for a share that ended, dropped for a hide the user set', () => {
+  const live = { id: 'live', name: 'Chief', remote: { handle: '@chief.hsliu.home', home: '@hsliu.home' } }
+  const ended = { id: 'ended', name: '助手', remote: { handle: '@assistant.friend.home', home: '@friend.home', gone: true } }
+  const legacy = { id: 'legacy', name: '旧', hidden: true, remote: { handle: '@old.friend.home', home: '@friend.home', gone: true, hiddenByGone: true } }
+  const userHidden = { id: 'user', name: 'Coder', hidden: true, remote: { handle: '@coder.bob.home', home: '@bob.home' } }
+  const userHiddenWhileGone = { id: 'user2', name: 'Coder', hidden: true, remote: { handle: '@coder.bob.home', home: '@bob.home', gone: true } }
+  assert.equal(isShownRemoteChat(live), true)
+  assert.equal(isShownRemoteChat(ended), true)
+  assert.equal(isShownRemoteChat(legacy), true)
+  assert.equal(isShownRemoteChat(userHidden), false)
+  assert.equal(isShownRemoteChat(userHiddenWhileGone), false)
+  assert.equal(isShownRemoteChat({ id: 'local', name: 'Chief' }), true)
+  assert.equal(isShownRemoteChat(undefined), false)
+  // The stricter reader is unchanged: a share that ended is still not a place to send to.
+  assert.equal(isListedRemoteChat(ended), false)
+  assert.equal(isListedRemoteChat(legacy), false)
+  assert.equal(isListedRemoteChat(live), true)
 })

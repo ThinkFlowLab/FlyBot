@@ -35,6 +35,21 @@ export function isListedRemoteChat(bot) {
   return true
 }
 
+// Two questions, two readers (#956). `isListedRemoteChat` answers "may I send to this Bot, offer it
+// in a picker, mention it": a share that ended is not a place to send to. The sidebar asks "is this
+// the user's conversation": a chat whose Bot left the published list keeps its row, its history and
+// its way back, marked as no longer shared. Only a hide the user set (#611) takes a row out, and
+// `remote.gone` never doubles as one — the two flags stay apart.
+export function isShownRemoteChat(bot) {
+  if (!bot) return false
+  if (isListedRemoteChat(bot)) return true
+  if (bot.remote?.gone !== true) return false
+  // `hiddenByGone` is the marker a version before #956 wrote beside the hide it imposed: nothing here
+  // writes it, and `remoteChats.sync` deletes it with that hide, so a state file not yet synced still
+  // shows the row and a later hide of the user's is left alone.
+  return bot.hidden !== true || bot.remote.hiddenByGone === true
+}
+
 export function listedChatBots(roster) {
   return (roster?.bots ?? []).filter(isListedRemoteChat)
 }

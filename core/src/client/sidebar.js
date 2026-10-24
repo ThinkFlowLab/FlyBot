@@ -11,7 +11,7 @@ import { reducedMotion } from './activity-row.js'
 import { Shimmer, workPhrase } from './cells.js'
 import { springEasing, SPRING_SHAPE } from './motion.js'
 import { hostText, t } from './i18n.js'
-import { friendBotTitle, roomTitle, sharedRoomTitle, isListedRemoteChat } from '../shared/remote-label.js'
+import { friendBotTitle, roomTitle, sharedRoomTitle, isShownRemoteChat } from '../shared/remote-label.js'
 import { showsDshRow } from './dsh-offer.js'
 import { InboxRow } from './inbox.js'
 
@@ -60,7 +60,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const state = botState(running || away, doing, alert)
   const shownAway = away ? awayGroups(groups, roster.roomsById) : []
   const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t('a group chat'), shownAway[0].tool, shownAway.length - 1) : null
-  if (!isListedRemoteChat(bot) && !active && !main) return null
+  if (!isShownRemoteChat(bot) && !active && !main) return null
   const onContextMenu = (event) => {
     event.preventDefault()
     actions.openMenu({ kind: 'bot', id, x: event.clientX, y: event.clientY })
@@ -70,7 +70,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   // A friend's Bot row (#384, #498): "Chief (SelfB1233)" on one line, as its header and the @ menu
   // say it; the second line is the preview, or "Friend's Bot" before the first message.
   const shown = remote ? friendBotTitle(bot) : bot.name
-  const secondLine = awayLine || preview || (remote ? t("Friend's Bot") : '')
+  const secondLine = awayLine || preview || (remote ? (bot.remote?.gone ? t('no longer shared') : t("Friend's Bot")) : '')
   const label = [shown, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
   if (tile && wide) {
     return h('div', { className: 'bt-tile-wrap' }, h('button', {
@@ -350,7 +350,7 @@ export function TeamSidebar(props) {
     const entries = [
       // Own Bots, friends' Bots, groups and face rooms share one list. A remote chat
       // still uses BotRow's globe; gone / hidden / home-level remotes stay out.
-      ...roster.bots.filter(bot => bot.id !== roster.mainBotId && isListedRemoteChat(bot)).map(bot => ({ kind: 'bot', item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
+      ...roster.bots.filter(bot => bot.id !== roster.mainBotId && isShownRemoteChat(bot)).map(bot => ({ kind: 'bot', item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
       ...roster.rooms.filter(room => !isPastFaceRoom(room)).map(room => ({ kind: 'room', item: room, at: stamps[room.id] ?? room.createdAt })),
       // The Agent sorts by its most recent Session, falling back to when it was added.
       ...(roster.agents ?? []).map(agent => ({ kind: 'agent', item: agent, at: Math.max(0, ...agent.sessions.map(id => stamps[id] ?? 0)) || agent.createdAt })),

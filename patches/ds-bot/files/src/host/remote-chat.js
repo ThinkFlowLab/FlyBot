@@ -236,10 +236,9 @@ export function install(rt) {
   // A published list: every Bot gets its chat; a chat whose Bot left keeps its history, marked gone.
   async function sync(plugin, list) {
     // `open()` clears `remote.gone` on a chat that is published again, so remember which chats
-    // were gone first. Then only a real change of `gone` may touch `hidden`: a chat the user hid
-    // from the sidebar (`roster.setFlags`) while its Bot is still published must stay hidden, or
-    // every publish would bring it back, and a returning chat still reappears (its `gone` hide
-    // is dropped).
+    // were gone first. `remote.gone` alone says the Bot left; `hidden` stays the user's own flag
+    // (`roster.setFlags`) and is never written here (#956), so a chat that left keeps its row in the
+    // sidebar and a returning one cannot carry a hide of the user's away with it.
     const goneBefore = new Map()
     for (const bot of chats()) if (bot.remote.plugin === plugin) goneBefore.set(bot.id, Boolean(bot.remote.gone))
     const handles = new Set()
@@ -256,16 +255,19 @@ export function install(rt) {
       if (wasGone !== gone) {
         bot.remote = { ...bot.remote, ...(gone ? { gone: true } : {}) }
         if (!gone) delete bot.remote.gone
-        if (gone) {
-          // Remember when *we* hide the chat because the Bot left the published list: on `hidden`
-          // alone that is indistinguishable from a hide the user set, so the return below would
-          // drop the user's own hide too (#631).
-          if (bot.hidden !== true) bot.remote.hiddenByGone = true
-          bot.hidden = true
-        } else if (bot.remote.hiddenByGone === true) {
+        // The Bot is published again: drop the marker an older version left with the hide it imposed.
+        if (!gone && bot.remote.hiddenByGone === true) {
           delete bot.hidden
           delete bot.remote.hiddenByGone
         }
+        changed = true
+      } else if (gone && bot.hidden === true && bot.remote.hiddenByGone === true) {
+        // A state file written before #956 hid the row we imposed. The row is the conversation's, so
+        // one sync takes that hide back (#956); a hide the user set carries no marker and stays. The
+        // marker goes with it — taking the hide back is its only use, and while it stayed a hide the
+        // user set later read as ours, so the next sync deleted it (the row then ignored the Hide).
+        delete bot.hidden
+        delete bot.remote.hiddenByGone
         changed = true
       }
     }

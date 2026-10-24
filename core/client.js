@@ -1449,6 +1449,12 @@ function isListedRemoteChat(bot) {
   if (isHomeLevelRemote(remote)) return false;
   return true;
 }
+function isShownRemoteChat(bot) {
+  if (!bot) return false;
+  if (isListedRemoteChat(bot)) return true;
+  if (bot.remote?.gone !== true) return false;
+  return bot.hidden !== true || bot.remote.hiddenByGone === true;
+}
 function listedChatBots(roster) {
   return (roster?.bots ?? []).filter(isListedRemoteChat);
 }
@@ -7489,7 +7495,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const state = botState(running || away, doing, alert);
   const shownAway = away ? awayGroups(groups, roster.roomsById) : [];
   const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t("a group chat"), shownAway[0].tool, shownAway.length - 1) : null;
-  if (!isListedRemoteChat(bot) && !active && !main) return null;
+  if (!isShownRemoteChat(bot) && !active && !main) return null;
   const onContextMenu = (event) => {
     event.preventDefault();
     actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
@@ -7497,7 +7503,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const pinned = bot.pinned === true && !tile;
   const remote = Boolean(bot.remote);
   const shown = remote ? friendBotTitle(bot) : bot.name;
-  const secondLine = awayLine || preview || (remote ? t("Friend's Bot") : "");
+  const secondLine = awayLine || preview || (remote ? bot.remote?.gone ? t("no longer shared") : t("Friend's Bot") : "");
   const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
   if (tile && wide) {
     return (0, import_react13.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react13.createElement)(
@@ -7867,7 +7873,7 @@ function TeamSidebar(props) {
     const entries2 = [
       // Own Bots, friends' Bots, groups and face rooms share one list. A remote chat
       // still uses BotRow's globe; gone / hidden / home-level remotes stay out.
-      ...roster.bots.filter((bot) => bot.id !== roster.mainBotId && isListedRemoteChat(bot)).map((bot) => ({ kind: "bot", item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
+      ...roster.bots.filter((bot) => bot.id !== roster.mainBotId && isShownRemoteChat(bot)).map((bot) => ({ kind: "bot", item: bot, at: stamps[currentPart(bot)] ?? bot.createdAt })),
       ...roster.rooms.filter((room2) => !isPastFaceRoom(room2)).map((room2) => ({ kind: "room", item: room2, at: stamps[room2.id] ?? room2.createdAt })),
       // The Agent sorts by its most recent Session, falling back to when it was added.
       ...(roster.agents ?? []).map((agent) => ({ kind: "agent", item: agent, at: Math.max(0, ...agent.sessions.map((id) => stamps[id] ?? 0)) || agent.createdAt }))

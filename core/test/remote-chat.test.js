@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { remoteTurn, isRemoteChat, REMOTE_PROVIDER, install, notSentLine } from '../src/host/remote-chat.js';
-import { isHomeLevelRemote } from '../src/shared/remote-label.js';
+import { isHomeLevelRemote, isListedRemoteChat, isShownRemoteChat } from '../src/shared/remote-label.js';
 
 const user = (content, source, id = 'm1') => ({ role: 'user', id, content, ...(source ? { source } : {}) });
 
@@ -44,9 +44,12 @@ test('sync hides gone and home-level remotes without deleting the chat', async (
   assert.equal(state.bots.a.remote.gone, undefined)
   assert.equal(state.bots.a.hidden, undefined)
   assert.equal(state.bots.b.remote.gone, true)
-  assert.equal(state.bots.b.hidden, true)
+  // #956: leaving the published list is `remote.gone`, never a `hidden` of the user's.
+  assert.equal(state.bots.b.hidden, undefined)
+  assert.equal(isShownRemoteChat(state.bots.b), true)
   assert.equal(state.bots.c.remote.gone, true)
-  assert.equal(state.bots.c.hidden, true)
+  assert.equal(state.bots.c.hidden, undefined)
+  assert.equal(isShownRemoteChat(state.bots.c), true)
   assert.equal(state.bots.b.name, 'Friend')
   await rt.remoteChats.sync('social', [
     { handle: '@chief.hsliu.home', name: 'Chief', home: '@hsliu.home' },
@@ -59,7 +62,8 @@ test('sync hides gone and home-level remotes without deleting the chat', async (
   ])
   assert.equal(state.bots.a.remote.gone, undefined)
   assert.equal(state.bots.a.hidden, undefined)
-  assert.equal(state.bots.c.hidden, true)
+  assert.equal(state.bots.c.remote.gone, true)
+  assert.equal(isShownRemoteChat(state.bots.c), true)
 })
 
 test('sync keeps a chat the user hid while the Bot is still published', async () => {
@@ -95,6 +99,8 @@ test('a hide the user set survives the Bot leaving the published list and coming
   await rt.remoteChats.sync('social', [])
   assert.equal(state.bots.b.remote.gone, true)
   assert.equal(state.bots.b.hidden, true)
+  // A hide the user set keeps the row out of the sidebar, gone or not (#611).
+  assert.equal(isShownRemoteChat(state.bots.b), false)
   await rt.remoteChats.sync('social', [member])
   assert.equal(state.bots.b.remote.gone, undefined)
   // The hide was the user's, so the return must not drop it.
@@ -102,7 +108,7 @@ test('a hide the user set survives the Bot leaving the published list and coming
   assert.equal(state.bots.b.remote.hiddenByGone, undefined)
 })
 
-test('a hide imposed because the Bot left is dropped when it comes back', async () => {
+test('#956: a chat whose Bot left keeps its row in the sidebar, and comes back as an ordinary one', async () => {
   const state = {
     bots: {
       b: { id: 'b', name: '助手', remote: { handle: '@assistant.friend.home', home: '@friend.home', plugin: 'social' } },
@@ -113,12 +119,60 @@ test('a hide imposed because the Bot left is dropped when it comes back', async 
   const member = { handle: '@assistant.friend.home', name: '助手', home: '@friend.home' }
   await rt.remoteChats.sync('social', [])
   assert.equal(state.bots.b.remote.gone, true)
-  assert.equal(state.bots.b.hidden, true)
-  assert.equal(state.bots.b.remote.hiddenByGone, true)
+  assert.equal(state.bots.b.hidden, undefined)
+  assert.equal(isShownRemoteChat(state.bots.b), true)
   await rt.remoteChats.sync('social', [member])
   assert.equal(state.bots.b.remote.gone, undefined)
   assert.equal(state.bots.b.hidden, undefined)
   assert.equal(state.bots.b.remote.hiddenByGone, undefined)
+  assert.equal(isShownRemoteChat(state.bots.b), true)
+})
+
+// A state file written before #956 carries the hide we imposed as a real `hidden`. The next sync
+// takes it back, so the row returns without the user doing anything.
+test('#956: a hide a previous version imposed is taken back on the next sync', async () => {
+  const state = {
+    bots: {
+      b: { id: 'b', name: '助手', hidden: true, remote: { handle: '@assistant.friend.home', home: '@friend.home', plugin: 'social', gone: true, hiddenByGone: true } },
+    },
+  }
+  const rt = { state, load: async () => {}, save: async () => {}, warn() {}, ctx: {} }
+  install(rt)
+  await rt.remoteChats.sync('social', [])
+  assert.equal(state.bots.b.remote.gone, true)
+  assert.equal(state.bots.b.hidden, undefined)
+  // The marker goes with the hide it explains: it has that one use, and a marker left behind makes a
+  // later Hide from sidebar read as ours, so the next sync would delete the user's hide.
+  assert.equal(state.bots.b.remote.hiddenByGone, undefined)
+  assert.equal(isShownRemoteChat(state.bots.b), true)
+  await rt.remoteChats.sync('social', [{ handle: '@assistant.friend.home', name: '助手', home: '@friend.home' }])
+  assert.equal(state.bots.b.remote.gone, undefined)
+  assert.equal(state.bots.b.hidden, undefined)
+  assert.equal(isShownRemoteChat(state.bots.b), true)
+})
+
+// The repair above must leave the chat exactly as it found it, so the user's own Hide works from then
+// on: set after the repair, it survives the next sync and the Bot coming back (#611, #303, #956).
+test('#956: a hide the user sets after the repair keeps the row out, and the Bot coming back changes nothing', async () => {
+  const state = {
+    bots: {
+      b: { id: 'b', name: '助手', hidden: true, remote: { handle: '@assistant.friend.home', home: '@friend.home', plugin: 'social', gone: true, hiddenByGone: true } },
+    },
+  }
+  const rt = { state, load: async () => {}, save: async () => {}, warn() {}, ctx: {} }
+  install(rt)
+  await rt.remoteChats.sync('social', [])
+  assert.equal(isShownRemoteChat(state.bots.b), true)
+  state.bots.b.hidden = true
+  await rt.remoteChats.sync('social', [])
+  assert.equal(state.bots.b.hidden, true)
+  assert.equal(isShownRemoteChat(state.bots.b), false)
+  assert.equal(state.bots.b.remote.gone, true)
+  await rt.remoteChats.sync('social', [{ handle: '@assistant.friend.home', name: '助手', home: '@friend.home' }])
+  assert.equal(state.bots.b.remote.gone, undefined)
+  assert.equal(state.bots.b.hidden, true)
+  assert.equal(isShownRemoteChat(state.bots.b), false)
+  assert.equal(isListedRemoteChat(state.bots.b), false)
 })
 
 test('roster and model guards keep a friend\'s Bot on its relay route', async () => {

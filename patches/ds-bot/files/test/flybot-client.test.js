@@ -223,7 +223,8 @@ test("a friend's Bot sidebar row is its one name, \"Chief (Bob)\", on one line, 
   assert.doesNotMatch(row, /bt-row-owner/)
   assert.doesNotMatch(styles, /\.bt-row-owner\{/)
   // Before the first message the second line still says what the row is.
-  assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remote \? t\("Friend's Bot"\) : ''\)/)
+  // #956: the placeholder names the state once the Bot is gone, so a kept row says why it is there.
+  assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remote \? \(bot\.remote\?\.gone \? t\(.no longer shared.\) : t\("Friend's Bot"\)\) : ''\)/)
   // The full name is on hover and in the label.
   assert.match(row, /title: remote \? shown :/)
   for (const file of ['header.js', 'brand.js', 'user-message.js', 'at-menu.js']) {
