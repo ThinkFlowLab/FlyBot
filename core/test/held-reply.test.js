@@ -130,3 +130,22 @@ test('the list preview shows the friend\'s line, not a reply that was not sent; 
   const turns = readFileSync(new URL('../src/host/turns.js', import.meta.url), 'utf8')
   assert.match(turns, /replyIn: \{ sessionId: id, turn: answeredTurn \}/)
 })
+
+// #968: the failed bubble reads the shared predicate, so both spellings and the pre-#954 sentence lose the
+// button, while a retryable failure keeps it.
+test('#968: a terminal failure draws no Retry on the bubble, in any spelling; a retryable one does', () => {
+  const terminal = [
+    held('failed', { retry: false, error: 'HTTP 500' }),
+    held('failed', { noRetry: true, error: 'HTTP 500' }),
+    held('failed', { error: 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.' }),
+    held('failed', { error: 'no such remote bot. Try again.' }),
+  ]
+  for (const record of terminal) {
+    const buttons = find(wrapper(draw(chief([record]))), n => n.type === 'button').map(text)
+    assert.deepEqual(buttons, [], `no Retry for ${record.error}`)
+  }
+  for (const error of ['HTTP 500', '429 Too Many Requests', 'timeout']) {
+    const buttons = find(wrapper(draw(chief([held('failed', { error })]))), n => n.type === 'button').map(text)
+    assert.deepEqual(buttons, ['Retry'], error)
+  }
+})

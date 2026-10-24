@@ -151,3 +151,18 @@ test('#271: no pointer for an approval whose chat is the open one, whatever the 
     assert.equal(typeof chatOpened, 'function')
   } finally { off() }
 })
+
+// #968: the approval card in the dock is the second surface that used to ignore the flag. A terminal failure
+// draws no Retry; the retryable one keeps it.
+test('#968: a terminal failed approval draws no Retry in the dock card', async () => {
+  const { FlyBotApprovals } = await import('../src/client/flybot-slots.js')
+  const inst = { hooks: {}, effects: [], rendered: false }
+  render(FlyBotApprovals, inst)
+  inst.hooks[PENDING].value = [
+    held({ id: 'a2', status: 'failed', noRetry: true, error: 'HTTP 500' }),
+    held({ id: 'a3', status: 'failed', error: 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.' }),
+    held({ id: 'a4', status: 'failed', error: 'HTTP 500' }),
+  ]
+  const text = JSON.stringify(render(FlyBotApprovals, inst))
+  assert.equal((text.match(/Retry/g) ?? []).length, 1, 'only the retryable failure keeps Retry')
+})

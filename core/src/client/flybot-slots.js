@@ -40,6 +40,7 @@ import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from './room-invi
 import { t } from './i18n.js'
 import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
 import { isApprovalWaiting, WAITING_STATUSES } from '../shared/approval-waiting.js'
+import { canRetry } from '../shared/held-retry.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
 
@@ -57,6 +58,9 @@ export function registry() {
   // The interface's translator, for plugin copy that core's dictionary carries (#892: Invite by link,
   // the Join-or-create dialog), so a zh UI reads it in Chinese.
   globalThis.__flybot__.t ??= t
+  // #968: the social plugin is a classic script and cannot import this module; it asks the same predicate
+  // through the one object every FlyBot client bundle shares.
+  globalThis.__flybot__.canRetry ??= canRetry
   // Classic-script plugins cannot import mark.js; they render the same Bot look
   // the sidebar / session list / chat header use via these host components.
   globalThis.__flybot__.BotMark ??= BotMark
@@ -294,7 +298,9 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
               h('li', { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? h('div', { className: 'bt-flybot-approval-path' }, file.path) : null)))
             : null,
           h('div', { className: 'bt-flybot-approval-actions' },
-            failed ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'retry') }, t('Retry')) : null,
+            // #968: `noRetry` (the dock's spelling of a terminal failure) and `retry: false` (the bubble's)
+            // are one rule, asked here through the shared predicate.
+            failed && canRetry(approval) ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'retry') }, t('Retry')) : null,
             waiting ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'reject') }, t('Reject')) : null,
             waiting ? h('button', { type: 'button', className: 'bt-flybot-approve', disabled: busy === approval.id, onClick: () => decide(approval.id, 'approve') }, t('Approve')) : null))
       }).concat(error ? [h('div', { key: 'error', className: 'bt-flybot-approval-error', role: 'alert' }, error)] : [])) : null)

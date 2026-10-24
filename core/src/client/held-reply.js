@@ -8,6 +8,7 @@ import { call as callHost } from './api.js'
 import { registry } from './flybot-registry.js'
 import { claimApprovals } from './approval-claims.js'
 import { isApprovalWaiting } from '../shared/approval-waiting.js'
+import { canRetry } from '../shared/held-retry.js'
 import { t } from './i18n.js'
 
 const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payload)
@@ -51,7 +52,9 @@ export function HeldReplyActions({ held, actions }) {
     const failed = held.status === 'failed'
     return h('div', { className: 'bt-held-note', 'data-state': held.status, title: failed && held.error ? held.error : undefined },
       h('span', null, held.status === 'approved' ? t('Sent to {to}', { to: held.toName }) : held.status === 'auto' ? t('Auto-sent to {to}', { to: held.toName }) : failed ? t('Not sent: delivery failed') : t('Not sent')),
-      failed ? h('button', { type: 'button', className: 'bt-held-retry', disabled: busy, onClick: () => decide('retry') }, t('Retry')) : null,
+      // #968: the terminal answer comes from one predicate, not from `status === 'failed'` here and a
+      // different field elsewhere. A failure that can never succeed draws no button on any surface.
+      failed && canRetry(held) ? h('button', { type: 'button', className: 'bt-held-retry', disabled: busy, onClick: () => decide('retry') }, t('Retry')) : null,
       error ? h('span', { className: 'bt-flybot-approval-error', role: 'alert' }, error) : null)
   }
   const plain = h('div', { className: 'bt-held-card', role: 'region', 'aria-label': t('Waiting for your approval') },

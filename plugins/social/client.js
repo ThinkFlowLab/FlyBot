@@ -10,6 +10,9 @@ window.__ModuleLoader__.load({
       return globalThis.__flybot__.slots
     }
     const call = (endpoint, payload) => globalThis.__flybot__.call(endpoint, payload)
+    // #968: the terminal/retryable decision is ds-bot's (`core/src/shared/held-retry.js`), reached through
+    // the shared FlyBot object; the fallback only covers a core bundle older than the predicate.
+    const canRetry = (record) => globalThis.__flybot__?.canRetry?.(record) ?? record?.retry !== false
 
     // Errors in English. ds-bot's api.js may localize transport errors ("HTTP 404" becomes
     // Chinese in a zh UI), so the panel words them from the error code instead.
@@ -1978,8 +1981,8 @@ window.__ModuleLoader__.load({
           item.error ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-error' }, item.error) : null,
           // A failure the sender marked as never retryable (#954) offers no Retry: the Bot is gone, so the button
           // could only repeat the same card.
-          item.retry === false ? null : h('div', { className: 'fs-actions fs-chat-actions' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')))
+          canRetry(item) ? h('div', { className: 'fs-actions fs-chat-actions' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')) : null)
       }
       const { from, to } = holdParties(item)
       const text = shownHoldText(item.text || item.summary || '', to)

@@ -2702,6 +2702,25 @@ function isApprovalWaiting(status) {
   return WAITING_STATUSES.includes(status);
 }
 
+// src/shared/held-retry.js
+var TERMINAL = [
+  // A friend's Bot that is gone or no longer shared (plugins/social/src/social.js: botGoneError / notSharedError).
+  /no such remote bot/i,
+  /is not shared with your Bots/i,
+  /is no longer shared with you/i,
+  /has not granted chat\.public/i,
+  // The codes, when a transport passes the code instead of its sentence.
+  /capability_not_granted/i,
+  /bot_not_shared/i,
+  /bot_not_found/i
+];
+var canRetry = (record) => {
+  if (!record) return true;
+  if (record.retry === false || record.noRetry === true) return false;
+  const said = `${record.error ?? ""} ${record.code ?? ""}`;
+  return !TERMINAL.some((reason) => reason.test(said));
+};
+
 // src/client/flybot-slots.js
 var import_react2 = require("react");
 var call2 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
@@ -2710,6 +2729,7 @@ function registry2() {
   globalThis.__flybot__.call ??= call2;
   globalThis.__flybot__.host ??= call;
   globalThis.__flybot__.t ??= t;
+  globalThis.__flybot__.canRetry ??= canRetry;
   globalThis.__flybot__.BotMark ??= BotMark;
   globalThis.__flybot__.BotAvatar ??= BotAvatar;
   globalThis.__flybot__.lookOf ??= lookOf;
@@ -2938,7 +2958,9 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
           (0, import_react2.createElement)(
             "div",
             { className: "bt-flybot-approval-actions" },
-            failed ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
+            // #968: `noRetry` (the dock's spelling of a terminal failure) and `retry: false` (the bubble's)
+            // are one rule, asked here through the shared predicate.
+            failed && canRetry(approval) ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "retry") }, t("Retry")) : null,
             waiting ? (0, import_react2.createElement)("button", { type: "button", disabled: busy === approval.id, onClick: () => decide(approval.id, "reject") }, t("Reject")) : null,
             waiting ? (0, import_react2.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy === approval.id, onClick: () => decide(approval.id, "approve") }, t("Approve")) : null
           )
@@ -5425,7 +5447,9 @@ function HeldReplyActions({ held, actions }) {
       "div",
       { className: "bt-held-note", "data-state": held.status, title: failed && held.error ? held.error : void 0 },
       (0, import_react7.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : held.status === "auto" ? t("Auto-sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
-      failed ? (0, import_react7.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
+      // #968: the terminal answer comes from one predicate, not from `status === 'failed'` here and a
+      // different field elsewhere. A failure that can never succeed draws no button on any surface.
+      failed && canRetry(held) ? (0, import_react7.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
       error ? (0, import_react7.createElement)("span", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
     );
   }

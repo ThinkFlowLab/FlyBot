@@ -12,6 +12,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isApprovalWaiting } from '../shared/approval-waiting.js'
+import { canRetry } from '../shared/held-retry.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
@@ -506,7 +507,10 @@ export function install(rt) {
       turn: a.request.meta.replyIn.turn,
       to: toRemote(a.request.to)?.handle ?? null,
       ...(a.recipientName ? { toOwner: a.recipientName } : {}),
-      ...(a.status === 'failed' && a.error ? { error: String(a.error).slice(0, 200), ...(a.noRetry === true ? { retry: false } : {}) } : {}),
+      // #968: the view's answer is normalized here, where the record is read: `noRetry` and a terminal
+      // sentence both become `retry: false`, so a record written before #954 gets the same answer as a new
+      // one, and no renderer has to match a reason string.
+      ...(a.status === 'failed' && a.error ? { error: String(a.error).slice(0, 200), ...(canRetry(a) ? {} : { retry: false }) } : {}),
     }))
   rt.heldRepliesOf = (botId) => [...autoSentOf(botId), ...heldOf(botId)]
 
@@ -523,7 +527,8 @@ export function install(rt) {
           return owner !== null && owner === actor.memberId
         })
         .sort((a, b) => a.createdAt - b.createdAt)
-        .map(a => ({ ...clone(a), ownerId: ownerOfRequest(a.request) ?? undefined, senderName: nameOf(a.request?.from), targetName: nameOf(a.request?.to) }))
+        // #968: the same normalized spelling for the approval card, which receives the dock's record.
+        .map(a => ({ ...clone(a), ownerId: ownerOfRequest(a.request) ?? undefined, senderName: nameOf(a.request?.from), targetName: nameOf(a.request?.to), ...(a.status === 'failed' && !canRetry(a) ? { retry: false } : {}) }))
     },
     get: id => clone(store()[id]),
     // Governance read: how many of each Bot's sends were held, approved, rejected or went stale.

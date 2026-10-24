@@ -13,6 +13,7 @@ import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAge
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
 import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from '../../../core/src/client/room-invite-preview.js'
+import { canRetry } from '../../../core/src/shared/held-retry.js'
 import { encodeFaceHuman } from '../src/face-rooms.js'
 import {
   hideRemoteInSettings, forgetHiddenIfGone, filterHiddenHomes, presentRemoteHandles,
@@ -2994,6 +2995,8 @@ function loadSocialClient(callImpl) {
   sandbox.__flybot__.RoomInvitePreview = RoomInvitePreview
   sandbox.__flybot__.invitePreviewOf = invitePreviewOf
   sandbox.__flybot__.inviteCountdown = inviteCountdown
+  // #968: the core bundle registers this on the same object; the plugin asks it through `__flybot__`.
+  sandbox.__flybot__.canRetry = canRetry
   const walk = (node, all = []) => {
     if (!node || typeof node !== 'object') return all
     if (typeof node.type === 'function') return walk(node.type(node.props), all)
@@ -10597,4 +10600,19 @@ test('#955: the rendered access row keeps one short line and the repeat is gone'
   assert.equal(String(hint.props.title ?? '').split('\n').length, 15, 'the tooltip carries all 15')
   const repeated = tree.filter(n => typeof n.children?.[0] === 'string' && /This room only:/.test(n.children[0]))
   assert.equal(repeated.length, 0, 'a room the grant row already named is not printed again')
+})
+
+// #968: the social dock asks the shared predicate too, so the pre-#954 spelling (a sentence, no flag) also
+// loses the button, and a retryable failure keeps it.
+test('#968: the social dock reads the shared predicate, not only the flag it used to use', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const friend = { id: 'r1', name: 'Coder', remote: { handle: '@coder.bob.home' } }
+  const roster = { bots: [friend] }
+  const base = { id: 'f3', kind: 'outbound_message', source: 'local', status: 'failed', from: 'Chief', to: '@coder.bob.home', toName: 'Bob', text: 'x' }
+  const legacy = { ...base, error: 'Coder (Bob) (@coder.bob.home) is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.' }
+  const legacyTree = walk(pluginOf([[], [legacy], '']).ChatApprovalDock({ bot: friend, roster }))
+  assert.equal(legacyTree.some(node => node.props['data-flybot'] === 'hold-retry'), false, 'the sentence alone is terminal')
+  const retryable = { ...base, error: 'HTTP 429 Too Many Requests' }
+  const retryableTree = walk(pluginOf([[], [retryable], '']).ChatApprovalDock({ bot: friend, roster }))
+  assert.ok(retryableTree.some(node => node.props['data-flybot'] === 'hold-retry'), 'a retryable failure keeps Retry')
 })
