@@ -49,13 +49,13 @@ function start({ config = {} } = {}) {
     summarize() {},
     async compactIfNeeded() {
       bench.compacted += 1
-      bench.tokens = 100
+      if (bench.holdTokens !== true) bench.tokens = 100
       return {}
     },
     async compactNow() {},
     async compactRegion() {},
   }
-  const ctx = fakeContext({ services: { compaction, tokenMeter: { measure: () => ({ totalTokens: bench.tokens }) } } })
+  const ctx = fakeContext({ services: { compaction, tokenMeter: { measure: () => ({ totalTokens: bench.tokens, ...bench.meter }) } } })
   async function* route(options) {
     bench.requests.push(options)
     if (options.sessionId === undefined) {
@@ -123,6 +123,48 @@ for (const sessionId of ['b2', 'g3']) {
     assert.deepEqual(bench.requests.map(request => [request.sessionId, request.purpose]), [[sessionId, 'compaction']])
   })
 }
+
+// #917: compaction replaces the span, but the meter's usage anchor only subtracts
+// its 4-characters-per-token estimate of what it removed. A denser provider
+// report (the mock's 3 characters per token) still reads above the check line.
+test('a checkpoint stays in place when the remaining surface fits and only the usage anchor reads high (#917)', async (t) => {
+  const { ctx, bench, stop } = start()
+  t.after(stop)
+  bench.tokens = 95_000
+  bench.holdTokens = true
+  bench.meter = { baseline: { kind: 'usage', tokens: 95_000 }, surfaceDeltaTokens: -40_000, surfaceTokens: 8_000 }
+  bench.respond = () => '{"action":"compact"}'
+  const session = {
+    id: 'b2', seq: 2,
+    requestHeader: () => ({ config: { provider: 'deepseek', model: 'v4' }, tools: [{ name: 'read' }] }),
+    deriveMessages: () => [], toolHistory: () => [],
+  }
+  const preStep = ctx.listeners.get('agent/pre-step').find(listener => /adoptCompaction/.test(String(listener)))
+  const next = { kind: 'continue' }
+  const result = await preStep({ agent: { id: 'b2', session }, messages: [], step: 2, signal: new AbortController().signal }, () => next)
+  assert.equal(result, next, 'the part switched even though the remaining surface fits under the check line')
+  assert.equal(bench.compacted, 1)
+})
+
+test('a checkpoint that leaves the surface over the check line still moves the part on (#917)', async (t) => {
+  const { ctx, bench, stop } = start()
+  t.after(stop)
+  bench.tokens = 95_000
+  bench.holdTokens = true
+  bench.meter = { baseline: { kind: 'usage', tokens: 95_000 }, surfaceDeltaTokens: -1_000, surfaceTokens: 90_000 }
+  bench.respond = () => '{"action":"compact"}'
+  const session = {
+    id: 'b2', seq: 2,
+    requestHeader: () => ({ config: { provider: 'deepseek', model: 'v4' } }),
+    deriveMessages: () => [], toolHistory: () => [],
+    // The step is already rejected; the switch job must not run far enough to touch a stub agent.
+    whenIdle: () => new Promise(() => {}),
+  }
+  const preStep = ctx.listeners.get('agent/pre-step').find(listener => /adoptCompaction/.test(String(listener)))
+  const next = { kind: 'continue' }
+  const result = await preStep({ agent: { id: 'b2', session }, messages: [], step: 2, signal: new AbortController().signal }, () => next)
+  assert.equal(result?.kind, 'reject', 'a surface that is still over the check line should move on')
+})
 
 test('an image in a Bot chat is read for that chat, and the chat gets the reading', async (t) => {
   const { ctx, bench, stop } = start()

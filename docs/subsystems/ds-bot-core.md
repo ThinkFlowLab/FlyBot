@@ -48,7 +48,7 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 
 - `core/index.js` — plugin server.
 - `core/client.js` — built browser bundle (generated; never hand-edit).
-- `dev/bench.sh`, `dev/smoke.mjs` — test bench.
+- `dev/bench.sh`, `dev/smoke.mjs` — test bench. The mock reads who leads a group from the system prompt (`Members: … and you (admin).`), which is where the standing section puts that line (#894). A turn's own text no longer carries it, so "admin calls everyone" in the smoke is decided from the section (#917).
 
 ## Invariants
 

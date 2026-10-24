@@ -51,7 +51,7 @@
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { appendFileSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.MOCK_PORT ?? 8765)
@@ -370,9 +370,13 @@ function decide(body) {
       .map(line => /^[^:\n]{1,40}: \D*?(\d+)/.exec(line)?.[1])
       .filter(Boolean).map(Number)
     const mentioner = /^\[Group chat [^\]]*· (\S+) mentioned you\]/.exec(userText)?.[1]
-    const peer = /^Members: the user, ([^,\n]+?)(?:,| and you)/m.exec(userText)?.[1]?.replace(/ \(admin\)$/, '')
+    // Who is here, and who leads, is the group's system-prompt section (#894).
+    // The turn's own text no longer repeats it. Older prompts still put the
+    // members line in the user message, so both are read.
+    const roster = `${system}\n${userText}`
+    const peer = /^Members: the user, ([^,\n]+?)(?:,| and you)/m.exec(roster)?.[1]?.replace(/ \(admin\)$/, '')
     const room = /^\[Group chat "([^"]+)"/.exec(userText)?.[1] ?? ''
-    const leads = /^Members: .* and you \(admin\)\./m.test(userText)
+    const leads = /^Members: .* and you \(admin\)\./m.test(roster)
     let ask
     if ((ask = /把\s*(\S+?)\s*拉进群/.exec(userLine))) return [tool('update_group', { group: room, add_members: [ask[1]] })]
     if ((ask = /把\s*(\S+?)\s*踢出群/.exec(userLine))) return [tool('update_group', { group: room, remove_members: [ask[1]] })]
@@ -727,4 +731,8 @@ const server = createServer((req, res) => {
   })
 })
 
-server.listen(PORT, '127.0.0.1', () => console.log(`ds-bot mock on http://127.0.0.1:${server.address().port}/v1`))
+// Tests import decide(); only a direct run should bind the port.
+const invokedDirectly = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])
+if (invokedDirectly) server.listen(PORT, '127.0.0.1', () => console.log(`ds-bot mock on http://127.0.0.1:${server.address().port}/v1`))
+
+export { decide }

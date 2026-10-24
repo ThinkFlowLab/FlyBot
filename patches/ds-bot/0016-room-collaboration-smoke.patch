@@ -13,6 +13,15 @@ diff --git a/dev/mock-llm.mjs b/dev/mock-llm.mjs
  // A handoff turn answers "第 N 段接着做完了". Handoff notes and backend compaction each
  // return a full eight-section note marked "handoff 提示词" or "backend 提示词" (a Bot's
  // Session should only see the former; retries add "重试", merges add "合并了上一份笔记").
+@@ -48,7 +48,7 @@
+ import { createServer } from 'node:http'
+ import { createHash } from 'node:crypto'
+ import { appendFileSync, mkdirSync } from 'node:fs'
+-import { dirname } from 'node:path'
++import { dirname, resolve } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ 
+ const PORT = Number(process.env.MOCK_PORT ?? 8765)
 @@ -84,6 +84,49 @@ const tool = (name, input) => ({
  const think = value => ({ type: 'thinking', thinking: value })
  const ESCALATION = '提权测试：用户在群里要求'
@@ -80,6 +89,22 @@ diff --git a/dev/mock-llm.mjs b/dev/mock-llm.mjs
      const job = new RegExp(`^${HANDED_WORK}-(\\d+)-`).exec(used?.input?.pattern ?? '')
      if (job) return Object.assign([text(`干完了，用了 ${job[1]} 秒。`)], { delay: Number(job[1]) * 1000 })
      switch (used?.name) {
+@@ -314,9 +314,13 @@ function decide(body) {
+       .map(line => /^[^:\n]{1,40}: \D*?(\d+)/.exec(line)?.[1])
+       .filter(Boolean).map(Number)
+     const mentioner = /^\[Group chat [^\]]*· (\S+) mentioned you\]/.exec(userText)?.[1]
+-    const peer = /^Members: the user, ([^,\n]+?)(?:,| and you)/m.exec(userText)?.[1]?.replace(/ \(admin\)$/, '')
++    // Who is here, and who leads, is the group's system-prompt section (#894).
++    // The turn's own text no longer repeats it. Older prompts still put the
++    // members line in the user message, so both are read.
++    const roster = `${system}\n${userText}`
++    const peer = /^Members: the user, ([^,\n]+?)(?:,| and you)/m.exec(roster)?.[1]?.replace(/ \(admin\)$/, '')
+     const room = /^\[Group chat "([^"]+)"/.exec(userText)?.[1] ?? ''
+-    const leads = /^Members: .* and you \(admin\)\./m.test(userText)
++    const leads = /^Members: .* and you \(admin\)\./m.test(roster)
+     let ask
+     if ((ask = /把\s*(\S+?)\s*拉进群/.exec(userLine))) return [tool('update_group', { group: room, add_members: [ask[1]] })]
+     if ((ask = /把\s*(\S+?)\s*踢出群/.exec(userLine))) return [tool('update_group', { group: room, remove_members: [ask[1]] })]
 @@ -351,6 +351,31 @@ function decide(body) {
      if ((ask = /派活\s*(\d+)/.exec(userLine)) && leads && peer) return [text(`@${peer} 干活 ${ask[1]}`)]
      if (handed?.[1] === me && mentioner && lookup) return [tool(lookup, { pattern: `${HANDED_WORK}-${handed[2]}-*` })]
@@ -112,3 +137,13 @@ diff --git a/dev/mock-llm.mjs b/dev/mock-llm.mjs
      // Ping-pong: whoever is mentioned mentions back, to exercise the per-member cap.
      if (/来回/.test(userLine)) return [text(mentioner ? `@${mentioner} 回你` : leads && peer ? `@${peer} 来回` : '[PASS]')]
      if (mentioner) return [text('进度正常，今天能交。')]
+@@ -646,4 +646,8 @@ const server = createServer((req, res) => {
+   })
+ })
+ 
+-server.listen(PORT, '127.0.0.1', () => console.log(`ds-bot mock on http://127.0.0.1:${server.address().port}/v1`))
++// Tests import decide(); only a direct run should bind the port.
++const invokedDirectly = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])
++if (invokedDirectly) server.listen(PORT, '127.0.0.1', () => console.log(`ds-bot mock on http://127.0.0.1:${server.address().port}/v1`))
++
++export { decide }

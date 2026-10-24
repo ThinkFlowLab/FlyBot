@@ -441,6 +441,62 @@ diff --git a/src/host/parts.js b/src/host/parts.js
  // The user's answer to an ask_user card. The message carries the question with the
  // answer, so the answer still makes sense after a checkpoint drops the card.
  export function questionReply(question, answer) {
+@@ -149,21 +149,44 @@ export function install(rt) {
+   // A broken provider adapter must not crash every turn; estimate from the
+   // derived messages instead, with one warning.
+   let measureWarned = false
+-  const tokensOf = (session) => {
++  const measuredOf = (session) => {
+     try {
+-      return ctx.get('tokenMeter')?.measure(session).totalTokens
++      return ctx.get('tokenMeter')?.measure(session)
+     } catch (error) {
+       if (!measureWarned) {
+         measureWarned = true
+         rt.warn('ds-bot: token measure failed; context sizes are estimated: %s', error)
+       }
+     }
++    return undefined
++  }
++  const tokensOf = (session) => {
++    const measured = measuredOf(session)
++    if (measured !== undefined) return measured.totalTokens
+     try {
+       return estimateTokens(session.deriveMessages().map(message => textOf(message.content)).join('\n'))
+     } catch {
+       return undefined
+     }
+   }
++  // The meter's total stays anchored on the provider usage from before a span
++  // was replaced, and the surface delta only subtracts a 4-characters-per-token
++  // estimate of the removed text. A denser report (the mock's 3 characters per
++  // token, or CJK on a real model) therefore still reads above the check line
++  // after the checkpoint has replaced the span. The heuristic size of what is
++  // left — the current surface plus the tool schemas, at that same density —
++  // is the prompt that remains. A reading with no such delta stays on the
++  // anchored total, which is what decides that the line was crossed.
++  const METER_CHARS_PER_TOKEN = 4
++  function pressureLeft(session) {
++    const measured = measuredOf(session)
++    if (measured === undefined) return tokensOf(session)
++    const anchored = measured.totalTokens
++    if (measured.baseline?.kind !== 'usage' || !(measured.surfaceDeltaTokens < 0) || typeof measured.surfaceTokens !== 'number') return anchored
++    const tools = session.requestHeader()?.tools
++    const toolTokens = Array.isArray(tools) && tools.length > 0 ? Math.ceil(JSON.stringify(tools).length / METER_CHARS_PER_TOKEN) : 0
++    return Math.min(anchored, measured.surfaceTokens + toolTokens)
++  }
+   const clock = createClock(config.timeZone)
+ 
+   // Lines for the model the Session last routed to; undefined while it has not
+@@ -544,7 +544,7 @@ export function install(rt) {
+     }
+     // The prefix cache starts over anyway, so the memory section catches up.
+     rt.renewMemory(sessionId)
+-    const after = tokensOf(agent.session) ?? before
++    const after = pressureLeft(agent.session) ?? before
+     partBase.set(agent.id, after)
+     ctx.logger.info('ds-bot: %s condensed from %d to %d tokens (check line %d, hard line %d)', agent.id, before ?? -1, after ?? -1, lines.check, lines.hard)
+     return after < lines.check
 @@ -561,7 +561,7 @@ export function install(rt) {
      const why = segment.fallback === 'overflow' ? 'the part overflowed the model\'s window'
        : segment.fallback === 'failure' ? 'a request in the previous part kept failing'
