@@ -470,3 +470,68 @@ test('#943 INC: a merged pull request is not re-judged when a comment arrives', 
   assert.ok(live.reasons.includes('missing line: Owner:'), live.reasons.join('; '))
   assert.ok(live.reasons.includes('missing line: Reviewer:'), live.reasons.join('; '))
 })
+
+// #951: `Owner:` and `Reviewer:` were read as two independent lines (#943/#950), so a body could name the
+// same Bot in both and pass: `Reviewer: Dev` is accepted because `Dev` is a `writers` Bot name (:99-101),
+// and nothing compared the values (:84). One Bot owning and reviewing one pull request is the shape #940
+// had with no lines at all — the check exists so the queue knows who reviews, not so a word appears twice.
+// The comparison is the same normalisation the reviewer side already uses: split on commas, strip a
+// leading `@`, lowercase, then compare name by name, so a list that overlaps in either direction refuses.
+const selfReviewRefusals = (r) => r.reasons.filter((reason) => /who is also the Owner of this pull request/.test(reason))
+
+test('#951: Owner and Reviewer naming the same Bot is refused, and the reason says it is the Owner', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Dev\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(selfReviewRefusals(r), ['Reviewer names "dev", who is also the Owner of this pull request'])
+})
+
+test('#951: a reviewer that is not the owner is accepted (the check compares the two lines)', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Reviewer\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.deepEqual(selfReviewRefusals(r), [])
+})
+
+test('#951: overlap in either direction, in a list, or through @ and case is refused', () => {
+  for (const header of [
+    'Owner: Dev, Dev2\nReviewer: Dev2\n',
+    'Owner: Dev\nReviewer: Dev, Reviewer\n',
+    'Owner: @Dev\nReviewer: dev\n',
+    'Owner: DEV\nReviewer: @dev\n',
+  ]) {
+    const r = run({ body: header + 'Fixes #951\n', comments: [comment()] })
+    assert.equal(r.ok, false, `${header}: ${r.reasons.join('; ')}`)
+    assert.equal(selfReviewRefusals(r).length, 1, `${header}: ${r.reasons.join('; ')}`)
+  }
+  // A list that shares no name with the owner still passes, so the comparison is per name and not per line.
+  const ok = run({ body: 'Owner: Dev\nReviewer: Reviewer2, Reviewer\nFixes #951\n', comments: [comment()] })
+  assert.equal(ok.ok, true, ok.reasons.join('; '))
+})
+
+// `Birfy` is both a `reviewers` login and the one identity every Bot writes as, so it is the sharpest
+// fixture: each line alone is perfectly valid, and only the comparison can refuse it.
+test('#951: a name that is both a login and a writers name is refused on both lines', () => {
+  const r = run({ body: 'Owner: Birfy\nReviewer: Birfy\nFixes #951\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(selfReviewRefusals(r), ['Reviewer names "birfy", who is also the Owner of this pull request'])
+})
+
+// #943's messages and #950's vocabularies are the same check, not rewritten by this one.
+test('#951: the missing-line and vocabulary refusals are unchanged', () => {
+  const missing = run({ body: 'Fixes #951\n', comments: [comment()] })
+  assert.ok(missing.reasons.includes('missing line: Owner:'), missing.reasons.join('; '))
+  assert.ok(missing.reasons.includes('missing line: Reviewer:'), missing.reasons.join('; '))
+  const empty = run({ body: 'Owner: Dev\nReviewer:\nFixes #951\n', comments: [comment()] })
+  assert.ok(empty.reasons.includes('missing line: Reviewer:'), empty.reasons.join('; '))
+  const unknown = run({ body: 'Owner: Dev\nReviewer: Nonexistent\nFixes #951\n', comments: [comment()] })
+  assert.ok(unknown.reasons.includes('Reviewer names "nonexistent", who is not a reviewers login'), unknown.reasons.join('; '))
+  assert.ok(unknown.reasons.includes('Reviewer names "nonexistent", who is not a writers Bot name'), unknown.reasons.join('; '))
+  assert.deepEqual(selfReviewRefusals(unknown), [])
+})
+
+// History is not a request: this check runs on every comment, so a merged pull request that names one
+// Bot twice must stay exactly as it is (:150, #943 INC at 87b49961).
+test('#951: a merged pull request naming one Bot twice is not re-judged', () => {
+  const merged = run({ body: 'Owner: Dev\nReviewer: Dev\nFixes #951\n', merged: true, comments: [comment()] })
+  assert.equal(merged.ok, true, merged.reasons.join('; '))
+  assert.deepEqual(selfReviewRefusals(merged), [])
+})

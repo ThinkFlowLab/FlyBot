@@ -78,14 +78,19 @@ const labelNames = (labels) => (labels ?? []).map((l) => String(typeof l === 'st
 // A Bot name can only through the one identity every Bot writes as, `Birfy`, so it names a reviewer only
 // while that account is in `reviewers`; with it gone the name is vocabulary and the line is refused.
 const SHARED_WRITE_LOGIN = 'Birfy'
+// One line's names: split on commas, strip a leading `@`, compare case-insensitively. Both header lines
+// read their values this way so `@Dev`, `dev` and `DEV` are one name wherever they appear (#951).
+const headerNames = (line, pattern) => line.replace(pattern, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
 function headerReasons(body, policy) {
   const lines = String(body ?? '').split(/\r?\n/).slice(0, HEADER_LINES)
   const reasons = []
-  if (!lines.some((line) => OWNER_LINE.test(line))) reasons.push('missing line: Owner:')
+  const owner = lines.find((line) => OWNER_LINE.test(line))
+  if (!owner) reasons.push('missing line: Owner:')
+  const owners = new Set(owner ? headerNames(owner, OWNER_LINE) : [])
   const reviewer = lines.find((line) => REVIEWER_LINE.test(line))
   if (!reviewer) reasons.push('missing line: Reviewer:')
   else {
-    const names = reviewer.replace(REVIEWER_LINE, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
+    const names = headerNames(reviewer, REVIEWER_LINE)
     if (!names.length) reasons.push('missing line: Reviewer:')
     const logins = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
     const bots = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
@@ -104,6 +109,12 @@ function headerReasons(body, policy) {
       // being sent to fix a spelling that was never the problem.
       reasons.push(`Reviewer names "${name}", who is not a reviewers login`)
       reasons.push(`Reviewer names "${name}", who is not a writers Bot name`)
+    }
+    // #951: the two lines are two roles. Reading them separately let one Bot own and review the same pull
+    // request — `Reviewer: Dev` passed on `Dev` being a `writers` name — which is the shape #940 had with
+    // no lines at all. The comparison is per name, so a list that overlaps in either direction refuses.
+    for (const name of names) {
+      if (owners.has(name)) reasons.push(`Reviewer names "${name}", who is also the Owner of this pull request`)
     }
     // Every name is a known Bot name and none of them can pass: refused, because the line would
     // otherwise read as reviewed.
