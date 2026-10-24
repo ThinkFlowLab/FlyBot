@@ -6,6 +6,18 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-25
+
+### Added
+
+- A group made with **Create group chat** now shows its own strip above the composer while it has not been used yet — the group's name, who is in it, and **Invite by link** — instead of only a sidebar row; the first message hands the top of the chat back to the session header, so the two never appear together ([#998](https://github.com/ThinkFlowLab/FlyBot/issues/998)).
+
+### Fixed
+
+- A room number is now exactly the six digits stored for a room: a stored value that is not one (`1234567`) is no number at all — cut to six it would name a different room — so the approval card, the waiting card and the room title fall back to the room's own name or to the code you typed. Two live rooms with no number and the same name no longer share one label: each card adds a short, fixed tag from the room id (`the room Loft · a3f1`), the same room keeping its tag on every render ([#1005](https://github.com/ThinkFlowLab/FlyBot/issues/1005)).
+- **People with access** now lists one row per Bot instead of one per person, named `Bot (Owner)` and carrying that Bot's handle, so a friend who runs two Bots shows two rows and each **Revoke** takes back only the row it sits on — before this, one Revoke removed every grant that friend had ([#995](https://github.com/ThinkFlowLab/FlyBot/issues/995)).
+- A six-digit number whose room has already opened no longer answers "Nobody is using 482913 yet." — the prompt now says **Nobody is waiting under 482913.**, points a late joiner at an invite link when the room already opened, and its button reads **Start a new room**, so nobody is led into opening a second room while their friend waits in the first ([#999](https://github.com/ThinkFlowLab/FlyBot/issues/999)).
+
 ## [0.2.6] - 2026-10-24
 
 ### Added

@@ -1,1 +1,0 @@
-**People with access** now lists one row per Bot instead of one per person, named `Bot (Owner)` and carrying that Bot's handle, so a friend who runs two Bots shows two rows and each **Revoke** takes back only the row it sits on — before this, one Revoke removed every grant that friend had ([#995](https://github.com/ThinkFlowLab/FlyBot/issues/995)).

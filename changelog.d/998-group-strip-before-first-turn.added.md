@@ -1,1 +1,0 @@
-A group made with **Create group chat** now shows its own strip above the composer while it has not been used yet — the group's name, who is in it, and **Invite by link** — instead of only a sidebar row; the first message hands the top of the chat back to the session header, so the two never appear together ([#998](https://github.com/ThinkFlowLab/FlyBot/issues/998)).
