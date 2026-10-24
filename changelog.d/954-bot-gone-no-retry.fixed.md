@@ -1,0 +1,1 @@
+A message to a friend's Bot that no longer exists now reads one sentence — the Bot is no longer shared with you, so ask its owner for a new invite — instead of repeating "no such remote bot. Try again. Try again.", and the failed hold it leaves offers no **Retry**, because sending again cannot succeed ([#954](https://github.com/ThinkFlowLab/FlyBot/issues/954)).
