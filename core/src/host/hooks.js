@@ -465,6 +465,9 @@ export function install(rt) {
     } catch (error) {
       approval.status = 'failed'
       approval.error = error?.message ?? String(error)
+      // A sender that knows its failure can never succeed says so (#954): the card then offers no Retry, which
+      // would only repeat the same refusal.
+      if (error?.noRetry === true) approval.noRetry = true
     }
   }
 
@@ -503,7 +506,7 @@ export function install(rt) {
       turn: a.request.meta.replyIn.turn,
       to: toRemote(a.request.to)?.handle ?? null,
       ...(a.recipientName ? { toOwner: a.recipientName } : {}),
-      ...(a.status === 'failed' && a.error ? { error: String(a.error).slice(0, 200) } : {}),
+      ...(a.status === 'failed' && a.error ? { error: String(a.error).slice(0, 200), ...(a.noRetry === true ? { retry: false } : {}) } : {}),
     }))
   rt.heldRepliesOf = (botId) => [...autoSentOf(botId), ...heldOf(botId)]
 
