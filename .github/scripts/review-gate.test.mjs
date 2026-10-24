@@ -556,8 +556,29 @@ test('#925: repo admin qualifies a CONTRIBUTOR, and does not skip the reviewers 
   assert.match(selfPass.reason, /own author is not a reviewer/)
 })
 
-test('#925: the permission API is asked only for a conclusion the association and selfReview do not already qualify', () => {
-  const policy = { reviewers: ['reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer'] }
+test('#925: a Tip+Verdict from a login outside reviewers does not call the permission API', () => {
+  const calls = []
+  const gh = (_cmd, path) => {
+    calls.push(path)
+    return JSON.stringify({ permission: 'admin' })
+  }
+  const policy = { reviewers: ['Reviewer-Agent'], selfReview: [], writers: ['Reviewer'] }
+  const body = `Verdict: PASS at ${HEAD}`
+  const admins = adminsFor({
+    gh,
+    repo: 'ThinkFlowLab/FlyBot',
+    policy,
+    reports: [
+      { login: 'passer-by', association: 'CONTRIBUTOR', body },
+      { login: 'reviewer-agent', association: 'CONTRIBUTOR', body },
+    ],
+  })
+  assert.deepEqual(admins, ['reviewer-agent'])
+  assert.deepEqual(calls, ['repos/ThinkFlowLab/FlyBot/collaborators/reviewer-agent/permission'])
+})
+
+test('#925: the permission API is asked only for a listed reviewer conclusion the association and selfReview do not already qualify', () => {
+  const policy = { reviewers: ['reviewer-agent', 'hsliuustc0106', 'write-user', 'custom', 'bad-body', 'gone'], selfReview: ['Birfy'], writers: ['Reviewer'] }
   const verdict = `Verdict: PASS at ${HEAD}`
   const reports = [
     { login: 'reviewer-agent', association: 'MEMBER', body: verdict },
@@ -567,9 +588,12 @@ test('#925: the permission API is asked only for a conclusion the association an
     { login: 'hsliuustc0106', association: 'CONTRIBUTOR', body: verdict },
     { login: 'hsliuustc0106', association: 'NONE', body: verdict },
     { login: 'writer', association: 'CONTRIBUTOR', body: verdict },
-    { login: 'custom', association: 'CONTRIBUTOR', body: verdict },
     { login: 'broken', association: 'CONTRIBUTOR', body: verdict },
     { login: 'missing', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'write-user', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'custom', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'bad-body', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'gone', association: 'CONTRIBUTOR', body: verdict },
     { login: '', association: 'NONE', body: verdict },
   ]
   const calls = []
@@ -577,19 +601,22 @@ test('#925: the permission API is asked only for a conclusion the association an
     calls.push(path)
     const login = decodeURIComponent(path.split('/collaborators/')[1].split('/')[0])
     if (login === 'hsliuustc0106') return JSON.stringify({ permission: 'admin', role_name: 'admin' })
-    if (login === 'writer') return JSON.stringify({ permission: 'write', role_name: 'write', permissions: { admin: false } })
+    if (login === 'write-user') return JSON.stringify({ permission: 'write', role_name: 'write', permissions: { admin: false } })
     if (login === 'custom') return JSON.stringify({ permission: 'write', permissions: { admin: true } })
-    if (login === 'broken') return 'not-json'
+    if (login === 'bad-body') return 'not-json'
     throw new Error('HTTP 404')
   }
   assert.deepEqual(adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy }), ['hsliuustc0106', 'custom'])
   assert.deepEqual(calls, [
     'repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission',
-    'repos/ThinkFlowLab/FlyBot/collaborators/writer/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/write-user/permission',
     'repos/ThinkFlowLab/FlyBot/collaborators/custom/permission',
-    'repos/ThinkFlowLab/FlyBot/collaborators/broken/permission',
-    'repos/ThinkFlowLab/FlyBot/collaborators/missing/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/bad-body/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/gone/permission',
   ])
+  for (const outsider of ['writer', 'broken', 'missing']) {
+    assert.equal(calls.some((path) => path.includes(`/collaborators/${outsider}/`)), false, outsider)
+  }
   assert.deepEqual(adminsFor({ gh, reports, policy }), [])
   assert.equal(calls.length, 5, 'no repo means no lookup')
 })

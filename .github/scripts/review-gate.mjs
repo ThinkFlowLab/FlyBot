@@ -39,20 +39,22 @@ const SHORT = 12
 const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 
 // A conclusion GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR, or
-// `selfReview`), asked once via the collaborator permission API. A comment with no Tip SHA
-// and Verdict is not a conclusion, so it is not looked up. Metadata read on the token the
-// job already has. Fail closed: no repo, no `gh`, a 403/404, or a body that is not the
-// permission object is not admin. `permission: admin` or `permissions.admin` counts.
+// `selfReview`), from a login in `reviewers`, asked once via the collaborator permission
+// API. Anyone else can never pass the reviewers check, so they are not looked up. A
+// comment with no Tip SHA and Verdict is not a conclusion. Metadata read on the token
+// the job already has. Fail closed: no repo, no `gh`, a 403/404, or a body that is not
+// the permission object is not admin. `permission: admin` or `permissions.admin` counts.
 export function adminsFor({ gh, repo, reports, policy } = {}) {
   if (!repo || typeof gh !== 'function') return []
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
+  const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
   const admins = []
   const seen = new Set()
   for (const r of reports ?? []) {
     if (ASSOCIATIONS.has(String(r.association ?? '').toUpperCase())) continue
     const name = String(r.login ?? '').trim()
     const key = name.toLowerCase()
-    if (!name || selfReview.has(key)) continue
+    if (!name || selfReview.has(key) || !reviewers.has(key)) continue
     const parsed = parseReport(r.body)
     if (!parsed.tip || !parsed.verdict) continue
     if (seen.has(key)) continue
