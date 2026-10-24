@@ -32,6 +32,26 @@ running `generate` (see the conflict recipe in [AGENTS.md](../../AGENTS.md)). `c
 patch `0008-client-bundle` are generated from `core/src/client/` and still conflict whenever two branches
 change the client; that is a known follow-up (build the bundle instead of patching it).
 
+### What `check` holds the series to (#978)
+
+`scripts/ds-bot-patches.mjs check` applies the series with `git apply` where git exists, and with its own
+applier where it does not (the machine the Bots work on has no `git`, and `github.com:443` does not
+resolve there). Both hold the same rules, and a test runs both over every patch and compares the trees
+byte for byte:
+
+- a hunk body carries exactly the line counts its header declares on each side — that is `#934`'s extra
+  blank context line;
+- every hunk matches at the old-side line its header names. The applier never searches for the context
+  nearby, so a header that is off by a line fails instead of writing the file one line off (`#966`);
+- no hunk runs past the end of the file on either side;
+- `\ No newline at end of file` is honoured on both sides, and a missing final newline survives;
+- `-p1` strip, whole-file create/delete and `new file mode` work as with `git apply`.
+
+The old-side start is exact because the pristine upstream fixes it; the new-side start is only a position
+hint (see above) and is not used to place a hunk. On a machine without git the pin is skipped out loud
+(`skipped pin (no git): the tree hash cannot be computed here`) instead of passing quietly, and `generate`
+still refuses to run because it asks git for the diff. `apply` and `check` work either way.
+
 | Patch | Topic |
 |---|---|
 | `0001-core-fixes` | Generic core fixes (diagnostics, memory, models, prompt, time context, turns, text, i18n, model menu); upstream candidates |

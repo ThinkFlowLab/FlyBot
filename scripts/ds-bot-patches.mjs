@@ -17,8 +17,16 @@
 // Upgrading the pin: replace ds-bot/ with upstream's ds-bot/ at the new commit, update
 // ds-bot.pin.json (commit, tree = `git rev-parse <commit>:ds-bot` upstream, version), run
 // `apply`; fix each patch that fails (edit core/ by hand), then `generate`, `check`, test.
+//
+// Without git (#978): `check` and `apply` still run, through a strict applier of our own that holds
+// the same rules git apply does — a hunk body must carry the counts its header declares, must match
+// the file AT the old-side line the header names (no "find this context nearby"), may not run past the
+// end of the file, and honours `\ No newline at end of file`. Tracked files come from a walk with the
+// root .gitignore rules, and the pin is skipped out loud instead of passing silently. A machine with
+// git keeps the git path: CI is the reference, and the test compares both appliers on every patch.
+// `generate` needs git either way, because it asks git for the diff.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,9 +38,183 @@ const CORE = 'core'
 const PATCHES = join(ROOT, 'patches', 'ds-bot')
 const FILES = join(PATCHES, 'files') // whole files FlyBot adds (or replaces, when binary): copied over ds-bot/ before the patches apply
 const git = (args, opts = {}) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, ...opts })
-const tracked = dir => git(['ls-files', '-z', '--', dir]).split('\0').filter(Boolean).map(f => relative(dir, f))
+const hasGit = (() => { try { execFileSync('git', ['--version'], { stdio: 'ignore' }); return true } catch { return false } })()
 const series = () => readdirSync(PATCHES).filter(f => /^\d{4}-.*\.patch$/.test(f)).sort()
 const fail = (message) => { console.error(`ds-bot-patches: ${message}`); process.exit(1) }
+
+// The tracked files of a directory. git answers on a machine that has it; without git the walk below
+// answers, and the root .gitignore decides what is not in the repository. The walk is a list of what
+// is on disk, which is what `ls-files` reports too before a commit, apart from ignored files.
+const tracked = dir => (hasGit ? git(['ls-files', '-z', '--', dir]).split('\0').filter(Boolean).map(f => relative(dir, f)) : walkTracked(dir))
+
+const globToRegExp = glob => new RegExp(`^${glob.split('*').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`)
+
+// The root .gitignore, read the way a walk needs it: no `/` in a rule matches a path segment (so
+// `node_modules/` prunes it at any depth), a `/` anchors the rule to the root, a trailing `/` means
+// directories only, and `!` re-includes. The repository has no nested ignore files.
+function ignoreRules() {
+  const file = join(ROOT, '.gitignore')
+  if (!existsSync(file)) return []
+  return readFileSync(file, 'utf8').split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'))
+    .map(line => {
+      const negate = line.startsWith('!')
+      let pattern = negate ? line.slice(1) : line
+      const dirOnly = pattern.endsWith('/')
+      if (dirOnly) pattern = pattern.slice(0, -1)
+      const anchored = pattern.includes('/')
+      if (anchored) pattern = pattern.replace(/^\/+/, '')
+      return { negate, dirOnly, anchored, re: globToRegExp(pattern) }
+    })
+}
+
+function isIgnored(rules, rel, isDir) {
+  const segments = rel.split('/')
+  const ancestors = []
+  let prefix = ''
+  for (const segment of segments.slice(0, -1)) { prefix = prefix ? `${prefix}/${segment}` : segment; ancestors.push(prefix) }
+  let ignored = false
+  for (const rule of rules) {
+    const hit = rule.anchored
+      ? rule.re.test(rel) || (rule.dirOnly && ancestors.some(p => rule.re.test(p)))
+      : (rule.dirOnly ? (isDir ? segments : segments.slice(0, -1)) : segments).some(segment => rule.re.test(segment))
+    if (hit) ignored = !rule.negate
+  }
+  return ignored
+}
+
+function walkTracked(dir) {
+  const rules = ignoreRules()
+  const out = []
+  const walk = (abs, rel) => {
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      if (entry.name === '.git') continue
+      const child = `${rel}/${entry.name}`
+      // A symlink to a directory is a file to git, but a directory to an ignore rule (`node_modules/`).
+      const directory = entry.isDirectory() || (entry.isSymbolicLink() && statSync(join(abs, entry.name), { throwIfNoEntry: false })?.isDirectory() === true)
+      if (isIgnored(rules, child, directory)) continue
+      if (entry.isDirectory()) walk(join(abs, entry.name), child)
+      else out.push(child.slice(dir.length + 1))
+    }
+  }
+  walk(join(ROOT, dir), dir)
+  return out
+}
+
+// A file's text as lines that remember whether the last one ends with a newline, so `\ No newline at
+// end of file` has somewhere to land.
+const toLines = text => {
+  if (text === '') return []
+  const ends = text.endsWith('\n')
+  const lines = (ends ? text.slice(0, -1) : text).split('\n').map(lineText => ({ text: lineText, noEol: false }))
+  if (!ends) lines[lines.length - 1].noEol = true
+  return lines
+}
+
+// git-free applier for the stored series (#978), at `git apply`'s strictness: `-p1` strip, whole-file
+// create/delete, and one rule per hunk that is checked rather than searched for. Used only when git is
+// absent; the test compares it against git apply on every patch so the two cannot drift.
+export function applyPatchText(text, dest) {
+  const rows = text.split('\n')
+  const sections = []
+  let section = null
+  for (const row of rows) {
+    if (row.startsWith('diff --git ')) { section = [row]; sections.push(section); continue }
+    if (section) section.push(row)
+  }
+  if (!sections.length) throw new Error('the patch has no `diff --git` section')
+  const strip = line => {
+    const raw = line.slice(4).split('\t')[0].trim()
+    if (raw === '/dev/null') return null
+    const parts = raw.split('/')
+    if (parts.length < 2 || (parts[0] !== 'a' && parts[0] !== 'b')) throw new Error(`cannot strip -p1 from ${line}`)
+    return parts.slice(1).join('/')
+  }
+  for (const sectionRows of sections) {
+    const oldHeader = sectionRows.find(row => row.startsWith('--- '))
+    const newHeader = sectionRows.find(row => row.startsWith('+++ '))
+    if (!oldHeader || !newHeader) throw new Error(`a file header is missing in ${sectionRows[0]}`)
+    const oldPath = strip(oldHeader)
+    const newPath = strip(newHeader)
+    const file = newPath ?? oldPath
+    const target = join(dest, file)
+    const modeLine = sectionRows.find(row => /^new file mode \d+$/.test(row))
+    const before = oldPath && existsSync(target) ? toLines(readFileSync(target, 'utf8')) : []
+    const after = []
+    let cursor = 0
+    let hunkNumber = 0
+    for (let h = 0; h < sectionRows.length; h++) {
+      const head = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(sectionRows[h])
+      if (!head) continue
+      hunkNumber++
+      const oldStart = Number(head[1])
+      const oldCount = head[2] === undefined ? 1 : Number(head[2])
+      const newCount = head[4] === undefined ? 1 : Number(head[4])
+      const name = `${file} hunk ${hunkNumber} (@@ -${oldStart},${oldCount} +${head[3]},${newCount} @@)`
+      const body = []
+      let j = h + 1
+      for (; j < sectionRows.length; j++) {
+        const row = sectionRows[j]
+        if (row.startsWith('@@ ') || row.startsWith('diff --git ')) break
+        if (row === '' && j === sectionRows.length - 1) break // the patch's own final newline
+        if (row[0] !== ' ' && row[0] !== '+' && row[0] !== '-' && row[0] !== '\\') throw new Error(`${name}: not a hunk line: ${JSON.stringify(row.slice(0, 60))}`)
+        body.push(row)
+      }
+      h = j - 1
+      // 1. The body must carry exactly the counts the header declares (#934's shape: one blank line too many).
+      let oldSeen = 0
+      let newSeen = 0
+      for (const row of body) {
+        if (row[0] === ' ') { oldSeen++; newSeen++ }
+        else if (row[0] === '-') oldSeen++
+        else if (row[0] === '+') newSeen++
+      }
+      if (oldSeen !== oldCount || newSeen !== newCount) throw new Error(`${name}: the body has ${oldSeen} old and ${newSeen} new line(s), the header declares ${oldCount} and ${newCount}`)
+      // 2. The hunk must land where its header says, and 3. it may not run past the end of the file (#966's shape).
+      const at = oldCount === 0 ? oldStart : oldStart - 1
+      if (at < cursor) throw new Error(`${name}: starts before the end of the previous hunk`)
+      if (at + oldCount > before.length) throw new Error(`${name}: runs past the end of the file (${before.length} lines)`)
+      for (let k = cursor; k < at; k++) after.push({ ...before[k] })
+      cursor = at
+      for (let b = 0; b < body.length; b++) {
+        const row = body[b]
+        if (row[0] === '\\') {
+          if (row !== '\\ No newline at end of file') throw new Error(`${name}: unknown marker ${JSON.stringify(row)}`)
+          const previous = body[b - 1]
+          if (!previous) throw new Error(`${name}: a marker with nothing before it`)
+          if (previous[0] === '+') {
+            if (!after.length) throw new Error(`${name}: a marker with nothing before it`)
+            after[after.length - 1].noEol = true
+            continue
+          }
+          const last = before[cursor - 1]
+          if (!last || !last.noEol) throw new Error(`${name}: says "No newline at end of file" after a line that has one`)
+          last.marked = true
+          if (previous[0] === ' ') after[after.length - 1].noEol = true
+          continue
+        }
+        const lineText = row.slice(1)
+        if (row[0] === '+') { after.push({ text: lineText, noEol: false }); continue }
+        const old = before[cursor]
+        if (!old) throw new Error(`${name}: line ${cursor + 1} does not exist in ${file}`)
+        if (old.text !== lineText) throw new Error(`${name}: ${row[0] === ' ' ? 'context' : 'removed line'} at ${cursor + 1} is ${JSON.stringify(old.text)}, the hunk has ${JSON.stringify(lineText)}`)
+        if (row[0] === ' ') after.push({ ...old })
+        cursor++
+      }
+    }
+    for (let k = cursor; k < before.length; k++) after.push({ ...before[k] })
+    // What the patch says about the old file's last newline must be what that file is.
+    if (before.length) {
+      const last = before[before.length - 1]
+      if (last.noEol && !last.marked && cursor >= before.length) throw new Error(`${file}: the last line has no newline; the hunk must mark it`)
+    }
+    for (let k = 0; k < after.length - 1; k++) if (after[k].noEol) throw new Error(`${file}: only the last line may lack a newline`)
+    if (!newPath) { rmSync(target, { force: true }); continue }
+    const content = after.map((line, k) => (k === after.length - 1 ? line.text + (line.noEol ? '' : '\n') : `${line.text}\n`)).join('')
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, content)
+    if (modeLine) chmodSync(target, parseInt(modeLine.split(' ').pop(), 8))
+  }
+}
 
 // ds-bot/'s tracked files, copied as they are on disk, then files/ over them, then each patch applied in order.
 function build(out) {
@@ -46,6 +228,10 @@ function build(out) {
     cpSync(join(FILES, file), join(ROOT, out, file))
   }
   for (const patch of series()) {
+    if (!hasGit) {
+      try { applyPatchText(readFileSync(join(PATCHES, patch), 'utf8'), join(ROOT, out)) } catch (error) { fail(`${patch} does not apply cleanly:\n${error.message}`) }
+      continue
+    }
     try {
       git(['apply', '--whitespace=nowarn', `--directory=${out}`, '-p1', join(PATCHES, patch)], { stdio: ['ignore', 'pipe', 'pipe'] })
     } catch (error) { fail(`${patch} does not apply cleanly:\n${error.stderr || error.message}`) }
@@ -53,6 +239,11 @@ function build(out) {
 }
 
 function checkPin() {
+  if (!hasGit) {
+    // Not a pass: the tree hash cannot be computed here, so say what was skipped (#978).
+    console.log(`skipped pin (no git): the tree hash cannot be computed here`)
+    return
+  }
   // The tree of ds-bot/ as staged (equals HEAD in CI), so the check also works before a commit.
   const tree = git(['ls-tree', git(['write-tree']).trim(), UPSTREAM]).split(/\s+/)[2]
   if (tree !== PIN.tree) fail(`${UPSTREAM}/ is tree ${tree}, the pin says ${PIN.tree} (${PIN.repo}@${PIN.commit.slice(0, 7)}). Do not edit ${UPSTREAM}/; change patches/ds-bot/.`)
@@ -132,12 +323,16 @@ function diffReproduces(file, diff, hadUpstream) {
       cpSync(join(ROOT, UPSTREAM, file), join(dir, file))
     }
     writeFileSync(join(dir, 'one.patch'), diff)
-    execFileSync('git', ['apply', '--whitespace=nowarn', '-p1', 'one.patch'], { cwd: dir, stdio: 'ignore' })
+    if (hasGit) execFileSync('git', ['apply', '--whitespace=nowarn', '-p1', 'one.patch'], { cwd: dir, stdio: 'ignore' })
+    else applyPatchText(diff, dir)
     return existsSync(join(ROOT, CORE, file)) ? existsSync(join(dir, file)) && readFileSync(join(dir, file)).equals(readFileSync(join(ROOT, CORE, file))) : !existsSync(join(dir, file))
   } catch { return false } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 
 function generate() {
+  // The diff itself comes from git. Without git there is nothing to ask for it: the git-free applier
+  // (#978) is a validator, not a diff writer.
+  if (!hasGit) fail('generate needs git: it asks git for the diff of ds-bot/ against core/. Without git, edit core/ and patches/ds-bot/ together and run check.')
   const topics = JSON.parse(readFileSync(join(PATCHES, 'topics.json'), 'utf8'))
   const upstream = new Set(tracked(UPSTREAM))
   const core = new Set(tracked(CORE))
