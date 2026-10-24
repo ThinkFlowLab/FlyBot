@@ -240,3 +240,38 @@ test('#754: host and client import the same judgment, and neither keeps a litera
   assert.match(files['channel.js'], /isApprovalWaiting\(reply\.status\)/, 'the wait badge asks the rule')
   assert.match(files['cells.js'], /isApprovalWaiting\(held\.status\)/, 'the chat bubble asks the rule')
 })
+
+// #954: a sender that knows its refusal can never succeed says so, and the card it failed on must not
+// offer Retry — the button would only repeat the same refusal. A failure that may pass later keeps it.
+test('#954: a final failure reaches the chat as retry: false, an ordinary one keeps Retry', async (t) => {
+  const { fb, call, stop } = await start()
+  t.after(stop)
+  holdFlagged(fb)
+  // The team is read before a grant can be written, and a remote send needs one.
+  await call('state', {})
+  await fb.grants.set('a', [{ grantee: '@bob.bot' }])
+  let error
+  fb.transports.add('bot-social', { send: async () => { throw error } })
+  const holdToBob = () => heldId(fb, {
+    from: 'a', to: { kind: 'remote', handle: '@bob.bot' }, text: 'are you still there?',
+    via: 'auto-reply', meta: { hold: true, replyIn: { sessionId: 's1', turn: 4 } },
+  })
+  const view = async id => (await call('state', {})).value.bots.find(bot => bot.id === 'a').heldReplies.find(entry => entry.id === id)
+
+  error = Object.assign(new Error('@bob.bot is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.'), { code: 'bot_not_found', handle: '@bob.bot', noRetry: true })
+  const id = await holdToBob()
+  const approved = await call('flybot/decide', { id, decision: 'approve' })
+  assert.equal(approved.ok, true, JSON.stringify(approved))
+  assert.equal(approved.value.status, 'failed', JSON.stringify(approved))
+  const failed = await view(id)
+  assert.equal(failed.retry, false, 'the sender said this can never succeed, so no Retry is offered')
+  assert.match(failed.error, /no longer shared with you/)
+
+  // The negative half: a failure that may pass later keeps the Retry it always had.
+  error = new Error('Bot Social did not answer')
+  const retryId = await holdToBob()
+  assert.equal((await call('flybot/decide', { id: retryId, decision: 'approve' })).value.status, 'failed')
+  const retryable = await view(retryId)
+  assert.equal(retryable.error, 'Bot Social did not answer')
+  assert.notEqual(retryable.retry, false, 'a retryable failure still offers Retry')
+})
