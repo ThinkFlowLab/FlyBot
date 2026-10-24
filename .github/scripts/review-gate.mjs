@@ -12,8 +12,8 @@
 //     `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, acting as Birfy, may PASS
 //     its own pull requests; any other author still needs someone else);
 //   - the login is tied to this repository (#676, #925): `author_association` is OWNER, MEMBER or
-//     COLLABORATOR, or the login is in `selfReview`, or `adminsFor` found repo admin. A CONTRIBUTOR
-//     who is none of those is not a conclusion;
+//     COLLABORATOR, the login is this pull request's own author listed in `selfReview`, or
+//     `adminsFor` found repo admin. A CONTRIBUTOR who is none of those is not a conclusion;
 //   - it carries the Verifier block review-pr already writes, with a `Tip SHA:` that is the
 //     head being judged and a `Verdict:`;
 //   - it names its writer in the header: `Written-by: <Bot>` (the older prose `Written by: …` reads
@@ -203,11 +203,16 @@ export function decide({ head, author, reports, policy, admins } = {}) {
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
     const association = String(r.association ?? '').toUpperCase()
-    // #676 / #925. `admins` is whatever `adminsFor` resolved; it does not skip the checks below.
-    const listedSelf = selfReview.has(login(r))
+    // #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR
+    // and still count, but only on its own pull request. That is one exception for one person, not a
+    // second reviewers list: the same login judging someone else's pull request keeps every rule
+    // below, and #676 still refuses a login nobody listed.
+    // #936 (#925): this gate also accepts a repository admin, the one fact the association stamp gets
+    // wrong for this account. `admins` is what `adminsFor` resolved; it skips no check below.
+    const selfOnly = selfReview.has(login(r)) && login(r) === authorLogin
     const isAdmin = adminSet.has(login(r))
-    if (!ASSOCIATIONS.has(association) && !listedSelf && !isAdmin) {
-      reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, and ${r.login} is not in selfReview and was not shown as a repo admin, so it is not a conclusion`)
+    if (!ASSOCIATIONS.has(association) && !selfOnly && !isAdmin) {
+      reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, so it is not a conclusion`)
       continue
     }
     // #676: a conclusion at this tip belongs to the newest-word question even when it fails a check

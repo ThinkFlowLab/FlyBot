@@ -494,23 +494,11 @@ test('#676: a conclusion from outside the repository counts for nothing', () => 
   assert.match(missing.reason, /author association missing/)
 })
 
-// #925: GitHub stamps an org admin's review CONTRIBUTOR. OWNER/MEMBER/COLLABORATOR still count.
-// A login in selfReview counts on any pull request (the #928 own-pull-request limit dropped that
-// stamp while the reviewer was not the author). A repo admin counts the same way. A CONTRIBUTOR
-// who is neither is still not a conclusion (#676). Admin does not skip the reviewers list or the
-// own-author rule.
-test('#925: OWNER, MEMBER and COLLABORATOR still count, and a bare CONTRIBUTOR does not', () => {
-  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
-    const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z', 'review', association)], policy })
-    assert.equal(r.ok, true, association)
-  }
-  const bare = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z', 'review', 'CONTRIBUTOR')], policy })
-  assert.equal(bare.ok, false)
-  assert.match(bare.reason, /author association CONTRIBUTOR/)
-  assert.match(bare.reason, /not in selfReview/)
-})
-
-test('#925: a selfReview login stamped CONTRIBUTOR counts on their own pull request and on someone else\'s', () => {
+// #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR and
+// still count, but only on its own pull request. One exception for one person, never a second
+// reviewers list: the same login on someone else's pull request stays outside the association rule,
+// and #676 still refuses everyone nobody listed.
+test('#928: a listed self-reviewer who is a CONTRIBUTOR counts, only on their own pull request', () => {
   const selfPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer', 'hsliuustc0106'] }
   const own = (login = 'hsliuustc0106') => comment(login, report({ writer: 'hsliuustc0106' }), '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')
 
@@ -519,16 +507,20 @@ test('#925: a selfReview login stamped CONTRIBUTOR counts on their own pull requ
   assert.equal(mine.by, 'hsliuustc0106')
   assert.equal(mine.judged[0].counts, true)
 
-  const elsewhere = decide({ head: HEAD, author: 'opener', reports: [own()], policy: selfPolicy })
-  assert.equal(elsewhere.ok, true, 'selfReview qualifies the association on any pull request in this repo')
-  assert.equal(elsewhere.by, 'hsliuustc0106')
-
   const unlisted = decide({ head: HEAD, author: 'opener', reports: [own('passer-by')], policy: selfPolicy })
   assert.equal(unlisted.ok, false, 'a CONTRIBUTOR nobody listed is still not a conclusion')
   assert.match(unlisted.reason, /author association CONTRIBUTOR/)
   assert.equal(unlisted.judged[0].counts, false)
+
+  const elsewhere = decide({ head: HEAD, author: 'opener', reports: [own()], policy: selfPolicy })
+  assert.equal(elsewhere.ok, false, 'a listed self-reviewer judging someone else\'s pull request is not exempt')
+  assert.equal(elsewhere.judged[0].counts, false)
 })
 
+// #936 / #925: a login holding admin on this repository is stamped CONTRIBUTOR on its reviews, so the
+// association gate cannot be the only word. The permission API is asked only for a Tip+Verdict
+// conclusion by a login already in `reviewers`; it never widens the reviewers list, never skips the
+// own-author rule, and a failed lookup is not admin.
 test('#925: repo admin qualifies a CONTRIBUTOR, and does not skip the reviewers list or the own-author rule', () => {
   const adminPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: [], writers: ['Reviewer'] }
   const pass = comment('hsliuustc0106', report(), '2026-10-18T01:00:00Z', 'review', 'CONTRIBUTOR')
@@ -562,12 +554,12 @@ test('#925: a Tip+Verdict from a login outside reviewers does not call the permi
     calls.push(path)
     return JSON.stringify({ permission: 'admin' })
   }
-  const policy = { reviewers: ['Reviewer-Agent'], selfReview: [], writers: ['Reviewer'] }
+  const p = { reviewers: ['Reviewer-Agent'], selfReview: [], writers: ['Reviewer'] }
   const body = `Verdict: PASS at ${HEAD}`
   const admins = adminsFor({
     gh,
     repo: 'ThinkFlowLab/FlyBot',
-    policy,
+    policy: p,
     reports: [
       { login: 'passer-by', association: 'CONTRIBUTOR', body },
       { login: 'reviewer-agent', association: 'CONTRIBUTOR', body },
@@ -578,7 +570,7 @@ test('#925: a Tip+Verdict from a login outside reviewers does not call the permi
 })
 
 test('#925: the permission API is asked only for a listed reviewer conclusion the association and selfReview do not already qualify', () => {
-  const policy = { reviewers: ['reviewer-agent', 'hsliuustc0106', 'write-user', 'custom', 'bad-body', 'gone'], selfReview: ['Birfy'], writers: ['Reviewer'] }
+  const p = { reviewers: ['reviewer-agent', 'hsliuustc0106', 'write-user', 'custom', 'bad-body', 'gone'], selfReview: ['Birfy'], writers: ['Reviewer'] }
   const verdict = `Verdict: PASS at ${HEAD}`
   const reports = [
     { login: 'reviewer-agent', association: 'MEMBER', body: verdict },
@@ -606,7 +598,7 @@ test('#925: the permission API is asked only for a listed reviewer conclusion th
     if (login === 'bad-body') return 'not-json'
     throw new Error('HTTP 404')
   }
-  assert.deepEqual(adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy }), ['hsliuustc0106', 'custom'])
+  assert.deepEqual(adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy: p }), ['hsliuustc0106', 'custom'])
   assert.deepEqual(calls, [
     'repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission',
     'repos/ThinkFlowLab/FlyBot/collaborators/write-user/permission',
@@ -617,6 +609,20 @@ test('#925: the permission API is asked only for a listed reviewer conclusion th
   for (const outsider of ['writer', 'broken', 'missing']) {
     assert.equal(calls.some((path) => path.includes(`/collaborators/${outsider}/`)), false, outsider)
   }
-  assert.deepEqual(adminsFor({ gh, reports, policy }), [])
+  // `Birfy` is the selfReview login: its own pull request is covered by that carve-out, so it is
+  // never looked up as an admin — which is also why the same login on someone else's pull request
+  // stays refused (#931).
+  assert.equal(calls.some((path) => path.includes('/collaborators/Birfy/')), false, 'a selfReview login is not looked up')
+  assert.deepEqual(adminsFor({ gh, reports, policy: p }), [])
   assert.equal(calls.length, 5, 'no repo means no lookup')
+})
+
+test('#925: OWNER, MEMBER and COLLABORATOR still count, and a bare CONTRIBUTOR does not', () => {
+  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
+    const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z', 'review', association)], policy })
+    assert.equal(r.ok, true, association)
+  }
+  const bare = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z', 'review', 'CONTRIBUTOR')], policy })
+  assert.equal(bare.ok, false)
+  assert.match(bare.reason, /author association CONTRIBUTOR/)
 })

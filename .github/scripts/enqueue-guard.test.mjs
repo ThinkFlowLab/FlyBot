@@ -277,7 +277,6 @@ test('#925: a CONTRIBUTOR who is not in selfReview and is not a repo admin is re
     const r = run({ reviews: [contributor('reviewer-agent')], permission })
     assert.equal(r.ok, false, permission)
     assert.match(r.reasons.join('; '), /author association CONTRIBUTOR/)
-    assert.match(r.reasons.join('; '), /not in selfReview/)
   }
 })
 
@@ -287,10 +286,10 @@ test('#925: a CONTRIBUTOR who has admin on the repo is accepted', () => {
   assert.equal(r.verdict.by, 'reviewer-agent')
 })
 
-test('#925: a selfReview login stamped CONTRIBUTOR is accepted without an admin lookup', () => {
+test('#925: a selfReview login stamped CONTRIBUTOR is accepted on its own pull request without an admin lookup', () => {
   const gh = fakeGh({
     files: [HOST_FILE],
-    author: 'opener',
+    author: 'Birfy',
     reviews: [contributor('Birfy')],
     permission: 'throw',
   })
@@ -298,6 +297,12 @@ test('#925: a selfReview login stamped CONTRIBUTOR is accepted without an admin 
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.verdict.by, 'Birfy')
   assert.equal(gh.calls.some((path) => path.includes('/permission')), false)
+})
+
+test('#925: a selfReview login judging someone else\'s pull request is still refused (#931)', () => {
+  const r = run({ author: 'opener', reviews: [contributor('Birfy')], permission: 'throw' })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /author association CONTRIBUTOR/)
 })
 
 test('#925: a tier that needs no PASS does not ask the permission API', () => {

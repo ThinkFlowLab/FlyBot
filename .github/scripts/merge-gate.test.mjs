@@ -439,3 +439,21 @@ test('#660-#663: the fenced Ran block is evidence only with a $ command, and a T
   assert.equal(r.ok, false)
   assert.match(r.reasons.join('; '), /lists no command it ran/)
 })
+
+test('#925: admin does not skip the own-author rule, and selfReview does not carry to someone else\'s pull request', () => {
+  const own = judge({ labels: [], head: HEAD, author: 'reviewer-agent', reports: [say(report(), '2026-10-24T03:42:31Z', 'comment')], policy, admins: ['reviewer-agent'] })
+  assert.equal(own.ok, false, 'admin does not skip the own-author rule')
+  assert.match(own.reasons.join('; '), /own author is not a reviewer/)
+
+  const listed = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer'] }
+  const other = judge({
+    labels: [],
+    head: HEAD,
+    author: 'opener',
+    reports: [{ login: 'hsliuustc0106', body: report(), at: '2026-10-24T03:42:31Z', kind: 'comment', association: 'CONTRIBUTOR' }],
+    policy: listed,
+    admins: [],
+  })
+  assert.equal(other.ok, false, 'a selfReview login judging someone else\'s pull request is not exempt (#931)')
+  assert.match(other.reasons.join('; '), /author association CONTRIBUTOR/)
+})
