@@ -64,8 +64,20 @@ const labelNames = (labels) => (labels ?? []).map((l) => String(typeof l === 'st
 
 // The refusal names the line, not just the defect, so the fix is "add this line" rather than "something
 // about the body". A `Reviewer:` line with no value names nobody, which is the same defect as a missing
-// line: the queue is meant to know who reviews, not to see the word. A value is one login, with or
-// without a leading `@`, compared case-insensitively against the policy's `reviewers`.
+// line: the queue is meant to know who reviews, not to see the word.
+//
+// #947: `Reviewer:` names a workstation, so it speaks the vocabulary of `Written-by:` — the policy's
+// `writers` Bot names, which is the only thing our pull requests ever wrote there — and the `reviewers`
+// logins stay accepted, because the shared account is a login too. Checking the login list alone refused
+// every pull request we open, #941 among them: `Reviewer: Reviewer2` came back "not in reviewers" while
+// `reviewers` holds accounts, not workstations. A value is one name from either list, with or without a
+// leading `@`, compared case-insensitively.
+//
+// Being listed is not the same as being able to review, and the line has to name at least one of the
+// second kind, or "a Bot name" becomes a way around the list. A login in `reviewers` can record a PASS.
+// A Bot name can only through the one identity every Bot writes as, `Birfy`, so it names a reviewer only
+// while that account is in `reviewers`; with it gone the name is vocabulary and the line is refused.
+const SHARED_WRITE_LOGIN = 'Birfy'
 function headerReasons(body, policy) {
   const lines = String(body ?? '').split(/\r?\n/).slice(0, HEADER_LINES)
   const reasons = []
@@ -75,8 +87,30 @@ function headerReasons(body, policy) {
   else {
     const names = reviewer.replace(REVIEWER_LINE, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
     if (!names.length) reasons.push('missing line: Reviewer:')
-    const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
-    for (const name of names) if (!reviewers.has(name)) reasons.push(`Reviewer names "${name}", who is not in reviewers`)
+    const logins = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
+    const bots = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
+    const sharedLogin = logins.has(SHARED_WRITE_LOGIN.toLowerCase())
+    let passable = false
+    for (const name of names) {
+      if (logins.has(name)) {
+        passable = true
+        continue
+      }
+      if (bots.has(name)) {
+        if (sharedLogin) passable = true
+        continue
+      }
+      // Neither list: say both, so the reader knows which two vocabularies were tried rather than
+      // being sent to fix a spelling that was never the problem.
+      reasons.push(`Reviewer names "${name}", who is not a reviewers login`)
+      reasons.push(`Reviewer names "${name}", who is not a writers Bot name`)
+    }
+    // Every name is a known Bot name and none of them can pass: refused, because the line would
+    // otherwise read as reviewed.
+    if (names.length && !passable && !reasons.length) {
+      const named = names.map((name) => `"${name}"`).join(', ')
+      reasons.push(`Reviewer names ${named}, who ${names.length === 1 ? 'is a writers Bot name but cannot record a Verdict here' : 'are writers Bot names but cannot record a Verdict here'}: every Bot writes as "${SHARED_WRITE_LOGIN}", which is not in reviewers`)
+    }
   }
   return reasons
 }

@@ -15,12 +15,15 @@ const TEST_FILE = 'core/test/enqueue-guard.test.js' // T1: needs none
 // #943: a pull request that may enter the queue says who owns it and who reviews it, in its body.
 const HEADERS = 'Owner: Dev\nReviewer: reviewer-agent\n'
 
-const policyFile = () => {
+const policyFile = (overrides = {}) => {
   const path = join(mkdtempSync(join(tmpdir(), 'enqueue-guard-policy-')), 'review-policy.json')
-  writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Birfy'] }))
+  writeFileSync(path, JSON.stringify({ reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['reviewer-agent', 'Reviewer', 'Reviewer2', 'Birfy'], ...overrides }))
   return path
 }
 const POLICY = policyFile()
+// #947: `Birfy` is the one identity every Bot writes as, so it is the login a `writers` Bot name stands
+// for. This fixture takes it out of `reviewers`: a Bot name then names nobody who can record a PASS.
+const NO_SHARED_LOGIN = policyFile({ reviewers: ['reviewer-agent'] })
 
 // The fixed format (#637): the first line is the conclusion, the evidence below it. `Ran:` is what
 // makes a PASS evidence rather than a claim (review-gate's rule, reused here).
@@ -54,7 +57,7 @@ const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], 
 
 const run = (fixture = {}) => main({
   gh: fakeGh({ files: [HOST_FILE], ...fixture }),
-  env: { REVIEW_POLICY: POLICY, GH_REPO: fixture.repo ?? 'ThinkFlowLab/FlyBot', PR: '566' },
+  env: { REVIEW_POLICY: fixture.policy ?? POLICY, GH_REPO: fixture.repo ?? 'ThinkFlowLab/FlyBot', PR: '566' },
   repo: fixture.repo ?? 'ThinkFlowLab/FlyBot',
   pr: 566,
 })
@@ -349,14 +352,60 @@ test('#943: a body with no Reviewer: line is refused, and the refusal names that
   assert.equal(r.reasons.some((reason) => /missing line: Owner:/.test(reason)), false, 'only the line that is missing is named')
 })
 
-test('#943: a Reviewer: naming a login outside `reviewers` is refused, and the refusal names the login', () => {
+// #947 rewrote both refusal sentences: a value is now looked for in two vocabularies, so the refusal
+// says which one it missed instead of claiming `reviewers` is the only list.
+test('#943, reworded by #947: a Reviewer: outside both vocabularies is refused and names the word', () => {
   const r = run({ body: 'Owner: Dev\nReviewer: someone-else\nFixes #943\n', comments: [comment()] })
   assert.equal(r.ok, false)
-  assert.ok(r.reasons.includes('Reviewer names "someone-else", who is not in reviewers'), r.reasons.join('; '))
+  assert.ok(r.reasons.includes('Reviewer names "someone-else", who is not a reviewers login'), r.reasons.join('; '))
+  assert.ok(r.reasons.includes('Reviewer names "someone-else", who is not a writers Bot name'), r.reasons.join('; '))
 })
 
 test('#943: an @ and any case are fine on a login `reviewers` lists', () => {
   const r = run({ body: 'Owner: Dev\nReviewer: @Reviewer-Agent, BIRFY\nFixes #943\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// #947: `Reviewer:` names a workstation, so it speaks the vocabulary of `Written-by:` — the policy's
+// `writers` Bot names, which is the only thing our pull requests ever wrote there. #943 compared the
+// value against `reviewers` (logins) alone, so `Reviewer: Reviewer2` was refused and #941 could not
+// enter the queue at all.
+test('#947: a Reviewer: naming a writers Bot name is accepted', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Reviewer2\nFixes #947\n', comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#947: either vocabulary is accepted, with an @ and in any case', () => {
+  for (const line of ['Reviewer: @Reviewer2', 'Reviewer: reviewer', 'Reviewer: Birfy', 'Reviewer: Reviewer2, Birfy', 'Reviewer: reviewer-agent, @REVIEWER2']) {
+    const r = run({ body: `Owner: Dev\n${line}\nFixes #947\n`, comments: [comment()] })
+    assert.equal(r.ok, true, `${line}: ${r.reasons.join('; ')}`)
+  }
+})
+
+test('#947: a name in neither vocabulary is refused, and the refusal says which two lists it missed', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Nonexistent\nFixes #947\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('Reviewer names "nonexistent", who is not a reviewers login'), r.reasons.join('; '))
+  assert.ok(r.reasons.includes('Reviewer names "nonexistent", who is not a writers Bot name'), r.reasons.join('; '))
+})
+
+// Chief's boundary on #947: accepting the Bot vocabulary must not become a way around the list of who
+// can record a PASS. A Bot name is the shared `Birfy` account, so it names a reviewer only while that
+// account is in `reviewers`; with it gone the name is vocabulary, not a reviewer.
+test('#947: a writers Bot name names nobody when the shared account is not a reviewer', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Reviewer2\nFixes #947\n', comments: [comment()], policy: NO_SHARED_LOGIN })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.some((reason) => /"reviewer2".*writers Bot name.*Birfy/.test(reason)), r.reasons.join('; '))
+  // The negative control: the same policy still accepts a real login, so the refusal is about the Bot
+  // name and not a fixture that refuses everything.
+  const login = run({ body: 'Owner: Dev\nReviewer: reviewer-agent\nFixes #947\n', comments: [comment()], policy: NO_SHARED_LOGIN })
+  assert.equal(login.ok, true, login.reasons.join('; '))
+})
+
+// One value has to be somebody who can pass, not every value: a Bot name beside a real login is still a
+// name the policy lists, and the line still names a reviewer who can record a Verdict.
+test('#947: a Bot name beside a real login is accepted even when it names nobody alone', () => {
+  const r = run({ body: 'Owner: Dev\nReviewer: Reviewer2, reviewer-agent\nFixes #947\n', comments: [comment()], policy: NO_SHARED_LOGIN })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
 
