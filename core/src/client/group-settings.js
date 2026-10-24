@@ -186,8 +186,14 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         h('span', { className: 'bt-gs-who' },
           h(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
           h('span', { className: 'bt-row-title', title: person.handle || undefined }, person.label || remoteBotTitle(person)),
-          room.origin === 'face-to-face' ? null : h('span', { className: 'bt-tag' }, t('Friend\'s Bot'))),
-        room.origin === 'face-to-face' || members.length + remotes.length <= 2
+          // #904: a host's roster entry is not a friend's Bot, and one this home cannot confirm is
+          // labelled as such; a Bot with no Bot Social identity can never be written to at all.
+          room.origin === 'face-to-face' ? null
+            : h('span', { className: 'bt-tag' }, person.unconnected ? t('Not connected')
+              : room.origin === 'inbound-share' && person.verified === false ? t('Unconfirmed')
+                : t('Friend\'s Bot'))),
+        // A guest's mirror is not theirs to edit: the host's membership is changed on the host side.
+        room.origin === 'face-to-face' || room.origin === 'inbound-share' || members.length + remotes.length <= 2
           ? null
           : h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Remove {name} from the group', { name: remoteBotTitle(person) }), title: t('Remove from group'), onClick: () => update({ removeParticipants: [{ kind: 'bot', id: person.handle || person.id, remote: true }] }) }, '×'))),
       room.origin === 'face-to-face' ? null : adding

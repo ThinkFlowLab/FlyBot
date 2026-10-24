@@ -243,7 +243,8 @@ test('#884: a stranger claims a room link with two of its Bots, both are seated,
   const mirror = guestRoomOf(b.rt)
   assert.ok(mirror, 'the joins projected the room on the guest side')
   assert.equal(Object.values(b.rt.state.rooms).filter(r => r.origin === 'inbound-share').length, 1, 'one room for both seats')
-  assert.deepEqual(mirror.participants.filter(p => p.leftSeq === undefined && p.kind === 'bot').map(p => p.id).sort(), ['chief-b', 'helper-b'])
+  // #904: the guest also lists the host's Bot that carried the join; before that it listed no host Bot at all.
+  assert.deepEqual(mirror.participants.filter(p => p.leftSeq === undefined && p.kind === 'bot').map(p => p.id).sort(), ['@chief.alice.home', '@writer.alice.home', 'chief-b', 'helper-b'])
   assert.equal(mirror.sharedFrom.remoteRoomId, 'war')
   assert.equal(mirror.sharedFrom.ticket, invite.ticket)
   assert.equal(mirror.sharedFrom.inviterName, 'Alice', 'the guest reads the owner, never the host’s own "You"')

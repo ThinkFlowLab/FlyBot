@@ -518,7 +518,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,67 @@ const ZH = {
+@@ -41,22 +41,69 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -578,6 +578,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  Retry: '重试',
 +  Approve: '批准',
 +  "Friend's Bot": '好友的 Bot',
++  'Unconfirmed': '未确认',
++  'Not connected': '未接入',
 +  'Expand': '展开',
 +  'Collapse': '收起',
    'Setting up your Main Bot…': '正在设置你的主 Bot…',

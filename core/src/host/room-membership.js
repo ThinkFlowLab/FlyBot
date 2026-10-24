@@ -691,6 +691,7 @@ export function install(rt) {
       syncMembers(room)
       await rt.save()
       if (record?.remote && record.handle) void rt.notifyRoomShare?.(room, { op: 'join', handle: record.handle })
+      else if (record?.kind === 'bot' && !record.remote) reshareRoster(room)
       return room
     })
   }
@@ -708,7 +709,9 @@ export function install(rt) {
         throw forbidden('Only a room admin can remove participants')
       }
       const live = currentParticipants(room)
-      const botsLeft = live.filter(p => p.kind === 'bot' && p.id !== me.id && p.handle !== me.handle)
+      // A local Bot has no handle: comparing handles alone dropped every local Bot from the count, so
+      // removing one always tripped the two-Bot rule. Compare by handle only when the entry has one.
+      const botsLeft = live.filter(p => p.kind === 'bot' && p.id !== me.id && (!me.handle || p.handle !== me.handle))
       const ownerLeave = actor && (
         (kind === 'human' && me.id === actor.memberId)
         || (kind === 'bot' && (state.bots?.[me.id]?.ownerId === actor.memberId || me.ownerId === actor.memberId || room.sharedFrom?.ownerId === actor.memberId))
@@ -735,6 +738,8 @@ export function install(rt) {
           .catch(error => rt.warn?.('ds-bot: a seat\'s leave was not settled: %s', error))
       } else if (kind === 'bot' && room.origin === 'inbound-share' && room.sharedFrom?.ticket) {
         void leaveTicketRoom(room, me).catch(error => rt.warn?.('ds-bot: leaving %s was not sent: %s', room.name, error))
+      } else if (kind === 'bot' && !me.remote) {
+        reshareRoster(room)
       }
       return room
     })
@@ -953,6 +958,172 @@ export function install(rt) {
     }
   }
 
+  // #904: a guest's copy learns this home's membership only from a fresh roster. A local add or remove
+  // therefore has to send one; without this the guest list never changes and a removed Bot keeps writing.
+  function reshareRoster(room) {
+    if (!room || room.origin === 'inbound-share' || isFaceRoom(room)) return
+    if (!(room.participants ?? []).some(p => p.remote)) return
+    void Promise.resolve(rt.notifyRoomShare?.(room, { op: 'join' }))
+      .catch(error => rt.warn?.('ds-bot: a membership change was not shared: %s', error))
+  }
+
+  // #904: the Bots this home keeps in the room, for the guests' copies of it. Only this home's own Bots:
+  // another guest's Bot is not this home's to publish. A Bot with no Bot Social identity rides along as
+  // `connected: false` so the guest can show it as not connected instead of leaving it out entirely.
+  function roomRoster(room) {
+    const out = []
+    for (const p of currentParticipants(room)) {
+      if (p.kind !== 'bot' || p.remote) continue
+      const bot = state.bots?.[p.id]
+      const member = bot?.fields?.social?.member
+      const handle = typeof member?.handle === 'string' && /^@[A-Za-z0-9._-]{1,120}$/.test(member.handle) ? member.handle : undefined
+      const name = bot?.name || p.displayName || p.id
+      const ownerName = ownerNameSafe(p) || cleanPeerName(member?.ownerName, '')
+      // #904: (home, handle) is the identity a guest keys on; a handle alone is unique only inside a home.
+      const home = typeof member?.home === 'string' && /^@[A-Za-z0-9._-]{1,120}$/.test(member.home) ? member.home : ''
+      const homeField = home ? { home } : {}
+      out.push(handle ? { handle, name, ...homeField, ...(ownerName ? { ownerName } : {}) } : { name, ...homeField, ...(ownerName ? { ownerName } : {}) })
+    }
+    return out
+  }
+
+  // #904: a roster is text a stranger wrote. It is read only for the room this mirror is bound to and
+  // only from that room's own inviter; anything else is dropped whole. Every entry it names stays
+  // unverified unless this home already holds a fact about that handle (the seat that carried the join,
+  // or a published friend Bot) — an unverified entry is displayed, never addressed.
+  function rosterOf(data, room, event) {
+    if (!Array.isArray(data?.roster)) return undefined
+    const bound = room?.sharedFrom ?? {}
+    const same = (a, b) => {
+      const left = String(a ?? '').trim().toLowerCase()
+      return left !== '' && left === String(b ?? '').trim().toLowerCase()
+    }
+    if (!same(data.roomId, bound.remoteRoomId)) return undefined
+    if (bound.inviterHome && bound.inviterHandle) {
+      if (!same(event?.fromHome, bound.inviterHome) || !same(event?.fromHandle, bound.inviterHandle)) return undefined
+    } else if (bound.inviterHome ? !same(event?.fromHome, bound.inviterHome) : !same(event?.fromHandle, bound.inviterHandle)) return undefined
+    const seat = String(bound.invitedHandle ?? '')
+    const out = []
+    for (const entry of data.roster.slice(0, 32)) {
+      const name = cleanPeerName(entry?.name, '')
+      const ownerName = cleanPeerName(entry?.ownerName, '')
+      const handle = String(entry?.handle ?? '').trim()
+      // The entry's home is identity, not trust: verification stays on the transport's home.
+      const entryHome = String(entry?.home ?? '').trim()
+      const ownerHome = /^@[A-Za-z0-9._-]{1,120}$/.test(entryHome) ? entryHome : bound.inviterHome
+      if (!handle) {
+        if (name) out.push({ name, ownerName, ownerHome, connected: false })
+        continue
+      }
+      if (!/^@[A-Za-z0-9._-]{1,120}$/.test(handle)) continue
+      out.push({
+        handle,
+        ownerHome,
+        name: name || handle,
+        ownerName,
+        verified: (handle === seat && same(ownerHome, bound.inviterHome)) || Boolean(publishedRemoteOf(state, handle)),
+      })
+    }
+    return out
+  }
+
+  // #904: the host room's notice rides the join like the roster (the guest's group settings were empty).
+  // It is stranger-written text too, so it is read only for the room this mirror is bound to and only
+  // from that room's own inviter; an empty value is not encoded, so it never wipes a notice.
+  function noticeOf(data, room, event) {
+    if (data?.op !== 'join' || typeof data.notice !== 'string') return undefined
+    const text = data.notice.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, 2000)
+    const bound = room?.sharedFrom ?? {}
+    const same = (a, b) => {
+      const left = String(a ?? '').trim().toLowerCase()
+      return left !== '' && left === String(b ?? '').trim().toLowerCase()
+    }
+    if (bound.remoteRoomId && !same(data.roomId, bound.remoteRoomId)) return undefined
+    if (bound.inviterHome && !same(event?.fromHome, bound.inviterHome)) return undefined
+    if (bound.inviterHandle && !same(event?.fromHandle, bound.inviterHandle)) return undefined
+    return text
+  }
+
+  // #904: one remote participant per roster entry. A roster is the whole list, so an entry it drops is a
+  // Bot the host no longer keeps here: it leaves this mirror's list, and nothing of it stays addressable.
+  function applyRoster(room, entries) {
+    if (!Array.isArray(entries)) return false
+    let changed = false
+    const seen = new Set()
+    const seat = String(room.sharedFrom?.invitedHandle ?? '')
+    const boundHome = room.sharedFrom?.inviterHome
+    const sameHome = (a, b) => {
+      const left = String(a ?? '').trim().toLowerCase()
+      return left !== '' && left === String(b ?? '').trim().toLowerCase()
+    }
+    const at = Date.now()
+    for (const entry of entries) {
+      const key = entry.handle || `not-connected:${entry.name.toLowerCase()}`
+      const ownerHome = entry.ownerHome || boundHome
+      seen.add(key)
+      // #904: one entry per (home, handle), so a same-named Bot of another home is a different Bot.
+      const found = (room.participants ?? []).find(p => p.remote && (p.handle === key || p.id === key)
+        && (!entry.handle || sameHome(p.ownerHome ?? boundHome, ownerHome)))
+      if (found) {
+        if (found.leftSeq !== undefined) {
+          delete found.leftSeq
+          delete found.leftAt
+          changed = true
+        }
+        if (entry.name && found.displayName !== entry.name) {
+          found.displayName = entry.name
+          changed = true
+        }
+        if (entry.ownerName && found.ownerName !== entry.ownerName) {
+          found.ownerName = entry.ownerName
+          changed = true
+        }
+        if (entry.handle && entry.handle === seat && found.verified !== true) {
+          found.verified = true
+          changed = true
+        }
+        continue
+      }
+      room.participants = [...(room.participants ?? []), entry.handle ? {
+        kind: 'bot',
+        remote: true,
+        id: entry.handle,
+        handle: entry.handle,
+        ownerHome,
+        ownerName: entry.ownerName,
+        displayName: entry.name,
+        role: 'member',
+        fromRoster: true,
+        verified: entry.verified === true,
+        roomOnly: true,
+        joinedSeq: room.seq ?? 0,
+        joinedAt: at,
+      } : {
+        kind: 'bot',
+        remote: true,
+        id: key,
+        unconnected: true,
+        ownerName: entry.ownerName,
+        displayName: entry.name,
+        role: 'member',
+        fromRoster: true,
+        verified: false,
+        roomOnly: true,
+        joinedSeq: room.seq ?? 0,
+        joinedAt: at,
+      }]
+      changed = true
+    }
+    for (const p of room.participants ?? []) {
+      if (!p.fromRoster || p.leftSeq !== undefined) continue
+      if (seen.has(p.handle || p.id)) continue
+      p.leftSeq = room.seq ?? 0
+      p.leftAt = at
+      changed = true
+    }
+    return changed
+  }
+
   // Membership notice: the add/remove click is the owner's consent, so this does not wait
   // for a chat line. Bot Social is 1:1; the envelope is the group record the other FlyBot sees.
   rt.notifyRoomShare = async function notifyRoomShare(room, { op = 'join', handle } = {}) {
@@ -973,6 +1144,7 @@ export function install(rt) {
           invitedHandle: remote.handle,
           seq: room.seq ?? 0,
           ticket: remote.ticket,
+          ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '' } : {}),
           ...seat.from,
         }, 'room-share', seat.botId, room.id)
         continue
@@ -984,6 +1156,7 @@ export function install(rt) {
         name: room.name,
         invitedHandle: remote.handle,
         seq: room.seq ?? 0,
+        ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '' } : {}),
         ...from,
       }, 'room-share')
     }
@@ -1477,6 +1650,9 @@ export function install(rt) {
     const who = cleanPeerName(data.who, remoteBotTitle(seat))
     const hop = Number.isFinite(Number(data.hop)) ? Math.max(0, Math.floor(Number(data.hop))) : 0
     const human = data.authorKind !== 'bot'
+    // #904: this path never reads the envelope's `authorId`: `ownSeatOf` matched the seat by the
+    // transport's own `fromHandle`, so `seat.handle` is already the Bot that wrote the line, while a
+    // claim inside the envelope is only the guest's word. A guest cannot speak as another Bot here.
     const posted = append(room, rt.authoredRoomLine(room, {
       who,
       text: data.text || '',
@@ -1767,8 +1943,17 @@ export function install(rt) {
     const sender = String(event.fromHandle ?? '')
     if (!claim) return sender ? { authorId: sender, authorKind: 'bot' } : { authorId: undefined, authorKind: 'human' }
     if (!claim.startsWith('@')) return { authorId: claim, authorKind: kind }
+    // #904: a remote seat stands for the handle only when this home verified it and it belongs to the
+    // home the transport names: two homes may carry the same handle, and an unverified roster entry is a
+    // display fact, never a signature.
+    const sameHome = (left, right) => {
+      const a = String(left ?? '').trim().toLowerCase()
+      return a !== '' && a === String(right ?? '').trim().toLowerCase()
+    }
     const traced = claim === sender
-      || currentParticipants(room).some(p => p.remote === true && (p.handle === claim || p.id === claim))
+      || currentParticipants(room).some(p => p.remote === true && p.leftSeq === undefined
+        && p.verified === true && (p.handle === claim || p.id === claim)
+        && sameHome(p.ownerHome ?? room.sharedFrom?.inviterHome, event.fromHome))
       || room.sharedFrom?.inviterHandle === claim
     return traced ? { authorId: claim, authorKind: kind } : { authorId: sender || claim, authorKind: 'bot', unverified: true }
   }
@@ -1894,6 +2079,8 @@ export function install(rt) {
         remoteRoomId: data.roomId,
         joinedSeq: data.seq,
         ...(ticket && data.op === 'join' ? { ticket } : {}),
+        ...(data.op === 'join' ? { roster: rosterOf(data, { sharedFrom: { remoteRoomId: data.roomId, inviterHome: event.fromHome, inviterHandle: event.fromHandle, invitedHandle: data.invitedHandle } }, event) } : {}),
+        ...(typeof noticeOf(data, undefined, event) === 'string' ? { notice: noticeOf(data, undefined, event) } : {}),
       }, actor || (ownerId ? { memberId: ownerId } : undefined))
     } else {
       delete room.hidden
@@ -1914,11 +2101,15 @@ export function install(rt) {
         }]
         room.sharedFrom = { ...room.sharedFrom, ticket }
       }
-      for (const p of room.participants ?? []) {
-        if (seatedHere && p.id !== localBotId) continue
-        if (p.leftSeq !== undefined) {
-          delete p.leftSeq
-          delete p.leftAt
+      // #904: only a join brings anyone back. A line on an existing mirror must not clear the soft leaves
+      // a roster just set, or a plain message would quietly undo a removal.
+      if (data.op === 'join') {
+        for (const p of room.participants ?? []) {
+          if (seatedHere && p.id !== localBotId) continue
+          if (p.leftSeq !== undefined) {
+            delete p.leftSeq
+            delete p.leftAt
+          }
         }
       }
       if (data.name) room.name = cleanPeerName(data.name, room.name)
@@ -1932,6 +2123,11 @@ export function install(rt) {
         invitedHandle: data.invitedHandle || room.sharedFrom?.invitedHandle,
         remoteRoomId: data.roomId,
       }
+      // #904: the host re-sends the whole roster when its membership changes, so this list is the
+      // current one; a Bot it no longer names leaves this mirror.
+      applyRoster(room, data.op === 'join' ? rosterOf(data, room, event) : undefined)
+      const notice = noticeOf(data, room, event)
+      if (typeof notice === 'string') room.notice = notice
       syncMembers(room)
     }
     let called = []
@@ -1980,6 +2176,10 @@ export function install(rt) {
     if (!ownerId) throw invalid('Sign in first')
     const handle = draft.invitedHandle || draft.handle
     const localBotId = draft.localBotId && state.bots?.[draft.localBotId] ? draft.localBotId : undefined
+    // #904: `invitedHandle` on this side names one of my own Bots (the share addressed it), so the
+    // host's Bot to record is the one that carried the join. A handle this home owns is never a remote.
+    const seatHandle = typeof draft.inviterHandle === 'string' && draft.inviterHandle.startsWith('@') ? draft.inviterHandle : undefined
+    const mineHandles = new Set(Object.values(state.bots ?? {}).map(bot => bot?.fields?.social?.member?.handle).filter(own => typeof own === 'string'))
     const at = Date.now()
     const inviterName = cleanPeerName(draft.inviterName, 'a friend')
     const title = cleanPeerName(draft.name, sharedRoomTitle(inviterName))
@@ -2026,7 +2226,35 @@ export function install(rt) {
           joinedAt: draft.invitedAt ?? at,
           invitedByName: inviterName,
           invitedAt: draft.invitedAt ?? at,
-        }] : handle ? [{
+        }] : []),
+        // #904: the host's seat Bot is a participant of its own, not the alternative to mine. A guest
+        // always brings a Bot (`localBotId`), so the old either/or dropped the host's side whole — the
+        // reported "they cannot see my Bots". The seat is the Bot that carried the join (the inviter),
+        // never `invitedHandle`: on this side that is one of my own Bots. It keeps the shape a ticket
+        // seat has here (#884).
+        ...(seatHandle && !mineHandles.has(seatHandle) ? [{
+          kind: 'bot',
+          remote: true,
+          id: seatHandle,
+          handle: seatHandle,
+          ownerHome: draft.inviterHome,
+          ownerName: inviterName,
+          displayName: cleanPeerName(draft.inviterBotName, seatHandle),
+          role: 'member',
+          ...(typeof draft.ticket === 'string' && draft.ticket ? { admittedBy: 'ticket', ticket: draft.ticket } : {}),
+          verified: true,
+          roomOnly: true,
+          joinedSeq: draft.joinedSeq ?? 0,
+          joinedAt: draft.invitedAt ?? at,
+          invitedByName: inviterName,
+          invitedAt: draft.invitedAt ?? at,
+          ownerId,
+        }] : []),
+        // The friend path's remote Bot: a share that names a Bot of another home and brought none of
+        // mine. The either/or this replaces kept one of the two, and a share may legitimately name both.
+        // When this home brought a Bot, `invitedHandle` names one of my own Bots (the share addressed it):
+        // recording it as remote would list my own Bot twice, once under each name.
+        ...(handle && handle !== seatHandle && !mineHandles.has(handle) && !(localBotId && handle === draft.invitedHandle) ? [{
           kind: 'bot',
           remote: true,
           id: handle,
@@ -2035,6 +2263,8 @@ export function install(rt) {
           ownerName: inviterName,
           displayName: cleanPeerName(draft.botName, handle),
           role: 'member',
+          verified: true,
+          roomOnly: true,
           joinedSeq: draft.joinedSeq ?? 0,
           joinedAt: draft.invitedAt ?? at,
           invitedByName: inviterName,
@@ -2044,6 +2274,10 @@ export function install(rt) {
       ],
     }
     state.rooms[id] = room
+    // #904: the notice the join carried (gated by the caller) is the room's own notice.
+    if (typeof draft.notice === 'string') room.notice = draft.notice
+    // #904: the roster the join carried, merged on top of the two above (the seat is already there).
+    if (applyRoster(room, draft.roster)) syncMembers(room)
     await rt.save?.()
     return room
   }

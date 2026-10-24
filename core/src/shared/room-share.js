@@ -14,6 +14,27 @@ function clip(value, max = 60) {
   return String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, max)
 }
 
+// #904: a room's roster entry. A Bot inside a real room is a handful, not a crowd; the cap keeps one
+// envelope from turning into a member dump a guest has to render.
+export const ROSTER_MAX = 32
+// The group notice's own limit in the room editor (core/src/client/group-settings.js).
+export const NOTICE_MAX = 2000
+
+// #904: a handle is unique only inside its home, so an entry carries the home it belongs to: two homes
+// can keep Bots with the same local name, and a guest has to tell them apart when it attributes a line.
+// The receiving side verifies against the transport's home; this field is for identity, not for trust.
+function rosterEntry(entry = {}) {
+  const handle = clip(entry.handle, 120)
+  const home = clip(entry.home, 120)
+  const out = { name: clip(entry.name) }
+  if (handle) out.handle = handle
+  if (/^@[A-Za-z0-9._-]{1,120}$/.test(home)) out.home = home
+  const ownerName = clip(entry.ownerName)
+  if (ownerName) out.ownerName = ownerName
+  if (!handle) out.connected = false
+  return out
+}
+
 export function encodeRoomShare(payload = {}) {
   const body = {
     v: 1,
@@ -49,6 +70,18 @@ export function encodeRoomShare(payload = {}) {
   if (Array.isArray(payload.calls) && payload.calls.length > 0) {
     body.calls = payload.calls.map(handle => clip(handle, 120)).filter(Boolean).slice(0, 24)
   }
+  // #904: the host room's Bots ride the membership notice so the guest's mirror can list them. It is
+  // display data only — the guest still takes reachability from Bot Social, so a roster can never hand
+  // out a send path. `connected: false` is a Bot with no Bot Social identity: shown, never addressed.
+  // #904: an explicit roster is encoded even when empty — empty means the host keeps none of its Bots in
+  // the room any more, while an absent field means "change nothing" (an older host).
+  if (body.op === 'join' && Array.isArray(payload.roster)) {
+    body.roster = payload.roster.slice(0, ROSTER_MAX).map(rosterEntry).filter(entry => entry.connected === false || entry.handle)
+  }
+  // #904: the host room's notice rides the same join envelope, so the guest's group settings are not
+  // empty. It is text the room displays, never authority. A present notice is encoded even when empty:
+  // empty means the host cleared it, while an absent field means "change nothing" (an older host).
+  if (body.op === 'join' && typeof payload.notice === 'string') body.notice = clip(payload.notice, NOTICE_MAX)
   return `${ROOM_SHARE_MARK}\n${JSON.stringify(body)}`
 }
 

@@ -190,6 +190,8 @@ var ZH = {
   Retry: "重试",
   Approve: "批准",
   "Friend's Bot": "好友的 Bot",
+  "Unconfirmed": "未确认",
+  "Not connected": "未接入",
   "Expand": "展开",
   "Collapse": "收起",
   "Setting up your Main Bot…": "正在设置你的主 Bot…",
@@ -12574,9 +12576,12 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
           { className: "bt-gs-who" },
           (0, import_react30.createElement)(BotAvatar, { bot: lookBotForRemote(person, roster), size: 26, badge: false, live: false }),
           (0, import_react30.createElement)("span", { className: "bt-row-title", title: person.handle || void 0 }, person.label || remoteBotTitle(person)),
-          room2.origin === "face-to-face" ? null : (0, import_react30.createElement)("span", { className: "bt-tag" }, t("Friend's Bot"))
+          // #904: a host's roster entry is not a friend's Bot, and one this home cannot confirm is
+          // labelled as such; a Bot with no Bot Social identity can never be written to at all.
+          room2.origin === "face-to-face" ? null : (0, import_react30.createElement)("span", { className: "bt-tag" }, person.unconnected ? t("Not connected") : room2.origin === "inbound-share" && person.verified === false ? t("Unconfirmed") : t("Friend's Bot"))
         ),
-        room2.origin === "face-to-face" || members.length + remotes.length <= 2 ? null : (0, import_react30.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Remove {name} from the group", { name: remoteBotTitle(person) }), title: t("Remove from group"), onClick: () => update({ removeParticipants: [{ kind: "bot", id: person.handle || person.id, remote: true }] }) }, "×")
+        // A guest's mirror is not theirs to edit: the host's membership is changed on the host side.
+        room2.origin === "face-to-face" || room2.origin === "inbound-share" || members.length + remotes.length <= 2 ? null : (0, import_react30.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Remove {name} from the group", { name: remoteBotTitle(person) }), title: t("Remove from group"), onClick: () => update({ removeParticipants: [{ kind: "bot", id: person.handle || person.id, remote: true }] }) }, "×")
       )),
       room2.origin === "face-to-face" ? null : adding ? [
         ...outsidePeople.map((person) => (0, import_react30.createElement)(

@@ -154,6 +154,8 @@ const ZH = {
   Retry: '重试',
   Approve: '批准',
   "Friend's Bot": '好友的 Bot',
+  'Unconfirmed': '未确认',
+  'Not connected': '未接入',
   'Expand': '展开',
   'Collapse': '收起',
   'Setting up your Main Bot…': '正在设置你的主 Bot…',
