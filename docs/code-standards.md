@@ -60,6 +60,7 @@ A change that keeps a membership, roster or presence list in sync has the same f
 - Each subsystem under [docs/subsystems/](subsystems/README.md) declares `owned_paths` in YAML front-matter.
 - Changing an owned file without updating that subsystem doc fails `npm run arch-docs` (also run at the end of `npm run lint`). Excuse it with a `Docs-not-needed:` trailer only when the change truly needs no doc update — and write it in the pull request body **and** in the branch commit, then check both at the tip: the queue squashes the body into the commit on `main`, where the check runs again ([why](../AGENTS.md#docs-not-needed-why-both-places)).
 - Reviewers: FAIL if an owned-path change ships without a subsystem doc update **and** without a `Docs-not-needed:` trailer. Load the latest `origin/main` rules before each review (`git fetch` + `git show origin/main:.claude/skills/review-pr/SKILL.md` or the equivalent), not a stale local copy.
+- Reference-first ([AGENTS.md](../AGENTS.md#reference-first)): an ordinary architecture change updates the subsystem doc and does not edit [`.claude/skills/review-pr`](../.claude/skills/review-pr/SKILL.md). Update that skill in the same PR only when the Verifier protocol itself changes (PASS / FAIL / INC fields, `Ran:` / `Not run:` shape, posting format, or the `review-gate.mjs` parse contract).
 
 ## Team authority contract (planned)
 

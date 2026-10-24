@@ -7,18 +7,21 @@ description: Review a FlyBot change or PR with Magpie-style Verifier honesty. Re
 
 Use for local or PR tip reviews on `ThinkFlowLab/FlyBot`. Produce a Verifier report only. This skill does **not** authorize push, approve, merge, or posting a GitHub review unless a human explicitly asked for that action.
 
+This file stays thin: Verifier process only. On each tip review, re-read these from `origin/main` — [docs/subsystems/](../../../docs/subsystems/README.md), [AGENTS.md](../../../AGENTS.md), and [docs/code-standards.md](../../../docs/code-standards.md). Do not restate subsystem architecture details here. An ordinary architecture change does not edit this skill. Edit it in the same PR only when the Verifier protocol itself changes (PASS / FAIL / INC fields, `Ran:` / `Not run:` shape, posting format, or the `review-gate.mjs` parse contract). The hard rule is [AGENTS.md → Reference-first](../../../AGENTS.md#reference-first).
+
 ## Establish the tip
 
 1. Confirm repo identity (`ThinkFlowLab/FlyBot` or the agreed fork) and the commit under review.
 2. Record **tip SHA** (`git rev-parse HEAD` or the PR head SHA). If the tip moves, re-run from scratch.
-3. Load the **latest rules from `origin/main`** before each review: `git fetch origin && git show origin/main:.claude/skills/review-pr/SKILL.md` (and the same for `docs/code-standards.md` / `AGENTS.md` if the local tree is behind). Prefer the fetched rules over a stale local copy.
-4. Read [LESSONS.md](../../../LESSONS.md), [docs/code-standards.md](../../../docs/code-standards.md), [AGENTS.md](../../../AGENTS.md), and the hard rules in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
+3. Load the **latest rules from `origin/main`** before each review: `git fetch origin && git show origin/main:<path>` for this skill, `docs/code-standards.md`, `AGENTS.md`, and every `docs/subsystems/` page the diff touches. Prefer the fetched text over a stale local copy. Do not restate those pages here.
+4. Read [LESSONS.md](../../../LESSONS.md) and the hard rules in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 5. Inventory changed files vs the merge base. Do not treat author narrative as evidence.
 
-## Architecture docs / owned paths (FAIL gate)
+## Architecture docs (FAIL gate — pointer)
 
-- Subsystem pages under `docs/subsystems/` declare `owned_paths` (longest match wins).
-- **FAIL** if any file matching an `owned_paths` entry changed without a corresponding subsystem doc update in the same PR, unless the commit message carries a `Docs-not-needed:` trailer (or the arch-doc check is otherwise green).
+Owned paths and what each subsystem owns live in [docs/subsystems/](../../../docs/subsystems/README.md). The acceptance line is [docs/code-standards.md](../../../docs/code-standards.md#architecture-docs-and-owned-paths). When the trailer must appear in both places: [AGENTS.md](../../../AGENTS.md#docs-not-needed-why-both-places).
+
+- **FAIL** if an owned path changed and the same PR neither updates the matching subsystem doc nor carries a valid `Docs-not-needed:` trailer.
 - Do not invent a `Docs-not-needed:` excuse for security, fence, or API-contract changes that change behavior documented in a subsystem page.
 
 ## Verdicts
@@ -69,7 +72,7 @@ Honesty rules:
 
 ## Security fence / display-name checks
 
-For any change that touches delivery, social, fencing, or model-visible remote text (especially issues #9 / #10 / related):
+The fence rule is [docs/code-standards.md](../../../docs/code-standards.md#security-fences-and-remote-strings) and the open fence lesson in [LESSONS.md](../../../LESSONS.md). This list is the review check. For any change that touches delivery, social, fencing, or model-visible remote text (especially issues #9 / #10 / related):
 
 1. **Fence escape:** closing markers must not reconstitute after stripping (nested `</untrusted-…>` patterns). Cover message and file fences.
 2. **Shared helper:** prefer one neutralization path shared with the client parser; reject one-shot `replaceAll` as sufficient.
@@ -79,7 +82,7 @@ For any change that touches delivery, social, fencing, or model-visible remote t
 
 ## Who reviews
 
-The reviewer is the **owner's own reviewer Bot/agent** (it may act as `Birfy`; self-review counts per `selfReview` in
+Role split and self-PASS: [AGENTS.md → Gates](../../../AGENTS.md#gates). The reviewer is the **owner's own reviewer Bot/agent** (it may act as `Birfy`; self-review counts per `selfReview` in
 `.github/agent/review-policy.json`), run in a separate session with fresh context. Codex is **not** used for review
 (owner decision 2026-10-19 15:31): do not comment `@codex review`, and do not wait for or require a Codex review. A
 comment that an outside bot posts on its own is input to read, not a PASS and not a gate.
@@ -89,6 +92,8 @@ comment that an outside bot posts on its own is input to read, not a PASS and no
 - Tip advanced after a PASS → previous PASS is void; mark **INC** until re-review.
 
 ## DSH and repo hard rules (instant FAIL)
+
+Authoritative list: [AGENTS.md → Hard rules](../../../AGENTS.md#hard-rules). Instant FAIL on this review when the diff does any of these:
 
 - Patching DeepSeek Harness or depending on private install files.
 - Secrets, tokens, or user `DSH_HOME` / `~/.dsh` in the diff.

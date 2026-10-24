@@ -207,6 +207,13 @@ If either lacks it, add it there and push. No trailer and no subsystem-doc updat
 
 The standing "file no new issues" rule covers design proposals only: a reproducible code defect is still filed as an issue, with its reproduction.
 
+### Reference-first
+
+Architecture truth lives in [docs/subsystems/](docs/subsystems/README.md) (each page's `owned_paths`, enforced by `arch-docs`), and in this file and [docs/code-standards.md](docs/code-standards.md) where those already state a rule. [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md) stays thin: the Verifier procedure (tip SHA, PASS / FAIL / INC, `Ran:` / `Not run:`, security and cleanliness checks) plus pointers. On each tip review, re-read the subsystem pages, this file, and code-standards from `origin/main`. Do not restate subsystem architecture details in the skill. Owner decision 2026-10-24.
+
+- **Architecture changes** update the matching subsystem doc, or a valid `Docs-not-needed:` trailer in both the branch commit and the pull request body ([why both](#docs-not-needed-why-both-places)). Do not edit `review-pr` for ordinary architecture.
+- **Only** when the Verifier protocol itself changes — the PASS / FAIL / INC fields, the `Ran:` / `Not run:` shape, the posting format, or the [`review-gate.mjs`](.github/scripts/review-gate.mjs) parse contract — the same pull request updates `.claude/skills/review-pr`, and this file when the gate wording here has to move with it.
+
 ### Hard rules for agents
 
 1. The self-test routine files issues only; the maintenance routine opens PRs; the release routine owns `CHANGELOG.md` and the version.
@@ -243,6 +250,7 @@ The Bot team:
 4. **The core is ds-bot + patches.** Change `core/`, then run `node scripts/ds-bot-patches.mjs generate` and `check`, and commit `core/` and `patches/` together. CI fails if `ds-bot/` differs from the pin or `core/` differs from `ds-bot/` + patches.
 5. **`client.js` is generated.** Change `core/src/client/`, then run `npm run build` in `core/` and commit both files. Never edit `client.js` by hand.
 6. **Do not touch the user's own DSH data.** The test bench keeps its data in `.dsh-test-<name>/`. Never point a test at `~/.dsh` or at a DSH that the user runs.
+7. **Reference-first.** An architecture change updates the matching subsystem doc (or a valid `Docs-not-needed:` trailer). Edit `.claude/skills/review-pr` only when the Verifier protocol itself changes. See [Reference-first](#reference-first).
 
 ## Commands
 
