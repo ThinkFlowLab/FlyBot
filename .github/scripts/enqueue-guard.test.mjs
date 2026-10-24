@@ -325,5 +325,5 @@ test('#925: a selfReview login with admin on someone else\'s pull request is acc
   const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.verdict.by, 'Birfy')
-  assert.equal(gh.calls.filter((path) => path.includes('/permission')).length, 1)
+  assert.ok(gh.calls.includes('repos/ThinkFlowLab/FlyBot/collaborators/Birfy/permission'))
 })

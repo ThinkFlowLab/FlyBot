@@ -638,8 +638,9 @@ test('#925: OWNER, MEMBER and COLLABORATOR still count, and a bare CONTRIBUTOR d
   assert.match(bare.reason, /author association CONTRIBUTOR/)
 })
 
-// #925: the shape the admin rule exists for — a login in `selfReview` who is NOT this pull request's
-// author. `selfOnly` cannot cover it, so the permission API decides, and it must actually be asked.
+// A selfReview login who is not this pull request's author is not covered by selfOnly (#928).
+// The permission API is what can qualify that CONTRIBUTOR stamp, and it must actually be asked.
+// The own-pull-request PASS is selfOnly (#926, #928); this lookup does not recover it.
 test('#925: a selfReview login judging someone else\'s pull request counts when the API reports admin', () => {
   const p = { reviewers: ['hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer'] }
   const body = report()
@@ -648,7 +649,7 @@ test('#925: a selfReview login judging someone else\'s pull request counts when 
   const gh = (_cmd, path) => { calls.push(path); return JSON.stringify({ permission: 'admin', role_name: 'admin' }) }
   const admins = adminsFor({ gh, repo: 'ThinkFlowLab/FlyBot', reports, policy: p, author: 'opener' })
   assert.deepEqual(admins, ['hsliuustc0106'])
-  assert.equal(calls.length, 1, 'the permission API is asked once')
+  assert.deepEqual(calls, ['repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission'])
 
   const r = decide({ head: HEAD, author: 'opener', reports: [comment('hsliuustc0106', body, '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')], policy: p, admins })
   assert.equal(r.ok, true, r.reason)
