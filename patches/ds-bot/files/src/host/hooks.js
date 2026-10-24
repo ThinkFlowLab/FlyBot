@@ -14,7 +14,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
 import { mentionSpans } from '../shared/mentions.js'
-import { isHomeLevelRemote } from '../shared/remote-label.js'
+import { isHomeLevelRemote, remoteMentionLabel } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
 import { SOURCE_KIND } from './constants.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
@@ -890,10 +890,13 @@ export function install(rt) {
     const from = room ? (room.admin ?? room.members?.[0]) : rt.selfOf(sessionId)
     if (from === undefined || rt.botOf(from) === undefined) return []
     // The same "@" rule as the team (code, links and quoted lines are literal), over the
-    // friends' Bots by handle and by chat name; a menu chip names the chat directly.
+    // friends' Bots by the name the @ menu inserts (#967), by the handle older lines carry, and by
+    // chat name; a menu chip names the chat directly. Every alias routes to the one handle.
     const handles = new Set()
     const quoted = text.replace(/^[ \t]*>.*$/gm, line => ' '.repeat(line.length))
-    const names = [...known.values()].flatMap(bot => [
+    const remoteList = [...known.values()]
+    const names = remoteList.flatMap(bot => [
+      { name: remoteMentionLabel(bot, remoteList), handle: bot.handle },
       { name: bot.handle.slice(1), handle: bot.handle },
       ...Object.values(state.bots).filter(chat => chat.remote?.handle === bot.handle && chat.name).map(chat => ({ name: chat.name, handle: bot.handle })),
     ])

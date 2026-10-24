@@ -1531,13 +1531,25 @@ function friendRecord(bot) {
   const remote = bot?.remote && typeof bot.remote === "object" ? bot.remote : {};
   return {
     displayName: remote.displayName || remote.name || bot?.name,
-    ownerName: remote.ownerName || remote.owner || remote.homeName,
+    ownerName: remote.ownerName || remote.owner || remote.homeName || bot?.ownerName || bot?.owner || bot?.homeName,
     handle: remote.handle ?? bot?.handle,
-    isChief: remote.isChief
+    isChief: remote.isChief ?? bot?.isChief
   };
 }
 function friendBotTitle(bot) {
   return remoteBotTitle(friendRecord(bot));
+}
+var mentionHandleOf = (record) => String((record?.remote && typeof record.remote === "object" ? record.remote.handle : record?.handle) ?? "").replace(/^@+/, "").toLowerCase();
+function remoteMentionLabel(record, others = []) {
+  const title = friendBotTitle(record);
+  const key = mentionHandleOf(record);
+  const clash = (others ?? []).some((other) => {
+    const otherKey = mentionHandleOf(other);
+    return otherKey !== "" && otherKey !== key && friendBotTitle(other) === title;
+  });
+  if (!clash) return title;
+  const home = cleanPeerName(String(record?.remote?.home ?? record?.home ?? "").replace(/^@+/, ""), "");
+  return home ? `${title} · ${home}` : title;
 }
 function friendBotOwner(bot) {
   return remoteOwnerBadge(friendRecord(bot));
@@ -1705,7 +1717,8 @@ function remoteMembers(roster) {
 }
 function remoteMentionRows(roster, query = "") {
   const needle = String(query).trim().toLowerCase().replace(/^@/, "");
-  return remoteMembers(roster).filter((bot) => bot.handle.toLowerCase().includes(needle) || String(bot.name ?? "").toLowerCase().includes(needle)).map((bot) => ({ remote: bot, text: `${bot.handle} ` }));
+  const all = remoteMembers(roster);
+  return all.filter((bot) => bot.handle.toLowerCase().includes(needle) || String(bot.name ?? "").toLowerCase().includes(needle)).map((bot) => ({ remote: bot, text: `@${remoteMentionLabel(bot, all)} ` }));
 }
 function remoteMembersByHome(roster) {
   const homes = /* @__PURE__ */ new Map();
@@ -2069,10 +2082,11 @@ function mentionTarget(event) {
 function nameMentions(text, roster) {
   const value = String(text ?? "");
   if (!value.includes("@") || roster === null || typeof roster !== "object") return value;
+  const records = [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []];
   const names = /* @__PURE__ */ new Map();
-  for (const record of [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []]) {
+  for (const record of records) {
     const handle = typeof record?.remote === "object" && record.remote !== null ? record.remote.handle : record?.handle;
-    if (typeof handle === "string" && typeof record?.name === "string" && record.name !== "") names.set(handle.replace(/^@+/, "").toLowerCase(), record.name);
+    if (typeof handle === "string" && typeof record?.name === "string" && record.name !== "") names.set(handle.replace(/^@+/, "").toLowerCase(), remoteMentionLabel(record, records));
   }
   const handles = [...names.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
   if (handles.length === 0) return value;
@@ -2736,7 +2750,7 @@ function registry2() {
   globalThis.__flybot__.RoomInvitePreview ??= RoomInvitePreview;
   globalThis.__flybot__.invitePreviewOf ??= invitePreviewOf;
   globalThis.__flybot__.inviteCountdown ??= inviteCountdown;
-  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner };
+  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner, remoteMentionLabel };
   return slots;
 }
 var createClientApi2 = (options = {}) => createClientApi({ call: call2, registry: registry2, ...options });
@@ -8975,9 +8989,10 @@ function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot();
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId]);
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map((row) => ({
-        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
-        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
-        name: row.bot?.remote && !face ? row.bot.kind === "bot" ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t("Everyone"),
+        // A friend's Bot by the one name the row inserts, "Chief (Bob)" (#967); its handle is the
+        // second line (#384). A seat carries its own name; a friend's chat is named as its sidebar
+        // row and header (#498).
+        name: row.bot?.remote && !face ? row.bot.kind === "bot" ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot) : row.bot ? row.bot.label ?? row.bot.name : row.remote ? row.text.replace(/^@/, "").trimEnd() : t("Everyone"),
         ...row.bot?.role && !face ? { description: row.bot.role } : {},
         ...row.remote ? { description: row.remote.handle } : {},
         ...row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {},
@@ -17019,13 +17034,30 @@ function contentParts(content) {
   }
   return { text: texts2.join("\n"), attachments, rest };
 }
+var normMentionHandle = (handle) => String(handle ?? "").replace(/^@+/, "").toLowerCase();
+function remoteMentionableBots(roster, chats = []) {
+  const known = /* @__PURE__ */ new Map();
+  const add = (record) => {
+    const handle = normMentionHandle(record?.remote?.handle ?? record?.handle);
+    if (handle) known.set(handle, record);
+  };
+  for (const record of Array.isArray(roster.remoteBots) ? roster.remoteBots : []) add(record);
+  for (const record of Array.isArray(chats) ? chats : []) if (typeof record?.remote?.handle === "string") add(record);
+  const all = [...known.values()];
+  return all.flatMap((record) => {
+    const handle = record.remote?.handle ?? record.handle;
+    const chat = (Array.isArray(chats) ? chats : []).find((bot) => normMentionHandle(bot?.remote?.handle) === normMentionHandle(handle));
+    const base = { id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: "bot", remote: record, handle };
+    return [{ ...base, name: String(handle).replace(/^@+/, "") }, { ...base, name: base.mentionLabel }];
+  });
+}
 function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
   const room2 = roster.roomsById[sessionId];
   if (room2?.origin === "face-to-face") return faceMentionables(room2, roster, fromFriend);
   const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
   const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
   const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
-  return bots.concat(humans, remotes, bots.filter((bot) => typeof bot?.remote?.handle === "string").map((bot) => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ""), mentionLabel: friendBotTitle(bot) })));
+  return bots.concat(humans, remotes, remoteMentionableBots(roster, roster.bots));
 }
 function faceMentionables(room2, roster, fromFriend) {
   const humans = (room2.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
@@ -17069,12 +17101,12 @@ function userTextParts(text, bots, referenceLabels = []) {
   return parts;
 }
 function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
-  return userTextParts(text, bots, referenceLabels).map((part, index) => part.bot ? (0, import_react41.createElement)(
-    "button",
-    { key: index, type: "button", className: "bt-umention", title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
-    (0, import_react41.createElement)(BotMark, { bot: part.bot, size: 16 }),
-    `@${part.bot.mentionLabel ?? part.label}`
-  ) : (0, import_react41.createElement)(import_react41.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references)));
+  const chip = (part) => [(0, import_react41.createElement)(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`];
+  return userTextParts(text, bots, referenceLabels).map((part, index) => {
+    if (!part.bot) return (0, import_react41.createElement)(import_react41.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references));
+    const title = `@${part.bot.name}`;
+    return typeof part.bot.id === "string" ? (0, import_react41.createElement)("button", { key: index, type: "button", className: "bt-umention", title, onClick: () => actions.openSession(part.bot.id) }, chip(part)) : (0, import_react41.createElement)("span", { key: index, className: "bt-umention", title }, chip(part));
+  });
 }
 function Attachments({ attachments, renderMessageImages }) {
   const compact2 = attachments.length > 1;

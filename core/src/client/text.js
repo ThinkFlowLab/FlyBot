@@ -2,6 +2,7 @@
 // Text helpers
 import { dateLocale, t } from './i18n.js'
 import { mentionSpans } from '../shared/mentions.js'
+import { remoteMentionLabel } from '../shared/remote-label.js'
 
 export const MENTION_ORIGIN = 'https://bots.local/'
 
@@ -28,18 +29,19 @@ export function mentionTarget(event) {
   return anchor ? anchor.getAttribute('href').slice(MENTION_ORIGIN.length) : null
 }
 
-// A friend's remote Bot is stored and delivered by its handle ("@bot-x.home": what the
-// @ menu inserts, what the host matches); the user reads its display name. Previews
-// rewrite the handle from the local roster, never from the text, so a remote name
-// reaches the UI only through the sanitized roster record. One pass over the text: a
-// name that itself contains a handle is never rescanned.
+// A friend's remote Bot is stored and delivered by its handle ("@bot-x.home": what older lines
+// carry, what the host routes on); the user reads one name for it, the same the @ menu inserts and
+// the bubble chips (#967). Previews rewrite the handle from the local roster, never from the text,
+// so a remote name reaches the UI only through the sanitized roster record. One pass over the text:
+// a name that itself contains a handle is never rescanned.
 export function nameMentions(text, roster) {
   const value = String(text ?? '')
   if (!value.includes('@') || roster === null || typeof roster !== 'object') return value
+  const records = [...(Array.isArray(roster.remoteBots) ? roster.remoteBots : []), ...(Array.isArray(roster.bots) ? roster.bots : [])]
   const names = new Map()
-  for (const record of [...(Array.isArray(roster.remoteBots) ? roster.remoteBots : []), ...(Array.isArray(roster.bots) ? roster.bots : [])]) {
+  for (const record of records) {
     const handle = typeof record?.remote === 'object' && record.remote !== null ? record.remote.handle : record?.handle
-    if (typeof handle === 'string' && typeof record?.name === 'string' && record.name !== '') names.set(handle.replace(/^@+/, '').toLowerCase(), record.name)
+    if (typeof handle === 'string' && typeof record?.name === 'string' && record.name !== '') names.set(handle.replace(/^@+/, '').toLowerCase(), remoteMentionLabel(record, records))
   }
   const handles = [...names.keys()].filter(Boolean).sort((a, b) => b.length - a.length)
   if (handles.length === 0) return value

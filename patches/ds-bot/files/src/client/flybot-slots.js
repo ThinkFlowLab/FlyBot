@@ -28,12 +28,13 @@
 //
 // The same registry object also carries the host Bot look so a plugin can draw a Bot
 // exactly as the sidebar does: __flybot__.BotAvatar / BotMark / lookOf, and name a friend's Bot
-// or its owner the same way: __flybot__.names.friendBotTitle / friendBotOwner (set in registry()).
+// or its owner the same way: __flybot__.names.friendBotTitle / friendBotOwner / remoteMentionLabel
+// (set in registry()).
 //
 // Types: ds-bot/types/flybot.d.ts (FlyBotClientRegistry).
 import { Component, createElement as h, Fragment, useEffect, useState } from 'react'
 import { call as callHost } from './api.js'
-import { friendBotOwner, friendBotTitle, isListedRemoteChat } from '../shared/remote-label.js'
+import { friendBotOwner, friendBotTitle, isListedRemoteChat, remoteMentionLabel } from '../shared/remote-label.js'
 import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from './room-invite-preview.js'
@@ -72,7 +73,9 @@ export function registry() {
   globalThis.__flybot__.invitePreviewOf ??= invitePreviewOf
   globalThis.__flybot__.inviteCountdown ??= inviteCountdown
   // The same for a friend's Bot's one name and its owner (#498), so the social plugin says it as the sidebar does.
-  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner }
+  // `remoteMentionLabel` is the one name a friend Bot mention wears (#967), so a plugin row for a
+  // friend the core does not list yet inserts the name the bubble and the preview will chip.
+  globalThis.__flybot__.names ??= { friendBotTitle, friendBotOwner, remoteMentionLabel }
   return slots
 }
 

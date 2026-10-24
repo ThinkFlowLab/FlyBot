@@ -3356,10 +3356,14 @@ window.__ModuleLoader__.load({
       return cache.list
         .filter(friend => !listed.has(String(friend.handle).toLowerCase()))
         .filter(friend => friend.handle.includes(needle) || String(friend.name).toLowerCase().includes(needle))
-        // The inserted text asks the Bot to use message_friend_bot; the send is held for approval.
+        // The row inserts what it shows: the one name the bubble and the sidebar preview wear, which
+        // the host also matches as an alias of this Bot (#967). The second line stays the handle it
+        // routes on, and a core without the helper keeps the old handle insertion, which still routes.
         .map((friend) => {
+          const label = globalThis.__flybot__?.names?.remoteMentionLabel?.(friend, cache.list) ?? ''
           const owner = String(friend.owner || friend.homeName || '').trim()
-          return { name: owner ? `${friend.name} (${owner})` : friend.name, description: friend.handle, section: 'Bots', value: `${friend.handle} ` }
+          const name = label || (owner ? `${friend.name} (${owner})` : friend.name)
+          return { name, description: friend.handle, section: 'Bots', value: label ? `@${label} ` : `${friend.handle} ` }
         })
     }
 

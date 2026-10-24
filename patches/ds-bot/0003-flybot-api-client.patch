@@ -255,7 +255,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  // The chats a message here can reference: every other Bot's chat, then the latest
  // conversations outside the team. Group chats stay out: a group's Session holds only
  // the user's messages, so a snapshot of it would miss every Bot's reply.
-@@ -78,14 +78,32 @@ export function atSources({ roster, sessions, launched, iconFor }) {
+@@ -78,14 +78,33 @@ export function atSources({ roster, sessions, launched, iconFor }) {
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -266,9 +266,10 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 +      const snapshot = roster.getSnapshot()
 +      const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
 +      const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-+        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
-+        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
-+        name: row.bot?.remote && !face ? (row.bot.kind === 'bot' ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
++        // A friend's Bot by the one name the row inserts, "Chief (Bob)" (#967); its handle is the
++        // second line (#384). A seat carries its own name; a friend's chat is named as its sidebar
++        // row and header (#498).
++        name: row.bot?.remote && !face ? (row.bot.kind === 'bot' ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? row.text.replace(/^@/, '').trimEnd() : t('Everyone'),
 +        ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
 +        ...(row.remote ? { description: row.remote.handle } : {}),
 +        ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),
@@ -2698,19 +2699,39 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +import { BotMark, PersonMark } from './mark.js'
  import { CheckIcon, CopyIcon } from './icons.js'
  import { dateLocale, t } from './i18n.js'
-+import { cleanPeerName, faceAliases, friendBotTitle, remoteBotTitle } from '../shared/remote-label.js'
++import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
 +import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
-@@ -28,10 +28,58 @@ export function contentParts(content) {
+@@ -28,12 +28,79 @@ export function contentParts(content) {
  }
  
  // In a group only its members are called; elsewhere a mention opens that Bot's chat.
 -export function mentionableBots(roster, sessionId) {
-+// A friend's remote Bot is also called by its handle — the @ menu inserts "@<handle>"
-+// and the host delivers on it — so the handle joins as a second name of the same Bot,
-+// and the chip reads the display name (mentionLabel) from the roster.
++// A friend's Bot is called from any chat I can write in, and the roster knows it before a chat of
++// its own exists and inside a group it holds no seat in (#967). Two names, one Bot: the title
++// people read (what the @ menu inserts now) and the handle the host routes on (what older lines
++// carry), so both forms chip as the same mention. The click opens its chat when one exists.
++const normMentionHandle = handle => String(handle ?? '').replace(/^@+/, '').toLowerCase()
++
++function remoteMentionableBots(roster, chats = []) {
++  const known = new Map()
++  const add = (record) => {
++    const handle = normMentionHandle(record?.remote?.handle ?? record?.handle)
++    if (handle) known.set(handle, record)
++  }
++  for (const record of Array.isArray(roster.remoteBots) ? roster.remoteBots : []) add(record)
++  for (const record of Array.isArray(chats) ? chats : []) if (typeof record?.remote?.handle === 'string') add(record)
++  const all = [...known.values()]
++  return all.flatMap((record) => {
++    const handle = record.remote?.handle ?? record.handle
++    const chat = (Array.isArray(chats) ? chats : []).find(bot => normMentionHandle(bot?.remote?.handle) === normMentionHandle(handle))
++    const base = { id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: 'bot', remote: record, handle }
++    return [{ ...base, name: String(handle).replace(/^@+/, '') }, { ...base, name: base.mentionLabel }]
++  })
++}
++
 +export function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
    const room = roster.roomsById[sessionId]
 -  if (room) return room.members.map(id => roster.byId[id]).filter(Boolean)
@@ -2722,10 +2743,9 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +    .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
 +  const remotes = (room?.participants ?? []).filter(p => p.remote && p.leftSeq === undefined)
 +    .map(p => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }))
-+  return bots.concat(humans, remotes, bots.filter(bot => typeof bot?.remote?.handle === 'string')
-+    .map(bot => ({ ...bot, name: bot.remote.handle.replace(/^@+/, ''), mentionLabel: friendBotTitle(bot) })))
-+}
-+
++  return bots.concat(humans, remotes, remoteMentionableBots(roster, roster.bots))
+ }
+ 
 +// A face-to-face line was typed on either home, so a Bot is matched by every name the room
 +// host routes on (faceAliases: "SelfA's Chief" typed on B is A's own Chief on A) and the chip
 +// reads as the Members panel names it, "SelfA · Chief", the same on both homes (#305).
@@ -2762,10 +2782,12 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +    ownerName: remote?.ownerName,
 +    mine: roster?.self?.memberId === authorId,
 +  }
- }
- 
++}
++
  // Runs of plain text and Bot mentions, in order.
-@@ -43,6 +43,9 @@ export function userTextParts(text, bots, referenceLabels = []) {
+ export function userTextParts(text, bots, referenceLabels = []) {
+   const parts = []
+@@ -43,16 +43,25 @@ export function userTextParts(text, bots, referenceLabels = []) {
      if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) })
      parts.push({ bot: span.bot, label: text.slice(span.start + 1, span.end) })
      cursor = span.end
@@ -2775,15 +2797,26 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
    }
    if (cursor < text.length) parts.push({ text: text.slice(cursor) })
    return parts
-@@ -51,7 +51,7 @@ export function userTextParts(text, bots, referenceLabels = []) {
- function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
-   return userTextParts(text, bots, referenceLabels).map((part, index) => (part.bot
-     ? h('button', { key: index, type: 'button', className: 'bt-umention', title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
--      h(BotMark, { bot: part.bot, size: 16 }), part.label)
-+      h(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`)
-     : h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))))
  }
  
+ function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
+-  return userTextParts(text, bots, referenceLabels).map((part, index) => (part.bot
+-    ? h('button', { key: index, type: 'button', className: 'bt-umention', title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
+-      h(BotMark, { bot: part.bot, size: 16 }), part.label)
+-    : h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))))
++  const chip = part => [h(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`]
++  return userTextParts(text, bots, referenceLabels).map((part, index) => {
++    if (!part.bot) return h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))
++    const title = `@${part.bot.name}`
++    // A friend's Bot the roster knows but that has no chat yet has nowhere to navigate to; the
++    // name still chips, as a mark rather than a button that would open nothing (#967).
++    return typeof part.bot.id === 'string'
++      ? h('button', { key: index, type: 'button', className: 'bt-umention', title, onClick: () => actions.openSession(part.bot.id) }, chip(part))
++      : h('span', { key: index, className: 'bt-umention', title }, chip(part))
++  })
+ }
+ 
+ function Attachments({ attachments, renderMessageImages }) {
 @@ -87,11 +87,34 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
    const referenceLabels = data.referenceLabels ?? []
    const references = openFile && openSkill ? { openFile, openSkill } : undefined

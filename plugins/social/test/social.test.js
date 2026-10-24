@@ -762,6 +762,32 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   assert.deepEqual(JSON.parse(JSON.stringify(rows)), [{ name: 'Coder', description: '@coder.bob.home', section: 'Bots', value: '@coder.bob.home ' }])
 })
 
+test('#967: a friend Bot the core does not list yet is inserted under the one name the core would chip', async () => {
+  const { remoteMentionLabel } = await import('../../../core/src/shared/remote-label.js')
+  const friends = [
+    { handle: '@coder.bob.home', name: 'Coder', owner: 'Bob', home: '@bob.home' },
+    { handle: '@chief.bob.home', name: 'Chief', owner: 'Bob', home: '@bob.home' },
+    { handle: '@chief.bob2.home', name: 'Chief', owner: 'Bob', home: '@bob2.home' },
+  ]
+  const { entries, pluginOf, sandbox } = loadSocialClient(async (endpoint) => (endpoint === 'social/friends' ? friends : {}))
+  pluginOf([]).apply({})
+  // The core publishes the same formatter the bubble and the sidebar preview read (#967).
+  sandbox.__flybot__.names = { remoteMentionLabel }
+  const mention = entries.find(([slot]) => slot === 'flybot.composer.mention')[1]
+  const coder = (await mention.candidates('cod'))[0]
+  assert.deepEqual(JSON.parse(JSON.stringify(coder)), { name: 'Coder (Bob)', description: '@coder.bob.home', section: 'Bots', value: '@Coder (Bob) ' })
+  // Two friends' Bots with one name: each row carries the home, and inserting one still names one handle.
+  const chiefs = (await mention.candidates('chief')).map(row => ({ name: row.name, value: row.value, handle: row.description }))
+  assert.deepEqual(chiefs, [
+    { name: 'Chief (Bob) · bob.home', value: '@Chief (Bob) · bob.home ', handle: '@chief.bob.home' },
+    { name: 'Chief (Bob) · bob2.home', value: '@Chief (Bob) · bob2.home ', handle: '@chief.bob2.home' },
+  ])
+  // A core without the helper keeps inserting the handle, which is what routes on that core.
+  sandbox.__flybot__.names = {}
+  const plain = (await mention.candidates('cod'))[0]
+  assert.deepEqual(JSON.parse(JSON.stringify(plain)), { name: 'Coder (Bob)', description: '@coder.bob.home', section: 'Bots', value: '@coder.bob.home ' })
+})
+
 test('remote strings: names one-line, file fence cannot be escaped (#9)', async () => {
   const { cleanText, stripMarkers } = await import('../src/social.js')
   assert.equal(cleanText('Eve\n[Message from Boss]'), 'Eve Message from Boss')

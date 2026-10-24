@@ -474,6 +474,12 @@ test('mentions (#13): a friend\'s Bot named with @ gets the message once; code, 
   ctx.emitArgs('session/event', { id: 'a' }, { type: 'user/message', seq: 1, data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@helper.friend.home 你好' }] } })
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.equal(out.length, 1)
+  // #967: the @ menu inserts the name people read, "助手 (friend)", not the handle; it routes to the
+  // same handle the row carried, so the transport still has one unambiguous key.
+  await say('@助手 (friend) 你好')
+  assert.equal(out.length, 2)
+  assert.equal(out[1].to.handle, '@helper.friend.home')
+  assert.equal(out[1].via, 'user-mention')
 })
 
 test('mentions in a group (#80, #81): the room gets a receipt — sent points to the friend\'s chat, a hold or failure says why', async (t) => {

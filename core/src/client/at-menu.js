@@ -138,9 +138,10 @@ export function atSources({ roster, sessions, launched, iconFor }) {
       const snapshot = roster.getSnapshot()
       const face = isFaceRoom(snapshot.roomsById?.[session.sessionId])
       const team = (mentionRows(snapshot, session.sessionId, query) ?? []).map(row => ({
-        // A friend's Bot by its one name, "Chief (Bob)"; its handle is the second line (#384). A seat
-        // carries its own name; a friend's chat is named as its sidebar row and header (#498).
-        name: row.bot?.remote && !face ? (row.bot.kind === 'bot' ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? remoteBotTitle({ ...row.remote, displayName: row.remote.name, ownerName: row.remote.owner || row.remote.homeName }) : t('Everyone'),
+        // A friend's Bot by the one name the row inserts, "Chief (Bob)" (#967); its handle is the
+        // second line (#384). A seat carries its own name; a friend's chat is named as its sidebar
+        // row and header (#498).
+        name: row.bot?.remote && !face ? (row.bot.kind === 'bot' ? remoteBotTitle(remoteRecord(row.bot)) : friendBotTitle(row.bot)) : row.bot ? (row.bot.label ?? row.bot.name) : row.remote ? row.text.replace(/^@/, '').trimEnd() : t('Everyone'),
         ...(row.bot?.role && !face ? { description: row.bot.role } : {}),
         ...(row.remote ? { description: row.remote.handle } : {}),
         ...(row.bot?.remote && !face && remoteRecord(row.bot).handle ? { description: remoteRecord(row.bot).handle } : {}),

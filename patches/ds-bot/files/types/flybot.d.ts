@@ -637,7 +637,7 @@ declare global {
     invitePreviewOf?: FlyBotInvitePreview
     inviteCountdown?: (expiresAt: string, offsetMs?: number) => string
     /** A friend's Bot chat (a roster Bot with `remote`): its one name, "Chief (Bob)", and its owner, "Bob" (#498). */
-    names?: { friendBotTitle(bot?: any): string; friendBotOwner(bot?: any): string }
+    names?: { friendBotTitle(bot?: any): string; friendBotOwner(bot?: any): string; remoteMentionLabel?(bot?: any, others?: any[]): string }
   } | undefined
 }
 

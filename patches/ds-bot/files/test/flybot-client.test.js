@@ -1,6 +1,38 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
+import { build } from 'esbuild'
 import { createClientApi, createRegistry, mentionCandidates, newChatActionRows, registry, SLOTS } from '../src/client/flybot-registry.js'
+
+// A client module that imports React cannot be loaded as plain ESM here (the platform packages come
+// from a DSH install, not from this checkout), so bundle it the way the other client tests do
+// (test/face-person-first.test.js) and hand it a small stand-in for the platform modules.
+async function loadClientModule(entry) {
+  const bundle = await build({
+    entryPoints: [fileURLToPath(new URL(`../src/client/${entry}`, import.meta.url))],
+    bundle: true, format: 'cjs', platform: 'node', write: false,
+    external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
+  })
+  const module = { exports: {} }
+  runInNewContext(bundle.outputFiles[0].text, {
+    module, exports: module.exports, setTimeout, clearTimeout,
+    require: (name) => {
+      const platform = {
+        react: {
+          Component: class {}, createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
+          useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useEffect: () => {}, useRef: current => ({ current }),
+          useLayoutEffect: () => {}, useMemo: make => make(), useCallback: fn => fn, useSyncExternalStore: (sub, get) => get(), Fragment: 'fragment',
+        },
+        'react-dom': { createPortal: node => node },
+        '@deepseek-ai/dsh-client-ui-primitives': { MarkdownText: function MarkdownText() { return null }, projectUserText: text => text },
+      }
+      if (!(name in platform)) throw new Error(`no platform module ${name}`)
+      return platform[name]
+    },
+  })
+  return module.exports
+}
 
 test('the client registry orders entries, replaces by id, and notifies', () => {
   const slots = createRegistry()
@@ -86,15 +118,16 @@ test('the browser flybot service lists Bots and turns host changes into field ev
   assert.throws(() => api.fields.on('nope', () => {}), /unknown event/)
 })
 
-test('remote members: @ rows insert the handle, the sidebar groups by home, bubbles show the fenced words', async () => {
+test('remote members: @ rows insert the one name, the sidebar groups by home, bubbles show the fenced words', async () => {
   const { remoteMentionRows, remoteMembersByHome, remoteMessageText } = await import('../src/client/flybot-registry.js')
   const { mentionRows } = await import('../src/client/at-menu.js')
   const roster = {
     ready: true, bots: [{ id: 'a', name: 'Chief' }, { id: 'b', name: 'Writer' }], byId: { a: { id: 'a', name: 'Chief' }, b: { id: 'b', name: 'Writer' } }, roomsById: {}, rooms: [],
     remoteBots: [{ handle: '@coder.bob.home', name: 'Coder', home: '@bob.home', homeName: 'Bob', remote: true }, { handle: '@x.eve.home', name: 'X', home: '@eve.home', remote: true }],
   }
-  assert.deepEqual(remoteMentionRows(roster, 'cod').map(row => row.text), ['@coder.bob.home '])
-  assert.deepEqual(mentionRows(roster, 'a', 'coder').map(row => row.text), ['@coder.bob.home '])
+  // #967: the menu inserts the name people read ("Coder (Bob)"), not the handle it routes on.
+  assert.deepEqual(remoteMentionRows(roster, 'cod').map(row => row.text), ['@Coder (Bob) '])
+  assert.deepEqual(mentionRows(roster, 'a', 'coder').map(row => row.text), ['@Coder (Bob) '])
   assert.deepEqual(remoteMembersByHome(roster).map(home => [home.home, home.name, home.bots.length]), [['@bob.home', 'Bob', 1], ['@eve.home', '@eve.home', 1]])
   assert.equal(remoteMessageText('<untrusted-message from="Coder">\nLGTM\n</untrusted-message>'), 'LGTM')
   const { failureLabel } = await import('../src/client/diagnostics.js')
@@ -227,12 +260,75 @@ test("a friend's Bot sidebar row is its one name, \"Chief (Bob)\", on one line, 
   assert.match(row, /const secondLine = awayLine \|\| preview \|\| \(remote \? \(bot\.remote\?\.gone \? t\(.no longer shared.\) : t\("Friend's Bot"\)\) : ''\)/)
   // The full name is on hover and in the label.
   assert.match(row, /title: remote \? shown :/)
-  for (const file of ['header.js', 'brand.js', 'user-message.js', 'at-menu.js']) {
+  // flybot-slots.js publishes the same formatter to plugins (__flybot__.names), so a plugin row
+  // inserts the name the bubble chips (#967).
+  for (const file of ['header.js', 'brand.js', 'user-message.js', 'at-menu.js', 'flybot-slots.js']) {
     const src = readFileSync(new URL(`../src/client/${file}`, import.meta.url), 'utf8')
-    assert.match(src, /friendBotTitle\(/, `${file} names a friend's chat through friendBotTitle`)
+    // #967: a mention reads the same label through remoteMentionLabel, which itself reads
+    // friendBotTitle, so the menu, the bubble and the preview cannot drift apart.
+    assert.match(src, /\bfriendBotTitle\b|\bremoteMentionLabel\b/, `${file} names a friend's Bot through the one formatter`)
     assert.doesNotMatch(src, /ownerName: bot\.remote\.homeName \|\| bot\.remote\.owner/, `${file} builds no name of its own`)
   }
   assert.match(styles, /\.bt-row-remote\{[^}]*color:var\(--bt-ink-2\)\}/)
   const { DICTIONARY } = await import('../src/client/i18n.js')
   assert.equal(DICTIONARY.zh["Friend's Bot"], '好友的 Bot')
+})
+
+test("a friend's Bot picked from the @ menu reads as its one name in the menu, the bubble and the preview (#967)", async () => {
+  const { remoteMentionRows } = await import('../src/client/flybot-registry.js')
+  const { mentionableBots, userTextParts } = await loadClientModule('user-message.js')
+  const { nameMentions } = await import('../src/client/text.js')
+  const { atSources } = await import('../src/client/at-menu.js')
+  // The reported shape: the friend's Bot is on the roster, and no chat of its own exists yet, so
+  // the bubble used to know no name for it and DSH drew "@coder.bob.home" as a file (bare handle).
+  const roster = {
+    ready: true, bots: [{ id: 'a', name: 'Chief' }], byId: { a: { id: 'a', name: 'Chief' } }, roomsById: {}, rooms: [],
+    remoteBots: [{ handle: '@coder.bob.home', name: 'Coder', home: '@bob.home', homeName: 'Bob', remote: true }],
+  }
+  assert.deepEqual(remoteMentionRows(roster, 'cod').map(row => row.text), ['@Coder (Bob) '])
+  const bots = mentionableBots(roster, 'a')
+  const parts = userTextParts('@Coder (Bob) hello', bots)
+  assert.equal(parts.length, 2)
+  assert.equal(parts[0].bot.mentionLabel, 'Coder (Bob)')
+  assert.equal(`@${parts[0].bot.mentionLabel}`, '@Coder (Bob)')
+  assert.equal(parts[1].text, ' hello')
+  // The line the menu used to insert still chips as the same Bot, one mention, not raw text.
+  const legacy = userTextParts('@coder.bob.home hello', bots)
+  assert.equal(legacy.length, 2)
+  assert.equal(legacy[0].bot.mentionLabel, 'Coder (Bob)')
+  assert.equal(legacy[1].text, ' hello')
+  // One vocabulary: the sidebar preview renders the same words for both forms.
+  assert.equal(nameMentions('@Coder (Bob) hello', roster), '@Coder (Bob) hello')
+  assert.equal(nameMentions('@coder.bob.home hello', roster), '@Coder (Bob) hello')
+  // The menu row shows what it inserts, so picking it is never a surprise.
+  const source = (await atSources({
+    roster: { getSnapshot: () => roster },
+    sessions: { list: { getSnapshot: () => ({ byId: {}, ids: [] }) } },
+    launched: () => false,
+    iconFor: () => 'bot',
+  }))[0]
+  const row = (await source.candidates({ sessionId: 'a' }, { query: 'cod' }))[0]
+  assert.equal(row.name, 'Coder (Bob)')
+  assert.equal(row.value, '@Coder (Bob) ')
+  assert.equal(row.description, '@coder.bob.home')
+  // Two friends may publish a Bot with the same name: the label keeps them apart, and each still
+  // names its own handle at the transport.
+  const clash = {
+    ...roster,
+    remoteBots: [
+      { handle: '@chief.bob.home', name: 'Chief', home: '@bob.home', homeName: 'Bob', remote: true },
+      { handle: '@chief.ann.home', name: 'Chief', home: '@ann.home', homeName: 'Ann', remote: true },
+    ],
+  }
+  const labels = remoteMentionRows(clash, 'chief').map(row => row.text)
+  assert.notEqual(labels[0], labels[1])
+  const both = mentionableBots(clash, 'a')
+  assert.equal(userTextParts(labels[0], both)[0].bot.handle, '@chief.bob.home')
+  assert.equal(userTextParts(labels[1], both)[0].bot.handle, '@chief.ann.home')
+  assert.equal(nameMentions(labels[0].trim(), clash), labels[0].trim())
+  // Not a mention: a bare handle typed inside a message stays exactly as typed (the raw path is
+  // not removed, and nothing is silently rewritten), and plain text is untouched.
+  assert.equal(nameMentions('mail me at coder.bob.home', roster), 'mail me at coder.bob.home')
+  // The bundled module builds its arrays in another realm, so compare their values, not their prototypes.
+  assert.deepEqual(JSON.parse(JSON.stringify(userTextParts('plain words', bots).map(part => part.text))), ['plain words'])
 })

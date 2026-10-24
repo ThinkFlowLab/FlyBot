@@ -1,5 +1,6 @@
 // The FlyBot slot registry, free of React so the "@" menu and tests can use it.
 // See flybot-slots.js for what each slot carries.
+import { remoteMentionLabel } from '../shared/remote-label.js'
 export const SLOTS = ['flybot.sidebar.section', 'flybot.sidebar.structure', 'flybot.composer.mention', 'flybot.bot.details', 'flybot.approvals', 'flybot.room.overview', 'flybot.room.members', 'flybot.session.dock', 'flybot.new-chat.action', 'flybot.account.header', 'flybot.settings.page']
 
 export function createRegistry() {
@@ -132,13 +133,15 @@ export function remoteMembers(roster) {
   return Array.isArray(roster?.remoteBots) ? roster.remoteBots.filter(bot => typeof bot?.handle === 'string') : []
 }
 
-// "@query" rows for remote members: picking one inserts "@handle ", which the host sends
-// through bot.send (so the social plugin's approval still applies).
+// "@query" rows for remote members: picking one inserts the name people read ("@Coder (Bob) ",
+// #967), which the host matches back to the handle it routes on and sends through bot.send (so the
+// social plugin's approval still applies).
 export function remoteMentionRows(roster, query = '') {
   const needle = String(query).trim().toLowerCase().replace(/^@/, '')
-  return remoteMembers(roster)
+  const all = remoteMembers(roster)
+  return all
     .filter(bot => bot.handle.toLowerCase().includes(needle) || String(bot.name ?? '').toLowerCase().includes(needle))
-    .map(bot => ({ remote: bot, text: `${bot.handle} ` }))
+    .map(bot => ({ remote: bot, text: `@${remoteMentionLabel(bot, all)} ` }))
 }
 
 // Remote members grouped by their home, for the sidebar.

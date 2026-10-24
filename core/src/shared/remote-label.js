@@ -144,14 +144,16 @@ export function remoteOwnerBadge(record) {
 }
 
 // The record those two read for a friend's Bot as the roster lists it: its chat (`bot.remote` from
-// remote-chat.js, named by the chat) or a seat that carries its own name and owner.
+// remote-chat.js, named by the chat) or a published roster record (roster.remoteBots, which carries
+// the name, owner and home at the top level and `remote: true`). Reading both shapes here is what
+// keeps a Bot's name the same before and after its chat exists (#498, #967).
 function friendRecord(bot) {
   const remote = bot?.remote && typeof bot.remote === 'object' ? bot.remote : {}
   return {
     displayName: remote.displayName || remote.name || bot?.name,
-    ownerName: remote.ownerName || remote.owner || remote.homeName,
+    ownerName: remote.ownerName || remote.owner || remote.homeName || bot?.ownerName || bot?.owner || bot?.homeName,
     handle: remote.handle ?? bot?.handle,
-    isChief: remote.isChief,
+    isChief: remote.isChief ?? bot?.isChief,
   }
 }
 
@@ -159,6 +161,24 @@ function friendRecord(bot) {
 // composer placeholder and the @ menu all say "Chief (SelfB1233)", from this one function.
 export function friendBotTitle(bot) {
   return remoteBotTitle(friendRecord(bot))
+}
+
+const mentionHandleOf = record => String((record?.remote && typeof record.remote === 'object' ? record.remote.handle : record?.handle) ?? '').replace(/^@+/, '').toLowerCase()
+
+// The one name a friend's Bot wears where a mention is shown or picked (#967): the same title as
+// its sidebar row (#498), so the `@` menu, the bubble and the preview never disagree. Two friends
+// may publish a Bot with the same name, so a title that two different handles share carries the
+// home: one name still names one Bot at the transport, and the handle stays the routing key.
+export function remoteMentionLabel(record, others = []) {
+  const title = friendBotTitle(record)
+  const key = mentionHandleOf(record)
+  const clash = (others ?? []).some((other) => {
+    const otherKey = mentionHandleOf(other)
+    return otherKey !== '' && otherKey !== key && friendBotTitle(other) === title
+  })
+  if (!clash) return title
+  const home = cleanPeerName(String(record?.remote?.home ?? record?.home ?? '').replace(/^@+/, ''), '')
+  return home ? `${title} · ${home}` : title
 }
 
 // The person who owns a friend's Bot: who a held reply to that Bot goes to (#418, #498).

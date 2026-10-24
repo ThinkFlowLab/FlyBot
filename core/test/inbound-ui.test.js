@@ -64,10 +64,12 @@ test("an inbound friend's message uses the friend's sidebar Bot (avatar, name), 
   assert.equal(other.chatId, undefined)
 })
 
-test("a friend Bot's handle in a preview reads as its display name (#71)", () => {
+test("a friend Bot's handle in a preview reads as its one name (#71, #967)", () => {
   const roster = { bots: [{ id: 'f', name: '代码审查官', remote: { handle: '@bot-2a758c0f.danyang.home' } }], remoteBots: [{ handle: '@bot-2a758c0f.danyang.home', name: '代码审查官' }] }
-  assert.equal(nameMentions('@bot-2a758c0f.danyang.home 你是?', roster), '@代码审查官 你是?')
-  assert.equal(nameMentions('看 @bot-2a758c0f.danyang.home。', roster), '看 @代码审查官。')
+  // #967: the same words as the sidebar row and the bubble -- name, then owner -- so a preview is
+  // never a third vocabulary for the Bot (the row for this chat already reads 代码审查官 (danyang)).
+  assert.equal(nameMentions('@bot-2a758c0f.danyang.home 你是?', roster), '@代码审查官 (danyang) 你是?')
+  assert.equal(nameMentions('看 @bot-2a758c0f.danyang.home。', roster), '看 @代码审查官 (danyang)。')
   // An address before the @, or a longer word after the handle, stays as written.
   assert.equal(nameMentions('mail a@bot-2a758c0f.danyang.home', roster), 'mail a@bot-2a758c0f.danyang.home')
   assert.equal(nameMentions('@bot-2a758c0f.danyang.home2 不在', roster), '@bot-2a758c0f.danyang.home2 不在')
@@ -80,7 +82,7 @@ test("a friend Bot's handle in a preview reads as its display name (#71)", () =>
     { handle: '@b.x.home', name: '请找 @a.x.home 的主人' },
     { handle: '@a.x.home', name: '代码审查官' },
   ] }
-  assert.equal(nameMentions('@b.x.home 你在?', nested), '@请找 @a.x.home 的主人 你在?')
+  assert.equal(nameMentions('@b.x.home 你在?', nested), '@请找 @a.x.home 的主人 (x) 你在?')
 })
 
 test("a friend Bot's generated look is seeded by its handle: with or without its chat record, one look (#84)", () => {

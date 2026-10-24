@@ -145,7 +145,7 @@ test('#305: a face room offers each of its Bots once, named Bot (Person), and no
   assert.deepEqual(mentionRows(group, 'face', 'chief.selfa').map(row => row.text), ['@Chief (SelfA) '])
 })
 
-test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, by its handle, named Bot (owner)', async () => {
+test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, by its handle, under its one name (owner)', async () => {
   const remote = { handle: '@coder.bob.home', name: 'Coder', home: '@bob.home', owner: 'Bob', homeName: 'Family Workspace' }
   const chat = indexRoster({
     bots: [
@@ -158,7 +158,10 @@ test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, 
   })
   const rows = mentionRows(chat, 'chief')
   assert.equal(rows.filter(row => (row.remote ?? row.bot?.remote)?.handle === '@coder.bob.home').length, 1)
-  assert.deepEqual(rows.map(row => row.text), ['@Helper ', '@coder.bob.home '])
+  // The row still belongs to that handle, but it inserts the name the bubble and the sidebar preview
+  // show, so the token the user reads is not the transport key (#967).
+  assert.deepEqual(rows.map(row => row.text), ['@Helper ', '@Coder (Bob) '])
+  assert.deepEqual(rows.filter(row => row.text === '@Coder (Bob) ').map(row => row.remote.handle), ['@coder.bob.home'])
   const [bots] = atSources({
     roster: { getSnapshot: () => chat },
     sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
