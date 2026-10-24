@@ -2694,7 +2694,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
 
   // #500: grant this Bot to an existing friend (Bot Social grant_bot_to_friend). Does not
   // replace invite links. After a successful share, People with access re-syncs this Bot.
-  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId, friendBotId, peerBotId } = {}) => {
+  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId, friendBotId, peerBotId, friendName } = {}) => {
     if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots to share')
@@ -2735,8 +2735,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const friend = result?.friend ?? {}
     const botName = cleanText(friend.display_name)
     const ownerName = cleanText(friend.owner_display_name || result?.grantee?.owner_display_name)
+    // #994: the answer from this deployment carries neither name, and the home key's slug ("selftestb2") is
+    // not a name: with one row per Bot it names the person's home instead of the Bot that got the grant. The
+    // panel already draws that Bot's label, so the click carries it (`friendName`); a caller without one gets a
+    // plain line, never the slug.
+    const slug = homeKey ? String(homeKey).replace(/^@/, '').replace(/\.home$/i, '') : ''
+    const rowLabel = cleanText(friendName)
     const who = (botName ? (ownerName ? `${botName} (${ownerName})` : botName) : ownerName)
-      || (homeKey ? (String(homeKey).replace(/^@/, '').replace(/\.home$/i, '') || homeKey) : 'your friend')
+      || (rowLabel && rowLabel.toLowerCase() !== slug.toLowerCase() ? rowLabel : '')
+      || 'your friend'
     return {
       botId: bot.id,
       botName: bot.name,

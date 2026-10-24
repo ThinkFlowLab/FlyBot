@@ -9490,7 +9490,7 @@ test('#973: the panel draws one row per Bot and names the Bot each button shares
   assert.match(text(card), /Writer \(Bob\)|@writer\.bob\.home/, 'the row shows which Bot it is')
   await buttons[1].props.onClick()
   await new Promise(r => setTimeout(r, 0))
-  assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.friendBotId === 'pb-writer'))
+  assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.friendBotId === 'pb-writer' && payload.friendName === 'Writer (Bob)'), 'the row label travels with the click (#994)')
 })
 
 // ---- #773: a room code shown as a QR image, and scanning one back ----------------------
@@ -11210,4 +11210,44 @@ test('#991: a held room line names the room it will go to, so two open rooms are
   assert.match(card, /the room 482913/)
   // `approvalView` keeps its fallback for a card built by an older shape that carries no room.
   assert.equal(approvalView({ approval_id: 'apr-old', kind: 'face_room_message' }).toName, 'the room')
+})
+
+// #994: on this deployment `grant_bot_to_friend` answers with the grant id and the status only — no `friend`,
+// no `grantee` — so the receipt fell back to the home key's slug ("selftestb2"), which names the person's
+// home instead of the Bot the click granted. Two rows make that the one line that cannot be wrong.
+test('#994: the share receipt names the Bot the click granted and never the home slug', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [
+      { relationship_id: 'r-chief', status: 'active', peer: { bot_id: 'pb-chief', handle: '@chief.selftestb2.home', display_name: 'Chief', owner_display_name: 'SelfTest B2' } },
+      { relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.selftestb2.home', display_name: 'Writer', owner_display_name: 'SelfTest B2' } },
+    ],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+  // What the real server answers today: the grant and its status, no names.
+  server.tools.grant_bot_to_friend = () => ({ grant_id: 'gr_1', status: 'active' })
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  const writer = listing.friends.find(f => f.peerBotId === 'pb-writer')
+  assert.equal(writer.name, 'Writer (SelfTest B2)', 'the row already names the Bot and its owner')
+  // The click the panel makes: the row label travels with the id of the Bot it shares with.
+  const shared = (await call('flybot/social/share-with-friend', { botId: chief.id, home: writer.home, peerBotId: writer.peerBotId, friendName: writer.name })).value
+  assert.equal(shared.message, 'Shared Chief with Writer (SelfTest B2). They can decline; you can Revoke in People with access.')
+  assert.doesNotMatch(shared.message, /selftestb2/i, 'the home slug never reaches the receipt (#994)')
+  // A caller with no label (an older client) gets a plain line, still never the slug.
+  const bare = (await call('flybot/social/share-with-friend', { botId: chief.id, home: writer.home, peerBotId: 'pb-writer' })).value
+  assert.equal(bare.message, 'Shared Chief with your friend. They can decline; you can Revoke in People with access.')
+  assert.doesNotMatch(bare.message, /selftestb2/i)
 })

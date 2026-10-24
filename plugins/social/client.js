@@ -3195,6 +3195,8 @@ window.__ModuleLoader__.load({
             botId: bot.id,
             home: friend.home,
             ...(friend.peerBotId ? { friendBotId: friend.peerBotId } : {}),
+            // #994: the receipt says who got it; the label the row already shows goes with the click.
+            ...(friend.name ? { friendName: friend.name } : {}),
             ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
           })
           setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })
