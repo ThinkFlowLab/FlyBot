@@ -34,7 +34,7 @@
 // of a friend's room that invited their granted Bot.
 
 import { randomBytes } from 'node:crypto'
-import { cleanPeerName, disambiguatedRemoteTitle, isChiefRecord, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { cleanPeerName, disambiguatedRemoteTitle, faceAliases, isChiefRecord, remoteBotName, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
 import { HISTORY_MAX, HISTORY_TEXT, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
@@ -451,27 +451,41 @@ export function install(rt) {
 
   const maxHopsOf = room => (Number.isFinite(Number(room?.maxHops)) ? Number(room.maxHops) : DEFAULT_MAX_HOPS)
 
-  // #825: which friends' Bots a line calls, by the one "@" rule the rest of the host uses — over each
-  // remote participant's handle and the name it is shown as. Fenced and quoted text is literal, so a
-  // handle inside a block never starts a turn.
+  // #825, #949: which remote Bots a line calls, by the same "@" rule as the rest of the host. The menu
+  // inserts remoteBotTitle ("Chief (bob)", "Data (Friend)"), which is not the stored "Name · owner"
+  // label and not a not-connected id. Every alias of one seat shares one token: its social handle, or
+  // the roster name when it has none (localCalls already matches that name). Fenced and quoted text
+  // is literal, so a title inside a block never starts a turn.
   const callsIn = (room, text) => {
     const said = String(text ?? '')
     if (!said.includes('@')) return []
     const names = []
     for (const peer of currentParticipants(room).filter(isRemoteParticipant)) {
-      const handle = peer.handle ?? peer.id
-      for (const name of [String(handle).replace(/^@+/, ''), peer.displayName, peer.label]) {
-        if (name) names.push({ name: String(name), handle })
+      const raw = typeof peer.handle === 'string' ? peer.handle.trim() : ''
+      const social = raw && !raw.startsWith('not-connected:') ? (raw.startsWith('@') ? raw : `@${raw.replace(/^@+/, '')}`) : ''
+      const rosterName = String(peer.displayName || peer.name || '').trim()
+      const token = social || rosterName
+      if (!token) continue
+      const bare = remoteBotName(peer, rosterName)
+      const aliases = [
+        ...faceAliases(peer, bare || rosterName),
+        remoteBotTitle(peer),
+        rosterName,
+        peer.label,
+        social.replace(/^@+/, ''),
+      ]
+      for (const name of new Set(aliases.map(value => String(value ?? '').trim()).filter(Boolean))) {
+        names.push({ name, handle: token })
       }
     }
     if (names.length === 0) return []
     const found = new Set()
-    for (const span of mentionSpans(said, names)) if (span.bot) found.add(span.bot.handle)
+    for (const span of mentionSpans(said, names)) if (span.bot?.handle) found.add(span.bot.handle)
     return [...found]
   }
 
-  // A line's `calls` are handles; the projected room answers with the local Bot behind the handle it
-  // was invited as. Anything else in the list is another home's business.
+  // A line's `calls` are the sending home's tokens: a social handle, or the roster name when the Bot
+  // has none (#949). This home answers with the local Bot behind a token it recognises.
   const localCalls = (room, calls) => {
     if (!Array.isArray(calls) || calls.length === 0) return []
     const wanted = new Set(calls.map(handle => String(handle ?? '').replace(/^@+/, '').toLowerCase()).filter(Boolean))
@@ -486,7 +500,7 @@ export function install(rt) {
     for (const peer of currentParticipants(room)) {
       if (peer.kind !== 'bot' || peer.remote) continue
       const record = state.bots?.[peer.id]
-      const handles = [peer.handle, peer.id, record?.fields?.social?.member?.handle, record?.name]
+      const handles = [peer.handle, peer.id, peer.displayName, record?.fields?.social?.member?.handle, record?.name]
         .filter(Boolean).map(value => String(value).replace(/^@+/, '').toLowerCase())
       if (handles.some(handle => wanted.has(handle)) && !out.includes(peer.id)) out.push(peer.id)
     }
@@ -1007,7 +1021,8 @@ export function install(rt) {
   // #904: a roster is text a stranger wrote. It is read only for the room this mirror is bound to and
   // only from that room's own inviter; anything else is dropped whole. Every entry it names stays
   // unverified unless this home already holds a fact about that handle (the seat that carried the join,
-  // or a published friend Bot) — an unverified entry is displayed, never addressed.
+  // or a published friend Bot). Verification is a signature: an unverified entry is still listed, and
+  // an @ of it is a call (#949).
   function rosterOf(data, room, event) {
     if (!Array.isArray(data?.roster)) return undefined
     const bound = room?.sharedFrom ?? {}

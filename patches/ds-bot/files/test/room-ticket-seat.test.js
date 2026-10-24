@@ -13,7 +13,7 @@ import { install as installRooms, publishedRemoteOf } from '../src/host/room-mem
 import { install as installReach, mayShareRoom } from '../src/host/reach.js'
 import { encodeRoomShare, parseRoomShare } from '../src/shared/room-share.js'
 import { unwrapUntrusted } from '../src/host/delivery.js'
-import { roomTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
+import { remoteBotTitle, roomTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
 
 const ALICE = {
   version: 2,
@@ -540,6 +540,56 @@ test('a ticket seat shows the other home\'s lines in the room session, including
   await a.rt.fanoutRoomLine(room, line)
   await settle()
   assert.equal(guestShows().length, 1, 'a redelivery does not show the host line again')
+})
+
+test('#949: an @ of the name the menu inserts starts that Bot, including one with no social handle', async (t) => {
+  const { a, b, settle } = await twoHomes(t)
+  const turns = { a: [], b: [] }
+  a.rt.startInboundTurn = async (args) => { turns.a.push(args.botId) }
+  b.rt.startInboundTurn = async (args) => { turns.b.push(args.botId) }
+  // Data has no Bot Social identity. The guest still lists it, and the @ menu titles it from that record.
+  a.rt.state.bots['data-a'] = {
+    id: 'data-a', sessionId: 'data-a', name: 'Data', instructions: '', createdAt: 3, ownerId: 'owner-1', fields: {},
+  }
+  const war = a.rt.state.rooms.war
+  war.members = [...war.members, 'data-a']
+  war.participants = [...war.participants, { kind: 'bot', id: 'data-a', role: 'member', displayName: 'Data', joinedSeq: 0, joinedAt: 1 }]
+
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  await settle()
+  const mirror = guestRoomOf(b.rt)
+  assert.ok(mirror, 'the join projected the room')
+  const data = (mirror.participants ?? []).find(p => p.remote && p.displayName === 'Data')
+  assert.ok(data, 'the host Bot with no identity is on the guest roster')
+  // The menu reads the seat it was given. With no owner and no handle the title is the fallback the screenshot shows.
+  delete data.ownerName
+  delete data.ownerHome
+  delete data.home
+  delete data.handle
+  assert.equal(remoteBotTitle(data), 'Data (Friend)')
+
+  await b.rt.postRoomMessage(mirror.id, { text: '@Data (Friend) 你好', authorId: 'owner-1', authorKind: 'human', displayName: 'Bob' })
+  await settle()
+  assert.deepEqual(turns.a, ['data-a'], 'the host Bot the guest @\'d takes a turn')
+
+  // The seat's stored name is Bot Social's "Name · owner" label. The menu inserts the title, not that string.
+  const seat = a.rt.state.rooms.war.participants.find(p => p.remote && p.handle === '@chief.bob.home')
+  assert.ok(seat, 'the guest Chief is seated on the host')
+  seat.displayName = 'Chief · FlyBot 682b8a43'
+  seat.ownerName = 'FlyBot 682b8a43'
+  const chiefTitle = remoteBotTitle(seat)
+  assert.notEqual(chiefTitle, seat.displayName, 'the menu title is not the stored label')
+  assert.match(chiefTitle, /^Chief \(/)
+  turns.b.length = 0
+  await a.rt.postRoomMessage('war', { text: `@${chiefTitle} 你好`, authorId: 'owner-1', authorKind: 'human', displayName: 'Alice' })
+  await settle()
+  assert.deepEqual(turns.b, ['chief-b'], 'the guest Bot the host @\'d by that title takes a turn')
+
+  turns.a.length = 0
+  await b.rt.postRoomMessage(mirror.id, { text: '```\n@Data (Friend)\n```', authorId: 'owner-1', authorKind: 'human', displayName: 'Bob' })
+  await settle()
+  assert.deepEqual(turns.a, [], 'a fenced title is literal text, not a call')
 })
 
 test('#899: a link minted on a room-only Bot is promoted when the host wires the server in', async (t) => {
