@@ -1934,7 +1934,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-label' }, 'Not sent'),
           item.from || item.to || item.toName ? h('div', { className: 'fs-sub' }, `${parties.from} → ${parties.to}`) : null,
           item.error ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-error' }, item.error) : null,
-          h('div', { className: 'fs-actions fs-chat-actions' },
+          // A failure the sender marked as never retryable (#954) offers no Retry: the Bot is gone, so the button
+          // could only repeat the same card.
+          item.retry === false ? null : h('div', { className: 'fs-actions fs-chat-actions' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')))
       }
       const { from, to } = holdParties(item)
