@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decide, loadPolicy, parseReport, render } from './review-gate.mjs'
+import { decide, loadPolicy, loginsNeedingAdmin, parseReport, render, repoAdminLogins } from './review-gate.mjs'
 
 const HEAD = 'a4d506a1b2c3d4e5f60718293a4b5c6d7e8f9012'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
@@ -494,11 +494,23 @@ test('#676: a conclusion from outside the repository counts for nothing', () => 
   assert.match(missing.reason, /author association missing/)
 })
 
-// #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR and
-// still count, but only on its own pull request. One exception for one person, never a second
-// reviewers list: the same login on someone else's pull request stays outside the association rule,
-// and #676 still refuses everyone nobody listed.
-test('#928: a listed self-reviewer who is a CONTRIBUTOR counts, only on their own pull request', () => {
+// #925: GitHub stamps an org admin's review CONTRIBUTOR. OWNER/MEMBER/COLLABORATOR still count.
+// A login in selfReview counts on any pull request (the #928 own-pull-request limit dropped that
+// stamp while the reviewer was not the author). A repo admin counts the same way. A CONTRIBUTOR
+// who is neither is still not a conclusion (#676). Admin does not skip the reviewers list or the
+// own-author rule.
+test('#925: OWNER, MEMBER and COLLABORATOR still count, and a bare CONTRIBUTOR does not', () => {
+  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
+    const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z', 'review', association)], policy })
+    assert.equal(r.ok, true, association)
+  }
+  const bare = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z', 'review', 'CONTRIBUTOR')], policy })
+  assert.equal(bare.ok, false)
+  assert.match(bare.reason, /author association CONTRIBUTOR/)
+  assert.match(bare.reason, /not in selfReview/)
+})
+
+test('#925: a selfReview login stamped CONTRIBUTOR counts on their own pull request and on someone else\'s', () => {
   const selfPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer', 'hsliuustc0106'] }
   const own = (login = 'hsliuustc0106') => comment(login, report({ writer: 'hsliuustc0106' }), '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')
 
@@ -507,12 +519,74 @@ test('#928: a listed self-reviewer who is a CONTRIBUTOR counts, only on their ow
   assert.equal(mine.by, 'hsliuustc0106')
   assert.equal(mine.judged[0].counts, true)
 
+  const elsewhere = decide({ head: HEAD, author: 'opener', reports: [own()], policy: selfPolicy })
+  assert.equal(elsewhere.ok, true, 'selfReview qualifies the association on any pull request in this repo')
+  assert.equal(elsewhere.by, 'hsliuustc0106')
+
   const unlisted = decide({ head: HEAD, author: 'opener', reports: [own('passer-by')], policy: selfPolicy })
   assert.equal(unlisted.ok, false, 'a CONTRIBUTOR nobody listed is still not a conclusion')
   assert.match(unlisted.reason, /author association CONTRIBUTOR/)
   assert.equal(unlisted.judged[0].counts, false)
+})
 
-  const elsewhere = decide({ head: HEAD, author: 'opener', reports: [own()], policy: selfPolicy })
-  assert.equal(elsewhere.ok, false, 'a listed self-reviewer judging someone else\'s pull request is not exempt')
-  assert.equal(elsewhere.judged[0].counts, false)
+test('#925: repo admin qualifies a CONTRIBUTOR, and does not skip the reviewers list or the own-author rule', () => {
+  const adminPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: [], writers: ['Reviewer'] }
+  const pass = comment('hsliuustc0106', report(), '2026-10-18T01:00:00Z', 'review', 'CONTRIBUTOR')
+
+  const accepted = decide({ head: HEAD, author: 'opener', reports: [pass], policy: adminPolicy, admins: ['HSLiuustc0106'] })
+  assert.equal(accepted.ok, true, accepted.reason)
+  assert.equal(accepted.by, 'hsliuustc0106')
+
+  const flagged = decide({ head: HEAD, author: 'opener', reports: [{ ...pass, admin: true }], policy: adminPolicy })
+  assert.equal(flagged.ok, true, 'admin: true on the report is the same grant')
+
+  const notAdmin = decide({ head: HEAD, author: 'opener', reports: [pass], policy: adminPolicy })
+  assert.equal(notAdmin.ok, false)
+  assert.match(notAdmin.reason, /author association CONTRIBUTOR/)
+
+  const outsider = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('passer-by', report(), '2026-10-18T01:00:00Z', 'review', 'CONTRIBUTOR')],
+    policy: adminPolicy,
+    admins: ['passer-by'],
+  })
+  assert.equal(outsider.ok, false, 'admin does not skip the reviewers list')
+  assert.match(outsider.reason, /not a reviewer/)
+
+  const selfPass = decide({ head: HEAD, author: 'hsliuustc0106', reports: [pass], policy: adminPolicy, admins: ['hsliuustc0106'] })
+  assert.equal(selfPass.ok, false, 'admin does not skip the own-author selfReview rule')
+  assert.match(selfPass.reason, /own author is not a reviewer/)
+})
+
+test('#925: the permission API is asked only for logins the association and selfReview do not already qualify', () => {
+  const policy = { reviewers: ['reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer'] }
+  const reports = [
+    { login: 'reviewer-agent', association: 'MEMBER' },
+    { login: 'Birfy', association: 'CONTRIBUTOR' },
+    { login: 'hsliuustc0106', association: 'CONTRIBUTOR' },
+    { login: 'hsliuustc0106', association: 'NONE' },
+    { login: '', association: 'NONE' },
+  ]
+  assert.deepEqual(loginsNeedingAdmin(reports, policy), ['hsliuustc0106'])
+
+  const calls = []
+  const gh = (_cmd, path) => {
+    calls.push(path)
+    const login = decodeURIComponent(path.split('/collaborators/')[1].split('/')[0])
+    if (login === 'hsliuustc0106') return JSON.stringify({ permission: 'admin', role_name: 'admin', permissions: { admin: true } })
+    if (login === 'writer') return JSON.stringify({ permission: 'write', role_name: 'write', permissions: { admin: false } })
+    if (login === 'custom') return JSON.stringify({ permission: 'write', permissions: { admin: true } })
+    if (login === 'broken') return 'not-json'
+    throw new Error('HTTP 404')
+  }
+  assert.deepEqual(repoAdminLogins({ gh, repo: 'ThinkFlowLab/FlyBot', logins: ['hsliuustc0106', 'hsliuustc0106', 'writer', 'custom', 'broken', 'missing', ''] }), ['hsliuustc0106', 'custom'])
+  assert.deepEqual(calls, [
+    'repos/ThinkFlowLab/FlyBot/collaborators/hsliuustc0106/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/writer/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/custom/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/broken/permission',
+    'repos/ThinkFlowLab/FlyBot/collaborators/missing/permission',
+  ])
+  assert.deepEqual(repoAdminLogins({ gh, logins: ['hsliuustc0106'] }), [])
 })

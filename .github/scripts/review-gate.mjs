@@ -11,6 +11,10 @@
 //   - it is not the pull request author's own report, unless the author is listed in the policy's
 //     `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, acting as Birfy, may PASS
 //     its own pull requests; any other author still needs someone else);
+//   - the login is tied to this repository (#676): `author_association` is OWNER, MEMBER or
+//     COLLABORATOR, or the login is in `selfReview`, or it has admin on the repo. Org repositories
+//     do not report OWNER. GitHub stamps a repo admin as CONTRIBUTOR (#925); that stamp is not a
+//     refusal for one of those logins. A CONTRIBUTOR who is none of them is not a conclusion;
 //   - it carries the Verifier block review-pr already writes, with a `Tip SHA:` that is the
 //     head being judged and a `Verdict:`;
 //   - it names its writer in the header: `Written-by: <Bot>` (the older prose `Written by: …` reads
@@ -34,6 +38,57 @@ const SHORT = 12
 // above makes any newest conclusion refuse, so without this an outside comment saying `Verdict: INC`
 // could hold a merge. A comment from anyone else is not a conclusion: it can neither pass nor block.
 const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
+
+// Logins whose association is not already OWNER, MEMBER or COLLABORATOR, and which `selfReview`
+// does not already qualify. `decide` still applies every other check; this only picks who the
+// permission API has to be asked about. A listed self-reviewer needs no lookup.
+export function loginsNeedingAdmin(reports, policy) {
+  const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
+  const out = []
+  const seen = new Set()
+  for (const r of reports ?? []) {
+    if (ASSOCIATIONS.has(String(r.association ?? '').toUpperCase())) continue
+    const name = String(r.login ?? '').trim()
+    const key = name.toLowerCase()
+    if (!name || seen.has(key) || selfReview.has(key)) continue
+    seen.add(key)
+    out.push(name)
+  }
+  return out
+}
+
+// `GET /repos/{owner}/{repo}/collaborators/{username}/permission` — metadata read, which the
+// job's token already has. No new secret. Fail closed: a 403, a 404 or a body that is not the
+// permission object is not admin (#676). `permission: admin` is the legacy role; `permissions.admin`
+// covers a custom role that still grants admin.
+export function repoAdminLogins({ gh, repo, logins } = {}) {
+  if (!repo || typeof gh !== 'function') return []
+  const admins = []
+  const seen = new Set()
+  for (const raw of logins ?? []) {
+    const name = String(raw ?? '').trim()
+    const key = name.toLowerCase()
+    if (!name || seen.has(key)) continue
+    seen.add(key)
+    let text
+    try {
+      text = gh('api', `repos/${repo}/collaborators/${encodeURIComponent(name)}/permission`)
+    } catch {
+      // Fail closed. A 403 or 404 is not admin, and this lookup must not become a grant.
+      continue
+    }
+    let data
+    try {
+      data = JSON.parse(text)
+    } catch {
+      // A body that is not the permission object is not admin.
+      continue
+    }
+    const level = String(data?.permission ?? '').toLowerCase()
+    if (level === 'admin' || data?.permissions?.admin === true) admins.push(name)
+  }
+  return admins
+}
 
 // The last Verifier block in one body: a comment may hold an earlier review that a later
 // one replaced, and only the last block is the verdict the reviewer stands behind.
@@ -137,12 +192,13 @@ const login = (r) => String(r.login ?? '').toLowerCase()
 const where = (r) => `${r.kind === 'review' ? 'review' : 'comment'} by ${r.login}`
 
 // reports: [{ login, body, at, kind, id }] from the comments and review bodies of one PR.
-export function decide({ head, author, reports, policy }) {
+export function decide({ head, author, reports, policy, admins } = {}) {
   const headSha = String(head ?? '').toLowerCase()
   const authorLogin = String(author ?? '').toLowerCase()
   const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
   const writers = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
+  const adminSet = new Set((admins ?? []).map((l) => String(l).toLowerCase()))
   const reasons = [] // reports that do not name this tip at all
   const judged = []
   const atTip = [] // conclusions that name this tip, valid or not, in the order the API returned them
@@ -159,13 +215,18 @@ export function decide({ head, author, reports, policy }) {
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
     const association = String(r.association ?? '').toUpperCase()
-    // #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR
-    // and still count, but only on its own pull request. That is one exception for one person, not a
-    // second reviewers list: the same login judging someone else's pull request keeps every rule
-    // below, and #676 still refuses a login nobody listed.
-    const selfOnly = selfReview.has(login(r)) && login(r) === authorLogin
-    if (!ASSOCIATIONS.has(association) && !selfOnly) {
-      reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, so it is not a conclusion`)
+    // #676, widened after #925. Org repositories never report OWNER; MEMBER (and COLLABORATOR,
+    // where GitHub sends it) is the association bar. GitHub stamps a repo admin's review
+    // CONTRIBUTOR — on #925 that discarded hsliuustc0106's PASS, and listing the login in
+    // selfReview (#926) did not clear the stamp while this check still required the association.
+    // A login in selfReview, or one the caller resolved as repo admin (`admins`, or `admin: true`
+    // on the report), is tied to this repository anyway. A CONTRIBUTOR who is neither is not a
+    // conclusion. A failed permission lookup is not admin. The own-author and reviewers checks
+    // below are unchanged: admin is not a self-PASS and not a second reviewers list.
+    const listedSelf = selfReview.has(login(r))
+    const isAdmin = r.admin === true || adminSet.has(login(r))
+    if (!ASSOCIATIONS.has(association) && !listedSelf && !isAdmin) {
+      reasons.push(`${where(r)}: author association ${association || 'missing'} is not OWNER, MEMBER or COLLABORATOR, and ${r.login} is not in selfReview and was not shown as a repo admin, so it is not a conclusion`)
       continue
     }
     // #676: a conclusion at this tip belongs to the newest-word question even when it fails a check
@@ -256,7 +317,9 @@ function main() {
       .map((v) => ({ kind: 'review', login: v.user?.login, body: v.body, at: v.submitted_at, association: v.author_association, url: v.html_url })),
   ]
 
-  const result = decide({ head, author, reports, policy: loadPolicy(policyPath) })
+  const policy = loadPolicy(policyPath)
+  const admins = repoAdminLogins({ gh, repo, logins: loginsNeedingAdmin(reports, policy) })
+  const result = decide({ head, author, reports, policy, admins })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')

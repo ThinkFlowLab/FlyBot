@@ -24,7 +24,7 @@
 import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { decide, loadPolicy } from './review-gate.mjs'
+import { decide, loadPolicy, loginsNeedingAdmin, repoAdminLogins } from './review-gate.mjs'
 import { createGate, loadRules } from './risk-gate.mjs'
 
 const SHORT = 12
@@ -99,7 +99,7 @@ const short = (s) => String(s ?? '').slice(0, SHORT)
 // expectedHead: optional, a head the caller insists on (`--sha` on a hand run); a different live head
 // refuses. The queue's base sha is never a head: a merge_group entry passes none here (see
 // prFromHeadRef). reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue' }) {
+export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins } = {}) {
   const reasons = []
   const target = String(head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -116,7 +116,7 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   // (#640, INC point 2): a refusal here would stop every routine fix and every release.
   const tier = fileList(files).length ? computedTier(files) : null
   const exempt = exemptFromPass({ tier, files })
-  const verdict = exempt ? { ok: true, verdict: null, by: null, exempt: true } : decide({ head: target, author, reports, policy })
+  const verdict = exempt ? { ok: true, verdict: null, by: null, exempt: true } : decide({ head: target, author, reports, policy, admins })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
@@ -189,7 +189,9 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the
   // base copy of risk-gate.mjs (see exemptFromPass).
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
-  const result = judge({ labels, files, head, author, reports, policy: loadPolicy(policyPath), expectedHead: arg('--sha'), mode })
+  const policy = loadPolicy(policyPath)
+  const admins = repoAdminLogins({ gh, repo, logins: loginsNeedingAdmin(reports, policy) })
+  const result = judge({ labels, files, head, author, reports, policy, admins, expectedHead: arg('--sha'), mode })
   // The entry's own commit and its base are logged, never judged: neither is a head a Verifier names.
   const base = env.BASE_SHA || fromRef?.base
   const entry = env.ENTRY_SHA || (fromRef ? env.GITHUB_SHA : '')

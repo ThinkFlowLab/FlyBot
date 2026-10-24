@@ -29,11 +29,15 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [] } = {}) =>
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
-const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot' } = {}) => {
+const fakeGh = ({ body = 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined } = {}) => {
   const calls = []
   const gh = (...args) => {
     const path = args[args.length - 1]
     calls.push(path)
+    if (path.includes('/collaborators/') && path.includes('/permission')) {
+      if (permission == null || permission === 'throw') throw new Error('fake gh: permission ' + path)
+      return JSON.stringify({ permission, role_name: permission, user: { login: 'reviewed' } })
+    }
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
@@ -258,6 +262,46 @@ test('#718: a fork stays exempt under any --repo spelling', () => {
 
 // The guard is only in the path if the instructions that tell an agent to enqueue name it; otherwise
 // the next agent runs `gh pr merge` from memory and #602 is back.
+const contributor = (login, at = '2026-10-24T03:42:31Z') =>
+  ({ user: { login }, body: report(), submitted_at: at, author_association: 'CONTRIBUTOR' })
+
+test('#925: a MEMBER PASS is accepted and does not ask the permission API', () => {
+  const gh = fakeGh({ files: [HOST_FILE], comments: [comment()] })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(gh.calls.some((path) => path.includes('/permission')), false)
+})
+
+test('#925: a CONTRIBUTOR who is not in selfReview and is not a repo admin is refused', () => {
+  for (const permission of ['write', 'throw']) {
+    const r = run({ reviews: [contributor('reviewer-agent')], permission })
+    assert.equal(r.ok, false, permission)
+    assert.match(r.reasons.join('; '), /author association CONTRIBUTOR/)
+    assert.match(r.reasons.join('; '), /not in selfReview/)
+  }
+})
+
+test('#925: a CONTRIBUTOR who has admin on the repo is accepted', () => {
+  const r = run({ reviews: [contributor('reviewer-agent')], permission: 'admin' })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.verdict.by, 'reviewer-agent')
+})
+
+test('#925: a selfReview login stamped CONTRIBUTOR is accepted without an admin lookup', () => {
+  const gh = fakeGh({
+    files: [HOST_FILE],
+    author: 'opener',
+    reviews: [contributor('Birfy')],
+    permission: 'throw',
+  })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.verdict.by, 'Birfy')
+  assert.equal(gh.calls.some((path) => path.includes('/permission')), false)
+  const own = run({ author: 'Birfy', reviews: [contributor('Birfy')], permission: 'throw' })
+  assert.equal(own.ok, true, own.reasons.join('; '))
+})
+
 test('#602: the instructions that enqueue point at the guard', () => {
   const agents = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8')
   const fixIssue = readFileSync(new URL('../../.claude/skills/fix-issue/SKILL.md', import.meta.url), 'utf8')

@@ -186,6 +186,33 @@ test('#637: a verdict Chief posts for the Reviewer parses like the Reviewer wrot
   assert.equal(result.verdict.by, 'reviewer-agent')
 })
 
+test('#925: a CONTRIBUTOR review by a repo admin passes the queue entry, and a failed lookup does not', () => {
+  const body = firstLine('PASS')
+  const pull = JSON.stringify({ head: { sha: HEAD }, user: { login: 'opener' }, labels: [] })
+  const review = JSON.stringify({ user: { login: 'reviewer-agent' }, body, submitted_at: '2026-10-24T03:42:31Z', author_association: 'CONTRIBUTOR' })
+  const gh = (permission) => (...args) => {
+    const path = args[args.length - 1]
+    if (path.includes('/permission')) {
+      if (permission !== 'admin') throw new Error('404')
+      return JSON.stringify({ permission: 'admin', role_name: 'admin' })
+    }
+    if (path.includes('/files')) return JSON.stringify({ filename: 'core/src/host/turns.js' })
+    if (path.includes('/comments')) return ''
+    if (path.includes('/reviews')) return review
+    if (/\/pulls\/\d+$/.test(path)) return pull
+    throw new Error('fake gh: unexpected ' + path)
+  }
+  const policyPath = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
+  writeFileSync(policyPath, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
+  const env = { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policyPath, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '925' }
+  const allowed = main({ gh: gh('admin'), env, repo: 'ThinkFlowLab/FlyBot', pr: 925 })
+  assert.equal(allowed.ok, true, allowed.reasons.join('; '))
+  assert.equal(allowed.verdict.by, 'reviewer-agent')
+  const refused = main({ gh: gh('none'), env, repo: 'ThinkFlowLab/FlyBot', pr: 925 })
+  assert.equal(refused.ok, false)
+  assert.match(refused.reasons.join('; '), /author association CONTRIBUTOR/)
+})
+
 test('#637: a body that does not start with the verdict is no conclusion, so the entry is refused', () => {
   const prefixed = ['Verdict (written by Reviewer, posted by Chief)', '', firstLine('PASS')].join('\n')
   const result = runGate({ comments: [apiComment(prefixed, '2026-10-21T12:49:00Z')] })

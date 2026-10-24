@@ -25,7 +25,7 @@
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { isMechanicalRelease, judge } from './merge-gate.mjs'
-import { loadPolicy, parseReport } from './review-gate.mjs'
+import { loadPolicy, loginsNeedingAdmin, parseReport, repoAdminLogins } from './review-gate.mjs'
 
 const SHORT = 12
 // AGENTS.md → Merge gates rule 2: the `hold` label is paired with a comment saying
@@ -136,7 +136,11 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
 
   // The live head is judged, never a cached one: a push that moved the tip voids the PASS the caller
   // believes it has, and `--sha` lets a caller insist on the head it read a moment ago.
-  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy: loadPolicy(policyPath), expectedHead: expectedHead ?? arg('--sha'), mode: 'queue' })
+  // #925: GitHub reports CONTRIBUTOR for a repo admin. Ask the permission API (the token this job
+  // already has) for every login the association and selfReview do not already qualify.
+  const policy = loadPolicy(policyPath)
+  const admins = repoAdminLogins({ gh, repo, logins: loginsNeedingAdmin(reports, policy) })
+  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, admins, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue' })
   const mechanicalRelease = isMechanicalRelease(files.map((f) => f.filename))
   // The branch this repository owns, not a contributor's: `head.repo` is null when the fork was deleted,
   // which is not ours either. Both sides are lower-cased because the repository name in the API paths is
