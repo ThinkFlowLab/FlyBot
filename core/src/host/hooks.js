@@ -1132,6 +1132,8 @@ export function install(rt) {
         if (!impl || typeof impl !== 'object') { rt.roomInviteServer = undefined; return () => {} }
         const wrapped = { ...impl }
         rt.roomInviteServer = wrapped
+        // #899: links minted on a room-only Bot get its full identity, so their knocks are read.
+        if (typeof wrapped.identify === 'function') void Promise.resolve().then(() => rt.load?.()).then(() => rt.identifyInviteBots?.()).catch(error => rt.warn?.('ds-bot: link Bots not identified: %s', error))
         return () => { if (rt.roomInviteServer === wrapped) rt.roomInviteServer = undefined }
       },
       // The pairs a room link opens, `[{ from, to, scope, ticket }]` (reach.js ticketPeers): the

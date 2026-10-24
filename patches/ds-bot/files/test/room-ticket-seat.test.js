@@ -462,3 +462,52 @@ test('#884: a join that names a ticket this home never claimed opens nothing', a
   assert.equal(ok.refused, undefined)
   assert.equal(Object.keys(b.rt.state.rooms).length, before + 1, 'the claimed join projects the room')
 })
+
+test('#899: a room-only identity is promoted for the link it makes and the link it joins, and a claim is not a seat', async (t) => {
+  const { a, b, log, settle } = await twoHomes(t)
+  const asked = []
+  // The plugin's identify promotes a room-only identity (register forInvite drops the flag, #863).
+  const promote = rt => async (ids) => {
+    asked.push(...ids)
+    for (const id of ids) delete rt.state.bots[id].fields.social.member.roomOnly
+  }
+  // Both Chiefs used a face-to-face room before: a handle, but room-only (not polled, cannot send).
+  a.rt.state.bots['chief-a'].fields.social.member.roomOnly = true
+  b.rt.state.bots['chief-b'].fields.social.member.roomOnly = true
+  a.rt.roomInviteServer.identify = promote(a.rt)
+  b.rt.roomInviteServer.identify = promote(b.rt)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  assert.deepEqual(asked, ['chief-a'], 'the Bot the link knocks on gets a full identity')
+  assert.equal(a.rt.state.bots['chief-a'].fields.social.member.roomOnly, undefined)
+
+  // The knock is lost once (the claim landed at Bot Social): the guest is not told it joined.
+  const send = b.rt.flybotSend
+  b.rt.flybotSend = async () => { throw new Error('connect ECONNRESET') }
+  await assert.rejects(() => b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' }), /ECONNRESET/)
+  assert.deepEqual(asked, ['chief-a', 'chief-b'], "the guest's room-only Bot is promoted before it knocks")
+  const waiting = await b.rt.previewLocalInvite(invite.url)
+  assert.equal(waiting.claimed, true)
+  assert.equal(waiting.joined, false, 'claimed, but no room here yet')
+
+  // Join again knocks again under the same claim, and the room arrives.
+  b.rt.flybotSend = send
+  const again = await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  assert.equal(again.claimed, true)
+  await settle()
+  assert.ok(log.some(m => parseRoomShare(m.text)?.op === 'ask' && m.delivered))
+  assert.ok(guestRoomOf(b.rt), 'the host seated the guest')
+  assert.equal((await b.rt.previewLocalInvite(invite.url)).joined, true)
+})
+
+test('#899: a link minted on a room-only Bot is promoted when the host wires the server in', async (t) => {
+  const { a } = await twoHomes(t)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  a.rt.state.bots['chief-a'].fields.social.member.roomOnly = true
+  const asked = []
+  a.rt.roomInviteServer.identify = async ids => { asked.push(...ids) }
+  assert.deepEqual(await a.rt.identifyInviteBots(), ['chief-a'])
+  assert.deepEqual(asked, ['chief-a'])
+  await a.rt.revokeRoomInvite('war', invite.ticket)
+  asked.length = 0
+  assert.deepEqual(await a.rt.identifyInviteBots(), [], 'a withdrawn link that seated nobody wakes nothing')
+})

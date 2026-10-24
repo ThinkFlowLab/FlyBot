@@ -9951,10 +9951,23 @@ test('#876: each refusal of a group link is its own sentence, never "not an invi
   }
   assert.equal(seen.size, 7, 'seven refusals, seven sentences')
   // A link this home already joined with is said before anyone presses Join.
-  const taken = localLinkDialog(async () => ({ preview: { name: 'Trip plan', lead: 'Chief', expiresAt: Date.now() + 60_000, claimed: true } }))
+  const taken = localLinkDialog(async () => ({ preview: { name: 'Trip plan', lead: 'Chief', expiresAt: Date.now() + 60_000, claimed: true, joined: true } }))
   taken.render().find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
   await settleUi()
   assert.match(taken.last().status.text, /You already joined this group with that link/, '#892: claimed is this home\'s own claim, never someone else\'s')
+  // #899: a claim whose room never arrived is not "joined": it waits, and Join knocks again.
+  const stale = localLinkDialog(async (endpoint) => (endpoint === 'room-invite-ask'
+    ? { sent: 'allow', claimed: true, bots: ['@chief.bob.home'] }
+    : { preview: { name: 'Trip plan', lead: 'Chief', owner: 'Alice', claimed: true, joined: false } }))
+  stale.render().find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
+  await settleUi()
+  assert.doesNotMatch(stale.last().status.text, /already joined/)
+  assert.equal(stale.last().status.text, 'Waiting for Alice to let you in. If the group does not appear, press Join group to ask again.')
+  assert.equal(stale.last().preview?.local, true, 'the card stays, so Join can ask again')
+  stale.render().find(n => n.props['data-flybot'] === 'face-link-preview-join').props.onClick()
+  await settleUi()
+  assert.deepEqual(plain(stale.hostCalls.at(-1)), ['room-invite-ask', { link: LOCAL_URL, accept: true, bots: ['a', 'b'] }])
+  assert.match(stale.last().status.text, /^Asked to join "Trip plan"/)
   // And a refusal on Join (the claim) is said the same way.
   const late = localLinkDialog(async (endpoint) => (endpoint === 'room-invite-ask' ? { refused: 'expired' } : {}), { link: LOCAL_URL, status: null, preview: { name: 'Trip plan', local: true, link: LOCAL_URL } })
   late.render().find(n => n.props['data-flybot'] === 'face-link-preview-join').props.onClick()

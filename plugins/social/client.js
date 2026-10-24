@@ -1572,9 +1572,15 @@ window.__ModuleLoader__.load({
           return
         }
         const card = invitePreview({ name: seen?.name, lead: seen?.owner ? `${seen.lead || 'Bot'} (${seen.owner})` : seen?.lead, expiresAt: isoAt(seen?.expiresAt) })
-        if (seen?.claimed) {
-          // `claimed` is this home's own claim: it already joined (#892), so say that rather than refuse.
+        if (seen?.claimed && seen?.joined) {
+          // `claimed` is this home's own claim (#892); `joined` says the room really is here (#899).
           setInvite({ link: text, status: { tone: 'hint', text: 'You already joined this group with that link. It is in your sidebar.' } })
+          return
+        }
+        if (seen?.claimed) {
+          // #899: a claim with no room here is a knock nobody answered yet: say so, and let Join knock again.
+          const who = seen.owner || seen.lead || 'the group\u2019s owner'
+          setInvite({ link: text, status: { tone: 'hint', text: `Waiting for ${who} to let you in. If the group does not appear, press Join group to ask again.` }, preview: { ...(card ?? { name: 'A group on another FlyBot', lead: '', people: '', expiresAt: '', clockOffsetMs: 0 }), local: true, link: text } })
           return
         }
         if (!card) {

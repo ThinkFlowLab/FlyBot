@@ -1067,6 +1067,9 @@ export function install(rt) {
     const handle = state.bots?.[botId]?.fields?.social?.member?.handle
     return typeof handle === 'string' && handle.startsWith('@') ? handle : undefined
   }
+  // #899: a link's Bots need a full identity: a room-only one (left by a face-to-face room) is not
+  // polled by the host and cannot send the guest's knock, so it is promoted like a missing one.
+  const activeHandleOf = botId => (state.bots?.[botId]?.fields?.social?.member?.roomOnly ? undefined : memberHandleOf(botId))
   // The Bot the link knocks on: the room's lead when it has a Bot Social identity, else the first
   // member that has one. A stranger's seat talks to this Bot, and to no other of this home.
   function inviteBotOf(room) {
@@ -1083,8 +1086,9 @@ export function install(rt) {
     // A link is the owner's consent to show this room outside: the Bot it knocks on gets a Bot Social
     // identity now if it has none (a home with no friends has none yet).
     const lead = [room.admin, ...(room.members ?? [])].find(id => id && rt.botOf?.(id))
-    if (lead && !memberHandleOf(lead)) await identify([lead])
+    if (lead && !activeHandleOf(lead)) await identify([lead])
     const botId = inviteBotOf(room)
+    if (botId && !activeHandleOf(botId)) await identify([botId])
     const handle = botId ? memberHandleOf(botId) : shareInviter(room).inviterHandle
     if (!handle) throw invalid('This machine has no Bot Social identity yet')
     const origin = rt.roomInviteOrigin || ROOM_INVITE_ORIGIN
@@ -1145,6 +1149,19 @@ export function install(rt) {
       if (invite.server === true) void endServerTicket(invite.ticket)
     }
     return { revoked: true, ...(wanted === undefined && gone.length > 1 ? { count: gone.length } : {}) }
+  }
+
+  // #899: a link minted before its Bot was promoted (room-only) is never read on this home; promote
+  // every Bot a server link of a room knocks on, once the server record is wired in.
+  rt.identifyInviteBots = async function identifyInviteBots() {
+    const ids = new Set()
+    for (const room of Object.values(state.rooms || {})) {
+      for (const invite of invitesOf(room)) {
+        if (invite.server === true && invite.botId && state.bots?.[invite.botId] && !activeHandleOf(invite.botId) && (openInvite(invite) || seatedBy(invite))) ids.add(invite.botId)
+      }
+    }
+    if (ids.size > 0) await identify([...ids])
+    return [...ids]
   }
 
   async function identify(ids) {
@@ -1219,6 +1236,8 @@ export function install(rt) {
         owner: cleanPeerName(seen.lead?.ownerName, ''),
         expiresAt: Number(seen.expiresAt) || undefined,
         claimed: seen.claimed === true,
+        // #899: a claim is not a seat: the room is here only once the inviter's home seated this one.
+        ...(seen.claimed === true ? { joined: joinedByTicket(parsed.ticket) } : {}),
       }
     } catch (error) {
       const code = String(error?.code ?? '')
@@ -1226,6 +1245,8 @@ export function install(rt) {
       return { handle: parsed.handle, ticket: parsed.ticket, refused: refusalOf(code) }
     }
   }
+  const joinedByTicket = ticket => Object.values(state.rooms || {}).some(room => room.origin === 'inbound-share' && !room.hidden
+    && room.sharedFrom?.ticket === ticket && currentParticipants(room).some(p => p.kind === 'bot' && !p.remote))
   // Bot Social's refusal code, as the one reason the dialog names.
   function refusalOf(code) {
     switch (code) {
@@ -1276,9 +1297,9 @@ export function install(rt) {
     if (asked.length > 0 && picked.length !== new Set(asked).size) throw invalid('Pick Bots of your own to bring')
     if (picked.length === 0) throw invalid('This machine has no Bot Social identity yet')
     if (picked.length > TICKET_SEATS_MAX) throw invalid(`A link brings at most ${TICKET_SEATS_MAX} Bots`)
-    const missing = picked.filter(bot => !memberHandleOf(bot.id)).map(bot => bot.id)
+    const missing = picked.filter(bot => !activeHandleOf(bot.id)).map(bot => bot.id)
     if (missing.length > 0) await identify(missing)
-    const handles = picked.map(bot => memberHandleOf(bot.id))
+    const handles = picked.map(bot => activeHandleOf(bot.id))
     if (handles.some(handle => !handle)) throw invalid('This machine has no Bot Social identity yet')
     let claim
     try {
