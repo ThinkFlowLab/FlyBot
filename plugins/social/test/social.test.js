@@ -9249,6 +9249,87 @@ test('#973: one friend with two Bots is two rows, each naming its Bot, and the c
   assert.match(shared.message, /with Writer \(Bob\)/, 'the receipt names the Bot that got it')
 })
 
+// #981: the share list asked "does this person have it?" by home, so once one of a friend's Bots had
+// this Bot the other Bots vanished and the panel said they already had it. Keyed by the granted Bot
+// instead: only the Bot that has the grant is filtered out of the list.
+test('#981: a granted Bot of a two-Bot friend hides that Bot only, not the friend', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const state = { granted: ['@coder.bob.home'], sent: [] }
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [
+      { relationship_id: 'r-coder', status: 'active', peer: { bot_id: 'pb-coder', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' } },
+      { relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } },
+    ],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  // A grant that names the friend's Bot: `grantee.handle` is that Bot's handle, which is what
+  // list_bot_grants returns for a Bot-to-Bot grant.
+  server.tools.list_bot_grants = ({ bot_id }) => ({
+    bot: { bot_id },
+    grants: state.granted.map((handle, index) => ({ grant_id: `gr_${index}`, id: `gr_${index}`, grantee: { handle, owner_display_name: 'Bob' }, relationship_id: 'r', reply_only: false, side: 'inviter' })),
+  })
+  server.tools.grant_bot_to_friend = (a) => {
+    state.sent.push(a)
+    return { grant_id: 'gr_new', status: 'active', friend: { handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  assert.deepEqual(listing.friends.map(f => f.peerBotId), ['pb-writer'], 'the Bot without the grant is still offered')
+  assert.deepEqual(listing.friends.map(f => f.name), ['Writer (Bob)'], 'and the row names that Bot')
+  const shared = (await call('flybot/social/share-with-friend', { botId: chief.id, home: '@bob.home', peerBotId: 'pb-writer' })).value
+  assert.equal(state.sent.at(-1)?.friend_bot_id, 'pb-writer', 'the click grants the Bot the row names')
+  assert.match(shared.message, /Writer \(Bob\)/)
+  state.granted.push('@writer.bob.home')
+  const none = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  assert.deepEqual(none.friends, [], 'every Bot of that friend has it: no row, and the panel sentence is then true')
+})
+
+// #981: a grant that names only the friend's home names the person, not one of their Bots. `memberHandleOf`
+// reads a bare home back as if it were a handle, so the filter must compare it to the home instead of
+// trusting it: otherwise a person-level grant offers both of that friend's Bots again, and the click's
+// receipt claims a share the server answers with "already granted".
+test('#981: a home-level grant hides the whole friend, not one Bot of theirs', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [
+      { relationship_id: 'r-coder', status: 'active', peer: { bot_id: 'pb-coder', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' } },
+      { relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } },
+    ],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  // Shared with the person, not with one of their Bots — the shape an older client and the plain REST
+  // `home` route leave behind.
+  server.tools.list_bot_grants = ({ bot_id }) => ({
+    bot: { bot_id },
+    grants: [{ grant_id: 'gr_home', id: 'gr_home', grantee: { handle: '@bob.home', owner_display_name: 'Bob' }, relationship_id: 'r', reply_only: false, side: 'inviter' }],
+  })
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  assert.deepEqual(listing.friends, [], 'the grant names the person: none of their Bots is offered again')
+})
+
 test('#500: share-with-friend surfaces a clear error when Bot Social lacks grant_bot_to_friend', async (t) => {
   const { ctx, home, call, stop } = await team()
   t.after(stop)

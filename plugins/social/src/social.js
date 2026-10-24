@@ -2605,20 +2605,35 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const listed = typeof api.listGrants === 'function'
       ? await api.listGrants({ botId: member.bot_id }).catch(error => { warn('grants not listed for share', error); return [] })
       : []
-    const grantedHomes = new Set()
+    // #981: "do they already have this Bot?" is a per-Bot question. Keyed by the person's home, one
+    // granted Bot hid every Bot of that friend and the panel then said they already had it. A grant that
+    // names no Bot (`grantPersonView().member` empty) keeps the old per-person answer for that home,
+    // because nothing here can tell which of their Bots it was.
+    const grantsByHome = new Map()
     for (const grant of listed) {
       if (isTalkThroughGrant(member, grant)) continue
       const view = grantPersonView(grant)
       const key = norm(view.home || (typeof grant.grantee === 'string' ? personHomeOf(grant.grantee) : ''))
-      if (key) grantedHomes.add(key)
+      if (!key) continue
+      const entry = grantsByHome.get(key) ?? { bots: new Set(), person: false }
+      // `memberHandleOf` reads a bare home back as a handle, so a person-level grant arrives as
+      // `member === home` — comparing it to the key is what tells the two apart.
+      if (view.member && norm(view.member) !== key) entry.bots.add(norm(view.member))
+      else entry.person = true
+      grantsByHome.set(key, entry)
     }
     const overview = await friendsOverview()
     const friends = []
     const seen = new Set()
     for (const item of overview.friends ?? []) {
       const homeKey = personHomeOf(item.handle) || norm(item.handle)
-      if (!homeKey || homeKey === '@' || grantedHomes.has(homeKey)) continue
+      if (!homeKey || homeKey === '@') continue
       if (home && homeKey === norm(home.handle)) continue
+      // Filter the Bot that has the grant, not the friend (#981). A row without a handle cannot be told
+      // apart from the granted Bot, so it stays hidden rather than offered a second time.
+      const grantedFor = grantsByHome.get(homeKey)
+      const handleKey = item.handle ? norm(item.handle) : ''
+      if (grantedFor && (grantedFor.person || !handleKey || grantedFor.bots.has(handleKey))) continue
       // One row per Bot, not per person (#973): a friend may run several Bots, and the row decides which one
       // the click shares with — so the key is the Bot, and only a friend who has no Bot id falls back to the
       // home. The label names the Bot ("Coder (Bob)"), because "Share with Bob" hid which one got the grant.
