@@ -70,30 +70,79 @@ export function missingUsageFields(row) {
   return missing
 }
 
+// Prefer an explicit PR ref, then a GitHub issues/pull URL, then a bare #N in prose.
+export function extractIssuePr(text) {
+  if (typeof text !== 'string' || text === '') return ''
+  const pr = /\bPR\s*#(\d+)\b/i.exec(text) || /github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)/i.exec(text)
+  if (pr) return `PR #${pr[1]}`
+  const issue = /github\.com\/[^/\s]+\/[^/\s]+\/issues\/(\d+)/i.exec(text) || /(?:^|[\s(\[])#(\d+)\b/.exec(text)
+  if (issue) return `#${issue[1]}`
+  return ''
+}
+
+function textFromEvent(event) {
+  const data = event?.data ?? {}
+  const parts = []
+  if (typeof data.text === 'string') parts.push(data.text)
+  if (typeof data.message === 'string') parts.push(data.message)
+  const content = data.message?.content ?? data.content
+  if (typeof content === 'string') parts.push(content)
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (typeof block?.text === 'string') parts.push(block.text)
+      if (typeof block?.content === 'string') parts.push(block.content)
+    }
+  }
+  return parts.join('\n')
+}
+
+function noteIssuePr(state, event) {
+  const found = extractIssuePr(textFromEvent(event))
+  if (found) state.issuePr = found
+}
+
 // Folds Session events, oldest first, into one row per billed attempt, as DSH's own
 // tokenUsage projection counts them: a later sample of one attempt replaces the earlier
 // one, and `llm/retry-started` begins a new attempt. The model is the one the latest
 // request header named. A fork's events up to its inherited cut are the parent's, so
 // the cut drops the rows before it (`reset`).
 export function foldCalls(events, from = {}) {
-  const state = { provider: from.provider ?? '', model: from.model ?? '', retry: from.retry ?? null }
+  const state = {
+    provider: from.provider ?? '',
+    model: from.model ?? '',
+    retry: from.retry ?? null,
+    issuePr: typeof from.issuePr === 'string' ? from.issuePr : '',
+    turnTools: 0,
+    attemptStart: undefined,
+  }
   const rows = new Map()
   let reset = false
   for (const event of events) {
     const data = event?.data ?? {}
+    noteIssuePr(state, event)
     switch (event?.type) {
       case 'request/header': {
         const config = data.header?.config
         if (config?.provider && config?.model) Object.assign(state, { provider: config.provider, model: config.model })
+        if (state.attemptStart === undefined && Number.isFinite(event.time)) state.attemptStart = event.time
         break
       }
       case 'request/context':
         if (data.provider && data.model) Object.assign(state, { provider: data.provider, model: data.model })
         break
+      case 'turn/start':
+        state.turnTools = 0
+        state.attemptStart = Number.isFinite(event.time) ? event.time : state.attemptStart
+        break
+      case 'tool/call':
+        // Same events turns.js counts for the inbox (#471); PTC sub-calls are not tool/call.
+        state.turnTools += 1
+        break
       case 'llm/retry-started':
         state.retry = state.retry?.turn === data.turn && state.retry.step === data.step
           ? { ...state.retry, count: state.retry.count + 1 }
           : { turn: data.turn, step: data.step, count: 1 }
+        state.attemptStart = Number.isFinite(event.time) ? event.time : state.attemptStart
         break
       case 'session/end-seed':
         if (data.inherited === true) {
@@ -107,14 +156,30 @@ export function foldCalls(events, from = {}) {
         if (usage === undefined || usage === null) break
         const attempt = state.retry?.turn === data.turn && state.retry.step === data.step ? state.retry.count : 0
         const key = `${data.turn}:${data.step}:${attempt}`
-        rows.set(key, withUsageFields({ key, time: Number.isFinite(event.time) ? event.time : 0, provider: state.provider, model: state.model, ...tokensOf(usage) }))
+        const time = Number.isFinite(event.time) ? event.time : 0
+        const wallMs = state.attemptStart !== undefined ? Math.max(0, time - state.attemptStart) : 0
+        rows.set(key, withUsageFields({
+          key,
+          time,
+          provider: state.provider,
+          model: state.model,
+          ...tokensOf(usage),
+          toolCalls: state.turnTools,
+          wallMs,
+          issuePr: state.issuePr,
+        }))
         break
       }
       default:
         break
     }
   }
-  return { rows: [...rows.values()], state, reset }
+  return {
+    rows: [...rows.values()],
+    // Resume fields only — marks.fold must stay compatible with pre-Step-0 ledgers.
+    state: { provider: state.provider, model: state.model, retry: state.retry },
+    reset,
+  }
 }
 
 // One aggregate per Session, model, use, and quarter hour.
@@ -261,6 +326,15 @@ export function install(rt) {
   let opening
   // Metered calls that finish before the ledger opens.
   const early = []
+  // Optional issue/PR stamp for a Session (automation / explicit note). Fold and live
+  // meter rows pick it up when the log itself does not name one.
+  const issuePrBySession = new Map()
+  const noteUsageIssuePr = (sessionId, ref) => {
+    if (typeof sessionId !== 'string' || sessionId === '') return
+    const normalized = extractIssuePr(typeof ref === 'string' ? ref : '') || (typeof ref === 'string' ? ref.trim() : '')
+    if (normalized === '') issuePrBySession.delete(sessionId)
+    else issuePrBySession.set(sessionId, normalized)
+  }
   function openLedger() {
     if (ledger !== undefined) return Promise.resolve(ledger)
     const job = opening ??= (async () => {
@@ -395,9 +469,9 @@ export function install(rt) {
     }
     events.reverse()
     if (events.length > 0 && events[0].seq !== from + 1) throw new Error(`the history of ${sessionId} came back with a gap`)
-    const fold = foldCalls(events, mark?.fold)
+    const fold = foldCalls(events, { ...(mark?.fold ?? {}), issuePr: issuePrBySession.get(sessionId) ?? '' })
     ledger.commit(sessionId, {
-      rows: fold.rows.map(row => withUsageFields({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' })),
+      rows: fold.rows.map(row => withUsageFields({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' }, { issuePr: row.issuePr || issuePrBySession.get(sessionId) || '' })),
       reset: fold.reset,
       mark: { through, fold: fold.state, sealed: sealable },
     })
@@ -631,8 +705,8 @@ export function install(rt) {
           provider: options.provider,
           model: options.model,
           usage,
-          issuePr: tag?.issuePr ?? options.issuePr ?? '',
-          toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : 0,
+          issuePr: tag?.issuePr ?? options.issuePr ?? issuePrBySession.get(tag?.sessionId ?? options.sessionId) ?? '',
+          toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : (Number.isFinite(options.toolCalls) ? options.toolCalls : 0),
           wallMs: Math.max(0, Date.now() - started),
           harness: tag?.harness ?? rt.harness?.id ?? 'default',
         })
@@ -640,5 +714,5 @@ export function install(rt) {
     })()
   })
 
-  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest })
+  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest, noteUsageIssuePr })
 }
