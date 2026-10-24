@@ -1613,8 +1613,8 @@ test('#913: a called member that never answers is reported apart from a member t
   t.after(stop)
   const room = await team(call, sent)
   const chief = (await call('state', {})).value.mainBotId
-  const editor = (await call('create-bot', { name: 'Editor' })).value
-  await call('update-room', { id: room.id, add: [editor.id] })
+  const editor = (await call('create-bot', { name: 'Editor' })).value.id
+  await call('update-room', { id: room.id, add: [editor] })
   sent.length = 0
   // A Bot posts with report_back, so the round's closing report comes back to it. The post names
   // nobody, so the room's order answers it: the Writer first, the Editor next.
@@ -1788,4 +1788,52 @@ test('#932: a quiet late line still calls the member it names; an unnamed quiet 
   await emit(room.id, botLine(chief, 'Chief', 'Nothing else from me today.', { late: true, quiet: true }))
   JSON.parse(await relay(room.id, 'q932-quiet', controller.signal))
   assert.equal(roomTurns(sent).length, 0, 'a quiet line that names nobody calls nobody')
+})
+
+// #932, second observation point: a member called by a Bot's mid-round line must not be written into
+// `Stayed silent:` in the closing report - that sentence is for a member the line never called (#913).
+test('#932: a member called mid-round is reported as called, never as stayed silent', async (t) => {
+  const env = start()
+  const { call, emit, relay, answer, stop, sent, rt, ctx } = env
+  t.after(stop)
+  const room = await team(call, sent)
+  await call('update-room', { id: room.id, mode: 'admin' })
+  const editor = (await call('create-bot', { name: 'Editor' })).value
+  await call('update-room', { id: room.id, add: [editor.id] })
+  const state = (await call('state', {})).value
+  const chief = state.mainBotId
+  const writer = state.bots.find(bot => bot.name === 'Writer').id
+  let busy = true
+  let markIdle
+  const idle = new Promise(resolve => { markIdle = resolve })
+  t.after(() => {
+    busy = false
+    markIdle()
+  })
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async sessionId => sessionId !== room.id ? resolve(sessionId) : ({
+    agent: { session: { id: sessionId }, get status() { return busy ? 'running' : 'idle' }, whenIdle: () => idle, followup: () => {} },
+  })
+  sent.length = 0
+  // A Bot posts with report_back, so the closing report comes back to it. Its line names only Writer, so the
+  // Editor is not in the round's order: it can only be called by the line Writer posts while it works.
+  await emit(room.id, { type: 'user/message', data: { source: { kind: 'bot', role: 'post', senderSessionId: chief, senderName: 'Chief', reportBack: true }, content: [{ type: 'text', text: '@Writer check the draft' }] } })
+  const controller = new AbortController()
+  t.after(() => controller.abort())
+  const running = relay(room.id, 'r932-report', controller.signal)
+  const first = await turnFor(sent)
+  assert.equal(first.sessionId, rt.roomOf(room.id).sessions?.[writer], 'the named Writer answers')
+  // Writer names the Editor while its own turn runs: the call lands in this round.
+  await rt.postToRoom(rt.roomOf(room.id), { id: writer, name: 'Writer' }, '@Editor check the notes.', { late: true, origin: 'other' })
+  await answer(first.sessionId, first.message.source.exchangeId, 'Draft is in the folder.', 1)
+  const second = await turnFor(sent, first)
+  assert.ok(second, 'the mid-round call reaches the Editor inside this round')
+  assert.notEqual(second.sessionId, first.sessionId, 'the Editor, not Writer again')
+  assert.match(promptOf(second), /Writer mentioned you/)
+  await answer(second.sessionId, second.message.source.exchangeId, '[PASS]', 2)
+  JSON.parse(await running)
+  const report = await waitFor(() => sent.filter(entry => entry.message?.source?.role === 'report')[0])
+  const text = report?.message.content[0].text ?? ''
+  assert.match(text, /Called, but no answer: Editor\./, 'a member called mid-round that said nothing is reported as called')
+  assert.doesNotMatch(text, /Stayed silent: [^.]*Editor/, 'never in the sentence for a member nobody called')
 })
