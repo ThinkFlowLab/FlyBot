@@ -12,14 +12,31 @@ Instructions for AI coding agents that work on this repository. Human contributo
 
 One issue → one branch → one PR → CI `tests-ok` → auto-merge (squash).
 
-Grok Bot is the single entry point for humans; it schedules OpenCode (implements) and the owner's own reviewer Bot (reviews, acting as `Birfy`; owner decision 2026-10-19 15:31). Codex is not used for review: do not request `@codex review` and do not wait for a Codex review.
+A person talks to the **Chief** (the Main Bot). The Chief hands the work to the stationary roles — **Triage**, **Dev**, **Reviewer** — each a Bot in the same tree, and each step below names the role that does it. OpenCode and Codex are gone (owner decision 2026-10-22): nothing requests `@codex review`, nothing waits for a Codex review, and no model route is prescribed here.
+
+**An `@`-mention must produce one reply.** The member takes the work, points to who has it in a line, or says it cannot; silence is a defect, not "nothing to add" — the round record already keeps `passed` and `missed` apart, and #913 tracks the summary that merges them.
 
 1. **Issue.** Work one issue per session and per git worktree. Skim LESSONS and code-standards first. Security debt first: [#9](https://github.com/ThinkFlowLab/FlyBot/issues/9) → [#10](https://github.com/ThinkFlowLab/FlyBot/issues/10) → [#8](https://github.com/ThinkFlowLab/FlyBot/issues/8).
-2. **Branch** from latest `origin/main`. Write a test that fails without the change, then fix the class of bug.
+2. **Branch from the live base, and prove it.** `git fetch origin && git switch -c <branch> origin/main` — never from a local `main` you did not just fetch. Prove the base before you write anything:
+
+   ```sh
+   git diff origin/main...HEAD --stat
+   ```
+
+   That output must list only files you changed. **Any file you did not touch means the branch sits on an older `main`: delete the branch and start again from the fetched tip.** Never stack the change on a stale base and never resolve the ghost files by hand. A stale base merges green and silently reverts what landed meanwhile: on #887 the branch restored an old `main` and removed the 84 test lines #869 had just merged, while the pull request page showed every check green (#864, #876, #887).
+   `Dev` then writes a test that fails without the change, and fixes the class of bug.
 3. **Verify locally:** `npm run verify` at the repo root (Node 22+, see Commands).
 4. **PR** to `main`. Imperative English title, `Fixes #N` in the body, and what you ran and did **not** run at the tip SHA. A user-visible change adds one fragment `changelog.d/<issue-or-slug>.<kind>.md` ([changelog.d/README.md](changelog.d/README.md)); never edit `CHANGELOG.md` in a feature PR. Squash is the only merge method; the PR title and body become the commit message, so keep the body short.
 5. **CI.** The required check is `tests-ok`. It is green only when `test`, `plugins (tree)`, `plugins (social)` and `package` all pass. Never merge around a red check.
-6. **Review and merge.** Merge by tier ([`risk-gate.mjs`](.github/scripts/risk-gate.mjs): `node .github/scripts/risk-gate.mjs --pr <n>`). **T0 and T1** (owner decision 2026-10-19 11:45): an agent may enqueue the PR once `tests-ok` is green at its tip, it is mergeable, and it conforms to the design rules. No PASS is needed. **T2 and T3** need a PASS at the tip SHA from [`review-pr`](.claude/skills/review-pr/SKILL.md) (PASS / FAIL / INC) with green checks, and then **the agent that gated the PR enqueues it itself**: since 2026-10-21 the owner's authorisation is the [self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized), not a click in the UI. **An implementer does not review its own pull request** ([Merge gates](#merge-gates)): the PASS comes from the reviewer Bot, and because every Bot shares the `Birfy` account, a PASS by the owner's reviewer Bot on a PR another Bot opened still counts (owner decision 2026-10-19 11:43). A tip move (any new commit) voids the PASS. Neither the PASS nor green CI replaces the other. Enqueue with `gh pr merge --auto --squash --match-head-commit <sha>`, and run `node .github/scripts/enqueue-guard.mjs --pr <n>` immediately before it: the guard re-reads the live head and refuses (exit 1) on a `hold`, on a newest conclusion that is not a PASS, and on a report marked "record only — do not merge", so a PASS is never a queue permit on its own (#602). `main` requires a merge queue: that command enqueues the PR (gh may answer `The merge strategy for main is set by the merge queue` or `already queued`), the queue performs the squash merge, and a plain `--squash` merge is refused; do not retry ([merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge)). Never admin-merge and never bypass a gate. Exception: a mechanical release PR under the [standing approval](#standing-approval-mechanical-release-prs) below. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
+6. **Gate, then queue.** Five checks, in this order. Each one can refuse.
+
+   1. **Tier.** `node .github/scripts/risk-gate.mjs --pr <n>`, or quote the `risk-tier:` line of the job summary. **T0/T1** need green `tests-ok` at the tip, a mergeable pull request and design-conformance — no PASS. **T2/T3** need a **PASS at the tip SHA** written by the Reviewer ([`review-pr`](.claude/skills/review-pr/SKILL.md): PASS / FAIL / INC), never by the implementer ([Merge gates](#merge-gates)). Neither a PASS nor green CI replaces the other.
+   2. **One conclusion per tip.** A tip carries at most one `Verdict:` block. A second conclusion at the same tip is an incident, not a better answer; a new commit voids the PASS; a correction reads `Correction from <Bot>: …` and is not a verdict.
+   3. **Enqueue.** `node .github/scripts/enqueue-guard.mjs --pr <n>`, then `gh pr merge --auto --squash --match-head-commit <sha>`. The guard re-reads the live head and refuses (exit 1) on a `hold`, on a newest conclusion that is not a PASS, and on a report marked "record only — do not merge", so a PASS is never a queue permit on its own (#602). `main` requires a merge queue: the command enqueues the pull request (gh may answer `The merge strategy for main is set by the merge queue` or `already queued`), the queue performs the squash merge, and a plain `--squash` merge is refused — do not retry ([merge plumbing](docs/autonomous-dev.md#merge-plumbing-merge_group-merge-queue-auto-merge)).
+   4. **Judge on the merge tree.** Whether the pull request can merge is decided on the queue entry — the pull request merged onto the current `main`, built and tested again — never on the pull request page. The page's green is the head alone: #759 was 9/9 green, was kicked out of the queue twice, and went red on `main` at `core/test/follow-through.test.js:264`.
+   5. **Never bypass.** No admin-merge, no bypass, no ruleset change. A `Docs-not-needed:` line goes in the PR body as well as in the branch commit, and you check both at the tip ([why, and how](#docs-not-needed-why-both-places)). Run `verify` with `TZ=UTC`.
+
+   Exception: a mechanical release PR under the [standing approval](#standing-approval-mechanical-release-prs) below. [`fix-issue`](.claude/skills/fix-issue/SKILL.md) walks all of this, with the environment gotchas.
 7. **Stop** and hand over to the maintainer on a security-sensitive change, an unresolved maintainer decision, or when you cannot get a green tip.
 
 When a class of bug repeats, date a lesson in LESSONS.md (`Seen N×`); after **≥3 days** promote the durable rule into `docs/code-standards.md` / CONTRIBUTING.
@@ -71,15 +88,21 @@ If `topics.json` conflicts, keep both sides' entries (one patch per edited upstr
 
 ## Agent operating model
 
-Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19. Four scheduled routines run on the Grok Bot box, each with one job. A routine does only its own job. Every write a routine makes carries the `Written-by:` line ([rule](#every-state-changing-write-says-who-wrote-it-627)).
+Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19; what runs today is two routines on a timer and the rest in rounds. A routine has one job and does only that job. Every write a routine makes carries the `Written-by:` line ([rule](#every-state-changing-write-says-who-wrote-it-627)).
 
 ### Routines
 
-| Routine | Schedule | Job |
+| Routine | Runs | Job |
 | --- | --- | --- |
-| Product self-test | every 12 h | Uses FlyBot and Bot Social as a user and **only files issues**: no PRs, no pushed branches, no code changes. Each issue states the expected behavior and the change scope. Search for duplicates first. |
-| Repo maintenance | every 2 h, FlyBot and Bot Social separately | The **only** routine that opens fix PRs. Each run: review open PRs against the design rules; triage every open issue (fixed, duplicate or obsolete: close with a comment; still valid: readiness check below); label every open issue and PR; develop only `agent-ready` issues; merge ready PRs through the merge queue within the gates below. Never deploys. Never edits `CHANGELOG.md` or a version number. |
-| Daily release | about 02:00 Asia/Shanghai | Publishes a real semver GitHub release (tag = `core/package.json` version, patch bump per day, skipped when there are no changelog fragments) through a mechanical release PR. It owns `CHANGELOG.md` and the version. The files and the approval are in [Standing approval](#standing-approval-mechanical-release-prs). The fork's release is followed by the upstream fast-forward and upstream's own release, in one window per version: [docs/release-runbook.md](docs/release-runbook.md). |
+| Product self-test | timer, 09:00 and 21:00 Asia/Shanghai | Uses FlyBot and Bot Social as a user and **only files issues**: no PRs, no pushed branches, no code changes. Each issue states the expected behavior and the change scope. Search for duplicates first. |
+| Repo maintenance | a round in the delivery group, no timer | The **only** routine that opens fix PRs. Each run: review open PRs against the design rules; triage every open issue (fixed, duplicate or obsolete: close with a comment; still valid: readiness check below); label every open issue and PR; develop only `agent-ready` issues; merge ready PRs through the merge queue within the gates below. Never deploys. Never edits `CHANGELOG.md` or a version number. |
+| Daily release | timer, about 02:00 Asia/Shanghai | Publishes a real semver GitHub release (tag = `core/package.json` version, patch bump per day, skipped when there are no changelog fragments) through a mechanical release PR. It owns `CHANGELOG.md` and the version. The files and the approval are in [Standing approval](#standing-approval-mechanical-release-prs). The fork's release is followed by the upstream fast-forward and upstream's own release, in one window per version: [docs/release-runbook.md](docs/release-runbook.md). |
+
+**Only the two rows marked *timer* self-trigger.** Maintenance, triage and review run as rounds in the delivery group — Triage lists what is open, Dev claims one item and pushes a tip, Reviewer judges that tip, the Bot that gated it enqueues — and hold no cron entry. So a quiet period means no round ran, not that a routine is broken. A timer belongs to a Session, not to a Bot (#628): read `bot_schedules` before saying anything about which timers a Bot has.
+
+### Read the board once per round (#796)
+
+One read of the open state per round — issues, pull requests, checks — is the budget, not a step to repeat. Whoever reads it writes the facts down where the next Bot will look: the pull request body or a comment, as text. Nobody else re-pulls the same list, restates it in a group chat, or pastes more than five lines of a log; they read the comment. A second opinion needs a second question, not a second fetch. #796 measures what a round actually costs.
 
 #### A schedule is per session, not per Bot (#628)
 
@@ -134,7 +157,7 @@ What this buys is presence and a name from a closed list, not truth: with one sh
 - **T2 / T3:** a PASS at the head commit from a reviewer in [`.github/agent/review-policy.json`](.github/agent/review-policy.json), with green CI, and the agent that gated it then enqueues it itself ([self-gate](#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)). **T2 and T3 need no maintainer approve** (user decision 2026-10-22): no human `APPROVED` review is read or required, and `merge-gate` re-judges the head on the queue entry. **Self-PASS across Bots counts:** a PR opened by the owner's Bot/agent (`Birfy`) may be PASSed by the owner's own reviewer Bot/agent (the policy's `selfReview` list) — the shared account is why that list exists, not a licence for an implementer to review its own pull request. Neither the PASS nor green CI replaces the other.
 - **A PASS must list what it ran.** The `Ran:` line (or a `Ran …:` heading over `$ ` commands) carrying at least one real command is part of the gate, not a nicety: `merge-gate` refuses a PASS that lists none (#681, #574). When a PASS at a tip cannot be read for that reason, the reviewer may post **one replacement PASS at the same tip**: its body keeps the original conclusion, adds the `Ran:` lines of what was actually run, and carries `Replaces: the PASS at <sha> merge-gate rejected for having no Ran: line`. That is a replacement, not a second conclusion — apart from it, one tip still carries one.
 - Any new commit voids a PASS. CI green, the merge queue and the no-bypass rule apply to every tier.
-- Agents never bypass a gate and never admin-merge (the routines run as the maintainer account `Birfy`, but use it only for the actions above, never for admin merge, bypass or changing protection rules). The merge queue squashes the PR title and body, so a `Docs-not-needed:` line goes in the PR **body** and also in a branch commit message (`npm run arch-docs` reads only the branch's commits). Run `verify` with `TZ=UTC`.
+- Agents never bypass a gate and never admin-merge (the routines run as the maintainer account `Birfy`, but use it only for the actions above, never for admin merge, bypass or changing protection rules). Run `verify` with `TZ=UTC`.
 
 ### Merge gates
 
@@ -156,6 +179,29 @@ Four rules decide what a queue entry must pass. The mechanical judge runs where 
 4. **The newest conclusion at the head being merged decides.** Read the pull request's comments and review bodies, live, for the exact head SHA being merged — the pull request's own head, on a queue entry too (the `<sha>` in `gh-readonly-queue/main/pr-<N>-<sha>` is the entry's base, not its head; #654) — and take the newest text that carries `Verdict:` or a `## Review —` heading: INC or REQUEST_CHANGES refuses, PASS allows, no conclusion refuses too, and so does a report with no `Written-by:` line or one that names a writer the policy does not list (#627). Since #637 the format is fixed: the **first line** of the conclusion is exactly `Verdict: PASS at <sha>` / `Verdict: INC at <sha>` / `Verdict: REQUEST_CHANGES at <sha>`, with the attribution on the second line (`Written-by: Reviewer`, and a relay adds `Posted-by: Chief (proxy…)`; the older prose `Written by: …` reads the same way) and the evidence below it — a body that carries a verdict anywhere else is no conclusion, and no conclusion refuses. A result from `pull_request` time never stands in — on #610 the tip report ran at 10:31:08Z and the INC landed at 11:24:37Z, 54 minutes later. The gating agent checks this before enqueueing; `merge-gate.yml` checks it again at `merge_group`, and the stricter answer wins. That job runs on two events: at `merge_group` it judges and a refusal fails it, and at `pull_request` it only reports what the queue entry would refuse — a required check that never reports on the pull request head leaves every pull request waiting for a status that never comes and unable to enter the queue at all (#639). The required status check is the job name `merge-gate`; the workflow name `Merge gate` is not a context any run produces.
 
 A review's `state` is not read at all: approvals are not a gate any more (user decision 2026-10-22), and the account cannot approve its own pull requests, so its reviews stay `COMMENTED` even for an INC — the INC on #610 was a comment rather than a review.
+
+**One conclusion per tip.** A tip carries at most one conclusion: one `Verdict:` block naming one SHA. Two conclusions at the same tip is an incident, not a tie to be broken — nobody re-verdicts to win, the Reviewer that wrote the later one retracts it in a comment, and the pull request waits. A correction reads `Correction from <Bot>: …` and carries no `Verdict:` line, so it never competes with the standing conclusion; the replacement PASS for a missing `Ran:` ([above](#gates)) is the only other body allowed at one tip.
+
+**Judged on the merge tree, never on the pull request page.** The page answers "does this commit pass alone"; the queue answers "does this commit pass merged onto the current `main`", and the second one is the merge decision. #759 was green on every check, was kicked out of the queue twice, and went red on `main` at `core/test/follow-through.test.js:264`. A red queue entry that names files you did not touch is the stale base of [step 2](#pipeline-contract), not bad luck: fix the base, do not re-enqueue blindly.
+
+**A merged pull request's body is not a control.** GitHub evaluates `Fixes #N` once, when the merge lands. Editing the body of a merged pull request afterwards closes nothing and triggers no guard; it only makes the record disagree with what merged. If the issue is still open, close it with a comment naming the pull request — and if the merge itself was wrong, say so on the issue.
+
+#### Docs-not-needed: why both places
+
+This is not a new rule, and it does not fail because it is unclear — it fails when nobody reads it at the tip. What the two places are for:
+
+- [`check-arch-docs.mjs`](core/scripts/check-arch-docs.mjs) reads `git log <base>..HEAD --pretty=%B` — the branch commit messages, plus the pull request title and body on the queue entry.
+- The merge queue squashes the pull request title and body into the one commit that lands on `main`, so that commit carries the body and none of the branch messages. `arch-docs` runs again on the push to `main`.
+- A trailer written only into a branch commit is therefore gone exactly when `main` is judged.
+
+**Self-check before you push, and again after any new commit:** the same line appears in both places.
+
+```sh
+git log -1 --format=%B                    # the branch commit message
+gh pr view <n> --json body --jq .body      # the pull request body
+```
+
+If either lacks it, add it there and push. No trailer and no subsystem-doc update fails `arch-docs` on the branch; a trailer in the wrong place fails only after the squash, when the branch is gone.
 
 **The T0/T1 exemption is computed, never labelled.** `merge-gate.mjs` runs the base copy of [`risk-gate.mjs`](.github/scripts/risk-gate.mjs) over the changed files and `.github/agent/risk-rules.json` to get the tier; a `risk:T0`/`risk:T1` label does nothing. Every Bot shares one account and a label carries no signature (#627), so a label-based exemption would let whoever can label turn a T3 into "no review needed" — the gate itself. A mechanical release PR is recognised by its files as before, and `hold` still refuses whatever the tier.
 

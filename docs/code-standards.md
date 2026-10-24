@@ -18,11 +18,21 @@ When you report status on a change:
 
 - A new regression test (or assertion) must **fail on the unbroken tip** before the fix lands, then pass with the fix.
 - Prefer a minimal fixture that shows the class of bug (fence reconstitution, forged header), not a one-off sample that only matches one string.
+- **Red evidence is one of two kinds, and the report says which.** A test that is red on `base` (the unbroken tip) and green with the fix is a **defect test**: it reproduces the reported bug. A test that is green on `base` as well is a **guardrail**: it pins behaviour a later change must not break. Both belong in a pull request, but a claimed fix needs a defect test — a guardrail is never counted as the fail-without-change evidence, and the two read identically in a diff, so state which one the red run showed (`base` ref, command, before/after counts).
 
 ## Fix the class, not the sample
 
 - If review or a test finds one escape path, fix the shared helper and cover sibling markers (`untrusted-message`, `untrusted-file`, trusted headers).
 - Same-class reds tighten LESSONS / this file; do not paper over with a special case.
+
+## List sync: leave softly, replay idempotently
+
+A change that keeps a membership, roster or presence list in sync has the same four traps every time; a pull request that reworks one states how it handles each.
+
+- **Leaving marks, it does not remove.** A departure keeps its record and sets the leaving sequence (`leftSeq`/`leftAt` in `core/src/host/room-membership.js`; `currentParticipants()` filters them out for the live view), so history still names who was there. Never `filter()` the entry out of the array: the next sync cannot tell it apart from someone who was never in the list, and a rejoin has nothing to land on.
+- **A rejoin clears the mark instead of adding a record.** Match the returning member to its old record, drop the stray `left` line, clear `leftSeq`/`leftAt`, and refresh `joinedSeq`. Two records for one Bot is the bug, not the fix.
+- **The same delivery lands once.** A repeated message or event must not add a second line or a second membership change: the room log keys remote events by id (`seenEvents`, monotone `eventCursor`) and returns before writing again. Idempotency is checked by replaying the fixture twice, not by reasoning about it.
+- **A missing field is not a cleared field.** An update diffs only the lists and fields the message explicitly carries: a roster it does not include leaves the current one alone, and an absent `notice` is not an empty notice. Clearing is always an explicit value in the payload.
 
 ## Silent catches
 
@@ -38,17 +48,17 @@ When you report status on a change:
 
 ## Merge only a reviewed tip
 
-- By tier (owner decisions 2026-10-19; see AGENTS.md step 6):
-  - **T0/T1:** merge through the queue when required checks are green, the PR is mergeable and design-conformant. No PASS needed.
-  - **T2/T3:** a **PASS** at the **same tip SHA** (a self-PASS by the owner's reviewer Bot/agent counts; no independent reviewer required). With green required checks and a mergeable branch, the agent that gated the PR enqueues it itself: the owner's authorisation is the self-gate (AGENTS.md, owner decision 2026-10-21, "the Bot gates and merges its own PRs"), not a click in the UI.
-  - Required checks in CONTRIBUTING (`npm test`, client `--check`, `npm run lint`; smoke when host changes) are green or honestly listed as not run with a maintainer waiver.
-- Any new commit voids a PASS: re-run the Verifier on the new tip. Never admin-merge or bypass a gate.
+- By tier: **T0/T1** merge on green required checks; **T2/T3** need a **PASS at the same tip SHA** from the Reviewer ([`review-pr`](../.claude/skills/review-pr/SKILL.md)), and neither the PASS nor green CI replaces the other. The authoritative wording, the enqueue guard and the queue are in [AGENTS.md → Merge gates](../AGENTS.md#merge-gates); this page keeps only what a change must satisfy.
+- **One conclusion per tip.** A second `Verdict:` at the same SHA is an incident; a new commit voids the PASS; a correction reads `Correction from <Bot>: …` and is not a verdict.
+- **Judge the merge tree.** Green on the pull request page is the head alone; the queue rebuilds the merge with the current `main`, and that run decides (#759).
+- Required checks ([CONTRIBUTING → Test a change](../CONTRIBUTING.md#test-a-change)) are green, or honestly listed as not run with a maintainer waiver: `npm test`, the client `--check`, `npm run lint`, plus the smoke bench when `index.js` or `src/host/` changes.
 - **One pull request per issue.** An issue that already has a PR keeps it: re-base the branch, use `update-branch`, or push to its head, and put new tests there. Never open a second PR and close the first — including on a contributor's fork while maintainer edits are allowed. A branch that cannot be pushed is the only exception, and the issue must say why.
+- **A merged pull request's body is not a control.** `Fixes #N` is evaluated once, at merge; editing the body afterwards closes nothing. Close the issue with a comment instead.
 
 ## Architecture docs and owned paths
 
 - Each subsystem under [docs/subsystems/](subsystems/README.md) declares `owned_paths` in YAML front-matter.
-- Changing an owned file without updating that subsystem doc fails `npm run arch-docs` (also run at the end of `npm run lint`). Excuse with a `Docs-not-needed:` trailer in the commit message only when the change truly needs no doc update.
+- Changing an owned file without updating that subsystem doc fails `npm run arch-docs` (also run at the end of `npm run lint`). Excuse it with a `Docs-not-needed:` trailer only when the change truly needs no doc update — and write it in the pull request body **and** in the branch commit, then check both at the tip: the queue squashes the body into the commit on `main`, where the check runs again ([why](../AGENTS.md#docs-not-needed-why-both-places)).
 - Reviewers: FAIL if an owned-path change ships without a subsystem doc update **and** without a `Docs-not-needed:` trailer. Load the latest `origin/main` rules before each review (`git fetch` + `git show origin/main:.claude/skills/review-pr/SKILL.md` or the equivalent), not a stale local copy.
 
 ## Team authority contract (planned)

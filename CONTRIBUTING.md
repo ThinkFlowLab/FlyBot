@@ -12,13 +12,15 @@ Security reports: use the repository **Security** tab, not a public PR descripti
 
 ## Maintainer / agent loop
 
-For agent-driven work on this repository (Grok Bot as the human’s unified entry):
+A person talks to the **Chief** (the Main Bot); the Chief hands work to **Triage**, **Dev** and **Reviewer**, each a Bot in the same tree. OpenCode and Codex are gone (owner decision 2026-10-22).
+
+The rules that decide whether a change may merge — tiers and the PASS, the enqueue guard, the merge queue, one conclusion per tip — live in [AGENTS.md](AGENTS.md#pipeline-contract) and [AGENTS.md → Merge gates](AGENTS.md#merge-gates). This section says only who does what, so the two files cannot drift apart:
 
 1. Read [LESSONS.md](LESSONS.md) and [docs/code-standards.md](docs/code-standards.md) before coding.
-2. **OpenCode** implements (default model `opencode/step-5-preview-free`); the **owner's reviewer Bot** (acting as `Birfy`, self-review) reviews the tip with [`review-pr`](.claude/skills/review-pr/SKILL.md); Codex is not used for review (owner decision 2026-10-19 15:31), so nothing requests or waits for it. T2/T3 need a PASS at the tip (self-PASS counts), and with green CI the gating agent enqueues it itself; T0/T1 merge on green CI without a PASS (see AGENTS.md step 6).
-3. Security follow-ups from PR #2 first when open: issues #9 → #10 → #8, then other review bugs.
-4. One worktree / session per issue. Promote LESSONS into code-standards after ≥3 days when the rule stays true.
-5. Reviewers use [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md).
+2. **Dev** implements on a branch proven against the live `origin/main` ([AGENTS.md step 2](AGENTS.md#pipeline-contract)): a test that fails without the change comes first.
+3. **Reviewer** writes the conclusion at the tip with [`review-pr`](.claude/skills/review-pr/SKILL.md); the implementer never writes it. T2/T3 need that PASS, T0/T1 need none, and neither replaces green CI.
+4. **The Bot that gated the pull request enqueues it** ([AGENTS.md → Merge gates](AGENTS.md#merge-gates)); no human approve is read.
+5. One worktree / session per issue. Security follow-ups from PR #2 first when open: issues #9 → #10 → #8. Promote a lesson into code-standards after ≥3 days when it stays true.
 
 ### Verifier checklist (every agent or maintainer status report)
 

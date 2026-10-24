@@ -11,9 +11,9 @@ Decisions by the maintainer, and what follows from them:
 1. **No GitHub Apps.** The deterministic controller runs in GitHub Actions on the built-in
    `GITHUB_TOKEN` with the least permissions per job. It has no LLM and no secrets.
 2. **No Cursor GitHub App on ThinkFlowLab**, so no Cursor cloud agent on this repo. LLM agents
-   (triage, implement, review) run **outside Actions**, as Grok Bot routines or agents on the Grok Bot box.
-   The review is done by the owner's own reviewer Bot (acting as `Birfy`, self-review); Codex is not used for review
-   (owner decision 2026-10-19 15:31), and no workflow, routine or gate requests or waits for it.
+   (triage, implement, review) run **outside Actions**, as the Chief's workstations — Triage, Dev and Reviewer — on
+   the team's own box. The review is done by the Reviewer Bot (acting as `Birfy`, self-review); OpenCode and Codex are
+   gone (owner decision 2026-10-22), and no workflow, routine or gate requests or waits for them.
 3. **Agents act only on issues labeled `agent-ready`**. That label is set by a maintainer, or by the owner's
    maintenance routine after triage (the routine runs as the maintainer account `Birfy`, so the controller sees a
    maintainer's label). No LLM develops other issues, and nothing outside text sets the label.
@@ -32,7 +32,7 @@ issue (agent-task form) --maintainer or maintenance routine adds agent-ready--> 
 | Role | Runs where | Credential | Can do |
 | --- | --- | --- | --- |
 | Controller: tier, labels, enable auto-merge, watchdog | Actions, base-branch code, no PR code run | `GITHUB_TOKEN`, per-job least permissions | label, comment, `gh pr merge --auto --squash` |
-| Agents: implement, review | Grok Bot routines on the box (the owner's maintenance routine runs as `Birfy`) | the maintainer account's own `gh` login; a narrower credential remains the goal | triage and set `agent-ready`, push a branch or fork, open a PR, comment, review, enqueue a PR that may merge |
+| Agents: implement, review | the Chief's workstations on the box — Triage, Dev, Reviewer (the maintenance routine runs as `Birfy`) | the maintainer account's own `gh` login; a narrower credential remains the goal | triage and set `agent-ready`, push a branch or fork, open a PR, comment, review, enqueue a PR that may merge |
 | Merge | the required GitHub merge queue on `main` (ruleset `main merge queue`) | none: the queue merges when the required checks pass on its entry | squash only (set by the queue) |
 | Maintainers (`Birfy`, `hsliuustc0106`) | GitHub | own accounts | `hold` (human-only), set `agent-ready`, pause; no T2/T3 approve |
 

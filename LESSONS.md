@@ -13,6 +13,34 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-10-24 — A stale base reverts merged work while the PR page stays green
+
+- **Seen:** 4× (#864, #876, #887; #907 re-uploaded an old copy of its branch twice, at `d6e143a8` and `b8b582bd`)
+- **Trigger:** branching from a local `main`, or any `main` not fetched in this run, and opening a pull request from it.
+- **Wrong:** reading the green pull request page as "the branch is fine"; the ghost files in the diff are the tell, and the branch quietly restores an old `main`. #887 removed the 84 test lines #869 had just merged, with every check green. #907 dropped #909's whole fix from both old tips (no `verifiedAuthor`, no `not-inviter` refusal) while its page stayed green.
+- **Right:** `git diff origin/main...HEAD --stat` must list only your files. Anything else means a stale base: delete the branch and start again from the fetched tip. See [AGENTS.md step 2](AGENTS.md#pipeline-contract).
+
+### 2026-10-24 — The merge decision is made on the merge tree
+
+- **Seen:** 1× (#759)
+- **Trigger:** deciding a pull request can merge from its own page.
+- **Wrong:** 9/9 green on the head read as mergeable; the entry was kicked out of the queue twice and went red on `main` at `core/test/follow-through.test.js:264`.
+- **Right:** read the queue entry — the pull request merged onto the current `main`. A red entry naming files you did not touch is the stale base above, not bad luck.
+
+### 2026-10-24 — One conclusion per tip
+
+- **Seen:** recurring; the team's highest incident rate, so no single issue to point at.
+- **Trigger:** a Bot judging a tip that already carries a `Verdict:`.
+- **Wrong:** posting a second `Verdict:` at the same SHA to "settle" the first, or editing the first when the answer changed.
+- **Right:** one `Verdict:` per tip. A new commit voids the old one; a correction reads `Correction from <Bot>: …` and carries no `Verdict:`.
+
+### 2026-10-24 — A `Docs-not-needed:` trailer only in a branch commit is gone after the squash
+
+- **Seen:** 1× (the commit on `main` carries the pull request title and body, nothing else)
+- **Trigger:** excusing an owned-path change with a trailer in a branch commit only.
+- **Wrong:** green on the pull request and on the queue entry, then `arch-docs` fails on the push to `main`, where the branch commits no longer exist.
+- **Right:** write the trailer in the pull request **body** as well (`check-arch-docs.mjs` reads `git log <base>..HEAD`).
+
 ### 2026-10-14 — Untrusted fence escape and remote display names
 
 - **Seen:** 2× (from PR #2 review → issue #9; #98 non-face room ingest)
