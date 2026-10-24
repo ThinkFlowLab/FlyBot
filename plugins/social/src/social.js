@@ -2603,21 +2603,29 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const seen = new Set()
     for (const item of overview.friends ?? []) {
       const homeKey = personHomeOf(item.handle) || norm(item.handle)
-      if (!homeKey || homeKey === '@' || seen.has(homeKey) || grantedHomes.has(homeKey)) continue
+      if (!homeKey || homeKey === '@' || grantedHomes.has(homeKey)) continue
       if (home && homeKey === norm(home.handle)) continue
-      seen.add(homeKey)
-      const label = cleanText(item.owner || item.name)
+      // One row per Bot, not per person (#973): a friend may run several Bots, and the row decides which one
+      // the click shares with — so the key is the Bot, and only a friend who has no Bot id falls back to the
+      // home. The label names the Bot ("Coder (Bob)"), because "Share with Bob" hid which one got the grant.
+      const rowKey = item.peerBotId ? `bot:${item.peerBotId}` : `home:${homeKey}`
+      if (seen.has(rowKey)) continue
+      seen.add(rowKey)
+      const botName = cleanText(item.name)
+      const ownerName = cleanText(item.owner)
+      const label = botName && ownerName ? `${botName} (${ownerName})` : botName || ownerName
         || String(homeKey).replace(/^@/, '').replace(/\.home$/i, '')
         || homeKey
       friends.push({
         home: homeKey,
         name: label,
+        ...(item.handle ? { handle: item.handle } : {}),
         ...(item.peerBotId ? { peerBotId: item.peerBotId } : {}),
         ...(item.ownerId ? { ownerId: item.ownerId } : {}),
         ...(item.relationshipId ? { relationshipId: item.relationshipId } : {}),
       })
     }
-    friends.sort((a, b) => String(a.name).localeCompare(String(b.name)) || String(a.home).localeCompare(String(b.home)))
+    friends.sort((a, b) => String(a.name).localeCompare(String(b.name)) || String(a.home).localeCompare(String(b.home)) || String(a.handle ?? '').localeCompare(String(b.handle ?? '')))
     return { botId: bot.id, botName: bot.name, friends }
   }
   disposers.push(flybot.api.handle('social/share-friends', async ({ botId } = {}) => shareFriendsForBot(botId), { read: true }))
@@ -2693,7 +2701,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       grants: accessRows(bot.id, grants),
       rooms: (flybot.rooms?.list?.() ?? []).filter(room => (room.bots ?? []).some(id => id === bot.id)).map(room => ({ id: room.id, name: room.name, origin: room.origin })),
     }
-    const who = cleanText(result?.friend?.owner_display_name || result?.friend?.display_name || result?.grantee?.owner_display_name)
+    // Name the Bot that received it, not only its owner (#973): the same person can be granted for a second
+    // Bot, and "Shared X with Bob" reads as if the first one had it again.
+    const friend = result?.friend ?? {}
+    const botName = cleanText(friend.display_name)
+    const ownerName = cleanText(friend.owner_display_name || result?.grantee?.owner_display_name)
+    const who = (botName ? (ownerName ? `${botName} (${ownerName})` : botName) : ownerName)
       || (homeKey ? (String(homeKey).replace(/^@/, '').replace(/\.home$/i, '') || homeKey) : 'your friend')
     return {
       botId: bot.id,

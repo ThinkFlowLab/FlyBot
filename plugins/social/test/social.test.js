@@ -9185,6 +9185,44 @@ test('#500: social/share-friends lists friends without this Bot; share-with-frie
   assert.deepEqual(after.friends, [])
 })
 
+// #973: a friend with two Bots used to collapse to one row named after the person, while the grant went to
+// whichever Bot came first. One row per Bot, each naming it, and the click grants to that row's Bot.
+test('#973: one friend with two Bots is two rows, each naming its Bot, and the click grants to that Bot', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [
+      { relationship_id: 'r-coder', status: 'active', peer: { bot_id: 'pb-coder', handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' } },
+      { relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } },
+    ],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+  server.tools.grant_bot_to_friend = (a) => {
+    granted.push(a)
+    return { grant_id: 'gr_1', status: 'active', friend: { handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  assert.deepEqual(listing.friends.map(f => f.peerBotId).sort(), ['pb-coder', 'pb-writer'], 'one row per Bot, not per person')
+  assert.deepEqual(listing.friends.map(f => f.handle).sort(), ['@coder.bob.home', '@writer.bob.home'])
+  assert.deepEqual(listing.friends.map(f => f.name).sort(), ['Coder (Bob)', 'Writer (Bob)'], 'the row names the Bot and its owner')
+  const shared = (await call('flybot/social/share-with-friend', { botId: chief.id, home: '@bob.home', peerBotId: 'pb-writer' })).value
+  assert.equal(granted.at(-1)?.friend_bot_id, 'pb-writer', 'the grant goes to the row that was clicked')
+  assert.match(shared.message, /with Writer \(Bob\)/, 'the receipt names the Bot that got it')
+})
+
 test('#500: share-with-friend surfaces a clear error when Bot Social lacks grant_bot_to_friend', async (t) => {
   const { ctx, home, call, stop } = await team()
   t.after(stop)
@@ -9317,6 +9355,34 @@ test('#500: Share with a friend lists candidates and shares on click', async () 
   await btn.props.onClick()
   await new Promise(r => setTimeout(r, 0))
   assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.botId === 'b' && payload.home === '@bob.home' && payload.friendBotId === 'pb-bob'))
+})
+
+// #973: two Bots of one friend are two rows; each row's button names that Bot and shares with that Bot.
+test('#973: the panel draws one row per Bot and names the Bot each button shares with', async () => {
+  const calls = []
+  const friends = [
+    { home: '@bob.home', handle: '@coder.bob.home', name: 'Coder (Bob)', peerBotId: 'pb-coder' },
+    { home: '@bob.home', handle: '@writer.bob.home', name: 'Writer (Bob)', peerBotId: 'pb-writer' },
+  ]
+  const { plugin, all, text } = clientPlugin([friends, '', null], {
+    call: async (endpoint, payload) => {
+      calls.push([endpoint, payload])
+      if (endpoint === 'social/share-friends') return { botId: payload.botId, friends }
+      if (endpoint === 'social/share-with-friend') return { message: 'Shared Writer with Writer (Bob). They can decline; you can Revoke in People with access.', status: 'active' }
+      return {}
+    },
+  })
+  const nodes = all(plugin.ShareWithFriend({ bot: { id: 'b', name: 'Writer' } }))
+  const rows = nodes.filter(n => n.props?.['data-flybot'] === 'share-friend-row')
+  assert.equal(rows.length, 2, 'one row per Bot of the same friend')
+  assert.equal(new Set(rows.map(r => r.props.key)).size, 2, 'two rows of one friend need two keys, or React reuses one')
+  const buttons = nodes.filter(n => n.props?.['data-flybot'] === 'share-friend')
+  assert.deepEqual(buttons.map(b => b.props['aria-label']).sort(), ['Share Writer with Coder (Bob)', 'Share Writer with Writer (Bob)'])
+  const card = nodes.find(n => n.props?.['data-flybot'] === 'share-with-friend')
+  assert.match(text(card), /Writer \(Bob\)|@writer\.bob\.home/, 'the row shows which Bot it is')
+  await buttons[1].props.onClick()
+  await new Promise(r => setTimeout(r, 0))
+  assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.friendBotId === 'pb-writer'))
 })
 
 // ---- #773: a room code shown as a QR image, and scanning one back ----------------------

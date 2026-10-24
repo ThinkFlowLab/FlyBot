@@ -3162,8 +3162,11 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [bot?.id])
       if (!bot?.id) return null
+      // One row per friend's Bot (#973): the Bot id is what the row shares with, so it is also its key,
+      // its busy flag, and what a fallback refresh removes. A friend without a Bot id keys on the person.
+      const friendKey = friend => friend?.peerBotId || friend?.handle || friend?.home || friend?.ownerId || 'share'
       const share = async (friend) => {
-        setBusy(friend.home || friend.ownerId || 'share')
+        setBusy(friendKey(friend))
         setNote(null)
         try {
           const result = await call('social/share-with-friend', {
@@ -3175,7 +3178,7 @@ window.__ModuleLoader__.load({
           setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })
           const next = await call('social/share-friends', { botId: bot.id }).catch(() => null)
           if (next) setFriends(Array.isArray(next.friends) ? next.friends : [])
-          else setFriends(list => (list ?? []).filter(item => item.home !== friend.home))
+          else setFriends(list => (list ?? []).filter(item => friendKey(item) !== friendKey(friend)))
         } catch (e) {
           setNote({ tone: 'error', text: errorText(e) })
         } finally { setBusy('') }
@@ -3189,20 +3192,20 @@ window.__ModuleLoader__.load({
         !loading && list.length === 0
           ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
           : null,
-        list.map(friend => h('div', { key: friend.home || friend.ownerId, className: 'fs-line', 'data-flybot': 'share-friend-row' },
+        list.map(friend => h('div', { key: friendKey(friend), className: 'fs-line', 'data-flybot': 'share-friend-row' },
           h('div', { className: 'fs-col' },
-            h('span', { className: 'fs-name' }, friend.name || friend.home),
-            friend.home && friend.name && !String(friend.name).includes(String(friend.home).replace(/^@/, ''))
-              ? h('span', { className: 'fs-sub' }, friend.home)
+            h('span', { className: 'fs-name' }, friend.name || friend.handle || friend.home),
+            friend.handle || friend.home
+              ? h('span', { className: 'fs-sub' }, friend.handle || friend.home)
               : null),
           h('button', {
             type: 'button',
             className: 'fs-btn fs-btn-sm',
-            disabled: Boolean(busy),
+            disabled: busy === friendKey(friend),
             'data-flybot': 'share-friend',
             'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
             onClick: () => { void share(friend) },
-          }, busy === (friend.home || friend.ownerId || 'share') ? 'Sharing…' : 'Share'))),
+          }, busy === friendKey(friend) ? 'Sharing…' : 'Share'))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text) : null)
     }
 
