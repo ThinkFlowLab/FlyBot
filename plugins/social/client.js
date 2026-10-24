@@ -1002,6 +1002,20 @@ window.__ModuleLoader__.load({
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, ROOM_NAME_MAX) || fallback
+    // Which link of a room a panel may show (#1019): one that still works. The host answers `room-invite`
+    // with the newest open link and every open link, so an expired newest one (an older Bot Social still
+    // dates links) does not hide a later one that is still good, and a link nobody can join with is never
+    // called live. Shared by the Members card's read and the group strip's.
+    const liveInviteOf = (value) => {
+      // The host keeps a deadline in milliseconds and this card reads an ISO time, the same unit the
+      // Members card converts (#876): handing the number straight to `qrJoinable` makes Date.parse return
+      // NaN, which calls a link that still works expired (#1019).
+      const at = item => (item?.expiresAt ? isoAt(item.expiresAt) : 'open')
+      const open = (Array.isArray(value?.invites) ? value.invites : [])
+        .filter(item => item?.url && qrJoinable(at(item), Date.now()))
+      const newest = value?.invite?.url && qrJoinable(at(value.invite), Date.now()) ? value.invite : null
+      return newest ?? open.at(-1) ?? null
+    }
     // The card is core's, not this plugin's (#876): `invitePreviewOf` and `RoomInvitePreview` are
     // registered by ds-bot's client bundle, so the face-room paste flow and the member-invite dialog
     // draw one tree of elements. This file keeps no copy of the markup.
@@ -2149,11 +2163,29 @@ window.__ModuleLoader__.load({
     // way to invite someone. The first message ends it and the host's own header takes over.
     function GroupStrip({ room, roster, blank } = {}) {
       useStyles()
-      const [invite, setInvite] = useState(null)
+      const roomId = room?.id
+      // The link is kept with the room it belongs to: a session dock is handed to another Session without
+      // unmounting, so a bare link would stay on screen for the next group and Copy would copy another
+      // room's invite (#1019). Reading it through the room id also clears it in the same render that draws
+      // the new room — no frame with the old room's URL.
+      const [shown, setShown] = useState({ roomId: '', invite: null })
       const [busy, setBusy] = useState(false)
       const [note, setNote] = useState(null)
       const [copied, setCopied] = useState(false)
-      if (blank !== true || !room?.id || room?.face) return null
+      const invite = shown.roomId === roomId ? shown.invite : null
+      // The link this room already has (#1019): coming back to a group nobody has spoken in must show the
+      // link that was minted before, not mint another one. Same read the Members card's row makes (#876),
+      // so a group with a live link has nothing to mint and its list does not grow on every visit.
+      useEffect(() => {
+        if (!roomId) return undefined
+        let gone = false
+        host('room-invite', { roomId }).then((value) => {
+          if (gone) return
+          setShown({ roomId, invite: liveInviteOf(value) })
+        }, () => {})
+        return () => { gone = true }
+      }, [roomId])
+      if (blank !== true || !roomId || room?.face) return null
       const memberNames = (Array.isArray(room.members) ? room.members : [])
         .map(id => oneLine(roster?.byId?.[id]?.name ?? roster?.bots?.find?.(bot => bot.id === id)?.name ?? ''))
         .filter(Boolean)
@@ -2161,8 +2193,8 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setNote(null)
         try {
-          const value = await host('room-invite-mint', { roomId: room.id })
-          if (value?.invite?.url) setInvite(value.invite)
+          const value = await host('room-invite-mint', { roomId })
+          if (value?.invite?.url) setShown({ roomId, invite: value.invite })
           else setNote(tr('No link came back. Try again.'))
         } catch (error) { setNote(errorText(error)) } finally { setBusy(false) }
       }

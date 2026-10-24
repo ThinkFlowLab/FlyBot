@@ -6670,6 +6670,82 @@ test('#998: a zero-turn group draws its own strip above the composer, and drops 
   assert.equal(plugin.GroupStrip({ room: undefined, roster, blank: true }), null, 'a Bot chat has no group strip')
 })
 
+// #1019: coming back to a group nobody has spoken in must show the link the room already has, not mint
+// another one. The strip reads `room-invite` the way the Members card does, and a link nobody can join
+// with is not live: an expired one is never shown, and its absence is what puts the button back.
+// #1019: coming back to a group nobody has spoken in must show the link the room already has, not mint
+// another one. The strip reads `room-invite` the way the Members card does, a link nobody can join with is
+// not live (a deadline is milliseconds, and the card reads an ISO time), and a dock handed another Session
+// never keeps showing — or copying — the room it used to be on.
+test('#1019: the group strip shows the room\'s live link and mints only when there is none', async () => {
+  const link = (ticket, expiresAt = null) => ({ ticket, handle: '@chief.alice.home', url: `https://s/r/@chief.alice.home/${ticket}`, expiresAt, server: true })
+  const existing = link('LiveAbCdEfGhIjKlMnOpQr')
+  const calls = []
+  let invites = [existing]
+  const host = sharingHost(async () => ({}), async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'room-invite') {
+      const list = invites.filter(item => item.roomId === undefined || item.roomId === payload.roomId)
+      return { invite: list.at(-1) ?? null, invites: list }
+    }
+    if (endpoint === 'room-invite-mint') {
+      const made = link(`Fresh${payload.roomId}AbCdEfGhIj`, Date.now() + 3600_000)
+      invites = [...invites, { ...made, roomId: payload.roomId }]
+      return { invite: made }
+    }
+    return {}
+  })
+  const mints = () => calls.filter(([endpoint]) => endpoint === 'room-invite-mint').length
+  const button = panel => panel.nodes().find(n => n.type === 'button' && n.props?.['data-flybot'] === 'group-strip-invite')
+  const url = panel => panel.nodes().find(n => n.props?.['data-flybot'] === 'group-strip-url')?.props.children.join('')
+  const roster = { byId: { b1: { id: 'b1', name: 'Chief' } }, bots: [] }
+  const room = { id: 'room-1', name: 'Launch plan', members: ['b1'] }
+  let panel = host.mount('GroupStrip', { room, roster, blank: true })
+  await panel.settle()
+  assert.equal(url(panel), existing.url, 'the link the room already has, not a fresh one')
+  assert.equal(panel.has('group-strip-invite'), false, 'so there is nothing to mint')
+  assert.equal(mints(), 0)
+  // A second visit is a second mount of the same blank group: same link, still no minting.
+  panel = host.mount('GroupStrip', { room, roster, blank: true })
+  await panel.settle()
+  assert.equal(url(panel), existing.url, 'the same link on the way back')
+  assert.equal(mints(), 0, 'no second ticket')
+  assert.equal(invites.length, 1, 'the room still holds one link')
+  // A deadline in the future is a live link: the host dates it in milliseconds (#1019 review).
+  invites = [{ ...link('LaterAbCdEfGhIjKlMnOp', Date.now() + 3600_000), roomId: 'room-1' }]
+  panel = host.mount('GroupStrip', { room, roster, blank: true })
+  await panel.settle()
+  assert.equal(url(panel), invites[0].url, 'a link that still works is shown, not called expired')
+  assert.equal(mints(), 0, 'and it is not replaced')
+  // An expired link is not live: no URL, the button is back, and it mints one.
+  invites = [{ ...link('GoneAbCdEfGhIjKlMnOpQr', Date.now() - 60_000), roomId: 'room-1' }]
+  panel = host.mount('GroupStrip', { room, roster, blank: true })
+  await panel.settle()
+  assert.equal(panel.has('group-strip-url'), false, 'an expired link is never drawn as live')
+  assert.ok(button(panel), 'with no live link, inviting is the only thing left')
+  await panel.click('group-strip-invite')
+  await panel.settle()
+  assert.equal(url(panel), 'https://s/r/@chief.alice.home/Freshroom-1AbCdEfGhIj', 'the minted link is the one on screen')
+  assert.equal(invites.length, 2, 'and the expired one is still listed by the room, just not shown')
+  // The dock is handed another Session without unmounting: room B keeps its own link, and never A's.
+  invites = [{ ...link('RoomAAbCdEfGhIjKlMnOpQ', null), roomId: 'room-a' }]
+  panel = host.mount('GroupStrip', { room: { ...room, id: 'room-a', name: 'Plan A' }, roster, blank: true })
+  await panel.settle()
+  assert.equal(url(panel), 'https://s/r/@chief.alice.home/RoomAAbCdEfGhIjKlMnOpQ')
+  invites = [...invites, { ...link('RoomBAbCdEfGhIjKlMnOpQ', null), roomId: 'room-b' }]
+  panel.update({ room: { ...room, id: 'room-b', name: 'Plan B' } })
+  assert.equal(url(panel), undefined, 'the old room\'s link is off screen before the new room is read')
+  await panel.settle()
+  assert.equal(url(panel), 'https://s/r/@chief.alice.home/RoomBAbCdEfGhIjKlMnOpQ', 'and the new room\'s own link takes its place')
+  assert.equal(mints(), 1, 'switching rooms mints nothing')
+  // Back to a room with no live link: the button returns, and clicking it mints for that room.
+  invites = invites.filter(item => item.roomId !== 'room-a')
+  panel.update({ room: { ...room, id: 'room-a', name: 'Plan A' } })
+  assert.equal(panel.has('group-strip-url'), false, 'no live link in A any more')
+  await panel.settle()
+  assert.ok(button(panel), 'and the button is back for it')
+})
+
 test('#297: the thinking line is a plain session dock below the approval card, styled like the other quiet notes', () => {
   const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(source, /register\('flybot\.session\.dock', \{ id: 'social-thinking', order: 60, component: PeerThinking \}\)/)
@@ -10980,7 +11056,7 @@ test('#968: the social dock reads the shared predicate, not only the flag it use
 // gets its own hook store through a current-store dispatcher. `useState` re-renders for real, the
 // 5 s polls are captured instead of waited on, and effects run once — enough to drive a failed or
 // racing `social/share-friends` read without a browser or a fake clock.
-function sharingHost(call) {
+function sharingHost(call, hostCalls) {
   const registered = []
   const polls = []
   const sandbox = {
@@ -10992,6 +11068,8 @@ function sharingHost(call) {
   }
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = { slots: { register: () => () => {} }, call }
+  // #1019: the panel that draws a room link calls the host endpoints through `__flybot__.host`.
+  if (hostCalls) sandbox.__flybot__.host = hostCalls
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const h = (type, props, ...children) => ({ type, props: { ...props, children: children.flat() } })
   sandbox.__flybot__.BotAvatar = () => h('span', { 'data-flybot': 'bot-avatar' })
@@ -11007,27 +11085,41 @@ function sharingHost(call) {
     useState: init => store.useState(init),
     useRef: value => store.useRef(value),
     useMemo: fn => fn(),
-    useEffect: fn => store.useEffect(fn),
+    useEffect: (fn, deps) => store.useEffect(fn, deps),
   }
   const plugin = registered[0].factory(() => hooks)
   const all = (node, out = []) => { if (node && typeof node === 'object') { out.push(node); for (const child of node.props?.children ?? []) all(child, out) } return out }
   const text = node => (typeof node === 'string' ? node : (node?.props?.children ?? []).map(text).join(''))
   const mount = (component, props) => {
-    const self = { hook: 0, states: [], refs: [], effects: [], tree: null }
+    const self = { hook: 0, states: [], refs: [], effects: [], deps: [], seen: [], tree: null, props }
     const pollStart = polls.length
-    const render = () => { const previous = store; store = self; self.hook = 0; self.tree = plugin[component](props); store = previous }
+    const render = () => { const previous = store; store = self; self.hook = 0; self.effects = []; self.deps = []; self.tree = plugin[component](self.props); store = previous }
+    // React's rule, as far as these panels need it: an effect runs when its deps change — a session dock
+    // handed another Session is a props change, not a mount (#1019). No deps: once.
+    const runEffects = () => {
+      for (let i = 0; i < self.effects.length; i++) {
+        const fn = self.effects[i]
+        if (!fn) continue
+        const deps = self.deps[i]
+        const key = Array.isArray(deps) ? JSON.stringify(deps) : 'once'
+        if (self.seen[i] === key) continue
+        self.seen[i] = key
+        const previous = store; store = self; fn(); store = previous
+      }
+    }
     self.useState = (init) => {
       const i = self.hook++
       if (!(i in self.states)) self.states[i] = typeof init === 'function' ? init() : init
       return [self.states[i], value => {
         self.states[i] = typeof value === 'function' ? value(self.states[i]) : value
         render()
+        runEffects()
       }]
     }
     self.useRef = (value) => { const i = self.hook++; if (!(i in self.refs)) self.refs[i] = { current: value }; return self.refs[i] }
-    self.useEffect = (fn) => { const i = self.hook++; if (!(i in self.effects)) self.effects[i] = fn }
+    self.useEffect = (fn, deps) => { const i = self.hook++; self.effects[i] = fn; self.deps[i] = deps }
     render()
-    for (const fn of [...self.effects]) { const previous = store; store = self; fn?.(); store = previous }
+    runEffects()
     const nodes = () => all(self.tree)
     const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0)) }
     return {
@@ -11036,6 +11128,8 @@ function sharingHost(call) {
       settle,
       // One poll tick of this panel, exactly what the 5 s timer does.
       poll: () => polls[pollStart]?.(),
+      // The same mounted panel handed another Session: props change, the component stays.
+      update: (next) => { self.props = { ...self.props, ...next }; render(); runEffects() },
       click: async (name) => {
         const node = nodes().find(n => n.type === 'button' && n.props?.['data-flybot'] === name)
         if (!node) throw new Error(`no ${name} button`)
