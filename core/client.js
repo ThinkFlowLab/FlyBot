@@ -2722,9 +2722,10 @@ var TERMINAL = [
   /no such remote bot/i,
   /is not shared with your Bots/i,
   /is no longer shared with you/i,
+  // Only chat.public is a share taken back (#971). capability_not_granted is Bot Social's generic
+  // "peer has not granted <capability>" code, so the bare code does not decide (#988).
   /has not granted chat\.public/i,
   // The codes, when a transport passes the code instead of its sentence.
-  /capability_not_granted/i,
   /bot_not_shared/i,
   /bot_not_found/i
 ];

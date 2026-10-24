@@ -8476,6 +8476,52 @@ test('#971: a revoked share is one human line with no retry, never "peer has not
   })
 })
 
+// #988: capability_not_granted names the capability the peer withheld. Only chat.public (above) is a
+// withdrawn share. profile.read stays the generic error: no "not shared" sentence, no noRetry.
+// Restoring the bare-code branch makes this red; dropping the chat.public sentence match makes #971 red.
+test('#988: capability_not_granted for a capability other than chat.public stays generic', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const base = server.fetch
+  let message = 'peer has not granted profile.read'
+  server.fetch = async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'capability_not_granted', message }) }] } }), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { inboxPollMs: 0, autoAccept: true }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const typed = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
+  assert.notEqual(typed?.code, 'bot_not_shared')
+  assert.notEqual(typed?.noRetry, true)
+  assert.doesNotMatch(typed.message, /is not shared with your Bots/)
+  assert.match(typed.message, /peer has not granted profile\.read/)
+  assert.match(typed.message, /Try again/)
+  await assert.rejects(ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'hi' }), (error) => {
+    assert.notEqual(error.noRetry, true)
+    assert.notEqual(error.code, 'bot_not_shared')
+    assert.doesNotMatch(error.message, /is not shared with your Bots/)
+    assert.match(error.message, /peer has not granted profile\.read/)
+    return true
+  })
+  message = 'peer has not granted calendar.freebusy.read'
+  const calendar = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
+  assert.notEqual(calendar?.noRetry, true)
+  assert.doesNotMatch(calendar.message, /is not shared with your Bots/)
+  assert.match(calendar.message, /calendar\.freebusy\.read/)
+  // A bare code in the sentence, with no capability named, is not a withdrawn share either.
+  message = 'capability_not_granted'
+  const bare = await social.sendChat({ handle: '@coder.bob.home', text: 'hello' }).then(() => null, error => error)
+  assert.notEqual(bare?.noRetry, true)
+  assert.doesNotMatch(bare.message, /is not shared with your Bots/)
+})
+
 test('#336: the "Share this Bot?" card has only buttons: Share opens that Bot\'s Sharing, Dismiss drops it', () => {
   const registered = []
   const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }

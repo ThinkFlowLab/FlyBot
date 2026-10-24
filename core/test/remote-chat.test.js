@@ -199,6 +199,25 @@ test('#971: a send the peer no longer grants reads as one line with no retry, ne
     const line = notSentLine(raw)
     assert.doesNotMatch(line, /chat\.public|Try again|capability_not_granted|send_as_member/)
     assert.match(line, /no longer shared with you/)
+    assert.equal(line, 'Not sent: this Bot is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.')
+})
+
+// #988: the same code covers capabilities that are not a withdrawn share. A profile.read refusal,
+// and a bare capability_not_granted with no sentence, stay ordinary failures. Dropping the
+// chat.public sentence match above turns that case back into "Try again."
+test('#988: a capability other than chat.public is not rewritten as not shared', () => {
+    const profile = Object.assign(new Error('Bot Social send_as_member: peer has not granted profile.read'), { code: 'capability_not_granted' })
+    const profileLine = notSentLine(profile)
+    assert.match(profileLine, /peer has not granted profile\.read/)
+    assert.match(profileLine, /Try again/)
+    assert.doesNotMatch(profileLine, /not shared|no longer shared/)
+    const calendar = Object.assign(new Error('Bot Social send_as_member: peer has not granted calendar.freebusy.read'), { code: 'capability_not_granted' })
+    assert.match(notSentLine(calendar), /calendar\.freebusy\.read/)
+    assert.doesNotMatch(notSentLine(calendar), /not shared|no longer shared/)
+    const bare = Object.assign(new Error('Bot Social send_as_member: something odd happened'), { code: 'capability_not_granted' })
+    const bareLine = notSentLine(bare)
+    assert.match(bareLine, /Try again/)
+    assert.doesNotMatch(bareLine, /not shared|no longer shared/)
 })
 
 test('a failed 1:1 send is one short English line with a next step', () => {

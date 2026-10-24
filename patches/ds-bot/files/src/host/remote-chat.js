@@ -46,8 +46,9 @@ export function notSentLine(error) {
   // #971: the peer withdrew `chat.public`, so the social plugin words it as "not shared"; the sentence is
   // passed through whole instead of gaining a "Try again." nothing can satisfy until that owner acts.
   if (/is not shared with your Bots/i.test(raw)) return `Not sent: ${body.replace(/^Not sent:\s*/i, "")}`
-  // The same fact straight from Bot Social, if a path ever reports it before the plugin words it.
-  if (/capability_not_granted|has not granted [a-z0-9_.]+/i.test(blob)) {
+  // The same fact straight from Bot Social, before the plugin words it. Only the chat.public sentence
+  // is that fact (#988): a bare capability_not_granted, or any other capability, is not a withdrawn share.
+  if (/has not granted chat\.public/i.test(blob)) {
     return 'Not sent: this Bot is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.'
   }
   if (/has no grant|has not been granted|cannot message friends|cannot message their Bots/i.test(blob)) {

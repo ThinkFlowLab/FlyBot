@@ -22,9 +22,24 @@ test('#968: a record written before #954 carries no flag, only the sentence, and
     'peer has not granted chat.public. Try again.',
   ]
   for (const error of sentences) assert.equal(canRetry({ status: 'failed', error }), false, error)
-  // A code can arrive instead of the sentence.
-  assert.equal(canRetry({ error: 'capability_not_granted' }), false)
+  // A code can arrive instead of the sentence. These two stay terminal on the code alone.
+  // capability_not_granted does not: the same code names other capabilities (#988).
   assert.equal(canRetry({ code: 'bot_not_shared' }), false)
+  assert.equal(canRetry({ code: 'bot_not_found' }), false)
   // The flag wins even when the text looks retryable: the sender knows more than its message.
   assert.equal(canRetry({ noRetry: true, error: 'HTTP 500' }), false)
+})
+
+// #988: capability_not_granted is Bot Social's generic "peer has not granted <capability>", not
+// "this Bot is not shared". Only the chat.public sentence is that fact. Restoring the bare-code
+// match makes the first assertions fail; dropping the chat.public sentence match makes the last fail.
+test('#988: capability_not_granted is terminal only for the chat.public sentence', () => {
+  assert.equal(canRetry({ error: 'peer has not granted profile.read', code: 'capability_not_granted' }), true)
+  assert.equal(canRetry({ error: 'peer has not granted calendar.freebusy.read', code: 'capability_not_granted' }), true)
+  assert.equal(canRetry({ code: 'capability_not_granted' }), true)
+  assert.equal(canRetry({ error: 'capability_not_granted' }), true)
+  assert.equal(canRetry({ error: 'peer has not granted chat.public', code: 'capability_not_granted' }), false)
+  assert.equal(canRetry({ error: 'peer has not granted chat.public. Try again.' }), false)
+  // The sender's own mark still wins when the capability is not chat.public.
+  assert.equal(canRetry({ noRetry: true, error: 'peer has not granted profile.read', code: 'capability_not_granted' }), false)
 })
