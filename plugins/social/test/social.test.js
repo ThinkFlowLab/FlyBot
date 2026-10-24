@@ -11017,3 +11017,69 @@ test('#984: a share-list read that straddled a revoke is dropped, not written', 
   assert.ok(share.has('share-friend-row'), 'a read taken across the revoke does not empty the card (#984)')
   assert.equal(share.has('share-with-friend-empty'), false)
 })
+
+// #987: the note has a source. A share failure and a list failure share one slot, so the retry
+// belongs to the list read and a successful read clears only a list error.
+test('#987: a failed share keeps its own error and offers no list retry', async () => {
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') return { friends: [shareCoder] }
+    if (endpoint === 'social/share-with-friend') throw new Error('social/share-with-friend: Bot Social said no')
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  await panel.click('share-friend')
+  await panel.settle()
+  assert.match(panel.text(), /Bot Social said no/, 'the share failure is shown')
+  assert.equal(panel.has('share-list-retry'), false, 'a share failure must not offer the list reader\'s retry')
+  panel.poll()
+  await panel.settle()
+  assert.match(panel.text(), /Bot Social said no/, 'a successful list read clears only a list error')
+})
+
+test('#987: a failed list read still offers a retry that re-reads and clears its own error', async () => {
+  let readFails = true
+  let reads = 0
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint !== 'social/share-friends') return {}
+    reads += 1
+    if (readFails) throw new Error('social/share-friends: no answer from Bot Social')
+    return { friends: [shareCoder] }
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  assert.ok(panel.has('share-list-retry'), 'a list failure offers the retry')
+  const before = reads
+  readFails = false
+  await panel.click('share-list-retry')
+  await panel.settle()
+  assert.equal(reads, before + 1, 'the retry re-reads the list')
+  assert.equal(panel.has('share-list-retry'), false, 'a successful read clears the list error')
+  assert.ok(panel.has('share-friend-row'))
+})
+
+test('#987: the empty sentence is suppressed by a list error, not by a share error', async () => {
+  let friends = [shareCoder]
+  let readFails = false
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') {
+      if (readFails) throw new Error('social/share-friends: no answer from Bot Social')
+      return { friends }
+    }
+    if (endpoint === 'social/share-with-friend') throw new Error('social/share-with-friend: Bot Social said no')
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  await panel.click('share-friend')
+  await panel.settle()
+  friends = []
+  panel.poll()
+  await panel.settle()
+  assert.ok(panel.has('share-with-friend-empty'), 'a share error does not speak for the list')
+  assert.match(panel.text(), /Bot Social said no/)
+  readFails = true
+  panel.poll()
+  await panel.settle()
+  assert.equal(panel.has('share-with-friend-empty'), false, 'a list error does suppress it')
+})

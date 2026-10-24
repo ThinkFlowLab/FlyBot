@@ -3161,12 +3161,13 @@ window.__ModuleLoader__.load({
           // about a roster that no longer exists, so it is dropped, never written (#984).
           if (readSeq.current !== seq || shareListEpoch !== epoch) return
           setFriends(Array.isArray(next?.friends) ? next.friends : [])
-          setNote(previous => (previous?.tone === 'error' ? null : previous))
+          // #987: the note has a source. A successful read settles the list, never a share's error.
+          setNote(previous => (previous?.source === 'list' ? null : previous))
         } catch (e) {
           if (readSeq.current !== seq || shareListEpoch !== epoch) return
           // Keep the rows a successful read established: a failed read established nothing, so the
           // card says it failed and offers a retry instead of claiming nobody is left (#984).
-          setNote({ tone: 'error', text: errorText(e) })
+          setNote({ tone: 'error', source: 'list', text: errorText(e) })
         }
       }
       useEffect(() => {
@@ -3192,12 +3193,13 @@ window.__ModuleLoader__.load({
             ...(friend.peerBotId ? { friendBotId: friend.peerBotId } : {}),
             ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
           })
-          setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })
+          setNote({ tone: 'ok', source: 'share', text: result?.message || `Shared ${bot.name}.` })
           const next = await call('social/share-friends', { botId: bot.id }).catch(() => null)
           if (next) setFriends(Array.isArray(next.friends) ? next.friends : [])
           else setFriends(list => (list ?? []).filter(item => friendKey(item) !== friendKey(friend)))
         } catch (e) {
-          setNote({ tone: 'error', text: errorText(e) })
+          // #987: the share's failure speaks for the share; it is not the list's error.
+          setNote({ tone: 'error', source: 'share', text: errorText(e) })
         } finally { setBusy('') }
       }
       const list = friends ?? []
@@ -3206,7 +3208,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-name' }, 'Share with a friend'),
         h('div', { className: 'fs-hint' }, `One click shares ${bot.name || 'this Bot'} with someone you already know. No invite link. They can decline; you can Revoke in People with access.`),
         loading ? h('div', { className: 'fs-hint' }, 'Loading friends…') : null,
-        !loading && list.length === 0 && note?.tone !== 'error'
+        !loading && list.length === 0 && note?.source !== 'list'
           ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
           : null,
         list.map(friend => h('div', { key: friendKey(friend), className: 'fs-line', 'data-flybot': 'share-friend-row' },
@@ -3224,7 +3226,7 @@ window.__ModuleLoader__.load({
             onClick: () => { void share(friend) },
           }, busy === friendKey(friend) ? 'Sharing…' : 'Share'))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text,
-          note.tone === 'error'
+          note.tone === 'error' && note.source === 'list'
             ? h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, 'Try again')
             : null) : null)
     }
