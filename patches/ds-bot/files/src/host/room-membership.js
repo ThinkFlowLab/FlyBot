@@ -614,6 +614,11 @@ export function install(rt) {
       }
       const kind = draft.kind
       const viaCode = opts?.viaCode === true && draft.kind === 'bot' && !isRemoteDraft(draft)
+      // #923: a seat one of this room's links admitted names the pair reach.js enumerates. The link's
+      // ticket, and the Bot of this home whose handle the guest knocked on, are what make that pair
+      // visible; without them the seat's envelopes fall back to a friendship the two homes never had.
+      const seatTicket = typeof opts?.ticket === 'string' && opts.ticket ? opts.ticket : undefined
+      const seatHostBotId = seatTicket && typeof opts?.hostBotId === 'string' && opts.hostBotId ? opts.hostBotId : undefined
       const published = assertAddable(room, draft, actor, { viaCode })
       const role = draft.role === 'admin' ? 'admin' : 'member'
       const invitedBy = actor?.memberId
@@ -646,6 +651,8 @@ export function install(rt) {
           invitedAt,
           joinedSeq: line.seq,
           joinedAt: invitedAt,
+          ...(seatTicket ? { admittedBy: 'ticket', ticket: seatTicket } : {}),
+          ...(seatHostBotId ? { hostBotId: seatHostBotId } : {}),
         }
         room.participants.push(record)
         append(room, {
@@ -1546,7 +1553,9 @@ export function install(rt) {
         void rt.notifyRoomShare?.(room, { op: 'join', handle: asker })
       } else {
         const ownerId = actor?.memberId ?? Object.keys(state.members || {})[0]
-        await rt.addRoomParticipant(room.id, { kind: 'bot', handle: asker }, actor ?? (ownerId ? { memberId: ownerId } : undefined))
+        // #923: the seat a link admitted keeps the link's ticket and the Bot whose handle it knocked
+        // on, so `reach.js` can enumerate the one pair this link opened.
+        await rt.addRoomParticipant(room.id, { kind: 'bot', handle: asker }, actor ?? (ownerId ? { memberId: ownerId } : undefined), { ticket: invite.ticket, hostBotId: invite.botId ?? room.admin })
       }
     } catch (error) {
       // Nothing was added, so the record must not say it seated anyone.

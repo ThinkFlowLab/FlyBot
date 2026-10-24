@@ -19,7 +19,7 @@ import {
   roomVisibleTo,
   viewerRole,
 } from '../src/host/room-membership.js'
-import { install as installReach, reach } from '../src/host/reach.js'
+import { install as installReach, reach, ticketPeers } from '../src/host/reach.js'
 import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
 import { encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
@@ -1475,6 +1475,45 @@ test('#852: the knock asks the room record, and only the accept admits one home'
   assert.equal(refusedAdd.refused, 'not-addable', 'a Bot the room cannot seat is refused')
   assert.deepEqual(rt.state.rooms.war.localInvites.find(i => i.ticket === fresh.ticket).homes, {}, 'the refused add left no home on the link')
   assert.equal(seats().length, 1, 'and seated nobody')
+})
+
+// #923: a room link seats a Bot of another home, and that seat is the one pair the link opened: the
+// room's own envelopes to it are the room's consent, not a friendship the two homes never had. A seat
+// recorded before it kept the ticket (or by a path that did not) is the same pair, read from the link's
+// own record of who it admitted; a friend's Bot added by hand is not.
+test('#923: a link-admitted seat is the pair the link opened, and a hand-added friend is not', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { alice, bob } = await signAliceAndBob(rt)
+  await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  rt.state.bots['chief-a'].fields = { social: { member: { home: '@alice.home', handle: '@chief.a.home' } } }
+  const invite = await rt.mintRoomInvite('war')
+  const knock = (payload, fromHandle = '@coder.bob.home', fromHome = '@bob.home') => rt.applyInboundRoomShare({
+    text: encodeRoomShare(payload), fromHandle, fromHome, fromName: 'Coder',
+  })
+  const accepted = await knock({ op: 'ask', ticket: invite.ticket, accept: true })
+  assert.equal(accepted.accepted, true)
+  const seat = rt.state.rooms.war.participants.find(p => p.remote === true && p.handle === '@coder.bob.home')
+  assert.equal(seat.admittedBy, 'ticket', 'the accept keeps the link that seated it')
+  assert.equal(seat.ticket, invite.ticket)
+  assert.equal(seat.hostBotId, 'chief-a', 'reached from the Bot whose handle it knocked on')
+  const pairs = () => ticketPeers(rt.state).filter(p => p.to === '@coder.bob.home')
+  assert.deepEqual(pairs(), [{ from: 'chief-a', to: '@coder.bob.home', scope: 'war', ticket: invite.ticket }], 'one pair, the room Bot Social can check')
+
+  // A room opened before the seat kept the ticket: the link's own `homes` still names it, so the pair
+  // is the same one, and a group envelope to it is the room's, not a friend's.
+  delete seat.admittedBy
+  delete seat.ticket
+  delete seat.hostBotId
+  assert.deepEqual(pairs().map(p => [p.from, p.ticket]), [['chief-a', invite.ticket]], 'the link record alone still opens the pair')
+
+  // A friend's Bot added by hand is nobody's link seat, whatever else is true about it.
+  rt.state.rooms.war.participants.push({ kind: 'bot', remote: true, id: '@friend.eve.home', handle: '@friend.eve.home', joinedSeq: 999, joinedAt: 2 })
+  assert.equal(ticketPeers(rt.state).some(p => p.to === '@friend.eve.home'), false, 'a hand-added friend is not a room pair')
+  void bob
 })
 
 

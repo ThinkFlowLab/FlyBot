@@ -10291,6 +10291,11 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
     assert.equal(out.action, 'deny', `${why}: ${JSON.stringify(out)}`)
   }
   assert.equal(sends().length, 1, 'none of those reached Bot Social')
+  // #923: the same envelope the owner approves on a card goes out by the same pair, so approving a
+  // held room share names the room instead of asking Bot Social about a friendship there is not.
+  const approved = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: share, via: 'room-share', approved: true, meta: { roomId: 'war', scope: 'war' } })
+  assert.equal(approved.action, 'allow', JSON.stringify(approved))
+  assert.equal(sends().at(-1).args.room_id, 'war', 'approved, it names the room the link was minted for')
   // The roster sync drops friends' Bots that are no longer listed; a seat is not one (live two-home run:
   // the guest's Bot "left" the room right after the first line).
   await social.remoteBots({ fresh: true })

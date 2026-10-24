@@ -1616,9 +1616,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         }
         const attachments = await uploadAll(msg.attachments, member.bot_id)
         // A 1:1 line between two Bots that are in one open room here names that room (#881): the
-        // room is the reach the server can check, and it is the consent that lifts its own hold. Room
-        // lines themselves are the group's record and name no room: a local room has no id on the
-        // server, so naming one would be a lie it refuses.
+        // room is the reach the server can check, and it is the consent that lifts its own hold. A
+        // room line names no room here, and the room's id is not what is missing — the link's own
+        // pair names it (sendTicketShare). This path has no pair, so it has no grant to name.
         const roomId = msg.via === 'room' || msg.via === 'room-share' ? undefined : roomContextFor(msg.from, bot.handle)
         const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: bot.handle, text: msg.text, ...(attachments.length ? { attachments } : {}), ...(roomId ? { room_id: roomId } : {}) })
           .catch((error) => {

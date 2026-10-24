@@ -204,6 +204,22 @@ function remoteInRoom(state, roomId, peer) {
   })
 }
 
+// The seats each link of this room admitted: the invite's own `homes` (home → the handles it seated)
+// is written on the accept and survives even when the seat record itself did not keep the ticket.
+function linkSeats(room) {
+  const out = new Map()
+  const invites = [room?.localInvite, ...(Array.isArray(room?.localInvites) ? room.localInvites : [])]
+  for (const invite of invites) {
+    if (!invite || typeof invite.ticket !== 'string' || !invite.ticket) continue
+    for (const handles of Object.values(invite.homes ?? {})) {
+      for (const handle of Array.isArray(handles) ? handles : []) {
+        if (typeof handle === 'string' && handle && !out.has(handle)) out.set(handle, invite)
+      }
+    }
+  }
+  return out
+}
+
 // #883, #884: the only pairs a room link opens, as { from: local Bot id, to: remote handle, scope:
 // the room id Bot Social knows the room by, ticket? }. A seat in a room of this home is reached from
 // the Bot its link named; a room of another home that a ticket seated Bots of mine in is reached from
@@ -222,10 +238,21 @@ export function ticketPeers(state) {
       }
       continue
     }
+    const linkOf = linkSeats(room)
     for (const p of live) {
-      if (p.kind !== 'bot' || p.remote !== true || p.admittedBy !== 'ticket' || !p.hostBotId) continue
-      if (!(room.members ?? []).includes(p.hostBotId)) continue
-      peers.push({ from: p.hostBotId, to: handleOf(p), scope: String(room.id), ticket: p.ticket })
+      if (p.kind !== 'bot' || p.remote !== true) continue
+      // #923: a seat is a pair when a link of this room admitted it, whether the seat itself kept the
+      // ticket (`admittedBy: 'ticket'`) or the link's own record of who it admitted is the only trace
+      // — a room opened before the seat carried it must reach that seat the same way, or its group
+      // envelopes fall back to a friendship the two homes never had. A friend's Bot added by hand is
+      // named by no link and stays out.
+      const ticket = p.admittedBy === 'ticket' ? p.ticket : linkOf.get(handleOf(p))?.ticket
+      if (!ticket) continue
+      // The seat names the Bot of this home whose handle it knocked on; a seat written before that
+      // was recorded is reached from the room's own lead, which is the Bot its link was minted for.
+      const host = p.hostBotId && (room.members ?? []).includes(p.hostBotId) ? p.hostBotId : room.admin
+      if (!host || !(room.members ?? []).includes(host)) continue
+      peers.push({ from: host, to: handleOf(p), scope: String(room.id), ticket })
     }
   }
   for (const [ticket, claim] of Object.entries(state.roomClaims ?? {})) {
