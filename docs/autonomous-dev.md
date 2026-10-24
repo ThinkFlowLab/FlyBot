@@ -163,7 +163,7 @@ makes the line a self-report, so the gate guarantees presence, not truth (#633).
 
 | File | Purpose |
 | --- | --- |
-| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627); editing it is T3 |
+| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627) — a roster, not a permission: `reviewers`/`selfReview` are the permission lists (#962); editing it is T3 |
 | `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
 | `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author), unlisted login, FAIL after PASS, missing `Ran:` (a missing `Not run:` no longer refuses), a missing `Written-by:` line and one naming an unlisted writer (#627), a `selfReview` login counting only on its own pull request (#928), a `selfReview` admin on someone else's pull request (permission API, `CONTRIBUTOR` stamp), a `CONTRIBUTOR` who is neither still refused, and the workflow's shape |
 | `.github/workflows/review-gate.yml` | reports it in the job summary; `continue-on-error`, never required |

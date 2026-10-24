@@ -3,6 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { main, recordOnlyAt } from './enqueue-guard.mjs'
@@ -573,4 +574,28 @@ test('#951 INC: Reviewer: Dev, Dev is one name and prints one refusal', () => {
   const same = run({ body: 'Owner: Dev\nReviewer: Dev, Dev\nFixes #951\n', comments: [comment()] })
   assert.equal(same.ok, false)
   assert.deepEqual(selfReviewRefusals(same), ['Reviewer names "dev", who is also the Owner of this pull request'])
+})
+
+// #962: `Docs` is a team member who opens documentation pull requests, and the `Owner:` line reads the
+// `writers` roster (#953) — so that name has to be registered before such a pull request can enter the
+// queue. The test reads the real policy, not a fixture: a fixture would keep passing while the file that
+// the guard loads on main still refused the name. Registering a name grants no permission: `reviewers` and
+// `selfReview` remain the two permission lists.
+const REAL_POLICY = fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
+
+test('#962: Docs is registered in writers; Owner: Docs passes and an unknown owner still fails', () => {
+  const policy = JSON.parse(readFileSync(REAL_POLICY, 'utf8'))
+  assert.ok(policy.writers.includes('Docs'), 'writers lists Docs')
+  const pass = {
+    user: { login: 'Birfy' },
+    body: [`Verdict: PASS at ${HEAD}`, 'Written-by: Birfy', '', 'Ran: npm run verify → pass', 'Not run: smoke'].join('\n'),
+    created_at: '2026-10-24T11:30:00Z',
+    author_association: 'COLLABORATOR',
+  }
+  const ok = run({ body: 'Owner: Docs\nReviewer: Reviewer\nFixes #962\n', comments: [pass], policy: REAL_POLICY })
+  assert.equal(ok.ok, true, ok.reasons.join('; '))
+  // The negative control on the same policy: the roster is still closed, so an unregistered name is refused.
+  const refused = run({ body: 'Owner: Somebody\nReviewer: Reviewer\nFixes #962\n', comments: [pass], policy: REAL_POLICY })
+  assert.equal(refused.ok, false)
+  assert.ok(refused.reasons.includes('Owner names "somebody", who is not a writers Bot name'), refused.reasons.join('; '))
 })
