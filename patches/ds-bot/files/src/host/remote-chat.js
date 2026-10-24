@@ -36,6 +36,13 @@ export function notSentLine(error) {
     if (error?.resend === true) return 'Not sent: Bot Social paused that chat. Send your message again: it starts a new chat.'
     return 'Not sent: this chat is paused. Approve any message waiting here, or remove and re-add this friend to start a new chat.'
   }
+  // #954: the friend's Bot itself is gone (Bot Social 404 bot_not_found). One sentence that names the Bot and the
+  // next step; the social plugin already writes that sentence, so it is reused whole instead of translated again.
+  if (/bot_not_found|no such remote bot/i.test(blob)) {
+    if (/no longer shared with you/i.test(raw)) return `Not sent: ${body.replace(/^Not sent:\s*/i, "")}`
+    const who = typeof error?.handle === "string" && error.handle ? error.handle : "that Bot"
+    return `Not sent: ${who} is no longer shared with you, so messages to it cannot be delivered. Ask its owner for a new invite.`
+  }
   if (/has no grant|has not been granted|cannot message friends|cannot message their Bots/i.test(blob)) {
     return 'Not sent: none of your Bots is invited to this friend. Invite them from Bot settings.'
   }
@@ -57,7 +64,8 @@ export function notSentLine(error) {
   if (/timeout|no answer/i.test(blob)) {
     return 'Not sent: Bot Social did not answer. Try again.'
   }
-  const short = (body || raw).slice(0, 80).replace(/\.$/, '')
+  // One "Try again." only: an earlier layer may already have said it (#954), and two reads as a stutter.
+  const short = (body || raw).slice(0, 80).replace(/\.$/, '').replace(/\.?\s*Try again\.?$/i, '').replace(/\.$/, '')
   if (!short || /^[a-z0-9_]+$/i.test(short)) {
     return 'Not sent: the message could not leave. Try again.'
   }
