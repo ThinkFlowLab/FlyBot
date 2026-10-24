@@ -38,10 +38,11 @@ const SHORT = 12
 // could hold a merge. A comment from anyone else is not a conclusion: it can neither pass nor block.
 const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 
-// Logins GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR, or `selfReview`),
-// asked once via `GET /repos/{owner}/{repo}/collaborators/{username}/permission`. Metadata read
-// on the token the job already has. Fail closed: no repo, no `gh`, a 403/404, or a body that is
-// not the permission object is not admin. `permission: admin` or `permissions.admin` counts.
+// A conclusion GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR, or
+// `selfReview`), asked once via the collaborator permission API. A comment with no Tip SHA
+// and Verdict is not a conclusion, so it is not looked up. Metadata read on the token the
+// job already has. Fail closed: no repo, no `gh`, a 403/404, or a body that is not the
+// permission object is not admin. `permission: admin` or `permissions.admin` counts.
 export function adminsFor({ gh, repo, reports, policy } = {}) {
   if (!repo || typeof gh !== 'function') return []
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
@@ -51,7 +52,10 @@ export function adminsFor({ gh, repo, reports, policy } = {}) {
     if (ASSOCIATIONS.has(String(r.association ?? '').toUpperCase())) continue
     const name = String(r.login ?? '').trim()
     const key = name.toLowerCase()
-    if (!name || seen.has(key) || selfReview.has(key)) continue
+    if (!name || selfReview.has(key)) continue
+    const parsed = parseReport(r.body)
+    if (!parsed.tip || !parsed.verdict) continue
+    if (seen.has(key)) continue
     seen.add(key)
     let text
     try {

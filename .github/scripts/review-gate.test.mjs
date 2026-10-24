@@ -556,18 +556,21 @@ test('#925: repo admin qualifies a CONTRIBUTOR, and does not skip the reviewers 
   assert.match(selfPass.reason, /own author is not a reviewer/)
 })
 
-test('#925: the permission API is asked only for logins the association and selfReview do not already qualify', () => {
+test('#925: the permission API is asked only for a conclusion the association and selfReview do not already qualify', () => {
   const policy = { reviewers: ['reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer'] }
+  const verdict = `Verdict: PASS at ${HEAD}`
   const reports = [
-    { login: 'reviewer-agent', association: 'MEMBER' },
-    { login: 'Birfy', association: 'CONTRIBUTOR' },
-    { login: 'hsliuustc0106', association: 'CONTRIBUTOR' },
-    { login: 'hsliuustc0106', association: 'NONE' },
-    { login: 'writer', association: 'CONTRIBUTOR' },
-    { login: 'custom', association: 'CONTRIBUTOR' },
-    { login: 'broken', association: 'CONTRIBUTOR' },
-    { login: 'missing', association: 'CONTRIBUTOR' },
-    { login: '', association: 'NONE' },
+    { login: 'reviewer-agent', association: 'MEMBER', body: verdict },
+    { login: 'Birfy', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'chatter', association: 'CONTRIBUTOR', body: 'LGTM, ship it' },
+    { login: 'tiponly', association: 'CONTRIBUTOR', body: `Tip SHA: ${HEAD}` },
+    { login: 'hsliuustc0106', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'hsliuustc0106', association: 'NONE', body: verdict },
+    { login: 'writer', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'custom', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'broken', association: 'CONTRIBUTOR', body: verdict },
+    { login: 'missing', association: 'CONTRIBUTOR', body: verdict },
+    { login: '', association: 'NONE', body: verdict },
   ]
   const calls = []
   const gh = (_cmd, path) => {
