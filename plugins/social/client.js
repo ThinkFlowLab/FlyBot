@@ -3149,7 +3149,10 @@ window.__ModuleLoader__.load({
       useStyles()
       const [friends, setFriends] = useState(null)
       const [busy, setBusy] = useState('')
+      // #992: two slots, not one. The friend-list read and the Share click are different failures;
+      // a share error must not overwrite the list error the retry belongs to.
       const [note, setNote] = useState(null)
+      const [listError, setListError] = useState(null)
       const readSeq = useRef(0)
       const load = async () => {
         if (!bot?.id) return
@@ -3161,18 +3164,19 @@ window.__ModuleLoader__.load({
           // about a roster that no longer exists, so it is dropped, never written (#984).
           if (readSeq.current !== seq || shareListEpoch !== epoch) return
           setFriends(Array.isArray(next?.friends) ? next.friends : [])
-          // #987: the note has a source. A successful read settles the list, never a share's error.
-          setNote(previous => (previous?.source === 'list' ? null : previous))
+          // #992: a successful read settles the list error only; the share's note is its own.
+          setListError(null)
         } catch (e) {
           if (readSeq.current !== seq || shareListEpoch !== epoch) return
           // Keep the rows a successful read established: a failed read established nothing, so the
           // card says it failed and offers a retry instead of claiming nobody is left (#984).
-          setNote({ tone: 'error', source: 'list', text: errorText(e) })
+          setListError(errorText(e))
         }
       }
       useEffect(() => {
         setFriends(null)
         setNote(null)
+        setListError(null)
         void load()
         if (typeof setInterval !== 'function') return undefined
         const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, 5000)
@@ -3193,13 +3197,13 @@ window.__ModuleLoader__.load({
             ...(friend.peerBotId ? { friendBotId: friend.peerBotId } : {}),
             ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
           })
-          setNote({ tone: 'ok', source: 'share', text: result?.message || `Shared ${bot.name}.` })
+          setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })
           const next = await call('social/share-friends', { botId: bot.id }).catch(() => null)
           if (next) setFriends(Array.isArray(next.friends) ? next.friends : [])
           else setFriends(list => (list ?? []).filter(item => friendKey(item) !== friendKey(friend)))
         } catch (e) {
-          // #987: the share's failure speaks for the share; it is not the list's error.
-          setNote({ tone: 'error', source: 'share', text: errorText(e) })
+          // #992: the share's failure has its own slot; the list error and its retry stay put.
+          setNote({ tone: 'error', text: errorText(e) })
         } finally { setBusy('') }
       }
       const list = friends ?? []
@@ -3208,7 +3212,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-name' }, 'Share with a friend'),
         h('div', { className: 'fs-hint' }, `One click shares ${bot.name || 'this Bot'} with someone you already know. No invite link. They can decline; you can Revoke in People with access.`),
         loading ? h('div', { className: 'fs-hint' }, 'Loading friends…') : null,
-        !loading && list.length === 0 && note?.source !== 'list'
+        !loading && list.length === 0 && !listError
           ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
           : null,
         list.map(friend => h('div', { key: friendKey(friend), className: 'fs-line', 'data-flybot': 'share-friend-row' },
@@ -3225,10 +3229,11 @@ window.__ModuleLoader__.load({
             'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
             onClick: () => { void share(friend) },
           }, busy === friendKey(friend) ? 'Sharing…' : 'Share'))),
-        note ? h('div', { className: 'fs-status', 'data-tone': note.tone, role: 'status' }, note.text,
-          note.tone === 'error' && note.source === 'list'
-            ? h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, 'Try again')
-            : null) : null)
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone, 'data-flybot': 'share-note', role: 'status' }, note.text) : null,
+        listError
+          ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'share-list-error', role: 'status' }, listError,
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, 'Try again'))
+          : null)
     }
 
     // A friend chat Bot Social paused (#404): a quiet notice, no buttons. There is no turn limit and

@@ -11083,3 +11083,88 @@ test('#987: the empty sentence is suppressed by a list error, not by a share err
   await panel.settle()
   assert.equal(panel.has('share-with-friend-empty'), false, 'a list error does suppress it')
 })
+
+// #TBD: two slots, not one. A failed share and a failed friend-list read are different failures; a
+// share error must not overwrite the list error the retry belongs to.
+test('#992: a failed share does not overwrite the list error', async () => {
+  let readFails = false
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') {
+      if (readFails) throw new Error('social/share-friends: no answer from Bot Social')
+      return { friends: [shareCoder] }
+    }
+    if (endpoint === 'social/share-with-friend') throw new Error('social/share-with-friend: Bot Social said no')
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  assert.ok(panel.has('share-friend-row'))
+  readFails = true
+  panel.poll()
+  await panel.settle()
+  assert.ok(panel.has('share-list-retry'), 'the failed read offers its retry')
+  await panel.click('share-friend')
+  await panel.settle()
+  assert.match(panel.text(), /no answer from Bot Social/, 'the list error stays after a failed share')
+  assert.match(panel.text(), /Bot Social said no/, 'the share error is shown too')
+  assert.ok(panel.has('share-list-retry'), 'and its retry is still there')
+  readFails = false
+  await panel.click('share-list-retry')
+  await panel.settle()
+  assert.equal(panel.has('share-list-retry'), false, 'a successful read clears the list error')
+  assert.match(panel.text(), /Bot Social said no/, 'but never the share error')
+})
+
+test('#992: a failed read does not overwrite the share error either', async () => {
+  let readFails = false
+  let friends = [shareCoder]
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') {
+      if (readFails) throw new Error('social/share-friends: no answer from Bot Social')
+      return { friends }
+    }
+    if (endpoint === 'social/share-with-friend') throw new Error('social/share-with-friend: Bot Social said no')
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  await panel.click('share-friend')
+  await panel.settle()
+  readFails = true
+  panel.poll()
+  await panel.settle()
+  assert.match(panel.text(), /Bot Social said no/, 'the share error survives a later failed read')
+  assert.match(panel.text(), /no answer from Bot Social/, 'and the read failure is named too')
+  assert.ok(panel.has('share-list-retry'), 'the retry only the list read gets')
+})
+
+test('#992: a successful share leaves the list error and its retry alone', async () => {
+  let readFails = false
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') {
+      if (readFails) throw new Error('social/share-friends: no answer from Bot Social')
+      return { friends: [shareCoder] }
+    }
+    if (endpoint === 'social/share-with-friend') return { message: 'Shared Writer with Coder (Bob).' }
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  readFails = true
+  panel.poll()
+  await panel.settle()
+  assert.ok(panel.has('share-list-retry'))
+  await panel.click('share-friend')
+  await panel.settle()
+  assert.match(panel.text(), /Shared Writer with Coder \(Bob\)\./, 'the share reports its own outcome')
+  assert.match(panel.text(), /no answer from Bot Social/, 'and leaves the list error on screen')
+  assert.ok(panel.has('share-list-retry'), 'with its retry')
+})
+
+test('#992: a fresh mount starts with no note of either kind', async () => {
+  const host = sharingHost(async (endpoint) => (endpoint === 'social/share-friends' ? { friends: [shareCoder] } : {}))
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  assert.equal(panel.has('share-note'), false)
+  assert.equal(panel.has('share-list-error'), false)
+})
