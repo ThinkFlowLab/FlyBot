@@ -16,7 +16,7 @@ test('plan: create missing, keep equal, update changed, ignore others', () => {
 test('labels.json: valid, unique, agent-ready is the approval label', () => {
   const names = wanted.map((l) => l.name.toLowerCase())
   // #702 retired the approval label; #739 added `pass`, which records that a verdict was a PASS.
-  assert.equal(wanted.length, 13, 'the 13 live labels')
+  assert.equal(wanted.length, 16, 'the 16 live labels')
   assert.equal(new Set(names).size, names.length)
   for (const l of wanted) {
     assert.match(l.color, /^[0-9A-F]{6}$/i)

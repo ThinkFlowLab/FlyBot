@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { extractIssuePr, foldCalls, missingUsageFields, withUsageFields } from '../src/host/usage.js'
+import { extractIssuePr, foldCalls, install as installUsage, missingUsageFields, withUsageFields } from '../src/host/usage.js'
 
 const header = (provider, model) => ({ type: 'request/header', data: { header: { config: { provider, model } }, reason: 'change' } })
 const message = (turn, step, usage, time = 0) => ({ type: 'assistant/message', time, data: { turn, step, message: { role: 'assistant', content: [] }, stream: [], usage } })
@@ -44,6 +44,40 @@ test('foldCalls counts tool/call events and wall clock from the attempt', () => 
   assert.equal(rows[0].toolCalls, 2)
   assert.equal(rows[0].wallMs, 500)
   assert.equal(rows[0].issuePr, '#903')
+})
+
+test('foldCalls records a routed harness and leaves the resume state unchanged', () => {
+  const { rows, state } = foldCalls([
+    { type: 'turn/start', time: 1000, data: { turn: 1 } },
+    header('deepseek', 'v4-flash'),
+    { type: 'user', time: 1001, data: { text: 'see PR #908 for #874' } },
+    { type: 'tool/call', time: 1100, data: { name: 'read_file' } },
+    message(1, 0, usage(10, 2), 1600),
+  ], { harness: 'lite' })
+  assert.equal(rows.length, 1)
+  assert.deepEqual(missingUsageFields(rows[0]), [])
+  assert.equal(rows[0].harness, 'lite')
+  assert.equal(rows[0].issuePr, 'PR #908')
+  assert.equal(rows[0].toolCalls, 1)
+  assert.equal(rows[0].wallMs, 600)
+  assert.deepEqual(state, { provider: 'deepseek', model: 'v4-flash', retry: null })
+  assert.throws(() => foldCalls([message(1, 0, usage(1, 1), 1)], { harness: 'turbo' }), /unknown harness/)
+})
+
+test('noteUsageHarness keeps a triage label and clears back to default', () => {
+  const rt = {
+    home: '/tmp/unused-usage-home',
+    state: { bots: {}, rooms: {}, agents: {} },
+    ctx: { effect() {}, on() {} },
+    warn() {},
+  }
+  installUsage(rt)
+  assert.equal(rt.noteUsageHarness('s1', ['harness:medium']), 'medium')
+  assert.equal(rt.noteUsageHarness('s1', { labels: [{ name: 'harness:heavy' }] }), 'heavy')
+  assert.equal(rt.noteUsageHarness('s1', 'default'), 'default')
+  assert.equal(rt.noteUsageHarness('s1', ['agent-ready']), 'default')
+  assert.throws(() => rt.noteUsageHarness('s1', 'turbo'), /unknown harness/)
+  assert.throws(() => rt.noteUsageHarness('s1', ['harness:lite', 'harness:heavy']), /one harness tier label/)
 })
 
 test('extractIssuePr prefers PR refs over bare issue numbers', () => {

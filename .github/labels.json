@@ -63,5 +63,20 @@
     "name": "pass",
     "color": "006B75",
     "description": "Reviewer PASS verdict at the merged head; set by pass-label, never removed"
+  },
+  {
+    "name": "harness:lite",
+    "color": "BFDADC",
+    "description": "Triage routes this issue to the Lite harness tier (#874)"
+  },
+  {
+    "name": "harness:medium",
+    "color": "F9D0C4",
+    "description": "Triage routes this issue to the Medium harness tier (#874)"
+  },
+  {
+    "name": "harness:heavy",
+    "color": "6F42C1",
+    "description": "Triage routes this issue to the Heavy harness tier (#874)"
   }
 ]

@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { resolveHarness, routeHarness } from './harness.js'
 
 const LEDGER_VERSION = 3
 const PAGE_MESSAGES = 400
@@ -107,6 +108,9 @@ function noteIssuePr(state, event) {
 // request header named. A fork's events up to its inherited cut are the parent's, so
 // the cut drops the rows before it (`reset`).
 export function foldCalls(events, from = {}) {
+  // A routed tier is a row field. It stays out of `state`: marks.fold is the
+  // resume cursor (provider, model, retry) and a pre-Step-0 mark has no harness.
+  const harness = typeof from.harness === 'string' && from.harness !== '' ? resolveHarness(from.harness).id : undefined
   const state = {
     provider: from.provider ?? '',
     model: from.model ?? '',
@@ -167,7 +171,7 @@ export function foldCalls(events, from = {}) {
           toolCalls: state.turnTools,
           wallMs,
           issuePr: state.issuePr,
-        }))
+        }, { harness }))
         break
       }
       default:
@@ -335,6 +339,19 @@ export function install(rt) {
     if (normalized === '') issuePrBySession.delete(sessionId)
     else issuePrBySession.set(sessionId, normalized)
   }
+  // Tier chosen at triage for this Session. Unset stays on the process default.
+  const harnessBySession = new Map()
+  const noteUsageHarness = (sessionId, ref) => {
+    if (typeof sessionId !== 'string' || sessionId === '') return 'default'
+    if (ref === undefined || ref === '' || ref === 'default') {
+      harnessBySession.delete(sessionId)
+      return 'default'
+    }
+    const id = typeof ref === 'string' ? resolveHarness(ref).id : routeHarness(ref).id
+    if (id === 'default') harnessBySession.delete(sessionId)
+    else harnessBySession.set(sessionId, id)
+    return harnessBySession.get(sessionId) ?? 'default'
+  }
   function openLedger() {
     if (ledger !== undefined) return Promise.resolve(ledger)
     const job = opening ??= (async () => {
@@ -469,7 +486,12 @@ export function install(rt) {
     }
     events.reverse()
     if (events.length > 0 && events[0].seq !== from + 1) throw new Error(`the history of ${sessionId} came back with a gap`)
-    const fold = foldCalls(events, { ...(mark?.fold ?? {}), issuePr: issuePrBySession.get(sessionId) ?? '' })
+    const notedHarness = harnessBySession.get(sessionId)
+    const fold = foldCalls(events, {
+      ...(mark?.fold ?? {}),
+      issuePr: issuePrBySession.get(sessionId) ?? '',
+      ...(notedHarness && { harness: notedHarness }),
+    })
     ledger.commit(sessionId, {
       rows: fold.rows.map(row => withUsageFields({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' }, { issuePr: row.issuePr || issuePrBySession.get(sessionId) || '' })),
       reset: fold.reset,
@@ -699,20 +721,23 @@ export function install(rt) {
           yield chunk
         }
       } finally {
-        if (usage !== undefined) record({
-          sessionId: tag?.sessionId ?? options.sessionId,
-          kind: tag?.kind ?? options.purpose ?? 'other',
-          provider: options.provider,
-          model: options.model,
-          usage,
-          issuePr: tag?.issuePr ?? options.issuePr ?? issuePrBySession.get(tag?.sessionId ?? options.sessionId) ?? '',
-          toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : (Number.isFinite(options.toolCalls) ? options.toolCalls : 0),
-          wallMs: Math.max(0, Date.now() - started),
-          harness: tag?.harness ?? rt.harness?.id ?? 'default',
-        })
+        if (usage !== undefined) {
+          const sessionKey = tag?.sessionId ?? options.sessionId
+          record({
+            sessionId: sessionKey,
+            kind: tag?.kind ?? options.purpose ?? 'other',
+            provider: options.provider,
+            model: options.model,
+            usage,
+            issuePr: tag?.issuePr ?? options.issuePr ?? issuePrBySession.get(sessionKey) ?? '',
+            toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : (Number.isFinite(options.toolCalls) ? options.toolCalls : 0),
+            wallMs: Math.max(0, Date.now() - started),
+            harness: tag?.harness ?? harnessBySession.get(sessionKey) ?? rt.harness?.id ?? 'default',
+          })
+        }
       }
     })()
   })
 
-  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest, noteUsageIssuePr })
+  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest, noteUsageIssuePr, noteUsageHarness })
 }

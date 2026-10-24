@@ -4488,16 +4488,18 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
 +++ b/src/host/usage.js
-@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto'
+@@ -13,8 +13,9 @@
+ import { randomUUID } from 'node:crypto'
  import { mkdir, unlink } from 'node:fs/promises'
  import { join } from 'node:path'
++import { resolveHarness, routeHarness } from './harness.js'
  
 -const LEDGER_VERSION = 2
 +const LEDGER_VERSION = 3
  const PAGE_MESSAGES = 400
  const PAGE_TIMEOUT_MS = 20_000
  const SCAN_TIMEOUT_MS = 180_000
-@@ -45,30 +45,104 @@ const tokensOf = usage => ({
+@@ -45,30 +45,107 @@ const tokensOf = usage => ({
    output: count(usage.outputTokens),
  })
  
@@ -4564,6 +4566,9 @@ diff --git a/src/host/usage.js b/src/host/usage.js
  // the cut drops the rows before it (`reset`).
  export function foldCalls(events, from = {}) {
 -  const state = { provider: from.provider ?? '', model: from.model ?? '', retry: from.retry ?? null }
++  // A routed tier is a row field. It stays out of `state`: marks.fold is the
++  // resume cursor (provider, model, retry) and a pre-Step-0 mark has no harness.
++  const harness = typeof from.harness === 'string' && from.harness !== '' ? resolveHarness(from.harness).id : undefined
 +  const state = {
 +    provider: from.provider ?? '',
 +    model: from.model ?? '',
@@ -4619,7 +4624,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
 +          toolCalls: state.turnTools,
 +          wallMs,
 +          issuePr: state.issuePr,
-+        }))
++        }, { harness }))
          break
        }
        default:
@@ -4665,7 +4670,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
      return {
        mark(session) {
          const row = getMark.get(session)
-@@ -233,6 +233,15 @@ export function install(rt) {
+@@ -233,6 +233,28 @@ export function install(rt) {
    let opening
    // Metered calls that finish before the ledger opens.
    const early = []
@@ -4677,6 +4682,19 @@ diff --git a/src/host/usage.js b/src/host/usage.js
 +    const normalized = extractIssuePr(typeof ref === 'string' ? ref : '') || (typeof ref === 'string' ? ref.trim() : '')
 +    if (normalized === '') issuePrBySession.delete(sessionId)
 +    else issuePrBySession.set(sessionId, normalized)
++  }
++  // Tier chosen at triage for this Session. Unset stays on the process default.
++  const harnessBySession = new Map()
++  const noteUsageHarness = (sessionId, ref) => {
++    if (typeof sessionId !== 'string' || sessionId === '') return 'default'
++    if (ref === undefined || ref === '' || ref === 'default') {
++      harnessBySession.delete(sessionId)
++      return 'default'
++    }
++    const id = typeof ref === 'string' ? resolveHarness(ref).id : routeHarness(ref).id
++    if (id === 'default') harnessBySession.delete(sessionId)
++    else harnessBySession.set(sessionId, id)
++    return harnessBySession.get(sessionId) ?? 'default'
 +  }
    function openLedger() {
      if (ledger !== undefined) return Promise.resolve(ledger)
@@ -4690,12 +4708,17 @@ diff --git a/src/host/usage.js b/src/host/usage.js
            return sqliteLedger(DatabaseSync, path)
          } catch (error) {
            if (fresh || !damaged(error)) {
-@@ -367,9 +367,9 @@ export function install(rt) {
+@@ -367,9 +367,14 @@ export function install(rt) {
      }
      events.reverse()
      if (events.length > 0 && events[0].seq !== from + 1) throw new Error(`the history of ${sessionId} came back with a gap`)
 -    const fold = foldCalls(events, mark?.fold)
-+    const fold = foldCalls(events, { ...(mark?.fold ?? {}), issuePr: issuePrBySession.get(sessionId) ?? '' })
++    const notedHarness = harnessBySession.get(sessionId)
++    const fold = foldCalls(events, {
++      ...(mark?.fold ?? {}),
++      issuePr: issuePrBySession.get(sessionId) ?? '',
++      ...(notedHarness && { harness: notedHarness }),
++    })
      ledger.commit(sessionId, {
 -      rows: fold.rows.map(row => ({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' })),
 +      rows: fold.rows.map(row => withUsageFields({ ...row, key: `${sessionId}#${row.key}`, session: sessionId, kind: 'turn' }, { issuePr: row.issuePr || issuePrBySession.get(sessionId) || '' })),
@@ -4730,28 +4753,31 @@ diff --git a/src/host/usage.js b/src/host/usage.js
        try {
          for await (const chunk of next()) {
            if (chunk?.type === 'usage' && chunk.usage && typeof chunk === 'object' && !counted.has(chunk)) {
-@@ -588,10 +588,20 @@ export function install(rt) {
+@@ -588,10 +588,23 @@ export function install(rt) {
            yield chunk
          }
        } finally {
 -        if (usage !== undefined) record({ sessionId: tag?.sessionId ?? options.sessionId, kind: tag?.kind ?? options.purpose ?? 'other', provider: options.provider, model: options.model, usage })
-+        if (usage !== undefined) record({
-+          sessionId: tag?.sessionId ?? options.sessionId,
-+          kind: tag?.kind ?? options.purpose ?? 'other',
-+          provider: options.provider,
-+          model: options.model,
-+          usage,
-+          issuePr: tag?.issuePr ?? options.issuePr ?? issuePrBySession.get(tag?.sessionId ?? options.sessionId) ?? '',
-+          toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : (Number.isFinite(options.toolCalls) ? options.toolCalls : 0),
-+          wallMs: Math.max(0, Date.now() - started),
-+          harness: tag?.harness ?? rt.harness?.id ?? 'default',
-+        })
++        if (usage !== undefined) {
++          const sessionKey = tag?.sessionId ?? options.sessionId
++          record({
++            sessionId: sessionKey,
++            kind: tag?.kind ?? options.purpose ?? 'other',
++            provider: options.provider,
++            model: options.model,
++            usage,
++            issuePr: tag?.issuePr ?? options.issuePr ?? issuePrBySession.get(sessionKey) ?? '',
++            toolCalls: Number.isFinite(tag?.toolCalls) ? tag.toolCalls : (Number.isFinite(options.toolCalls) ? options.toolCalls : 0),
++            wallMs: Math.max(0, Date.now() - started),
++            harness: tag?.harness ?? harnessBySession.get(sessionKey) ?? rt.harness?.id ?? 'default',
++          })
++        }
        }
      })()
    })
  
 -  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest })
-+  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest, noteUsageIssuePr })
++  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest, noteUsageIssuePr, noteUsageHarness })
  }
 diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 --- a/src/shared/mentions.js
