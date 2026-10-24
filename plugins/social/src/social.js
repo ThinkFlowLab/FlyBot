@@ -2334,7 +2334,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // Answer it as a result: which Bot it is (Bot Social's 409 names no Bot, so the public invite info
   // `GET /v1/invites/{code}` does; it needs no token), and which hidden or declined Bots really came
   // back into the list. Unhiding stays scoped to the invite's Bot/peer home, never every remote.
-  async function alreadyHave(mapped, code, before) {
+  async function alreadyHave(mapped, code, before, joining = {}) {
     let bot = mapped.bot?.handle ? mapped.bot : undefined
     let owner = cleanText(mapped.peer?.owner_display_name || mapped.peer?.display_name)
     if (!bot && typeof client.inviteInfo === 'function') {
@@ -2348,6 +2348,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         warn('could not look up the invite after relationship_exists', error)
       }
     }
+    // #1000: a re-accept restores only the direction the invite sent, because Bot Social applies neither
+    // half of the invite again on a relationship that already exists. The half this side can create is the
+    // grant an accepted invite would have made; without it the inviter's first line to this Bot is held as
+    // an unknown recipient. Best effort: the friendship itself is already active either way.
+    const sharedBack = await restoreAcceptedInviteGrant({ bot: joining.bot, member: joining.member, inviter: bot })
     const restored = []
     try {
       const result = await client.callTool('list_remote_bots', { home: home.id })
@@ -2385,6 +2390,29 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       ...(botName ? { botName } : {}),
       ...(owner ? { ownerName: owner } : {}),
       restored,
+      ...(sharedBack ? { sharedBack: true, sharedBackBotName: joining.bot?.name } : {}),
+    }
+  }
+  // #1000: the grant an accepted invite makes on the joining side, asked for explicitly when the invite
+  // lands on a relationship that already exists (relationship_exists, or a `regranted` join). Bot Social
+  // applies the inviter's half only on a fresh relationship, so a re-accept left this home's Bot ungranted
+  // and the inviter's line to it held as an unknown recipient. A server without the tool (or with an older
+  // REST route) answers `unavailable`: the accept already happened, so that is logged, never thrown.
+  async function restoreAcceptedInviteGrant({ bot, member, inviter, inviterHome } = {}) {
+    if (!home || !bot || !member) return false
+    if (typeof api.grantBotToFriend !== 'function') return false
+    const peerId = cleanText(inviter?.bot_id)
+    const peerHome = norm(inviterHome || (inviter?.home ? inviter.home : '') || (inviter?.handle ? homeOfPeer(inviter.handle) : ''))
+    // The server resolves the friend by bot id, or by the home for a server that only knows that.
+    if (!peerId && (!peerHome || peerHome === '@')) return false
+    try {
+      const result = await api.grantBotToFriend({ botId: member.bot_id, ...(peerId ? { friendBotId: peerId } : {}), ...(!peerId ? { friendHome: peerHome } : {}) })
+      if (result?.unavailable) return false
+      await syncOutgoingGrants({ only: bot.id }).catch(error => warn('grants not synced after a re-accept', error))
+      return true
+    } catch (error) {
+      warn('the accepted invite could not be granted back', error)
+      return false
     }
   }
   // Joining a friend's invite (code or link). If the server asks this owner to approve
@@ -2398,6 +2426,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const configuredHost = () => { try { return new URL(String(config.server)).host.toLowerCase() } catch { return '' } }
     let from = config.botId ? { from_bot_id: config.botId } : {}
     let joinedAs
+    // #1000: the Bot that accepts the invite, kept outside the `if` so a re-accept (the relationship already
+    // exists) can still grant its own Bot back — the half of the invite only this side can create.
+    let joiningBot
+    let joiningMember
     if (home) {
       const team = flybot.bot.list()
       const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : team.find(item => item.isMain) ?? team[0]
@@ -2406,6 +2438,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
       from = { from_bot_id: member.bot_id }
       joinedAs = { botId: bot.id, botName: bot.name, handle: norm(member.handle) }
+      joiningBot = bot
+      joiningMember = member
     }
     const before = new Set(listedRemoteBots().map(bot => bot.handle))
     let joined
@@ -2413,7 +2447,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       joined = await client.callTool('join_invite', { code: parsed.code, ...from })
     } catch (error) {
       const mapped = mapJoinInviteError(error, { foreignHost: Boolean(parsed.host && configuredHost() && parsed.host !== configuredHost()) })
-      if (mapped.code === 'relationship_exists' && home) return alreadyHave(mapped, parsed.code, before)
+      if (mapped.code === 'relationship_exists' && home) return alreadyHave(mapped, parsed.code, before, { bot: joiningBot, member: joiningMember })
       throw mapped
     }
     // Bot Social answers with `inviter` = the invited Bot itself (a member handle, @chief.bob.home) and
@@ -2427,6 +2461,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // sharing that Bot back and the re-filter drops the shared Bot until the next refresh (#228).
     if (offeredHandle) rememberInbound(offeredHandle)
     if (joined.relationship_id) rememberJoined(joined.relationship_id)
+    // #1000: a re-accept lands on a relationship that already exists, and Bot Social does not apply the
+    // invite's two halves again — the joining home's Bot is left ungranted, so the other side cannot reach
+    // it and its own first line is held as an unknown recipient. Accepting an invite is where both
+    // directions come from, so the half only this side can create is asked for explicitly.
+    const sharedBack = joined.regranted === true && joined.status === 'active'
+      ? await restoreAcceptedInviteGrant({ bot: joiningBot, member: joiningMember, inviter: offered, inviterHome: joined.inviter?.handle ? homeOfPeer(joined.inviter.handle) : undefined })
+      : false
     // Recorded before the approval round trip below: if that answer is lost after Bot Social applied
     // it, the relationship can still become active, and a retry answers relationship_exists without
     // reaching this point again (Codex P2 on #387).
@@ -2465,6 +2506,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       ...(inviterBotName ? { inviterBotName } : {}),
       ...(joinedAs ? { joinedAs } : {}),
       ...(joined.regranted ? { regranted: true } : {}),
+      ...(sharedBack ? { sharedBack: true, sharedBackBotName: joiningBot?.name } : {}),
     }
   }))
   disposers.push(flybot.api.handle('social/respond', async ({ relationshipId, decision } = {}) => {

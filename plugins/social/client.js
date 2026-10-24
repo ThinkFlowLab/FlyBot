@@ -2891,6 +2891,12 @@ window.__ModuleLoader__.load({
             const back = (r.restored ?? []).map(bot => botWithOwner(bot.name, bot.owner)).filter(Boolean)
             if (back.length) return `${back.join(' and ')} ${back.length > 1 ? 'are' : 'is'} back in your list.`
             const have = botWithOwner(r.botName, r.ownerName)
+            // #1000: a re-accept completes the pair now, so the line says what the click did instead of
+            // leaving the other direction silently absent.
+            if (r.sharedBack) {
+              const mine = r.sharedBackBotName || 'Your Bot'
+              return { tone: 'info', text: `${have ? `You already have ${have}. ` : ''}${mine} is shared back, so they can reach you too.` }
+            }
             return { tone: 'info', text: have ? `You already have ${have}.` : ALREADY_HAVE }
           }
           const who = r.inviterName ?? r.inviter ?? 'Your friend'
@@ -2898,7 +2904,8 @@ window.__ModuleLoader__.load({
           if (r.status === 'active') {
             // A join that brought no Bot says so instead of claiming one was shared, and stays open.
             if (shared) accepted = r
-            return shared ? `${who} shared ${shared} with you.` : `Joined ${who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.`
+            const backNote = r.sharedBack ? ` ${r.sharedBackBotName || 'Your Bot'} is shared back, so they can reach you too.` : ''
+            return shared ? `${who} shared ${shared} with you.${backNote}` : `Joined ${who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.${backNote}`
           }
           return `Request sent to ${who}. They show up here once they accept.`
         })

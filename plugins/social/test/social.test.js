@@ -5862,6 +5862,9 @@ test('#496: the panel shows an already-had Bot as neutral text, a restored one a
   const lastStatus = setters => { const value = setters.filter(([index, item]) => index === 2 && item !== null).at(-1)?.[1]; return value && { tone: value.tone, text: value.text } }
   for (const [reply, tone, expected] of [
     [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [] }, 'info', 'You already have Chief (SelfA1233).'],
+    // #1000: the re-accept also shares the joining Bot back, and the neutral line says it.
+    [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', 'You already have Chief (SelfA1233). Chief is shared back, so they can reach you too.'],
+    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', "Chief is shared back, so they can reach you too."],
     [{ alreadyHave: true, status: 'active', restored: [] }, 'info', "You already have this friend's Bot."],
     [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [{ handle: '@chief.selfa1233.home', name: 'Chief', owner: 'SelfA1233' }] }, 'ok', 'Chief (SelfA1233) is back in your list.'],
   ]) {
@@ -6719,6 +6722,9 @@ test('#343 / #499: an accepted invite shows its result, then the panel closes on
   const lastStatus = setters => setters.filter(([index, value]) => index === 2 && value !== null).at(-1)?.[1]
   for (const [reply, expected, closes] of [
     [{ status: 'active', inviter: '@helper.alice.home', inviterName: 'Alice', inviterBotName: 'Helper' }, /^Alice shared Helper with you\.$/, true],
+    // #1000: a re-accept shares the joining Bot back, so the line says so instead of leaving it silent.
+    [{ status: 'active', inviter: '@helper.alice.home', inviterName: 'Alice', inviterBotName: 'Helper', sharedBack: true, sharedBackBotName: 'Chief' }, /^Alice shared Helper with you\. Chief is shared back, so they can reach you too\.$/, true],
+    [{ status: 'active', inviterName: 'Alice', sharedBack: true, sharedBackBotName: 'Chief' }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*Chief is shared back, so they can reach you too\.$/, false],
     [{ status: 'active', inviterName: 'Alice' }, /^Joined Alice's invite, but their Bot hasn't loaded yet/, false],
     [{ status: 'pending_target', inviterName: 'Alice' }, /^Request sent to Alice/, false],
   ]) {
@@ -11534,4 +11540,96 @@ test('#1005: the client refuses a stored code that is not six digits, on the car
   assert.equal(draw(room('1234567'), '').some(n => n.props['data-flybot'] === 'face-wait-code-digits'), false, 'no truncated number')
   const six = draw(room('123456'), '')
   assert.ok(six.some(n => n.props['data-flybot'] === 'face-wait-code-digits' && n.children.includes('123456')))
+})
+
+// #1000: a re-accept lands on a relationship that already exists, so Bot Social applies neither half of the
+// invite again. Accepting an invite is where both directions come from ("chat both ways, accepted on join"),
+// so the joining home asks for the grant an accepted invite would have made; without it the inviter's first
+// line to this Bot is held as an unknown recipient (SelfTest checklist 2b on d2578496).
+test('#1000: accepting a re-invite grants the joining Bot back, so the pair is two-way again', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.grant_bot_to_friend = a => { granted.push(a); return { grant_id: 'g-back', status: 'active' } }
+  server.tools.list_bot_grants = () => ({ grants: granted.length ? [{ id: 'g-back', grantee: '@chief.bob.home', name: 'Chief (@chief.bob.home)', relationship_id: 'r1' }] : [] })
+  const wrapped = async (url, init = {}) => {
+    if (/\/v1\/invites\/[^/]+$/.test(String(url)) && (init.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify({ code: 'LIVE1', status: 'active', inviter: { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' } }), { status: 200 })
+    }
+    const body = String(url).endsWith('/mcp') && init.body ? JSON.parse(init.body) : undefined
+    if (body?.params?.name === 'join_invite') {
+      const text = JSON.stringify({ code: 'relationship_exists', message: 'you are already connected to this Bot (or a request is pending)', relationship_id: 'r1' })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text }] } }), { status: 200 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: wrapped }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: wrapped }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const exists = (await call('flybot/social/join-invite', { code: 'https://s/i/LIVE1' })).value
+  assert.equal(exists.alreadyHave, true)
+  assert.equal(exists.sharedBack, true, 'the re-accept completes the pair')
+  assert.equal(exists.sharedBackBotName, 'Chief')
+  assert.equal(granted.length, 1, 'one grant, the half an accepted invite would have made')
+  assert.equal(granted[0].friend_bot_id, 'x1', 'granted to the Bot the invite named')
+  const joinedMember = [...server.members.values()].find(item => item.bot_id === granted[0].bot_id)
+  assert.equal(joinedMember?.handle, '@chief.danyang.home', 'the joining Bot, never the home')
+  // The grant is on the joining Bot, so People with access lists the inviter and can Revoke it (#995).
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(access.grants.length, 1)
+  assert.equal(access.grants[0].grantIds.includes('g-back'), true)
+})
+
+// The other shape of the same re-accept: Bot Social folds the invite into the relationship that already
+// exists and answers `regranted: true`. Same asymmetry, same half to restore.
+test('#1000: a regranted join also grants the joining Bot back', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.grant_bot_to_friend = a => { granted.push(a); return { grant_id: 'g-back', status: 'active' } }
+  server.tools.join_invite = () => ({ relationship_id: 'r1', status: 'active', regranted: true, inviter: { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' }, awaiting: null })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: server.fetch }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const joined = (await call('flybot/social/join-invite', { code: 'B2', botId: chief.id })).value
+  assert.equal(joined.regranted, true)
+  assert.equal(joined.sharedBack, true)
+  assert.equal(joined.sharedBackBotName, 'Chief')
+  assert.deepEqual(granted.map(a => a.friend_bot_id), ['x1'])
+})
+
+// A server that cannot grant back (an older Bot Social) must not fail the accept: the friendship is already
+// active and the neutral sentence still shows — the same tolerance the share path has (#563).
+test('#1000: an older server that cannot grant back never fails the accept', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.grant_bot_to_friend = () => { throw Object.assign(new Error('MCP error -32602: Tool grant_bot_to_friend not found'), { code: 'mcp' }) }
+  server.tools.join_invite = () => ({ relationship_id: 'r1', status: 'active', regranted: true, inviter: { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' }, awaiting: null })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: server.fetch }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const joined = await call('flybot/social/join-invite', { code: 'B2' })
+  assert.equal(joined.ok, true, joined.error?.message)
+  assert.equal(joined.value.regranted, true)
+  assert.equal(joined.value.sharedBack, undefined)
 })
