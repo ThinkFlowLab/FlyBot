@@ -101,12 +101,14 @@ diff --git a/src/client/characters.js b/src/client/characters.js
 diff --git a/src/client/mark.js b/src/client/mark.js
 --- a/src/client/mark.js
 +++ b/src/client/mark.js
-@@ -1,8 +1,9 @@
+@@ -1,8 +1,11 @@
  import { createElement as h, useEffect, useRef, useState } from 'react'
 -import { fnv1a, lookOf, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup } from './characters.js'
 +import { fnv1a, lookOf, lookAvoidingLocals, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup, defaultColor } from './characters.js'
 +import { inkFill } from './inks.js'
  import { t } from './i18n.js'
++import { clusterOrder } from './cluster-order.js'
++import { rosterBot } from './sources.js'
  
 -export { colorOf, lookOf } from './characters.js'
 +export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
@@ -172,22 +174,23 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  export function AdminStar() {
    return h('span', { className: 'bt-admin-star', role: 'img', 'aria-label': t('Admin') }, h(StarIcon, { size: 7 }))
  }
-@@ -130,10 +130,42 @@ function clusterSeats(count, frame) {
+@@ -130,10 +130,43 @@ function clusterSeats(count, frame) {
    return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]]
  }
  
 +export function roomAvatarPeople(room, roster) {
-+  const members = (room?.members ?? []).map(id => roster?.byId?.[id]).filter(Boolean)
++  const members = (room?.members ?? []).map(id => rosterBot(roster, id)).filter(Boolean)
 +  const seen = new Set(members.map(bot => bot.id))
 +  const remotes = []
 +  for (const p of room?.participants ?? []) {
 +    if (p.leftSeq !== undefined) continue
 +    if (p.kind === 'human') continue
 +    if (!p.remote && p.id && seen.has(p.id)) continue
-+    if (!p.remote && p.id && roster?.byId?.[p.id]) {
-+      if (!seen.has(p.id)) {
-+        members.push(roster.byId[p.id])
-+        seen.add(p.id)
++    const known = !p.remote && p.id ? rosterBot(roster, p.id) : undefined
++    if (known) {
++      if (!seen.has(known.id)) {
++        members.push(known)
++        seen.add(known.id)
 +      }
 +      continue
 +    }
@@ -214,7 +217,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 -  const members = room.members.map(id => roster.byId[id]).filter(Boolean)
 -  // A group with one Bot left shows the user beside it.
 -  const people = members.length === 1 ? [members[0], null] : members
-+  const people = roomAvatarPeople(room, roster)
++  const people = clusterOrder(roomAvatarPeople(room, roster))
    const seat = (bot, seatSize, key) => (bot
      ? h(BotMark, { key, bot, size: seatSize })
      : h('span', { key, className: 'bt-cluster-you', style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } }))

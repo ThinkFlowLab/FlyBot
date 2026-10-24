@@ -1,13 +1,13 @@
 import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
 import { call } from './api.js'
-import { isHex, inkText, paintCss } from './inks.js'
-import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
+import { isHex } from './inks.js'
+import { SHAPES, markupCache } from './characters.js'
 import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
 import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
-import { MENTION_ORIGIN, currentPart, landingPart, setPluginTools } from './text.js'
+import { currentPart, landingPart, setPluginTools } from './text.js'
+import { mentionCss } from './mention-style.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 import { installBrandChrome, installTabTitle } from './brand.js'
-import { lookOf } from './mark.js'
 import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
 import { HeaderPill } from './header.js'
 import { installHeaderEffects } from './header-effects.js'
@@ -290,17 +290,7 @@ export function apply(ctx) {
     const style = installStyles('', 'mentions')
     let last = ''
     const render = () => {
-      const next = roster.getSnapshot().bots.map((bot) => {
-        const anchor = `.bt-bubble a[href="${MENTION_ORIGIN}${bot.id}"]`
-        const chip = /\s/.test(bot.name) ? '' : `[class*="_userRow"] [data-ref-chip="file"][title="@${bot.name.replace(/["\\]/g, '\\$&')}" i]`
-        const look = lookOf(bot)
-        const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`
-        const mark = look.image
-          ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}`
-          : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`
-        const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : ''
-        return `${anchor}{color:${inkText(look.color)}}${chipBase}${mark}`
-      }).join('\n')
+      const next = mentionCss(roster.getSnapshot().bots)
       if (next !== last) style.textContent = last = next
     }
     render()

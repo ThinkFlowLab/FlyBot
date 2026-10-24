@@ -30,8 +30,17 @@ export function indexRoster(value) {
   setLocalBots(value.bots)
   setPluginTools(value.pluginTools)
   const byId = {}
+  // A remote chat must not replace a local Bot's id or session (#963). Nobody
+  // takes another Bot's own id; the same Bot may refresh its own keys.
+  const claim = (bot, id) => {
+    if (id === undefined || id === null || id === '') return
+    const prev = byId[id]
+    if (prev && prev !== bot && !prev.remote && bot?.remote) return
+    if (prev && prev !== bot && prev.id === id) return
+    byId[id] = bot
+  }
   for (const bot of value.bots) {
-    for (const id of [...(bot.parts ?? []), bot.sessionId ?? bot.id, bot.id]) byId[id] = bot
+    for (const id of [...(bot.parts ?? []), bot.sessionId ?? bot.id, bot.id]) claim(bot, id)
   }
   const roomsById = {}
   for (const room of value.rooms) roomsById[room.id] = room
@@ -43,6 +52,25 @@ export function indexRoster(value) {
     for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id
   }
   return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true }
+}
+
+// A member id, session id, or part id. A local Bot wins when a friend's chat
+// was indexed under the same key (#963).
+export function rosterBot(roster, id) {
+  if (id === undefined || id === null || id === '') return undefined
+  const list = roster?.bots ?? []
+  const own = list.find(bot => bot && !bot.remote && (bot.id === id || bot.sessionId === id || (bot.parts ?? []).includes(id)))
+  if (own) return own
+  return roster?.byId?.[id]
+}
+
+// The local Bot of this display name, else a friend's Bot with that name (#963).
+export function botByName(bots, name) {
+  const wanted = String(name ?? '').toLowerCase()
+  if (wanted === '') return undefined
+  const list = Array.isArray(bots) ? bots : []
+  return list.find(bot => bot && !bot.remote && String(bot.name ?? '').toLowerCase() === wanted)
+    ?? list.find(bot => bot && String(bot.name ?? '').toLowerCase() === wanted)
 }
 
 // Whether a main-view Session id belongs to the team's DSH Agent: the conversation

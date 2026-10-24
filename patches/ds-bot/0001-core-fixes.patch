@@ -1796,6 +1796,20 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 diff --git a/src/client/text.js b/src/client/text.js
 --- a/src/client/text.js
 +++ b/src/client/text.js
+@@ -10,9 +10,12 @@ export const MENTION_ORIGIN = 'https://bots.local/'
+ // ("@新 Bot" in "@新 Bot 2"); it then stays plain text.
+ export function linkMentions(text, bots, selfId) {
+   if (!text || !text.includes('@')) return text
++  // Same-length names keep their order. Locals go first so "@Chief" names my
++  // Chief when a friend uses that title too (#963).
++  const ordered = [...(bots ?? [])].sort((a, b) => Number(Boolean(a?.remote)) - Number(Boolean(b?.remote)))
+   let out = ''
+   let cursor = 0
+-  for (const span of mentionSpans(text, bots)) {
++  for (const span of mentionSpans(text, ordered)) {
+     if (!span.bot || span.bot.id === selfId) continue
+     out += `${text.slice(cursor, span.start)}[${text.slice(span.start + 1, span.end).replace(/[[\]\\]/g, '\\$&')}](${MENTION_ORIGIN}${span.bot.id})`
+     cursor = span.end
 @@ -25,6 +25,25 @@ export function mentionTarget(event) {
    return anchor ? anchor.getAttribute('href').slice(MENTION_ORIGIN.length) : null
  }

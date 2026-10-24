@@ -1963,6 +1963,405 @@ function maskOf(shape) {
 }
 var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 
+// src/client/cluster-order.js
+function clusterOrder(people2) {
+  const list = Array.isArray(people2) ? people2 : [];
+  const remote = (bot) => Boolean(bot?.remote);
+  if (!list.some(remote)) return list;
+  const locals = list.filter((bot) => !remote(bot));
+  const remotes = list.filter(remote);
+  if (list.length <= 4) return [...remotes, ...locals];
+  return [...locals, ...remotes];
+}
+
+// src/shared/mentions.js
+var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
+var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
+var ADDRESS_BEFORE = /[a-z0-9_./]/i;
+var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\)/g;
+var fitsAt = (text, at, word) => text.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text.slice(at + word.length));
+var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
+function nameProblem(name) {
+  const text = String(name ?? "").trim();
+  if (text === "") return "A Bot needs a name";
+  if (/[@`\r\n]/.test(text)) return "A Bot name cannot contain @, ` or a line break";
+  if (ALL_WORDS.includes(text.toLowerCase())) return `"${text}" calls everyone in a group, so it cannot be a Bot name`;
+  return void 0;
+}
+function referenceSpans(text, labels = []) {
+  const spans = [];
+  for (const label of [...labels].sort((a, b) => b.length - a.length)) {
+    const mention = `@${label}`;
+    for (let at = text.indexOf(mention); at !== -1; at = text.indexOf(mention, at + 1)) {
+      const end = at + mention.length;
+      if (at > 0 && ADDRESS_BEFORE.test(text[at - 1]) || NAME_GOES_ON.test(text.slice(end)) || overlaps(spans, at, end)) continue;
+      spans.push({ start: at, end, label });
+      break;
+    }
+  }
+  return spans.sort((a, b) => a.start - b.start);
+}
+function mentionSpans(text, bots, { references = [] } = {}) {
+  const value = String(text ?? "");
+  const skip = [
+    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
+    ...referenceSpans(value, references)
+  ];
+  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
+  const spans = [];
+  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
+    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
+    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
+    const all = bot ? void 0 : ALL_WORDS.find((word) => fitsAt(value, at + 1, word));
+    if (!bot && !all) continue;
+    const end = at + 1 + (bot ? bot.name.length : all.length);
+    spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
+    at = end - 1;
+  }
+  return spans;
+}
+function unmatchedMentions(text, bots, { references = [] } = {}) {
+  const value = String(text ?? "");
+  const skip = [
+    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
+    ...referenceSpans(value, references)
+  ];
+  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
+  const missing = [];
+  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
+    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
+    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
+    const all = bot ? void 0 : ALL_WORDS.find((word2) => fitsAt(value, at + 1, word2));
+    if (bot || all) {
+      at += 1 + (bot ? bot.name.length : all.length) - 1;
+      continue;
+    }
+    const word = /^[^\s@,，。.!?！？:：;；、()（）"'“”]{1,40}/.exec(value.slice(at + 1))?.[0];
+    if (word) missing.push(`@${word}`);
+  }
+  return missing;
+}
+
+// src/client/text.js
+var MENTION_ORIGIN = "https://bots.local/";
+function linkMentions(text, bots, selfId) {
+  if (!text || !text.includes("@")) return text;
+  const ordered = [...bots ?? []].sort((a, b) => Number(Boolean(a?.remote)) - Number(Boolean(b?.remote)));
+  let out = "";
+  let cursor = 0;
+  for (const span of mentionSpans(text, ordered)) {
+    if (!span.bot || span.bot.id === selfId) continue;
+    out += `${text.slice(cursor, span.start)}[${text.slice(span.start + 1, span.end).replace(/[[\]\\]/g, "\\$&")}](${MENTION_ORIGIN}${span.bot.id})`;
+    cursor = span.end;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
+function mentionTarget(event) {
+  const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
+  return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
+}
+function nameMentions(text, roster) {
+  const value = String(text ?? "");
+  if (!value.includes("@") || roster === null || typeof roster !== "object") return value;
+  const names = /* @__PURE__ */ new Map();
+  for (const record of [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []]) {
+    const handle = typeof record?.remote === "object" && record.remote !== null ? record.remote.handle : record?.handle;
+    if (typeof handle === "string" && typeof record?.name === "string" && record.name !== "") names.set(handle.replace(/^@+/, "").toLowerCase(), record.name);
+  }
+  const handles = [...names.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (handles.length === 0) return value;
+  const source = handles.map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return value.replace(new RegExp(`(^|[^a-z0-9_./])@(${source})(?![a-z0-9_\\-/\\\\])(?!\\.[a-z0-9_-])`, "gi"), (_all, before, handle) => `${before}@${names.get(handle.toLowerCase())}`);
+}
+function clock(ms) {
+  return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
+}
+function dayLabel(ms) {
+  const date = new Date(ms);
+  const today = /* @__PURE__ */ new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  return sameDay ? t("Today {time}", { time: clock(ms) }) : `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric" })} ${clock(ms)}`;
+}
+function relativeShort(ms) {
+  const diff = Math.max(0, Date.now() - ms);
+  if (diff < 6e4) return t("just now");
+  if (diff < 36e5) return t("{n} min", { n: Math.floor(diff / 6e4) });
+  if (diff < 864e5) return t("{n} h", { n: Math.floor(diff / 36e5) });
+  if (diff < 30 * 864e5) return t("{n} d", { n: Math.floor(diff / 864e5) });
+  return new Date(ms).toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
+}
+var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
+var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
+var currentPart = (bot) => bot.sessionId ?? bot.id;
+function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
+  const bot = last ? roster.byId[last.botId] : void 0;
+  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
+  if (bot && stay) return last.sessionId;
+  const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
+  if (held) return last.sessionId;
+  const main = roster.byId[mainId];
+  return main ? currentPart(main) : mainId;
+}
+function reminderPrompts(text) {
+  const one = /^reminder_prompt_json: (.*)$/m.exec(text);
+  const batch = /^reminders_json: (.*)$/m.exec(text);
+  try {
+    const prompts = [...one ? [JSON.parse(one[1])] : [], ...batch ? JSON.parse(batch[1]).map((entry) => entry.reminder_prompt) : []];
+    return prompts.filter((prompt) => typeof prompt === "string" && prompt.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+var stripHeader = (text) => text.replace(HEADER, "");
+var TRACE = /^[ \t]*[^\n→]{1,60}(?:[ \t]*→[ \t]*[^\n→]{1,60})+[ \t]*\n+/;
+function stripTrace(text) {
+  if (typeof text !== "string") return text;
+  const line2 = text.match(TRACE)?.[0];
+  if (!line2 || /[.!?。！？:：,，]/.test(line2.replace(/[^\S\n]*\n+$/, "").replace(/→/g, ""))) return text;
+  return text.slice(line2.length).replace(/^\s+/, "");
+}
+function latestMemoryChange(news, ids) {
+  const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
+  return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
+}
+function summaryBlocks(text) {
+  const blocks = [];
+  let paragraph = [];
+  const flush = () => {
+    if (paragraph.length > 0) blocks.push({ kind: "p", text: paragraph.join(" ") });
+    paragraph = [];
+  };
+  for (const raw of String(text ?? "").split("\n")) {
+    const line2 = raw.trim().replace(/\*\*|__/g, "");
+    const heading = /^#{1,6}\s+(.+)$/.exec(line2);
+    if (heading) {
+      flush();
+      blocks.push({ kind: "h", text: heading[1].trim() });
+    } else if (line2 === "") {
+      flush();
+    } else {
+      paragraph.push(line2.replace(/^[-*•]\s+/, ""));
+    }
+  }
+  flush();
+  return blocks;
+}
+function typedBy(roster, sessionId, turn) {
+  if (sessionId === void 0 || turn === void 0) return void 0;
+  const name = roster.remoteTypedTurns?.[sessionId]?.[turn];
+  return typeof name === "string" && name ? name : void 0;
+}
+function isHiddenTurn(roster, sessionId, turn) {
+  if (sessionId === void 0 || turn === void 0) return false;
+  return (roster.exchangeTurns[sessionId] ?? []).includes(turn);
+}
+var toolName = (root) => root.name || root.call?.name;
+var pluginTools = /* @__PURE__ */ new Set();
+function setPluginTools(names) {
+  pluginTools = new Set((Array.isArray(names) ? names : []).filter((name) => typeof name === "string"));
+}
+var isPluginTool = (name) => typeof name === "string" && pluginTools.has(name);
+var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
+function toolArgs(root) {
+  if (typeof root.args?.text === "function") {
+    return { text: (key) => root.args.text(key) ?? void 0, value: (key) => typeof root.args.value === "function" ? root.args.value(key) : void 0 };
+  }
+  let parsed;
+  const object = () => {
+    if (parsed === void 0) {
+      try {
+        parsed = JSON.parse(root.argsRaw ?? root.call?.argsRaw ?? "");
+      } catch {
+        parsed = null;
+      }
+      if (typeof parsed !== "object" || Array.isArray(parsed)) parsed = null;
+    }
+    return parsed;
+  };
+  return {
+    text: (key) => {
+      const value = object()?.[key];
+      return typeof value === "string" ? value : void 0;
+    },
+    value: (key) => object()?.[key]
+  };
+}
+var RELAY_ROLES = /* @__PURE__ */ new Set(["request", "reply", "stopped"]);
+var isRelayContext = (data) => {
+  const source = data?.source;
+  if (source === null || typeof source !== "object" || source.kind !== "bot" || source.handoff === true) return false;
+  if (source.deferred === true || source.resumed === true || source.retried === true) return false;
+  return RELAY_ROLES.has(source.role) && typeof source.senderSessionId === "string";
+};
+var stepShows = (step) => (step?.blocks ?? []).some((block) => {
+  if (block === void 0 || block.kind === "tool-call") return false;
+  return block.kind === "text" || block.kind === "reasoning" ? String(block.text ?? "").trim() !== "" : true;
+});
+var stepHasReasoning = (step) => (step?.blocks ?? []).some((block) => block?.kind === "reasoning" && String(block.text ?? "").trim() !== "");
+var relayPart = (data, groupPart) => groupPart === void 0 || (stepHasReasoning(data) ? groupPart === "reasoning" : groupPart === "response");
+function relaysBefore(contexts, steps, step) {
+  const index = steps.findIndex((entry) => entry?.step === step?.step);
+  if (index === -1) return [];
+  let prev = -Infinity;
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    if (stepShows(steps[cursor])) {
+      prev = steps[cursor].time;
+      break;
+    }
+  }
+  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
+}
+function commRunOf(order, peers, turn, hiddenTurns = []) {
+  const turns = [];
+  for (const entry of order) {
+    const peer = peers[entry];
+    const hidden = hiddenTurns.includes(entry);
+    if (hidden && peer === void 0) continue;
+    turns.push({ turn: entry, peer, hidden });
+  }
+  const at = turns.findIndex((entry) => entry.turn === turn);
+  if (at === -1 || turns[at].peer === void 0) return null;
+  const previous = turns[at - 1];
+  if (previous?.peer !== void 0 && previous.hidden) return "folded";
+  let count = 0;
+  const peerIds = [];
+  for (let index = at; index < turns.length; index += 1) {
+    const entry = turns[index];
+    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
+    count += entry.hidden ? 2 : 1;
+    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
+  }
+  return { count, peerIds };
+}
+function heldReplyOf(bot, sessionId, turn) {
+  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : [];
+  let found;
+  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply;
+  return found;
+}
+var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
+function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
+  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+  if (!Array.isArray(outline)) return "";
+  for (let index = outline.length - 1; index >= 0; index -= 1) {
+    const entry = outline[index];
+    if (hiddenTurns.includes(entry.turn)) continue;
+    const text = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
+    if (text !== "") return stripTrace(stripHeader(text)).replace(/\s+/g, " ").trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, "");
+  }
+  return "";
+}
+var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+function usageOf(list, ids) {
+  let input = 0;
+  let cacheRead = 0;
+  let output = 0;
+  for (const id of ids) {
+    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+    if (!usage) continue;
+    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+    cacheRead += usage.cacheReadTokens ?? 0;
+    output += usage.outputTokens ?? 0;
+  }
+  if (input + output === 0) return "";
+  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
+}
+function faceRowTitle(title) {
+  const text = String(title ?? "");
+  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
+  if (named) return `${named[2]} · ${named[1]}`;
+  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
+}
+function modelOf(bot, roster) {
+  const ref = bot.model ?? bot.appliedModel;
+  if (!ref) return void 0;
+  const served = (roster.models ?? []).find((model) => model.ref === ref);
+  const [provider, ...rest] = ref.split("/");
+  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
+}
+function botRowTitle(name, model, wide) {
+  if (model) return `${name} · ${model}`;
+  return wide ? void 0 : name;
+}
+function awayGroups(groups, roomsById) {
+  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
+}
+
+// src/client/sources.js
+function createSource(initial) {
+  let value = initial;
+  const listeners2 = /* @__PURE__ */ new Set();
+  return {
+    getSnapshot: () => value,
+    subscribe: (listener) => {
+      listeners2.add(listener);
+      return () => {
+        listeners2.delete(listener);
+      };
+    },
+    set(next) {
+      const resolved = typeof next === "function" ? next(value) : next;
+      if (resolved === value) return;
+      value = resolved;
+      for (const listener of [...listeners2]) listener();
+    }
+  };
+}
+var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
+var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
+function indexRoster(value) {
+  setLocalBots(value.bots);
+  setPluginTools(value.pluginTools);
+  const byId = {};
+  const claim = (bot, id) => {
+    if (id === void 0 || id === null || id === "") return;
+    const prev = byId[id];
+    if (prev && prev !== bot && !prev.remote && bot?.remote) return;
+    if (prev && prev !== bot && prev.id === id) return;
+    byId[id] = bot;
+  };
+  for (const bot of value.bots) {
+    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) claim(bot, id);
+  }
+  const roomsById = {};
+  for (const room2 of value.rooms) roomsById[room2.id] = room2;
+  const agentsById = {};
+  const agentOf = {};
+  for (const agent of value.agents ?? []) {
+    agentsById[agent.id] = agent;
+    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
+  }
+  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
+}
+function rosterBot(roster, id) {
+  if (id === void 0 || id === null || id === "") return void 0;
+  const list = roster?.bots ?? [];
+  const own = list.find((bot) => bot && !bot.remote && (bot.id === id || bot.sessionId === id || (bot.parts ?? []).includes(id)));
+  if (own) return own;
+  return roster?.byId?.[id];
+}
+function botByName(bots, name) {
+  const wanted = String(name ?? "").toLowerCase();
+  if (wanted === "") return void 0;
+  const list = Array.isArray(bots) ? bots : [];
+  return list.find((bot) => bot && !bot.remote && String(bot.name ?? "").toLowerCase() === wanted) ?? list.find((bot) => bot && String(bot.name ?? "").toLowerCase() === wanted);
+}
+function isAgentSession(roster, cache, sessionId) {
+  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
+  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
+  return cache.has(sessionId);
+}
+function countCards(state, sessionId, callIds, delta) {
+  const own = { ...state[sessionId] };
+  for (const callId of callIds) {
+    const count = (own[callId] ?? 0) + delta;
+    if (count > 0) own[callId] = count;
+    else delete own[callId];
+  }
+  return { ...state, [sessionId]: own };
+}
+
 // src/client/mark.js
 var import_react = require("react");
 var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
@@ -2119,17 +2518,18 @@ function clusterSeats(count, frame) {
   return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 }
 function roomAvatarPeople(room2, roster) {
-  const members = (room2?.members ?? []).map((id) => roster?.byId?.[id]).filter(Boolean);
+  const members = (room2?.members ?? []).map((id) => rosterBot(roster, id)).filter(Boolean);
   const seen = new Set(members.map((bot) => bot.id));
   const remotes = [];
   for (const p of room2?.participants ?? []) {
     if (p.leftSeq !== void 0) continue;
     if (p.kind === "human") continue;
     if (!p.remote && p.id && seen.has(p.id)) continue;
-    if (!p.remote && p.id && roster?.byId?.[p.id]) {
-      if (!seen.has(p.id)) {
-        members.push(roster.byId[p.id]);
-        seen.add(p.id);
+    const known = !p.remote && p.id ? rosterBot(roster, p.id) : void 0;
+    if (known) {
+      if (!seen.has(known.id)) {
+        members.push(known);
+        seen.add(known.id);
       }
       continue;
     }
@@ -2152,7 +2552,7 @@ function roomAvatarPeople(room2, roster) {
   return [...members, ...remotes];
 }
 function RoomAvatar({ room: room2, roster, size = 36 }) {
-  const people2 = roomAvatarPeople(room2, roster);
+  const people2 = clusterOrder(roomAvatarPeople(room2, roster));
   const seat = (bot, seatSize, key) => bot ? (0, import_react.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
   if (people2.length === 0) return (0, import_react.createElement)(BotMark, { size });
   if (size <= 20 && people2.length > 1) {
@@ -2579,373 +2979,6 @@ var FLYBOT_CSS = `
 .bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 `;
 
-// src/shared/mentions.js
-var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
-var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
-var ADDRESS_BEFORE = /[a-z0-9_./]/i;
-var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\)/g;
-var fitsAt = (text, at, word) => text.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text.slice(at + word.length));
-var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
-function nameProblem(name) {
-  const text = String(name ?? "").trim();
-  if (text === "") return "A Bot needs a name";
-  if (/[@`\r\n]/.test(text)) return "A Bot name cannot contain @, ` or a line break";
-  if (ALL_WORDS.includes(text.toLowerCase())) return `"${text}" calls everyone in a group, so it cannot be a Bot name`;
-  return void 0;
-}
-function referenceSpans(text, labels = []) {
-  const spans = [];
-  for (const label of [...labels].sort((a, b) => b.length - a.length)) {
-    const mention = `@${label}`;
-    for (let at = text.indexOf(mention); at !== -1; at = text.indexOf(mention, at + 1)) {
-      const end = at + mention.length;
-      if (at > 0 && ADDRESS_BEFORE.test(text[at - 1]) || NAME_GOES_ON.test(text.slice(end)) || overlaps(spans, at, end)) continue;
-      spans.push({ start: at, end, label });
-      break;
-    }
-  }
-  return spans.sort((a, b) => a.start - b.start);
-}
-function mentionSpans(text, bots, { references = [] } = {}) {
-  const value = String(text ?? "");
-  const skip = [
-    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
-    ...referenceSpans(value, references)
-  ];
-  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
-  const spans = [];
-  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
-    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
-    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
-    const all = bot ? void 0 : ALL_WORDS.find((word) => fitsAt(value, at + 1, word));
-    if (!bot && !all) continue;
-    const end = at + 1 + (bot ? bot.name.length : all.length);
-    spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
-    at = end - 1;
-  }
-  return spans;
-}
-function unmatchedMentions(text, bots, { references = [] } = {}) {
-  const value = String(text ?? "");
-  const skip = [
-    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
-    ...referenceSpans(value, references)
-  ];
-  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
-  const missing = [];
-  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
-    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
-    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
-    const all = bot ? void 0 : ALL_WORDS.find((word2) => fitsAt(value, at + 1, word2));
-    if (bot || all) {
-      at += 1 + (bot ? bot.name.length : all.length) - 1;
-      continue;
-    }
-    const word = /^[^\s@,，。.!?！？:：;；、()（）"'“”]{1,40}/.exec(value.slice(at + 1))?.[0];
-    if (word) missing.push(`@${word}`);
-  }
-  return missing;
-}
-
-// src/client/text.js
-var MENTION_ORIGIN = "https://bots.local/";
-function linkMentions(text, bots, selfId) {
-  if (!text || !text.includes("@")) return text;
-  let out = "";
-  let cursor = 0;
-  for (const span of mentionSpans(text, bots)) {
-    if (!span.bot || span.bot.id === selfId) continue;
-    out += `${text.slice(cursor, span.start)}[${text.slice(span.start + 1, span.end).replace(/[[\]\\]/g, "\\$&")}](${MENTION_ORIGIN}${span.bot.id})`;
-    cursor = span.end;
-  }
-  return cursor === 0 ? text : out + text.slice(cursor);
-}
-function mentionTarget(event) {
-  const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
-  return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
-}
-function nameMentions(text, roster) {
-  const value = String(text ?? "");
-  if (!value.includes("@") || roster === null || typeof roster !== "object") return value;
-  const names = /* @__PURE__ */ new Map();
-  for (const record of [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []]) {
-    const handle = typeof record?.remote === "object" && record.remote !== null ? record.remote.handle : record?.handle;
-    if (typeof handle === "string" && typeof record?.name === "string" && record.name !== "") names.set(handle.replace(/^@+/, "").toLowerCase(), record.name);
-  }
-  const handles = [...names.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
-  if (handles.length === 0) return value;
-  const source = handles.map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  return value.replace(new RegExp(`(^|[^a-z0-9_./])@(${source})(?![a-z0-9_\\-/\\\\])(?!\\.[a-z0-9_-])`, "gi"), (_all, before, handle) => `${before}@${names.get(handle.toLowerCase())}`);
-}
-function clock(ms) {
-  return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
-}
-function dayLabel(ms) {
-  const date = new Date(ms);
-  const today = /* @__PURE__ */ new Date();
-  const sameDay = date.toDateString() === today.toDateString();
-  return sameDay ? t("Today {time}", { time: clock(ms) }) : `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric" })} ${clock(ms)}`;
-}
-function relativeShort(ms) {
-  const diff = Math.max(0, Date.now() - ms);
-  if (diff < 6e4) return t("just now");
-  if (diff < 36e5) return t("{n} min", { n: Math.floor(diff / 6e4) });
-  if (diff < 864e5) return t("{n} h", { n: Math.floor(diff / 36e5) });
-  if (diff < 30 * 864e5) return t("{n} d", { n: Math.floor(diff / 864e5) });
-  return new Date(ms).toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
-}
-var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
-var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
-var currentPart = (bot) => bot.sessionId ?? bot.id;
-function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
-  const bot = last ? roster.byId[last.botId] : void 0;
-  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
-  if (bot && stay) return last.sessionId;
-  const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
-  if (held) return last.sessionId;
-  const main = roster.byId[mainId];
-  return main ? currentPart(main) : mainId;
-}
-function reminderPrompts(text) {
-  const one = /^reminder_prompt_json: (.*)$/m.exec(text);
-  const batch = /^reminders_json: (.*)$/m.exec(text);
-  try {
-    const prompts = [...one ? [JSON.parse(one[1])] : [], ...batch ? JSON.parse(batch[1]).map((entry) => entry.reminder_prompt) : []];
-    return prompts.filter((prompt) => typeof prompt === "string" && prompt.trim() !== "");
-  } catch {
-    return [];
-  }
-}
-var stripHeader = (text) => text.replace(HEADER, "");
-var TRACE = /^[ \t]*[^\n→]{1,60}(?:[ \t]*→[ \t]*[^\n→]{1,60})+[ \t]*\n+/;
-function stripTrace(text) {
-  if (typeof text !== "string") return text;
-  const line2 = text.match(TRACE)?.[0];
-  if (!line2 || /[.!?。！？:：,，]/.test(line2.replace(/[^\S\n]*\n+$/, "").replace(/→/g, ""))) return text;
-  return text.slice(line2.length).replace(/^\s+/, "");
-}
-function latestMemoryChange(news, ids) {
-  const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
-  return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
-}
-function summaryBlocks(text) {
-  const blocks = [];
-  let paragraph = [];
-  const flush = () => {
-    if (paragraph.length > 0) blocks.push({ kind: "p", text: paragraph.join(" ") });
-    paragraph = [];
-  };
-  for (const raw of String(text ?? "").split("\n")) {
-    const line2 = raw.trim().replace(/\*\*|__/g, "");
-    const heading = /^#{1,6}\s+(.+)$/.exec(line2);
-    if (heading) {
-      flush();
-      blocks.push({ kind: "h", text: heading[1].trim() });
-    } else if (line2 === "") {
-      flush();
-    } else {
-      paragraph.push(line2.replace(/^[-*•]\s+/, ""));
-    }
-  }
-  flush();
-  return blocks;
-}
-function typedBy(roster, sessionId, turn) {
-  if (sessionId === void 0 || turn === void 0) return void 0;
-  const name = roster.remoteTypedTurns?.[sessionId]?.[turn];
-  return typeof name === "string" && name ? name : void 0;
-}
-function isHiddenTurn(roster, sessionId, turn) {
-  if (sessionId === void 0 || turn === void 0) return false;
-  return (roster.exchangeTurns[sessionId] ?? []).includes(turn);
-}
-var toolName = (root) => root.name || root.call?.name;
-var pluginTools = /* @__PURE__ */ new Set();
-function setPluginTools(names) {
-  pluginTools = new Set((Array.isArray(names) ? names : []).filter((name) => typeof name === "string"));
-}
-var isPluginTool = (name) => typeof name === "string" && pluginTools.has(name);
-var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
-function toolArgs(root) {
-  if (typeof root.args?.text === "function") {
-    return { text: (key) => root.args.text(key) ?? void 0, value: (key) => typeof root.args.value === "function" ? root.args.value(key) : void 0 };
-  }
-  let parsed;
-  const object = () => {
-    if (parsed === void 0) {
-      try {
-        parsed = JSON.parse(root.argsRaw ?? root.call?.argsRaw ?? "");
-      } catch {
-        parsed = null;
-      }
-      if (typeof parsed !== "object" || Array.isArray(parsed)) parsed = null;
-    }
-    return parsed;
-  };
-  return {
-    text: (key) => {
-      const value = object()?.[key];
-      return typeof value === "string" ? value : void 0;
-    },
-    value: (key) => object()?.[key]
-  };
-}
-var RELAY_ROLES = /* @__PURE__ */ new Set(["request", "reply", "stopped"]);
-var isRelayContext = (data) => {
-  const source = data?.source;
-  if (source === null || typeof source !== "object" || source.kind !== "bot" || source.handoff === true) return false;
-  if (source.deferred === true || source.resumed === true || source.retried === true) return false;
-  return RELAY_ROLES.has(source.role) && typeof source.senderSessionId === "string";
-};
-var stepShows = (step) => (step?.blocks ?? []).some((block) => {
-  if (block === void 0 || block.kind === "tool-call") return false;
-  return block.kind === "text" || block.kind === "reasoning" ? String(block.text ?? "").trim() !== "" : true;
-});
-var stepHasReasoning = (step) => (step?.blocks ?? []).some((block) => block?.kind === "reasoning" && String(block.text ?? "").trim() !== "");
-var relayPart = (data, groupPart) => groupPart === void 0 || (stepHasReasoning(data) ? groupPart === "reasoning" : groupPart === "response");
-function relaysBefore(contexts, steps, step) {
-  const index = steps.findIndex((entry) => entry?.step === step?.step);
-  if (index === -1) return [];
-  let prev = -Infinity;
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    if (stepShows(steps[cursor])) {
-      prev = steps[cursor].time;
-      break;
-    }
-  }
-  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
-}
-function commRunOf(order, peers, turn, hiddenTurns = []) {
-  const turns = [];
-  for (const entry of order) {
-    const peer = peers[entry];
-    const hidden = hiddenTurns.includes(entry);
-    if (hidden && peer === void 0) continue;
-    turns.push({ turn: entry, peer, hidden });
-  }
-  const at = turns.findIndex((entry) => entry.turn === turn);
-  if (at === -1 || turns[at].peer === void 0) return null;
-  const previous = turns[at - 1];
-  if (previous?.peer !== void 0 && previous.hidden) return "folded";
-  let count = 0;
-  const peerIds = [];
-  for (let index = at; index < turns.length; index += 1) {
-    const entry = turns[index];
-    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
-    count += entry.hidden ? 2 : 1;
-    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
-  }
-  return { count, peerIds };
-}
-function heldReplyOf(bot, sessionId, turn) {
-  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : [];
-  let found;
-  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply;
-  return found;
-}
-var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
-function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
-  if (!Array.isArray(outline)) return "";
-  for (let index = outline.length - 1; index >= 0; index -= 1) {
-    const entry = outline[index];
-    if (hiddenTurns.includes(entry.turn)) continue;
-    const text = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
-    if (text !== "") return stripTrace(stripHeader(text)).replace(/\s+/g, " ").trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, "");
-  }
-  return "";
-}
-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
-function usageOf(list, ids) {
-  let input = 0;
-  let cacheRead = 0;
-  let output = 0;
-  for (const id of ids) {
-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
-    if (!usage) continue;
-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
-    cacheRead += usage.cacheReadTokens ?? 0;
-    output += usage.outputTokens ?? 0;
-  }
-  if (input + output === 0) return "";
-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
-}
-function faceRowTitle(title) {
-  const text = String(title ?? "");
-  const named = text.match(/^Face-to-face · (.+) · (\d{6})$/);
-  if (named) return `${named[2]} · ${named[1]}`;
-  return text.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text;
-}
-function modelOf(bot, roster) {
-  const ref = bot.model ?? bot.appliedModel;
-  if (!ref) return void 0;
-  const served = (roster.models ?? []).find((model) => model.ref === ref);
-  const [provider, ...rest] = ref.split("/");
-  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
-}
-function botRowTitle(name, model, wide) {
-  if (model) return `${name} · ${model}`;
-  return wide ? void 0 : name;
-}
-function awayGroups(groups, roomsById) {
-  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
-}
-
-// src/client/sources.js
-function createSource(initial) {
-  let value = initial;
-  const listeners2 = /* @__PURE__ */ new Set();
-  return {
-    getSnapshot: () => value,
-    subscribe: (listener) => {
-      listeners2.add(listener);
-      return () => {
-        listeners2.delete(listener);
-      };
-    },
-    set(next) {
-      const resolved = typeof next === "function" ? next(value) : next;
-      if (resolved === value) return;
-      value = resolved;
-      for (const listener of [...listeners2]) listener();
-    }
-  };
-}
-var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
-var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
-function indexRoster(value) {
-  setLocalBots(value.bots);
-  setPluginTools(value.pluginTools);
-  const byId = {};
-  for (const bot of value.bots) {
-    for (const id of [...bot.parts ?? [], bot.sessionId ?? bot.id, bot.id]) byId[id] = bot;
-  }
-  const roomsById = {};
-  for (const room2 of value.rooms) roomsById[room2.id] = room2;
-  const agentsById = {};
-  const agentOf = {};
-  for (const agent of value.agents ?? []) {
-    agentsById[agent.id] = agent;
-    for (const sessionId of agent.sessions ?? []) agentOf[sessionId] = agent.id;
-  }
-  return { ...value, agents: value.agents ?? [], byId, roomsById, agentsById, agentOf, ready: true };
-}
-function isAgentSession(roster, cache, sessionId) {
-  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
-  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
-  return cache.has(sessionId);
-}
-function countCards(state, sessionId, callIds, delta) {
-  const own = { ...state[sessionId] };
-  for (const callId of callIds) {
-    const count = (own[callId] ?? 0) + delta;
-    if (count > 0) own[callId] = count;
-    else delete own[callId];
-  }
-  return { ...state, [sessionId]: own };
-}
-
 // src/client/themes.js
 var THEME_KEYS = ["bg", "sidebar", "bubble", "card", "text", "user", "userText", "accent"];
 var THEMES = {
@@ -3050,6 +3083,33 @@ function registerTheme(id, theme) {
   };
 }
 var allThemes = () => ({ ...THEMES, ...customThemes });
+
+// src/client/mention-style.js
+function chipKey(bot) {
+  if (/\s/.test(bot?.name)) return null;
+  return String(bot?.name ?? "").toLowerCase();
+}
+function mentionCss(bots) {
+  const list = Array.isArray(bots) ? bots : [];
+  const owner = /* @__PURE__ */ new Map();
+  for (const bot of list) {
+    const key = chipKey(bot);
+    if (key === null) continue;
+    const prev = owner.get(key);
+    if (prev && !prev.remote && bot?.remote) continue;
+    owner.set(key, bot);
+  }
+  return list.map((bot) => {
+    const anchor = `.bt-bubble a[href="${MENTION_ORIGIN}${bot.id}"]`;
+    const key = chipKey(bot);
+    const chip = key !== null && owner.get(key) === bot ? `[class*="_userRow"] [data-ref-chip="file"][title="@${String(bot.name).replace(/["\\]/g, "\\$&")}" i]` : "";
+    const look = lookOf(bot);
+    const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`;
+    const mark = look.image ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}` : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`;
+    const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : "";
+    return `${anchor}{color:${inkText(look.color)}}${chipBase}${mark}`;
+  }).join("\n");
+}
 
 // src/client/motion.js
 var import_react3 = require("react");
@@ -6222,7 +6282,9 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
     "div",
     { className: "bt-group-replies" },
     replies.map((reply, index) => {
-      const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? "gray" };
+      const stored = roster.byId[reply.botId];
+      const resolved = reply.remote ? stored : rosterBot(roster, reply.botId) ?? stored;
+      const bot = resolved ?? { id: reply.botId, name: reply.name, color: reply.color ?? "gray" };
       if (reply.kind === "user") {
         const who = reply.name && reply.name !== "User" ? reply.name : reply.authorId;
         if (reply.other) {
@@ -6405,7 +6467,7 @@ function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   const root = node.data.root;
   const turn = node.location?.turn?.turn ?? root.turn;
   const hidden = isHiddenTurn(roster, sessionId, turn);
-  const findBot = (nameOrId) => roster.byId[nameOrId] ?? roster.bots.find((bot) => bot.name.toLowerCase() === String(nameOrId ?? "").toLowerCase());
+  const findBot = (nameOrId) => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId);
   const calls = hidden ? [] : callTree(root);
   const drawn = calls.filter((call4) => DRAWN.has(toolName(call4)));
   const running = root.kind === "tool-result" ? void 0 : calls.findLast((call4) => call4.kind !== "tool-result");
@@ -17447,15 +17509,7 @@ function apply(ctx) {
     const style = installStyles("", "mentions");
     let last = "";
     const render = () => {
-      const next = roster.getSnapshot().bots.map((bot) => {
-        const anchor = `.bt-bubble a[href="${MENTION_ORIGIN}${bot.id}"]`;
-        const chip = /\s/.test(bot.name) ? "" : `[class*="_userRow"] [data-ref-chip="file"][title="@${bot.name.replace(/["\\]/g, "\\$&")}" i]`;
-        const look = lookOf(bot);
-        const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`;
-        const mark = look.image ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}` : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`;
-        const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : "";
-        return `${anchor}{color:${inkText(look.color)}}${chipBase}${mark}`;
-      }).join("\n");
+      const next = mentionCss(roster.getSnapshot().bots);
       if (next !== last) style.textContent = last = next;
     };
     render();

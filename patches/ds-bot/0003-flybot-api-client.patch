@@ -437,7 +437,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -2,12 +2,19 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
+@@ -2,12 +2,20 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
  import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
@@ -446,6 +446,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
 +import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
++import { botByName, rosterBot } from './sources.js'
  import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
  import { SecretToolCell } from './secret-card.js'
  import { dateLocale, t } from './i18n.js'
@@ -883,7 +884,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
        timer = setTimeout(tick, document.hidden ? 5000 : 1000)
      }
      void tick()
-@@ -562,20 +562,29 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -562,20 +562,31 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
    if (done) {
      try { replies = JSON.parse(contentText(content)).replies ?? [] } catch { replies = [] }
    }
@@ -897,7 +898,10 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const room = roster.roomsById[sessionId]
    return h('div', { className: 'bt-group-replies' },
      replies.map((reply, index) => {
-       const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
+-      const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
++      const stored = roster.byId[reply.botId]
++      const resolved = reply.remote ? stored : (rosterBot(roster, reply.botId) ?? stored)
++      const bot = resolved ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
        if (reply.kind === 'user') {
 -        return h('div', { key: `user-${index}`, className: 'bt-urow' }, h('div', { className: 'bt-ububble' },
 -          h(MarkdownText, { text: reply.text, labels: mdLabels(), variant: 'compact' })))
@@ -971,7 +975,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      case 'create_group':
      case 'update_group':
      case 'delete_group':
-@@ -719,7 +719,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot
+@@ -719,12 +719,12 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot
    }
  }
  
@@ -980,6 +984,12 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const roster = useRoster(value => value)
    const root = node.data.root
    const turn = node.location?.turn?.turn ?? root.turn
+   const hidden = isHiddenTurn(roster, sessionId, turn)
+-  const findBot = nameOrId => roster.byId[nameOrId] ?? roster.bots.find(bot => bot.name.toLowerCase() === String(nameOrId ?? '').toLowerCase())
++  const findBot = nameOrId => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId)
+   const calls = hidden ? [] : callTree(root)
+   const drawn = calls.filter(call => DRAWN.has(toolName(call)))
+   // The newest call still running names the work, so a program reads as the tool it is in.
 @@ -734,6 +734,6 @@ export function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }
    useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note)
    useShownCards(actions, sessionId, drawn.filter(call => CARDS.has(toolName(call)) && call.callId).map(call => call.callId))
@@ -1157,16 +1167,19 @@ diff --git a/src/client/index.js b/src/client/index.js
 @@ -1,44 +1,64 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
  import { call } from './api.js'
- import { isHex, inkText, paintCss } from './inks.js'
- import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
+-import { isHex, inkText, paintCss } from './inks.js'
+-import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
++import { isHex } from './inks.js'
++import { SHAPES, markupCache } from './characters.js'
  import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
 -import { MENTION_ORIGIN, currentPart } from './text.js'
-+import { MENTION_ORIGIN, currentPart, landingPart, setPluginTools } from './text.js'
++import { currentPart, landingPart, setPluginTools } from './text.js'
++import { mentionCss } from './mention-style.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
-+import { installBrandChrome, installTabTitle } from './brand.js'
- import { lookOf } from './mark.js'
+-import { lookOf } from './mark.js'
 -import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
++import { installBrandChrome, installTabTitle } from './brand.js'
 +import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
  import { HeaderPill } from './header.js'
 -import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
@@ -1282,6 +1295,25 @@ diff --git a/src/client/index.js b/src/client/index.js
      try {
        const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
        localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))
+@@ -252,17 +252,7 @@ export function apply(ctx) {
+     const style = installStyles('', 'mentions')
+     let last = ''
+     const render = () => {
+-      const next = roster.getSnapshot().bots.map((bot) => {
+-        const anchor = `.bt-bubble a[href="${MENTION_ORIGIN}${bot.id}"]`
+-        const chip = /\s/.test(bot.name) ? '' : `[class*="_userRow"] [data-ref-chip="file"][title="@${bot.name.replace(/["\\]/g, '\\$&')}" i]`
+-        const look = lookOf(bot)
+-        const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`
+-        const mark = look.image
+-          ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}`
+-          : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`
+-        const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : ''
+-        return `${anchor}{color:${inkText(look.color)}}${chipBase}${mark}`
+-      }).join('\n')
++      const next = mentionCss(roster.getSnapshot().bots)
+       if (next !== last) style.textContent = last = next
+     }
+     render()
 @@ -325,7 +325,7 @@ export function apply(ctx) {
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })

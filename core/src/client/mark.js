@@ -2,6 +2,8 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
 import { fnv1a, lookOf, lookAvoidingLocals, lookBotForRemote, shapeId, shapeOf, MASK_ID, nextMarkSerial, characterMarkup, defaultColor } from './characters.js'
 import { inkFill } from './inks.js'
 import { t } from './i18n.js'
+import { clusterOrder } from './cluster-order.js'
+import { rosterBot } from './sources.js'
 
 export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
 
@@ -159,17 +161,18 @@ function clusterSeats(count, frame) {
 }
 
 export function roomAvatarPeople(room, roster) {
-  const members = (room?.members ?? []).map(id => roster?.byId?.[id]).filter(Boolean)
+  const members = (room?.members ?? []).map(id => rosterBot(roster, id)).filter(Boolean)
   const seen = new Set(members.map(bot => bot.id))
   const remotes = []
   for (const p of room?.participants ?? []) {
     if (p.leftSeq !== undefined) continue
     if (p.kind === 'human') continue
     if (!p.remote && p.id && seen.has(p.id)) continue
-    if (!p.remote && p.id && roster?.byId?.[p.id]) {
-      if (!seen.has(p.id)) {
-        members.push(roster.byId[p.id])
-        seen.add(p.id)
+    const known = !p.remote && p.id ? rosterBot(roster, p.id) : undefined
+    if (known) {
+      if (!seen.has(known.id)) {
+        members.push(known)
+        seen.add(known.id)
       }
       continue
     }
@@ -193,7 +196,7 @@ export function roomAvatarPeople(room, roster) {
 }
 
 export function RoomAvatar({ room, roster, size = 36 }) {
-  const people = roomAvatarPeople(room, roster)
+  const people = clusterOrder(roomAvatarPeople(room, roster))
   const seat = (bot, seatSize, key) => (bot
     ? h(BotMark, { key, bot, size: seatSize })
     : h('span', { key, className: 'bt-cluster-you', style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } }))

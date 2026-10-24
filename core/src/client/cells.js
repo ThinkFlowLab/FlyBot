@@ -5,6 +5,7 @@ import { inkText } from './inks.js'
 import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
+import { botByName, rosterBot } from './sources.js'
 import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
 import { SecretToolCell } from './secret-card.js'
 import { dateLocale, t } from './i18n.js'
@@ -859,7 +860,9 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
   const room = roster.roomsById[sessionId]
   return h('div', { className: 'bt-group-replies' },
     replies.map((reply, index) => {
-      const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
+      const stored = roster.byId[reply.botId]
+      const resolved = reply.remote ? stored : (rosterBot(roster, reply.botId) ?? stored)
+      const bot = resolved ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
       if (reply.kind === 'user') {
         const who = reply.name && reply.name !== 'User' ? reply.name : reply.authorId
         // Another person's own line: their name and person mark beside a received bubble,
@@ -1034,7 +1037,7 @@ export function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   const root = node.data.root
   const turn = node.location?.turn?.turn ?? root.turn
   const hidden = isHiddenTurn(roster, sessionId, turn)
-  const findBot = nameOrId => roster.byId[nameOrId] ?? roster.bots.find(bot => bot.name.toLowerCase() === String(nameOrId ?? '').toLowerCase())
+  const findBot = nameOrId => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId)
   const calls = hidden ? [] : callTree(root)
   const drawn = calls.filter(call => DRAWN.has(toolName(call)))
   // The newest call still running names the work, so a program reads as the tool it is in.

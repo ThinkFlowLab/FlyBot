@@ -1,0 +1,1 @@
+Your own Bot keeps its color after a friend with the same name is added. The @ mention, the group icon, and that Bot's messages stay on the local look; the friend's Bot stays on its own ([#963](https://github.com/ThinkFlowLab/FlyBot/issues/963)).
