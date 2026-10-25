@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
 import { currentColor, isColor, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
+import { cleanExternal } from './room-participant-external.js'
 
 export function install(rt) {
   const { ctx, config, home, defaults, state } = rt
@@ -58,7 +59,7 @@ export function install(rt) {
 
   // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
   // Bot made when no model is served.
-  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, ownerId: explicitOwnerId }) {
+  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId }) {
     const cleanName = String(botName ?? '').trim().slice(0, 40)
     // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
     // team names never clash with it and creating it starts no turn.
@@ -69,6 +70,8 @@ export function install(rt) {
       if (rt.findBot(cleanName)) throw new Error(`A Bot named ${cleanName} already exists`)
     } else if (cleanName === '') throw new Error('A friend\'s Bot needs a name')
     const cleanAvatarValue = cleanAvatar(avatar)
+    // Validated before the Session exists: a record that cannot be run leaves nothing behind (#198).
+    const externalRecord = cleanExternal(external)
     // The model is fixed at creation, so a later change of the DSH default leaves it alone.
     // A Bot made by another Bot (create_bot, a tree child) with no model named starts on its
     // maker's effective model and thinking level (#410; the level resolved against that
@@ -110,6 +113,7 @@ export function install(rt) {
         ...(typeof systemPrompt === 'string' && systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
         ...(fields && typeof fields === 'object' && Object.keys(fields).length > 0 ? { fields: JSON.parse(JSON.stringify(fields)) } : {}),
         ...(isRemote ? { remote: JSON.parse(JSON.stringify(remote)) } : {}),
+        ...(externalRecord ? { external: externalRecord } : {}),
       }
       if (main) {
         state.mainBotIds.push(id)

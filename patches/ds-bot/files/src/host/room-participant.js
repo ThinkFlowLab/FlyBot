@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { ROOM_REPLY_TIMEOUT_MS, ROOM_WORK_GRACE_MS, TEAM_TOOLS } from './constants.js'
 import { splitRef } from './text.js'
+import { createExternalRoomParticipant } from './room-participant-external.js'
 
 export function createDshRoomParticipant(rt) {
   async function open({ room, member }) {
@@ -110,4 +111,35 @@ export function createDshRoomParticipant(rt) {
   }
 
   return { kind: 'dsh', open, runTurn, snapshot, cancel }
+}
+
+// A room's members do not all run the same way (#198): a Bot whose record carries `external`
+// is spoken for by a supervised process, every other one by a DSH Session. Both sit behind the
+// one boundary groups.js calls, and the session id says which driver owns it.
+export function createRoomParticipants(rt) {
+  const dsh = createDshRoomParticipant(rt)
+  const external = createExternalRoomParticipant(rt)
+  const bySession = new Map()
+  const driverOf = member => (member?.external === undefined ? dsh : external)
+  const remember = (sessionId, driver) => {
+    if (sessionId !== undefined && !bySession.has(sessionId)) bySession.set(sessionId, driver)
+  }
+  return {
+    async open(args) {
+      const driver = driverOf(args.member)
+      const session = await driver.open(args)
+      remember(session?.id, driver)
+      return session
+    },
+    async runTurn(args) {
+      const driver = bySession.get(args.sessionId) ?? driverOf(args.member)
+      remember(args.sessionId, driver)
+      return driver.runTurn(args)
+    },
+    snapshot: sessionId => (bySession.get(sessionId) ?? dsh).snapshot(sessionId),
+    cancel: args => (bySession.get(args.sessionId) ?? dsh).cancel(args),
+    // Only the external driver owns a process; a DSH Session is archived by the host.
+    close: () => external.close(),
+    closeParticipant: (roomId, botId) => external.closeParticipant(roomId, botId),
+  }
 }

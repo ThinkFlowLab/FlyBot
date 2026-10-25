@@ -24,6 +24,21 @@ const WORK_DIR_PARAM = { type: 'string', description: 'Full path of the folder t
 export function install(rt) {
   const { ctx, state } = rt
 
+  // The tool speaks NAME=value because a free-form object parameter is not expressible in the
+  // schema DSH compiles; the record keeps the typed map (#198).
+  const externalOf = (input) => {
+    if (input === undefined || input === null) return undefined
+    if (!Array.isArray(input.env)) return input
+    const env = {}
+    for (const entry of input.env) {
+      const text = String(entry ?? '')
+      const at = text.indexOf('=')
+      if (at < 1) throw new Error('external.env entries read NAME=value')
+      env[text.slice(0, at)] = text.slice(at + 1)
+    }
+    return { ...input, env }
+  }
+
   const callerBot = (exec) => rt.botOf(rt.selfOf(exec.agent?.id))
   const callerRoom = (exec) => {
     const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
@@ -268,6 +283,17 @@ export function install(rt) {
       brief: { type: 'string', description: 'Why the user wants it, passed to the new Bot as its first context' },
       model: { type: 'string', description: 'Model the Bot runs on, as provider/model or a model id. Only when the user names one; otherwise the new Bot starts on your own model.' },
       work_dir: WORK_DIR_PARAM,
+      external: {
+        type: 'object',
+        additionalProperties: false,
+        description: 'A supervised external process that speaks for this Bot in rooms (#198). Subprocess only; the command is an argument array, never a shell line.',
+        properties: {
+          driver: { type: 'string', description: 'Only "subprocess" today' },
+          command: { type: 'array', items: { type: 'string' }, description: 'Program and its arguments, e.g. ["node","agent.js"]' },
+          cwd: { type: 'string', description: 'Working folder for the process' },
+          env: { type: 'array', items: { type: 'string' }, description: 'Variables for the process, each written NAME=value' },
+        },
+      },
     },
     output,
     async execute(args, exec) {
@@ -277,7 +303,7 @@ export function install(rt) {
         const workDir = args.work_dir ? await rt.cleanWorkDir(args.work_dir) : undefined
         const name = String(args.name ?? '').trim()
         await rt.approveFolder(exec, { path: workDir, who: { en: `the new Bot ${name}`, zh: `新 Bot ${name} ` } })
-        const bot = await rt.createBot({ ...args, workDir, createdBy: rt.selfOf(exec.agent.id) })
+        const bot = await rt.createBot({ ...args, workDir, createdBy: rt.selfOf(exec.agent.id), external: externalOf(args.external) })
         return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It starts no turn until the user writes to it.`
       } catch (error) {
         return `Could not create the Bot: ${error.message}`

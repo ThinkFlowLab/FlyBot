@@ -29,7 +29,7 @@ import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, faceRoster, isFaceLead } from './face-lead.js'
 import { faceMentions } from './face-mentions.js'
 import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
-import { createDshRoomParticipant } from './room-participant.js'
+import { createRoomParticipants } from './room-participant.js'
 
 const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
@@ -192,10 +192,20 @@ const noticeMark = notice => createHash('sha256').update(String(notice ?? '')).d
 
 export function install(rt) {
   const { ctx } = rt
-  const participant = createDshRoomParticipant(rt)
+  const participant = createRoomParticipants(rt)
   fanoutRoomLine = (room, line) => rt.fanoutRoomLine?.(room, line)
   stampRoomLine = (room, line) => rt.stampHop?.(room, line) ?? line
   rt.notePostedLine = (roomId, text) => postedLines.set(roomId, [...(postedLines.get(roomId) ?? []), text].slice(-20))
+  // What an external participant's process does is a room line (#198), so a crash is seen where
+  // the Bot speaks and not only in a log nobody reads.
+  ctx.effect(() => () => participant.close(), 'ds-bot: external room participants')
+  // A member that loses its seat takes its process with it (store.js dropGroupSession, #198).
+  rt.closeExternalParticipant = (roomId, botId) => participant.closeParticipant(roomId, botId)
+  rt.externalRoomLine = async function externalRoomLine(room, line) {
+    const posted = appendRoom(room, line)
+    await rt.save().catch(error => rt.warn?.('ds-bot: the state line of an external Bot was not saved: %s', error))
+    return posted
+  }
 
   // A member's group Session, created on its first turn there. A new one starts with
   // a fresh look at the log and a brief of the member's own chat; the brief is the

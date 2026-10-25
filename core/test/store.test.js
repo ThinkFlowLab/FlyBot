@@ -285,3 +285,20 @@ test('dispose waits for a pending save and prevents later writes', async (t) => 
     restore()
   }
 })
+
+test('a member that loses its seat closes its external process (#198)', async (t) => {
+  const { rt } = runtime(t)
+  await rt.load()
+  const calls = []
+  rt.closeExternalParticipant = (roomId, botId) => { calls.push([roomId, botId]); return true }
+  ctxRegistry(rt)
+  const room = { id: 'ops', name: 'Ops', sessions: { ext: 'external:ops:ext' } }
+  rt.dropGroupSession(room, 'ext')
+  assert.deepEqual(calls, [['ops', 'ext']])
+  assert.equal(room.sessions.ext, undefined)
+})
+
+// dropGroupSession archives the Session it drops; this fixture's host has no registry of its own.
+function ctxRegistry(rt) {
+  rt.ctx.workspaceRegistry = { archiveSession: async () => {} }
+}

@@ -567,6 +567,8 @@ export function install(rt) {
     delete room.sessions[botId]
     if (room.segments !== undefined) delete room.segments[botId]
     groupOwners.delete(sessionId)
+    // An external participant's process goes with the seat (#198); a DSH Session is archived below.
+    rt.closeExternalParticipant?.(room.id, botId)
     rt.cancelApprovals?.(sessionId)
     // A plain archive refuses a running Session, which would go on working for a group
     // that no longer has it.

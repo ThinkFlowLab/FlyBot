@@ -62,6 +62,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'tool detach_capability',
     'tool track_tasks',
     'effect ds-bot: chat index',
+    'effect ds-bot: external room participants',
     'effect ds-bot: group chat section',
     'prompt bot-room 10150',
     'tool group_relay',
