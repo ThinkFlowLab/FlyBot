@@ -541,8 +541,11 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 diff --git a/src/client/header.js b/src/client/header.js
 --- a/src/client/header.js
 +++ b/src/client/header.js
-@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
- import { currentPart, latestMemoryChange } from './text.js'
+@@ -1,11 +1,12 @@
+ import { createElement as h, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+ import { createPortal } from 'react-dom'
+-import { currentPart, latestMemoryChange } from './text.js'
++import { currentPart, faceRowTitle, latestMemoryChange } from './text.js'
  import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
  import { botState, BotAvatar, RoomAvatar } from './mark.js'
 +import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
@@ -565,14 +568,18 @@ diff --git a/src/client/header.js b/src/client/header.js
    const opening = useTurnClock((state) => {
      const first = openingTurn(state[sessionId], firstTurns, hiddenTurns)
      return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : ''
-@@ -68,26 +68,14 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+@@ -68,40 +68,32 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
    const bot = roster.byId[sessionId]
    const room = roster.roomsById[sessionId]
    const detailsOpen = useUi(state => state.details === sessionId)
 -  const name = bot?.name ?? room?.name ?? ''
-+  const name = bot?.remote
++  const full = bot?.remote
 +    ? friendBotTitle(bot)
 +    : (roomTitle(room) || bot?.name || '')
++  // The pill is one short row. The number-first title fits where
++  // "Face-to-face · SelfA1025, SelfB…" does not, and the full title stays on hover (#1102).
++  const face = room?.origin === 'face-to-face'
++  const name = face ? faceRowTitle(full) : full
    const useNews = useMemoryNews ?? noNews
    const memoryIds = bot ? [bot.id] : room?.members ?? []
    const notice = useMemoryNotice(memoryIds, useNews)
@@ -595,12 +602,15 @@ diff --git a/src/client/header.js b/src/client/header.js
    const memoryNotice = notice && changed !== null && roster.memory !== false
    return h('div', { className: 'bt-head' },
      h('button', {
-@@ -97,11 +97,11 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+       type: 'button', className: 'bt-pill', 'aria-expanded': detailsOpen, 'data-memory': memoryNotice ? 'updated' : undefined,
+-      'aria-label': memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? name }) : t('View conversation details'),
++      'aria-label': memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? full }) : t('View conversation details'),
+       onClick: () => (memoryNotice ? actions.openMemory(changed) : actions.toggleDetails(sessionId)),
      },
      bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
        : room ? h(RoomAvatar, { room, roster, size: 24 }) : null,
 -    h('span', { className: 'bt-pill-name' }, bot?.name ?? room?.name ?? (title || t('New chat'))),
-+    h('span', { className: 'bt-pill-name' }, name || title || t('New chat')),
++    h('span', { className: face ? 'bt-pill-name bt-pill-name-face' : 'bt-pill-name', title: face ? full : undefined }, name || title || t('New chat')),
      h(MemoryNotice, { shown: memoryNotice }),
      h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow))),
      h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),

@@ -1,6 +1,6 @@
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { currentPart, latestMemoryChange } from './text.js'
+import { currentPart, faceRowTitle, latestMemoryChange } from './text.js'
 import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
 import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
@@ -70,9 +70,13 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const bot = roster.byId[sessionId]
   const room = roster.roomsById[sessionId]
   const detailsOpen = useUi(state => state.details === sessionId)
-  const name = bot?.remote
+  const full = bot?.remote
     ? friendBotTitle(bot)
     : (roomTitle(room) || bot?.name || '')
+  // The pill is one short row. The number-first title fits where
+  // "Face-to-face · SelfA1025, SelfB…" does not, and the full title stays on hover (#1102).
+  const face = room?.origin === 'face-to-face'
+  const name = face ? faceRowTitle(full) : full
   const useNews = useMemoryNews ?? noNews
   const memoryIds = bot ? [bot.id] : room?.members ?? []
   const notice = useMemoryNotice(memoryIds, useNews)
@@ -82,12 +86,12 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   return h('div', { className: 'bt-head' },
     h('button', {
       type: 'button', className: 'bt-pill', 'aria-expanded': detailsOpen, 'data-memory': memoryNotice ? 'updated' : undefined,
-      'aria-label': memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? name }) : t('View conversation details'),
+      'aria-label': memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? full }) : t('View conversation details'),
       onClick: () => (memoryNotice ? actions.openMemory(changed) : actions.toggleDetails(sessionId)),
     },
     bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
       : room ? h(RoomAvatar, { room, roster, size: 24 }) : null,
-    h('span', { className: 'bt-pill-name' }, name || title || t('New chat')),
+    h('span', { className: face ? 'bt-pill-name bt-pill-name-face' : 'bt-pill-name', title: face ? full : undefined }, name || title || t('New chat')),
     h(MemoryNotice, { shown: memoryNotice }),
     h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow))),
     h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),

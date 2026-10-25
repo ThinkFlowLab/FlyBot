@@ -1985,7 +1985,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  
  // -------------------------------------------------------------------------
  // Sidebar
-@@ -37,77 +37,148 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,77 +37,149 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -2136,7 +2136,8 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  const label = [hover, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : ''].filter(Boolean).join(', ')
    return h('button', {
      type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
-+    // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
++    // The full title on hover. The row wraps the number-first form so the second
++    // name is not cut to "SelfB…" (#1102, #304, #458).
 +    title: hover,
      'data-room-id': id, onClick: () => actions.openSession(id),
      onContextMenu: (event) => { event.preventDefault(); actions.openMenu({ kind: 'room', id, x: event.clientX, y: event.clientY }) },
@@ -2145,7 +2146,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    pinned && !wide ? h(PinMark) : null,
    wide ? h('span', { className: 'bt-row-body' },
 -    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, room.name), pinned ? h(PinMark) : null),
-+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag', title: from }, t('Shared')) : null, pinned ? h(PinMark) : null),
++    h('span', { className: 'bt-row-name' }, h('span', { className: face ? 'bt-row-title bt-row-title-face' : 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag', title: from }, t('Shared')) : null, pinned ? h(PinMark) : null),
      workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
 -  wide && approval && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
 +  wide && alert && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
@@ -2508,10 +2509,11 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
  .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
-@@ -132,21 +132,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -132,27 +132,32 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-row-title.bt-row-title-face{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
 +.bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
  .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2536,6 +2538,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  .bt-head{position:relative;display:flex;justify-content:center;align-items:center;height:40px;flex:none;pointer-events:none}
  .bt-pill{pointer-events:auto;display:inline-flex;align-items:center;gap:8px;height:40px;padding:7.5px 13.5px 7.5px 7.5px;border-radius:999px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 2px 8px -1px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);color:var(--bt-ink);font-family:inherit;font-size:14px;line-height:20px;cursor:pointer;max-width:70%;box-sizing:border-box;transition:background-color .12s ease,transform ${SPRING_TAP.duration}ms ${SPRING_TAP.easing}}
+ .bt-pill:hover{background:color-mix(in srgb,var(--bt-main),#777 9%)}
+ .bt-pill:active{transform:scale(.965)}
+ .bt-pill-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
++.bt-pill:has(.bt-pill-name-face){height:auto;min-height:40px;align-items:flex-start}
++.bt-pill-name.bt-pill-name-face{min-width:0;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+ .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
+ .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
+ .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}
 @@ -174,6 +174,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
@@ -2651,7 +2661,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-group-replies{display:contents}
  /* A Bot chat is flat in every work-details mode, without changing the user's mode
     (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -805,21 +805,23 @@ export const CONVERSATION_CSS = `
+@@ -805,21 +805,28 @@ export const CONVERSATION_CSS = `
  [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
  :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
  [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
@@ -2667,6 +2677,11 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 +   whole header, so the header keeps its own layout, border and drag row. */
 +[class*="_header"] .bt-head{display:flex;align-items:center;height:auto;flex:none;width:auto;pointer-events:auto}
 +[class*="_header"] .bt-head .bt-pill{height:30px;padding:3px 10px 3px 4px;gap:6px;font-size:13px;line-height:18px;max-width:min(320px,32vw)}
++[class*="_header"] .bt-head .bt-pill:has(.bt-pill-name-face){height:auto;min-height:30px;align-items:flex-start}
++/* The session breadcrumb is a 244px nowrap line (#1102). Two lines keep
++   "Face-to-face · SelfA1025, SelfB1025 · 739184" inside that box. */
++[class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
++[class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 +[class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
  [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
  /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),

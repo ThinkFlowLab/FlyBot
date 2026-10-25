@@ -230,7 +230,7 @@ test('the account menu names each destination as it is named elsewhere (#392, #3
   for (const gone of ['Automation tasks', 'Classic Agent mode', 'Switch', 'Mode']) assert.equal(Object.hasOwn(DICTIONARY.zh, gone), false, gone)
 })
 
-test('a face-room sidebar row stays on one line and shows its full title on hover (#304)', async () => {
+test('a face-room sidebar row shows its full title on hover (#304, #1102)', async () => {
   const { readFileSync } = await import('node:fs')
   const sidebar = readFileSync(new URL('../src/client/sidebar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   const styles = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
@@ -238,8 +238,9 @@ test('a face-room sidebar row stays on one line and shows its full title on hove
   assert.match(mark, /className: 'bt-row-remote bt-row-face'/)
   const row = sidebar.slice(sidebar.indexOf('function RoomRow('), sidebar.indexOf('function AgentSessionRow('))
   // #892: the hover is the title, plus who shared it for a shared room.
-  assert.match(row, /'aria-current': active \? 'page' : undefined,\n(\s*\/\/[^\n]*\n)?\s*title: hover,\n/)
-  // No sidebar row wraps its title (#384 dropped the friend's Bot two-line clamp too).
+  // More than one comment may sit above title: hover (#1102).
+  assert.match(row, /'aria-current': active \? 'page' : undefined,\n(\s*\/\/[^\n]*\n)*\s*title: hover,\n/)
+  // A friend's Bot row stays one line (#384). A face-room title wraps on `.bt-row-title-face` (#1102).
   assert.equal(styles.split('\n').some(line => line.includes('-webkit-line-clamp:2') && line.includes('.bt-row-')), false)
   assert.match(styles, /\.bt-row-title\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/)
 })

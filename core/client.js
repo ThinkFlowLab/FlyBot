@@ -3571,6 +3571,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
 .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
 .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-row-title.bt-row-title-face{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
 .bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
 .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3594,6 +3595,8 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-pill:hover{background:color-mix(in srgb,var(--bt-main),#777 9%)}
 .bt-pill:active{transform:scale(.965)}
 .bt-pill-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.bt-pill:has(.bt-pill-name-face){height:auto;min-height:40px;align-items:flex-start}
+.bt-pill-name.bt-pill-name-face{min-width:0;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
 .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, "width", "margin-left")}}
 .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, "width", "margin-left")}}
 .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, "transform")}}
@@ -4281,6 +4284,11 @@ var CONVERSATION_CSS = `
    whole header, so the header keeps its own layout, border and drag row. */
 [class*="_header"] .bt-head{display:flex;align-items:center;height:auto;flex:none;width:auto;pointer-events:auto}
 [class*="_header"] .bt-head .bt-pill{height:30px;padding:3px 10px 3px 4px;gap:6px;font-size:13px;line-height:18px;max-width:min(320px,32vw)}
+[class*="_header"] .bt-head .bt-pill:has(.bt-pill-name-face){height:auto;min-height:30px;align-items:flex-start}
+/* The session breadcrumb is a 244px nowrap line (#1102). Two lines keep
+   "Face-to-face · SelfA1025, SelfB1025 · 739184" inside that box. */
+[class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
+[class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 [class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
 [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
 /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
@@ -4606,6 +4614,7 @@ function sessionTabLabel(roster, sessionId) {
     return friendBotTitle(bot);
   }
   if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
+  if (room2?.origin === "face-to-face") return faceRowTitle(roomTitle(room2));
   if (room2) return roomTitle(room2);
   return bot?.name || "";
 }
@@ -8334,7 +8343,8 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
       className: "bt-row",
       "aria-label": label,
       "aria-current": active ? "page" : void 0,
-      // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
+      // The full title on hover. The row wraps the number-first form so the second
+      // name is not cut to "SelfB…" (#1102, #304, #458).
       title: hover,
       "data-room-id": id,
       onClick: () => actions.openSession(id),
@@ -8348,7 +8358,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
     wide ? (0, import_react14.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react14.createElement)("span", { className: "bt-row-name" }, (0, import_react14.createElement)("span", { className: "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react14.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react14.createElement)("span", { className: "bt-tag", title: from }, t("Shared")) : null, pinned ? (0, import_react14.createElement)(PinMark) : null),
+      (0, import_react14.createElement)("span", { className: "bt-row-name" }, (0, import_react14.createElement)("span", { className: face ? "bt-row-title bt-row-title-face" : "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react14.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react14.createElement)("span", { className: "bt-tag", title: from }, t("Shared")) : null, pinned ? (0, import_react14.createElement)(PinMark) : null),
       workingLine ? (0, import_react14.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react14.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && alert && !active ? (0, import_react14.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react14.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
@@ -9085,7 +9095,9 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   const bot = roster.byId[sessionId];
   const room2 = roster.roomsById[sessionId];
   const detailsOpen = useUi((state) => state.details === sessionId);
-  const name = bot?.remote ? friendBotTitle(bot) : roomTitle(room2) || bot?.name || "";
+  const full2 = bot?.remote ? friendBotTitle(bot) : roomTitle(room2) || bot?.name || "";
+  const face = room2?.origin === "face-to-face";
+  const name = face ? faceRowTitle(full2) : full2;
   const useNews = useMemoryNews ?? noNews;
   const memoryIds = bot ? [bot.id] : room2?.members ?? [];
   const notice = useMemoryNotice(memoryIds, useNews);
@@ -9101,11 +9113,11 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
         className: "bt-pill",
         "aria-expanded": detailsOpen,
         "data-memory": memoryNotice ? "updated" : void 0,
-        "aria-label": memoryNotice ? t("Memory updated. Open {name}'s memory", { name: roster.byId[changed2]?.name ?? name }) : t("View conversation details"),
+        "aria-label": memoryNotice ? t("Memory updated. Open {name}'s memory", { name: roster.byId[changed2]?.name ?? full2 }) : t("View conversation details"),
         onClick: () => memoryNotice ? actions.openMemory(changed2) : actions.toggleDetails(sessionId)
       },
       bot ? (0, import_react15.createElement)(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== void 0), badge: false }) : room2 ? (0, import_react15.createElement)(RoomAvatar, { room: room2, roster, size: 24 }) : null,
-      (0, import_react15.createElement)("span", { className: "bt-pill-name" }, name || title || t("New chat")),
+      (0, import_react15.createElement)("span", { className: face ? "bt-pill-name bt-pill-name-face" : "bt-pill-name", title: face ? full2 : void 0 }, name || title || t("New chat")),
       (0, import_react15.createElement)(MemoryNotice, { shown: memoryNotice }),
       (0, import_react15.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react15.createElement)(GoArrow))
     ),

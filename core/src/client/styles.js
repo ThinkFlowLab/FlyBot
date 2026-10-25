@@ -149,6 +149,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
 .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
 .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-row-title.bt-row-title-face{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
 .bt-row-remote{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2)}
 .bt-tag{flex:none;max-width:96px;font-size:12px;line-height:16px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-row-preview{font-size:13px;line-height:18px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -172,6 +173,8 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-pill:hover{background:color-mix(in srgb,var(--bt-main),#777 9%)}
 .bt-pill:active{transform:scale(.965)}
 .bt-pill-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.bt-pill:has(.bt-pill-name-face){height:auto;min-height:40px;align-items:flex-start}
+.bt-pill-name.bt-pill-name-face{min-width:0;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
 .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
 .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
 .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}
@@ -860,6 +863,11 @@ export const CONVERSATION_CSS = `
    whole header, so the header keeps its own layout, border and drag row. */
 [class*="_header"] .bt-head{display:flex;align-items:center;height:auto;flex:none;width:auto;pointer-events:auto}
 [class*="_header"] .bt-head .bt-pill{height:30px;padding:3px 10px 3px 4px;gap:6px;font-size:13px;line-height:18px;max-width:min(320px,32vw)}
+[class*="_header"] .bt-head .bt-pill:has(.bt-pill-name-face){height:auto;min-height:30px;align-items:flex-start}
+/* The session breadcrumb is a 244px nowrap line (#1102). Two lines keep
+   "Face-to-face · SelfA1025, SelfB1025 · 739184" inside that box. */
+[class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
+[class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 [class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
 [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
 /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),

@@ -172,7 +172,8 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const label = [hover, face ? t('Face-to-face') : '', pinned ? t('Pinned') : '', members.length > 0 ? t('Working') : '', waiting ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : ''].filter(Boolean).join(', ')
   return h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
-    // The full title on hover: a long face-room title is cut to one line in the row (#304, #173).
+    // The full title on hover. The row wraps the number-first form so the second
+    // name is not cut to "SelfB…" (#1102, #304, #458).
     title: hover,
     'data-room-id': id, onClick: () => actions.openSession(id),
     onContextMenu: (event) => { event.preventDefault(); actions.openMenu({ kind: 'room', id, x: event.clientX, y: event.clientY }) },
@@ -180,7 +181,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   h(RoomAvatar, { room, roster, size: 36 }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag', title: from }, t('Shared')) : null, pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: face ? 'bt-row-title bt-row-title-face' : 'bt-row-title' }, face ? faceRowTitle(title) : title), face ? h(FaceMark) : room.sharedFrom ? h('span', { className: 'bt-tag', title: from }, t('Shared')) : null, pinned ? h(PinMark) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   wide && alert && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)

@@ -94,6 +94,27 @@ test('#250: an ended face-to-face room says closed in the tab instead of listing
   off()
 })
 
+test('#1102: a live face-room tab leads with the number so both names stay in the title', () => {
+  const sessions = createSource({ byId: { room1: { id: 'room1', retainedBy: { mainView: 1 } } } })
+  const roster = createSource({
+    byId: {},
+    roomsById: {
+      room1: {
+        name: 'Face-to-face · SelfA1025, SelfB1025 · 739184',
+        displayName: 'Face-to-face · SelfA1025, SelfB1025 · 739184',
+        origin: 'face-to-face',
+        face: { status: 'open' },
+      },
+    },
+  })
+  const doc = { title: 'FlyBot' }
+  const off = installTabTitle(sessions, roster, doc)
+  // The long form "Face-to-face · SelfA1025, SelfB…" loses the second name and the number
+  // when the tab clips the end. The number-first form fits, and both names are whole.
+  assert.equal(doc.title, '739184 · SelfA1025, SelfB1025 — FlyBot')
+  off()
+})
+
 test('#173: the tab title follows a room the roster learns after it opened', () => {
   const sessions = createSource({ byId: { chief: { id: 'chief', retainedBy: { mainView: 1 } } } })
   const roster = createSource({ byId: { chief: { name: 'Chief' } }, roomsById: {} })

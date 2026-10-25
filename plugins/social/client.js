@@ -272,14 +272,14 @@ window.__ModuleLoader__.load({
 .fs-dialog-head{display:flex;align-items:center;gap:8px;flex:none}
 .fs-dialog-head .fs-name{flex:1 1 auto}
 .fs-dialog > form{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
-.fs-tiles{margin:0;padding:4px 0 0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:10px 6px;align-content:start}
+.fs-tiles{margin:0;padding:4px 0 0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px 6px;align-content:start}
 .fs-pick{max-height:220px;overflow:auto}
 .fs-tile{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:6px 2px;border-radius:10px}
 .fs-tile-hit{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;width:100%;margin:0;cursor:pointer;font:inherit;position:relative}
 .fs-tile-hit:hover,.fs-tile-on{background:var(--bt-hover,rgba(119,119,119,.09))}
 .fs-tile-mark{position:relative;flex:none;display:inline-flex}
-.fs-tile-name{display:block;width:100%;font-size:12px;line-height:16px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink,#141414)}
-.fs-tile-sub{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-tile-name{display:block;width:100%;font-size:12px;line-height:16px;text-align:center;white-space:normal;overflow-wrap:anywhere;color:var(--bt-ink,#141414)}
+.fs-tile-sub{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:normal;overflow-wrap:anywhere;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .fs-wait-overview{margin:0 0 8px;padding:8px 10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px;min-width:0;max-width:100%}
 .fs-wait-overview .fs-wait-foot{margin-top:2px}
 .fs-tile-mine{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px var(--bt-card,#fff);pointer-events:none}

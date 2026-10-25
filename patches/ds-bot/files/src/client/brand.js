@@ -2,6 +2,7 @@
 // Paths stay here so tests can import them without React.
 
 import { isAutoFaceTitle } from '../shared/face-title.js'
+import { faceRowTitle } from './text.js'
 import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
 
 export const FLYBOT_WING = 'M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z'
@@ -37,6 +38,10 @@ export function sessionTabLabel(roster, sessionId) {
   // An ended face-to-face room (closed, or someone left) no longer lists people who are not in it (#250).
   // A name the user chose is kept.
   if (room && room.origin === 'face-to-face' && (room.face?.status === 'closed' || room.face?.status === 'left') && isAutoFaceTitle(room.name)) return 'Face-to-face · closed'
+  // A live face room leads with its number (#1102). The long form
+  // "Face-to-face · SelfA1025, SelfB1025 · 739184" is what a tab clips to
+  // "Face-to-face · SelfA1025, SelfB…", which hides the second name and the number.
+  if (room?.origin === 'face-to-face') return faceRowTitle(roomTitle(room))
   if (room) return roomTitle(room)
   return bot?.name || ''
 }
