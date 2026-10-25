@@ -762,7 +762,7 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
   const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
   plugin.apply({})
-  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-group', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.approvals#social-held-reply', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.room.members#social-room-invite', 'flybot.session.dock#social-group-strip', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking', 'flybot.session.dock#social-paused'])
+  assert.deepEqual(entries.map(([slot, entry]) => `${slot}#${entry.id}`), ['flybot.sidebar.section#social', 'flybot.new-chat.action#social-face-join', 'flybot.new-chat.action#social-face-start', 'flybot.new-chat.action#social-add-friend', 'flybot.composer.mention#social', 'flybot.account.header#social-handle', 'flybot.bot.details#social-invite', 'flybot.approvals#social-held-reply', 'flybot.settings.page#social', 'flybot.room.overview#social-face', 'flybot.room.members#social-room-invite', 'flybot.session.dock#social-group-strip', 'flybot.session.dock#social-room-end', 'flybot.session.dock#social-approval', 'flybot.session.dock#social-thinking', 'flybot.session.dock#social-paused'])
   // Transport errors are worded in English from their code, never the localized host text.
   assert.match(plugin.errorText(Object.assign(new Error('请求失败（HTTP 404）'), { code: 'HTTP_404' })), /^The FlyBot host did not answer \(HTTP 404\)/)
   assert.equal(plugin.errorText(Object.assign(new Error('x'), { code: 'bot/refused' })), 'x')
@@ -3480,7 +3480,8 @@ test('social section has no + Add; Add friend and Face-to-face room live on the 
   assert.equal(closed.nodes.some(n => n.type === 'button' && n.children.includes('Join with a number')), false)
   assert.equal(closed.nodes.some(n => n.props['data-flybot'] === 'face-join' || n.props['data-flybot'] === 'face-group-entry'), false)
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.room.overview' && entry.id === 'social-face'))
-  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group'))
+  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-join'))
+  assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-start'))
   assert.ok(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend'))
   assert.equal(closed.entries.some(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-accept-invite'), false)
   // Copy actions live in Add friend, not in the short + menu (#181).
@@ -3544,26 +3545,88 @@ test('social sidebar mount starts status without waiting on a friends roster', a
   assert.equal(started.includes('social/settings'), false)
 })
 
-test('the sidebar + menu gets a Face-to-face room action from social', () => {
+test('the sidebar + menu offers joining and starting as two rows (#1021)', () => {
   const { entries, pluginOf } = loadSocialClient(async () => ({}))
   pluginOf([]).apply({})
-  const row = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-face-group')
-  assert.ok(row)
-  // #892: one entry for both ways in, a number entered together or a group's invite link.
-  assert.equal(row[1].label, 'Join or create by number or link')
-  assert.match(row[1].hint, /number/)
-  assert.match(row[1].hint, /invite link/)
+  const row = id => entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === id)
+  const join = row('social-face-join')
+  const start = row('social-face-start')
+  assert.ok(join)
+  assert.ok(start)
+  // #1021: the one label that named a create path and a join path at once is gone.
+  assert.equal(join[1].label, 'Join by number or link')
+  assert.equal(start[1].label, 'Start a face-to-face room')
+  assert.equal(entries.some(([, entry]) => entry.label === 'Join or create by number or link'), false)
+  // #892: the join row keeps the number-and-link hint; the start row says the number is typed together.
+  assert.match(join[1].hint, /number/)
+  assert.match(join[1].hint, /invite link/)
+  assert.match(start[1].hint, /number/)
+  assert.doesNotMatch(start[1].hint, /link/)
   // #385: each social row has its own mark and a short one-line hint with no closing period.
-  const friend = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
-  assert.equal(typeof row[1].icon, 'function')
-  assert.equal(typeof friend[1].icon, 'function')
-  assert.notEqual(row[1].icon, friend[1].icon)
-  for (const hint of [row[1].hint, friend[1].hint]) {
-    assert.doesNotMatch(hint, /\.$/)
-    assert.ok(hint.length <= 45, hint)
+  const friend = row('social-add-friend')
+  for (const entry of [join[1], start[1], friend[1]]) {
+    assert.equal(typeof entry.icon, 'function')
+    assert.equal(typeof entry.run, 'function')
+    assert.doesNotMatch(entry.hint, /\.$/)
+    assert.ok(entry.hint.length <= 45, entry.hint)
   }
-  assert.equal(row[1].order, 15)
-  assert.equal(typeof row[1].run, 'function')
+  assert.notEqual(join[1].icon, friend[1].icon)
+  assert.deepEqual([join[1].order, start[1].order, friend[1].order], [15, 16, 17])
+})
+
+test('#1021: the join row opens the screen with the 6-digit input and the link field, the start row the one without', () => {
+  const { registered, entries, walk } = loadSocialClient(async (endpoint) => {
+    if (endpoint === 'social/status') return { connected: true, bots: [{ id: 'a', name: 'Chief', isMain: true }], approvals: [] }
+    if (endpoint === 'social/face-rooms') return { rooms: [] }
+    if (endpoint === 'social/remote-bots') return { homes: [] }
+    if (endpoint === 'social/settings') return { autoAccept: {} }
+    return {}
+  })
+  const hooks = []
+  let hookI = 0
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect: fn => { fn?.() },
+    useState: (init) => {
+      const i = hookI++
+      if (hooks[i] === undefined) hooks[i] = typeof init === 'function' ? init() : init
+      return [hooks[i], (value) => { hooks[i] = typeof value === 'function' ? value(hooks[i]) : value }]
+    },
+    useRef: v => ({ current: v }),
+    useMemo: f => f(),
+  }))
+  plugin.apply({})
+  const section = entries.find(([slot]) => slot === 'flybot.sidebar.section')[1]
+  hookI = 0
+  walk(section.component({}))
+  const row = id => entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === id)
+  const open = id => {
+    let closed = false
+    row(id)[1].run({ close: () => { closed = true } })
+    assert.equal(closed, true, 'the picker closes behind the row')
+    hookI = 0
+    return walk(section.component({}))
+  }
+  const find = (tree, name) => tree.find(n => n.props['data-flybot'] === name)
+  const hasCodeInput = tree => tree.some(n => n.props['aria-label'] === '6-digit room number')
+  const hasLinkInput = tree => tree.some(n => n.props.className === 'fs-link-input')
+
+  const join = open('social-face-join')
+  assert.equal(find(join, 'face-group').props['aria-label'], 'Join by number or link')
+  assert.equal(find(join, 'face-group-title').children.join(''), 'Join by number or link')
+  assert.ok(hasCodeInput(join), 'the join-shaped row is the one carrying the number')
+  assert.ok(hasLinkInput(join), 'and the invite link')
+  assert.match(find(join, 'face-join-about').children.join(''), /paste a group invite link/)
+
+  const start = open('social-face-start')
+  assert.equal(find(start, 'face-group').props['aria-label'], 'Start a face-to-face room')
+  assert.equal(find(start, 'face-group-title').children.join(''), 'Start a face-to-face room')
+  assert.ok(hasCodeInput(start), 'a room is still built out of one number')
+  assert.equal(hasLinkInput(start), false, 'a link is a way into a group that already exists')
+  assert.equal(find(start, 'face-link-join'), undefined)
+  assert.equal(find(start, 'face-scan'), undefined)
+  assert.match(find(start, 'face-join-about').children.join(''), /same number/)
 })
 
 test('sidebar + Add friend opens the join panel in Friends\' Bots; header stays without + Add', () => {
@@ -3597,7 +3660,7 @@ test('sidebar + Add friend opens the join panel in Friends\' Bots; header stays 
   assert.equal(before.some(n => n.props['data-flybot'] === 'add-friend'), false)
   const add = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
   assert.equal(add[1].label, 'Add friend')
-  assert.equal(add[1].order, 16)
+  assert.equal(add[1].order, 17)
   const closed = []
   add[1].run({ close: () => closed.push(true) })
   assert.deepEqual(closed, [true])
@@ -11691,8 +11754,9 @@ test('#1064: a pending claim is named on the Members card and Seat them asks the
 test('#892: the dialog names both ways in: a number entered together, or a group invite link or its QR', () => {
   const tree = localLinkDialog(async () => ({}), { link: '', status: null }).render()
   const find = name => tree.find(n => n.props['data-flybot'] === name)
-  assert.equal(find('face-group').props['aria-label'], 'Join or create by number or link')
-  assert.equal(find('face-group-title').children.join(''), 'Join or create by number or link')
+  // #1021: the screen is titled after the row that opened it; this one is the join path.
+  assert.equal(find('face-group').props['aria-label'], 'Join by number or link')
+  assert.equal(find('face-group-title').children.join(''), 'Join by number or link')
   const about = find('face-join-about').children.join('')
   assert.match(about, /same 6-digit number/)
   assert.match(about, /paste a group invite link or scan its QR code/)

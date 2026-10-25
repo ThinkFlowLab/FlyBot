@@ -18,14 +18,18 @@ const ZH = {
   'Chat with several of your Bots': '和你的几个 Bot 一起聊',
   'Face-to-face room': '面对面房间',
   'Meet people nearby with a 6-digit number': '用同一组 6 位数字和身边的人见面',
-  // #892: one entry for both ways in, a number entered together or a group's invite link, and its dialog.
-  'Join or create by number or link': '面对面建群或用链接加入',
+  // #892: the entries and the dialog named both ways in. #1021: the picker offers them as two rows,
+  // so the label that named a create path and a join path at once is gone.
+  'Join by number or link': '用号码或链接加入',
+  'Start a face-to-face room': '面对面建群',
   // #1053: a fresh 6-digit code offers to start the room. The hint still covers a number whose room already opened (#999).
   'Start a new room with {code}': '用 {code} 开一个新房间',
   'No one is waiting under this number. If someone already opened the room, the number no longer works — ask them for an invite link.': '这个号码下还没有人在等。如果已经有人开过这个房间，号码就不再有效——向他们要一条邀请链接。',
   'Start a new room': '开一个新房间',
   'Enter a number, or paste a group invite link': '输入数字面对面建群，或粘贴邀请链接加入',
   'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.': '选好你的 Bot。和身边的人输入同一组 6 位数字一起建群，或粘贴群邀请链接、扫描二维码加入那个群。',
+  'Pick the number everyone nearby types': '定一个大家都输入的号码',
+  'Pick your Bots and choose a 6-digit number. Everyone nearby types the same number to build the room together.': '选好你的 Bot，再定一组 6 位数字。身边的人输入同一个号码，就能一起把这个群建起来。',
   'Or paste a group invite link (https://…/r/…)': '或粘贴群邀请链接（https://…/r/…）',
   // #1044: a turn that died before writing anything still says so where the chat is.
   'Could not run: {error}': '这一轮没能跑起来：{error}',

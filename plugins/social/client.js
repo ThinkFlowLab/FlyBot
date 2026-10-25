@@ -960,14 +960,22 @@ window.__ModuleLoader__.load({
     // The interface's translator (#892): core's dictionary carries this plugin's Members-card and dialog copy,
     // so a zh UI reads it in Chinese. An older host has none: the English stands, with {params} filled in.
     // #892: the entry, the dialog's title and its copy name both ways in (core's dictionary has the zh).
-    const JOIN_OR_CREATE = 'Join or create by number or link'
+    // #1021: one row for two intents read as one label that names neither. The picker offers
+    // **Join by number or link** and **Start a face-to-face room** as separate rows; both open this
+    // screen, which titles itself after the row that was tapped, and only the join path carries the
+    // link and scan fields, because those are ways into someone else's group.
+    const JOIN_BY_NUMBER = 'Join by number or link'
+    const START_FACE_ROOM = 'Start a face-to-face room'
     // #1053: a fresh code's first step is starting the room. #999: the same answer also means a
     // room with this number may already have opened, so the hint still points at an invite link.
     const NOBODY_TITLE = 'Start a new room with {code}'
     const NOBODY_HINT = 'No one is waiting under this number. If someone already opened the room, the number no longer works — ask them for an invite link.'
     const START_NEW_ROOM = 'Start a new room'
     const JOIN_OR_CREATE_HINT = 'Enter a number, or paste a group invite link'
+    const START_FACE_HINT = 'Pick the number everyone nearby types'
     const JOIN_OR_CREATE_ABOUT = 'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.'
+    // The start path has no invitation in it: a room is built by typing one number together.
+    const START_FACE_ABOUT = 'Pick your Bots and choose a 6-digit number. Everyone nearby types the same number to build the room together.'
     const LINK_PLACEHOLDER = 'Or paste a group invite link (https://…/r/…)'
     const tr = (text, params) => {
       const fn = globalThis.__flybot__?.t
@@ -1391,7 +1399,10 @@ window.__ModuleLoader__.load({
     const othersIn = (members, mine) => (members ?? []).some(member => !mine(member))
 
     // Separate Face-to-face room screen (#92): pick Bots, join by number, live waiting room.
-    function FaceToFaceGroup({ actions, onClose, roster, remoteChats } = {}) {
+    // `mode` is the picker row that opened it (#1021): `join` keeps every way in, `start` is the
+    // room being built without an invitation.
+    function FaceToFaceGroup({ actions, onClose, roster, remoteChats, mode } = {}) {
+      const starting = mode === 'start'
       const [step, setStep] = useState('setup')
       const [bots, setBots] = useState([])
       const [selected, setSelected] = useState([])
@@ -1775,13 +1786,16 @@ window.__ModuleLoader__.load({
       // #1052: the helper is for a started number only. Empty stays quiet; six digits clear it.
       const digitsPartial = digitCount > 0 && !digitsTyped
       const nobody = step === 'nobody' ? faceWaitCode(room, code) : ''
+      // #1021: the screen names the row that opened it, so a person who tapped "join" never reads a
+      // title about starting a room (and the other way round).
+      const title = starting ? START_FACE_ROOM : JOIN_BY_NUMBER
       return h('div', {
-        className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': tr(JOIN_OR_CREATE),
+        className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': tr(title),
         onClick: event => { if (event?.target === event?.currentTarget) dismiss() },
       },
         h('div', { className: 'fs-dialog' },
           h('div', { className: 'fs-dialog-head' },
-            h('div', { className: 'fs-name', 'data-flybot': 'face-group-title' }, tr(JOIN_OR_CREATE)),
+            h('div', { className: 'fs-name', 'data-flybot': 'face-group-title' }, tr(title)),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: dismiss }, tr('Close'))),
           step === 'nobody' ? h('div', { className: 'fs-wait', 'data-flybot': 'face-nobody' },
             // #999: `nobody` means the join answer held no other home, not that the number is unused —
@@ -1820,7 +1834,7 @@ window.__ModuleLoader__.load({
                   disabled: !!busy || !room.roomId, onClick: enter,
                 }, 'Enter chat'),
               }))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
-            h('div', { className: 'fs-hint', 'data-flybot': 'face-join-about' }, tr(JOIN_OR_CREATE_ABOUT)),
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-join-about' }, tr(starting ? START_FACE_ABOUT : JOIN_OR_CREATE_ABOUT)),
             h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
               bots.map(bot => h(FaceTile, {
                 key: bot.id,
@@ -1848,7 +1862,9 @@ window.__ModuleLoader__.load({
             digitsPartial ? h('div', {
               className: 'fs-hint', 'data-flybot': 'face-join-digits', role: 'status',
             }, tr('Enter 6 digits')) : null,
-            h('div', { className: 'fs-link-row', 'data-flybot': 'face-link-join' },
+            // #1021: a link and a scanned QR are ways into a group that already exists, so the start
+            // path — building a room out of one number typed together — does not offer them.
+            starting ? null : h('div', { className: 'fs-link-row', 'data-flybot': 'face-link-join' },
               h('input', {
                 className: 'fs-link-input', value: invite.link, type: 'url', autoComplete: 'off', spellCheck: false,
                 placeholder: tr(LINK_PLACEHOLDER), 'aria-label': tr('Group invite link'),
@@ -1861,13 +1877,13 @@ window.__ModuleLoader__.load({
               invite.status ? h('div', {
                 className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-link-status', 'data-tone': invite.status.tone, role: 'status',
               }, invite.status.text) : null),
-            preview ? h(InvitePreviewCard, {
+            preview && !starting ? h(InvitePreviewCard, {
               preview, busy, kind: 'face-link-preview',
               onClear: clearInvite,
               joinLabel: preview.local ? tr('Join group') : tr('Join'),
               onJoin: () => (preview.local ? joinLocal(preview.link) : joinTicket(preview.link ?? invite.link, preview.ticket)),
             }) : null,
-            h('div', { className: 'fs-scan-row' },
+            starting ? null : h('div', { className: 'fs-scan-row' },
               h('button', {
                 type: 'button', className: 'fs-btn', 'data-flybot': 'face-scan', disabled: !!busy,
                 onClick: beginScan,
@@ -2809,21 +2825,23 @@ window.__ModuleLoader__.load({
     function makeOpener() {
       let handler = null
       let pending = false
+      let queued = null
       return {
-        open() {
-          if (handler) handler()
-          else pending = true
+        // #1021: the row that opens a panel passes which one it is, so the panel can name it.
+        open(arg) {
+          if (handler) handler(arg)
+          else { pending = true; queued = arg }
         },
         bind(fn) {
           handler = fn
-          if (pending) { pending = false; fn() }
+          if (pending) { pending = false; fn(queued) }
           return () => { if (handler === fn) handler = null }
         },
       }
     }
     const facePanel = makeOpener()
     const addFriendPanel = makeOpener()
-    const openFaceToFace = () => facePanel.open()
+    const openFaceToFace = (mode) => facePanel.open(mode === 'start' ? 'start' : 'join')
     const openAddFriend = () => addFriendPanel.open()
 
     function FriendsBots({ remoteChats, actions, roster } = {}) {
@@ -2831,6 +2849,7 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState('')
       const [adding, setAdding] = useState(false)
       const [faceOpen, setFaceOpen] = useState(false)
+      const [faceMode, setFaceMode] = useState('join')
       const [shareRequests, setShareRequests] = useState([])
       const [acceptNotices, setAcceptNotices] = useState([])
       // null until the first status answer: a reload must not toast notices that were already there (#1054).
@@ -2867,7 +2886,7 @@ window.__ModuleLoader__.load({
         timer?.unref?.()
         return () => clearInterval(timer)
       }, [])
-      useEffect(() => facePanel.bind(() => setFaceOpen(true)), [])
+      useEffect(() => facePanel.bind(mode => { setFaceMode(mode === 'start' ? 'start' : 'join'); setFaceOpen(true) }), [])
       useEffect(() => addFriendPanel.bind(() => setAdding(true)), [])
       const unavailable = String(error).startsWith('Social is not running:')
       if (unavailable) {
@@ -2880,7 +2899,7 @@ window.__ModuleLoader__.load({
         h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest }),
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
         adding ? h(AddFriend, { actions, remoteChats, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
-        faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null)
+        faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, mode: faceMode, onClose: () => setFaceOpen(false) }) : null)
     }
 
     // Someone accepted an invite to one of my Bots (#1054). One-way stays; this card is the inviter's
@@ -3843,18 +3862,27 @@ window.__ModuleLoader__.load({
           }
           offs = [
             slots().register('flybot.sidebar.section', { id: 'social', order: 100, component: FriendsBots }),
+            // #1021: two rows, because joining someone else's group and starting a room are different
+            // intentions. They open the same screen with the same handlers; the row says which one.
             slots().register('flybot.new-chat.action', {
-              id: 'social-face-group',
+              id: 'social-face-join',
               order: 15,
-              // #892: one entry for both ways in: a number entered together, or a group's invite link or QR.
-              label: JOIN_OR_CREATE,
+              label: JOIN_BY_NUMBER,
               hint: JOIN_OR_CREATE_HINT,
               icon: NearbyIcon,
-              run: ({ close } = {}) => { openFaceToFace(); close?.() },
+              run: ({ close } = {}) => { openFaceToFace('join'); close?.() },
+            }),
+            slots().register('flybot.new-chat.action', {
+              id: 'social-face-start',
+              order: 16,
+              label: START_FACE_ROOM,
+              hint: START_FACE_HINT,
+              icon: NearbyIcon,
+              run: ({ close } = {}) => { openFaceToFace('start'); close?.() },
             }),
             slots().register('flybot.new-chat.action', {
               id: 'social-add-friend',
-              order: 16,
+              order: 17,
               label: 'Add friend',
               hint: 'Paste an invite link or code',
               icon: AddPersonIcon,
