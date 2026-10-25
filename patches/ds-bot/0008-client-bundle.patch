@@ -3995,7 +3995,7 @@ diff --git a/client.js b/client.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -2488,2292 +2488,4042 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2488,2292 +2488,4073 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @keyframes bt-rise{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
  @media (prefers-reduced-motion:reduce){.bt-member,.bt-addlist{animation:none}}
  
@@ -7047,7 +7047,38 @@ diff --git a/client.js b/client.js
 -  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
 +var HIDDEN_REMOVED_TOOLS = /* @__PURE__ */ new Set(["ask_user_question"]);
 +var isConnectorTool = (name) => typeof name === "string" && /^mcp__(github|composio)__/.test(name);
-+var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName));
++var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
++  "list_bots",
++  "message_bot",
++  "stop_bot",
++  "create_bot",
++  "update_bot",
++  "list_models",
++  "bot_schedules",
++  "create_group",
++  "update_group",
++  "delete_group",
++  "post_to_group",
++  "ask_user",
++  "track_tasks",
++  "request_secret",
++  "list_secrets",
++  "group_relay",
++  "read_own_chat",
++  "read_group_chat",
++  "remember",
++  "forget",
++  "recall",
++  "read_browser",
++  "list_capabilities",
++  "save_capability",
++  "delete_capability",
++  "attach_capability",
++  "detach_capability",
++  "track_links"
++]);
++var isSilentRegistration = (name) => typeof name === "string" && SILENT_REGISTRATION_TOOLS.has(name);
++var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName));
 +function isHiddenToolRemoval(node) {
 +  const content = node?.data?.content;
 +  if (!Array.isArray(content) || content.length === 0) return false;

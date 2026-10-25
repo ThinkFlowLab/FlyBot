@@ -654,14 +654,31 @@ export function Nothing() { return null }
 
 // DSH writes a developer `tool-removal` context row when FlyBot `restrict()`s
 // `ask_user_question` off Bot sessions. The chat then shows "Tool removed: …".
-// Hide only those notices; other context (tool-added, unrelated removals) stays.
+// Hide those notices. A tool a person turns on, and an unrelated removal, still show.
 export const HIDDEN_REMOVED_TOOLS = new Set(['ask_user_question'])
 // Connector tools come and go with a Bot's connector switch (#335), not with anything the Bot did.
 const isConnectorTool = name => typeof name === 'string' && /^mcp__(github|composio)__/.test(name)
 // Plugin tools a per-Bot mask hides (tree's create_child_bot, list_children, …) come and go with the
 // Bot's place, never with anything a person did, so their rows stay out of every chat (#419).
-const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName)))
-  || (block?.type === 'tool-addition' && (isConnectorTool(block.toolName) || isPluginTool(block.toolName)))
+// The product's own tools join a session's request header the same way: DSH writes one
+// tool-addition (or tool-removal) row, and a plain turn prints it. That row is the
+// registration, not a step of the chat (#1101). The names are TEAM_TOOLS in
+// src/host/constants.js; the test walks that list, so a new team tool fails until it
+// is listed here. track_links is the same notice on the other home of the report;
+// this tree does not register that name.
+const SILENT_REGISTRATION_TOOLS = new Set([
+  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'list_models',
+  'bot_schedules',
+  'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
+  'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
+  'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
+  'list_capabilities', 'save_capability', 'delete_capability',
+  'attach_capability', 'detach_capability',
+  'track_links',
+])
+const isSilentRegistration = name => typeof name === 'string' && SILENT_REGISTRATION_TOOLS.has(name)
+const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)))
+  || (block?.type === 'tool-addition' && (isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)))
 
 export function isHiddenToolRemoval(node) {
   const content = node?.data?.content

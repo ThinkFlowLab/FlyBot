@@ -6207,7 +6207,38 @@ function Nothing() {
 }
 var HIDDEN_REMOVED_TOOLS = /* @__PURE__ */ new Set(["ask_user_question"]);
 var isConnectorTool = (name) => typeof name === "string" && /^mcp__(github|composio)__/.test(name);
-var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName));
+var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
+  "list_bots",
+  "message_bot",
+  "stop_bot",
+  "create_bot",
+  "update_bot",
+  "list_models",
+  "bot_schedules",
+  "create_group",
+  "update_group",
+  "delete_group",
+  "post_to_group",
+  "ask_user",
+  "track_tasks",
+  "request_secret",
+  "list_secrets",
+  "group_relay",
+  "read_own_chat",
+  "read_group_chat",
+  "remember",
+  "forget",
+  "recall",
+  "read_browser",
+  "list_capabilities",
+  "save_capability",
+  "delete_capability",
+  "attach_capability",
+  "detach_capability",
+  "track_links"
+]);
+var isSilentRegistration = (name) => typeof name === "string" && SILENT_REGISTRATION_TOOLS.has(name);
+var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName));
 function isHiddenToolRemoval(node) {
   const content = node?.data?.content;
   if (!Array.isArray(content) || content.length === 0) return false;

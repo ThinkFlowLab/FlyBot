@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
+import { TEAM_TOOLS } from '../src/host/constants.js'
 
 // ContextCell lives next to ToolCell; bundle it the same way so the DSH
 // "Tool removed: ask_user_question" hide can be checked without a browser.
@@ -131,4 +132,37 @@ test('#419: plugin tools a per-Bot mask takes away (tree) leave no Tool removed 
   assert.match(index, /setPluginTools\(value\.pluginTools\); live\.pluginTools = value\.pluginTools/)
   indexRoster({ bots: [], rooms: [] })
   assert.match(text(expand(ContextCell({ node: block('tool-removal', 'create_child_bot') }))), /Tool removed: create_child_bot/)
+})
+
+// DSH appends one developer row when a session's request header gains or loses a tool
+// (source.kind tool-registry). The product's own tools join that way on a plain turn;
+// the row is the registration, not a step of the chat (#1101). track_links is the same
+// notice from the other home of that report. A tool a person turns on still shows.
+test('#1101: product tool registration leaves no Tool added / Tool removed line', () => {
+  const block = (type, toolName) => ({ data: { content: [{ type, toolName }] } })
+  // TEAM_TOOLS plus track_links, the same notice on the other home of the report.
+  for (const name of [...TEAM_TOOLS, 'track_links']) {
+    assert.equal(isHiddenToolRemoval(block('tool-addition', name)), true, name)
+    assert.equal(isHiddenToolRemoval(block('tool-removal', name)), true, name)
+    assert.equal(text(expand(ContextCell({ node: block('tool-addition', name) }))), '', name)
+    assert.equal(text(expand(ContextCell({ node: block('tool-removal', name) }))), '', name)
+  }
+  const mixed = {
+    data: {
+      content: [
+        { type: 'tool-addition', toolName: 'track_tasks' },
+        { type: 'tool-addition', toolName: 'track_links' },
+        { type: 'tool-addition', toolName: 'web_search' },
+      ],
+    },
+  }
+  assert.equal(isHiddenToolRemoval(mixed), false)
+  assert.equal(text(expand(ContextCell({ node: mixed }))), 'Tool added: web_search')
+  // Using the tool is a different row. This one only drops the registration notice.
+  const call = {
+    kind: 'tool-result', name: 'message_bot', callId: 'used',
+    call: { name: 'message_bot', argsRaw: JSON.stringify({ to: 'Writer' }) },
+    content: [{ type: 'text', text: '' }], isError: false, subCalls: [],
+  }
+  assert.match(showTool(call), /Messaged.*Writer/)
 })
