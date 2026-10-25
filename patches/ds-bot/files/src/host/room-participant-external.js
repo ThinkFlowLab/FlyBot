@@ -17,6 +17,15 @@ const INTERPRETERS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'mksh', 'cmd',
 const MAX_COMMAND = 32
 const MAX_ENV = 32
 const MAX_OUT = 4096
+// A stop is a request, a signal is a demand, a SIGKILL is the end: a child that ignores the
+// first two would otherwise outlive the seat that closed it (#1164).
+const TERM_GRACE_MS = 50
+const KILL_GRACE_MS = 500
+// 'close' is not guaranteed: a grandchild can hold the inherited stdio open, so a crash is
+// reported from 'exit' after this much stderr has arrived (#1164).
+const DRAIN_MS = 100
+// Only the last words of a crashing child are worth a room line (#1164).
+const STDERR_TAIL = 200
 
 const oneLine = value => String(value ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
 
@@ -63,6 +72,15 @@ export function createExternalRoomParticipant(rt) {
   const keyOf = (room, member) => `${room.id}\u0000${member.id}`
   const sessionIdOf = (room, member) => `external:${room.id}:${member.id}`
 
+  // A state is a sentence the room reads, not a state name: `timeout` reads as `timed out` (#1164).
+  function stateLine(member, state, detail) {
+    if (state === 'crashed') return `${member.name}'s external process crashed${detail ? ` (${detail})` : ''}. Its turns in this room have no answer until it starts again.`
+    return `${member.name}'s external process ${state === 'timeout' ? 'timed out' : state}${detail ? ` (${detail})` : ''}.`
+  }
+
+  // A crash line carries the child's last words, flattened and capped, so `exit 1` is diagnosable
+  // from the room itself (#1164).
+  const tailOf = (entry) => String(entry.stderr ?? '').slice(-STDERR_TAIL).replace(/[\r\n]+/g, ' ').trim().slice(0, STDERR_TAIL)
   // The room sees what happened to its participant, not just a turn that never came back (#198).
   async function report(room, member, state, detail) {
     rt.warn?.('ds-bot: external Bot %s in %s: %s%s', member.name, room.name, state, detail ? ` (${detail})` : '')
@@ -73,9 +91,7 @@ export function createExternalRoomParticipant(rt) {
         authorId: member.id,
         authorKind: 'bot',
         kind: 'external',
-        text: state === 'crashed'
-          ? `${member.name}'s external process crashed${detail ? ` (${detail})` : ''}. Its turns in this room have no answer until it starts again.`
-          : `${member.name}'s external process ${state}${detail ? ` (${detail})` : ''}.`,
+        text: stateLine(member, state, detail),
       })
     } catch (error) {
       rt.warn?.('ds-bot: the state of %s in %s was not posted: %s', member.name, room.name, error)
@@ -96,11 +112,14 @@ export function createExternalRoomParticipant(rt) {
     const key = keyOf(room, member)
     const known = processes.get(key)
     if (known !== undefined) {
+      // A live process answers every turn, unless its seat has already been stopped: a stop that
+      // was ignored must never hand the next turn to the process the room just closed (#1164).
+      if (known.stopping === true) processes.delete(key)
       // Still running: the same process answers every turn in this room.
-      if (known.child !== undefined || known.turn !== undefined) return known
+      else if (known.child !== undefined || known.turn !== undefined) return known
       // It died (crash, clean exit, or the user stopped it). The next turn starts a fresh
       // one, which is what the room's line promises (#198).
-      processes.delete(key)
+      else processes.delete(key)
     }
     const record = member.external
     const entry = { state: 'starting', detail: undefined, turn: undefined, child: undefined, buffer: '' }
@@ -135,19 +154,40 @@ export function createExternalRoomParticipant(rt) {
     child.stderr.on('data', chunk => { entry.stderr = `${entry.stderr ?? ''}${chunk}`.slice(-MAX_OUT) })
     child.on('error', (error) => {
       entry.child = undefined
+      entry.reported = true
       settle(entry, 'crashed', oneLine(error?.message ?? error))
       void report(room, member, 'crashed', entry.detail)
     })
+    const reportExit = (code, signal) => {
+      // One line either way: whichever of 'exit' and 'close' reports first wins (#1164).
+      if (entry.reported === true) return
+      entry.reported = true
+      // A stop the child obeyed — it read the message and left on its own — is not an ending the
+      // room should hear about: it stopped when asked, so no 'crashed' line (#198).
+      if (entry.state === 'stopped' || entry.stopping === true) return
+      const clean = code === 0
+      const detail = signal !== null ? `signal ${signal}` : `exit ${code}`
+      const tail = clean ? '' : tailOf(entry)
+      const said = tail === '' ? detail : `${detail}: ${tail}`
+      settle(entry, clean ? 'exited' : 'crashed', said)
+      void report(room, member, entry.state, said)
+      entry.stopping = false
+    }
+    // 'exit' must free the seat at once — otherwise the next turn writes into a dead child and the
+    // room only sees a missed turn. It also arms one short drain, so the child's last stderr lines
+    // can still arrive before the crash line is posted (#1164).
+    let drain
     child.on('exit', (code, signal) => {
       entry.child = undefined
-      // A stop the child obeyed — it read the message and left on its own — is the same exit the
-      // signal branch below skips: it stopped when asked, so the room must not hear 'crashed' (#198).
-      if (entry.state === 'stopped' || entry.stopping === true) return
-      const clean = code === 0 && entry.stopping !== true
-      const detail = signal !== null ? `signal ${signal}` : `exit ${code}`
-      settle(entry, clean ? 'exited' : 'crashed', detail)
-      void report(room, member, entry.state, detail)
-      entry.stopping = false
+      drain = setTimeout(() => reportExit(code, signal), DRAIN_MS)
+      drain.unref?.()
+    })
+    // 'close' carries the full tail, but it may never come: a grandchild holding the inherited
+    // stdio postpones it for as long as it lives, so it is the confirmation, not the only path.
+    child.on('close', (code, signal) => {
+      clearTimeout(drain)
+      entry.child = undefined
+      reportExit(code, signal)
     })
     return entry
   }
@@ -160,10 +200,13 @@ export function createExternalRoomParticipant(rt) {
     // The protocol message is a courtesy the child may act on; the signal follows so a child that
     // never reads still goes (#198).
     try { child.stdin.write(`${JSON.stringify({ type: 'stop' })}\n`) } catch { /* the pipe may already be closed */ }
-    const kill = () => { try { child.kill('SIGTERM') } catch { /* the process may already be gone */ } }
-    const grace = setTimeout(kill, 50)
-    grace.unref?.()
-    child.once?.('exit', () => clearTimeout(grace))
+    const sendSignal = (name) => { try { child.kill(name) } catch { /* the process may already be gone */ } }
+    // SIGTERM first, then SIGKILL: a stop that is ignored is not a stop (#1164).
+    const term = setTimeout(() => sendSignal('SIGTERM'), TERM_GRACE_MS)
+    const hard = setTimeout(() => sendSignal('SIGKILL'), TERM_GRACE_MS + KILL_GRACE_MS)
+    term.unref?.()
+    hard.unref?.()
+    child.once?.('exit', () => { clearTimeout(term); clearTimeout(hard) })
   }
 
   // A member who loses the seat, or a Bot that is deleted, takes its process with it: a child

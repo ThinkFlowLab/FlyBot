@@ -129,6 +129,91 @@ test('a turn that times out comes back as no answer, not as a model failure (#19
   assert.equal(entry.botId, 'slow')
 })
 
+test('a child that ignores the stop is killed after the grace (#1164)', async (t) => {
+  // SIGTERM is handled and deliberately ignored: only an escalation can take this child.
+  const STUBBORN = "const fs=require('node:fs');fs.appendFileSync(process.env.SEEN,'start '+process.pid+'\\n');process.on('SIGTERM',()=>{});process.stdin.resume()"
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const seen = join(dir, 'pids.txt')
+  writeFileSync(seen, '')
+  const { driver, run } = fixture(t)
+  const member = { id: 'stubborn', name: 'Stubborn', external: { driver: 'subprocess', command: [process.execPath, '-e', STUBBORN], env: { SEEN: seen } } }
+  const turn = run(member, 'work')
+  await waitFor(() => /start \d+/.test(readFileSync(seen, 'utf8')))
+  const pid = Number(readFileSync(seen, 'utf8').match(/start (\d+)/)[1])
+  assert.equal(driver.closeParticipant('ops', 'stubborn'), true)
+  assert.equal(await turn, null)
+  await waitFor(() => { try { process.kill(pid, 0); return false } catch { return true } }, 4000)
+})
+
+test('a seat that was closed is never handed the next turn (#1164)', async (t) => {
+  // The child records each turn with its own pid and never answers. A stopped turn leaves the
+  // entry in place while the child may still be running: that is the reuse path — the next turn
+  // must reach a fresh process, not the one the user just stopped.
+  const PID_LOG = "const fs=require('node:fs');fs.appendFileSync(process.env.SEEN,'start '+process.pid+'\\n');process.on('SIGTERM',()=>{});let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);if(JSON.parse(l).type==='turn')fs.appendFileSync(process.env.SEEN,'turn '+process.pid+'\\n')}})"
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const seen = join(dir, 'pids.txt')
+  writeFileSync(seen, '')
+  const { driver, run } = fixture(t)
+  const member = { id: 'seat2', name: 'Seat2', external: { driver: 'subprocess', command: [process.execPath, '-e', PID_LOG], env: { SEEN: seen } } }
+  const turns = () => readFileSync(seen, 'utf8').split('\n').filter(row => row.startsWith('turn ')).map(row => row.slice(5))
+  const stopped = run(member, 'one')
+  await waitFor(() => turns().length === 1)
+  const first = turns()[0]
+  assert.equal(await driver.cancel({ sessionId: 'external:ops:seat2' }), true)
+  assert.equal(await stopped, null)
+  const next = run(member, 'two')
+  await waitFor(() => turns().length === 2)
+  const second = turns()[1]
+  assert.notEqual(second, first, 'the closed process must not answer the next turn')
+  await driver.cancel({ sessionId: 'external:ops:seat2' })
+  assert.equal(await next, null)
+})
+test('the timeout state line says timed out (#1164)', async (t) => {
+  const { rt, lines, run } = fixture(t)
+  rt.roomReplyTimeoutMs = 200
+  const member = { id: 'late', name: 'Late', external: { driver: 'subprocess', command: [process.execPath, '-e', 'process.stdin.resume()'] } }
+  assert.deepEqual(await run(member, 'work'), { missed: true })
+  const entry = await waitForLine(lines, 'late')
+  assert.match(entry.text, /external process timed out/)
+  assert.doesNotMatch(entry.text, /process timeout/)
+})
+
+test('a crash line carries the last words from stderr (#1164)', async (t) => {
+  const BOOM = "process.stderr.write('boom: missing config\\n',()=>process.exit(3))"
+  const { lines, run } = fixture(t)
+  const member = { id: 'boom', name: 'Boom', external: { driver: 'subprocess', command: [process.execPath, '-e', BOOM] } }
+  assert.equal((await run(member))?.failure?.reason, 'crashed')
+  const entry = await waitForLine(lines, 'boom')
+  assert.match(entry.text, /crashed \(exit 3: boom: missing config\)/)
+  // The tail is capped: 400 characters of stderr keep only the last 200.
+  const NOISE = "process.stderr.write('x'.repeat(400),()=>process.exit(3))"
+  const noisy = { id: 'noise', name: 'Noise', external: { driver: 'subprocess', command: [process.execPath, '-e', NOISE] } }
+  assert.equal((await run(noisy))?.failure?.reason, 'crashed')
+  const noise = await waitForLine(lines, 'noise')
+  assert.match(noise.text, /x{200}/)
+  assert.doesNotMatch(noise.text, /x{201}/)
+})
+test('a crash is reported when a grandchild holds the stdio open (#1164)', async (t) => {
+  // On the first launch the child leaves a grandchild on its inherited stdio and exits 1, so
+  // 'close' is postponed for as long as the grandchild lives (measured here: exit at ~40 ms,
+  // close at ~1280 ms). The crash line must not wait for 'close', and the seat must be free at
+  // once. The marker makes the second launch a normal responder.
+  const HELD = "const fs=require('node:fs');const cp=require('node:child_process');if(!fs.existsSync(process.env.MARK)){fs.writeFileSync(process.env.MARK,'1');fs.writeSync(2,'boom: helper holds the pipe\\n');cp.spawn(process.execPath,['-e','setTimeout(()=>{},1200)'],{stdio:'inherit'});process.exit(1)}let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);const m=JSON.parse(l);if(m.type==='turn')process.stdout.write(JSON.stringify({text:'again: '+m.text})+'\\n')}})"
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const mark = join(dir, 'mark')
+  const { lines, run } = fixture(t)
+  const member = { id: 'held', name: 'Held', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { MARK: mark } } }
+  const started = Date.now()
+  const first = run(member)
+  // 900 ms is before the grandchild's 1.2 s: only reporting from 'exit' can meet this.
+  const entry = await waitForLine(lines, 'held', 900)
+  const elapsed = Date.now() - started
+  assert.match(entry.text, /crashed \(exit 1: boom: helper holds the pipe\)/)
+  assert.ok(elapsed < 900, `the crash line waited for close (${elapsed} ms)`)
+  assert.equal((await first)?.failure?.reason, 'crashed')
+  // The seat was cleared on 'exit', so the next turn reaches a fresh process, not a dead pipe.
+  assert.equal(await run(member, 'ok'), 'again: ok')
+})
 test('a record may not carry a command line, only arguments (#198)', () => {
   assert.throws(() => cleanExternal({ command: 'node agent.js' }), /array of arguments/)
   assert.throws(() => cleanExternal({ command: [] }), /1 to 32/)
@@ -140,6 +225,10 @@ test('a record may not carry a command line, only arguments (#198)', () => {
     { driver: 'subprocess', command: ['node', 'agent.js'], cwd: '/tmp', env: { HOME: '/tmp' } })
 })
 
+const waitForLine = async (lines, botId, ms = 4000) => {
+  await waitFor(() => lines.some(line => line.botId === botId), ms)
+  return lines.find(line => line.botId === botId)
+}
 const waitFor = async (done, ms = 4000) => {
   const started = Date.now()
   while (!done()) {
