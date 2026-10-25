@@ -3059,6 +3059,13 @@ window.__ModuleLoader__.load({
 
     const ACCESS_POLL_MS = 5000
     const ACCESS_NOTE = 'One row per Bot. Revoke one without affecting the rest. Default: nobody, Chief included.'
+    // Settings → Bot Social asks to land on this card (#1074). One shot: a normal open of Bot settings does not scroll.
+    let peopleAccessBot = null
+    function openPeopleAccess(actions, botId) {
+      if (typeof actions?.openSettings !== 'function' || !botId) return
+      peopleAccessBot = botId
+      actions.openSettings('bots', botId)
+    }
     function ManageAccess({ bot, onGrants }) {
       const [view, setView] = useState(null)
       const [busy, setBusy] = useState('')
@@ -3078,6 +3085,13 @@ window.__ModuleLoader__.load({
         const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, ACCESS_POLL_MS)
         timer?.unref?.()
         return () => clearInterval(timer)
+      }, [bot?.id])
+      useEffect(() => {
+        if (!bot?.id || peopleAccessBot !== bot.id || typeof document?.querySelector !== 'function') return undefined
+        peopleAccessBot = null
+        const node = document.querySelector('[data-flybot="manage-access"]')
+        if (typeof node?.scrollIntoView === 'function') node.scrollIntoView({ block: 'start' })
+        return undefined
       }, [bot?.id])
       // Sharing's hint mentions Revoke only once someone has access (#499).
       const granted = (view?.grants ?? []).length
@@ -3419,6 +3433,31 @@ window.__ModuleLoader__.load({
     // Bot Social capability ids in words (#421). An id FlyBot does not know stays out of the line and
     // only shows in the tooltip, with the raw ids, for diagnostics.
     const FEATURE_WORDS = { typed_by_owner: 'typing as you', mentions: '@mentions', presence: 'online status' }
+    // A peer name on this page is one line: the overview already cleans it, and a value that skipped that still cannot break the row (#1074).
+    const settingsName = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    const friendLabel = (friend) => {
+      const name = settingsName(friend?.name)
+      const owner = settingsName(friend?.owner)
+      const handle = settingsName(friend?.handle)
+      const who = name || handle
+      if (who && owner && owner !== who && !who.includes(owner)) return `${who} (${owner})`
+      return who
+    }
+    const shareBotOf = (bot) => (bot && bot.remote !== true && typeof bot.id === 'string' && bot.id
+      ? { id: bot.id, name: settingsName(bot.name) || 'Bot', isMain: bot.isMain === true }
+      : null)
+    // The host's Row does not forward a data attribute, so this page's rows are the same markup with a hook.
+    function settingsRow({ label, hint, flybot, kind, children } = {}) {
+      return h('div', {
+        className: 'bt-set-row',
+        ...(flybot ? { 'data-flybot': flybot } : {}),
+        ...(kind ? { 'data-kind': kind } : {}),
+      },
+      h('div', { className: 'bt-set-copy' },
+        h('span', null, label),
+        hint ? h('span', { className: 'bt-set-hint' }, hint) : null),
+      children ? h('div', { className: 'bt-set-control' }, children) : null)
+    }
     const featureLine = (features, t) => {
       const ids = Array.isArray(features) ? features.map(String) : []
       if (!ids.length) return t('No optional features listed.')
@@ -3429,9 +3468,10 @@ window.__ModuleLoader__.load({
         : others === 1 ? t('Supports 1 optional feature') : t('Supports {count} optional features', { count: others })
       return h('span', { title: ids.join(', '), 'data-flybot': 'server-features' }, text)
     }
-    function SocialServerSettings({ t: given, Section, Row } = {}) {
+    function SocialServerSettings({ t: given, Section, Row, actions, roster } = {}) {
       useStyles()
       const t = given ?? ((text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+      // state order: view, loadError, live, form, address, name, checked, busy, error, circle, circleError, shareBots
       const [view, setView] = useState(null)
       const [loadError, setLoadError] = useState(null)
       const [live, setLive] = useState(null)
@@ -3441,6 +3481,9 @@ window.__ModuleLoader__.load({
       const [checked, setChecked] = useState(null)
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState(null)
+      const [circle, setCircle] = useState(null)
+      const [circleError, setCircleError] = useState('')
+      const [shareBots, setShareBots] = useState(null)
       const refresh = async () => {
         try { setView(await call('social/server', {})); setLoadError(null) } catch (e) { setLoadError(errorText(e)) }
       }
@@ -3458,6 +3501,27 @@ window.__ModuleLoader__.load({
         call('social/server-check', {}).then(info => { if (!off) setLive({ ok: true, ...info }) }, e => { if (!off) setLive({ ok: false, error: errorText(e) }) })
         return () => { off = true }
       }, [view?.server, view?.state === 'connected'])
+      // Friends and the Bots that can be shared (#1074). Hidden until this server is actually connected.
+      useEffect(() => {
+        if (!view?.server || view.state !== 'connected') return undefined
+        let off = false
+        const fromRoster = () => (Array.isArray(roster?.bots) ? roster.bots : []).map(shareBotOf).filter(Boolean)
+        call('social/overview', {}).then((value) => {
+          if (off) return
+          setCircle({
+            friends: Array.isArray(value?.friends) ? value.friends : [],
+            incoming: Array.isArray(value?.incoming) ? value.incoming : [],
+            outgoing: Array.isArray(value?.outgoing) ? value.outgoing : [],
+          })
+          setCircleError('')
+        }, (e) => { if (!off) setCircleError(errorText(e)) })
+        call('social/status', {}).then((value) => {
+          if (off) return
+          const listed = (Array.isArray(value?.bots) ? value.bots : []).map(shareBotOf).filter(Boolean)
+          setShareBots(listed.length ? listed : fromRoster())
+        }, () => { if (!off) setShareBots(fromRoster()) })
+        return () => { off = true }
+      }, [view?.server, view?.state])
       const platform = live?.ok ? live : view?.platform
       const open = (value = '') => { setForm(true); setAddress(value); setChecked(null); setError(null) }
       const close = () => { setForm(false); setChecked(null); setError(null); setBusy(false) }
@@ -3477,6 +3541,26 @@ window.__ModuleLoader__.load({
       const source = view.source === 'settings' ? t('Set here') : view.source === 'config' ? t('Profile default') : t('Not set')
       const status = (STATE_TEXT[view.state] ?? STATE_TEXT.connecting)(t, view)
       const quick = [...(view.defaultServer && view.source === 'settings' ? [view.defaultServer] : []), ...view.known].filter((item, at, all) => all.indexOf(item) === at)
+      const connected = view.state === 'connected'
+      const friendHint = (friend, kind) => {
+        const handle = settingsName(friend?.handle)
+        if (kind === 'friend') return handle || undefined
+        const sentence = kind === 'incoming' ? t('Accept them in Add friend.') : t('Waiting for them to accept')
+        return [handle, sentence].filter(Boolean).join(' · ')
+      }
+      const friendRows = circle ? ['friend', 'incoming', 'outgoing'].flatMap(kind => (circle[kind === 'friend' ? 'friends' : kind] ?? []).map((friend) => {
+        const label = friendLabel(friend)
+        if (!label) return null
+        return settingsRow({ flybot: 'settings-friend', kind, label, hint: friendHint(friend, kind) })
+      }).filter(Boolean)) : []
+      const friendStatus = circleError
+        ? settingsRow({ flybot: 'settings-friends-status', kind: 'error', label: t('Could not load friends.'), hint: circleError })
+        : circle === null
+          ? settingsRow({ flybot: 'settings-friends-status', kind: 'loading', label: t('Loading…') })
+          : friendRows.length === 0
+            ? settingsRow({ flybot: 'settings-friends-status', kind: 'empty', label: t('No friends yet.') })
+            : null
+      const orderedBots = (shareBots ?? []).slice().sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name))
       return h('div', { 'data-flybot': 'social-server' },
         h(Section, { title: t('Bot Social server') },
           h(Row, { label: view.server ?? t('No server'), hint: status },
@@ -3505,7 +3589,40 @@ window.__ModuleLoader__.load({
               checked && !checked.same
                 ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'data-flybot': 'server-confirm', onClick: () => void change() }, busy ? t('Switching…') : t('Switch to this server'))
                 : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || address.trim() === '', 'data-flybot': 'server-check', onClick: () => void check() }, busy ? t('Checking…') : t('Check')))))
-          : null)
+          : null,
+        connected ? h(Section, { title: t('Friends') },
+          friendStatus,
+          ...friendRows,
+          settingsRow({
+            label: t('Add friend'),
+            hint: t('Same panel as the + menu.'),
+            children: h('button', {
+              type: 'button',
+              className: 'bt-soft bt-soft-sm',
+              'data-flybot': 'settings-add-friend',
+              onClick: () => {
+                // The panel is in the sidebar, which the Settings dialog covers.
+                if (typeof actions?.closeSettings === 'function') actions.closeSettings()
+                openAddFriend()
+              },
+            }, t('Add friend')),
+          })) : null,
+        connected ? h(Section, { title: t('Sharing') },
+          shareBots === null ? settingsRow({ label: t('Loading…') }) : null,
+          ...orderedBots.map(bot => settingsRow({
+            label: bot.name,
+            hint: bot.isMain ? t('Main Bot') : undefined,
+            children: h('button', {
+              type: 'button',
+              className: 'bt-soft bt-soft-sm',
+              'data-flybot': 'settings-people-access',
+              'data-bot': bot.id,
+              'aria-label': t('People with access to {name}', { name: bot.name }),
+              disabled: typeof actions?.openSettings !== 'function',
+              onClick: () => openPeopleAccess(actions, bot.id),
+            }, t('People with access')),
+          })),
+          shareBots && orderedBots.length === 0 ? settingsRow({ label: t('No Bots to share yet.') }) : null) : null)
     }
 
     let cache = { at: 0, list: [] }

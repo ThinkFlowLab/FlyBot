@@ -8401,7 +8401,7 @@ test('server controller: per-server files, a hung start is replaced and its late
   }
 })
 
-// state order in SocialServerSettings: view, loadError, live, form, address, name, checked, busy, error
+// state order in SocialServerSettings: view, loadError, live, form, address, name, checked, busy, error, circle, circleError, shareBots
 const serverView = (extra = {}) => ({ server: 'https://a.test', source: 'config', defaultServer: 'https://a.test', displayName: 'Me', state: 'connected', handle: '@me.home', error: null, canChange: true, known: [], ...extra })
 const pageProps = { Section: 'section', Row: 'row', t: (text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')) }
 const nodeBy = (nodes, id) => nodes.find(node => node.props?.['data-flybot'] === id)
@@ -8501,6 +8501,136 @@ test('Settings → Bot Social page: every English line it passes to t() has a Ch
   assert.ok(keys.length > 20)
   assert.deepEqual(keys.filter(key => !Object.hasOwn(DICTIONARY.zh, key)), [])
   assert.ok(Object.hasOwn(DICTIONARY.zh, 'Bot Social'))
+})
+
+// A social client whose effects run and whose setState sticks, so a Settings page can load.
+function liveSocialClient(callImpl) {
+  const { registered, entries, walk, sandbox } = loadSocialClient(callImpl)
+  const buckets = new Map()
+  let bucket = []
+  let index = 0
+  const plugin = registered[0].factory(() => ({
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    Fragment: 'F',
+    useEffect: fn => { fn?.() },
+    useState: (init) => {
+      const at = index++
+      if (bucket[at] === undefined) bucket[at] = typeof init === 'function' ? init() : init
+      const store = bucket
+      const slot = at
+      return [store[slot], (value) => { store[slot] = typeof value === 'function' ? value(store[slot]) : value }]
+    },
+    useRef: v => ({ current: v }),
+    useMemo: f => f(),
+  }))
+  const render = (key, draw) => {
+    if (!buckets.has(key)) buckets.set(key, [])
+    bucket = buckets.get(key)
+    index = 0
+    return walk(draw())
+  }
+  const textOf = (node) => (typeof node === 'string' || typeof node === 'number' ? String(node) : (node?.children ?? []).map(textOf).join(''))
+  return { plugin, entries, sandbox, render, textOf }
+}
+
+const settingsFriends = [
+  { relationshipId: 'r-home', name: 'Bob', handle: '@bob.home' },
+  { relationshipId: 'r-bot', name: 'Chief', owner: 'SelfB', handle: '@chief.selfb.home' },
+  { relationshipId: 'r-dirty', name: 'Eve\n<script>', handle: '@eve.home' },
+]
+const settingsIncoming = [{ relationshipId: 'r-req', name: 'Helper', handle: '@helper.carol.home' }]
+const settingsOutgoing = [{ relationshipId: 'r-out', name: 'Pat', handle: '@pat.home' }]
+
+async function settleSettings(render, draw) {
+  for (let i = 0; i < 4; i++) {
+    render('page', draw)
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+  return render('page', draw)
+}
+
+test('#1074: Settings → Bot Social lists friends and links each Bot to People with access; + → Add friend stays', async (t) => {
+  const opened = []
+  const closed = []
+  const actions = {
+    openSettings: (page, id) => opened.push([page, id]),
+    closeSettings: () => closed.push('settings'),
+  }
+  const props = { ...pageProps, actions, roster: { bots: [] } }
+  const draw = (plugin) => () => plugin.SocialServerSettings(props)
+  const calls = []
+  const { plugin, entries, sandbox, render, textOf } = liveSocialClient(async (endpoint) => {
+    calls.push(endpoint)
+    if (endpoint === 'social/server') return serverView()
+    if (endpoint === 'social/server-check') return { ok: true, features: ['presence'] }
+    if (endpoint === 'social/overview') return { friends: settingsFriends, incoming: settingsIncoming, outgoing: settingsOutgoing }
+    if (endpoint === 'social/status') return { connected: true, bots: [{ id: 'b', name: 'Writer', isMain: false }, { id: 'a', name: 'Chief', isMain: true }] }
+    if (endpoint === 'social/access') return { grants: [], rooms: [] }
+    return {}
+  })
+  const dispose = plugin.apply({})
+  t.after(() => dispose?.())
+  const nodes = await settleSettings(render, draw(plugin))
+  const by = (id) => nodes.filter(node => node.props?.['data-flybot'] === id)
+  const friends = by('settings-friend')
+  const line = (node) => node.children.find(child => child.props?.className === 'bt-set-copy').children.map(textOf)
+  assert.deepEqual(friends.map(node => [node.props['data-kind'], ...line(node)]), [
+    ['friend', 'Bob', '@bob.home'],
+    ['friend', 'Chief (SelfB)', '@chief.selfb.home'],
+    ['friend', 'Eve script', '@eve.home'],
+    ['incoming', 'Helper', '@helper.carol.home · Accept them in Add friend.'],
+    ['outgoing', 'Pat', '@pat.home · Waiting for them to accept'],
+  ])
+  assert.equal(friends.some(node => textOf(node).includes('\n') || textOf(node).includes('<')), false, 'a peer name stays one line, with no markup')
+  assert.equal(by('settings-friends-status').length, 0)
+  const access = by('settings-people-access')
+  assert.deepEqual(access.map(node => [node.props['data-bot'], textOf(node)]), [['a', 'People with access'], ['b', 'People with access']], 'the Main Bot is first, whatever order status returned')
+  access[0].props.onClick()
+  assert.deepEqual(opened, [['bots', 'a']])
+  const scrolled = []
+  sandbox.document.querySelector = (selector) => (selector === '[data-flybot="manage-access"]' ? { scrollIntoView: (opts) => scrolled.push([selector, opts]) } : null)
+  render('access', () => plugin.ManageAccess({ bot: { id: 'a', name: 'Chief' } }))
+  // The options object is created inside the client sandbox, so compare its fields.
+  assert.equal(scrolled.length, 1)
+  assert.equal(scrolled[0][0], '[data-flybot="manage-access"]')
+  assert.equal(scrolled[0][1].block, 'start')
+  const menu = entries.find(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend')
+  assert.equal(menu[1].label, 'Add friend')
+  const section = entries.find(([slot]) => slot === 'flybot.sidebar.section')[1]
+  const sidebar = () => render('sidebar', () => section.component({}))
+  assert.equal(sidebar().some(node => node.props?.['data-flybot'] === 'add-friend'), false)
+  menu[1].run({ close() {} })
+  assert.equal(sidebar().some(node => node.props?.['data-flybot'] === 'add-friend'), true, '+ → Add friend still opens the panel')
+  sidebar().find(node => node.type === 'button' && textOf(node) === 'Done').props.onClick()
+  assert.equal(sidebar().some(node => node.props?.['data-flybot'] === 'add-friend'), false)
+  by('settings-add-friend')[0].props.onClick()
+  assert.deepEqual(closed, ['settings'], 'Add friend on this page leaves Settings so the sidebar panel is visible')
+  assert.equal(sidebar().some(node => node.props?.['data-flybot'] === 'add-friend'), true, 'the same panel, not a second Add friend')
+  assert.ok(calls.includes('social/overview'))
+  assert.equal(entries.filter(([slot, entry]) => slot === 'flybot.new-chat.action' && entry.id === 'social-add-friend').length, 1)
+
+  const off = liveSocialClient(async (endpoint) => (endpoint === 'social/server' ? serverView({ server: null, source: 'none', state: 'not-configured', handle: null, defaultServer: null }) : {}))
+  const quiet = await settleSettings(off.render, draw(off.plugin))
+  assert.equal(quiet.some(node => node.props?.['data-flybot'] === 'settings-friend' || node.props?.['data-flybot'] === 'settings-people-access' || node.props?.['data-flybot'] === 'settings-add-friend'), false)
+  assert.equal(quiet.find(node => node.type === 'row').props.label, 'No server')
+
+  const failed = liveSocialClient(async (endpoint) => {
+    if (endpoint === 'social/server') return serverView()
+    if (endpoint === 'social/server-check') return { ok: true, features: [] }
+    if (endpoint === 'social/overview') throw new Error('list_friends failed')
+    if (endpoint === 'social/status') throw new Error('status failed')
+    return {}
+  })
+  const roster = { bots: [{ id: 'a', name: 'Chief', isMain: true }, { id: 'remote', name: 'Coder', remote: true }] }
+  const broken = await settleSettings(failed.render, () => failed.plugin.SocialServerSettings({ ...pageProps, actions, roster }))
+  const status = broken.filter(node => node.props?.['data-flybot'] === 'settings-friends-status')
+  assert.equal(status.length, 1)
+  assert.equal(status[0].props['data-kind'], 'error')
+  assert.match(failed.textOf(status[0]), /Could not load friends\./)
+  assert.match(failed.textOf(status[0]), /list_friends failed/)
+  assert.equal(broken.some(node => node.props?.['data-kind'] === 'empty'), false, 'a failed read is not an empty friend list')
+  assert.deepEqual(broken.filter(node => node.props?.['data-flybot'] === 'settings-people-access').map(node => node.props['data-bot']), ['a'], 'a friend\'s Bot is not offered as someone to share')
+  assert.equal(broken.filter(node => node.props?.['data-flybot'] === 'settings-add-friend').length, 1)
 })
 
 test('#343: Add friend shows accepting and inviting as two labelled groups, each picker labelled, Done at the bottom', () => {
