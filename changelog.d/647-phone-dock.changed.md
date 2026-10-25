@@ -1,0 +1,1 @@
+On a phone the whole session dock is now touch-sized, not only the held-reply card: every button in it (invite by link, approve all held replies, accept or decline a notice, close a room) is 40px tall instead of the desktop 26–30px, the Auto-send and Copy link links get a real hit area, and the dock clears the phone's home indicator, so a decision can be made one-handed (#647).

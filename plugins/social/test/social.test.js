@@ -10301,6 +10301,24 @@ test('on a phone-width screen the hold card keeps Approve/Reject touch-sized (#3
   assert.match(phone, /\.fs-hold \.fs-hold-decide\{[^}]*justify-content:flex-end/)
 })
 
+test('at phone width the rest of the session dock is touch-sized too, not only the held card (#647)', () => {
+  const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.equal((src.match(/@media \(max-width:640px\)\{/g) ?? []).length, 1, 'still one phone-width block')
+  const phone = src.match(/@media \(max-width:640px\)\{([^\n]*)\}\n/)?.[1]
+  assert.ok(phone, 'the block stays on one line, so it closes where it opened')
+  // The dock was left at desktop sizes: `.fs-btn` 30px and `.fs-btn-sm` 26px. On a phone those are
+  // the only way to invite by link, approve all held replies, accept a notice or close a room.
+  assert.match(phone, /\.bt-flybot-session-dock \.fs-btn,\.bt-flybot-session-dock \.fs-btn-sm\{height:40px;padding:0 14px;font-size:14px\}/)
+  // Auto-send and Copy link are 12px text runs with no box: give them a hit area.
+  assert.match(phone, /\.bt-flybot-session-dock \.fs-link\{[^}]*min-height:32px/)
+  // The dock is the last row above the composer, so it has to clear the phone's home indicator.
+  assert.match(phone, /\.bt-flybot-session-dock\{padding-bottom:calc\(6px \+ env\(safe-area-inset-bottom,0px\)\)\}/)
+  // Wider screens are unchanged: the desktop sizes stay outside the media query.
+  assert.match(src, /\n\.fs-btn\{flex:none;height:30px/)
+  assert.match(src, /\n\.fs-btn-sm\{height:26px/)
+  assert.match(src, /\n\.fs-group-strip\{[^}]*margin:6px 12px/)
+})
+
 // Bot Social with the room lead (#476): POST /lead and PUT /roles answer the room, as the server does.
 function leadFaceServer(features) {
   const server = attestingFaceServer({ features })
