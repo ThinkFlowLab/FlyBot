@@ -4438,6 +4438,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // A person's line goes out plain with typed_by_owner when Bot Social attests it; an older
         // server (or a token that may not attest) gets the legacy envelope, as before.
         let sent
+        let legacy = false
         if (outbound.human && outbound.plain !== undefined && await canAttest()) {
           try {
             // The Bots the person's "@" picked go along as an explicit list when the server carries it (#293).
@@ -4449,7 +4450,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
             warn('Bot Social will not attest typed lines for this token; sending the legacy form', error)
           }
         }
-        sent ??= await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
+        if (sent === undefined) {
+          legacy = true
+          sent = await faceApi.send(serverId, { text: outbound.text, botId: outbound.botId })
+        }
+        // #997: a person's "@" cannot ride the legacy envelope. On a server that stamps typed lines, the
+        // other home reads that envelope as a Bot's line, so the named Bot is never called and the sender
+        // used to see nothing but a `warn()`. The words still go out as the envelope — dropping the line
+        // would be worse — but the room gets one line saying which call was lost, instead of silence.
+        // Only a definite "this token may not attest" (the probe answered, the server refused the stamp)
+        // counts: a probe that did not answer is not a "no" and takes no line, and a server that cannot
+        // stamp at all reads the envelope as the person's line, so its labels still call the Bot.
+        if (legacy && outbound.human && typed.supported) {
+          const lost = mentions.filter(handle => typeof handle === 'string' && handle.startsWith('@'))
+          if (lost.length > 0) flybot.rooms.postNotice?.(room.id, `No call went out for ${lost.join(', ')}: this connector token may not attest typed lines, so the other home reads this line as a Bot's.`)
+        }
         if (sent?.status === 'pending_approval') {
           rememberHoldRoom(sent.approvalId, serverId)
           // A person's own line is theirs: typing it is the approval, so it goes out at once

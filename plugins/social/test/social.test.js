@@ -8291,6 +8291,55 @@ test('mentions (#293): a typed line carries its @ handles when the server lists 
   assert.equal('mentions' in legacy, false)
 })
 
+test('#997: an @ that cannot ride the legacy envelope is not swallowed — one room line names the call that was lost', async (t) => {
+  const typedLine = { authorKind: 'human', who: 'Danyang', text: "@Bob's Chief please look", authorId: 'owner-1' }
+  const noticesOf = tweak => {
+    const notices = []
+    return { notices, tweak: (scoped) => {
+      tweak?.(scoped)
+      const orig = scoped.rooms.postNotice?.bind(scoped.rooms)
+      scoped.rooms.postNotice = (id, text) => { notices.push(String(text)); return orig?.(id, text) }
+    } }
+  }
+  // The defect: a server that stamps typed lines refuses this token, so the line falls back to the legacy
+  // envelope. The other home reads that envelope as a Bot's line, so the @ reaches nobody.
+  const refusing = attestingFaceServer({ refuse: true, features: ['typed_by_owner', 'mentions'] })
+  const refused = noticesOf()
+  const a = await faceFixture(t, refusing, refused.tweak)
+  const before = refused.notices.length
+  await a.fanout(typedLine, { mentions: ['@chief.bob.home'] })
+  const legacy = refusing.calls.filter(c => String(c.name).includes('/messages')).at(-1).args
+  assert.match(legacy.text, /FLYBOT-FACE-HUMAN/)
+  assert.equal('mentions' in legacy, false, 'the legacy envelope still never carries a callable list')
+  assert.deepEqual(refused.notices.slice(before), [`No call went out for @chief.bob.home: this connector token may not attest typed lines, so the other home reads this line as a Bot's.`], 'exactly one line, not a warn nobody sees, naming the Bot that was not called')
+  // One line per lost call, not a repeated copy of the first.
+  await a.fanout({ ...typedLine, text: "@Bob's Chief again" }, { mentions: ['@chief.bob.home'] })
+  assert.equal(refused.notices.length - before, 2, 'one line per lost call')
+
+  // The other direction: when the list does travel, the room stays quiet.
+  const carrying = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
+  const quiet = noticesOf()
+  const b = await faceFixture(t, carrying, quiet.tweak)
+  const quietBefore = quiet.notices.length
+  await b.fanout(typedLine, { mentions: ['@chief.bob.home'] })
+  assert.deepEqual(carrying.calls.find(c => String(c.name).includes('/messages')).args.mentions, ['@chief.bob.home'])
+  assert.equal(quiet.notices.length - quietBefore, 0, 'a call that went out is not announced')
+
+  // "Not known yet" is not "no": a probe that did not answer does not hold the line and does not claim a drop.
+  const unreachable = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
+  const inner = unreachable.fetch
+  unreachable.fetch = async (url, init) => String(url).endsWith('/v1/platform')
+    ? new Response('no answer', { status: 502 })
+    : inner(url, init)
+  const unknown = noticesOf()
+  const c = await faceFixture(t, unreachable, unknown.tweak)
+  const unknownBefore = unknown.notices.length
+  await c.fanout(typedLine, { mentions: ['@chief.bob.home'] })
+  assert.match(unreachable.calls.filter(call => String(call.name).includes('/messages')).at(-1).args.text, /FLYBOT-FACE-HUMAN/, 'the line still goes out')
+  assert.equal(unknown.notices.length - unknownBefore, 0, 'an unanswered probe is not evidence that the call was dropped')
+})
+
+
 test('mentions (#293): a friend\'s attested line calls my Bots by its handle list first; text is read only without one, and an unattested line never calls', async (t) => {
   const server = attestingFaceServer({ features: ['typed_by_owner', 'mentions'] })
   const { call, sources, room } = await faceFixture(t, server)
