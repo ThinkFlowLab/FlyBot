@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { createRuntime, provideFlyBot } from '../index.js'
 import { homeLock } from '../src/host/home-lock.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -118,10 +118,14 @@ function start(t, home) {
     route = options
     return register(options)
   }
-  apply(ctx, { home })
+  // createRuntime + provideFlyBot is what apply() does, and it keeps the runtime so a
+  // test can reach a save that no request drives (#1027).
+  const rt = createRuntime(ctx, { home })
+  provideFlyBot(ctx, rt.flybot)
   t.after(() => ctx.dispose())
   const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
   call.ctx = ctx
+  call.rt = rt
   return call
 }
 
@@ -184,6 +188,65 @@ test('a reading host follows the other host\'s keys, never writes them, and keep
   assert.equal((await call('secret-set', { name: 'MINE', value: 'mine-value-1' })).ok, true)
   const saved = JSON.parse(readFileSync(secretsPath, 'utf8')).secrets.map(secret => secret.name).sort()
   assert.deepEqual(saved, ['FIRST_KEY', 'MINE', 'SECOND_KEY', 'THIRD_KEY'])
+})
+
+test('#1027: a save in a stale read-only window takes the lock and writes', async (t) => {
+  const home = tempHome(t)
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const call = start(t, home)
+  assert.match((await call('state', {})).value.readOnly, /open in another dsh/)
+
+  // The other host closes; this window has not read since.
+  rmSync(join(home, 'state.lock'))
+
+  // A save no request drives (a plugin, a scheduled task, a retitle) takes the free lock
+  // and writes, instead of being dropped until some later state call refreshes.
+  await call.rt.save()
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.lock'), 'utf8')).pid, process.pid)
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).revision, 8)
+  assert.equal((await call('state', {})).value.readOnly, null)
+})
+
+test('#1032: a change made before save() lands; taking over does not replace it with what the other host left', async (t) => {
+  const home = tempHome(t)
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const call = start(t, home)
+  assert.match((await call('state', {})).value.readOnly, /open in another dsh/)
+
+  // The other host saves once more and closes while this window is read-only, and a writer
+  // here changes state before its save — the shape every host path uses.
+  writeFileSync(join(home, 'state.json'), JSON.stringify({ ...TEAM, revision: 8, prefs: { theme: 'light' } }))
+  rmSync(join(home, 'state.lock'))
+  call.rt.state.prefs.theme = 'dark'
+  await call.rt.save()
+
+  // This window writes what it has (revision 7 in memory, so 8 on disk); the change is not
+  // replaced by the copy the other host left, and the revision it bumps is its own.
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  assert.equal(saved.prefs.theme, 'dark')
+  assert.equal(saved.revision, 8)
+  assert.equal((await call('state', {})).value.readOnly, null)
+})
+
+test('#1032: mutate() adopts what the other host left before the change, so both survive', async (t) => {
+  const home = tempHome(t)
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const call = start(t, home)
+  assert.match((await call('state', {})).value.readOnly, /open in another dsh/)
+
+  writeFileSync(join(home, 'state.json'), JSON.stringify({ ...TEAM, revision: 8, prefs: { theme: 'light' } }))
+  rmSync(join(home, 'state.lock'))
+  // The write-path entry: take over and adopt first, then change, then write.
+  await call.rt.mutate(() => { call.rt.state.prefs.locale = 'zh' })
+
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  assert.equal(saved.prefs.theme, 'light')
+  assert.equal(saved.prefs.locale, 'zh')
+  assert.equal(saved.revision, 9)
+  assert.equal((await call('state', {})).value.readOnly, null)
 })
 
 test('read-only host (#14): FlyBot queries answer, plugin reads answer, writes and polling stop', async (t) => {

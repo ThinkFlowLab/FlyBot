@@ -797,6 +797,38 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
+@@ -235,10 +235,31 @@
+     return warnReadOnly()
+   }
+ 
++  // A window that was read-only because the other dsh held state.lock takes the lock on
++  // its next write once that file is gone, instead of waiting for a later state call
++  // (#1027). Taking over adopts nothing by itself: whoever called save() may already have
++  // changed `state`, and adopt() replaces it whole (#1032).
++  const takeover = () => {
++    claimLock()
++    if (holder !== undefined) return false
++    warnedReadOnly = false
++    return true
++  }
++
+   const save = () => {
+     if (stopped) return writing
+     indexSessions()
+     // A reading host keeps the file's revision, so its window does not skip the next change.
++    if (holder !== undefined && !lockBroken && stuck === undefined) {
++      // The other dsh may have closed since this window last looked: take the free lock
++      // instead of dropping the write (#1027). Nothing is adopted here — a caller may have
++      // already changed `state`, and adopt() replaces it whole (#1032). The write-path
++      // entry that adopts *before* a change is `mutate()`, just below.
++      if (!takeover()) {
++        warnReadOnly()
++        return writing
++      }
++    }
+     if (!writable()) return writing
+     state.revision += 1
+     state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
 @@ -260,9 +260,10 @@ export function install(rt) {
          ensureLock()
          await rename(temp, statePath)
@@ -809,6 +841,24 @@ diff --git a/src/host/store.js b/src/host/store.js
          throw error
        }
      })
+@@ -273,6 +273,17 @@
+     })
+   }
+ 
++  // The write-path entry for a change made outside a request (a plugin, a scheduled task,
++  // a delivery): take over the lock and adopt what the other host left *before* the change
++  // is made, then write it. Adopting first is what keeps both sides: a change already in
++  // `state` cannot be adopted around without losing it (#1032).
++  const mutate = async (change) => {
++    await refresh()
++    const result = await change()
++    await save()
++    return result
++  }
++
+   ctx.effect(() => () => {
+     stopped = true
+     return writing.finally(() => lock.release())
 @@ -335,9 +335,10 @@ export function install(rt) {
    }
    const findBot = (ref) => {
@@ -822,13 +872,19 @@ diff --git a/src/host/store.js b/src/host/store.js
    }
    // Every group chat whose id or name matches; callers refuse an ambiguous name.
    const findRooms = (ref) => {
-@@ -353,5 +353,6 @@ export function install(rt) {
+@@ -349,9 +349,10 @@
+   const isAdminOf = (room, id) => id !== undefined && room.admin === id
+ 
+   Object.assign(rt, {
+-    state, load, save, refresh, readOnly,
++    state, load, save, refresh, readOnly, mutate,
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
 +    initialOwnerId, syncDesignatedChief,
    })
  }
+
 diff --git a/src/host/tools.js b/src/host/tools.js
 --- a/src/host/tools.js
 +++ b/src/host/tools.js

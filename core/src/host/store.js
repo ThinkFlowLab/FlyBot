@@ -427,10 +427,31 @@ export function install(rt) {
     return warnReadOnly()
   }
 
+  // A window that was read-only because the other dsh held state.lock takes the lock on
+  // its next write once that file is gone, instead of waiting for a later state call
+  // (#1027). Taking over adopts nothing by itself: whoever called save() may already have
+  // changed `state`, and adopt() replaces it whole (#1032).
+  const takeover = () => {
+    claimLock()
+    if (holder !== undefined) return false
+    warnedReadOnly = false
+    return true
+  }
+
   const save = () => {
     if (stopped) return writing
     indexSessions()
     // A reading host keeps the file's revision, so its window does not skip the next change.
+    if (holder !== undefined && !lockBroken && stuck === undefined) {
+      // The other dsh may have closed since this window last looked: take the free lock
+      // instead of dropping the write (#1027). Nothing is adopted here — a caller may have
+      // already changed `state`, and adopt() replaces it whole (#1032). The write-path
+      // entry that adopts *before* a change is `mutate()`, just below.
+      if (!takeover()) {
+        warnReadOnly()
+        return writing
+      }
+    }
     if (!writable()) return writing
     state.revision += 1
     state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
@@ -464,6 +485,17 @@ export function install(rt) {
       warn('ds-bot: state write failed: %s', error)
       throw error
     })
+  }
+
+  // The write-path entry for a change made outside a request (a plugin, a scheduled task,
+  // a delivery): take over the lock and adopt what the other host left *before* the change
+  // is made, then write it. Adopting first is what keeps both sides: a change already in
+  // `state` cannot be adopted around without losing it (#1032).
+  const mutate = async (change) => {
+    await refresh()
+    const result = await change()
+    await save()
+    return result
   }
 
   ctx.effect(() => () => {
@@ -543,7 +575,7 @@ export function install(rt) {
   const isAdminOf = (room, id) => id !== undefined && room.admin === id
 
   Object.assign(rt, {
-    state, load, save, refresh, readOnly,
+    state, load, save, refresh, readOnly, mutate,
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
