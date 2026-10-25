@@ -1084,6 +1084,18 @@ export function install(rt) {
           } : {}),
         }))
       },
+      // #1126: the next share seq for a mention. Same counter a stored line uses (`room.seq`), so a
+      // second mention is a new remote line instead of a redelivery of seq 0.
+      takeLineSeq(roomId) {
+        const room = rt.roomOf?.(String(roomId ?? ''))
+        if (!room) return 1
+        if (typeof room.seq !== 'number' || !Number.isFinite(room.seq) || room.seq < 0) {
+          room.seq = Array.isArray(room.log) ? room.log.length : 0
+        }
+        room.seq += 1
+        void Promise.resolve(rt.save?.()).catch(() => {})
+        return room.seq
+      },
       removeParticipant: (roomId, ref) => rt.removeRoomParticipant?.(roomId, ref),
       upsertFace: spec => rt.upsertFaceRoom?.(spec),
       applyFaceLine: (roomId, line) => {

@@ -226,9 +226,10 @@ export function sharedRoom(state, botId, peer) {
 }
 
 // #1126: a mention of a Bot that already sits in a live local or inbound group with the sender.
-// The seat is the consent, so the mention does not also need a Sharing grant. Face-to-face stays
-// on sharedRoom (it names a server room). A link's ticket seat stays on ticketPeers: a mention is
-// not that pair. A plain line and message_bot do not come here — the caller passes `via`.
+// The seat is the consent, so the mention does not also need a Sharing grant. A seat a group
+// invite admitted (`admittedBy: 'ticket'`) counts while it is still in the room: that is how a
+// local-group link seats the other home. Face-to-face stays on sharedRoom (it names a server
+// room). A plain line and message_bot do not come here — the caller passes `via`.
 export function mentionRoom(state, botId, peer) {
   if (typeof botId !== 'string' || state.bots?.[botId] === undefined) return undefined
   const key = handleKey(peer)
@@ -237,7 +238,7 @@ export function mentionRoom(state, botId, peer) {
     && candidate.origin !== 'face-to-face'
     && !candidate.hidden
     && (candidate.members ?? []).includes(botId)
-    && remotesInRoom(candidate).some(seat => seat.admittedBy !== 'ticket' && handleKey(seat.handle || seat.id) === key))
+    && remotesInRoom(candidate).some(seat => handleKey(seat.handle || seat.id) === key))
   return room === undefined ? undefined : String(room.id)
 }
 

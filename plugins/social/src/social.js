@@ -1693,15 +1693,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // room-share, never a plain line), from the exact local Bot, to the exact handle, under the room id
   // the link names (`meta.scope`). The pairs are the host's (flybot.rooms.ticketPeers), not the text's.
   // #1126: the live local or inbound seat this mention is speaking to, when the sender is in that
-  // room. A face room is not one (it has its own room id). A link's ticket seat is not one either:
-  // only ticketPair may reach it, and a mention is not that pair.
+  // room. A face room is not one (it has its own room id). A seat a group invite admitted counts:
+  // that is the prod shared-group seat. A plain line is not a mention and does not come here.
   function liveCoSeat(fromBotId, handle) {
     const target = norm(handle)
     if (!target || target === '@' || typeof fromBotId !== 'string' || typeof flybot.rooms?.list !== 'function') return undefined
     for (const room of flybot.rooms.list()) {
       if (!room || room.origin === 'face-to-face' || !(room.members ?? []).includes(fromBotId)) continue
       const participant = (room.participants ?? []).find(p => p.leftSeq === undefined && p.kind === 'bot' && p.remote === true
-        && p.admittedBy !== 'ticket' && norm(p.handle || p.id) === target)
+        && norm(p.handle || p.id) === target)
       if (participant) return { room, participant }
     }
     return undefined
@@ -1710,23 +1710,34 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (msg?.via !== 'user-mention' || msg.attachments?.length) return undefined
     return liveCoSeat(msg.from, msg.target?.handle)
   }
+  // Bot Social's room reach for a link. An ordinary local room has no server id and must name none
+  // (#881). A ticket seat names the scope the link already opened: this room's id on the host, the
+  // host's room id on an inbound mirror.
+  function shareScope(seat) {
+    const room = seat.room
+    const ticketed = seat.participant?.admittedBy === 'ticket' || (room.origin === 'inbound-share' && room.sharedFrom?.ticket)
+    if (!ticketed) return undefined
+    if (room.origin === 'inbound-share' && room.sharedFrom?.remoteRoomId) return String(room.sharedFrom.remoteRoomId)
+    return String(room.id)
+  }
   // The same `FLYBOT-ROOM-SHARE` line fanout already sends. An inbound mirror names the host's room
-  // id (sharedFrom.remoteRoomId); a room of this home names its own. No Bot Social room_id: a local
-  // room has none, and inventing one is room_not_shared (#881). Names go through cleanText, the
-  // same cap the host uses for a share field.
-  function coSeatEnvelope(msg, seat) {
+  // id (sharedFrom.remoteRoomId); a room of this home names its own. `seq` is the room's own next
+  // line number: seq 0 on every mention is one redelivery, so the second line is logged and never shown.
+  async function coSeatEnvelope(msg, seat) {
     const room = seat.room
     const remoteId = room.origin === 'inbound-share' && room.sharedFrom?.remoteRoomId
       ? String(room.sharedFrom.remoteRoomId)
       : String(room.id)
     const to = norm(msg.target.handle)
+    const seq = typeof flybot.rooms?.takeLineSeq === 'function' ? Number(await flybot.rooms.takeLineSeq(room.id)) : NaN
+    if (!Number.isFinite(seq) || seq <= 0) throw new Error('that room has no line to send')
     const body = {
       v: 1,
       op: 'line',
       roomId: cleanText(remoteId, 'room'),
       name: cleanText(room.name, 'group'),
       invitedHandle: to,
-      seq: 0,
+      seq,
       who: cleanText(flybot.bot.get(msg.from)?.name, 'member'),
       kind: 'message',
       authorKind: 'human',
@@ -1743,8 +1754,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       throw new Error(`${name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${name} with them in its settings → Sharing.`)
     }
     const to = norm(msg.target.handle)
-    const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to, text: coSeatEnvelope(msg, seat) })
-      .catch((error) => { if (isPaused(error)) notePaused(to, error); throw error })
+    const scope = shareScope(seat)
+    const sent = await client.callTool('send_as_member', {
+      from_bot_id: member.bot_id,
+      to,
+      text: await coSeatEnvelope(msg, seat),
+      ...(scope ? { room_id: scope } : {}),
+    }).catch((error) => { if (isPaused(error)) notePaused(to, error); throw error })
     clearPaused(to)
     if (sent?.message?.status === 'pending_approval') await autoSendRoomEnvelope(sent)
     return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }

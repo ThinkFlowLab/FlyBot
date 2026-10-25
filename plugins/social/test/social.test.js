@@ -11750,8 +11750,6 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
     ['another Bot of theirs', { from: 'a', to: '@other.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
     // The text itself must be the host's envelope for that room, whole.
     ['plain text wearing the room via', { from: 'a', to: '@guest.eve.home', text: 'hello there', via: 'room', meta: { roomId: 'war', scope: 'war' } }],
-    // #1126 stays off this pair: a mention is not a link, and a ticket seat is not a local-group seat.
-    ['a user mention of the seat', { from: 'a', to: '@guest.eve.home', text: '@guest.eve.home hi', via: 'user-mention' }],
     ['an envelope for another room', { from: 'a', to: '@guest.eve.home', text: share.replace('"war"', '"other"'), via: 'room', meta: { roomId: 'war', scope: 'war' } }],
     ['the marker inside a plain line', { from: 'a', to: '@guest.eve.home', text: `look: ${share}`, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
   ]
@@ -11760,6 +11758,21 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
     assert.equal(out.action, 'deny', `${why}: ${JSON.stringify(out)}`)
   }
   assert.equal(sends().length, 1, 'none of those reached Bot Social')
+  // #1126: a mention of this live ticket seat is the group's line, under the link's room id.
+  // A plain line and message_bot above stay refused. Two mentions take two seqs.
+  const lineOf = call => JSON.parse(String(call.args.text).slice('FLYBOT-ROOM-SHARE\n'.length))
+  const mentioned = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: '@guest.eve.home hi', via: 'user-mention' })
+  assert.equal(mentioned.action, 'allow', JSON.stringify(mentioned))
+  assert.equal(sends().at(-1).args.room_id, 'war', 'a ticket seat names the link scope')
+  assert.equal(sends().at(-1).args.to, '@guest.eve.home')
+  const first = lineOf(sends().at(-1))
+  assert.equal(first.op, 'line')
+  assert.equal(first.roomId, 'war')
+  assert.ok(first.seq > 0, `seq advances past 0, got ${first.seq}`)
+  const again = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: '@guest.eve.home again', via: 'user-mention' })
+  assert.equal(again.action, 'allow', JSON.stringify(again))
+  const second = lineOf(sends().at(-1))
+  assert.ok(second.seq > first.seq, `second mention seq ${second.seq} follows ${first.seq}`)
   // #923: the same envelope the owner approves on a card goes out by the same pair, so approving a
   // held room share names the room instead of asking Bot Social about a friendship there is not.
   const approved = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: share, via: 'room-share', approved: true, meta: { roomId: 'war', scope: 'war' } })
@@ -11789,6 +11802,23 @@ const SHARED_GROUP = {
     participants: [
       { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
       { kind: 'bot', remote: true, id: '@chief.flybot682b8a43.home', handle: '@chief.flybot682b8a43.home', ownerHome: '@flybot682b8a43.home', ownerName: 'Owner', displayName: 'Chief', role: 'member', joinedSeq: 1, joinedAt: 1 },
+    ],
+  },
+  // A local-group invite seats the other home with admittedBy ticket (host admitClaim).
+  invite: {
+    id: 'invite', name: '研发组', members: ['a'], admin: 'a', named: true, log: [], seq: 4, seen: {},
+    participants: [
+      { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', remote: true, id: '@guest.eve.home', handle: '@guest.eve.home', ownerHome: '@eve.home', ownerName: 'Eve', displayName: 'Guest', role: 'member', admittedBy: 'ticket', ticket: 'TktSeatAbCdEfGhIjKlMnO', hostBotId: 'a', joinedSeq: 1, joinedAt: 1 },
+    ],
+  },
+  // The guest's mirror of that invite (recordInboundSharedRoom) marks the inviter the same way.
+  invited: {
+    id: 'invited', name: '研发组', origin: 'inbound-share', members: ['a'], admin: 'a', named: true, log: [], seq: 2, seen: {},
+    sharedFrom: { remoteRoomId: 'host-invite', ticket: 'TktGuestAbCdEfGhIjKlMn', inviterHandle: '@chief.invite.home', inviterHome: '@invite.home' },
+    participants: [
+      { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', remote: true, id: '@chief.invite.home', handle: '@chief.invite.home', ownerHome: '@invite.home', ownerName: 'Owner', displayName: 'Chief', role: 'member', admittedBy: 'ticket', ticket: 'TktGuestAbCdEfGhIjKlMn', joinedSeq: 1, joinedAt: 1 },
     ],
   },
 }
@@ -11823,7 +11853,13 @@ test('#1126: a mention of a live shared-room seat is a room line; a stranger and
   const line = lineOf(sends()[0])
   assert.equal(line.op, 'line')
   assert.equal(line.roomId, 'rnd')
+  assert.equal(line.seq, 1, 'the first mention takes the room\'s next seq, not 0')
   assert.match(line.text, /hello from the group/)
+  const mentionedAgain = await ctx.flybot.bot.send({
+    from: 'a', to: '@chief.other.home', text: '@chief.other.home second line', via: 'user-mention',
+  })
+  assert.equal(mentionedAgain.action, 'allow', JSON.stringify(mentionedAgain))
+  assert.equal(lineOf(sends().at(-1)).seq, 2, 'the next mention is a new line')
 
   const inbound = await ctx.flybot.bot.send({
     from: 'a', to: '@chief.flybot682b8a43.home', text: '@chief.flybot682b8a43.home in the mirror', via: 'user-mention',
@@ -11832,6 +11868,31 @@ test('#1126: a mention of a live shared-room seat is a room line; a stranger and
   assert.equal(sends().at(-1).args.to, '@chief.flybot682b8a43.home')
   assert.equal('room_id' in sends().at(-1).args, false)
   assert.equal(lineOf(sends().at(-1)).roomId, 'host-room', 'an inbound mirror names the host room, not its local id')
+  assert.equal(lineOf(sends().at(-1)).seq, 1)
+
+  const ticket = await ctx.flybot.bot.send({
+    from: 'a', to: '@guest.eve.home', text: '@guest.eve.home from the invite', via: 'user-mention',
+  })
+  assert.equal(ticket.action, 'allow', JSON.stringify(ticket))
+  assert.equal(sends().at(-1).args.to, '@guest.eve.home')
+  assert.equal(sends().at(-1).args.room_id, 'invite', 'a ticket seat names the link scope')
+  const ticketLine = lineOf(sends().at(-1))
+  assert.equal(ticketLine.op, 'line')
+  assert.equal(ticketLine.roomId, 'invite')
+  assert.equal(ticketLine.seq, 5, 'continues the room counter (seq was 4)')
+  const ticketAgain = await ctx.flybot.bot.send({
+    from: 'a', to: '@guest.eve.home', text: '@guest.eve.home invite again', via: 'user-mention',
+  })
+  assert.equal(ticketAgain.action, 'allow', JSON.stringify(ticketAgain))
+  assert.equal(lineOf(sends().at(-1)).seq, 6)
+
+  const guest = await ctx.flybot.bot.send({
+    from: 'a', to: '@chief.invite.home', text: '@chief.invite.home from the guest', via: 'user-mention',
+  })
+  assert.equal(guest.action, 'allow', JSON.stringify(guest))
+  assert.equal(sends().at(-1).args.room_id, 'host-invite', 'the guest names the host room the link opened')
+  assert.equal(lineOf(sends().at(-1)).roomId, 'host-invite')
+  assert.equal(lineOf(sends().at(-1)).seq, 3, 'the mirror\'s own counter was 2')
 
   const beforeStranger = sends().length
   const stranger = await ctx.flybot.bot.send({
