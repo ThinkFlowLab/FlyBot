@@ -30,6 +30,7 @@ import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, face
 import { faceMentions } from './face-mentions.js'
 import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createRoomParticipants } from './room-participant.js'
+import { ROOM_CONTEXT_BUDGET, fitRoomLines, formatRoomBoard, prepareRoomLine } from './room-context.js'
 
 const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
@@ -155,7 +156,7 @@ export const referenceNote = references => (references?.length
   ? `Conversations the user referenced in this round:\n\n${references.map(reference => reference.text).join('\n\n')}`
   : '')
 
-const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
+const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Progress lives on the task board: update your card with track_tasks, and do not narrate CI, merge-queue, or review status in the group. When the board already shows it, reply [PASS], or one short handoff line if someone must act next. A status meant for someone else is [PASS]. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
 // The turn's own closing line: the full reply rule above stands in the group's section of the system prompt.
 const ROOM_REPLY_NOW = 'Reply now with your message for the group, no name prefix, or [PASS] to stay silent.'
 // Words that address the whole room: a plain line with one of them may get an answer from each Bot (#299).
@@ -343,18 +344,34 @@ export function install(rt) {
   // The group's standing rules are not repeated here: they are in the section above.
   function roomPrompt(room, member, round) {
     const lines = unseenLines(room, member.id)
-    const earlier = lines.filter(line => line.seq < round.startSeq).slice(-ROOM_EARLIER_MAX)
-    const current = lines.filter(line => line.seq >= round.startSeq)
+    const earlierLines = lines.filter(line => line.seq < round.startSeq).slice(-ROOM_EARLIER_MAX)
+    const currentLines = lines.filter(line => line.seq >= round.startSeq)
+    // Count caps first, then a character budget. Long status essays collapse
+    // inside the budget; the stored log is unchanged (#1203).
+    const fitted = fitRoomLines([...earlierLines, ...currentLines], {
+      budget: ROOM_CONTEXT_BUDGET,
+      render: lineText,
+      prepare: prepareRoomLine,
+    })
+    const earlier = fitted.entries.filter(entry => entry.line.seq < round.startSeq)
+    const current = fitted.entries.filter(entry => entry.line.seq >= round.startSeq)
+    const show = entries => entries.map(entry => entry.text).join('\n')
     const spokeThisRound = (room.seen[member.id] ?? 0) >= round.startSeq
     const index = round.slots.findIndex(slot => slot.status === 'speaking')
     const before = index
     const after = round.slots.length - index - 1
     const working = workingIn(room).filter(item => item.bot.id !== member.id)
+    const board = isFaceRoom(room) ? '' : formatRoomBoard(rt.state.tasks, {
+      roomId: room.id,
+      nameOf: task => rt.botOf(task.ownerBotId)?.name,
+    })
     return [
       noticeChange(room, member),
-      earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
+      board,
+      fitted.omitted > 0 ? `${fitted.omitted} older lines are not in this turn. Progress is on the task board; call read_group_chat when you need an exact earlier line.` : '',
+      earlier.length ? `Earlier in the group, before this round (context only):\n${show(earlier)}` : '',
       current.length
-        ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${transcript(current)}`
+        ? `This round so far${spokeThisRound ? ', since your last message' : ', starting with the new message'} (oldest first):\n${show(current)}`
         : 'Nothing new in this round since your last message.',
       round.shown?.includes(member.id) ? '' : referenceNote(round.references),
       working.length > 0 ? `Still at work on what they were asked; each posts here when done: ${working.map(item => `${item.bot.name} (${minutesSince(item.since)} min)`).join(', ')}.` : '',

@@ -5,6 +5,7 @@
 // the reply is posted into the room when the turn ends, and the driver does not
 // open a round of its own.
 import { compareForWork } from '../shared/task-board.js'
+import { formatRoomBoard } from './room-context.js'
 
 // A no-op track_tasks call still bumps updatedAt. The hash leaves that stamp out,
 // so a wake that did not move the board waits before the next one.
@@ -233,11 +234,14 @@ export function install(rt) {
         // A group card is a room turn: the reply posts into the group when the
         // turn ends (turns.js, no waiter), so a question stays there (#1182).
         // noteWake counts only a wake that left, including this room turn (#1172).
+        const board = roomId
+          ? formatRoomBoard(rt.state.tasks, { roomId, nameOf: task => rt.botOf(task.ownerBotId)?.name })
+          : ''
         await rt.deliver({
           toId: botId,
           sessionId,
           role: roomId ? 'room' : 'task',
-          text: cueFor(next),
+          text: board ? `${cueFor(next)}\n\n${board}` : cueFor(next),
           ...(roomId ? { roomId, note: 'your task', taskDrive: true } : {}),
         })
         await noteWake(next)

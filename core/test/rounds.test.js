@@ -1888,3 +1888,68 @@ test('#932: a member called mid-round is reported as called, never as stayed sil
   assert.match(text, /Called, but no answer: Editor\./, 'a member called mid-round that said nothing is reported as called')
   assert.doesNotMatch(text, /Stayed silent: [^.]*Editor/, 'never in the sentence for a member nobody called')
 })
+
+// #1203: message-count caps still let a handful of CI essays fill the first look.
+// The turn the model reads stays inside a character budget, those essays collapse,
+// and the open board is the progress. The stored log keeps the essay.
+test('#1203 a group turn budgets room context and reads progress from the board', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, ctx, rt } = start()
+  t.after(stop)
+  const chief = (await call('state', {})).value.mainBotId
+  const writer = (await call('create-bot', { name: 'Writer' })).value
+  const room = (await call('create-room', { name: 'R1203', members: [chief, writer.id] })).value
+  await call('update-room', { id: room.id, mode: 'everyone', notice: 'Keep this notice verbatim.' })
+  const marker = 'ESSAY_BODY_MARKER_1203'
+  const essay = `CI on tip abcdef12 is green. tests-ok passed. enqueue when mergeable. merge_group is next. PASS at abcdef12. @Chief ${'detail '.repeat(180)}${marker}`
+  assert.ok(essay.indexOf(marker) > 400)
+  await rt.load()
+  const live = rt.roomOf(room.id)
+  live.log = []
+  live.seq = 0
+  live.seen = {}
+  for (let seq = 1; seq <= 10; seq += 1) {
+    live.log.push({ seq, who: 'Writer', botId: writer.id, authorId: writer.id, authorKind: 'bot', text: `${essay} ${seq}` })
+  }
+  live.seq = 11
+  live.log.push({ seq: 11, who: 'Writer', botId: writer.id, authorId: writer.id, authorKind: 'bot', text: 'short handoff keep me' })
+  rt.state.tasks ??= {}
+  Object.assign(rt.state.tasks, {
+    'task-overall': {
+      id: 'task-overall', status: 'open', kind: 'group', title: 'Ship the note', progress: 40,
+      ownerBotId: chief, source: 'conversation', origin: { roomId: room.id }, updatedAt: 2, createdAt: 1,
+    },
+    'task-sub': {
+      id: 'task-sub', status: 'claimed', title: 'Writer implements', parentId: 'task-overall',
+      note: 'keep the card <secret>\nnext', ownerBotId: writer.id, source: 'conversation',
+      origin: { roomId: room.id }, updatedAt: 3, createdAt: 2,
+    },
+    'task-done': {
+      id: 'task-done', status: 'accepted', title: 'FINISHED_MARKER_1203', ownerBotId: writer.id,
+      source: 'conversation', origin: { roomId: room.id }, updatedAt: 4, createdAt: 1,
+    },
+  })
+  sent.length = 0
+  await emit(room.id, userMessage('go on'))
+  const running = relay(room.id, 'r1203')
+  const first = await turnFor(sent)
+  const prompt = promptOf(first)
+  const earlier = prompt.split('Earlier in the group, before this round (context only):\n')[1]?.split('\n\n')[0] ?? ''
+  assert.ok(earlier.length > 0 && earlier.length <= 4000, `earlier room context is ${earlier.length} chars`)
+  assert.match(prompt, /short handoff keep me/)
+  assert.doesNotMatch(prompt, /ESSAY_BODY_MARKER_1203/)
+  assert.match(prompt, /\[status on the board, \d+ chars\]/)
+  assert.match(prompt, /Task board \(progress lives here/)
+  assert.match(prompt, /\[open 40%\] Ship the note/)
+  assert.match(prompt, /Writer \[claimed\] Writer implements — keep the card secret next/)
+  assert.doesNotMatch(prompt, /FINISHED_MARKER_1203/)
+  const standing = standingOf(ctx, first.sessionId)
+  assert.match(standing, /Keep this notice verbatim\./)
+  assert.match(standing, /do not narrate CI/)
+  assert.doesNotMatch(prompt, /Keep this notice verbatim/)
+  assert.match(prompt, /Reply now with your message for the group, no name prefix, or \[PASS\] to stay silent\.$/)
+  assert.ok(live.log.some(line => String(line.text).includes(marker)), 'the stored log still has the essay')
+  await answer(first.sessionId, first.message.source.exchangeId, '[PASS]', 1)
+  const second = await turnFor(sent, first)
+  await answer(second.sessionId, second.message.source.exchangeId, '[PASS]', 2)
+  await running
+})

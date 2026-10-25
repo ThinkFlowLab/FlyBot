@@ -1,0 +1,1 @@
+A group turn shows a character-budgeted room history, with long CI and merge essays collapsed, and a compact task-board snapshot, so progress comes from the board instead of chat ([#1203](https://github.com/ThinkFlowLab/FlyBot/issues/1203)).

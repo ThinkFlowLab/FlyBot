@@ -412,6 +412,9 @@ test('only the task lead assigns, the card is claimed, and the wake is a group t
   assert.match(text, new RegExp(`Continue ${child.id} \\[urgent\\] Bob writes`))
   assert.match(text, /do not wait for a confirmation/)
   assert.match(text, /never in your own chat/)
+  assert.match(text, /Task board \(progress lives here/)
+  assert.match(text, /Ship the note/)
+  assert.match(text, /Bob writes/)
   assert.equal(app.calls('war').length, 0, 'the driver does not post the cue into the room')
   assert.equal(app.calls('b').length, 0, 'the subtask does not wake the own chat')
 
