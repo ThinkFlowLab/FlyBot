@@ -3631,11 +3631,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     settings.faceRooms[snapshot.roomId].seen = seen
     const lone = Boolean(past) && neverShared(flybot.rooms.ofFace?.(snapshot.roomId) ?? room)
     if (past && !lone) {
+      // Bot Social's close time, when it sent one: both homes then show the same Past-rooms time (#1070).
+      const closedAt = Date.parse(snapshot.closedAt || '')
       rememberPastFace(viewHostedFace(flybot.rooms.ofFace?.(snapshot.roomId) ?? room, {
         faceRoomId: snapshot.roomId,
         localRoomId: room.id,
         status: past.status,
         name: title,
+        ...(Number.isFinite(closedAt) ? { endedAt: snapshot.closedAt } : {}),
       }))
     }
     saveSettings()
@@ -3730,8 +3733,27 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (known.has(serverId)) continue
           const hosted = flybot.rooms.ofFace?.(serverId)
           if (hosted?.id && neverShared(hosted)) void Promise.resolve(flybot.rooms.dropFace?.(hosted.id)).catch(() => {})
-          else rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status: 'closed', joinCode: meta?.joinCode })
-            || { faceRoomId: serverId, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status: 'closed', members: [], joinCode: meta?.joinCode })
+          else {
+            // Who already left keeps Left. Everyone else reads Closed: the room ended around them (#304).
+            const status = hosted?.face?.status === 'left' ? 'left' : 'closed'
+            rememberPastFace(viewHostedFace(hosted, { faceRoomId: serverId, localRoomId: meta?.localRoomId, status, joinCode: meta?.joinCode })
+              || { faceRoomId: serverId, roomId: meta?.localRoomId, name: faceRoomTitle({}, { code: meta?.joinCode, room: hosted }), status, members: [], joinCode: meta?.joinCode })
+            // The sidebar drops a face room only when the hosted status is closed or left. A Past row
+            // alone leaves the room in the active list as well (#1070). A failed mark stays in
+            // faceRooms so the next poll tries again.
+            if (hosted?.id && hosted.face?.status !== 'left' && hosted.face?.status !== 'closed') {
+              try {
+                await flybot.rooms.upsertFace?.({
+                  roomId: serverId,
+                  status: 'closed',
+                  ...(meta?.joinCode ? { joinCode: meta.joinCode } : {}),
+                })
+              } catch (error) {
+                warn('face-room not marked closed', error)
+                continue
+              }
+            }
+          }
           delete settings.faceRooms[serverId]
           dropRoomRemotes(serverId)
           forgetSentRoles(serverId)

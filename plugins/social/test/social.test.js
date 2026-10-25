@@ -2524,6 +2524,67 @@ test('when a face room drops off Bot Social, the local transcript stays openable
   assert.ok(opened.roomId)
 })
 
+test('#1070: a room that drops off Bot Social is Closed once and leaves the active list', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  server.face.peer('582914')
+  await call('flybot/social/face-join', { start: true, code: '582914' })
+  await call('flybot/social/face-start', { faceRoomId: 'frm_582914' })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_582914').face.status, 'open')
+  // The other side closed the room: Bot Social no longer lists it. This home did not Leave.
+  server.face.rooms.delete('frm_582914')
+  const listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  const copies = listed.rooms.filter(room => room.faceRoomId === 'frm_582914')
+  assert.equal(copies.length, 1, 'one Past-rooms row')
+  assert.equal(copies[0].status, 'closed')
+  assert.ok(copies[0].members.some(member => member.handle === '@coder.bob.home'), 'who was there stays on the row')
+  // The sidebar hides a face room only when the hosted status is closed or left.
+  assert.equal(ctx.flybot.rooms.ofFace('frm_582914').face.status, 'closed', 'leaves the active list')
+  assert.match(ctx.flybot.rooms.ofFace('frm_582914').name, / · 582914$/)
+  const again = (await call('flybot/social/face-rooms', { poll: true })).value.rooms.filter(room => room.faceRoomId === 'frm_582914')
+  assert.equal(again.length, 1, 'a later poll does not add a second row')
+  assert.equal(again[0].endedAt, copies[0].endedAt)
+  assert.equal(ctx.flybot.rooms.ofFace('frm_582914').face.status, 'closed', 'a later poll does not reopen it')
+})
+
+test('#1070: Past rooms uses the server close time when Bot Social sends one', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  server.face.peer('846271')
+  await call('flybot/social/face-join', { start: true, code: '846271' })
+  await call('flybot/social/face-start', { faceRoomId: 'frm_846271' })
+  const room = server.face.rooms.get('frm_846271')
+  room.status = 'closed'
+  room.closed_at = '2026-10-25T13:22:00.000Z'
+  const listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  const copies = listed.rooms.filter(item => item.faceRoomId === 'frm_846271')
+  assert.equal(copies.length, 1)
+  assert.equal(copies[0].status, 'closed')
+  assert.equal(copies[0].endedAt, '2026-10-25T13:22:00.000Z')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_846271').face.status, 'closed')
+  server.face.rooms.delete('frm_846271')
+  const again = (await call('flybot/social/face-rooms', { poll: true })).value.rooms.filter(item => item.faceRoomId === 'frm_846271')
+  assert.equal(again.length, 1, 'dropping off the list does not add a second row')
+  assert.equal(again[0].endedAt, '2026-10-25T13:22:00.000Z')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_846271').face.status, 'closed')
+})
+
 test('face-to-face leave after matching ends still moves the room to Past rooms', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

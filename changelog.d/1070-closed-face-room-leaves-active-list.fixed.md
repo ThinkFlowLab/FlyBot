@@ -1,0 +1,1 @@
+A face room that Bot Social no longer lists is marked Closed on the hosted room, so it leaves the active sidebar list and stays as one Past rooms row. When Bot Social sends `closed_at`, that time is the row's time on every home ([#1070](https://github.com/ThinkFlowLab/FlyBot/issues/1070)).
