@@ -2016,17 +2016,146 @@ diff --git a/src/client/voice.js b/src/client/voice.js
 diff --git a/src/host/agents.js b/src/host/agents.js
 --- a/src/host/agents.js
 +++ b/src/host/agents.js
-@@ -129,8 +129,8 @@ export function install(rt) {
+@@ -77,6 +77,13 @@ export function install(rt) {
+     const readOnly = rt.readOnly()
+     if (readOnly !== undefined) throw new Error(readOnly)
+   }
++  // A change made outside a request may start in a window that was read-only only because
++  // the other dsh had the team open: refresh first — it adopts what that host left and
++  // takes the free lock (#1027, #1032) — then refuse if the lock is still someone else's.
++  const beforeWrite = async () => {
++    if (rt.readOnly() !== undefined) await rt.refresh()
++    writeCheck()
++  }
+   const record = (agentId) => {
+     const agent = state.agents[agentId]
+     if (agent === undefined) throw new Error('Unknown DSH Agent')
+@@ -84,16 +84,15 @@ export function install(rt) {
+   }
+ 
+   async function createAgentSession(agentId, workspaceId) {
+-    writeCheck()
+-    const agent = record(agentId)
++    record(agentId)
++    await beforeWrite()
+     // A known workspace id wins (the Agent's latest Session may live outside the
+     // team workspace after a workspace switch); anything else gets the team's own.
+     const target = typeof workspaceId === 'string' && ctx.workspaceRegistry.get(workspaceId)
+       ? workspaceId
+       : await rt.ensureWorkspace()
+     const { sessionId } = await ctx.sessionController.create({ workspaceId: target })
+-    agent.sessions.push(sessionId)
+-    await rt.save()
++    await rt.mutate(() => { record(agentId).sessions.push(sessionId) })
+     // agent/created fired before the session joined the index, so restrict again now.
+     await restrictTeamTools(await rt.resolveAgent(sessionId))
+     return sessionId
+@@ -103,48 +103,54 @@ export function install(rt) {
+   // picker or a fork) is adopted into the same Agent: it keeps dsh's surface and
+   // the team tools stay hidden.
+   async function adoptAgentSession(agentId, sessionId) {
+-    writeCheck()
+-    const agent = record(agentId)
+-    if (agent.sessions.includes(sessionId)) return sessionId
++    record(agentId)
++    await beforeWrite()
++    if (record(agentId).sessions.includes(sessionId)) return sessionId
+     await rt.resolveAgent(sessionId)
+-    const owned = rt.selfOf(sessionId) !== undefined || rt.botOf(sessionId) !== undefined
+-      || rt.roomOf(sessionId) !== undefined || agentOf(sessionId) !== undefined
+-    if (owned) throw new Error('Session already belongs to the team')
+-    agent.sessions.push(sessionId)
+-    await rt.save()
++    // The ownership check reads the records, so it runs inside the change, after the adopt.
++    await rt.mutate(() => {
++      const owned = rt.selfOf(sessionId) !== undefined || rt.botOf(sessionId) !== undefined
++        || rt.roomOf(sessionId) !== undefined || agentOf(sessionId) !== undefined
++      if (owned) throw new Error('Session already belongs to the team')
++      const agent = record(agentId)
++      if (!agent.sessions.includes(sessionId)) agent.sessions.push(sessionId)
++    })
+     await restrictTeamTools(await rt.resolveAgent(sessionId))
+     return sessionId
+   }
+ 
+   async function addAgent() {
+-    writeCheck()
+-    if (Object.keys(state.agents).length > 0) throw new Error('The team already has a DSH Agent')
+-    const agent = { id: randomUUID(), name: AGENT_NAME, sessions: [], createdAt: Date.now() }
+-    state.agents[agent.id] = agent
++    const id = randomUUID()
++    await rt.mutate(() => {
++      writeCheck()
++      if (Object.keys(state.agents).length > 0) throw new Error('The team already has a DSH Agent')
++      state.agents[id] = { id, name: AGENT_NAME, sessions: [], createdAt: Date.now() }
++    })
+     try {
+-      await createAgentSession(agent.id)
++      await createAgentSession(id)
+     } catch (error) {
+       // The first Session may already be created and saved: archive it and
+       // persist the rollback, or the Agent returns on restart with its team
        // tools never denied.
-       const createdSessions = [...agent.sessions]
-       delete state.agents[agent.id]
+-      const createdSessions = [...agent.sessions]
+-      delete state.agents[agent.id]
 -      for (const sessionId of createdSessions) await ctx.workspaceRegistry.archiveSession(sessionId).catch(() => {})
 -      await rt.save().catch(() => {})
++      const createdSessions = [...record(id).sessions]
++      await rt.mutate(() => { delete state.agents[id] }).catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
 +      for (const sessionId of createdSessions) await ctx.workspaceRegistry.archiveSession(sessionId).catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
-+      await rt.save().catch(() => { /* rollback is best effort; the original error is what the caller sees */ })
        throw error
      }
-     return agent
+-    return agent
++    return record(id)
+   }
+ 
+   async function archiveAgentSession(agentId, sessionId) {
+-    writeCheck()
+-    const agent = record(agentId)
+-    if (!agent.sessions.includes(sessionId)) throw new Error('Session does not belong to the DSH Agent')
++    record(agentId)
++    await beforeWrite()
++    if (!record(agentId).sessions.includes(sessionId)) throw new Error('Session does not belong to the DSH Agent')
+     // Archive first: the Session leaves the Agent only once it is actually gone,
+     // so a failed archive stays retryable and keeps its tool restriction.
+     await ctx.workspaceRegistry.archiveSession(sessionId)
+-    agent.sessions = agent.sessions.filter(id => id !== sessionId)
+-    await rt.save()
++    await rt.mutate(() => {
++      const agent = record(agentId)
++      agent.sessions = agent.sessions.filter(id => id !== sessionId)
++    })
+   }
+ 
+   async function renameAgentSession(agentId, sessionId, title) {
+@@ -158,9 +158,9 @@ export function install(rt) {
+   }
+ 
+   async function removeAgent(agentId) {
+-    writeCheck()
+-    const agent = record(agentId)
+-    const sessions = [...agent.sessions]
++    record(agentId)
++    await beforeWrite()
++    const sessions = [...record(agentId).sessions]
+     const kept = []
+     let failure
+     for (const sessionId of sessions) {
+@@ -174,12 +174,10 @@ export function install(rt) {
+     // What could not be archived stays with the Agent, so it keeps its tool
+     // restriction and the removal can be retried from the same place.
+     if (kept.length > 0) {
+-      agent.sessions = kept
+-      await rt.save()
++      await rt.mutate(() => { record(agentId).sessions = kept })
+       throw failure
+     }
+-    delete state.agents[agentId]
+-    await rt.save()
++    await rt.mutate(() => { delete state.agents[agentId] })
+   }
+ 
+   Object.assign(rt, { agentOf, addAgent, createAgentSession, adoptAgentSession, archiveAgentSession, renameAgentSession, removeAgent })
 diff --git a/src/host/approvals.js b/src/host/approvals.js
 --- a/src/host/approvals.js
 +++ b/src/host/approvals.js

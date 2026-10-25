@@ -101,19 +101,25 @@ export function install(rt) {
   // line it has not shown yet arrived (its row turns unread), and the senders seen so far, kept apart
   // from the roster, tell the first line from a sender. A group line is the group's, not the Bot's.
   const CONTACTS_KEPT = 200
-  const noteFriendLine = (to, sessionId, roomId, handle) => {
+  const noteFriendLine = async (to, sessionId, roomId, handle) => {
     if (to === undefined || roomId || (sessionId !== undefined && sessionId !== rt.chatOf(to.id))) return false
     const key = String(handle)
-    const contacts = (state.remoteContacts ??= {})[to.id] ??= {}
-    const first = contacts[key] === undefined
     const now = Date.now()
-    if (first) {
-      contacts[key] = now
-      const keys = Object.keys(contacts)
-      if (keys.length > CONTACTS_KEPT) for (const old of keys.slice(0, keys.length - CONTACTS_KEPT)) delete contacts[old]
-    }
-    to.friendLineAt = now
-    void rt.save().catch(() => {})
+    let first = false
+    // A change made outside a request: `mutate` adopts what the other host left before the
+    // change, so the Bot record is re-resolved inside the callback, never used from before it.
+    await rt.mutate(() => {
+      const bot = state.bots[to.id]
+      if (bot === undefined) return
+      const contacts = (state.remoteContacts ??= {})[bot.id] ??= {}
+      first = contacts[key] === undefined
+      if (first) {
+        contacts[key] = now
+        const keys = Object.keys(contacts)
+        if (keys.length > CONTACTS_KEPT) for (const old of keys.slice(0, keys.length - CONTACTS_KEPT)) delete contacts[old]
+      }
+      bot.friendLineAt = now
+    })
     return first
   }
 
@@ -166,7 +172,7 @@ export function install(rt) {
       return exchangeId
     }
     const origin = originOf({ from, to, fromId, remote, given: givenOrigin })
-    const firstContact = remote?.handle && !deferred && !resumed && !retried && !resent ? noteFriendLine(to, sessionId, roomId, remote.handle) : false
+    const firstContact = remote?.handle && !deferred && !resumed && !retried && !resent ? await noteFriendLine(to, sessionId, roomId, remote.handle) : false
     // Session events reject `undefined` members, so optional fields are omitted instead.
     const source = {
       kind: SOURCE_KIND,
@@ -194,8 +200,8 @@ export function install(rt) {
       ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
     }
     if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !resent) {
-      state.exchanges.push({ id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) })
-      void rt.save().catch(() => {})
+      const exchange = { id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) }
+      await rt.mutate(() => { state.exchanges.push(exchange) })
     }
     await rt.ensureCapabilities(targetSessionId)
     const agent = await resolveAgent(targetSessionId)
