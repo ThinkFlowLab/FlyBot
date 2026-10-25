@@ -38,6 +38,11 @@ const orderLabels = (names) => [...names].sort((a, b) => {
 // The issues endpoint returns pull requests too; the pulls endpoint never does, so the two
 // lists are told apart by that field rather than by sniffing a PR's shape.
 const isPull = (row) => row.pull_request !== undefined || row.merge_commit_sha !== undefined
+// GitHub's closing keywords are the only mention that links a pull request to an issue (#1189).
+// `also see #12`, `same as #12` or a changelog line quoting a number is prose, and a card that
+// showed those as a link would claim a pull request that closes nothing.
+const CLOSING_KEYWORD = /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)[ \t]*:?[ \t]*#(\d+)/gi
+const closingLinks = (text) => [...String(text).matchAll(CLOSING_KEYWORD)].map(match => Number(match[1]))
 const verdictOf = (comments) => {
   for (let index = (comments ?? []).length - 1; index >= 0; index -= 1) {
     const body = String(comments[index]?.body ?? '')
@@ -125,8 +130,13 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
     return rows
   }
 
+  // Every page, not only the first (#1189). Past 100 comments — ordinary on this repository
+  // (#1170, #1183) — the newest verdict sat on a page nothing read, and the badge fell back to
+  // "no verdict at this tip" while one existed. The cap is the same MAX_PAGES as every other list
+  // and each page is a cached GET (ETag), so a long thread costs up to MAX_PAGES reads of one URL
+  // and a normal one still costs one.
   async function commentsOf(number) {
-    return get(`${base}/issues/${number}/comments?per_page=100&page=1`)
+    return pages(`/issues/${number}/comments`)
   }
 
   async function runsOfDay(from, to) {
@@ -238,9 +248,7 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
     const pullRows = openPulls
     const linkedTo = new Map()
     for (const pr of pullRows) {
-      const text = `${pr.title ?? ''}\n${pr.body ?? ''}`
-      for (const match of text.matchAll(/#(\d+)/g)) {
-        const number = Number(match[1])
+      for (const number of closingLinks(`${pr.title ?? ''}\n${pr.body ?? ''}`)) {
         if (!linkedTo.has(number)) linkedTo.set(number, pr.number)
       }
     }

@@ -8,7 +8,7 @@ import { createDeliveryBoard, DELIVERY_COLUMNS, install, median, startOfDay } fr
 const NOW = Date.parse('2026-10-25T04:00:00Z') // 12:00 in Asia/Shanghai
 const AT = (iso) => Date.parse(iso)
 
-function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra = [] } = {}) {
+function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra = [], openPullsExtra = [] } = {}) {
   const calls = []
   const write = (body, status = 200) => ({ ok: status < 400, status, headers: { get: () => 'etag-1' }, json: async () => body })
   const request = async (url, init = {}) => {
@@ -29,6 +29,7 @@ function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra 
       return write(page === 1 ? [
         { number: 40, title: 'Pending verdict', html_url: 'https://x/40', body: 'Owner: Dev', head: { sha: 'aaaaaaa1' }, mergeable_state: 'unstable', created_at: '2026-10-24T00:00:00Z', updated_at: '2026-10-24T10:00:00Z', labels: [] },
         { number: 41, title: 'Fix the thing', html_url: 'https://x/41', body: 'Fixes #12', head: { sha: 'bbbbbbb2' }, mergeable_state: 'clean', created_at: '2026-10-23T00:00:00Z', updated_at: '2026-10-24T09:00:00Z', labels: [{ name: 'agent-pr' }] },
+        ...openPullsExtra,
       ] : [])
     }
     if (path === '/pulls' && parsed.searchParams.get('state') === 'all') {
@@ -72,7 +73,10 @@ function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra 
     }
     if (/^\/issues\/\d+\/comments$/.test(path)) {
       const number = Number(path.split('/')[2])
-      return write(comments[number] ?? [])
+      const value = comments[number] ?? []
+      // A thread longer than one page is passed as pages; a flat array is page one (#1189).
+      const pagesOf = Array.isArray(value[0]) ? value : [value]
+      return write(pagesOf[page - 1] ?? [])
     }
     if (/^\/commits\/.+\/check-runs$/.test(path)) {
       const sha = path.split('/')[2]
@@ -113,6 +117,23 @@ test('five columns come from one snapshot, an issue and its PR linked (#1173)', 
   const ready = snapshot.columns.ready[0]
   assert.deepEqual(ready.labels, ['agent-ready', 'enhancement'])
   assert.deepEqual(snapshot.counts, { raw: 2, ready: 1, working: 1, review: 2, 'done-today': 2 })
+})
+
+test('only a closing keyword links a pull request to an issue (#1189)', async () => {
+  const { board } = build({
+    openPullsExtra: [
+      { number: 43, title: 'Related work', html_url: 'https://x/43', body: 'also see #10, same as #12', head: { sha: 'ddddddd4' }, mergeable_state: 'clean', created_at: '2026-10-22T00:00:00Z', updated_at: '2026-10-24T08:00:00Z', labels: [] },
+      { number: 44, title: 'Close it', html_url: 'https://x/44', body: 'Closes: #13', head: { sha: 'eeeeeee5' }, mergeable_state: 'clean', created_at: '2026-10-22T00:00:00Z', updated_at: '2026-10-24T08:00:00Z', labels: [] },
+    ],
+  })
+  const snapshot = await board.read()
+  const card = (column, number) => snapshot.columns[column].find(item => item.number === number)
+  // "also see #10, same as #12" is prose: #10 links to nothing, and #12 keeps the pull request
+  // that closes it (41), not the one that only mentions it.
+  assert.equal(card('raw', 10).linked, null)
+  assert.equal(card('working', 12).linked, 41)
+  // A closing keyword with a colon counts; nothing else does.
+  assert.equal(card('raw', 13).linked, 44)
 })
 
 test('a pull request closed today without a merge is done today, not nowhere (#1173)', async () => {
@@ -178,6 +199,25 @@ test('a verdict line wins over an Attestation that names an older sha (#1173)', 
   const snapshot = await board.read()
   const card = snapshot.columns.review.find(item => item.number === 41)
   assert.equal(card.badge, 'pass-enqueue')
+})
+
+test('a verdict on a later page of comments still decides the badge (#1189)', async () => {
+  // 120 comments with the newest verdict at index 101: on a board that reads one page it never
+  // appears, and the card says "no verdict at this tip" while the tip has one.
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ body: `note ${index}` }))
+  const secondPage = [
+    { body: 'note 100' },
+    { body: 'Verdict: INC at bbbbbbb2' },
+    ...Array.from({ length: 18 }, (_, index) => ({ body: `note ${102 + index}` })),
+  ]
+  const { board, github } = build({
+    comments: { 41: [firstPage, secondPage] },
+    checks: { bbbbbbb2: [{ status: 'completed', conclusion: 'success' }] },
+  })
+  const snapshot = await board.read()
+  const card = snapshot.columns.review.find(item => item.number === 41)
+  assert.equal(card.badge, 'inc')
+  assert.ok(github.calls.some(call => call.path === '/issues/41/comments' && /[?&]page=2(&|$)/.test(call.query)))
 })
 
 test('the token is read per request, and install loads the secrets first (#1173)', async () => {
