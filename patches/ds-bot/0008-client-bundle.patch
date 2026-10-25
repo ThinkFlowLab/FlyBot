@@ -71,7 +71,7 @@ diff --git a/client.js b/client.js
    "New…": "新建",
    "Animation": "动画",
    "Bot animation": "Bot 动画",
-@@ -63,6 +63,21 @@
+@@ -63,6 +124,21 @@
    Duplicate: "复制一份",
    Hidden: "已隐藏",
    Admin: "管理员",
@@ -93,7 +93,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,21 +78,68 @@
+@@ -78,21 +154,68 @@
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -165,7 +165,7 @@ diff --git a/client.js b/client.js
    Connectors: "连接器",
    "Search connectors": "搜索连接器",
    "No connectors": "暂无连接器",
-@@ -129,6 +129,59 @@
+@@ -129,6 +252,59 @@
    "Connecting…": "正在连接…",
    "Could not connect: {error}": "连接失败：{error}",
    "Connected as {account}": "已连接：{account}",
@@ -225,7 +225,7 @@ diff --git a/client.js b/client.js
    Connected: "已连接",
    Disconnect: "断开",
    Connect: "连接",
-@@ -141,17 +141,44 @@
+@@ -141,17 +317,44 @@
    "GitHub addresses must start with https://": "GitHub 地址必须以 https:// 开头",
    "This DSH cannot load connectors": "这个 DSH 不能加载连接器",
    "No such connector": "没有这个连接器",
@@ -274,7 +274,7 @@ diff --git a/client.js b/client.js
    // Header
    "Message {name}": "给 {name} 发消息",
    Message: "发消息",
-@@ -162,8 +162,6 @@
+@@ -162,8 +365,6 @@
    "Dismiss new messages": "关闭新消息提示",
    New: "新",
    // New chat
@@ -283,7 +283,7 @@ diff --git a/client.js b/client.js
    "Add to group chat": "加入群聊",
    "Message Bot": "给 Bot 发消息",
    "To:": "发给：",
-@@ -187,9 +187,20 @@
+@@ -187,9 +388,20 @@
    Everyone: "所有人",
    "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
    "Members · {count}": "成员 · {count}",
@@ -304,7 +304,7 @@ diff --git a/client.js b/client.js
    "Remove {name} from the group": "把 {name} 移出群聊",
    "Remove from group": "移出群聊",
    "Add member": "添加成员",
-@@ -247,6 +247,25 @@
+@@ -247,6 +459,25 @@
    "This model is not available now. Pick another one.": "这个模型现在不可用，请换一个。",
    "Every message of this Bot runs on it.": "这个 Bot 的每条消息都用它。",
    "Applies from the next message.": "从下一条消息开始生效。",
@@ -330,7 +330,7 @@ diff --git a/client.js b/client.js
    Profile: "资料",
    Label: "标签",
    "Optional. Shown under the name.": "可选，显示在名字下方。",
-@@ -270,6 +270,7 @@
+@@ -270,6 +501,7 @@
    "Kept above the other chats.": "排在其他对话上面。",
    "Search still finds it.": "仍然可以搜索到。",
    Manage: "管理",
@@ -338,7 +338,7 @@ diff --git a/client.js b/client.js
    // Group chat settings
    "Leave it empty to name the group after its members.": "留空就按成员命名。",
    "Every member reads it before speaking in this group.": "每位成员在这个群里发言前都会读到。",
-@@ -303,6 +303,8 @@
+@@ -303,6 +535,8 @@
    "Harness default": "Harness 默认",
    Saving: "保存中",
    "Manage models": "管理模型",
@@ -347,7 +347,7 @@ diff --git a/client.js b/client.js
    // Shapes
    Whale: "鲸鱼",
    Star: "星星",
-@@ -374,9 +374,10 @@
+@@ -374,9 +608,10 @@
    "No group chats yet.": "还没有群聊。",
    "A group chat lets several Bots work on one thing with you.": "在群聊里，几个 Bot 和你一起做一件事。",
    "Back to group chats": "返回群聊列表",
@@ -360,7 +360,7 @@ diff --git a/client.js b/client.js
    "Harness settings": "Harness 设置",
    "Back to Bots": "返回 Bot 列表",
    "Close settings": "关闭设置",
-@@ -385,7 +385,6 @@
+@@ -385,7 +620,6 @@
    Pin: "置顶",
    Pinned: "已置顶",
    "Mark as Unread": "标为未读",
@@ -368,7 +368,7 @@ diff --git a/client.js b/client.js
    "Group settings": "群设置",
    "Rename group": "重命名群聊",
    "Copy conversation ID": "复制对话 ID",
-@@ -394,6 +394,8 @@
+@@ -394,6 +628,8 @@
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    "Add DSH Agent": "添加 DSH Agent",
@@ -377,7 +377,7 @@ diff --git a/client.js b/client.js
    "Remove DSH Agent": "移除 DSH Agent",
    "New session": "新会话",
    Archive: "归档",
-@@ -404,13 +404,13 @@
+@@ -404,13 +640,13 @@
    "{n} h": "{n} 小时",
    "{n} d": "{n} 天",
    // Plugin updates
@@ -397,7 +397,7 @@ diff --git a/client.js b/client.js
    "You have {version}.": "当前版本 {version}。",
    "The update did not finish: {reason}": "更新没有完成：{reason}",
    "What's new": "更新说明",
-@@ -420,8 +420,70 @@
+@@ -420,8 +656,70 @@
    "DSH update": "DSH 更新",
    "DSH {version}": "DSH {version}",
    "Restart DSH to start using DSH {version}.": "重启 DSH 后开始使用 DSH {version}。",
@@ -469,7 +469,7 @@ diff --git a/client.js b/client.js
    // Command palette
    Messages: "消息",
    Commands: "命令",
-@@ -446,6 +446,7 @@
+@@ -446,6 +744,7 @@
    Reply: "回复",
    "More message actions": "更多操作",
    More: "更多",
@@ -477,7 +477,7 @@ diff --git a/client.js b/client.js
    Reactions: "表情",
    "Message actions": "消息操作",
    Download: "下载",
-@@ -459,6 +459,9 @@
+@@ -459,6 +758,9 @@
    "Replies from": "群聊回复：",
    "Reply from": "收到回复：",
    "Message from": "收到消息：",
@@ -487,7 +487,7 @@ diff --git a/client.js b/client.js
    "Stopped by": "叫停者：",
    "{count} messages with": "{count} 条消息，来自",
    "Routine started": "例行任务开始",
-@@ -468,6 +468,8 @@
+@@ -468,6 +770,8 @@
    "Working out a plan": "理一下思路",
    "Sorting out the details": "梳理细节",
    "On it": "在做了",
@@ -496,7 +496,7 @@ diff --git a/client.js b/client.js
    "Busy with it": "正在处理",
    "Moving ahead": "推进中",
    "Taking care of it": "处理中",
-@@ -495,7 +495,6 @@
+@@ -495,7 +799,6 @@
    "Looking back through the chat": "翻看聊天记录",
    "{name} looked up its own chat": "{name} 查看了自己的对话",
    "{name} looked up its own chat for “{text}”": "{name} 在自己的对话里查找「{text}」",
@@ -504,7 +504,7 @@ diff --git a/client.js b/client.js
    "{name} didn't answer in time": "{name} 没有及时回应",
    "{name} paused for your approval": "{name} 停下来等你批准",
    "{name} started on it": "{name} 开始做了",
-@@ -506,12 +506,30 @@
+@@ -506,12 +809,30 @@
    "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
    "A Bot": "一个 Bot",
    "{name} is waiting for your approval": "{name} 等你批准",
@@ -536,7 +536,7 @@ diff --git a/client.js b/client.js
    "Couldn't message {name}": "没能给 {name} 发消息",
    Messaged: "已发消息给",
    "Couldn't stop {name}": "没能叫停 {name}",
-@@ -533,13 +533,14 @@
+@@ -533,13 +854,14 @@
    Selected: "已选",
    Skip: "跳过",
    Submit: "提交",
@@ -552,7 +552,7 @@ diff --git a/client.js b/client.js
    "No Bot": "没有 Bot",
    "Paste or type the key": "粘贴或输入密钥",
    "Only {name}": "只给 {name}",
-@@ -582,7 +582,7 @@
+@@ -582,7 +904,7 @@
    "NAME, e.g. GITHUB_TOKEN": "名字，例如 GITHUB_TOKEN",
    "What it is for": "用途",
    Value: "值",
@@ -561,7 +561,7 @@ diff --git a/client.js b/client.js
    "Save key": "保存密钥",
    "Keys your Bots asked for. Bots never see the values: they use them as ": "你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ",
    " in their shell, and every value is replaced by ": " 使用，而且发给模型之前，每个值都会被替换成 ",
-@@ -747,11 +747,11 @@
+@@ -747,11 +1069,11 @@
    "Compared with the {count} days before": "与再往前 {count} 天相比",
    "{share}% of all usage from {span}": "占 {span} 全部用量的 {share}%",
    // About
@@ -576,7 +576,7 @@ diff --git a/client.js b/client.js
    Updates: "更新",
    "Check for updates": "检查更新",
    "Checking…": "正在检查…",
-@@ -761,6 +761,13 @@
+@@ -761,6 +1083,13 @@
    "Update checks are off.": "已关闭更新检查。",
    "Installed from a local folder; update it there.": "从本地文件夹安装，请在那里更新。",
    "Updates are not offered for this install.": "这种安装方式不提供更新。",
@@ -590,7 +590,7 @@ diff --git a/client.js b/client.js
    Links: "链接",
    "Source code": "源代码",
    "Release notes": "发布说明",
-@@ -776,7 +776,7 @@
+@@ -776,7 +1105,7 @@
    Show: "查看",
    Hide: "收起",
    "GitHub issue": "GitHub issue",
@@ -599,7 +599,7 @@ diff --git a/client.js b/client.js
    "Report on GitHub": "在 GitHub 上报告",
    "Copied the diagnostics.": "已复制诊断信息。",
    "Could not copy. Select the text below and copy it.": "无法复制。请选中下面的文字手动复制。",
-@@ -788,7 +788,7 @@
+@@ -788,7 +1117,7 @@
    "Recent errors": "最近的错误",
    "Recent errors · {count}": "最近的错误 · {count}",
    "No errors recorded.": "没有错误记录。",
@@ -608,7 +608,7 @@ diff --git a/client.js b/client.js
    "Model call": "模型调用",
    "This window": "这个窗口",
    "Error log": "错误日志",
-@@ -821,6 +821,14 @@
+@@ -821,6 +1150,14 @@
    "Add at least one more Bot": "再至少添加一个 Bot",
    Members: "成员",
    // Connectors and scheduled tasks
@@ -623,7 +623,7 @@ diff --git a/client.js b/client.js
    "Scheduled tasks": "定时任务",
    "Every day": "每天",
    "Every {count} days": "每 {count} 天",
-@@ -834,7 +834,15 @@
+@@ -834,7 +1171,15 @@
    "Every weekend at {time}": "每个周末 {time}",
    "On the schedule {expression}": "按计划 {expression}",
    "Next: {time}": "下次 {time}",
@@ -639,7 +639,7 @@ diff --git a/client.js b/client.js
    "in {name}": "在 {name}",
    "Click again to delete": "再点一次删除",
    "Delete task": "删除任务",
-@@ -856,8 +856,8 @@
+@@ -856,8 +1201,8 @@
    Unit: "单位",
    "Create task": "创建任务",
    "Turn on Automation tasks in DSH": "在 DSH 里打开「自动化任务」",
@@ -650,7 +650,7 @@ diff --git a/client.js b/client.js
    "New task": "新建任务",
    "No scheduled tasks yet.": "还没有定时任务。",
    "No scheduled tasks yet. Add one": "还没有定时任务，去添加",
-@@ -873,6 +873,12 @@
+@@ -873,6 +1218,12 @@
    "Repeat every 1 minute to 7 days": "重复间隔要在 1 分钟到 7 天之间",
    "Pick when it runs": "选择什么时候运行",
    "No such task": "没有这个任务",
@@ -663,7 +663,7 @@ diff --git a/client.js b/client.js
    "Working folder": "工作文件夹",
    "Working folder: {folder}": "工作文件夹：{folder}",
    Folder: "文件夹",
-@@ -902,6 +902,8 @@
+@@ -902,6 +1253,8 @@
    [/^A key can have at most (\d+) characters$/, "密钥最多 $1 个字符"],
    [/^(.+) is not saved yet$/, "$1 还没有保存"],
    [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, "$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。"],
@@ -672,7 +672,7 @@ diff --git a/client.js b/client.js
    [/^HTTP (\d+)$/, "请求失败（HTTP $1）"],
    [/^GitHub answered (\d+)$/, "GitHub 返回了 $1"],
    [/^Keep the name under (\d+) characters$/, "名字不能超过 $1 个字"],
-@@ -930,6 +930,20 @@
+@@ -930,6 +1283,20 @@
    "Unknown Bot": "找不到这个 Bot",
    "Unknown conversation": "找不到这个对话",
    "A group chat needs at least two Bots": "群聊至少要两个 Bot",
@@ -693,7 +693,7 @@ diff --git a/client.js b/client.js
    "The admin must be a member of the group": "管理员必须是群成员",
    "Unknown group chat": "找不到这个群聊",
    "Hand the admin role to another member instead of leaving the group without one": "请把管理员交给其他成员，不要让群聊没有管理员",
-@@ -951,7 +951,9 @@
+@@ -951,7 +1318,9 @@
    "The model wrote nothing": "模型没有输出内容",
    "Write the entry to save.": "请写下要保存的内容。",
    "This DeepSeek Harness has no folder chooser": "这个 DeepSeek Harness 没有文件夹选择窗口",
@@ -704,7 +704,7 @@ diff --git a/client.js b/client.js
  };
  Object.assign(ZH, HOST_ZH);
  var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;
-@@ -1016,6 +1016,14 @@
+@@ -1016,6 +1385,14 @@
    entries.push({ time: now, level: "error", text, ...code ? { code } : {} });
    if (entries.length > MAX) entries.splice(0, entries.length - MAX);
  }
@@ -719,7 +719,7 @@ diff --git a/client.js b/client.js
  var quietly = (where) => (error) => noteClientError(where, error);
  var clearClientErrors = () => {
    entries.length = 0;
-@@ -1042,12 +1042,17 @@
+@@ -1042,12 +1419,17 @@
  };
  function failureLabel(code, message) {
    if (FAILURES[code]) return t(FAILURES[code]);
@@ -740,7 +740,7 @@ diff --git a/client.js b/client.js
  function issueUrl(base, { what = "", diagnostics }) {
    const text = what.trim().slice(0, WHAT_MAX);
    const title = text.split("\n")[0].slice(0, 80);
-@@ -1066,10 +1066,16 @@
+@@ -1066,10 +1448,16 @@
  var call = async (endpoint, payload, signal) => {
    let response;
    try {
@@ -758,7 +758,7 @@ diff --git a/client.js b/client.js
        body: JSON.stringify({ endpoint, payload: payload ?? null }),
        signal
      });
-@@ -1087,7 +1087,7 @@
+@@ -1087,7 +1475,7 @@
    if (!result.ok) {
      const code = result.error?.code ?? "bot/error";
      const message = hostText(result.error?.message ?? "Request failed");
@@ -767,7 +767,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,388 @@
+@@ -1097,6 +1485,388 @@
    return result.value;
  };
  
@@ -1156,7 +1156,7 @@ diff --git a/client.js b/client.js
  // src/client/inks.js
  var INKS = {
    deepseek: ["#4D6BFE", "#6A84FF"],
-@@ -1177,15 +1177,92 @@
+@@ -1177,15 +1947,92 @@
    value = Math.imul(value ^ value >>> 13, 3266489909);
    return DEFAULT_SHAPES[((value ^ value >>> 16) >>> 0) % DEFAULT_SHAPES.length];
  }
@@ -1251,7 +1251,7 @@ diff --git a/client.js b/client.js
  var SHAPES = {};
  for (const [id, character] of Object.entries(CHARACTERS)) {
    const layers = [
-@@ -1206,8 +1206,8 @@
+@@ -1206,8 +2053,8 @@
      return "";
    }
  }
@@ -1262,7 +1262,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -1242,163 +1242,17 @@
+@@ -1242,163 +2089,17 @@
  }
  var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
  
@@ -1435,7 +1435,7 @@ diff --git a/client.js b/client.js
  // src/shared/mentions.js
  var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
  var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
-@@ -1445,14 +1445,36 @@
+@@ -1445,14 +2146,36 @@
    }
    return spans;
  }
@@ -1473,7 +1473,7 @@ diff --git a/client.js b/client.js
      if (!span.bot || span.bot.id === selfId) continue;
      out += `${text.slice(cursor, span.start)}[${text.slice(span.start + 1, span.end).replace(/[[\]\\]/g, "\\$&")}](${MENTION_ORIGIN}${span.bot.id})`;
      cursor = span.end;
-@@ -1463,6 +1463,20 @@
+@@ -1463,6 +2186,20 @@
    const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
    return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
  }
@@ -1494,7 +1494,7 @@ diff --git a/client.js b/client.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
  }
-@@ -1483,6 +1483,15 @@
+@@ -1483,6 +2220,15 @@
  var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
  var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
  var currentPart = (bot) => bot.sessionId ?? bot.id;
@@ -1510,7 +1510,7 @@ diff --git a/client.js b/client.js
  function reminderPrompts(text) {
    const one = /^reminder_prompt_json: (.*)$/m.exec(text);
    const batch = /^reminders_json: (.*)$/m.exec(text);
-@@ -1494,6 +1494,13 @@
+@@ -1494,6 +2240,13 @@
    }
  }
  var stripHeader = (text) => text.replace(HEADER, "");
@@ -1524,7 +1524,7 @@ diff --git a/client.js b/client.js
  function latestMemoryChange(news, ids) {
    const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
    return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
-@@ -1506,25 +1506,35 @@
+@@ -1506,25 +2259,35 @@
      paragraph = [];
    };
    for (const raw of String(text ?? "").split("\n")) {
@@ -1564,7 +1564,7 @@ diff --git a/client.js b/client.js
  var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
  function toolArgs(root) {
    if (typeof root.args?.text === "function") {
-@@ -1597,14 +1597,21 @@
+@@ -1597,14 +2360,21 @@
    }
    return { count, peerIds };
  }
@@ -1589,7 +1589,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,9 +1624,917 @@
+@@ -1624,9 +2394,917 @@
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -2508,7 +2508,7 @@ diff --git a/client.js b/client.js
  var reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
  function springEasing(stiffness, damping) {
    const w0 = Math.sqrt(stiffness);
-@@ -1659,12 +1659,12 @@
+@@ -1659,12 +3337,12 @@
      const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
      last = now;
      const steps = Math.ceil(dt * 240);
@@ -2524,7 +2524,7 @@ diff --git a/client.js b/client.js
        }
        if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
          value.x = value.to;
-@@ -1699,10 +1699,10 @@
+@@ -1699,10 +3377,10 @@
  }
  var CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]';
  function useGlide(key, { axis = "x", selector = CHOSEN, lead = SPRING_LEAD, trail = SPRING_TRAIL, box: given } = {}) {
@@ -2538,7 +2538,7 @@ diff --git a/client.js b/client.js
    if (own.current === null) {
      own.current = {
        key: void 0,
-@@ -1736,7 +1736,7 @@
+@@ -1736,7 +3414,7 @@
      springs.set({ start, end }, forward ? { start: trail, end: lead } : { start: lead, end: trail }, jump || hidden || before === null || reducedMotion());
      container.dataset.glide = "";
    };
@@ -2547,7 +2547,7 @@ diff --git a/client.js b/client.js
      const state = own.current;
      const node = box.current;
      if (node === state.node && key === state.key) return;
-@@ -1750,7 +1750,7 @@
+@@ -1750,7 +3428,7 @@
      }
      place(fresh);
    });
@@ -2556,7 +2556,7 @@ diff --git a/client.js b/client.js
      own.current.observer?.disconnect();
      own.current.springs.stop();
    }, []);
-@@ -1758,16 +1758,16 @@
+@@ -1758,16 +3436,16 @@
  }
  function Segmented({ label, value, className, children }) {
    const glide = useGlide(value);
@@ -2577,7 +2577,7 @@ diff --git a/client.js b/client.js
      const container = list.current;
      if (!container) return;
      const next = /* @__PURE__ */ new Map();
-@@ -1788,8 +1788,8 @@
+@@ -1788,8 +3466,8 @@
    }, [key]);
  }
  function useMorph(box, key) {
@@ -2588,7 +2588,7 @@ diff --git a/client.js b/client.js
      const node = box.current;
      const state = last.current;
      if (!node) {
-@@ -1817,8 +1817,8 @@
+@@ -1817,8 +3495,8 @@
    });
  }
  function useLinger(value, ms) {
@@ -2599,7 +2599,7 @@ diff --git a/client.js b/client.js
      if (value) {
        setKept(value);
        return void 0;
-@@ -1838,6 +1838,7 @@
+@@ -1838,6 +3516,7 @@
  .bt-mark{display:inline-block;flex:none;position:relative;line-height:0}
  .bt-mark svg{width:100%;height:100%;overflow:visible}
  .bt-mark-img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;box-shadow:inset 0 0 0 1px var(--bt-line)}
@@ -2607,7 +2607,7 @@ diff --git a/client.js b/client.js
  .bt-mark .bt-b,.bt-mark .bt-eye,.bt-mark .bt-eyes,.bt-mark .bt-gaze{transform-box:fill-box}
  .bt-mark .bt-b{transform-origin:50% 100%}
  .bt-mark .bt-eye,.bt-mark .bt-eyes{transform-origin:center}
-@@ -1856,6 +1856,14 @@
+@@ -1856,6 +3535,14 @@
  @keyframes bt-fidget-look{0%,22%,100%{transform:none}3%,9%{transform:translateX(-14%)}12%,19%{transform:translateX(14%)}}
  body[data-bt-motion=lively] .bt-badge-alert{right:auto;bottom:auto;left:50%;top:calc(var(--bt-size,36px) * -.14);translate:-50% 0;animation:bt-q-ride 1.3s cubic-bezier(.3,.7,.4,1) infinite}
  body[data-bt-motion=lively] :is(.bt-row,.bt-tile)>.bt-mark:hover .bt-badge-alert{animation:none}
@@ -2622,7 +2622,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
  /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
     size wide), a resting mark leans into the pointer and keeps nuzzling it, its eyes
-@@ -1933,15 +1933,23 @@
+@@ -1933,15 +3620,23 @@
  .bt-side{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;gap:2px;padding:0 12px 8px 0;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-side-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 5px 0 0}
  .bt-brand{display:inline-flex;align-items:center;gap:6px;margin-right:auto;padding:4px 8px 4px 4px;border:0;border-radius:8px;background:none;cursor:pointer;font-family:inherit;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:var(--bt-ink);white-space:nowrap}
@@ -2648,7 +2648,7 @@ diff --git a/client.js b/client.js
  .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
  .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
-@@ -1950,27 +1950,32 @@
+@@ -1950,27 +3645,32 @@
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2685,7 +2685,7 @@ diff --git a/client.js b/client.js
  .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, "width", "margin-left")}}
  .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, "width", "margin-left")}}
  .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, "transform")}}
-@@ -1992,6 +1992,7 @@
+@@ -1992,6 +3692,7 @@
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
@@ -2693,7 +2693,7 @@ diff --git a/client.js b/client.js
  .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
  .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
  .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
-@@ -2085,6 +2085,7 @@
+@@ -2085,6 +3786,7 @@
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  
  .bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
@@ -2701,7 +2701,7 @@ diff --git a/client.js b/client.js
  .bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
  .bt-to-label{color:var(--bt-ink-2)}
  .bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
-@@ -2098,7 +2098,9 @@
+@@ -2098,7 +3800,9 @@
  .bt-option[aria-selected=true]{background:var(--bt-active)}
  .bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
  .bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2712,7 +2712,7 @@ diff --git a/client.js b/client.js
  .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
  .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
  .bt-nc-spacer{flex:1}
-@@ -2127,6 +2127,10 @@
+@@ -2127,6 +3831,10 @@
  .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
  .bt-send:disabled{opacity:.35;cursor:default}
  .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
@@ -2723,7 +2723,7 @@ diff --git a/client.js b/client.js
  
  .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
-@@ -2163,6 +2163,8 @@
+@@ -2163,6 +3871,8 @@
  .bt-drawer-id{display:flex;flex-direction:column;align-items:center;padding:14px 16px 0}
  .bt-drawer-id>.bt-mark,.bt-drawer-id>.bt-cluster{margin-bottom:16px}
  .bt-drawer-name{font-size:17px;line-height:24px;font-weight:500;border:0;background:none;color:inherit;cursor:text;padding:0 6px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2732,7 +2732,7 @@ diff --git a/client.js b/client.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
-@@ -2255,6 +2255,7 @@
+@@ -2255,6 +3965,7 @@
  .bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
  .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
  .bt-settings-shell{margin-top:auto}
@@ -2740,7 +2740,7 @@ diff --git a/client.js b/client.js
  /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
     its layout, and not rendered. */
  .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-@@ -2288,6 +2288,8 @@
+@@ -2288,6 +3999,8 @@
  .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
  .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
  .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
@@ -2749,7 +2749,7 @@ diff --git a/client.js b/client.js
  .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
  .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
  .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
-@@ -2308,8 +2308,17 @@
+@@ -2308,8 +4021,17 @@
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-connector-form-row{display:flex;align-items:center;gap:6px}
@@ -2767,7 +2767,7 @@ diff --git a/client.js b/client.js
  
  /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
     shell offers them and CSS-module name suffixes elsewhere. */
-@@ -2427,7 +2427,8 @@
+@@ -2427,7 +4149,8 @@
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
  @media (prefers-reduced-motion:reduce){.bt-palette{animation:bt-fade .1s ease-out}}
@@ -2777,7 +2777,7 @@ diff --git a/client.js b/client.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -2599,6 +2599,14 @@
+@@ -2599,6 +4322,14 @@
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
  .bt-think summary::-webkit-details-marker{display:none}
@@ -2792,7 +2792,7 @@ diff --git a/client.js b/client.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -2612,7 +2612,6 @@
+@@ -2612,7 +4343,6 @@
  .bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
  [class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
@@ -2800,7 +2800,7 @@ diff --git a/client.js b/client.js
  .bt-group-replies{display:contents}
  /* A Bot chat is flat in every work-details mode, without changing the user's mode
     (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -2622,21 +2622,28 @@
+@@ -2622,21 +4352,28 @@
  [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
  :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
  [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
@@ -2837,7 +2837,7 @@ diff --git a/client.js b/client.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
-@@ -2648,6 +2648,9 @@
+@@ -2648,6 +4385,9 @@
  [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
  .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
  .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
@@ -2847,7 +2847,7 @@ diff --git a/client.js b/client.js
  .bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
  .bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
  .bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
-@@ -2679,7 +2679,8 @@
+@@ -2679,7 +4419,8 @@
  @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
  @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
  [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
@@ -2857,7 +2857,7 @@ diff --git a/client.js b/client.js
  [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
  [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
  [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
-@@ -2691,6 +2691,8 @@
+@@ -2691,6 +4432,8 @@
  [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
  [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
  [data-composer-placeholder]{font-size:0!important;line-height:0!important}
@@ -2866,7 +2866,7 @@ diff --git a/client.js b/client.js
  [data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
  /* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
  [data-composer-card] button[class*="_add"]{display:none!important}
-@@ -2722,6 +2722,7 @@
+@@ -2722,6 +4465,7 @@
  .bt-mic:active,.bt-voice:active{scale:.9}
  [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
  body[data-bt-room] .bt-voice{display:none!important}
@@ -2874,7 +2874,7 @@ diff --git a/client.js b/client.js
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
-@@ -2776,6 +2776,7 @@
+@@ -2776,6 +4520,7 @@
  .bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
  .bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
  .bt-urow{display:flex;justify-content:flex-end}
@@ -2882,7 +2882,7 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2855,226 +2855,204 @@
+@@ -2855,226 +4600,204 @@
    };
  }
  
@@ -3264,7 +3264,7 @@ diff --git a/client.js b/client.js
    );
  }
  var SmileIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M7.3 11.6a3.4 3.4 0 0 0 5.4 0", "M7.75 8.25h.01M12.25 8.25h.01"]);
-@@ -3093,14 +3093,14 @@
+@@ -3093,14 +4816,14 @@
  var GearIcon = lineIcon(["M10 7.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z", "M7.85 4.4l.29-1.87a7.7 7.7 0 0 1 3.72 0l.29 1.87a6 6 0 0 1 1.63.94l1.76-.69a7.7 7.7 0 0 1 1.86 3.23l-1.47 1.18a6 6 0 0 1 0 1.88l1.47 1.18a7.7 7.7 0 0 1-1.86 3.23l-1.76-.69a6 6 0 0 1-1.63.94l-.29 1.87a7.7 7.7 0 0 1-3.72 0l-.29-1.87a6 6 0 0 1-1.63-.94l-1.76.69a7.7 7.7 0 0 1-1.86-3.23l1.47-1.18a6 6 0 0 1 0-1.88L2.6 7.88a7.7 7.7 0 0 1 1.86-3.23l1.76.69a6 6 0 0 1 1.63-.94z"]);
  var PinIcon = lineIcon(["M12.5 3l4.5 4.5-3 1.5-2.5 2.5.5 3.5-1.5 1.5L7 13 3.5 16.5", "M7 13l-3.5-3.5L5 8l3.5.5L11 6l1.5-3"]);
  function PinMarkIcon() {
@@ -3283,7 +3283,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
-@@ -3112,21 +3112,48 @@
+@@ -3112,21 +4835,48 @@
  var HideIcon = lineIcon(["M3 3l14 14", "M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4", "M8.5 8.5a2 2 0 0 0 3 3"]);
  var TrashIcon = lineIcon(["M3.5 5.5h13", "M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5", "M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10", "M8.5 9v4.5M11.5 9v4.5"]);
  var DuplicateIcon = lineIcon(["M7 7h8.5v9.5H7z", "M4.5 13V3.5H13", "M11.25 9.5v4.5M9 11.75h4.5"]);
@@ -3335,7 +3335,7 @@ diff --git a/client.js b/client.js
      if (count === 0) return void 0;
      const onKey = (event) => {
        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.length !== 1) return;
-@@ -3146,10 +3146,10 @@
+@@ -3146,10 +4896,10 @@
    }, [count, ownRef]);
  }
  function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false }) {
@@ -3350,7 +3350,7 @@ diff --git a/client.js b/client.js
    const options = optionsOf(question);
    const multi = question.multiSelect === true;
    const custom = own.trim();
-@@ -3167,7 +3167,7 @@
+@@ -3167,7 +4917,7 @@
    };
    useOptionKeys(options.length, (index) => choose(options[index].label), ownRef);
    const ownLetter = options.length > 0 ? keyLetter(options.length) : void 0;
@@ -3359,7 +3359,7 @@ diff --git a/client.js b/client.js
      ref: ownRef,
      rows: 1,
      value: own,
-@@ -3186,7 +3186,7 @@
+@@ -3186,7 +4936,7 @@
    }) : null;
    const rows = options.map((option, optionIndex) => {
      const selected = multi && picked.includes(option.label);
@@ -3368,7 +3368,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          key: option.label,
-@@ -3196,36 +3196,36 @@
+@@ -3196,36 +4946,36 @@
          "aria-keyshortcuts": keyLetter(optionIndex).toLowerCase(),
          onClick: () => choose(option.label)
        },
@@ -3418,7 +3418,7 @@ diff --git a/client.js b/client.js
      "form",
      {
        className: raised ? "bt-q bt-q-raised" : "bt-q",
-@@ -3235,24 +3235,24 @@
+@@ -3235,24 +4985,24 @@
          submit();
        }
      },
@@ -3453,7 +3453,7 @@ diff --git a/client.js b/client.js
      ) : null,
      foot
    );
-@@ -3262,29 +3262,29 @@
+@@ -3262,29 +5012,29 @@
    const prompt = question?.question ?? "";
    const chosen = [...answer.selected ?? [], ...answer.custom ? [answer.custom] : []];
    if (chosen.length === 0) {
@@ -3494,7 +3494,7 @@ diff --git a/client.js b/client.js
        );
      }))
    );
-@@ -3292,8 +3292,8 @@
+@@ -3292,8 +5042,8 @@
  function QuestionCard({ matched }) {
    const pending = matched;
    const questions = pending.questions ?? [];
@@ -3505,7 +3505,7 @@ diff --git a/client.js b/client.js
    const question = questions[index];
    if (question === void 0) return null;
    const onAnswer = (answer) => {
-@@ -3305,10 +3305,10 @@
+@@ -3305,10 +5055,10 @@
      }
      pending.answer({ answers: next });
    };
@@ -3518,7 +3518,7 @@ diff --git a/client.js b/client.js
    if (answered === question.id) return null;
    const onAnswer = (answer) => {
      setAnswered(question.id);
-@@ -3318,10 +3318,10 @@
+@@ -3318,10 +5068,10 @@
      setAnswered(question.id);
      void actions.dismissQuestion(sessionId);
    };
@@ -3531,7 +3531,7 @@ diff --git a/client.js b/client.js
    );
  }
  function QuestionDock({ sessionId, useRoster, useCards, useSession, actions }) {
-@@ -3329,16 +3329,16 @@
+@@ -3329,16 +5079,16 @@
    const drawn = useCards?.((state) => state[sessionId]?.[question?.callId] > 0) === true;
    const loading = useSession?.(historyLoading) === true;
    if (question === void 0 || question.callId && (drawn || loading)) return null;
@@ -3551,7 +3551,7 @@ diff --git a/client.js b/client.js
      key: question.id,
      question,
      answer: answers.find((answer) => answer.id === question.id) ?? { selected: [] }
-@@ -3346,37 +3346,37 @@
+@@ -3346,37 +5096,37 @@
  }
  
  // src/client/secret-card.js
@@ -3601,7 +3601,7 @@ diff --git a/client.js b/client.js
      className: "bt-secret-input",
      type: MASK_BY_CSS ? "text" : "password",
      "data-masked": MASK_BY_CSS ? "" : void 0,
-@@ -3401,12 +3401,12 @@
+@@ -3401,12 +5151,12 @@
    });
  }
  function ScopeSwitch({ value, onChange, bot }) {
@@ -3618,7 +3618,7 @@ diff --git a/client.js b/client.js
        key: id,
        type: "button",
        role: "radio",
-@@ -3417,26 +3417,26 @@
+@@ -3417,26 +5167,26 @@
    );
  }
  function SecretHead({ bot, title, detail, name, onClose }) {
@@ -3657,7 +3657,7 @@ diff --git a/client.js b/client.js
    const secret = (roster.secrets ?? []).find((entry) => entry.name === request.name);
    const run = (promise) => {
      setBusy(true);
-@@ -3452,73 +3452,73 @@
+@@ -3452,73 +5202,73 @@
      if (!busy) void run(actions.secretAllow(request.id));
    };
    const filling = request.kind === "fill" || replacing;
@@ -3754,7 +3754,7 @@ diff --git a/client.js b/client.js
    }
    return null;
  }
-@@ -3531,44 +3531,46 @@
+@@ -3531,44 +5281,46 @@
    const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
    const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
    if (waiting.length === 0) return null;
@@ -3816,7 +3816,7 @@ diff --git a/client.js b/client.js
    const long = value.trim().length >= MIN_VALUE;
    const save = () => {
      if (!long) return;
-@@ -3583,66 +3583,66 @@
+@@ -3583,66 +5335,66 @@
      setValue(next);
      setReplaced(false);
    };
@@ -3909,7 +3909,7 @@ diff --git a/client.js b/client.js
    const ready = /^[A-Za-z][\w-]{0,63}$/.test(name.trim()) && value.trim().length >= MIN_VALUE;
    const save = () => {
      if (!ready) return;
-@@ -3653,43 +3653,43 @@
+@@ -3653,43 +5405,43 @@
        }
      });
    };
@@ -3971,7 +3971,7 @@ diff --git a/client.js b/client.js
    ];
  }
  var SECRET_CSS = `
-@@ -3756,6 +3756,144 @@
+@@ -3756,6 +5508,144 @@
  @media (prefers-reduced-motion:reduce){.bt-secret-glide{transition:none}.bt-secret-check,.bt-secret-done,.bt-secret-ok,.bt-secret-edit{animation:none}}
  `;
  
@@ -4116,7 +4116,7 @@ diff --git a/client.js b/client.js
  // src/client/turn-reasoning.js
  function turnReasoning(steps, current) {
    const members = steps.length ? steps : [current];
-@@ -3767,7 +3767,7 @@
+@@ -3767,7 +5657,7 @@
  var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reasoning").map((block) => block.text).join("\n").trim();
  
  // src/client/cells.js
@@ -4125,7 +4125,7 @@ diff --git a/client.js b/client.js
  var import_react_dom = require("react-dom");
  var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
  var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
-@@ -3780,7 +3780,7 @@
+@@ -3780,7 +5670,7 @@
      actions.openSession(target);
    };
    const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
@@ -4134,7 +4134,7 @@ diff --git a/client.js b/client.js
      "div",
      { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
      texts2.map((text, index) => {
-@@ -3788,21 +3788,21 @@
+@@ -3788,21 +5678,21 @@
        const picked = key ? reactions?.[index] ?? [] : [];
        const last = index === texts2.length - 1;
        const live = streaming && last;
@@ -4162,7 +4162,7 @@ diff --git a/client.js b/client.js
            key: emoji,
            type: "button",
            className: "bt-react",
-@@ -3813,9 +3813,22 @@
+@@ -3813,9 +5703,22 @@
      })
    );
  }
@@ -4186,7 +4186,7 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (refs.some((ref) => ref.current?.contains(event.target))) return;
-@@ -3836,11 +3836,11 @@
+@@ -3836,11 +5739,11 @@
    }, [open]);
  }
  function MessageTools({ text, name, sessionId, react, actions }) {
@@ -4203,7 +4203,7 @@ diff --git a/client.js b/client.js
    const close = () => setPanel(null);
    useDismiss(panel !== null, close, [tools, pop]);
    const open = (kind, event) => {
-@@ -3865,25 +3865,25 @@
+@@ -3865,25 +5768,25 @@
      link.click();
      setTimeout(() => URL.revokeObjectURL(url), 1e3);
    };
@@ -4238,7 +4238,7 @@ diff --git a/client.js b/client.js
        "div",
        { ref: pop, className: "bt-menu", role: "menu", "aria-label": t("Message actions"), style: place },
        item(t("Copy"), CopyIcon, copy2),
-@@ -3892,11 +3892,12 @@
+@@ -3892,11 +5795,12 @@
    );
  }
  function ThinkingRow({ text }) {
@@ -4254,7 +4254,7 @@ diff --git a/client.js b/client.js
    );
  }
  function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
-@@ -3904,19 +3904,33 @@
+@@ -3904,19 +5808,33 @@
    const location2 = node.location;
    const turn = location2?.kind === "turn" || location2?.kind === "step" ? location2.turn : void 0;
    const seq = node.data.finalNode?.seq;
@@ -4290,7 +4290,7 @@ diff --git a/client.js b/client.js
    const running = data.status === "running";
    useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts2.length > 0 ? { text: true } : null);
    if (hidden) return null;
-@@ -3924,13 +3924,14 @@
+@@ -3924,13 +5842,14 @@
    const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : [];
    if (texts2.length === 0 && !reasoning && relays.length === 0) return null;
    const selfId = roster.byId[sessionId]?.id ?? sessionId;
@@ -4308,7 +4308,7 @@ diff --git a/client.js b/client.js
          key: relay.seq,
          prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
          bots: [sender],
-@@ -3940,61 +3940,230 @@
+@@ -3940,61 +5859,230 @@
          whole: true
        });
      }),
@@ -4562,7 +4562,7 @@ diff --git a/client.js b/client.js
    );
  }
  function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
-@@ -4005,14 +4005,14 @@
+@@ -4005,14 +6093,14 @@
    const target = other && other.id !== self?.id ? other : self;
    if (!target) return null;
    const label = team ? t("Team memory updated") : target === self ? t("Memory updated") : t("Updated {name}'s memory", { name: target.name });
@@ -4580,7 +4580,7 @@ diff --git a/client.js b/client.js
  }
  var scrollParent = (node) => {
    for (let at = node.parentElement; at; at = at.parentElement) {
-@@ -4021,11 +4021,11 @@
+@@ -4021,11 +6109,11 @@
    return null;
  };
  function EarlierParts({ sessionId, roster, actions }) {
@@ -4597,7 +4597,7 @@ diff --git a/client.js b/client.js
    const load = (cursor) => {
      if (busy.current) return;
      busy.current = true;
-@@ -4041,19 +4041,19 @@
+@@ -4041,19 +6129,19 @@
        if (alive.current) setView((current) => ({ ...current, loading: false, failed: true }));
      });
    };
@@ -4620,7 +4620,7 @@ diff --git a/client.js b/client.js
      const node = top.current;
      if (!node || view.loading || view.failed || !view.cursor || typeof IntersectionObserver !== "function") return void 0;
      const observer = new IntersectionObserver((entries2) => {
-@@ -4069,35 +4069,35 @@
+@@ -4069,35 +6157,35 @@
      if (item.kind === "bot" && last?.kind === "bot") last.texts.push(item.text);
      else rows.push(item.kind === "bot" ? { kind: "bot", texts: [item.text] } : item);
    }
@@ -4667,7 +4667,7 @@ diff --git a/client.js b/client.js
              if (selfId && other.id) actions.openExchange(selfId, other.id);
            }, whole: true });
          }
-@@ -4105,7 +4105,7 @@
+@@ -4105,7 +6193,7 @@
            return null;
        }
      }),
@@ -4676,7 +4676,7 @@ diff --git a/client.js b/client.js
    );
  }
  function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions }) {
-@@ -4116,7 +4116,7 @@
+@@ -4116,7 +6204,7 @@
    const deferred = source.kind === "bot" && source.deferred === true;
    const relayed = isRelayContext(data);
    const turn = node.location?.turn?.turn ?? data.turn;
@@ -4685,7 +4685,7 @@ diff --git a/client.js b/client.js
      if (relayed) actions.noteTurnPeer(sessionId, turn, source.senderSessionId);
    }, [relayed, sessionId, turn, source.senderSessionId]);
    const order = useSessions((list) => {
-@@ -4135,23 +4135,31 @@
+@@ -4135,23 +6223,31 @@
      return first?.turn === turn && unseenSince(visit, first.start) ? clockLabel(first.start) : "";
    });
    const body = triggerBody();
@@ -4724,7 +4724,7 @@ diff --git a/client.js b/client.js
        const run = relayed ? commRunOf(
          order.split(",").filter(Boolean).map(Number),
          Object.fromEntries(peers.split(",").filter(Boolean).map((pair) => [Number(pair.slice(0, pair.indexOf(":"))), pair.slice(pair.indexOf(":") + 1)])),
-@@ -4165,7 +4165,7 @@
+@@ -4165,7 +6261,7 @@
        for (const peer of (run?.peerIds ?? []).map((id) => roster.byId[id]).filter(Boolean)) {
          if (!bots.some((bot) => bot.id === peer.id)) bots.push(peer);
        }
@@ -4733,7 +4733,7 @@ diff --git a/client.js b/client.js
          prefix: source.role === "stopped" ? t("Stopped by") : count > 1 ? t("{count} messages with", { count }) : t("Message from"),
          bots,
          onOpen: (bot) => actions.openExchange(selfId, bot.id),
-@@ -4174,24 +4174,24 @@
+@@ -4174,24 +6270,24 @@
      }
      if (source.kind === "schedule") {
        const prompts = reminderPrompts(contentText(data.content));
@@ -4763,7 +4763,7 @@ diff --git a/client.js b/client.js
      actions.noteTurnTime(sessionId, turn, "first", start);
    }, [sessionId, turn, start]);
    const visit = useUi((state) => state.visits?.[sessionId]);
-@@ -4199,11 +4199,63 @@
+@@ -4199,11 +6295,63 @@
      const own = state[sessionId]?.[turn];
      return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
    });
@@ -4828,7 +4828,7 @@ diff --git a/client.js b/client.js
  var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
  function clockLabel(time, now = Date.now()) {
    const date = new Date(time);
-@@ -4233,10 +4233,19 @@
+@@ -4233,10 +6381,19 @@
    return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
  }
  var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
@@ -4849,7 +4849,7 @@ diff --git a/client.js b/client.js
      actions.noteTurnTime(sessionId, turn, "end", time);
    }, [sessionId, turn, time]);
    const label = useTurnClock((state) => {
-@@ -4250,15 +4250,15 @@
+@@ -4250,15 +6407,15 @@
      return start !== void 0 && start > visit.seen && start <= visit.entered;
    });
    if (!label && !fresh) return null;
@@ -4870,7 +4870,7 @@ diff --git a/client.js b/client.js
  }
  var PHRASES = {
    thinking: ["Thinking about it", "Weighing the options", "Working out a plan", "Sorting out the details"],
-@@ -4320,19 +4320,22 @@
+@@ -4320,19 +6477,22 @@
  }
  function workPhrase(tool) {
    if (!tool) return t("Thinking about it");
@@ -4898,7 +4898,7 @@ diff --git a/client.js b/client.js
      if (done) return void 0;
      let stop = false;
      let timer;
-@@ -4341,10 +4341,10 @@
+@@ -4341,10 +6501,10 @@
        const result = await actions.roomProgress(sessionId);
        if (stop) return;
        const entry = (result ?? []).find((item) => item.callId === callId) ?? (result ?? [])[0];
@@ -4911,7 +4911,7 @@ diff --git a/client.js b/client.js
        }
        timer = setTimeout(tick, document.hidden ? 5e3 : 1e3);
      };
-@@ -4362,71 +4362,89 @@
+@@ -4362,71 +6522,89 @@
        replies = [];
      }
    }
@@ -5032,7 +5032,7 @@ diff --git a/client.js b/client.js
      })
    );
  }
-@@ -4435,52 +4435,52 @@
+@@ -4435,52 +6613,52 @@
  function callTree(root) {
    const calls = [];
    const seen = /* @__PURE__ */ new Set();
@@ -5101,7 +5101,7 @@ diff --git a/client.js b/client.js
      case "create_group":
      case "update_group":
      case "delete_group":
-@@ -4492,64 +4492,80 @@
+@@ -4492,64 +6670,80 @@
          post_to_group: ["Posted in", "Couldn't post in the group"]
        }[tool];
        if (!done) return null;
@@ -5200,7 +5200,7 @@ diff --git a/client.js b/client.js
  var import_react_dom2 = require("react-dom");
  var PHRASE_HOLD_MS = 800;
  var drawPhrase = (pool) => t(pool[Math.min(pool.length - 1, Math.floor(Math.random() * pool.length))]);
-@@ -4559,9 +4559,71 @@
+@@ -4559,9 +6753,71 @@
    const hours = Math.floor(minutes / 60);
    return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
  }
@@ -5275,7 +5275,7 @@ diff --git a/client.js b/client.js
      if (!active) {
        setHost(null);
        return void 0;
-@@ -4569,7 +4569,7 @@
+@@ -4569,7 +6825,7 @@
      let frame = 0;
      const find = () => {
        frame = 0;
@@ -5284,7 +5284,7 @@ diff --git a/client.js b/client.js
        setHost((prev) => prev === node ? prev : node);
      };
      const observer = new MutationObserver(() => {
-@@ -4581,13 +4581,13 @@
+@@ -4581,13 +6837,13 @@
        cancelAnimationFrame(frame);
        observer.disconnect();
      };
@@ -5301,7 +5301,7 @@ diff --git a/client.js b/client.js
      const seen = /* @__PURE__ */ new WeakSet();
      const started = Date.now();
      let column = null;
-@@ -4638,21 +4638,31 @@
+@@ -4638,21 +6894,31 @@
    const pendingInput = useSession((snapshot) => Math.max(0, ...(snapshot?.pendingSubmissions ?? []).filter((sub) => sub.placement !== "queued").map((sub) => sub.time)));
    const bot = roster.byId[sessionId];
    const room2 = roster.roomsById[sessionId];
@@ -5340,7 +5340,7 @@ diff --git a/client.js b/client.js
      if (wantKey === null || shown?.key === wantKey) return void 0;
      const make = () => setShown({ key: wantKey, text: want.label ?? drawPhrase(want.pool), at: Date.now() });
      const wait = shown ? shown.at + PHRASE_HOLD_MS - Date.now() : 0;
-@@ -4663,24 +4663,29 @@
+@@ -4663,24 +6929,29 @@
      const timer = setTimeout(make, wait);
      return () => clearTimeout(timer);
    }, [wantKey, shown]);
@@ -5381,7 +5381,7 @@ diff --git a/client.js b/client.js
      if (phase !== null) return;
      endedAt.current = Date.now();
      setShown(null);
-@@ -4691,31 +4691,37 @@
+@@ -4691,31 +6962,37 @@
      const delta = before - scroller.scrollTop;
      if (delta > 0) scroller.querySelector("[data-chat-flow]")?.animate([{ transform: `translateY(${-delta}px)` }, { transform: "none" }], { duration: 140, easing: "cubic-bezier(.23,1,.32,1)" });
    }, [phase]);
@@ -5430,7 +5430,7 @@ diff --git a/client.js b/client.js
        )
      )
    ), host);
-@@ -4731,49 +4731,1491 @@
+@@ -4731,49 +7008,1493 @@
    return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
  }
  
@@ -6314,6 +6314,8 @@ diff --git a/client.js b/client.js
 +.bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 +.bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 +.bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++/* Needs you is answered on the card, so its ask is the whole text (#1177). The phone sheet clamps these two classes to two lines at a lower specificity; this unsets that clamp. In progress and Done stay one line. */
++.bt-inbox-card:is([data-status=approval],[data-status=held],[data-status=input],[data-status=result],[data-status=failed]) :is(.bt-inbox-title,.bt-inbox-reason){white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible;text-overflow:clip;display:block;min-width:0;-webkit-line-clamp:unset;-webkit-box-orient:unset}
 +.bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 +.bt-inbox-activity{color:var(--bt-ink-3)}
 +.bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
@@ -6934,7 +6936,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4785,55 +4785,131 @@
+@@ -4785,55 +8506,131 @@
          onClick: () => actions.openSession(id),
          onContextMenu
        },
@@ -7081,7 +7083,7 @@ diff --git a/client.js b/client.js
        "data-room-id": id,
        onClick: () => actions.openSession(id),
        onContextMenu: (event) => {
-@@ -4841,20 +4841,20 @@
+@@ -4841,20 +8638,20 @@
          actions.openMenu({ kind: "room", id, x: event.clientX, y: event.clientY });
        }
      },
@@ -7110,7 +7112,7 @@ diff --git a/client.js b/client.js
      if (!renaming) return;
      input.current?.focus();
      input.current?.select();
-@@ -4875,10 +4875,10 @@
+@@ -4875,10 +8672,10 @@
          }
        })();
      };
@@ -7123,7 +7125,7 @@ diff --git a/client.js b/client.js
          ref: input,
          defaultValue: session.title,
          "aria-label": t("Rename"),
-@@ -4891,7 +4891,7 @@
+@@ -4891,7 +8688,7 @@
        })
      );
    }
@@ -7132,7 +7134,7 @@ diff --git a/client.js b/client.js
      "button",
      {
        type: "button",
-@@ -4905,8 +4905,8 @@
+@@ -4905,8 +8702,8 @@
          actions.openMenu({ kind: "agent-session", id: session.id, agentId: agent.id, x: event.clientX, y: event.clientY });
        }
      },
@@ -7143,7 +7145,7 @@ diff --git a/client.js b/client.js
    );
  }
  function AgentRow({ agent, actions, useSessions, useSessionStatus, useUi, wide, marked }) {
-@@ -4941,10 +4941,10 @@
+@@ -4941,10 +8738,10 @@
    const preview = sessions[0]?.title ?? t("New session");
    const label = ["DSH Agent", running ? t("Working") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
    const open = active && wide;
@@ -7156,7 +7158,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          type: "button",
-@@ -4959,30 +4959,30 @@
+@@ -4959,30 +8756,30 @@
            actions.openMenu({ kind: "agent", id: agent.id, x: event.clientX, y: event.clientY });
          }
        },
@@ -7198,7 +7200,7 @@ diff --git a/client.js b/client.js
            key: session.id,
            session,
            agent,
-@@ -4996,8 +4996,8 @@
+@@ -4996,8 +8793,8 @@
  }
  var GLIDE = springEasing(1e3, 63);
  function useListGlide(listRef, layout, key) {
@@ -7209,7 +7211,7 @@ diff --git a/client.js b/client.js
      const list = listRef.current;
      if (!list) return;
      const next = /* @__PURE__ */ new Map();
-@@ -5014,9 +5014,44 @@
+@@ -5014,9 +8811,44 @@
      tops.current = { layout, map: next };
    }, [layout, key]);
  }
@@ -7255,7 +7257,7 @@ diff --git a/client.js b/client.js
    const roster = useRoster((value) => value);
    const markedUnread = useUi((value) => value.unread);
    props.useRegistry((value) => value);
-@@ -5025,17 +5025,26 @@
+@@ -5025,17 +8857,26 @@
      for (const id of list.ids) stamps[id] = list.byId[id]?.updatedAt ?? 0;
      return JSON.stringify(stamps);
    });
@@ -7286,7 +7288,7 @@ diff --git a/client.js b/client.js
    useListGlide(listRef, wide, order.map((entry) => entry.item.id).join(","));
    useLandOnMainBot(roster, useSessions, actions);
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide };
-@@ -5045,39 +5045,42 @@
+@@ -5045,39 +8886,42 @@
      event.preventDefault();
      actions.openPalette(event.key);
    };
@@ -7349,7 +7351,7 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (event.target instanceof Element && (event.target.closest(".bt-update-pop") || button.current?.contains(event.target))) return;
-@@ -5116,14 +5116,14 @@
+@@ -5116,14 +8960,14 @@
      setDshError("");
      void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
    };
@@ -7369,7 +7371,7 @@ diff --git a/client.js b/client.js
        ref: button,
        type: "button",
        className: "bt-round bt-update",
-@@ -5133,21 +5133,21 @@
+@@ -5133,21 +8977,21 @@
        "aria-haspopup": "dialog",
        "aria-expanded": open,
        onClick: toggle
@@ -7402,7 +7404,7 @@ diff --git a/client.js b/client.js
              type: "button",
              className: "bt-update-go",
              disabled: phase === "installing",
-@@ -5155,17 +5155,17 @@
+@@ -5155,17 +8999,17 @@
            }, phase === "installing" ? t("Updating…") : phase === "failed" ? t("Try again") : t("Update"))
          )
        ) : null,
@@ -7427,7 +7429,7 @@ diff --git a/client.js b/client.js
              type: "button",
              className: "bt-update-go",
              disabled: dshPhase === "installing",
-@@ -5176,61 +5176,25 @@
+@@ -5176,61 +9020,25 @@
      ), document.body) : null
    );
  }
@@ -7499,7 +7501,7 @@ diff --git a/client.js b/client.js
    );
  }
  var openShellSettings = null;
-@@ -5259,6 +5259,18 @@
+@@ -5259,6 +9067,18 @@
      else openHarnessSettings();
    });
  }
@@ -7518,7 +7520,7 @@ diff --git a/client.js b/client.js
  function openThroughMenu(trigger) {
    const before = new Set(document.querySelectorAll('[role="menu"]'));
    trigger.click();
-@@ -5288,32 +5288,32 @@
+@@ -5288,32 +9108,32 @@
    }));
  }
  function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboarding, actions }) {
@@ -7559,7 +7561,7 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (event.target instanceof Element && (event.target.closest(".bt-account-menu") || button.current?.contains(event.target))) return;
-@@ -5341,30 +5341,32 @@
+@@ -5341,30 +9161,32 @@
    const groups = [
      [
        [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],
@@ -7604,7 +7606,7 @@ diff --git a/client.js b/client.js
            key: label,
            type: "button",
            role: "menuitem",
-@@ -5372,7 +5372,7 @@
+@@ -5372,7 +9194,7 @@
              setOpen(false);
              void Promise.resolve(run()).catch((error) => actions.reportError(error, "menu"));
            }
@@ -7613,7 +7615,7 @@ diff --git a/client.js b/client.js
        ))
      ), document.body) : null
    );
-@@ -5382,8 +5382,8 @@
+@@ -5382,8 +9204,8 @@
      const row = Object.values(list.byId).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
      return row ? `${row.id}|${row.blank ? 1 : 0}` : "";
    });
@@ -7624,7 +7626,7 @@ diff --git a/client.js b/client.js
      if (!roster.ready || !roster.mainBotId) return void 0;
      const [id, blank3] = mainView.split("|");
      const bot = id === "" ? void 0 : roster.byId[id];
-@@ -5397,40 +5397,40 @@
+@@ -5397,40 +9219,40 @@
        return void 0;
      }
      const last = lastBot.current;
@@ -7675,7 +7677,7 @@ diff --git a/client.js b/client.js
  }
  var SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -5491,18 +5491,28 @@
+@@ -5491,18 +9313,28 @@
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
@@ -7708,7 +7710,7 @@ diff --git a/client.js b/client.js
      const left = seen + MEMORY_NOTICE_MS - Date.now();
      setShown(seen > 0 && left > 0);
      if (seen === 0 || left <= 0) return void 0;
-@@ -5512,16 +5512,16 @@
+@@ -5512,16 +9344,16 @@
    return shown;
  }
  function MemoryNotice({ shown }) {
@@ -7730,7 +7732,7 @@ diff --git a/client.js b/client.js
    );
  }
  function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
-@@ -5537,7 +5537,7 @@
+@@ -5537,7 +9369,7 @@
      const first = openingTurn(state[sessionId], firstTurns, hiddenTurns);
      return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : "";
    });
@@ -7739,7 +7741,7 @@ diff --git a/client.js b/client.js
      if (opening) document.body.style.setProperty("--bt-first-sep", JSON.stringify(opening));
      else document.body.style.removeProperty("--bt-first-sep");
      return () => document.body.style.removeProperty("--bt-first-sep");
-@@ -5548,52 +5548,40 @@
+@@ -5548,52 +9380,40 @@
    const bot = roster.byId[sessionId];
    const room2 = roster.roomsById[sessionId];
    const detailsOpen = useUi((state) => state.details === sessionId);
@@ -7811,7 +7813,7 @@ diff --git a/client.js b/client.js
      let frame = 0;
      let watched = null;
      const observer = new MutationObserver(() => schedule());
-@@ -5642,7 +5642,7 @@
+@@ -5642,7 +9462,7 @@
    }, []);
    return view;
  }
@@ -7820,7 +7822,7 @@ diff --git a/client.js b/client.js
    const replies = useSessions((list) => {
      const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline;
      return Array.isArray(outline) ? outline.reduce((count, entry) => count + (entry.response ? 1 : 0), 0) : 0;
-@@ -5658,18 +5658,22 @@
+@@ -5658,18 +9478,22 @@
    });
    const view = useTranscriptView();
    const unpinned = view?.unpinned === true;
@@ -7848,7 +7850,7 @@ diff --git a/client.js b/client.js
      const scroller = document.querySelector("[data-conversation-scroll]");
      if (!scroller) return void 0;
      scroller.toggleAttribute("data-bt-news", showDown);
-@@ -5677,16 +5677,16 @@
+@@ -5677,16 +9501,16 @@
    }, [showDown]);
    if (!view || !showDown && !showUp) return null;
    const label = (count) => count === 1 ? t("1 new message") : count > 0 ? t("{count} new messages", { count }) : t("New messages");
@@ -7869,7 +7871,7 @@ diff --git a/client.js b/client.js
        type: "button",
        className: "bt-news-x",
        "aria-label": t("Dismiss new messages"),
-@@ -5694,7 +5694,7 @@
+@@ -5694,7 +9518,7 @@
          event.stopPropagation();
          onDismiss();
        }
@@ -7878,7 +7880,7 @@ diff --git a/client.js b/client.js
    );
    const toLatest = () => {
      const scroller = document.querySelector("[data-conversation-scroll]");
-@@ -5704,8 +5704,8 @@
+@@ -5704,8 +9528,8 @@
    };
    const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
    return (0, import_react_dom4.createPortal)(
@@ -7889,7 +7891,7 @@ diff --git a/client.js b/client.js
        null,
        showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
        showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
-@@ -5714,19 +5714,117 @@
+@@ -5714,19 +9538,117 @@
    );
  }
  
@@ -8014,7 +8016,7 @@ diff --git a/client.js b/client.js
      if (!note) return void 0;
      const timer = setTimeout(() => setNote(""), 2600);
      return () => clearTimeout(timer);
-@@ -5774,19 +5774,38 @@
+@@ -5774,19 +9696,38 @@
    const stop = () => recognition.current?.stop();
    return { listening, note, start, stop };
  }
@@ -8056,7 +8058,7 @@ diff --git a/client.js b/client.js
      const box = document.querySelector('[class*="_centerCol"] [role=textbox][contenteditable=true]');
      if (box instanceof HTMLElement) {
        box.focus();
-@@ -5797,10 +5797,10 @@
+@@ -5797,10 +9738,10 @@
    }, [quote?.token]);
    if (sessionId === void 0) return null;
    const pluginMic = actions.speech() !== void 0;
@@ -8070,7 +8072,7 @@ diff --git a/client.js b/client.js
        type: "button",
        className: "bt-mic",
        "aria-label": dictation.listening ? t("Stop dictation") : t("Dictate"),
-@@ -5808,16 +5808,16 @@
+@@ -5808,16 +9749,16 @@
        title: dictation.listening ? t("Stop dictation") : t("Dictate"),
        onMouseDown: keepComposerFocus,
        onClick: () => dictation.listening ? dictation.stop() : dictation.start()
@@ -8091,7 +8093,7 @@ diff --git a/client.js b/client.js
    );
  }
  function menuIcons(roster) {
-@@ -5825,17 +5825,17 @@
+@@ -5825,17 +9766,17 @@
    return (row) => {
      if (!row.bot) return PeopleIcon;
      const id = row.bot.id;
@@ -8114,7 +8116,7 @@ diff --git a/client.js b/client.js
      if (!open) return void 0;
      const onDown = (event) => {
        if (![button.current, menu.current].some((node) => node?.contains(event.target))) setOpen(null);
-@@ -5876,10 +5876,10 @@
+@@ -5876,10 +9817,10 @@
      actions.referenceChat(sessionId, inputActions?.captureInsertion?.());
    };
    const canReference = typeof inputActions?.captureInsertion === "function" && actions.canReferenceChat();
@@ -8128,7 +8130,7 @@ diff --git a/client.js b/client.js
        ref: button,
        type: "button",
        className: "bt-plus",
-@@ -5889,8 +5889,8 @@
+@@ -5889,8 +9830,8 @@
        "aria-expanded": Boolean(open),
        onMouseDown: keepComposerFocus,
        onClick: toggle
@@ -8139,7 +8141,7 @@ diff --git a/client.js b/client.js
        "div",
        {
          ref: menu,
-@@ -5900,9 +5900,9 @@
+@@ -5900,9 +9841,9 @@
          style: { left: shown.left, bottom: shown.bottom },
          "data-leaving": leaving || void 0
        },
@@ -8152,7 +8154,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -5922,15 +5922,57 @@
+@@ -5922,15 +9863,57 @@
  function mentionRows(roster, sessionId, query = "") {
    const here = conversationOf(roster, sessionId);
    if (here === null) return null;
@@ -8214,7 +8216,7 @@ diff --git a/client.js b/client.js
  function chatRows(roster, list, sessionId) {
    const here = conversationOf(roster, sessionId);
    if (here === null) return [];
-@@ -5959,14 +5959,31 @@
+@@ -5959,14 +9942,31 @@
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -8250,7 +8252,7 @@ diff --git a/client.js b/client.js
      },
      onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
    };
-@@ -5995,6 +5995,83 @@
+@@ -5995,6 +9995,83 @@
    return [bots, chats];
  }
  
@@ -8334,7 +8336,7 @@ diff --git a/client.js b/client.js
  // src/client/speech.js
  var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
  var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
-@@ -6121,232 +6121,8 @@
+@@ -6121,232 +10198,8 @@
    };
  }
  
@@ -8568,7 +8570,7 @@ diff --git a/client.js b/client.js
  var import_react_dom6 = require("react-dom");
  var MENU_EXIT_MS = 120;
  function groupModels(models) {
-@@ -6367,17 +6367,10 @@
+@@ -6367,17 +10220,10 @@
    });
  }
  var servedOf = (roster, ref) => (roster.models ?? []).find((model) => model.ref === ref);
@@ -8588,7 +8590,7 @@ diff --git a/client.js b/client.js
      setFetched(void 0);
      if (ref === void 0 || served?.reasoning !== void 0 || actions?.efforts === void 0) return void 0;
      let live = true;
-@@ -6402,12 +6402,12 @@
+@@ -6402,12 +10248,12 @@
    ];
  }
  function EffortRows({ reasoning, current, onPick }) {
@@ -8606,7 +8608,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          key: row.effort ?? "default",
-@@ -6416,17 +6416,17 @@
+@@ -6416,17 +10262,17 @@
          "aria-checked": row.effort === current,
          onClick: () => onPick(row.effort)
        },
@@ -8630,7 +8632,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          key: model.ref,
-@@ -6436,20 +6436,20 @@
+@@ -6436,20 +10282,20 @@
          title: model.ref,
          onClick: () => onPick(model.ref)
        },
@@ -8659,7 +8661,7 @@ diff --git a/client.js b/client.js
      if (place === null) return void 0;
      const onDown = (event) => {
        if (menu.current?.contains(event.target) || button.current?.contains(event.target)) return;
-@@ -6484,6 +6484,7 @@
+@@ -6484,6 +10330,7 @@
    return { isOpen: place !== null, shownPlace, leaving, button, menu, open, close };
  }
  function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onPickEffort }) {
@@ -8667,7 +8669,7 @@ diff --git a/client.js b/client.js
    const { isOpen, shownPlace, leaving, button, menu, open, close } = useAnchoredMenu();
    const shown = modelOf(bot, roster);
    const current = bot.model ?? bot.appliedModel;
-@@ -6511,10 +6511,10 @@
+@@ -6511,10 +10358,10 @@
      else if (effort !== bot.effort) void run(actions.updateBot(bot.id, { effort: effort ?? null }));
    };
    const models = roster.models ?? [];
@@ -8681,7 +8683,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          ref: button,
-@@ -6527,37 +6527,38 @@
+@@ -6527,37 +10374,38 @@
          "data-missing": shown !== void 0 && !shown.served && models.length > 0 ? "" : void 0,
          onClick: toggle
        },
@@ -8734,7 +8736,7 @@ diff --git a/client.js b/client.js
    const models = roster.models ?? [];
    const lost = bot.model ? !models.some((model) => model.ref === bot.model) : false;
    if (bot.model && (!lost || models.length === 0)) return null;
-@@ -6570,12 +6570,12 @@
+@@ -6570,12 +10418,12 @@
      }).finally(() => setBusy(""));
    };
    const text = lost ? t("{model} is not available anymore. Pick another model for me.", { model: bot.model.split("/").slice(1).join("/") }) : models.length === 0 ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name }) : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name });
@@ -8751,7 +8753,7 @@ diff --git a/client.js b/client.js
          key: model.ref,
          type: "button",
          className: "bt-model-chip",
-@@ -6584,50 +6584,115 @@
+@@ -6584,50 +10432,115 @@
          "aria-label": `${model.name} · ${provider}`,
          title: model.ref === roster.defaultModel ? `${model.ref} · ${t("Harness default")}` : model.ref,
          onClick: () => pick2(model.ref)
@@ -8883,7 +8885,7 @@ diff --git a/client.js b/client.js
      ...ops,
      ...hooks,
      t: actions.accountT(),
-@@ -6639,6 +6639,16 @@
+@@ -6639,6 +10552,16 @@
    });
  }
  var MODEL_CSS = `
@@ -8900,7 +8902,7 @@ diff --git a/client.js b/client.js
  .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
  .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
  .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
-@@ -6675,18 +6675,88 @@
+@@ -6675,18 +10598,88 @@
  @media (prefers-reduced-motion:reduce){.bt-model-dock{animation:none}.bt-model-spin{animation-duration:2s}.bt-model-caret{transition:none}.bt-model-tick svg{animation:none}}
  `;
  
@@ -8996,7 +8998,7 @@ diff --git a/client.js b/client.js
    const fallback = group ? t("Each Bot's own folder") : t("Team workspace");
    const toggle = () => {
      if (isOpen) {
-@@ -6719,35 +6719,35 @@
+@@ -6719,35 +10712,35 @@
    };
    const known = info?.folders ?? [];
    const folders = value && !known.some((folder) => folder.path === value) ? [{ path: value, title: folderName(value) }, ...known] : known;
@@ -9048,7 +9050,7 @@ diff --git a/client.js b/client.js
        className: "bt-folder-input",
        autoFocus: true,
        value: draft,
-@@ -6759,33 +6759,33 @@
+@@ -6759,33 +10752,33 @@
          if (event.key === "Enter" && !event.nativeEvent.isComposing) typed();
        }
      }),
@@ -9098,7 +9100,7 @@ diff --git a/client.js b/client.js
        "button",
        {
          ref: button,
-@@ -6798,19 +6798,19 @@
+@@ -6798,19 +10791,19 @@
          title: value,
          onClick: toggle
        },
@@ -9124,7 +9126,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -6830,8 +6830,8 @@
+@@ -6830,8 +10823,8 @@
  `;
  
  // src/client/schedules.js
@@ -9135,7 +9137,7 @@ diff --git a/client.js b/client.js
  var shared = null;
  var listeners = /* @__PURE__ */ new Set();
  function publish(view) {
-@@ -6839,8 +6839,8 @@
+@@ -6839,8 +10832,8 @@
    for (const listener of listeners) listener(view);
  }
  function useSchedules(actions) {
@@ -9146,7 +9148,7 @@ diff --git a/client.js b/client.js
      listeners.add(setView);
      let stopped = false;
      let timer;
-@@ -6848,7 +6848,7 @@
+@@ -6848,7 +10841,7 @@
        if (!stopped) publish(next);
      }).catch(() => {
      }).finally(() => {
@@ -9155,7 +9157,7 @@ diff --git a/client.js b/client.js
      });
      load();
      return () => {
-@@ -6896,11 +6896,25 @@
+@@ -6896,11 +10889,25 @@
        return "";
    }
  }
@@ -9186,7 +9188,7 @@ diff --git a/client.js b/client.js
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(false), 3e3);
      return () => clearTimeout(timer);
-@@ -6913,20 +6913,48 @@
+@@ -6913,20 +10920,48 @@
      setBusy(true);
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
    };
@@ -9244,7 +9246,7 @@ diff --git a/client.js b/client.js
        type: "button",
        className: "bt-mini bt-task-remove",
        "data-confirm": confirming || void 0,
-@@ -6934,7 +6934,7 @@
+@@ -6934,7 +10969,7 @@
        "aria-label": confirming ? t("Click again to delete") : t("Delete task"),
        title: confirming ? void 0 : t("Delete task"),
        onClick: remove
@@ -9253,7 +9255,7 @@ diff --git a/client.js b/client.js
    );
  }
  var pad = (number) => String(number).padStart(2, "0");
-@@ -6945,22 +6945,44 @@
+@@ -6945,22 +10980,44 @@
  }
  var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
  var UNITS = [["minutes", 1, "minutes"], ["hours", 60, "hours"], ["days", 1440, "days"]];
@@ -9311,7 +9313,7 @@ diff --git a/client.js b/client.js
    };
    const submit = (event) => {
      event.preventDefault();
-@@ -6975,146 +6975,185 @@
+@@ -6975,146 +11032,185 @@
        setBusy(false);
        return;
      }
@@ -9559,7 +9561,7 @@ diff --git a/client.js b/client.js
      )))
    );
  }
-@@ -7127,6 +7127,12 @@
+@@ -7127,6 +11223,12 @@
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
  .bt-task-remove svg{width:14px;height:14px}
@@ -9572,7 +9574,7 @@ diff --git a/client.js b/client.js
  .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
  .bt-task-head{display:flex;align-items:center;gap:6px}
  .bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
-@@ -7158,7 +7158,7 @@
+@@ -7158,7 +11260,7 @@
  `;
  
  // src/client/capability-settings.js
@@ -9581,7 +9583,7 @@ diff --git a/client.js b/client.js
  var blank = () => ({ name: "", kind: "mcp", description: "", transport: "stdio", command: "", argsText: "", envText: "{}", url: "", headersText: "{}", content: "", items: [] });
  var parseMap = (text, label) => {
    let value;
-@@ -7172,11 +7172,11 @@
+@@ -7172,11 +11274,11 @@
  };
  var statusText = (status) => !status ? void 0 : status.state === "ready" ? t("Ready") : status.state === "needs-approval" ? t("Needs approval") : status.state === "error" ? t("Could not connect: {error}", { error: status.error ?? "" }) : t("Connecting…");
  function Field({ label, value, onChange, multiline = false, disabled = false, placeholder }) {
@@ -9596,7 +9598,7 @@ diff --git a/client.js b/client.js
        className: multiline ? "bt-input bt-input-area" : "bt-input",
        value,
        disabled,
-@@ -7188,7 +7188,7 @@
+@@ -7188,7 +11290,7 @@
    );
  }
  function CapabilityForm({ draft, setDraft, items, actions, onClose }) {
@@ -9605,7 +9607,7 @@ diff --git a/client.js b/client.js
    const set = (key, value) => setDraft((previous) => ({ ...previous, [key]: value }));
    const submit = async (event) => {
      event.preventDefault();
-@@ -7199,7 +7199,7 @@
+@@ -7199,7 +11301,7 @@
        if (draft.kind === "mcp" && draft.transport === "stdio") {
          payload.transport = "stdio";
          payload.command = draft.command;
@@ -9614,7 +9616,7 @@ diff --git a/client.js b/client.js
          payload.env = parseMap(draft.envText, t("Environment"));
        } else if (draft.kind === "mcp") {
          payload.transport = "streamable-http";
-@@ -7219,95 +7219,95 @@
+@@ -7219,95 +11321,95 @@
      }
    };
    const available = items.filter((item) => item.name !== draft.name && ["mcp", "skill"].includes(item.kind));
@@ -9750,7 +9752,7 @@ diff --git a/client.js b/client.js
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(""), 4e3);
      return () => clearTimeout(timer);
-@@ -7330,20 +7330,20 @@
+@@ -7330,20 +11432,20 @@
      setConfirming("");
      void run(actions.deleteCapability(item.name));
    };
@@ -9778,7 +9780,7 @@ diff --git a/client.js b/client.js
          key: item.name,
          item,
          confirming: confirming === item.name,
-@@ -7359,10 +7359,10 @@
+@@ -7359,10 +11461,10 @@
    const attached = new Set(bot.capabilities ?? []);
    const statuses = roster.capabilityStatuses?.[bot.id] ?? {};
    if (items.length === 0) return null;
@@ -9791,7 +9793,7 @@ diff --git a/client.js b/client.js
        key: item.name,
        label: item.name,
        hint: attached.has(item.name) ? statusText(statuses[item.name]) : void 0,
-@@ -7372,9 +7372,55 @@
+@@ -7372,9 +11474,55 @@
    );
  }
  
@@ -9849,7 +9851,7 @@ diff --git a/client.js b/client.js
  var MENU_EXIT_MS2 = 120;
  var counts = /* @__PURE__ */ new Map();
  var countListeners = /* @__PURE__ */ new Set();
-@@ -7384,13 +7384,13 @@
+@@ -7384,13 +11532,13 @@
    for (const listener of countListeners) listener();
  }
  function useMemoryCount(botId, actions) {
@@ -9866,7 +9868,7 @@ diff --git a/client.js b/client.js
        if (!stop) noteCount(botId, view.entries.length);
      }).catch(() => {
      });
-@@ -7404,16 +7404,16 @@
+@@ -7404,16 +11552,16 @@
  function MemoryRow({ bot, actions }) {
    const count = useMemoryCount(bot.id, actions);
    const label = count === null ? t("Loading…") : count === 0 ? t("Nothing saved yet") : count === 1 ? t("1 entry") : t("{count} entries", { count });
@@ -9889,7 +9891,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
-@@ -7428,45 +7428,45 @@
+@@ -7428,45 +11576,45 @@
    return format.format(-Math.round(hours / 24), "day");
  }
  function Skeleton({ label }) {
@@ -9954,7 +9956,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
-@@ -7478,9 +7478,9 @@
+@@ -7478,9 +11626,9 @@
    return groups;
  }, []);
  function EntryRow({ entry, remove }) {
@@ -9967,7 +9969,7 @@ diff --git a/client.js b/client.js
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(false), 3e3);
      return () => clearTimeout(timer);
-@@ -7495,16 +7495,16 @@
+@@ -7495,16 +11643,16 @@
      setBusy(true);
      if (!await remove(entry)) setBusy(false);
    };
@@ -9989,7 +9991,7 @@ diff --git a/client.js b/client.js
        type: "button",
        className: "bt-mem-remove",
        "data-confirm": confirming || void 0,
-@@ -7512,7 +7512,7 @@
+@@ -7512,7 +11660,7 @@
        "aria-label": confirming ? t("Click again to remove") : t("Remove from memory"),
        title: confirming ? void 0 : t("Remove from memory"),
        onClick: click
@@ -9998,7 +10000,7 @@ diff --git a/client.js b/client.js
    );
  }
  function Entries({ bot, view, remove }) {
-@@ -7521,25 +7521,25 @@
+@@ -7521,25 +11669,25 @@
      { scope: "own", title: t("{name}'s memory", { name: bot.name }), size: view.sizes.own },
      { scope: "team", title: t("Team memory"), hint: t("Every Bot reads it"), size: view.sizes.team }
    ];
@@ -10035,7 +10037,7 @@ diff --git a/client.js b/client.js
      ))
    );
  }
-@@ -7551,52 +7551,52 @@
+@@ -7551,52 +11699,52 @@
    return change.scope === "team" ? t("Added to team memory: {text}", { text }) : t("Added: {text}", { text });
  }
  function Reply({ answer, dismiss }) {
@@ -10107,7 +10109,7 @@ diff --git a/client.js b/client.js
      alive.current = true;
      void load({ summarize: true });
      return () => {
-@@ -7606,9 +7606,9 @@
+@@ -7606,9 +11754,9 @@
    }, [botId]);
    return { view, error, load, show };
  }
@@ -10120,7 +10122,7 @@ diff --git a/client.js b/client.js
      const id = setInterval(() => setNow(Date.now()), every);
      return () => clearInterval(id);
    }, [every]);
-@@ -7616,18 +7616,18 @@
+@@ -7616,18 +11764,18 @@
  }
  function MemoryDialog({ bot, actions, leaving = false }) {
    const { view, error, load, show } = useMemoryView(bot.id, actions);
@@ -10149,7 +10151,7 @@ diff --git a/client.js b/client.js
      if (!menu) return void 0;
      const onDown = (event) => {
        if (menuRef.current?.contains(event.target) || dotsRef.current?.contains(event.target)) return;
-@@ -7689,52 +7689,52 @@
+@@ -7689,52 +11837,52 @@
    const when3 = view?.summary ? ago(view.summary.at, now) : null;
    const status = view === null ? "" : page === "entries" ? count === 1 ? t("1 entry") : t("{count} entries", { count }) : view.summarizing && view.summary ? t("Updating…") : view.summary && view.fresh ? when3 ? t("Updated {time}", { time: when3 }) : t("Updated just now") : "";
    const busy = answer?.pending === true;
@@ -10225,7 +10227,7 @@ diff --git a/client.js b/client.js
              ref: inputRef,
              className: "bt-mem-input",
              value: text,
-@@ -7744,10 +7744,10 @@
+@@ -7744,10 +11892,10 @@
              "aria-label": t("Ask about or update {name}'s memory", { name: bot.name }),
              onChange: (event) => setText(event.target.value)
            }),
@@ -10238,7 +10240,7 @@ diff --git a/client.js b/client.js
            )
          )
        )
-@@ -7755,8 +7755,40 @@
+@@ -7755,8 +11903,40 @@
    );
  }
  
@@ -10280,7 +10282,7 @@ diff --git a/client.js b/client.js
  var capitalize = (word) => word[0].toUpperCase() + word.slice(1);
  async function avatarImage(file) {
    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error(t("Choose a PNG, JPEG, WebP, or GIF image"));
-@@ -7780,8 +7780,8 @@
+@@ -7780,8 +11960,8 @@
    throw new Error(t("That image is too large"));
  }
  function InlineText({ label, value, placeholder, required = false, maxLength, multiline = false, onSave }) {
@@ -10291,7 +10293,7 @@ diff --git a/client.js b/client.js
    const commit = () => {
      const next = draft?.trim();
      setDraft(null);
-@@ -7792,7 +7792,7 @@
+@@ -7792,7 +11972,7 @@
      if (next === void 0 || next === (value ?? "") || required && next === "") return;
      void onSave(next);
    };
@@ -10300,7 +10302,7 @@ diff --git a/client.js b/client.js
      className: multiline ? "bt-bs-input bt-bs-area" : "bt-bs-input",
      value: draft ?? value ?? "",
      placeholder,
-@@ -7813,29 +7813,29 @@
+@@ -7813,29 +11993,29 @@
    });
  }
  function Row({ label, hint, stack = false, children }) {
@@ -10339,7 +10341,7 @@ diff --git a/client.js b/client.js
    );
  }
  function modelHint(bot, roster) {
-@@ -7846,22 +7846,22 @@
+@@ -7846,22 +12026,22 @@
    return t("Applies from the next message.");
  }
  function ShapeRing({ shape, size }) {
@@ -10367,7 +10369,7 @@ diff --git a/client.js b/client.js
        key: id,
        type: "button",
        className: "bt-shape",
-@@ -7869,8 +7869,8 @@
+@@ -7869,8 +12049,8 @@
        title: t(shapeOf(id).label),
        "aria-pressed": !hasPhoto && look.shape === id,
        onClick: () => onShape(id)
@@ -10378,7 +10380,7 @@ diff --git a/client.js b/client.js
        key: color,
        type: "button",
        className: "bt-color",
-@@ -7878,19 +7878,19 @@
+@@ -7878,19 +12058,19 @@
        title: t(capitalize(color)),
        "aria-pressed": look.color === color,
        onClick: () => onColor(color)
@@ -10404,7 +10406,7 @@ diff --git a/client.js b/client.js
      const onDown = (event) => {
        if (!(event.target instanceof Element) || ref.current?.contains(event.target) || event.target.closest(".bt-avatar-trigger")) return;
        onClose();
-@@ -7908,7 +7908,7 @@
+@@ -7908,7 +12088,7 @@
        window.removeEventListener("keydown", onKey, true);
      };
    }, [onClose]);
@@ -10413,7 +10415,7 @@ diff --git a/client.js b/client.js
      if (tab !== "upload") return void 0;
      const onPaste = (event) => {
        const file = [...event.clipboardData?.files ?? []].find((item) => item.type.startsWith("image/"));
-@@ -7922,32 +7922,32 @@
+@@ -7922,32 +12102,32 @@
    }, [tab, bot]);
    const hasPhoto = Boolean(look.image);
    const glide = useGlide(tab);
@@ -10454,7 +10456,7 @@ diff --git a/client.js b/client.js
        "div",
        {
          className: "bt-dropzone",
-@@ -7963,15 +7963,15 @@
+@@ -7963,15 +12143,15 @@
            upload(event.dataTransfer.files?.[0]);
          }
        },
@@ -10476,7 +10478,7 @@ diff --git a/client.js b/client.js
          const file = event.target.files?.[0];
          event.target.value = "";
          upload(file);
-@@ -7982,26 +7982,27 @@
+@@ -7982,26 +12162,27 @@
  function MemoryCard({ bot, actions }) {
    const count = useMemoryCount(bot.id, actions);
    const label = count === null ? t("Loading…") : count === 0 ? t("Nothing saved yet") : count === 1 ? t("1 entry") : t("{count} entries", { count });
@@ -10512,7 +10514,7 @@ diff --git a/client.js b/client.js
    const isMainBot = isMainOf(roster, bot.id);
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
    const isTile = roster.mainBotId === bot.id;
-@@ -8011,112 +8011,116 @@
+@@ -8011,112 +12192,116 @@
      if (confirming) void run(actions.deleteBot(bot.id));
      else setConfirming(true);
    };
@@ -10678,7 +10680,7 @@ diff --git a/client.js b/client.js
        )
      )
    );
-@@ -8133,6 +8133,7 @@
+@@ -8133,6 +12318,7 @@
  .bt-bs-row>.bt-set-copy{flex:1 1 auto}
  .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
  .bt-bs-row .bt-model-trigger{flex:none;max-width:58%}
@@ -10686,7 +10688,7 @@ diff --git a/client.js b/client.js
  .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
  .bt-bs-input:hover{background:var(--bt-hover)}
  .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
-@@ -8155,6 +8155,643 @@
+@@ -8155,6 +12341,643 @@
  @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
  `;
  
@@ -11330,7 +11332,7 @@ diff --git a/client.js b/client.js
  // src/client/bot-draft.js
  function freshBotName(roster, base = "New Bot") {
    const taken = new Set(roster.bots.map((bot) => bot.name.toLowerCase()));
-@@ -8165,36 +8165,48 @@
+@@ -8165,36 +12988,48 @@
  }
  function startModel(roster) {
    const models = roster.models ?? [];
@@ -11394,7 +11396,7 @@ diff --git a/client.js b/client.js
      if (inline) frame.current?.scrollIntoView({ block: "start", behavior: "smooth" });
    }, []);
    const fallbackName = freshBotName(roster, t("New Bot"));
-@@ -8206,8 +8206,8 @@
+@@ -8206,8 +13041,8 @@
      setError("");
      setBusy(true);
      try {
@@ -11405,7 +11407,7 @@ diff --git a/client.js b/client.js
      } catch (failure) {
        setError(failure?.message ?? String(failure));
        setBusy(false);
-@@ -8219,25 +8219,25 @@
+@@ -8219,25 +13054,25 @@
      avatarImage(file).then(setImage, (failure) => setError(failure?.message ?? String(failure)));
    };
    const previewLook = image ? { ...look, image } : look;
@@ -11439,7 +11441,7 @@ diff --git a/client.js b/client.js
          look,
          hasPhoto: Boolean(image),
          onShape: (shape) => {
-@@ -8249,27 +8249,27 @@
+@@ -8249,27 +13084,27 @@
            setLook((current) => ({ ...current, color }));
          }
        }),
@@ -11475,7 +11477,7 @@ diff --git a/client.js b/client.js
          className: "bt-input",
          autoFocus: !inline,
          value: name,
-@@ -8284,75 +8284,113 @@
+@@ -8284,75 +13119,113 @@
            }
          }
        }),
@@ -11619,7 +11621,7 @@ diff --git a/client.js b/client.js
    const pick2 = (bot) => {
      setPicked((current) => [...current, bot.id]);
      setQuery("");
-@@ -8386,13 +8386,17 @@
+@@ -8386,13 +13259,17 @@
    };
    const created = (bot) => {
      close();
@@ -11640,7 +11642,7 @@ diff --git a/client.js b/client.js
      if (text) await actions.send(room2.id, text);
      actions.openSession(room2.id);
      close();
-@@ -8411,46 +8411,75 @@
+@@ -8411,46 +13288,75 @@
        close();
        return;
      }
@@ -11727,7 +11729,7 @@ diff --git a/client.js b/client.js
          canGoBack: draft.fromList,
          onBack: draft.fromList ? () => {
            setDraft(null);
-@@ -8467,33 +8467,41 @@
+@@ -8467,33 +13373,41 @@
      if (picked.length > 0) setPicked((current) => current.slice(0, -1));
      else if (admin !== null) setAdmin(null);
    };
@@ -11784,7 +11786,7 @@ diff --git a/client.js b/client.js
            ref: inputRef,
            autoFocus: true,
            value: query,
-@@ -8517,20 +8517,20 @@
+@@ -8517,20 +13431,20 @@
              } else if (event.key === "Backspace" && query === "") unpick();
            }
          }),
@@ -11810,7 +11812,7 @@ diff --git a/client.js b/client.js
            "button",
            {
              key: option.key,
-@@ -8542,21 +8542,36 @@
+@@ -8542,21 +13456,36 @@
              onMouseEnter: () => setCursor(index),
              onClick: option.run
            },
@@ -11856,7 +11858,7 @@ diff --git a/client.js b/client.js
              rows: 1,
              value: message,
              placeholder,
-@@ -8569,7 +8569,7 @@
+@@ -8569,7 +13498,7 @@
                }
              }
            }),
@@ -11865,7 +11867,7 @@ diff --git a/client.js b/client.js
          )
        )
      )
-@@ -8577,18 +8577,18 @@
+@@ -8577,18 +13506,18 @@
  }
  
  // src/client/exchange.js
@@ -11888,7 +11890,7 @@ diff --git a/client.js b/client.js
      let stop = false;
      let timer;
      let seen = null;
-@@ -8612,48 +8612,48 @@
+@@ -8612,48 +13541,48 @@
    const right = roster.byId[pair[1]];
    let lastDay = 0;
    const paneLeft = usePaneLeft();
@@ -11953,7 +11955,7 @@ diff --git a/client.js b/client.js
  var plainSpeech = (text) => stripHeader(text).replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>|~-]+/g, " ").replace(/\s+/g, " ").trim();
  var VOICE_LABELS = {
    listening: "Listening",
-@@ -8665,14 +8665,14 @@
+@@ -8665,14 +13594,14 @@
  };
  var CAPTURE_NOTES = { blocked: "Microphone access is blocked", unavailable: "Voice chat is not available in this browser", "too-long": "That was too long to recognize" };
  function useMicLevel(enabled) {
@@ -11971,7 +11973,7 @@ diff --git a/client.js b/client.js
        if (stopped) {
          media.getTracks().forEach((track) => track.stop());
          return;
-@@ -8716,18 +8716,18 @@
+@@ -8716,18 +13645,18 @@
      const entry = Array.isArray(outline) ? outline[outline.length - 1] : void 0;
      return entry ? `${outline.length}|${entry.response ?? ""}` : "0|";
    });
@@ -12001,7 +12003,7 @@ diff --git a/client.js b/client.js
    const paneLeft = usePaneLeft();
    const close = () => {
      turn.current += 1;
-@@ -8747,12 +8747,12 @@
+@@ -8747,12 +13676,12 @@
      dictation.stop();
      submit(text);
    });
@@ -12016,7 +12018,7 @@ diff --git a/client.js b/client.js
      if (!speech) return void 0;
      let live = true;
      speechCatalog(speech).then(({ catalog: next, usable }) => {
-@@ -8767,16 +8767,16 @@
+@@ -8767,16 +13696,16 @@
      };
    }, [speech]);
    const listen = phase === "listening";
@@ -12036,7 +12038,7 @@ diff --git a/client.js b/client.js
      if (!speech || !catalog || !listen) return void 0;
      const own = turn.current;
      let capture = null;
-@@ -8838,7 +8838,7 @@
+@@ -8838,7 +13767,7 @@
        setServiceLevel(0);
      };
    }, [speech, catalog, listen, cycle]);
@@ -12045,7 +12047,7 @@ diff --git a/client.js b/client.js
      if (phase !== "thinking" || running || waiting.current === null) return;
      const [count, text] = [lastReply.slice(0, lastReply.indexOf("|")), lastReply.slice(lastReply.indexOf("|") + 1)];
      if (count === waiting.current || !text.trim()) return;
-@@ -8858,7 +8858,7 @@
+@@ -8858,7 +13787,7 @@
      window.speechSynthesis.cancel();
      window.speechSynthesis.speak(utterance);
    }, [phase, running, lastReply]);
@@ -12054,7 +12056,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,292 +8875,48 @@
+@@ -8875,292 +13804,48 @@
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -12363,7 +12365,7 @@ diff --git a/client.js b/client.js
  // src/client/usage-data.js
  var HOUR = 0;
  var OWNER = 1;
-@@ -9277,13 +9277,13 @@
+@@ -9277,13 +13962,13 @@
    }
    return result;
  }
@@ -12379,7 +12381,7 @@ diff --git a/client.js b/client.js
    }
    return String(Math.round(count));
  }
-@@ -9294,11 +9294,11 @@
+@@ -9294,11 +13979,11 @@
  }
  
  // src/client/usage-page.js
@@ -12393,7 +12395,7 @@ diff --git a/client.js b/client.js
  var rangeLabel = (id) => ({ "24h": t("24 hours"), "7d": t("7 days"), "30d": t("30 days"), "12w": t("12 weeks"), "12m": t("12 months") })[id];
  var unitLabel = (unit) => ({ hour: t("Per hour"), day: t("Per day"), week: t("Per week"), month: t("Per month") })[unit];
  var MODEL_INKS = ["deepseek", "tangerine", "green", "violet", "sky", "rose", "yellow", "cyan", "magenta", "brown"];
-@@ -9341,9 +9341,9 @@
+@@ -9341,9 +14026,9 @@
    return dates({ year: "numeric", month: "long" }).format(bucket.start);
  }
  function useTween(value) {
@@ -12406,7 +12408,7 @@ diff --git a/client.js b/client.js
      if (reducedMotion() || typeof requestAnimationFrame !== "function") {
        from.current = value;
        setShown(value);
-@@ -9363,9 +9363,9 @@
+@@ -9363,9 +14048,9 @@
    }, [value]);
    return shown;
  }
@@ -12418,7 +12420,7 @@ diff --git a/client.js b/client.js
      className: "bt-us-model",
      "aria-hidden": true,
      style: { width: size, height: size, fontSize: Math.round(size * 0.42), background: `color-mix(in srgb, ${paint} 20%, var(--bt-card))`, color: `color-mix(in srgb, ${paint} 72%, var(--bt-ink))` }
-@@ -9382,7 +9382,7 @@
+@@ -9382,7 +14067,7 @@
        sub: owner.deleted ? t("Deleted") : role.toLowerCase() === name.toLowerCase() ? "" : role,
        paint: paintCss(colorOf(bot)),
        stops: GRADIENTS[colorOf(bot)],
@@ -12427,7 +12429,7 @@ diff --git a/client.js b/client.js
      };
    }
    if (owner.kind === "room") {
-@@ -9392,7 +9392,7 @@
+@@ -9392,7 +14077,7 @@
        name: owner.name || t("Deleted group chat"),
        sub: owner.deleted ? t("Deleted") : t("Group chat"),
        paint: "var(--bt-us-rest)",
@@ -12436,7 +12438,7 @@ diff --git a/client.js b/client.js
      };
    }
    if (owner.kind === "agent") {
-@@ -9414,30 +9414,30 @@
+@@ -9414,30 +14099,30 @@
    const names = options.map(([, text]) => text).join("\n");
    const glide = useGlide(`${value}
  ${names}`, { box: boxRef });
@@ -12477,7 +12479,7 @@ diff --git a/client.js b/client.js
            "span",
            { className: "bt-us-delta", title: compareText(range) },
            `${change >= 0 ? "↑" : "↓"} ${Math.abs(change)}%`
-@@ -9455,83 +9455,83 @@
+@@ -9455,83 +14140,83 @@
    return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((scale) => scale * step).find((value) => value >= max);
  }
  function Chart({ range, columns, series, tipSeries, by, onBy, onPick }) {
@@ -12588,7 +12590,7 @@ diff --git a/client.js b/client.js
      onClick ? "button" : "div",
      {
        className: "bt-us-row",
-@@ -9540,69 +9540,69 @@
+@@ -9540,69 +14225,69 @@
        title: t("{tokens} tokens · {calls} calls", { tokens: full(sum.total), calls: full(sum.calls) }),
        ...onClick ? { type: "button", onClick } : {}
      },
@@ -12686,7 +12688,7 @@ diff --git a/client.js b/client.js
      const onDown = (event) => {
        if (![box, near].some((ref) => ref.current?.contains(event.target))) onClose();
      };
-@@ -9628,17 +9628,17 @@
+@@ -9628,17 +14313,17 @@
      const [from, to] = [anchor, key].sort();
      onPick(from, to);
    };
@@ -12707,7 +12709,7 @@ diff --git a/client.js b/client.js
          key,
          type: "button",
          className: "bt-us-day",
-@@ -9654,15 +9654,15 @@
+@@ -9654,15 +14339,15 @@
          "data-has": flag(active.has(key)),
          onMouseEnter: () => setHover(key),
          onClick: () => press(key)
@@ -12729,7 +12731,7 @@ diff --git a/client.js b/client.js
      );
    };
    const shortcuts = [
-@@ -9671,30 +9671,30 @@
+@@ -9671,30 +14356,30 @@
      ["year", t("This year"), `${today.slice(0, 4)}-01-01`, today]
    ];
    const count = low === null ? 0 : Math.round((hourMs(high) - hourMs(low)) / DAY_MS) + 1;
@@ -12768,7 +12770,7 @@ diff --git a/client.js b/client.js
    const today = hourMs(`${view.now.slice(0, 10)} 00`);
    const first = mondayOf(today) - (HEAT_WEEKS - 1) * 7 * DAY_MS;
    const from = dayKey(first);
-@@ -9710,13 +9710,13 @@
+@@ -9710,13 +14395,13 @@
    for (let week = 0; week < HEAT_WEEKS; week += 1) {
      const monday = first + week * 7 * DAY_MS;
      if (week > 0 && new Date(monday).getUTCMonth() !== new Date(monday - 7 * DAY_MS).getUTCMonth()) {
@@ -12784,7 +12786,7 @@ diff --git a/client.js b/client.js
          key: ms,
          className: "bt-us-cell",
          style: { "--w": week },
-@@ -9724,7 +9724,7 @@
+@@ -9724,7 +14409,7 @@
          "data-future": ms > today ? "" : void 0,
          "data-today": ms === today ? "" : void 0,
          onMouseEnter: ms > today ? void 0 : () => setHover({ ms, week, day })
@@ -12793,7 +12795,7 @@ diff --git a/client.js b/client.js
      }
    }
    const tipSide = hover ? {
-@@ -9733,61 +9733,61 @@
+@@ -9733,61 +14418,61 @@
    } : null;
    const active = [...daily.values()].filter((value) => value > 0).length;
    const summary = active === 1 ? t("Active on 1 day in the last year") : t("Active on {count} days in the last year", { count: active });
@@ -12881,7 +12883,7 @@ diff --git a/client.js b/client.js
      let stopped = false;
      let timer;
      const resized = Promise.all((document.querySelector(".bt-settings")?.getAnimations() ?? []).filter((animation) => animation.transitionProperty === "width" || animation.transitionProperty === "height").map((animation) => animation.finished.catch(() => {
-@@ -9797,7 +9797,7 @@
+@@ -9797,7 +14482,7 @@
          const value = await actions.usage();
          await resized;
          if (stopped) return;
@@ -12890,7 +12892,7 @@ diff --git a/client.js b/client.js
          setError("");
          timer = setTimeout(load, value.scanning ? 3e3 : 2e4);
        } catch (failure) {
-@@ -9814,7 +9814,7 @@
+@@ -9814,7 +14499,7 @@
    }, []);
    const today = view?.now.slice(0, 10);
    const range = rangeId === "custom" && span ? { ...spanRange(span.from, span.to), ends: span.to >= today } : RANGES.find((item) => item.id === rangeId);
@@ -12899,7 +12901,7 @@ diff --git a/client.js b/client.js
      if (!view) return null;
      const faces2 = view.owners.map((owner) => ownerFace(owner, roster));
      const lifetime = /* @__PURE__ */ new Map();
-@@ -9823,7 +9823,7 @@
+@@ -9823,7 +14508,7 @@
      const models2 = view.models.map((model, at) => {
        const name = model.name || model.model || t("Unknown model");
        const paint = modelPaint.get(at) ?? "var(--bt-us-rest)";
@@ -12908,7 +12910,7 @@ diff --git a/client.js b/client.js
      });
      const ownerAt2 = focus?.kind === "owner" ? view.owners.findIndex((owner) => owner.key === focus.key) : -1;
      const modelAt = focus?.kind === "model" ? view.models.findIndex((model) => model.key === focus.key) : -1;
-@@ -9871,23 +9871,23 @@
+@@ -9871,23 +14556,23 @@
      });
      return { faces: faces2, models: models2, ownerAt: ownerAt2, modelAt, face: face2, keep: keep2, all: all2, part: part2, series: series2, tipSeries: tipSeries2, fillOf: fillOf2, columns: columns2, ranked: ranked2, isBot: isBot2, activeDays: activeDays2, oldest: oldest2 };
    }, [view, rangeId, span, by, focusId, roster]);
@@ -12940,7 +12942,7 @@ diff --git a/client.js b/client.js
        )
      );
    }
-@@ -9912,7 +9912,7 @@
+@@ -9912,7 +14597,7 @@
      ["custom", rangeId === "custom" && span ? spanText(span.from, span.to) : t("Custom"), CalendarIcon]
    ];
    const whole = part.total.total;
@@ -12949,7 +12951,7 @@ diff --git a/client.js b/client.js
      key: `o${at}`,
      kind: faces[at].kind,
      glyph: faces[at].glyph(32),
-@@ -9924,7 +9924,7 @@
+@@ -9924,7 +14609,7 @@
      fill: face ? soften(face.paint, 0.8) : fillOf.get(`o${at}`) ?? soften(faces[at].paint),
      onClick: () => pick2({ kind: "owner", key: view.owners[at].key })
    });
@@ -12958,7 +12960,7 @@ diff --git a/client.js b/client.js
      key: `m${at}`,
      kind: "model",
      glyph: models[at].glyph(32),
-@@ -9936,30 +9936,30 @@
+@@ -9936,30 +14621,30 @@
      fill: face ? soften(face.paint, 0.8) : fillOf.get(`m${at}`) ?? soften(models[at].paint),
      onClick: () => pick2({ kind: "model", key: view.models[at].key })
    });
@@ -12999,7 +13001,7 @@ diff --git a/client.js b/client.js
        )
      ];
    } else {
-@@ -9968,39 +9968,39 @@
+@@ -9968,39 +14653,39 @@
      const rest = owners.filter(([at]) => !isBot(at));
      const usedModels = ranked(all.models);
      body = [
@@ -13053,7 +13055,7 @@ diff --git a/client.js b/client.js
      body
    );
  }
-@@ -10150,33 +10150,135 @@
+@@ -10150,33 +14835,135 @@
  @keyframes bt-us-drop{from{opacity:0;transform:translateY(-4px) scale(.96)}}
  @keyframes bt-us-fade{from{opacity:0}}
  @keyframes bt-us-cell{from{opacity:0;transform:scale(.5)}}
@@ -13200,7 +13202,7 @@ diff --git a/client.js b/client.js
    const run = (task, after) => {
      setBusy(true);
      setError(null);
-@@ -10184,72 +10184,128 @@
+@@ -10184,72 +14971,128 @@
        after?.();
      }, (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
    };
@@ -13354,7 +13356,7 @@ diff --git a/client.js b/client.js
  );
  function download(name, text) {
    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
-@@ -10260,7 +10260,7 @@
+@@ -10260,7 +15103,7 @@
    setTimeout(() => URL.revokeObjectURL(url), 1e3);
  }
  var copy = (text) => navigator.clipboard === void 0 ? Promise.resolve(false) : navigator.clipboard.writeText(text).then(() => true, () => false);
@@ -13363,7 +13365,7 @@ diff --git a/client.js b/client.js
    const date = new Date(time);
    const today = (/* @__PURE__ */ new Date()).toDateString() === date.toDateString();
    const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" });
-@@ -10270,18 +10270,18 @@
+@@ -10270,18 +15113,18 @@
    if (entry.source === "turn") return failureLabel(entry.code, entry.text);
    return entry.text;
  }
@@ -13388,7 +13390,7 @@ diff --git a/client.js b/client.js
      void run(load());
    }, []);
    const copyReport = () => run(fetchReport().then(async (next) => {
-@@ -10289,7 +10289,7 @@
+@@ -10289,7 +15132,7 @@
      setNote(copied ? t("Copied the diagnostics.") : t("Could not copy. Select the text below and copy it."));
      if (!copied) setPreview(true);
    }));
@@ -13397,7 +13399,7 @@ diff --git a/client.js b/client.js
    const openIssue = () => {
      const win = window.open("", "_blank");
      if (win !== null) win.opener = null;
-@@ -10317,59 +10317,59 @@
+@@ -10317,59 +15160,59 @@
    const total = (report?.total ?? 0) + browserErrors.length;
    const shown = entries2.slice(0, 8);
    return [
@@ -13482,7 +13484,7 @@ diff --git a/client.js b/client.js
        )
      )
    ];
-@@ -10377,8 +10377,8 @@
+@@ -10377,8 +15220,8 @@
  var TOAST_MS = 6e3;
  function ErrorToast({ useUi, actions }) {
    const toast = useUi((state) => state.toast);
@@ -13493,7 +13495,7 @@ diff --git a/client.js b/client.js
      if (!toast) return void 0;
      setLeaving(false);
      const fade = setTimeout(() => setLeaving(true), TOAST_MS);
-@@ -10389,15 +10389,16 @@
+@@ -10389,15 +15232,16 @@
      };
    }, [toast?.token]);
    if (!toast) return null;
@@ -13515,7 +13517,7 @@ diff --git a/client.js b/client.js
    );
  }
  var FEEDBACK_CSS = `
-@@ -10416,47 +10416,56 @@
+@@ -10416,47 +15260,56 @@
  .bt-fb-text{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
  .bt-fb-code{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
  .bt-event-error{color:#e02135}
@@ -13585,7 +13587,7 @@ diff --git a/client.js b/client.js
      let live = true;
      actions.repoStars().then((count) => {
        if (live && Number.isInteger(count)) setStars(count);
-@@ -10466,87 +10466,72 @@
+@@ -10466,87 +15319,72 @@
        live = false;
      };
    }, []);
@@ -13696,7 +13698,7 @@ diff --git a/client.js b/client.js
  .bt-about-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
  .bt-about-name{font-size:16px;line-height:22px;font-weight:600}
  .bt-about-version{font-size:12px;line-height:16px;color:var(--bt-ink-2);font-variant-numeric:tabular-nums}
-@@ -10569,54 +10569,59 @@
+@@ -10569,54 +15407,59 @@
  `;
  
  // src/client/settings.js
@@ -13773,7 +13775,7 @@ diff --git a/client.js b/client.js
              key: ink,
              type: "button",
              className: "bt-swatch",
-@@ -10626,75 +10626,87 @@
+@@ -10626,75 +15469,87 @@
              style: { background: INKS[ink][0] },
              onClick: () => run(actions.setPrefs({ accent: INKS[ink][0] }))
            })),
@@ -13884,7 +13886,7 @@ diff --git a/client.js b/client.js
          key: id,
          type: "button",
          "aria-pressed": motion === id,
-@@ -10706,69 +10706,69 @@
+@@ -10706,69 +15561,69 @@
    );
  }
  function BotsPage({ roster, actions, run }) {
@@ -13984,7 +13986,7 @@ diff --git a/client.js b/client.js
    useEscape(close);
    const run = (promise) => Promise.resolve(promise).then(() => {
      setError("");
-@@ -10779,104 +10779,112 @@
+@@ -10779,104 +15634,112 @@
    });
    const bot = page === "bots" && id ? roster.byId[id] : void 0;
    const room2 = page === "groups" && id ? roster.roomsById[id] : void 0;
@@ -14138,7 +14140,7 @@ diff --git a/client.js b/client.js
    const bot = roster.byId[menu.id];
    const room2 = roster.roomsById[menu.id];
    const entry = bot ?? room2;
-@@ -10884,13 +10884,22 @@
+@@ -10884,13 +15747,22 @@
    const isMainBot = isMainOf(roster, menu.id);
    const isTile = roster.mainBotId === menu.id;
    const mainCount = (roster.mainBotIds ?? []).length;
@@ -14163,7 +14165,7 @@ diff --git a/client.js b/client.js
        bot ? [t("Edit Bot"), GearIcon, () => actions.openSettings("bots", bot.id)] : null,
        room2 ? [t("Group settings"), GearIcon, () => actions.openSettings("groups", room2.id)] : null,
        room2 ? [t("Rename group"), PencilIcon, () => actions.renameBot(room2.id)] : null,
-@@ -10901,20 +10901,22 @@
+@@ -10901,20 +15773,22 @@
        bot && !isMainBot ? [t("Make Main Bot"), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
        bot && isMainBot && mainCount > 1 ? [t("Remove Main Bot role"), StarLineIcon, () => actions.setMain(bot.id, false)] : null
      ],
@@ -14192,7 +14194,7 @@ diff --git a/client.js b/client.js
          key: label,
          type: "button",
          role: "menuitem",
-@@ -10923,14 +10923,14 @@
+@@ -10923,14 +15797,14 @@
            actions.closeMenu();
            void Promise.resolve(run()).catch((error) => actions.reportError(error, "menu"));
          }
@@ -14211,7 +14213,7 @@ diff --git a/client.js b/client.js
      const box = ref.current?.getBoundingClientRect();
      if (!box) return;
      setPlace({ left: Math.max(8, Math.min(menu.x, window.innerWidth - box.width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - box.height - 8)) });
-@@ -10952,14 +10952,14 @@
+@@ -10952,14 +15826,14 @@
        [t("Archive"), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true]
      ]
    ];
@@ -14231,7 +14233,7 @@ diff --git a/client.js b/client.js
          key: label,
          type: "button",
          role: "menuitem",
-@@ -10968,16 +10968,31 @@
+@@ -10968,16 +15842,31 @@
            actions.closeMenu();
            void Promise.resolve(run()).catch((error) => console.warn("[ds-bot]", error));
          }
@@ -14264,7 +14266,7 @@ diff --git a/client.js b/client.js
    prefs: "ds-bot:prefs",
    surface: "ds-bot:surface",
    agentSessions: "ds-bot:agent-sessions",
-@@ -11038,233 +11038,8 @@
+@@ -11038,233 +15927,8 @@
    }
  }
  
@@ -14499,7 +14501,7 @@ diff --git a/client.js b/client.js
  function transcriptOf(list, id, name, hiddenTurns = []) {
    const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
    if (!Array.isArray(outline)) return "";
-@@ -11289,10 +11289,10 @@
+@@ -11289,10 +15953,10 @@
  var PERMISSION_LABELS = { "read-only": "Read only", "workspace-write": "Workspace", "danger-full-access": "Full access" };
  var DANGER = /* @__PURE__ */ new Set(["danger-full-access"]);
  function PermissionRow({ bot, roster, actions, run }) {
@@ -14512,7 +14514,7 @@ diff --git a/client.js b/client.js
      if (pending === saved) setPending(null);
    }, [pending, saved]);
    if (!catalog?.options?.length) return null;
-@@ -11302,14 +11302,14 @@
+@@ -11302,14 +15966,14 @@
      setPending(value);
      void run(actions.updateBot(bot.id, { permission: value })).catch(() => setPending(null));
    };
@@ -14531,7 +14533,7 @@ diff --git a/client.js b/client.js
          key: option.value,
          type: "button",
          "aria-pressed": option.value === current,
-@@ -11323,42 +11323,42 @@
+@@ -11323,42 +15987,42 @@
  function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) {
    const state = useBrowserTabs((map) => map[bot.id] ?? EMPTY_TABS);
    const pages = useBrowserPages((map) => map);
@@ -14589,7 +14591,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,87 +11367,195 @@
+@@ -11367,87 +16031,195 @@
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -14828,7 +14830,7 @@ diff --git a/client.js b/client.js
    if (last.current.view !== view) last.current = { view, tab, move: view === "settings" ? "in" : "out" };
    else if (last.current.tab !== tab) last.current = { view, tab, move: "tab" };
    const move = last.current.move;
-@@ -11472,36 +11472,43 @@
+@@ -11472,36 +16244,43 @@
        setTimeout(() => setCopied(false), 1600);
      });
    };
@@ -14887,7 +14889,7 @@ diff --git a/client.js b/client.js
      ];
    }
    const current = bot?.name ?? room2.name;
-@@ -11515,12 +11515,12 @@
+@@ -11515,12 +16294,12 @@
    const subtitle = bot ? bot.role : roomSubtitle(room2, roster);
    const tabs = bot ? ["details", "browser"] : ["details"];
    return [
@@ -14904,7 +14906,7 @@ diff --git a/client.js b/client.js
          className: "bt-drawer-name-input",
          autoFocus: true,
          value: draftName,
-@@ -11535,87 +11535,86 @@
+@@ -11535,87 +16314,86 @@
              setEditing(false);
            }
          }
@@ -15034,7 +15036,7 @@ diff --git a/client.js b/client.js
  }
  var savedWidth = () => {
    try {
-@@ -11625,8 +11625,8 @@
+@@ -11625,8 +16403,8 @@
      return null;
    }
  };
@@ -15044,7 +15046,7 @@ diff --git a/client.js b/client.js
  var room = { rule: null, selector: "" };
  var roomRule = () => {
    const live = room.rule?.parentStyleSheet?.ownerNode?.isConnected;
-@@ -11674,11 +11674,11 @@
+@@ -11674,11 +16452,11 @@
  var tabLabel = (page) => page.title || shortAddress(page.url) || t("New tab");
  function PanelStrip({ bot, subject, view, ids, active, reading, onView, actions, useBrowserPages }) {
    const pages = useBrowserPages((map) => map);
@@ -15061,7 +15063,7 @@ diff --git a/client.js b/client.js
      const box = wrap.current;
      const capsule = ind.current;
      if (!box || !capsule) return void 0;
-@@ -11707,7 +11707,7 @@
+@@ -11707,7 +16485,7 @@
        trail.cancel();
      };
    });
@@ -15070,7 +15072,7 @@ diff --git a/client.js b/client.js
      const box = wrap.current;
      if (!box) return void 0;
      const observer = new ResizeObserver(() => {
-@@ -11721,13 +11721,13 @@
+@@ -11721,13 +16499,13 @@
      observer.observe(box);
      return () => observer.disconnect();
    }, []);
@@ -15087,7 +15089,7 @@ diff --git a/client.js b/client.js
          "button",
          {
            type: "button",
-@@ -11737,13 +11737,13 @@
+@@ -11737,13 +16515,13 @@
            title: bot.name,
            onClick: () => onView("details")
          },
@@ -15104,7 +15106,7 @@ diff --git a/client.js b/client.js
            "button",
            {
              key: tabId,
-@@ -11764,9 +11764,9 @@
+@@ -11764,9 +16542,9 @@
                }
              }
            },
@@ -15117,7 +15119,7 @@ diff --git a/client.js b/client.js
              className: "bt-ptab-x",
              role: "button",
              "aria-label": t("Close tab"),
-@@ -11778,20 +11778,20 @@
+@@ -11778,20 +16556,20 @@
            }, "×")
          );
        }),
@@ -15145,7 +15147,7 @@ diff --git a/client.js b/client.js
      const element = frame.current;
      if (!element || leaving || !tabId) {
        void actions.browserShow(null);
-@@ -11817,7 +11817,7 @@
+@@ -11817,7 +16595,7 @@
        window.removeEventListener("resize", schedule);
      };
    }, [tabId, showGuest, leaving]);
@@ -15154,7 +15156,7 @@ diff --git a/client.js b/client.js
      setDraft(null);
      if (landed && !page.url) input.current?.focus();
    }, [tabId, landed]);
-@@ -11833,27 +11833,27 @@
+@@ -11833,27 +16611,27 @@
    };
    const editing = draft !== null;
    const secure = /^https:/i.test(page.url);
@@ -15191,7 +15193,7 @@ diff --git a/client.js b/client.js
            ref: input,
            type: "text",
            spellCheck: false,
-@@ -11877,25 +11877,25 @@
+@@ -11877,25 +16655,25 @@
            }
          })
        ),
@@ -15227,7 +15229,7 @@ diff --git a/client.js b/client.js
        ) : null
      )
    );
-@@ -11907,41 +11907,41 @@
+@@ -11907,41 +16685,41 @@
    const tabState = useBrowserTabs((map) => bot ? map[bot.id] ?? EMPTY_TABS2 : EMPTY_TABS2);
    const active = tabState.active;
    const page = useBrowserPages((pages) => (active ? pages[active] : null) ?? EMPTY_PAGE);
@@ -15285,7 +15287,7 @@ diff --git a/client.js b/client.js
      let timer;
      const onResize = () => {
        setResizing(true);
-@@ -11955,28 +11955,28 @@
+@@ -11955,28 +16733,28 @@
        window.removeEventListener("resize", onResize);
      };
    }, []);
@@ -15321,7 +15323,7 @@ diff --git a/client.js b/client.js
      if (!page.readAt || Date.now() - page.readAt > READ_FLASH_MS) return void 0;
      setReading(true);
      const timer = setTimeout(() => setReading(false), READ_FLASH_MS);
-@@ -12013,7 +12013,7 @@
+@@ -12013,7 +16791,7 @@
        return actions[name](...args);
      };
    }
@@ -15330,7 +15332,7 @@ diff --git a/client.js b/client.js
      const move = fly.current;
      if (!move) return;
      fly.current = null;
-@@ -12096,7 +12096,7 @@
+@@ -12096,7 +16874,7 @@
      for (const name of ends) grip.addEventListener(name, onEnd);
    };
    const hasStrip = canBrowse && tabState.ids.length > 0;
@@ -15339,7 +15341,7 @@ diff --git a/client.js b/client.js
      "aside",
      {
        ref: root,
-@@ -12113,15 +12113,15 @@
+@@ -12113,15 +16891,15 @@
          if (event.target === event.currentTarget) setLanded(true);
        }
      },
@@ -15360,7 +15362,7 @@ diff --git a/client.js b/client.js
          sessionId: pane.id,
          startRenaming: pane.renaming,
          startTab: pane.tab,
-@@ -12217,8 +12217,78 @@
+@@ -12217,8 +16995,78 @@
  @media (prefers-reduced-motion:reduce){.bt-ptabs,.bt-panel-view,.bt-bcard,.bt-ptab-name{animation:none}}
  `;
  
@@ -15440,7 +15442,7 @@ diff --git a/client.js b/client.js
  var import_react_dom9 = require("react-dom");
  var DIALOG_EXIT_MS = 160;
  var MENU_EXIT_MS3 = 120;
-@@ -12227,15 +12227,15 @@
+@@ -12227,15 +17075,15 @@
    const ui2 = useUi((value) => value);
    useRegistry((value) => value);
    const current = useSessions((list) => Object.values(list.byId).find((session) => (session?.retainedBy?.mainView ?? 0) > 0)?.id ?? null);
@@ -15460,7 +15462,7 @@ diff --git a/client.js b/client.js
      if (open) {
        setKept(open);
        return void 0;
-@@ -12245,19 +12245,26 @@
+@@ -12245,19 +17093,26 @@
    }, [ui2.details, ui2.view, ui2.renaming, ui2.tab]);
    const pane = open ?? kept;
    const [settings, settingsLeaving] = useLinger(ui2.settings, DIALOG_EXIT_MS);
@@ -15497,7 +15499,7 @@ diff --git a/client.js b/client.js
    );
  }
  
-@@ -12304,7 +12304,7 @@
+@@ -12304,7 +17159,7 @@
  `;
    };
    const expand = (text2) => text2.replace(/\u0001(\d+)[\u0002\u0003]/g, (_, index) => expand(stash[Number(index)]));
@@ -15506,7 +15508,7 @@ diff --git a/client.js b/client.js
    const block = (text2) => expand(flow(text2));
    const oneLine = (text2) => block(text2).replace(/\s*\n+\s*/g, " ").trim();
    const styleOf = (el) => (el.ownerDocument.defaultView || window).getComputedStyle(el);
-@@ -12372,7 +12372,7 @@
+@@ -12372,7 +17227,7 @@
        const marker = ordered ? `${number++}. ` : "- ";
        if (body2 === "") continue;
        const pad2 = " ".repeat(marker.length);
@@ -15515,7 +15517,7 @@ diff --git a/client.js b/client.js
      }
      return keep(lines.join("\n"));
    };
-@@ -12398,11 +12398,11 @@
+@@ -12398,11 +17253,11 @@
      let width = 0;
      for (const row of rows.slice(0, limits.tableRows + 1)) {
        if (over()) break;
@@ -15529,7 +15531,7 @@ diff --git a/client.js b/client.js
            carry[column].left -= 1;
            column += 1;
          }
-@@ -12414,14 +12414,14 @@
+@@ -12414,14 +17269,14 @@
          const span = Math.max(1, Math.min(limits.tableCols, Number(cell.colSpan) || 1));
          const down = Math.max(1, Math.min(limits.tableRows, Number(cell.rowSpan) || 1));
          for (let offset = 0; offset < span; offset += 1) {
@@ -15547,7 +15549,7 @@ diff --git a/client.js b/client.js
      }
      width = Math.min(width, limits.tableCols);
      if (grid.length === 0 || width === 0) return caption ? `
-@@ -12552,7 +12552,7 @@
+@@ -12552,7 +17407,7 @@
      }
      if (tag === "blockquote") {
        const quoted = block(body2);
@@ -15556,7 +15558,7 @@ diff --git a/client.js b/client.js
      }
      const end = body2.trimEnd().length;
      const marked = mark ? `${body2.slice(0, end)}${mark}${body2.slice(end)}` : body2;
-@@ -13052,11 +13052,117 @@
+@@ -13052,11 +17907,118 @@
    };
  }
  
@@ -15579,6 +15581,7 @@ diff --git a/client.js b/client.js
 +.bt-flybot-pointer button{flex:none;min-height:28px;padding:4px 12px}
 +.bt-inbox-card{flex-wrap:wrap;row-gap:8px}
 +.bt-inbox-copy{flex-basis:calc(100% - 38px)}
++/* In progress and Done only. A Needs you ask is the whole text: inbox.js unsets this clamp on those five statuses (#1177). */
 +.bt-inbox-title,.bt-inbox-reason{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 +.bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
 +.bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}
@@ -15675,7 +15678,7 @@ diff --git a/client.js b/client.js
  function disposeAll(disposers, label) {
    for (const dispose of [...disposers].reverse()) {
      try {
-@@ -13075,8 +13075,8 @@
+@@ -13075,8 +18037,8 @@
    };
    return {
      reconcile(wanted) {
@@ -15686,7 +15689,7 @@ diff --git a/client.js b/client.js
          if (!wanted[group] || mounted[group].length > 0) continue;
          try {
            mounted[group] = install[group]();
-@@ -13086,7 +13086,7 @@
+@@ -13086,7 +18048,7 @@
        }
      },
      dispose() {
@@ -15695,7 +15698,7 @@ diff --git a/client.js b/client.js
      }
    };
  }
-@@ -13105,7 +13105,7 @@
+@@ -13105,7 +18067,7 @@
  }
  
  // src/client/user-message.js
@@ -15704,7 +15707,7 @@ diff --git a/client.js b/client.js
  var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
  var canDrawUserMessages = () => typeof ui.projectUserText === "function";
  function contentParts(content) {
-@@ -13119,10 +13119,63 @@
+@@ -13119,10 +18081,63 @@
    }
    return { text: texts2.join("\n"), attachments, rest };
  }
@@ -15771,7 +15774,7 @@ diff --git a/client.js b/client.js
  }
  function userTextParts(text, bots, referenceLabels = []) {
    const parts = [];
-@@ -13132,43 +13132,44 @@
+@@ -13132,43 +18147,44 @@
      if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) });
      parts.push({ bot: span.bot, label: text.slice(span.start + 1, span.end) });
      cursor = span.end;
@@ -15829,7 +15832,7 @@ diff --git a/client.js b/client.js
  }
  var clock3 = (time) => typeof time === "number" ? new Date(time).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" }) : void 0;
  function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
-@@ -13178,28 +13178,52 @@
+@@ -13178,28 +18194,52 @@
    const referenceLabels = data.referenceLabels ?? [];
    const references = openFile && openSkill ? { openFile, openSkill } : void 0;
    const steering = node.kind === "steering";
@@ -15891,7 +15894,7 @@ diff --git a/client.js b/client.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
-@@ -13216,42 +13216,115 @@
+@@ -13216,42 +18256,115 @@
  `;
  
  // src/client/approval-notices.js
@@ -16020,7 +16023,7 @@ diff --git a/client.js b/client.js
    migrateStorage();
    const UNREAD_KEY = STORAGE.unread;
    let savedUnread = {};
-@@ -13274,7 +13274,13 @@
+@@ -13274,7 +18387,13 @@
    } catch {
      seenAt = {};
    }
@@ -16035,7 +16038,7 @@ diff --git a/client.js b/client.js
    const surface = createSource({ mode: readMode(), plain: false });
    let agentSessionCache = /* @__PURE__ */ new Set();
    try {
-@@ -13344,13 +13344,25 @@
+@@ -13344,13 +18463,25 @@
      }
      return { ...state, unread };
    });
@@ -16062,7 +16065,7 @@ diff --git a/client.js b/client.js
      if (order < applied) return;
      applied = order;
      const nextActivity = JSON.stringify(value.activity ?? {});
-@@ -13368,10 +13368,15 @@
+@@ -13368,10 +18499,15 @@
      const live2 = {};
      if (value.connectors !== void 0 && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live2.connectors = value.connectors;
      if (value.capabilityStatuses !== void 0 && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live2.capabilityStatuses = value.capabilityStatuses;
@@ -16078,7 +16081,7 @@ diff --git a/client.js b/client.js
      try {
        const ids = (value.agents ?? []).flatMap((agent) => agent.sessions ?? []);
        localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids));
-@@ -13488,20 +13488,12 @@
+@@ -13488,20 +18624,12 @@
      const style = installStyles("", "mentions");
      let last = "";
      const render = () => {
@@ -16101,7 +16104,7 @@ diff --git a/client.js b/client.js
      return () => {
        offRoster();
        offRegistry();
-@@ -13520,7 +13520,7 @@
+@@ -13520,7 +18648,7 @@
        const accent = isHex(prefs.accent) ? prefs.accent : void 0;
        const motion = prefs.motion === "quiet" || prefs.motion === "lively" ? prefs.motion : "normal";
        document.body.dataset.btMotion = motion;
@@ -16110,7 +16113,7 @@ diff --git a/client.js b/client.js
        if (next === key) return;
        key = next;
        style.textContent = themeCss(themes[id], accent);
-@@ -13536,7 +13536,7 @@
+@@ -13536,7 +18664,7 @@
      };
      render();
      const offRoster = roster.subscribe(render);
@@ -16119,7 +16122,7 @@ diff --git a/client.js b/client.js
      return () => {
        offRoster();
        offRegistry();
-@@ -13588,6 +13588,7 @@
+@@ -13588,6 +18716,7 @@
      // or the click appears to do nothing.
      isAgentSession: (id) => isAgentSessionId(id),
      openSession: (id) => {
@@ -16127,7 +16130,7 @@ diff --git a/client.js b/client.js
        if (isAgentSessionId(id)) return actions.openAgentSession(id);
        ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
        setPlain(false);
-@@ -13653,12 +13653,12 @@
+@@ -13653,12 +18782,12 @@
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -16143,7 +16146,7 @@ diff --git a/client.js b/client.js
        expected = target;
        ctx.uiWorkspace.openSession(target);
      },
-@@ -13708,10 +13708,15 @@
+@@ -13708,10 +18837,15 @@
      },
      // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
      openSettings: (page = "general", id = null) => {
@@ -16161,7 +16164,7 @@ diff --git a/client.js b/client.js
      },
      openMemory: (botId) => {
        ui2.set((state) => ({ ...state, memory: botId, menu: null, palette: null }));
-@@ -13719,6 +13719,19 @@
+@@ -13719,6 +18853,19 @@
      closeMemory: () => {
        ui2.set((state) => state.memory ? { ...state, memory: null } : state);
      },
@@ -16181,7 +16184,7 @@ diff --git a/client.js b/client.js
      openConnectors: () => {
        ui2.set((state) => ({ ...state, settings: { page: "connectors", id: null }, menu: null, palette: null, newChat: null }));
      },
-@@ -13728,7 +13728,7 @@
+@@ -13728,7 +18875,7 @@
        if (mode !== "bot" && mode !== "agent") return;
        if (surface.getSnapshot().mode === mode) return;
        if (mode === "agent") {
@@ -16190,7 +16193,7 @@ diff --git a/client.js b/client.js
        }
        writeMode(mode);
        surface.set((state) => ({ ...state, mode }));
-@@ -13757,6 +13757,12 @@
+@@ -13757,6 +18904,12 @@
        const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null);
        ui2.set((state) => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }));
      },
@@ -16203,7 +16206,7 @@ diff --git a/client.js b/client.js
      endVisit: (id) => {
        leaveVisits([id]);
        ui2.set((state) => {
-@@ -13810,8 +13810,14 @@
+@@ -13810,8 +18963,14 @@
      updateRoom: (id, patch) => after(call("update-room", { id, ...patch })),
      send: (sessionId, text) => after(call("send", { sessionId: partFor(sessionId), text })),
      answerQuestion: (sessionId, questionId, answer) => after(call("answer-question", { sessionId: partFor(sessionId), questionId, answer })),
@@ -16218,7 +16221,7 @@ diff --git a/client.js b/client.js
      stopMemberWork: (roomId, botId) => after(call("stop-member-work", { roomId, botId })),
      // Values go out in these requests and never come back in a response.
      secretSet: (payload) => after(call("secret-set", payload)),
-@@ -13819,15 +13819,26 @@
+@@ -13819,15 +18978,26 @@
      secretCancel: (requestId) => after(call("secret-cancel", { requestId })),
      secretUpdate: (name, scope) => after(call("secret-update", { name, scope })),
      secretDelete: (name) => after(call("secret-delete", { name })),
@@ -16246,7 +16249,7 @@ diff --git a/client.js b/client.js
      scheduleDelete: (sessionId, id) => call("schedule-delete", { sessionId, id }),
      exchange: (a, b) => call("exchange", { a, b }).catch(() => []),
      roomProgress: (roomId) => call("room-progress", { roomId }).catch(() => []),
-@@ -13846,6 +13846,8 @@
+@@ -13846,6 +19016,8 @@
        noteClientError(where, error);
        ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
      },
@@ -16255,7 +16258,7 @@ diff --git a/client.js b/client.js
      dismissToast: (token) => ui2.set((state) => state.toast && (token === void 0 || state.toast.token === token) ? { ...state, toast: null } : state)
    };
    if (browsers) {
-@@ -13890,6 +13890,7 @@
+@@ -13890,6 +19062,7 @@
    actions.closePanel = () => {
      ui2.set((state) => state.details ? { ...state, details: null, view: "details", renaming: false, tab: null } : state);
    };
@@ -16263,7 +16266,7 @@ diff --git a/client.js b/client.js
    actions.signInEntry = () => ctx.slots.entries?.("settings.models.sign-in")?.[0] ?? null;
    actions.canSignIn = () => Boolean(actions.signInEntry());
    actions.signIn = () => ui2.set((state) => ({ ...state, signIn: (state.signIn ?? 0) + 1 }));
-@@ -13964,7 +13964,13 @@
+@@ -13964,7 +19137,13 @@
    });
    const browserPages = browsers?.pages ?? createSource({});
    const browserTabs = browsers?.tabs ?? createSource({});
@@ -16278,7 +16281,7 @@ diff --git a/client.js b/client.js
    ctx.effect(() => noticeApprovals({
      work,
      roster,
-@@ -13989,7 +13989,17 @@
+@@ -13989,7 +19168,17 @@
      } };
    };
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
@@ -16296,7 +16299,7 @@ diff --git a/client.js b/client.js
    const installAtMenu = () => {
      const fiber = ctx.inject(["inputTriggers"], (scope) => {
        scope.effect(() => {
-@@ -14001,7 +14001,12 @@
+@@ -14001,7 +19190,12 @@
          const launched = (sessionId) => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE;
          const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map((source) => triggers.registerSource(source));
          atMenu = { controllerOf };
@@ -16309,7 +16312,7 @@ diff --git a/client.js b/client.js
            atMenu = null;
            for (const off of offs) off();
          };
-@@ -14010,6 +14010,14 @@
+@@ -14010,6 +19204,14 @@
      return () => fiber.dispose();
    };
    actions.canReferenceChat = () => atMenu !== null;
@@ -16324,7 +16327,7 @@ diff --git a/client.js b/client.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId);
      if (controller === void 0 || span === void 0) return;
-@@ -14019,33 +14019,46 @@
+@@ -14019,33 +19221,46 @@
      installCompiledStyles(SHELL_CSS, "shell"),
      installCompiledStyles(SIDEBAR_CSS, "sidebar"),
      installCompiledStyles(SECRET_CSS, "secrets"),
@@ -16375,7 +16378,7 @@ diff --git a/client.js b/client.js
      shadow("conversation.chat.node", { key: "assistant-step", priority: -10, locale: "chat", inject: assistantFace }, AssistantCell),
      shadow("conversation.chat.node", { key: "turn-trigger", priority: -10, locale: "chat", inject: face }, TriggerCell),
      shadow("conversation.chat.node", { key: "tool-call", priority: -10, locale: "chat", inject: face }, ToolCell),
-@@ -14057,15 +14057,24 @@
+@@ -14057,15 +19272,24 @@
      // every message.
      shadow("conversation.chat.node", { key: "question-reply", priority: -10, locale: "chat" }, AnsweredCell),
      shadow("conversation.chat.node", { key: "compaction", priority: -10, locale: "chat" }, Nothing),
@@ -16403,7 +16406,7 @@ diff --git a/client.js b/client.js
      shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),
      shadow("conversation.composer", {
        priority: -10,
-@@ -14074,9 +14074,18 @@
+@@ -14074,9 +19298,18 @@
      shadow("conversation.input.dock", { id: "bot-members", order: -120, inject: face }, MemberDock),
      shadow("conversation.input.dock", { id: "bot-model", order: -110, inject: face }, ModelChoiceDock),
      shadow("conversation.input.dock", { id: "bot-question", order: -100, inject: face }, QuestionDock),

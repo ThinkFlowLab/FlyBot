@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
+import { MOBILE_CSS } from '../src/client/mobile.js'
 
 // The Agent inbox, step 1 (#349): three groups built from data the client already has,
 // approvals answered with the chat card's own answer, and one Inbox row in the sidebar.
@@ -29,7 +30,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { inboxModel, needsCount, InboxCard, InboxDialog, InboxRow, GROUPS, STATUSES, KEEP_MS } = module.exports
+const { inboxModel, needsCount, InboxCard, InboxDialog, InboxRow, GROUPS, STATUSES, KEEP_MS, INBOX_CSS } = module.exports
 const plain = value => JSON.parse(JSON.stringify(value))
 
 // Draws the inbox's own components; Bot marks and icons stay as elements.
@@ -674,4 +675,56 @@ test('a card names where its decision is written back, and one line when that fa
   assert.equal(quiet.length, 1)
   assert.equal(quiet[0].props.role, undefined, 'only a failed comment is an alert')
   assert.equal(textOf(quiet[0]), `Could not confirm the comment on ${href} went out`)
+})
+
+// Needs you is answered on the card. Those statuses are the whole group; the other
+// groups stay a one-line title. The phone sheet still clamps .bt-inbox-title at two
+// lines, so the Needs you rule has to unset that clamp or a 400px window cuts the ask again.
+const NEEDS_STATUSES = ['approval', 'held', 'input', 'result', 'failed']
+const askRule = (css) => {
+  const match = css.match(/\.bt-inbox-card:is\(([^)]*)\) :is\(\.bt-inbox-title,\.bt-inbox-reason\)\{([^}]*)\}/)
+  return { statuses: match?.[1] ?? '', body: match?.[2] ?? '' }
+}
+
+test('a Needs you card shows the whole ask, and the phone clamp cannot cut it to two lines (#1177)', () => {
+  for (const card of model.needs) assert.ok(NEEDS_STATUSES.includes(card.status), card.id)
+  for (const card of [...model.progress, ...model.done]) assert.equal(NEEDS_STATUSES.includes(card.status), false, card.id)
+
+  const { statuses, body } = askRule(INBOX_CSS)
+  for (const status of NEEDS_STATUSES) assert.match(statuses, new RegExp(`\\[data-status=${status}\\]`), status)
+  for (const status of ['running', 'task', 'done', 'cancelled']) assert.doesNotMatch(statuses, new RegExp(`\\[data-status=${status}\\]`), status)
+  assert.match(body, /white-space:pre-wrap/)
+  assert.match(body, /overflow-wrap:anywhere/)
+  assert.match(body, /overflow:visible/)
+  assert.match(body, /text-overflow:clip/)
+  assert.match(body, /display:block/)
+  assert.match(body, /-webkit-line-clamp:unset/)
+  assert.match(body, /-webkit-box-orient:unset/)
+  assert.match(INBOX_CSS, /\.bt-inbox-title\{[^}]*white-space:nowrap[^}]*text-overflow:ellipsis/)
+  assert.match(INBOX_CSS, /\.bt-inbox-reason,\.bt-inbox-hint,\.bt-inbox-activity\{[^}]*white-space:nowrap/)
+  const phone = MOBILE_CSS.match(/\.bt-inbox-title,\.bt-inbox-reason\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(phone, /-webkit-line-clamp:2/)
+  assert.doesNotMatch(phone, /data-status/)
+
+  const ask = 'Review PR #1171 (the token is base64url 格式的 payload) before ScheduleService 刚 restarted, and the rest of the sentence a one-line card cuts off.'
+  const detail = `${ask}\nThe second paragraph stays on the card.`
+  const asked = inboxModel({
+    roster: {
+      ...roster,
+      questions: {
+        s2: { id: 'q-long', question: ask, detail, options: [{ label: 'Ship it' }], askedAt: NOW, botId: 'b2' },
+      },
+    },
+    work, tasks, sessions, now: NOW,
+  })
+  const card = asked.needs.find(entry => entry.id === 'question:q-long')
+  assert.equal(card.status, 'input')
+  assert.equal(card.title, ask)
+  assert.equal(card.reason, detail)
+  const tree = draw(card)
+  assert.equal(textOf(byClass(tree, 'bt-inbox-title')[0]), ask)
+  assert.equal(textOf(byClass(tree, 'bt-inbox-reason')[0]), detail)
+  assert.equal(byClass(tree, 'bt-inbox-answer').length, 1)
+  assert.ok(buttons(tree).some(node => textOf(node) === 'Submit'))
+  assert.ok(buttons(tree).some(node => textOf(node) === 'Open'))
 })

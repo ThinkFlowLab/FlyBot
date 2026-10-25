@@ -24,6 +24,7 @@ export const MOBILE_CSS = `
 .bt-flybot-pointer button{flex:none;min-height:28px;padding:4px 12px}
 .bt-inbox-card{flex-wrap:wrap;row-gap:8px}
 .bt-inbox-copy{flex-basis:calc(100% - 38px)}
+/* In progress and Done only. A Needs you ask is the whole text: inbox.js unsets this clamp on those five statuses (#1177). */
 .bt-inbox-title,.bt-inbox-reason{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
 .bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}

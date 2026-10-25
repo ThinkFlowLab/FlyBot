@@ -7888,6 +7888,8 @@ var INBOX_CSS = `
 .bt-inbox-meta{min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-title{font-size:13.5px;line-height:19px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-inbox-reason,.bt-inbox-hint,.bt-inbox-activity{font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Needs you is answered on the card, so its ask is the whole text (#1177). The phone sheet clamps these two classes to two lines at a lower specificity; this unsets that clamp. In progress and Done stay one line. */
+.bt-inbox-card:is([data-status=approval],[data-status=held],[data-status=input],[data-status=result],[data-status=failed]) :is(.bt-inbox-title,.bt-inbox-reason){white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible;text-overflow:clip;display:block;min-width:0;-webkit-line-clamp:unset;-webkit-box-orient:unset}
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
@@ -17924,6 +17926,7 @@ var MOBILE_CSS = `
 .bt-flybot-pointer button{flex:none;min-height:28px;padding:4px 12px}
 .bt-inbox-card{flex-wrap:wrap;row-gap:8px}
 .bt-inbox-copy{flex-basis:calc(100% - 38px)}
+/* In progress and Done only. A Needs you ask is the whole text: inbox.js unsets this clamp on those five statuses (#1177). */
 .bt-inbox-title,.bt-inbox-reason{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .bt-inbox-actions{flex:1 1 100%;justify-content:flex-end;flex-wrap:wrap;padding-left:38px}
 .bt-inbox-actions :is(.bt-soft,.bt-send){height:36px;padding:0 16px;font-size:13px}
