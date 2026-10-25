@@ -16,7 +16,7 @@ Face-to-face rooms (#83, #92) also live here: the primary entry is the sidebar *
 
 Everything in `plugins/social/` (entry `plugins/social/index.js` and any helpers).
 
-At phone width (`<= 640 px`, the last block in `client.js's stylesheet`) this panel's buttons and inputs are 40 px, its row controls at least 32 px, long runs wrap inside their card, and the session dock clears the home indicator through `env(safe-area-inset-bottom,0px)` — 0 on this stack until the shell gains `viewport-fit=cover` (#647), so today it reads as a plain 6 px (#1147, #1149).
+At phone width (`<= 640 px`, the last block in `client.js's stylesheet`) this panel's buttons and inputs are 40 px, its row controls at least 32 px, long runs wrap inside their card, and the session dock clears the home indicator through `env(safe-area-inset-bottom,0px)` — 0 on this stack until the shell gains `viewport-fit=cover` (#647), so today it reads as a plain 6 px (#1147, #1149). The two selectors a more specific desktop rule used to beat are named in the block as well — the face-room header's small buttons (22 px at a desk) and the account menu's links (`min-height:0` at a desk) — so the 40 px holds there too (#1156).
 
 ## Does not own
 

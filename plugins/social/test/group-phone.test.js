@@ -126,3 +126,17 @@ test('the two footer buttons that out-specify `.fs-btn` are raised in the same b
   // block's (0,1,0), so `.fs-btn{height:40px}` cannot reach them however late it sits.
   assert.match(rule('.fs-preview-foot .fs-btn,.fs-wait-foot .fs-btn'), /height:40px/)
 })
+
+test('the face-room header buttons beat their 22px rule (#1156)', () => {
+  // `.fs-face-actions .fs-btn-sm` is (0,2,0), so the block's `.fs-btn-sm` (0,1,0) never reached it;
+  // the same selector inside the block ties and, being last, wins.
+  assert.match(rule('.fs-face-actions .fs-btn-sm'), /height:40px/)
+})
+
+test('the account menu links keep a 40px hit area (#1156)', () => {
+  // `.bt-menu .fs-me button.fs-link` is (0,3,1) and sets `min-height:0`, so the block's `.fs-link`
+  // (0,1,0) was beaten outright. Same selector in the block, last, wins.
+  const link = rule('.bt-menu .fs-me button.fs-link')
+  assert.match(link, /min-height:40px/)
+  assert.match(link, /display:inline-flex/)
+})
