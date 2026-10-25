@@ -73,6 +73,11 @@ function activeSessionError(sessionId, kinds) {
 // The team's data in a temporary home, and a project folder beside it. The registry
 // refuses an archive while a Session still has an active task or another activity,
 // exactly as DSH does.
+//
+// The whole tree comes from `tmpdir()`, so `TMPDIR` has to stay outside `DSH_HOME`: a
+// folder under the harness home is refused (`bot/refused`) before any part can move, and
+// every case below asserts that answer, so the refusal names itself instead of reading as
+// a two-second timeout (#1169).
 async function start({ schedule, activities = {} } = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'ds-bot-part-archive-')))
   const dsh = join(root, 'dsh')
@@ -158,7 +163,7 @@ async function start({ schedule, activities = {} } = {}) {
   }
   // Loading once fills the Session-owner indexes.
   await tool('list_bots', {}, 'a')
-  return { ctx, created, agentOf, call, state, archived, stopped, activities, project, until, settle, stop }
+  return { ctx, created, agentOf, call, state, archived, stopped, activities, home, project, until, settle, stop }
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 20))
@@ -180,7 +185,8 @@ test('#896: a part whose task moved is archived once the move finished', async (
   schedule.arm('b')
   // A folder change moves an idle Bot's chat to a fresh part, the same switch a context
   // check takes.
-  await h.call('update-bot', { id: 'b', workDir: h.project })
+  const answer = await h.call('update-bot', { id: 'b', workDir: h.project })
+  assert.equal(answer.ok, true, answer.error?.message)
   await h.until(() => h.state().bots.b.sessionId === 's1')
   await drained()
   assert.deepEqual(archivedEntry(h.archived, 'b'), 'b', 'the earlier part is archived')
@@ -193,7 +199,8 @@ test('#896: a failed task move does not leave an armed earlier part active', asy
   const h = await start({ schedule })
   t.after(h.stop)
   schedule.arm('b')
-  await h.call('update-bot', { id: 'b', workDir: h.project })
+  const answer = await h.call('update-bot', { id: 'b', workDir: h.project })
+  assert.equal(answer.ok, true, answer.error?.message)
   await h.until(() => h.state().bots.b.sessionId === 's1')
   await drained()
   assert.deepEqual(archivedEntry(h.archived, 'b'), ['b', { stopActivity: true }], 'the earlier part is archived with its activity stopped')
@@ -204,10 +211,27 @@ test('#896: a part held by a job is never force-archived', async (t) => {
   const schedule = scheduleService()
   const h = await start({ schedule, activities: { b: ['job'] } })
   t.after(h.stop)
-  await h.call('update-bot', { id: 'b', workDir: h.project })
+  const answer = await h.call('update-bot', { id: 'b', workDir: h.project })
+  assert.equal(answer.ok, true, answer.error?.message)
   await h.until(() => h.state().bots.b.sessionId === 's1')
   await drained()
   assert.equal(archivedEntry(h.archived, 'b'), undefined, 'the earlier part stays active, as before this fix')
   assert.deepEqual(h.stopped, [], 'a stop request never reaches a job')
   assert.deepEqual(h.activities.b, ['job'], 'the job still runs')
+})
+
+// The refusal the three cases above can meet when `TMPDIR` sits inside `DSH_HOME`, from a
+// folder this case names itself: the guard answers, no part is made and the Bot stays put.
+// `cleanWorkDir` refuses a folder that holds the harness data (`folders.js`).
+test('#1169: a folder under the harness home refuses the move and names itself', async (t) => {
+  const schedule = scheduleService()
+  const h = await start({ schedule })
+  t.after(h.stop)
+  const answer = await h.call('update-bot', { id: 'b', workDir: h.home })
+  assert.equal(answer.ok, false, 'a folder under the harness home is refused')
+  assert.equal(answer.error?.code, 'bot/refused')
+  assert.match(answer.error.message, /holds DeepSeek Harness data/)
+  assert.ok(answer.error.message.includes(h.home), 'the refusal names the folder')
+  assert.equal(h.state().bots.b.sessionId, 'b', 'the Bot stays in its own chat')
+  assert.deepEqual(h.created, [], 'no part is created for a refused folder')
 })
