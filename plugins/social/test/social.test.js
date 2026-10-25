@@ -6803,6 +6803,35 @@ test('#1038: the invite button waits for the room\'s answer, and a chat without 
   assert.equal(panel.has('group-strip-url'), false, 'the previous room\'s link is off screen')
   assert.equal(panel.has('group-strip-invite'), false, 'and no button until this room answers')
 })
+// #1046: the read can fail — an older host has no `room-invite` route at all, which is the only reason
+// the button is drawn from \`known\` rather than from the link. The strip must still offer the one thing it
+// can do (mint), must not paint an error where a link would go, and must never mint by itself.
+test('#1046: a host that refuses the invite read still offers the button, and reading never mints', async () => {
+  const link = { ticket: 'FreshAbCdEfGhIjKlMnOp', handle: '@chief.alice.home', url: 'https://s/r/@chief.alice.home/FreshAbCdEfGhIjKlMnOp', expiresAt: null, server: true }
+  const calls = []
+  const host = sharingHost(async () => ({}), async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'room-invite') throw new Error('no room-invite route')
+    if (endpoint === 'room-invite-mint') return { invite: link }
+    return {}
+  })
+  const mints = () => calls.filter(([endpoint]) => endpoint === 'room-invite-mint').length
+  const roster = { byId: { b1: { id: 'b1', name: 'Chief' } }, bots: [] }
+  const room = { id: 'room-9', name: 'Older host', members: ['b1'] }
+  const panel = host.mount('GroupStrip', { room, roster, blank: true })
+  await panel.settle()
+  assert.equal(calls.filter(([endpoint]) => endpoint === 'room-invite').length, 1, 'the room is read once')
+  assert.equal(panel.has('group-strip'), true, 'the strip is up')
+  assert.equal(panel.has('group-strip-invite'), true, 'a refused read is still this room\'s answer: the button is there')
+  assert.equal(mints(), 0, 'and the read never mints')
+  assert.equal(panel.has('group-strip-note'), false, 'nothing is drawn where the error would be')
+  await panel.click('group-strip-invite')
+  await panel.settle()
+  assert.equal(mints(), 1, 'the click mints exactly once')
+  assert.equal(panel.nodes().find(n => n.props?.['data-flybot'] === 'group-strip-url')?.props.children.join(''), link.url, 'and the link is on screen')
+  assert.equal(panel.has('group-strip-note'), false, 'still no error note')
+})
+
 test('#297: the thinking line is a plain session dock below the approval card, styled like the other quiet notes', () => {
   const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(source, /register\('flybot\.session\.dock', \{ id: 'social-thinking', order: 60, component: PeerThinking \}\)/)
