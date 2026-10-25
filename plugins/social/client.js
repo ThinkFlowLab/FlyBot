@@ -25,6 +25,10 @@ window.__ModuleLoader__.load({
     const ALREADY_HAVE = "You already have this friend's Bot."
     // A friend's Bot with its owner: `Chief (SelfA1233)`, Bot first (#384).
     const botWithOwner = (name, owner) => (name && owner && owner !== name ? `${name} (${owner})` : name || '')
+    // The Bot the accept shares back is ours, and both homes can run a Bot with the same name (#1026): a bare
+    // `Chief is shared back` reads as the friend's Chief being shared twice. A server that names none keeps the
+    // generic noun rather than stacking a second "Your" on it.
+    const sharedBackLine = name => `${name ? `Your ${name}` : 'Your Bot'} is shared back, so they can reach you too.`
     // One row per person must stay one readable line (#955): the access card used to join every room a share
     // is used in, so a long-lived share printed 15 rooms / 362 characters inside a settings row. The hint names
     // at most three rooms, says how many are left, and keeps every name in the tooltip.
@@ -2894,8 +2898,7 @@ window.__ModuleLoader__.load({
             // #1000: a re-accept completes the pair now, so the line says what the click did instead of
             // leaving the other direction silently absent.
             if (r.sharedBack) {
-              const mine = r.sharedBackBotName || 'Your Bot'
-              return { tone: 'info', text: `${have ? `You already have ${have}. ` : ''}${mine} is shared back, so they can reach you too.` }
+              return { tone: 'info', text: `${have ? `You already have ${have}. ` : ''}${sharedBackLine(r.sharedBackBotName)}` }
             }
             return { tone: 'info', text: have ? `You already have ${have}.` : ALREADY_HAVE }
           }
@@ -2904,7 +2907,7 @@ window.__ModuleLoader__.load({
           if (r.status === 'active') {
             // A join that brought no Bot says so instead of claiming one was shared, and stays open.
             if (shared) accepted = r
-            const backNote = r.sharedBack ? ` ${r.sharedBackBotName || 'Your Bot'} is shared back, so they can reach you too.` : ''
+            const backNote = r.sharedBack ? ` ${sharedBackLine(r.sharedBackBotName)}` : ''
             return shared ? `${who} shared ${shared} with you.${backNote}` : `Joined ${who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.${backNote}`
           }
           return `Request sent to ${who}. They show up here once they accept.`

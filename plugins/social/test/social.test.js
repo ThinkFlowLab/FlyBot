@@ -5863,8 +5863,11 @@ test('#496: the panel shows an already-had Bot as neutral text, a restored one a
   for (const [reply, tone, expected] of [
     [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [] }, 'info', 'You already have Chief (SelfA1233).'],
     // #1000: the re-accept also shares the joining Bot back, and the neutral line says it.
-    [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', 'You already have Chief (SelfA1233). Chief is shared back, so they can reach you too.'],
-    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', "Chief is shared back, so they can reach you too."],
+    // #1026: the joining Bot is marked as ours, because both homes can run a Bot called Chief.
+    [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', 'You already have Chief (SelfA1233). Your Chief is shared back, so they can reach you too.'],
+    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', 'Your Chief is shared back, so they can reach you too.'],
+    // #1026: a server that sends no name keeps the generic fallback, never a doubled "Your Your Bot".
+    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true }, 'info', 'Your Bot is shared back, so they can reach you too.'],
     [{ alreadyHave: true, status: 'active', restored: [] }, 'info', "You already have this friend's Bot."],
     [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [{ handle: '@chief.selfa1233.home', name: 'Chief', owner: 'SelfA1233' }] }, 'ok', 'Chief (SelfA1233) is back in your list.'],
   ]) {
@@ -6723,8 +6726,11 @@ test('#343 / #499: an accepted invite shows its result, then the panel closes on
   for (const [reply, expected, closes] of [
     [{ status: 'active', inviter: '@helper.alice.home', inviterName: 'Alice', inviterBotName: 'Helper' }, /^Alice shared Helper with you\.$/, true],
     // #1000: a re-accept shares the joining Bot back, so the line says so instead of leaving it silent.
-    [{ status: 'active', inviter: '@helper.alice.home', inviterName: 'Alice', inviterBotName: 'Helper', sharedBack: true, sharedBackBotName: 'Chief' }, /^Alice shared Helper with you\. Chief is shared back, so they can reach you too\.$/, true],
-    [{ status: 'active', inviterName: 'Alice', sharedBack: true, sharedBackBotName: 'Chief' }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*Chief is shared back, so they can reach you too\.$/, false],
+    // #1026: it is marked as ours, so a friend's Chief and our Chief are not the same Chief.
+    [{ status: 'active', inviter: '@helper.alice.home', inviterName: 'Alice', inviterBotName: 'Helper', sharedBack: true, sharedBackBotName: 'Chief' }, /^Alice shared Helper with you\. Your Chief is shared back, so they can reach you too\.$/, true],
+    [{ status: 'active', inviterName: 'Alice', sharedBack: true, sharedBackBotName: 'Chief' }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*Your Chief is shared back, so they can reach you too\.$/, false],
+    // #1026: no name from the server falls back to "Your Bot" on this line too.
+    [{ status: 'active', inviterName: 'Alice', sharedBack: true }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*Your Bot is shared back, so they can reach you too\.$/, false],
     [{ status: 'active', inviterName: 'Alice' }, /^Joined Alice's invite, but their Bot hasn't loaded yet/, false],
     [{ status: 'pending_target', inviterName: 'Alice' }, /^Request sent to Alice/, false],
   ]) {
@@ -6747,6 +6753,30 @@ test('#343 / #499: an accepted invite shows its result, then the panel closes on
     assert.equal(closed, closes ? 1 : 0, 'no second click on Done')
     assert.deepEqual(opened, closes ? ['chat-helper'] : [], 'the new friend\'s Bot opens')
   }
+})
+
+test('#1026: both homes run a Bot called Chief, so the shared-back line says which Chief it means', async () => {
+  const lastStatus = setters => setters.filter(([index, value]) => index === 2 && value !== null).at(-1)?.[1]
+  // Every home in the self-test bench runs a Main Bot called Chief, so a bare name on that line reads as
+  // the friend's own Bot being shared twice; naming the joining side as ours is what tells them apart.
+  const say = async reply => {
+    const { plugin, all, setters } = clientPlugin([null, 'https://s/i/INV1', null, false, [{ id: 'a', name: 'Chief', isMain: true }], 'a', 'a', ''], {
+      call: async endpoint => (endpoint === 'social/join-invite' ? reply : {}),
+    })
+    const nodes = all(plugin.AddFriend({ onDone() {} }))
+    await nodes.find(n => n.type === 'form').props.onSubmit({ preventDefault() {} })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    return lastStatus(setters)?.text ?? ''
+  }
+  const reaccept = await say({ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Chief' })
+  const fresh = await say({ status: 'active', inviter: '@chief.selfb2.home', inviterName: 'SelfB2', inviterBotName: 'Chief', sharedBack: true, sharedBackBotName: 'Chief' })
+  for (const [text, friend] of [[reaccept, 'Chief (SelfA1233)'], [fresh, 'SelfB2 shared Chief']]) {
+    assert.match(text, /Your Chief is shared back, so they can reach you too\./, `the joining side is ours: ${text}`)
+    assert.ok(text.includes(friend), `the friend's side stays named apart: ${text}`)
+    assert.doesNotMatch(text, /(?<!Your )Chief is shared back/, `a bare name never claims the share, either home runs a Chief: ${text}`)
+    assert.doesNotMatch(text, /Your Your/, `the fallback is not stacked on itself: ${text}`)
+  }
+  assert.notEqual(reaccept, fresh, 'the two acceptances do not read as one sentence')
 })
 
 test('#499: typing in the paste box clears a failed accept\'s error, not a result; Enter accepts', () => {
