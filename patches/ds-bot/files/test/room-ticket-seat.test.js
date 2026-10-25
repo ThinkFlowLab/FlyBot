@@ -351,8 +351,9 @@ test('#892: withdrawing the link stops new joins and keeps the seat; removing th
   assert.equal(mirror.hidden, true, 'the guest heard the leave')
   assert.equal(a.rt.state.rooms.war.localInvites.length, 0, 'a withdrawn link that seats nobody is dropped')
   assert.equal(mayShareRoom(a.rt.state, a.rt.state.rooms.war, 'writer-a'), false, 'with no link left, Writer is private again')
+  const beforeSend = log.length
   await b.rt.fanoutRoomLine(mirror, { who: 'Chief', botId: 'chief-b', authorId: 'chief-b', authorKind: 'bot', text: 'still there?', seq: 100 })
-  assert.equal(log.at(-1).delivered, false)
+  assert.equal(log.length, beforeSend, 'the guest sends nothing once the host has removed them')
   const before = Object.keys(a.rt.state.rooms).length
   const stray = await a.rt.applyInboundRoomShare({ text: `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'war', text: 'hi', seq: 1 })}`, fromHandle: '@chief.bob.home', fromHome: '@bob.home' })
   assert.equal(stray.refused, 'not-seated')

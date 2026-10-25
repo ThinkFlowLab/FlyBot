@@ -2205,3 +2205,122 @@ test('#904: a seat\'s line is attributed to the seat, not to whatever the envelo
   const invented = room.log.filter(entry => String(entry.text).includes('line 3')).at(-1)
   assert.equal(invented.authorId, '@chief.bob.home', 'an invented handle never becomes an author')
 })
+
+const BOB_HOME = {
+  version: 2,
+  revision: 1,
+  mainBotIds: ['chief-b'],
+  members: { 'owner-b': { id: 'owner-b', createdAt: 1, designatedChiefId: 'chief-b' } },
+  bots: {
+    'chief-b': {
+      id: 'chief-b', sessionId: 'chief-b', name: 'Chief', instructions: '', createdAt: 1, ownerId: 'owner-b',
+      fields: { social: { member: { handle: '@chief.bob.home', home: '@bob.home', ownerName: 'Bob' } } },
+    },
+  },
+  rooms: {},
+  exchanges: [],
+  exchangeTurns: {},
+  questions: {},
+}
+
+const settleShares = async () => {
+  for (let i = 0; i < 12; i += 1) await new Promise(resolve => setImmediate(resolve))
+}
+
+// #1167: adding a friend's Bot is allowed by the seat (an open room link, no person-grant).
+// Reach only treats current participants as reachable, so a leave sent after leftSeq never
+// arrives and the other home keeps the room.
+test('#1167: removing a friend\'s Bot drops that home\'s room, and later lines do not return', async (t) => {
+  const a = host(t, TEAM)
+  const b = host(t, BOB_HOME)
+  await a.rt.load()
+  await b.rt.load()
+  const invite = await a.rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await a.rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await a.rt.authenticate(alice.sessionToken)
+  const inviteB = await b.rt.createInvitation({ createdByMemberId: 'owner-b' })
+  const bob = await b.rt.redeemInvitation(inviteB.token, { displayName: 'Bob' })
+  const actorB = await b.rt.authenticate(bob.sessionToken)
+  a.rt.state.bots['chief-a'].fields = { social: { member: { handle: '@chief.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  a.rt.state.bots['chief-b'].fields = { social: { member: { handle: '@helper.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  publish(a.rt, [{ handle: '@chief.bob.home', name: 'Chief', home: '@bob.home', homeName: 'Bob', owner: 'Bob', plugin: 'social', remote: true }])
+  // No person-grant. An open link is the consent that lets this home's Bots speak in the room.
+  a.rt.roomInviteServer = { mint: async () => ({ ticket: 'Tkt0001AbCdEfGhIjKlMnO', expiresAt: null }) }
+  await a.rt.mintRoomInvite('war', actorA)
+  const traffic = []
+  const wire = (from, to, home) => {
+    from.rt.flybotSend = async (msg) => {
+      const verdict = from.rt.reach(msg)
+      traffic.push({ op: parseRoomShare(msg.text)?.op, action: verdict.action, to: msg.to })
+      if (verdict.action !== 'allow') return { action: 'deny', reason: verdict.reason }
+      const localBotId = Object.keys(to.rt.state.bots).find(id => to.rt.state.bots[id]?.fields?.social?.member?.handle === msg.to)
+      const sender = from.rt.state.bots[msg.from]
+      await to.rt.applyInboundRoomShare({
+        text: msg.text,
+        fromHandle: sender?.fields?.social?.member?.handle,
+        fromHome: home,
+        fromName: sender?.fields?.social?.member?.ownerName || 'Alice',
+        localBotId,
+      })
+      return { action: 'sent' }
+    }
+  }
+  wire(a, b, '@alice.home')
+  wire(b, a, '@bob.home')
+  await a.rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@chief.bob.home' }, actorA)
+  await settleShares()
+  const guest = () => Object.values(b.rt.state.rooms).find(room => room.origin === 'inbound-share')
+  assert.ok(guest(), 'the add projected the room on the friend\'s home')
+  assert.equal(traffic.some(item => item.op === 'join' && item.action === 'allow'), true, 'the join left while the seat was live')
+  const hello = await a.rt.postRoomMessage('war', { text: '测1' }, actorA)
+  await a.rt.fanoutRoomLine(a.rt.state.rooms.war, hello)
+  await settleShares()
+  assert.ok(guest().log.some(line => String(line.text).includes('测1')), 'a line while seated arrives')
+
+  await a.rt.removeRoomParticipant('war', { kind: 'bot', id: '@chief.bob.home' }, actorA)
+  await settleShares()
+  const leave = traffic.findLast(item => item.op === 'leave')
+  assert.equal(leave?.action, 'allow', 'the leave is sent while the seat can still be reached')
+  assert.equal(guest().hidden, true, 'the friend\'s home hid the room')
+  assert.equal(roomVisibleTo(b.rt.state, actorB, guest().id), false, 'the room drops out of that home\'s list')
+
+  const after = await a.rt.postRoomMessage('war', { text: '踢后测4' }, actorA)
+  await a.rt.fanoutRoomLine(a.rt.state.rooms.war, after)
+  await settleShares()
+  assert.equal(guest().log.some(line => String(line.text).includes('踢后测4')), false, 'a line after the remove does not arrive')
+  const before = a.rt.state.rooms.war.log.length
+  await b.rt.fanoutRoomLine(guest(), { who: 'Bob', authorId: 'owner-b', authorKind: 'human', text: 'B踢后测5', seq: (guest().seq ?? 0) + 1 })
+  await settleShares()
+  assert.equal(a.rt.state.rooms.war.log.length, before, 'the removed home cannot send into the room')
+  assert.equal(traffic.findLast(item => item.op === 'line' && String(item.to).includes('alice'))?.action, undefined)
+})
+
+test('#1167: a hidden shared room stays hidden for a later line or a stale join, and a newer join reopens it', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const share = (op, seq, extra = {}) => encodeRoomShare({
+    op, roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@chief.bob.home', seq, ...extra,
+  })
+  const deliver = text => rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', text, localBotId: 'chief-b',
+  }, actorB)
+  const joined = await deliver(share('join', 4))
+  const room = joined.room
+  assert.equal(room.hidden, undefined)
+  await deliver(share('leave', 8))
+  assert.equal(room.hidden, true, 'the leave hid the mirror')
+  const line = await deliver(share('line', 9, { who: 'Alice', authorKind: 'human', text: '踢后测4' }))
+  assert.equal(line.refused, 'left', 'a line after the leave is refused')
+  assert.equal(room.hidden, true, 'the line does not bring the room back')
+  assert.equal(room.log.some(entry => String(entry.text).includes('踢后测4')), false)
+  const stale = await deliver(share('join', 8, { roster: [{ handle: '@chief.alice.home', name: 'Chief', ownerName: 'Alice' }] }))
+  assert.equal(stale.refused, 'left', 'a join from before the remove is not a re-invite')
+  assert.equal(room.hidden, true)
+  const again = await deliver(share('join', 12))
+  assert.equal(again.refused, undefined, 'a later join is a new invite')
+  assert.equal(room.hidden, undefined, 'the room opens again')
+  assert.equal(roomVisibleTo(rt.state, actorB, room.id), true)
+})

@@ -752,6 +752,14 @@ export function install(rt) {
         || (kind === 'bot' && (state.bots?.[me.id]?.ownerId === actor.memberId || me.ownerId === actor.memberId || room.sharedFrom?.ownerId === actor.memberId))
       )
       if (kind === 'bot' && room.origin !== 'inbound-share' && room.origin !== 'face-to-face' && !me.remote && botsLeft.length < 2 && !ownerLeave) throw invalid('A group chat needs at least two Bots')
+      // #1167: reach and a room link's pairs only see who is still in the room. Tell the other home
+      // before leftSeq, or that leave is refused and their copy of the room stays open.
+      if (me.remote) {
+        await Promise.resolve(rt.notifyRoomShare?.(room, { op: 'leave', handle: me.handle || me.id }))
+          .catch(error => rt.warn?.('ds-bot: a seat\'s leave was not sent: %s', error))
+      } else if (kind === 'bot' && room.origin === 'inbound-share' && room.sharedFrom?.ticket) {
+        await sendTicketLeave(room, me).catch(error => rt.warn?.('ds-bot: leaving %s was not sent: %s', room.name, error))
+      }
       const line = append(room, {
         kind: 'left',
         who: me.displayName,
@@ -767,12 +775,10 @@ export function install(rt) {
       }
       syncMembers(room)
       await rt.save()
-      if (me.remote) {
-        void Promise.resolve(rt.notifyRoomShare?.(room, { op: 'leave', handle: me.handle || me.id }))
-          .then(() => (isTicketSeat(me) ? settleTicket(room, me.ticket, me) : undefined))
-          .catch(error => rt.warn?.('ds-bot: a seat\'s leave was not settled: %s', error))
+      if (me.remote && isTicketSeat(me)) {
+        await settleTicket(room, me.ticket, me).catch(error => rt.warn?.('ds-bot: a seat\'s leave was not settled: %s', error))
       } else if (kind === 'bot' && room.origin === 'inbound-share' && room.sharedFrom?.ticket) {
-        void leaveTicketRoom(room, me).catch(error => rt.warn?.('ds-bot: leaving %s was not sent: %s', room.name, error))
+        await finishTicketLeave(room).catch(error => rt.warn?.('ds-bot: leaving %s was not settled: %s', room.name, error))
       } else if (kind === 'bot' && !me.remote) {
         reshareRoster(room)
       }
@@ -967,7 +973,9 @@ export function install(rt) {
   // and is told about the room by that Bot.
   const isTicketSeat = p => p?.remote === true && p.admittedBy === 'ticket'
   function seatSender(room, seat) {
-    const botId = seat.hostBotId && rt.botOf?.(seat.hostBotId) && room.members?.includes(seat.hostBotId) ? seat.hostBotId : undefined
+    const named = seat.hostBotId && rt.botOf?.(seat.hostBotId) && room.members?.includes(seat.hostBotId) ? seat.hostBotId : undefined
+    // The same fallback ticketPeers uses: a seat written before hostBotId still leaves from the room lead.
+    const botId = named ?? (room.admin && rt.botOf?.(room.admin) && room.members?.includes(room.admin) ? room.admin : undefined)
     if (!botId) return undefined
     const member = state.bots?.[botId]?.fields?.social?.member
     return { botId, from: { ...shareInviter(room), inviterHandle: member?.handle, ...(member?.home ? { inviterHome: member.home } : {}) } }
@@ -2024,28 +2032,30 @@ export function install(rt) {
   }
 
   // The guest's side of a seat (#884): a Bot of mine that a ticket seated leaves the room it mirrors.
-  // The inviter's home hears it from that Bot, and when none of mine is left the claim is given back.
-  async function leaveTicketRoom(room, me) {
+  // The inviter's home hears it from that Bot. Sent while the Bot is still seated (#1167): after
+  // leftSeq the pair is gone and the host never hears the leave. The claim is given back only once
+  // that Bot is no longer current, so the "am I the last?" check stays after leftSeq.
+  async function sendTicketLeave(room, me) {
     const inviter = room.sharedFrom?.inviterHandle
     const scope = room.sharedFrom?.remoteRoomId
-    if (inviter && scope) {
-      await sendShareTo(room, { handle: inviter, id: inviter }, {
-        op: 'leave',
-        roomId: scope,
-        name: room.name,
-        invitedHandle: inviter,
-        seq: room.seq ?? 0,
-        ticket: room.sharedFrom.ticket,
-      }, 'room-share', me.id, scope)
-    }
+    if (!inviter || !scope) return
+    await sendShareTo(room, { handle: inviter, id: inviter }, {
+      op: 'leave',
+      roomId: scope,
+      name: room.name,
+      invitedHandle: inviter,
+      seq: room.seq ?? 0,
+      ticket: room.sharedFrom.ticket,
+    }, 'room-share', me.id, scope)
+  }
+  async function finishTicketLeave(room) {
     const stays = currentParticipants(room).some(p => p.kind === 'bot' && !p.remote)
-    if (!stays) {
-      if (state.roomClaims?.[room.sharedFrom.ticket]) {
-        delete state.roomClaims[room.sharedFrom.ticket]
-        await rt.save?.()
-      }
-      await endServerTicket(room.sharedFrom.ticket)
+    if (stays || !room.sharedFrom?.ticket) return
+    if (state.roomClaims?.[room.sharedFrom.ticket]) {
+      delete state.roomClaims[room.sharedFrom.ticket]
+      await rt.save?.()
     }
+    await endServerTicket(room.sharedFrom.ticket)
   }
 
   // A seat of this home's own room that the sender is, for a share addressed to that room.
@@ -2093,6 +2103,9 @@ export function install(rt) {
     // `op: 'line'` envelope to the friend who invited this Bot, under *their* room id, one hop on,
     // carrying the handles it calls there.
     if (room.origin === 'inbound-share' && !isFaceRoom(room)) {
+      // #1167: a room the host already took back does not keep sending, even from a Session that is
+      // still open. sharedFrom.localBotId would otherwise still name a sender after everyone left.
+      if (room.hidden || !currentParticipants(room).some(p => p.kind === 'bot' && !p.remote)) return
       const inviter = room.sharedFrom?.inviterHandle
       if (!inviter || !rt.flybotSend) return
       // A Bot of mine a ticket seated speaks for itself, under that room's scope (#884).
@@ -2305,7 +2318,7 @@ export function install(rt) {
     })
   }
 
-  function markInboundLeft(room) {
+  function markInboundLeft(room, removedSeq) {
     const at = Date.now()
     const line = append(room, { kind: 'left', who: room.sharedFrom?.inviterName || 'the room', authorKind: 'bot', text: '' })
     for (const p of currentParticipants(room)) {
@@ -2313,6 +2326,10 @@ export function install(rt) {
       p.leftAt = at
     }
     room.hidden = true
+    // #1167: the host's seq at the leave. A join at or before it is a roster refresh already in
+    // flight, not a re-invite; a later join may open the room again.
+    const seq = Number(removedSeq)
+    room.sharedFrom = { ...(room.sharedFrom ?? {}), removedSeq: Number.isFinite(seq) ? seq : (room.seq ?? line.seq) }
     syncMembers(room)
     return room
   }
@@ -2397,10 +2414,18 @@ export function install(rt) {
         }
         syncMembers(room)
       } else {
-        markInboundLeft(room)
+        markInboundLeft(room, data.seq)
       }
       await rt.save?.()
       return { handled: true, room }
+    }
+    // #1167: a line, or a join that was already on its way when the seat was removed, must not open
+    // a room a leave just hid. A newer join is the host adding this Bot again.
+    if (room?.hidden) {
+      const removed = Number(room.sharedFrom?.removedSeq)
+      const seq = Number(data.seq)
+      const newerJoin = data.op === 'join' && Number.isFinite(seq) && (!Number.isFinite(removed) || seq > removed)
+      if (!newerJoin) return { handled: true, refused: 'left', room }
     }
     if (!room) {
       room = await rt.recordInboundSharedRoom({
@@ -2419,6 +2444,7 @@ export function install(rt) {
       }, actor || (ownerId ? { memberId: ownerId } : undefined))
     } else {
       delete room.hidden
+      if (room.sharedFrom) delete room.sharedFrom.removedSeq
       // A ticket seats each Bot of mine on its own (#878): the join names one, and only that one comes
       // back or is added. A friend's share keeps the room's one Bot.
       const seatedHere = ticket && data.op === 'join' && localBotId
