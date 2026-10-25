@@ -219,6 +219,9 @@ function faceStatusFrom(spec, current) {
   const status = spec?.status
   if (status === 'open' || status === 'closed' || status === 'left') return status
   if (spec?.startedAt) return 'open'
+  // A later snapshot that says "candidate" and omits startedAt must not put an
+  // open, closed, or left room back on the waiting lobby (#1072).
+  if (current === 'open' || current === 'closed' || current === 'left') return current
   if (status) return status
   return current || 'candidate'
 }

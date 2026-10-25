@@ -343,6 +343,33 @@ test('face-to-face rejoin revives a left participant instead of duplicating', as
   assert.equal(room.face.status, 'open')
 })
 
+test('#1072: an open face room is not demoted to the waiting lobby when a snapshot omits startedAt', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const spec = {
+    roomId: 'frm_1072',
+    localId: 'face-1072',
+    status: 'open',
+    startedAt: '2026-10-25T01:00:00.000Z',
+    localBots: [{ id: 'spec-a', handle: '@writer.alice.home', name: 'Writer A' }],
+  }
+  const both = [
+    { handle: '@writer.alice.home', displayName: 'Writer', ownerName: 'Alice', published: false },
+    { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
+  ]
+  await rt.upsertFaceRoom({ ...spec, members: both })
+  const room = rt.state.rooms['face-1072']
+  assert.equal(room.face.status, 'open')
+  assert.equal(room.id, 'face-1072')
+  await rt.upsertFaceRoom({ roomId: 'frm_1072', status: 'candidate', members: [both[0]] })
+  assert.equal(room.face.status, 'open')
+  assert.equal(room.id, 'face-1072')
+  const peer = room.participants.filter(p => p.handle === '@coder.bob.home')
+  assert.equal(peer.length, 1)
+  assert.ok(peer[0].leftSeq !== undefined)
+  assert.equal(room.participants.filter(p => p.handle === '@writer.alice.home' && p.leftSeq === undefined).length, 1)
+})
+
 test('#304: a face room keeps the number it was joined by in its title, through polls and leave', async (t) => {
   const { rt } = host(t, TEAM)
   await rt.load()

@@ -2483,6 +2483,70 @@ test('#304: a failed automatic leave is tried again on the next poll', async (t)
   assert.equal(leaves.length, 2, 'not after it succeeded')
 })
 
+test('#1072: revoking a grant leaves the shared face room before the grant is deleted', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.tools.revoke_bot_grant = () => ({ ok: true })
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  server.face.peer('123456')
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: chief.id })).value
+  await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
+  await ctx.flybot.grants.set(chief.id, [{ id: 'g-face', grantee: '@coder.bob.home', name: 'Bob' }])
+  const before = server.calls.length
+  const revoked = await call('flybot/social/revoke-grant', { botId: chief.id, grantId: 'g-face', grantee: '@coder.bob.home' })
+  assert.equal(revoked.ok, true)
+  const slice = server.calls.slice(before)
+  const leaveAt = slice.findIndex(c => c.name === 'REST POST /frm_123456/leave')
+  const revokeAt = slice.findIndex(c => c.name === 'revoke_bot_grant')
+  assert.ok(leaveAt >= 0, 'the shared face room is left on Bot Social')
+  assert.ok(revokeAt > leaveAt, 'the leave is recorded before the grant is deleted')
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.equal(hosted.id, joined.roomId, 'the same hosted room')
+  assert.equal(hosted.face.status, 'left')
+  const peer = hosted.participants.filter(p => p.handle === '@coder.bob.home')
+  assert.equal(peer.length, 1, 'the peer seat stays on the record')
+  assert.equal((ctx.flybot.grants.of(chief.id) ?? []).some(grant => grant.id === 'g-face'), false)
+})
+
+test('#1072: an open face room whose next snapshot is a waiting lobby closes instead of sticking', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  server.face.peer('123456')
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456' })).value
+  await call('flybot/social/face-start', { faceRoomId: 'frm_123456' })
+  const room = server.face.rooms.get('frm_123456')
+  room.status = 'candidate'
+  delete room.started_at
+  room.expires_at = new Date(Date.now() + 10 * 60_000).toISOString()
+  room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  const listed = (await call('flybot/social/face-rooms', { poll: true })).value
+  const past = listed.rooms.find(item => item.faceRoomId === 'frm_123456')
+  const hosted = ctx.flybot.rooms.ofFace('frm_123456')
+  assert.equal(hosted.id, joined.roomId)
+  assert.equal(hosted.face.status, 'closed')
+  assert.equal(past.status, 'closed')
+  const peer = hosted.participants.filter(p => p.handle === '@coder.bob.home')
+  assert.equal(peer.length, 1)
+  assert.ok(peer[0].leftSeq !== undefined)
+  assert.equal(hosted.participants.filter(p => p.handle === '@chief.danyang.home').length, 1)
+})
+
 test('face and inbox polls speed up while a live face room is open', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

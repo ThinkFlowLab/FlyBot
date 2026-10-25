@@ -2667,6 +2667,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     void remoteBots({ fresh: true }).catch(() => {})
     return result
   }))
+  // Face rooms that still seat this grantee. The only server call is leaving our own seats;
+  // the other home then sees a normal departure. A room already left or closed is skipped,
+  // and so is one this home is no longer hosting.
+  async function leaveSharedFaceRooms(bot, grantee) {
+    if (!grantee || typeof flybot.rooms?.list !== 'function') return
+    for (const room of roomsUsing(bot.id, grantee)) {
+      if (room.origin !== 'face-to-face') continue
+      const meta = Object.entries(settings.faceRooms ?? {}).find(([, item]) => item?.localRoomId === room.id)
+      if (!meta) continue
+      const status = flybot.rooms.ofFace?.(meta[0])?.face?.status
+      if (status === 'left' || status === 'closed') continue
+      try {
+        await leaveFaceRoom({ roomId: room.id, faceRoomId: meta[0] })
+      } catch (error) {
+        warn('shared face room not left on revoke', error)
+      }
+    }
+  }
   // One grant's delete; the caller fences it and refreshes the roster once afterwards.
   async function revokeOne(bot, { grantId, relationshipId, grantee }) {
     const current = flybot.grants?.of?.(bot.id) ?? []
@@ -2676,6 +2694,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       || (grantee && norm(grant.grantee) === norm(grantee)))
     if (!target && !grantId && !relationshipId) throw new Error('which grant?')
     const member = memberOf(bot.id)
+    // The face room seats that person with no person-grant on the room, so deleting the
+    // grant leaves the other home polling a lobby. Leave first, while the room is still
+    // healthy, and a failed leave must not block the revoke (#1072).
+    await leaveSharedFaceRooms(bot, target?.grantee || (typeof grantee === 'string' ? grantee : ''))
     await api.revokeGrant({
       grantId: grantId || target?.id,
       relationshipId: relationshipId || target?.relationshipId,
@@ -3497,15 +3519,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (held === 'closed' && status === 'open') return { status: held, peersGone: true }
     if (held === 'left' || held === 'closed') return { status: held }
     const expiresAt = snapshot?.expiresAt || hosted?.face?.expiresAt
+    const locals = new Set(bringable().map(bot => bot.handle).filter(Boolean))
+    const previousRemotes = (hosted?.participants ?? []).filter(p => p.leftSeq === undefined && p.remote === true)
+    const currentRemotes = (snapshot?.members ?? []).filter(member => member.handle && !locals.has(norm(member.handle)))
+    // Every other home left an open room: it has ended here, including when the next snapshot
+    // falls back to the waiting lobby (candidate, startedAt omitted). A room that was only ever
+    // a candidate lobby stays one until its window runs out (#1072, #304). Checked before the
+    // expired-candidate return so a started room still leaves on Bot Social.
+    const wasOpen = held === 'open' || Boolean(hosted?.face?.startedAt)
+    if ((status === 'open' || wasOpen) && previousRemotes.length > 0 && currentRemotes.length === 0) return { status: 'closed', peersGone: true }
     if (status === 'candidate' && expiresAt) {
       const at = Date.parse(expiresAt)
       if (Number.isFinite(at) && at <= now()) return { status: 'closed' }
     }
-    const locals = new Set(bringable().map(bot => bot.handle).filter(Boolean))
-    const previousRemotes = (hosted?.participants ?? []).filter(p => p.leftSeq === undefined && p.remote === true)
-    const currentRemotes = (snapshot?.members ?? []).filter(member => member.handle && !locals.has(norm(member.handle)))
-    // Every other home left: the room has ended here, but this home did not leave it (#304).
-    if (status === 'open' && previousRemotes.length > 0 && currentRemotes.length === 0) return { status: 'closed', peersGone: true }
     // The joining window ran out and nobody else ever came (#458): the room ends, it is no open chat with yourself.
     const started = Date.parse(snapshot?.startedAt || '')
     const deadline = Date.parse(expiresAt || '')
