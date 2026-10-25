@@ -472,7 +472,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { failureLabel } from './diagnostics.js'
  import { turnReasoning } from './turn-reasoning.js'
  
-@@ -45,6 +45,9 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId,
+@@ -45,8 +45,27 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId,
      }))
  }
  
@@ -481,7 +481,25 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
  const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
  
++// The closed status line already says who left (#1103). Same rule as
++// plugins/social/src/face-rooms.js leaveNoticeCoveredByClose: the plugin does not post the short
++// line when it already knows the room closed, and a line posted earlier is not drawn beside the banner.
++function leaveNoticeCoveredByClose(room, text) {
++  if (room?.origin !== 'face-to-face' || room.face?.status !== 'closed') return false
++  const match = String(text ?? '').trim().match(/^(.+) left(?: the room)?$/)
++  if (!match) return false
++  const who = match[1]
++  for (const participant of room.participants ?? []) {
++    if (participant?.remote !== true || participant.leftSeq === undefined) continue
++    const name = String(participant.ownerName || participant.displayName || participant.name || '').trim()
++    if (name && (who === name || who.endsWith(` (${name})`))) return true
++  }
++  return false
++}
++
  // Closes a popover on a press outside the given elements or on Escape.
+ function useDismiss(open, close, refs) {
+   useEffect(() => {
 @@ -101,8 +101,10 @@ function MessageTools({ text, name, sessionId, react, actions }) {
  }
  
@@ -953,7 +971,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
            t('{name} could not answer: {reason}', { name: bot.name, reason: failureLabel(reply.code, reply.text) }))
        }
        if (reply.kind === 'lookup') {
-@@ -599,14 +599,24 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -599,14 +599,27 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
        if (reply.kind === 'stopped') {
          return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
        }
@@ -966,6 +984,9 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 -        h(BotMark, { bot: bot, size: 22, state: speakerTool ? toolState(speakerTool) : 'thinking' }),
 -        h(Shimmer, null, speakerTool ? `${bot.name} · ${workPhrase(speakerTool)}…` : t('{name} is typing…', { name: bot.name })))
 +      if (reply.kind === 'notice' && room?.origin === 'face-to-face' && String(reply.text ?? '').trim() === WAITING_OTHERS_NOTICE) return null
++      // The closed status line already names this person (#1103). Same rule as the social plugin's
++      // leaveNoticeCoveredByClose: a short "Name left the room" beside "Name left the room. Room closed."
++      if ((reply.kind === 'notice' || reply.kind === 'left') && leaveNoticeCoveredByClose(room, reply.text)) return null
 +      if (reply.kind === 'notice' || reply.kind === 'joined' || reply.kind === 'left' || reply.kind === 'started') {
 +        return h('div', { key: `notice-${index}`, className: 'bt-event', 'data-flybot': 'face-notice' }, remoteMessageText(reply.text))
 +      }

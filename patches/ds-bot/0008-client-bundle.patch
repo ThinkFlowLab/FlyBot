@@ -3998,7 +3998,7 @@ diff --git a/client.js b/client.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -2488,2292 +2488,4079 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2488,2292 +2488,4092 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @keyframes bt-rise{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
  @media (prefers-reduced-motion:reduce){.bt-member,.bt-addlist{animation:none}}
  
@@ -5033,23 +5033,6 @@ diff --git a/client.js b/client.js
 +    pending.answer({ answers: next });
 +  };
 +  return (0, import_react5.createElement)(QuestionView, { key: index, question, onAnswer, onDismiss: () => pending.dismiss(), ownAnswer: true, raised: true });
-+}
-+function PendingQuestion({ sessionId, question, actions, inline }) {
-+  const [answered, setAnswered] = (0, import_react5.useState)(null);
-+  if (answered === question.id) return null;
-+  const onAnswer = (answer) => {
-+    setAnswered(question.id);
-+    void actions.answerQuestion(sessionId, question.id, { selected: answer.selected ?? [], custom: answer.custom ?? "" }).catch(() => setAnswered(null));
-+  };
-+  const onDismiss = () => {
-+    setAnswered(question.id);
-+    void actions.dismissQuestion(sessionId);
-+  };
-+  return (0, import_react5.createElement)(
-+    "div",
-+    { className: inline ? "bt-q-inline" : "bt-q-dock" },
-+    (0, import_react5.createElement)(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline })
-+  );
  }
 -@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
 -@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
@@ -5165,6 +5148,23 @@ diff --git a/client.js b/client.js
 -  style.textContent = text;
 -  document.head.appendChild(style);
 -  return style;
++function PendingQuestion({ sessionId, question, actions, inline }) {
++  const [answered, setAnswered] = (0, import_react5.useState)(null);
++  if (answered === question.id) return null;
++  const onAnswer = (answer) => {
++    setAnswered(question.id);
++    void actions.answerQuestion(sessionId, question.id, { selected: answer.selected ?? [], custom: answer.custom ?? "" }).catch(() => setAnswered(null));
++  };
++  const onDismiss = () => {
++    setAnswered(question.id);
++    void actions.dismissQuestion(sessionId);
++  };
++  return (0, import_react5.createElement)(
++    "div",
++    { className: inline ? "bt-q-inline" : "bt-q-dock" },
++    (0, import_react5.createElement)(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline })
++  );
++}
 +function QuestionDock({ sessionId, useRoster, useCards, useSession, actions }) {
 +  const question = useRoster((value) => value.questions?.[sessionId]);
 +  const drawn = useCards?.((state) => state[sessionId]?.[question?.callId] > 0) === true;
@@ -5962,10 +5962,22 @@ diff --git a/client.js b/client.js
 -    const size = frame * 5 / 9;
 -    const rest = frame - size;
 -    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
--  }
++var WAITING_OTHERS_NOTICE = "Waiting for the owner's approval";
++var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
++function leaveNoticeCoveredByClose(room2, text) {
++  if (room2?.origin !== "face-to-face" || room2.face?.status !== "closed") return false;
++  const match = String(text ?? "").trim().match(/^(.+) left(?: the room)?$/);
++  if (!match) return false;
++  const who = match[1];
++  for (const participant of room2.participants ?? []) {
++    if (participant?.remote !== true || participant.leftSeq === void 0) continue;
++    const name = String(participant.ownerName || participant.displayName || participant.name || "").trim();
++    if (name && (who === name || who.endsWith(` (${name})`))) return true;
+   }
 -  const half = frame / 2;
 -  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
--}
++  return false;
+ }
 -function RoomAvatar({ room: room2, roster, size = 36 }) {
 -  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
 -  const people = members.length === 1 ? [members[0], null] : members;
@@ -5992,8 +6004,6 @@ diff --git a/client.js b/client.js
 -      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
 -      if (overflow > 0 && index === 3) {
 -        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
-+var WAITING_OTHERS_NOTICE = "Waiting for the owner's approval";
-+var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 +function useDismiss(open, close, refs) {
 +  (0, import_react8.useEffect)(() => {
 +    if (!open) return void 0;
@@ -7613,6 +7623,7 @@ diff --git a/client.js b/client.js
 +        return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
 +      }
 +      if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
++      if ((reply.kind === "notice" || reply.kind === "left") && leaveNoticeCoveredByClose(room2, reply.text)) return null;
 +      if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
 +        return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
 +      }

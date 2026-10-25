@@ -19,6 +19,7 @@ import {
   faceEventKey,
   platformJoinText,
   platformLeaveText,
+  leaveNoticeCoveredByClose,
   platformStartedText,
   faceMemberLabel,
   distinctFaceBotName,
@@ -133,6 +134,17 @@ test('peer names and system copy are sanitized', () => {
   assert.doesNotMatch(text, /not published/)
   assert.equal(platformLeaveText({ display_name: 'Coder', owner_name: 'Bob' }), 'Bob left the room')
   assert.equal(platformLeaveText({ display_name: 'Coder' }), 'Coder left')
+  // #1103: the closed banner already names this person, so the short leave is not a second line.
+  const closed = {
+    origin: 'face-to-face', face: { status: 'closed' },
+    participants: [{ remote: true, ownerName: 'SelfB1025', displayName: 'Coder', leftSeq: 4 }],
+  }
+  assert.equal(leaveNoticeCoveredByClose(closed, 'SelfB1025 left the room'), true)
+  assert.equal(leaveNoticeCoveredByClose(closed, 'Coder (SelfB1025) left'), true)
+  assert.equal(leaveNoticeCoveredByClose(closed, 'Carol left the room'), false)
+  assert.equal(leaveNoticeCoveredByClose(closed, 'Bob joined the room'), false)
+  assert.equal(leaveNoticeCoveredByClose({ ...closed, face: { status: 'open' } }, 'SelfB1025 left the room'), false)
+  assert.equal(leaveNoticeCoveredByClose({ ...closed, participants: [] }, 'SelfB1025 left the room'), false)
   assert.match(platformStartedText('start'), /no longer valid/)
   assert.match(platformStartedText('expired'), /Joining has ended/)
   assert.equal(faceMemberLabel({ display_name: 'Writer', owner_name: 'Alice' }), 'Writer (Alice)')

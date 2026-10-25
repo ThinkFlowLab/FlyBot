@@ -58,6 +58,22 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
 const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 
+// The closed status line already says who left (#1103). Same rule as
+// plugins/social/src/face-rooms.js leaveNoticeCoveredByClose: the plugin does not post the short
+// line when it already knows the room closed, and a line posted earlier is not drawn beside the banner.
+function leaveNoticeCoveredByClose(room, text) {
+  if (room?.origin !== 'face-to-face' || room.face?.status !== 'closed') return false
+  const match = String(text ?? '').trim().match(/^(.+) left(?: the room)?$/)
+  if (!match) return false
+  const who = match[1]
+  for (const participant of room.participants ?? []) {
+    if (participant?.remote !== true || participant.leftSeq === undefined) continue
+    const name = String(participant.ownerName || participant.displayName || participant.name || '').trim()
+    if (name && (who === name || who.endsWith(` (${name})`))) return true
+  }
+  return false
+}
+
 // Closes a popover on a press outside the given elements or on Escape.
 function useDismiss(open, close, refs) {
   useEffect(() => {
@@ -920,6 +936,9 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
         return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
       }
       if (reply.kind === 'notice' && room?.origin === 'face-to-face' && String(reply.text ?? '').trim() === WAITING_OTHERS_NOTICE) return null
+      // The closed status line already names this person (#1103). Same rule as the social plugin's
+      // leaveNoticeCoveredByClose: a short "Name left the room" beside "Name left the room. Room closed."
+      if ((reply.kind === 'notice' || reply.kind === 'left') && leaveNoticeCoveredByClose(room, reply.text)) return null
       if (reply.kind === 'notice' || reply.kind === 'joined' || reply.kind === 'left' || reply.kind === 'started') {
         return h('div', { key: `notice-${index}`, className: 'bt-event', 'data-flybot': 'face-notice' }, remoteMessageText(reply.text))
       }

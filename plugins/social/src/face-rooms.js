@@ -426,6 +426,22 @@ export function platformLeaveText(member) {
   return owner ? `${owner} left the room` : `${faceMemberLabel(member)} left`
 }
 
+// The closed status line already says who left and that the room closed (#1103):
+// "Bob left the room. Room closed." The short platform leave is the same fact.
+// Same rule as core `leaveNoticeCoveredByClose` (`cells.js`), which hides a line already drawn.
+export function leaveNoticeCoveredByClose(room, text) {
+  if (room?.origin !== 'face-to-face' || room.face?.status !== 'closed') return false
+  const match = String(text ?? '').trim().match(/^(.+) left(?: the room)?$/)
+  if (!match) return false
+  const who = match[1]
+  for (const participant of room.participants ?? []) {
+    if (participant?.remote !== true || participant.leftSeq === undefined) continue
+    const name = String(participant.ownerName || participant.displayName || participant.name || '').trim()
+    if (name && (who === name || who.endsWith(` (${name})`))) return true
+  }
+  return false
+}
+
 export function platformLeadText(member, reason) {
   if (member) return `Room lead: ${faceMemberLabel(member)}`
   return reason === 'lead_left' ? 'The room lead left. The default lead takes over.' : 'The room lead is back to the default.'

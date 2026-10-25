@@ -5631,6 +5631,18 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
 }
 var WAITING_OTHERS_NOTICE = "Waiting for the owner's approval";
 var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+function leaveNoticeCoveredByClose(room2, text) {
+  if (room2?.origin !== "face-to-face" || room2.face?.status !== "closed") return false;
+  const match = String(text ?? "").trim().match(/^(.+) left(?: the room)?$/);
+  if (!match) return false;
+  const who = match[1];
+  for (const participant of room2.participants ?? []) {
+    if (participant?.remote !== true || participant.leftSeq === void 0) continue;
+    const name = String(participant.ownerName || participant.displayName || participant.name || "").trim();
+    if (name && (who === name || who.endsWith(` (${name})`))) return true;
+  }
+  return false;
+}
 function useDismiss(open, close, refs) {
   (0, import_react8.useEffect)(() => {
     if (!open) return void 0;
@@ -6501,6 +6513,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
         return (0, import_react8.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
       }
       if (reply.kind === "notice" && room2?.origin === "face-to-face" && String(reply.text ?? "").trim() === WAITING_OTHERS_NOTICE) return null;
+      if ((reply.kind === "notice" || reply.kind === "left") && leaveNoticeCoveredByClose(room2, reply.text)) return null;
       if (reply.kind === "notice" || reply.kind === "joined" || reply.kind === "left" || reply.kind === "started") {
         return (0, import_react8.createElement)("div", { key: `notice-${index}`, className: "bt-event", "data-flybot": "face-notice" }, remoteMessageText(reply.text));
       }

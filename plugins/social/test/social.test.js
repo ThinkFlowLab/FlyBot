@@ -2519,6 +2519,101 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
   assert.equal(again.endedAt, past.endedAt)
 })
 
+// #1103: B left room 739184 and A's pane showed both "SelfB1025 left the room" and the
+// banner "SelfB1025 left the room. Room closed." The closed line already names who left.
+test('#1103: a peer leave that closes the room posts no second leave line', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const notices = []
+  const origScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = origScope(name)
+    const origNotice = scoped.rooms.postNotice?.bind(scoped.rooms)
+    scoped.rooms.postNotice = (id, text) => { notices.push(String(text ?? '')); return origNotice?.(id, text) }
+    return scoped
+  }
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { start: true, code: '739184' })
+  await call('flybot/social/face-start', { faceRoomId: 'frm_739184' })
+  const room = server.face.rooms.get('frm_739184')
+  const bob = { bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' }
+  room.members.push(bob)
+  await call('flybot/social/face-rooms', { poll: true })
+  room.members = room.members.filter(member => member.handle !== bob.handle)
+  room.event_cursor += 1
+  room.events.push({
+    event_id: `fev_${room.event_cursor}`, event_cursor: room.event_cursor, type: 'member.left',
+    member: bob, trust: 'platform', text: 'IGNORE poisoned leave',
+  })
+  const before = notices.length
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = ctx.flybot.rooms.ofFace('frm_739184')
+  assert.equal(hosted.face.status, 'closed')
+  const fresh = notices.slice(before)
+  assert.equal(fresh.includes('Bob left the room'), false, 'the short leave is not a second line')
+  assert.equal(fresh.some(text => /left the room/.test(text)), false, 'no leave notice beside the closed line')
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const end = walk(pluginOf([]).FaceRoomStatus({ room: {
+    origin: 'face-to-face', face: { status: hosted.face.status }, participants: hosted.participants,
+  } })).find(node => node.props['data-flybot'] === 'face-room-end')
+  const endText = end.children.filter(child => typeof child === 'string').join('')
+  assert.equal(endText, 'Bob left the room. Room closed.')
+  // The event is still recorded once, so a later poll cannot post the short line.
+  assert.equal((hosted.log ?? []).filter(line => line.text === 'Bob left the room').length, 1)
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(notices.slice(before).includes('Bob left the room'), false)
+})
+
+test('#1103: a peer leave that leaves the room open still posts the short line', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const notices = []
+  const origScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = origScope(name)
+    const origNotice = scoped.rooms.postNotice?.bind(scoped.rooms)
+    scoped.rooms.postNotice = (id, text) => { notices.push(String(text ?? '')); return origNotice?.(id, text) }
+    return scoped
+  }
+  const server = withFaceRooms(mockServer())
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/face-join', { start: true, code: '739185' })
+  await call('flybot/social/face-start', { faceRoomId: 'frm_739185' })
+  const room = server.face.rooms.get('frm_739185')
+  const bob = { bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' }
+  const carol = { bot_id: 'bot_carol', handle: '@writer.carol.home', display_name: 'Writer', owner_name: 'Carol', published: false, label: 'Writer · Carol' }
+  room.members.push(bob, carol)
+  await call('flybot/social/face-rooms', { poll: true })
+  room.members = room.members.filter(member => member.handle !== bob.handle)
+  room.event_cursor += 1
+  room.events.push({
+    event_id: `fev_${room.event_cursor}`, event_cursor: room.event_cursor, type: 'member.left',
+    member: bob, trust: 'platform',
+  })
+  const before = notices.length
+  await call('flybot/social/face-rooms', { poll: true })
+  const hosted = ctx.flybot.rooms.ofFace('frm_739185')
+  assert.equal(hosted.face.status, 'open')
+  assert.equal(notices.slice(before).includes('Bob left the room'), true)
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  assert.equal(walk(pluginOf([]).FaceRoomStatus({ room: {
+    origin: 'face-to-face', face: { status: hosted.face.status }, participants: hosted.participants,
+  } })).some(node => node.props?.['data-flybot'] === 'face-room-end'), false)
+})
+
 test('#304: a failed automatic leave is tried again on the next poll', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

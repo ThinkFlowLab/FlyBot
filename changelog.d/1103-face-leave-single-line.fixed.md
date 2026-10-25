@@ -1,0 +1,1 @@
+When the other side leaves a face room and that leave closes the room, the room says so once: the "left the room. Room closed." banner is the only line, so the short platform leave no longer appears next to it. A leave that leaves the room open still posts its short line ([#1103](https://github.com/ThinkFlowLab/FlyBot/issues/1103)).

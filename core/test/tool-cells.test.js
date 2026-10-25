@@ -370,6 +370,40 @@ test('#278: a Face-to-face room drops the old "Waiting for the owner\'s approval
   assert.match(shown(root, { sessionId: 'room' }), /Waiting for the owner/)
 })
 
+// #1103: the closed banner already says who left. A short leave notice beside it is the second line.
+test('#1103: a closed face room draws the short leave only when the banner does not cover it', () => {
+  const replies = [
+    { kind: 'notice', text: 'SelfB1025 left the room' },
+    { kind: 'notice', text: 'Coder (SelfB1025) left' },
+    { kind: 'notice', text: 'Carol left the room' },
+    { kind: 'notice', text: 'Bob joined the room' },
+    { kind: 'notice', text: 'The room is now open. The number is no longer valid.' },
+  ]
+  const closed = {
+    ...room, origin: 'face-to-face', face: { status: 'closed' },
+    participants: [
+      { remote: false, displayName: 'Chief', ownerName: 'SelfA1025' },
+      { remote: true, displayName: 'Coder', ownerName: 'SelfB1025', leftSeq: 4 },
+    ],
+  }
+  const root = call('group_relay', 'relay', { content: { replies } })
+  const drawn = shown(root, { sessionId: 'room', roster: team({ rooms: [closed], roomsById: { room: closed } }) })
+  assert.doesNotMatch(drawn, /SelfB1025 left the room/)
+  assert.doesNotMatch(drawn, /Coder \(SelfB1025\) left/)
+  assert.match(drawn, /Carol left the room/)
+  assert.match(drawn, /Bob joined the room/)
+  assert.match(drawn, /The room is now open/)
+  // The room is still open: the short line is the only leave signal.
+  const open = { ...closed, face: { status: 'open' } }
+  const live = shown(root, { sessionId: 'room', roster: team({ rooms: [open], roomsById: { room: open } }) })
+  assert.match(live, /SelfB1025 left the room/)
+  assert.match(live, /Coder \(SelfB1025\) left/)
+  // Closed, but nobody recorded as gone: the banner cannot name them, so the short line stays.
+  const unnamed = { ...closed, participants: [{ remote: false, displayName: 'Chief' }] }
+  const bare = shown(root, { sessionId: 'room', roster: team({ rooms: [unnamed], roomsById: { room: unnamed } }) })
+  assert.match(bare, /SelfB1025 left the room/)
+})
+
 // The Secrets page says who may use a key with three explicit choices (#545): all my Bots,
 // chosen Bots, or none; a key for no Bot shows that choice, not a list with nobody in it.
 test('the scope editor offers all my Bots, chosen Bots, or none, and shows the current one', () => {

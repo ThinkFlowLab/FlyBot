@@ -50,6 +50,7 @@ import {
   faceOutbound,
   cleanFaceName,
   platformJoinText,
+  leaveNoticeCoveredByClose,
   humanFaceWho,
   faceRoomTitle,
   parseFaceHuman,
@@ -3845,7 +3846,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (alreadyJoined(line.text)) continue
           seen = rememberEvent(seen, `join-text:${line.text}`)
         }
-        if (firstTime(flybot.rooms.applyFaceLine?.(room.id, line), line)) void flybot.rooms.postNotice?.(room.id, line.text)
+        // A leave that closes the room is already the status line ("Bob left the room. Room closed.").
+        // Posting the short line as well is the second signal (#1103). The log still keeps the event.
+        const coveredLeave = line.kind === 'left' && leaveNoticeCoveredByClose(room, line.text)
+        if (firstTime(flybot.rooms.applyFaceLine?.(room.id, line), line) && !coveredLeave) void flybot.rooms.postNotice?.(room.id, line.text)
       } else if (line.human || line.authorKind === 'human') {
         const local = locals.some(bot => bot.handle && bot.handle === line.authorId)
         if (local) continue
