@@ -255,7 +255,6 @@ window.__ModuleLoader__.load({
 .fs-hold .fs-hold-decide{display:flex;gap:8px;flex:none}
 .fs-hold .fs-actions .fs-hold-always{order:-1;margin-right:auto;white-space:nowrap;flex:0 0 auto}
 .fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
-@media (max-width:640px){.fs-hold .fs-btn{height:40px;padding:0 16px;font-size:14px}.fs-hold .fs-hold-decide{flex:1 1 auto;justify-content:flex-end}}
 .fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
 .fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
 .fs-remove{flex:none;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0}
@@ -321,6 +320,7 @@ window.__ModuleLoader__.load({
 .fs-wait-foot .fs-btn-primary{flex:1 1 auto;width:auto;min-width:0}
 .fs-wait[data-flybot=face-nobody] .fs-name{white-space:normal;overflow:visible;text-overflow:clip}
 .fs-fail{padding:0}
+@media (max-width:640px){.fs-hold .fs-btn{height:40px;padding:0 16px;font-size:14px}.fs-hold .fs-hold-decide{flex:1 1 auto;justify-content:flex-end}.fs-btn,.fs-btn-sm{height:40px;padding:0 14px;font-size:13px}.fs-link,.fs-hold-more{display:inline-flex;align-items:center;min-height:40px;padding:0 2px;font-size:13px}.fs-icon{height:40px;min-width:40px}.fs-input,.fs-digits,.fs-link-input{height:40px;font-size:14px}.fs-paste{min-height:40px}.fs-remove{width:32px;height:32px}.fs-pending-item,.fs-past-head{min-height:40px}.fs-hold .fs-draft{overflow-wrap:anywhere}.fs-preview-foot .fs-btn,.fs-wait-foot .fs-btn{height:40px}.bt-flybot-session-dock{padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}.fs-group-strip{margin:6px 8px}}
 `
     function useStyles() {
       useEffect(() => {

@@ -16,6 +16,8 @@ Face-to-face rooms (#83, #92) also live here: the primary entry is the sidebar *
 
 Everything in `plugins/social/` (entry `plugins/social/index.js` and any helpers).
 
+At phone width (`<= 640 px`, the last block in `client.js's stylesheet`) this panel's buttons and inputs are 40 px, its row controls at least 32 px, long runs wrap inside their card, and the session dock clears the home indicator through `env(safe-area-inset-bottom,0px)` — 0 on this stack until the shell gains `viewport-fit=cover` (#647), so today it reads as a plain 6 px (#1147, #1149).
+
 ## Does not own
 
 - Plugin runtime hooks/slots → [plugin-runtime](plugin-runtime.md).
