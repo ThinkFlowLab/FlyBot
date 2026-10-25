@@ -11827,3 +11827,159 @@ test('#1025: the re-accept reads that Bot\'s grants itself, before the panel is 
   const stored = ctx.flybot.grants.of(chief.id).filter(grant => !grant.roomId)
   assert.deepEqual(stored.map(grant => grant.grantee), ['@chief.bob.home'])
 })
+
+// #1024: Bot Social takes the friend's bot id and nothing else, so an invite info that names no `bot_id` has
+// to get one from `list_friends` (`peer.bot_id`) before a grant is asked for. The removed `friend_home`
+// fallback never reached the server (mcp-client.js:466-478), which is why the accept stayed one-way in silence.
+test('#1024: a re-accept without an invite bot_id grants to the peer id list_friends names', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.grant_bot_to_friend = a => { granted.push(a); return { grant_id: 'g-back', status: 'active' } }
+  server.tools.list_bot_grants = () => ({ grants: granted.length ? [{ id: 'g-back', grantee: '@chief.bob.home', name: 'Chief (@chief.bob.home)', relationship_id: 'r1' }] : [] })
+  // The invite info carries the invite's Bot by handle only; the friendship, listed against the home, carries its id.
+  server.tools.list_friends = () => ({ bot: { handle: '@danyang.home' }, friends: [{ relationship_id: 'r1', status: 'active', peer: { bot_id: 'x1', handle: '@bob.home', display_name: 'Bob' } }], pending_incoming: [], pending_outgoing: [] })
+  const wrapped = async (url, init = {}) => {
+    if (/\/v1\/invites\/[^/]+$/.test(String(url)) && (init.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify({ code: 'LIVE1', status: 'active', inviter: { handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' } }), { status: 200 })
+    }
+    const body = String(url).endsWith('/mcp') && init.body ? JSON.parse(init.body) : undefined
+    if (body?.params?.name === 'join_invite') {
+      const text = JSON.stringify({ code: 'relationship_exists', message: 'you are already connected to this Bot (or a request is pending)', relationship_id: 'r1' })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text }] } }), { status: 200 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: wrapped }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: wrapped }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const exists = (await call('flybot/social/join-invite', { code: 'https://s/i/LIVE1' })).value
+  assert.equal(exists.alreadyHave, true)
+  assert.equal(exists.sharedBack, true)
+  assert.equal(granted.length, 1, 'one grant, the half an accepted invite would have made')
+  assert.equal(granted[0].friend_bot_id, 'x1', 'the peer id list_friends names for that home')
+  assert.equal(granted[0].friend_home, undefined, 'never the home Bot Social does not take')
+})
+
+// The other half of the same rule: when nothing listed names the inviter, no grant is attempted at all, and the
+// accept does not claim a share that did not happen — a visible one-way accept beats the silent half (#1024).
+test('#1024: an invite with no bot_id and no listed friend stays one-way without claiming to be shared back', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.grant_bot_to_friend = a => { granted.push(a); return { grant_id: 'g-back', status: 'active' } }
+  server.tools.list_friends = () => ({ bot: { handle: '@danyang.home' }, friends: [], pending_incoming: [], pending_outgoing: [] })
+  const wrapped = async (url, init = {}) => {
+    if (/\/v1\/invites\/[^/]+$/.test(String(url)) && (init.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify({ code: 'LIVE2', status: 'active', inviter: { handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' } }), { status: 200 })
+    }
+    const body = String(url).endsWith('/mcp') && init.body ? JSON.parse(init.body) : undefined
+    if (body?.params?.name === 'join_invite') {
+      const text = JSON.stringify({ code: 'relationship_exists', message: 'you are already connected to this Bot (or a request is pending)', relationship_id: 'r1' })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text }] } }), { status: 200 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: wrapped }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: wrapped }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const exists = (await call('flybot/social/join-invite', { code: 'https://s/i/LIVE2' })).value
+  assert.equal(exists.alreadyHave, true)
+  assert.equal(granted.length, 0, 'no grant with a friend home the server never receives')
+  assert.equal(exists.sharedBack, undefined, 'no claim of a share that did not happen')
+})
+
+// #1024: the accept path these tests share — a 409 re-accept whose public invite info names the inviter's Bot by
+// handle only (no bot_id), with list_friends answering `friends` for any identity asked.
+async function reAcceptWithoutBotId(t, { inviter, friends }) {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.grant_bot_to_friend = a => { granted.push(a); return { grant_id: 'g-back', status: 'active' } }
+  server.tools.list_bot_grants = () => ({ grants: granted.length ? [{ id: 'g-back', grantee: '@chief.bob.home', name: 'Chief (@chief.bob.home)', relationship_id: 'r1' }] : [] })
+  server.tools.list_friends = () => ({ bot: { handle: '@danyang.home' }, friends, pending_incoming: [], pending_outgoing: [] })
+  const wrapped = async (url, init = {}) => {
+    if (/\/v1\/invites\/[^/]+$/.test(String(url)) && (init.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify({ code: 'LIVE', status: 'active', inviter }), { status: 200 })
+    }
+    const body = String(url).endsWith('/mcp') && init.body ? JSON.parse(init.body) : undefined
+    if (body?.params?.name === 'join_invite') {
+      const text = JSON.stringify({ code: 'relationship_exists', message: 'already connected', relationship_id: 'r1' })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text }] } }), { status: 200 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: wrapped }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: wrapped }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const exists = (await call('flybot/social/join-invite', { code: 'https://s/i/LIVE' })).value
+  return { exists, granted }
+}
+const twoBobsBots = [
+  { relationship_id: 'r-w', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.bob.home', display_name: 'Writer' } },
+  { relationship_id: 'r-c', status: 'active', peer: { bot_id: 'pb-coder', handle: '@coder.bob.home', display_name: 'Coder' } },
+]
+
+// A friend can run two Bots under one home (#973): the invite names the Bot it was made for, so the grant must
+// name that same Bot and never "whichever of the home's Bots list_friends answered first".
+test('#1024: with two Bots under one home the grant goes to the Bot the invite named', async (t) => {
+  const { exists, granted } = await reAcceptWithoutBotId(t, {
+    inviter: { handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' },
+    friends: twoBobsBots,
+  })
+  assert.equal(granted.length, 1, 'one grant')
+  assert.equal(granted[0].friend_bot_id, 'pb-coder', 'the Bot the invite named, not the first under its home')
+  assert.equal(exists.sharedBack, true)
+})
+
+// The other side of that rule: when the invite names only the home and that home lists two Bots, nothing says
+// which Bot was invited, so nothing is granted — a wrong Bot given access is worse than an explicit one-way accept.
+test('#1024: a home listing two Bots names no Bot, so the accept grants nothing and claims nothing', async (t) => {
+  const { exists, granted } = await reAcceptWithoutBotId(t, {
+    inviter: { handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+    friends: twoBobsBots,
+  })
+  assert.equal(granted.length, 0, 'no grant to a Bot the invite did not name')
+  assert.equal(exists.sharedBack, undefined, 'no claim of a share that did not happen')
+})
+
+// The home filter: another friend's Bot is never a candidate for this invite (a real roster lists everyone).
+test("#1024: another friend's Bot is never the grant for this invite", async (t) => {
+  const { granted } = await reAcceptWithoutBotId(t, {
+    inviter: { handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' },
+    friends: [
+      { relationship_id: 'r-e', status: 'active', peer: { bot_id: 'pb-eve', handle: '@helper.eve.home', display_name: 'Helper' } },
+      { relationship_id: 'r-b', status: 'active', peer: { bot_id: 'pb-bob', handle: '@bob.home', display_name: 'Bob' } },
+    ],
+  })
+  assert.deepEqual(granted.map(a => a.friend_bot_id), ['pb-bob'], "the inviter's home, not the first listed friend")
+})
+
+// The status filter: a pending friendship is not a Bot this home may hand access to.
+test('#1024: a pending friendship does not lend its id to the grant', async (t) => {
+  const { granted } = await reAcceptWithoutBotId(t, {
+    inviter: { handle: '@coder.bob.home', display_name: 'Coder', owner_display_name: 'Bob' },
+    friends: [
+      { relationship_id: 'r-p', status: 'pending_incoming', peer: { bot_id: 'pb-pending', handle: '@coder.bob.home', display_name: 'Coder' } },
+      { relationship_id: 'r-c', status: 'active', peer: { bot_id: 'pb-coder', handle: '@coder.bob.home', display_name: 'Coder' } },
+    ],
+  })
+  assert.deepEqual(granted.map(a => a.friend_bot_id), ['pb-coder'], 'only the active friendship')
+})

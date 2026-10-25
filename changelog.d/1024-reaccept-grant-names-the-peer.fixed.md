@@ -1,0 +1,1 @@
+Re-accepting an invite from a Bot Social server whose invite info names no `bot_id` now grants to the peer id `list_friends` lists instead of a `friend_home` the server never receives ([#1024](https://github.com/ThinkFlowLab/FlyBot/issues/1024)): the pair becomes two-way again, and when no listed friend names that home the accept no longer claims a share that did not happen.

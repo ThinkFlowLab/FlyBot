@@ -2398,15 +2398,44 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // applies the inviter's half only on a fresh relationship, so a re-accept left this home's Bot ungranted
   // and the inviter's line to it held as an unknown recipient. A server without the tool (or with an older
   // REST route) answers `unavailable`: the accept already happened, so that is logged, never thrown.
+  // #1024: an invite names one of the inviter's Bots by its member handle, and a friend can run several under
+  // one home (#973), so the grant must name that Bot and not the home. Bot Social resolves the friend by bot id
+  // (`friend_bot_id` / `friend_owner_id`; the REST fallback in mcp-client.js keeps only those two and drops the
+  // home), and when the invite info carries no `bot_id` the id comes from `list_friends` (`peer.bot_id`, what
+  // `friendsOverview` already reads): the handle the invite named first, else the only active entry of that home.
+  // Two or more active entries mean the home alone does not say which Bot was invited — then nothing is granted
+  // and `sharedBack` stays absent, because a visible one-way accept beats a grant to the wrong Bot.
+  async function invitePeerBotId({ member, peerHome, invitedHandle } = {}) {
+    const homeKey = norm(peerHome)
+    const exact = norm(invitedHandle)
+    if (!homeKey && !exact) return ''
+    const ids = [...new Set([member?.bot_id, home?.id, config.botId].filter(id => typeof id === 'string' && id))]
+    const byHome = new Set()
+    // Asked together: each call has a 1.5 s deadline, and one accept should not wait three of them in a row.
+    const answers = await Promise.all(ids.map(async botId => {
+      try { return await client.callTool('list_friends', { bot_id: botId }, { timeoutMs: FRIEND_CALL_MS }) }
+      catch (error) { warn(`friends of ${botId} not read for the invite`, error); return undefined }
+    }))
+    for (const answer of answers) {
+      for (const item of Array.isArray(answer?.friends) ? answer.friends : []) {
+        if (item?.status !== undefined && item.status !== 'active') continue
+        const handle = norm(item?.peer?.handle)
+        const id = cleanText(item?.peer?.bot_id)
+        if (!handle || !id) continue
+        if (exact && handle === exact) return id
+        if (homeKey && homeOfPeer(handle) === homeKey) byHome.add(id)
+      }
+    }
+    return byHome.size === 1 ? [...byHome][0] : ''
+  }
   async function restoreAcceptedInviteGrant({ bot, member, inviter, inviterHome } = {}) {
     if (!home || !bot || !member) return false
     if (typeof api.grantBotToFriend !== 'function') return false
-    const peerId = cleanText(inviter?.bot_id)
     const peerHome = norm(inviterHome || (inviter?.home ? inviter.home : '') || (inviter?.handle ? homeOfPeer(inviter.handle) : ''))
-    // The server resolves the friend by bot id, or by the home for a server that only knows that.
-    if (!peerId && (!peerHome || peerHome === '@')) return false
+    const peerId = cleanText(inviter?.bot_id) || await invitePeerBotId({ member, peerHome, invitedHandle: inviter?.handle })
+    if (!peerId) return false
     try {
-      const result = await api.grantBotToFriend({ botId: member.bot_id, ...(peerId ? { friendBotId: peerId } : {}), ...(!peerId ? { friendHome: peerHome } : {}) })
+      const result = await api.grantBotToFriend({ botId: member.bot_id, friendBotId: peerId })
       if (result?.unavailable) return false
       await syncOutgoingGrants({ only: bot.id }).catch(error => warn('grants not synced after a re-accept', error))
       return true
