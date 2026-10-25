@@ -801,3 +801,82 @@ test('the requester sends a result back with a note and the same task returns to
   assert.deepEqual(Object.values(saved).map(task => task.id), [returned.id])
   assert.equal(saved[returned.id].followUp.note, 'the second file is missing')
 })
+
+// #1154: a task may name the issue or PR it came from. A decision then leaves one comment on the
+// record for the Bot that owns the task to post — the Bot holds the connector and the one identity,
+// the host holds no token — and a task that names nowhere behaves exactly as it did before.
+test('a decision on a task with a target leaves one comment waiting for its Bot (#1154)', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  for (const [given, href] of [
+    ['https://github.com/ThinkFlowLab/FlyBot/pull/12', 'https://github.com/ThinkFlowLab/FlyBot/issues/12'],
+    ['ThinkFlowLab/FlyBot#12', 'https://github.com/ThinkFlowLab/FlyBot/issues/12'],
+  ]) {
+    const made = await app.createTask(alice.sessionToken, { target: given })
+    assert.equal(made.ok, true, JSON.stringify(made))
+    assert.deepEqual(made.value.target, { owner: 'ThinkFlowLab', repo: 'FlyBot', number: 12, href })
+  }
+  const refused = await app.createTask(alice.sessionToken, { target: 'https://example.test/not-a-repo' })
+  assert.equal(refused.ok, false, JSON.stringify(refused))
+  assert.equal(refused.error.code, 'bot/invalid')
+
+  const created = await app.createTask(alice.sessionToken, { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/12' })
+  const id = created.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    assert.equal((await app.call(endpoint, { id }, alice.sessionToken)).ok, true, endpoint)
+  }
+  const returned = await app.call('task-return', { id, summary: 'Two files changed', links: ['https://example.test/pull/1'] }, alice.sessionToken)
+  assert.equal(returned.ok, true, JSON.stringify(returned))
+  assert.equal(returned.value.writeBack, undefined, 'a result alone asks for no comment')
+
+  const accepted = await app.call('task-accept-result', { id }, alice.sessionToken)
+  assert.equal(accepted.ok, true, JSON.stringify(accepted))
+  assert.equal(accepted.value.writeBack.state, 'pending')
+  assert.equal(accepted.value.writeBack.target, 'https://github.com/ThinkFlowLab/FlyBot/issues/12')
+  const body = accepted.value.writeBack.body
+  assert.ok(body.startsWith('Accepted: Prepare the launch note'), body)
+  assert.ok(body.includes('Two files changed'), body)
+  assert.ok(body.includes('Written-by: Alice'), body)
+  assert.equal(/Verdict:|PASS at|INC at/.test(body), false, 'a decision is not a review verdict')
+
+  // The decision stands on the record while the comment waits: nothing is posted by the host.
+  const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[id]
+  assert.equal(saved.status, 'accepted')
+  assert.equal(saved.writeBack.state, 'pending')
+  assert.equal(saved.writeBack.target, 'https://github.com/ThinkFlowLab/FlyBot/issues/12')
+})
+
+test('sending a result back names the note in the comment, and a task without a target posts nothing (#1154)', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const withTarget = await app.createTask(alice.sessionToken, { target: 'ThinkFlowLab/FlyBot#1154' })
+  const id = withTarget.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    assert.equal((await app.call(endpoint, { id }, alice.sessionToken)).ok, true, endpoint)
+  }
+  assert.equal((await app.call('task-return', { id, summary: 'Draft is ready' }, alice.sessionToken)).ok, true)
+  const sentBack = await app.call('task-send-back', { id, note: 'the second file is missing' }, alice.sessionToken)
+  assert.equal(sentBack.ok, true, JSON.stringify(sentBack))
+  assert.equal(sentBack.value.writeBack.state, 'pending')
+  const body = sentBack.value.writeBack.body
+  assert.ok(body.startsWith('Sent back: the second file is missing'), body)
+  assert.ok(body.includes('Draft is ready'), body)
+  const waiting = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[id]
+  assert.equal(waiting.writeBack.state, 'pending')
+  assert.equal(waiting.status, 'working')
+
+  const plain = await app.createTask(alice.sessionToken)
+  const plainId = plain.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    assert.equal((await app.call(endpoint, { id: plainId }, alice.sessionToken)).ok, true, endpoint)
+  }
+  assert.equal((await app.call('task-return', { id: plainId, summary: 'Done' }, alice.sessionToken)).ok, true)
+  const decided = await app.call('task-accept-result', { id: plainId }, alice.sessionToken)
+  assert.equal(decided.ok, true)
+  assert.equal(decided.value.status, 'accepted')
+  assert.equal(decided.value.writeBack, undefined, 'no target means no comment, exactly as before')
+  const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[plainId]
+  assert.equal(saved.writeBack, undefined)
+})

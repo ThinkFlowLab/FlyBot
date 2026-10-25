@@ -628,6 +628,8 @@ const ZH = {
   'Send it back': '退回给 Bot',
   'What should change': '需要改什么',
   'Sent back: {note}': '已退回：{note}',
+  'Comment goes to {target}': '评论写到 {target}',
+  'Could not comment on {target}: {error}': '无法在 {target} 上留言：{error}',
   // Bot task board (#1058)
   Tasks: '任务',
   'Close tasks': '关闭任务',

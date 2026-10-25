@@ -687,6 +687,8 @@ var ZH = {
   "Send it back": "退回给 Bot",
   "What should change": "需要改什么",
   "Sent back: {note}": "已退回：{note}",
+  "Comment goes to {target}": "评论写到 {target}",
+  "Could not comment on {target}: {error}": "无法在 {target} 上留言：{error}",
   // Bot task board (#1058)
   Tasks: "任务",
   "Close tasks": "关闭任务",
@@ -7714,6 +7716,8 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
   const answerable = card.kind === "approval" && card.approval?.answerable === true;
   const evidence = card.kind === "task" && card.status === "result" ? card.task?.result?.links ?? [] : [];
   const sentBack = card.kind === "task" && card.status === "task" ? card.task?.followUp?.note : void 0;
+  const target = card.kind === "task" ? card.task?.target?.href : void 0;
+  const writeBack = card.kind === "task" && card.task?.writeBack?.state === "failed" ? card.task.writeBack : void 0;
   return (0, import_react13.createElement)(
     "div",
     { className: "bt-inbox-card", role: "group", "aria-label": `${t(STATUSES[card.status].label)}: ${card.title}`, "data-status": card.status },
@@ -7741,6 +7745,14 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
         title: href
       }, href))) : null,
       sentBack ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: sentBack }, t("Sent back: {note}", { note: sentBack })) : null,
+      target ? (0, import_react13.createElement)("span", { className: "bt-inbox-evidence" }, (0, import_react13.createElement)("a", {
+        href: target,
+        target: "_blank",
+        rel: "noreferrer noopener",
+        className: "bt-inbox-evidence-link bt-inbox-target",
+        title: target
+      }, t("Comment goes to {target}", { target: target.replace(/^https:\/\/github\.com\//, "") }))) : null,
+      writeBack ? (0, import_react13.createElement)("span", { className: "bt-inbox-writeback", role: "alert", title: writeBack.error }, t("Could not comment on {target}: {error}", { target: writeBack.target, error: writeBack.error })) : null,
       (0, import_react13.createElement)(AnswerFields, { card, busy, onAnswer }),
       (0, import_react13.createElement)(ResultActions, { card, busy, onAnswer }),
       error ? (0, import_react13.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
@@ -7876,6 +7888,7 @@ var INBOX_CSS = `
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
+.bt-inbox-writeback{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 .bt-inbox-evidence{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;line-height:16px}
 .bt-inbox-evidence-link{color:var(--bt-blue,#3a7afe);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bt-inbox-evidence-link:hover{text-decoration:underline}

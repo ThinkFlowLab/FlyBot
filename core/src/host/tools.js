@@ -790,6 +790,13 @@ export function install(rt) {
   function formatTasks(tasks, { inGroup, withNext }) {
     const ordered = [...tasks].sort(compareForWork)
     const cues = []
+    // A decision the host recorded names the comment it needs (#1154): the Bot holds the connector,
+    // so the turn that reads this posts it and reports back through postResult.
+    for (const task of ordered) {
+      if (task.writeBack?.state !== 'pending') continue
+      cues.push(`Post ${task.id}: comment on ${task.writeBack.target}, then pass postResult {task: '${task.id}', ok: true} — or ok: false with the error. Body:
+${task.writeBack.body}`)
+    }
     for (const task of ordered) {
       if (task.waitingFor !== 'input' || !task.inputRequest?.question) continue
       cues.push(inGroup
@@ -835,6 +842,17 @@ export function install(rt) {
             assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the group admin, or a Main Bot in the group, may name another member.' },
             ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. In your own chat, call ask_user; in a group, ask in your reply.' },
             answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
+            target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },
+            postResult: {
+              type: 'object',
+              description: 'How the decision comment a task asked you to post went. Pass task (its id) and ok; when ok is false, pass the error. One report per decision, and no retrying on its own.',
+              properties: {
+                task: { type: 'string', description: 'The task id the comment belongs to.' },
+                ok: { type: 'boolean', description: 'Whether the comment was posted.' },
+                error: { type: 'string', description: 'Why it failed, one line. Required when ok is false.' },
+              },
+              additionalProperties: false,
+            },
           },
         },
       },
@@ -846,6 +864,7 @@ export function install(rt) {
       if (!rt.botOf(self)) return 'Only a Bot on the team can track tasks.'
       const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
       try {
+        if (args?.postResult !== undefined) await rt.recordTaskPostResult(self, args.postResult)
         const tasks = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
         if (!Array.isArray(tasks) || tasks.length === 0) return 'No tasks.'
         return formatTasks(tasks, { inGroup: Boolean(roomId), withNext: args?.tasks === undefined })

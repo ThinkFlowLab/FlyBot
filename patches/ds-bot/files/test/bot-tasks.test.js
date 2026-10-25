@@ -356,3 +356,65 @@ test('a classic group without participants still lists the overall task and anot
   assert.match(next.ctx.sections.get('bot-room').text({ agent: { id: 'a-old' } }), /overall task/)
   assert.equal((await list(next.call, bob.sessionToken)).some(task => task.kind === 'group'), false)
 })
+
+// #1154: a decision on a task that names an issue or PR is a comment the owning Bot has to post —
+// it holds the connector, the host holds no token. The board shows that work, and the Bot reports
+// once how it went; a task that names nowhere asks for nothing.
+test('the board asks the owning Bot for the comment a decision needs, and takes one report (#1154)', async (t) => {
+  const at = Date.now()
+  const state = team()
+  state.tasks = {
+    'task-write-back': {
+      id: 'task-write-back', status: 'accepted', createdAt: at - 60_000, updatedAt: at - 1000,
+      requesterId: 'owner-1', ownerBotId: 's', title: 'Ship the fix', source: 'conversation', origin: {},
+      target: { owner: 'ThinkFlowLab', repo: 'FlyBot', number: 1154, href: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154' },
+      writeBack: {
+        target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154', at: at - 1000, state: 'pending',
+        body: 'Accepted: Ship the fix\n\nDraft is ready\n\nDecided in FlyBot by Alice.\n\nWritten-by: Alice',
+      },
+      actors: [{ status: 'accepted', at: at - 1000, memberId: 'owner-1' }],
+    },
+    'task-fails': {
+      id: 'task-fails', status: 'accepted', createdAt: at - 60_000, updatedAt: at - 3000,
+      requesterId: 'owner-1', ownerBotId: 's', title: 'Cannot write this one', source: 'conversation', origin: {},
+      target: { owner: 'ThinkFlowLab', repo: 'FlyBot', number: 1154, href: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154' },
+      writeBack: { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154', at: at - 3000, state: 'pending', body: 'Accepted: Cannot write this one' },
+      actors: [{ status: 'accepted', at: at - 3000, memberId: 'owner-1' }],
+    },
+    'task-plain': {
+      id: 'task-plain', status: 'accepted', createdAt: at - 60_000, updatedAt: at - 2000,
+      requesterId: 'owner-1', ownerBotId: 's', title: 'Nothing to write back', source: 'conversation', origin: {},
+      actors: [{ status: 'accepted', at: at - 2000, memberId: 'owner-1' }],
+    },
+  }
+  const app = await start(t, { state })
+  t.after(() => app.stop())
+
+  const listed = await app.track('s')
+  assert.match(listed, /Post task-write-back: comment on https:\/\/github\.com\/ThinkFlowLab\/FlyBot\/issues\/1154/)
+  assert.match(listed, /Written-by: Alice/)
+  assert.equal(listed.includes('Post task-plain:'), false, 'a task with no target asks for nothing')
+
+  // One report settles it, and the work leaves the board.
+  const posted = await app.track('s', { postResult: { task: 'task-write-back', ok: true } })
+  assert.equal(posted.includes('Post task-write-back:'), false)
+  const settled = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks['task-write-back']
+  assert.equal(settled.writeBack.state, 'posted')
+  assert.equal(settled.status, 'accepted', 'reporting does not move the decision')
+
+  // A failure is one report too: it needs its reason, it lands on the task, the decision stays.
+  assert.match(await app.track("s", { postResult: { task: "task-fails", ok: false } }), /needs its reason/)
+  assert.match(await app.track("s"), /Post task-fails:/, "a refused report leaves the work waiting")
+  const failedReport = await app.track("s", { postResult: { task: "task-fails", ok: false, error: "HTTP 403 from the connector" } })
+  assert.equal(failedReport.includes("Post task-fails:"), false, "one report ends it, no retry loop")
+  const failed = JSON.parse(readFileSync(app.statePath, "utf8")).tasks["task-fails"]
+  assert.equal(failed.writeBack.state, "failed")
+  assert.equal(failed.writeBack.error, "HTTP 403 from the connector")
+  assert.equal(failed.status, "accepted", "reporting does not move the decision")
+
+  // Only the owning Bot, only once.
+  assert.match(await app.track("a", { postResult: { task: "task-plain", ok: true } }), /Only the Bot that owns this task/)
+  const again = await app.track("s", { postResult: { task: "task-write-back", ok: true } })
+  assert.match(again, /no comment waiting/)
+  assert.equal(again.includes("Post task-write-back:"), false)
+})

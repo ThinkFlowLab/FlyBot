@@ -444,6 +444,10 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
   const answerable = card.kind === 'approval' && card.approval?.answerable === true
   const evidence = card.kind === 'task' && card.status === 'result' ? (card.task?.result?.links ?? []) : []
   const sentBack = card.kind === 'task' && card.status === 'task' ? card.task?.followUp?.note : undefined
+  // Where a decision is written back (#1154): the issue or PR the task came from is on the card, and
+  // a comment that could not be posted says so once, on the card, instead of staying in a log.
+  const target = card.kind === 'task' ? card.task?.target?.href : undefined
+  const writeBack = card.kind === 'task' && card.task?.writeBack?.state === 'failed' ? card.task.writeBack : undefined
   return h('div', { className: 'bt-inbox-card', role: 'group', 'aria-label': `${t(STATUSES[card.status].label)}: ${card.title}`, 'data-status': card.status },
     h('span', { className: 'bt-inbox-ava' }, card.bot ? h(BotAvatar, { bot: card.bot, size: 28, badge: false, live: false }) : card.room ? h(RoomAvatar, { room: card.room, roster, size: 28 }) : null),
     h('span', { className: 'bt-inbox-copy' },
@@ -459,6 +463,10 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
         key: `${href}-${index}`, href, target: '_blank', rel: 'noreferrer noopener', className: 'bt-inbox-evidence-link', title: href,
       }, href))) : null,
       sentBack ? h('span', { className: 'bt-inbox-reason', title: sentBack }, t('Sent back: {note}', { note: sentBack })) : null,
+      target ? h('span', { className: 'bt-inbox-evidence' }, h('a', {
+        href: target, target: '_blank', rel: 'noreferrer noopener', className: 'bt-inbox-evidence-link bt-inbox-target', title: target,
+      }, t('Comment goes to {target}', { target: target.replace(/^https:\/\/github\.com\//, '') }))) : null,
+      writeBack ? h('span', { className: 'bt-inbox-writeback', role: 'alert', title: writeBack.error }, t('Could not comment on {target}: {error}', { target: writeBack.target, error: writeBack.error })) : null,
       h(AnswerFields, { card, busy, onAnswer }),
       h(ResultActions, { card, busy, onAnswer }),
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),
@@ -576,6 +584,7 @@ export const INBOX_CSS = `
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
+.bt-inbox-writeback{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 .bt-inbox-evidence{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;line-height:16px}
 .bt-inbox-evidence-link{color:var(--bt-blue,#3a7afe);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bt-inbox-evidence-link:hover{text-decoration:underline}

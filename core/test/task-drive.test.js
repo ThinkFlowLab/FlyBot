@@ -419,3 +419,24 @@ test('asking during the wake does not schedule another wake', async (t) => {
   await app.ctx.taskDrive.consider()
   assert.equal(app.calls('s').length, 1)
 })
+
+// #1154: once a decision names an issue or PR, posting that comment is the Bot's work — the Bot
+// holds the connector. So a task that is already decided still wakes it, and the cue says where.
+test('a decision waiting to be posted wakes the Bot even after the task is decided (#1154)', async (t) => {
+  const app = await start(t)
+  const body = await app.track('s', { tasks: [{ title: 'Ship the fix', priority: 'high' }] })
+  const id = app.idOf(body, 'Ship the fix')
+  await app.finishWake('s')
+  assert.equal(app.calls('s').length, 1)
+
+  const href = 'https://github.com/ThinkFlowLab/FlyBot/issues/1154'
+  const task = app.rt.state.tasks[id]
+  task.status = 'accepted'
+  task.writeBack = { target: href, at: Date.now(), state: 'pending', body: 'Accepted: Ship the fix' }
+  writeFileSync(join(app.home, 'state.json'), JSON.stringify(app.rt.state))
+
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 2, 'a decided task with a comment to post is still work')
+  assert.match(app.text('s'), /Then post the decision comment on https:\/\/github\.com\/ThinkFlowLab\/FlyBot\/issues\/1154/)
+  assert.match(app.text('s'), /postResult \{task: 'task-[0-9a-f]+', ok: true\}/)
+})

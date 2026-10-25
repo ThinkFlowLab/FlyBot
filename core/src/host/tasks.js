@@ -76,6 +76,34 @@ const readNote = (value) => {
   if (value === undefined || value === null) return undefined
   return oneLine(value, 300)
 }
+// Where a decision is written back (#1154): an issue or pull request the task came from. The pointer
+// is optional — a task without one keeps its decision on its own record, exactly as before — and it is
+// normalised so a `pull/12` link and `owner/repo#12` name the same place.
+const TARGET_FORMS = [
+  /^https?:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/(\d+)\/?$/i,
+  /^([\w.-]+)\/([\w.-]+)#(\d+)$/,
+]
+const readTarget = (value) => {
+  if (value === undefined || value === null || String(value).trim() === '') return undefined
+  const text = oneLine(value, 300)
+  for (const form of TARGET_FORMS) {
+    const match = text.match(form)
+    if (match === null) continue
+    const [, owner, repo, number] = match
+    return { owner, repo, number: Number(number), href: `https://github.com/${owner}/${repo}/issues/${Number(number)}` }
+  }
+  throw invalid('A target is a GitHub issue or pull request: https://github.com/owner/repo/issues/12 or owner/repo#12')
+}
+const WRITE_BACK_SUMMARY = 1500
+// The comment a decision posts. It records a task decision, so it must not read like a review
+// verdict: no `Verdict:` line, no PASS/INC, and `Written-by:` names who decided (#627, #1154).
+const writeBackBody = (task, status, note, decider) => {
+  const lines = [status === 'accepted' ? `Accepted: ${oneLine(task.title, 200)}` : `Sent back: ${oneLine(note, 500)}`]
+  const summary = oneLine(task.result?.summary ?? '', WRITE_BACK_SUMMARY)
+  if (summary !== '') lines.push('', summary)
+  lines.push('', `Decided in FlyBot by ${decider}.`, '', `Written-by: ${decider}`)
+  return lines.join('\n')
+}
 const readOptionalLine = (value, name) => {
   if (value === undefined || value === null || String(value).trim() === '') return undefined
   const text = oneLine(value, 300)
@@ -113,6 +141,21 @@ export function install(rt) {
   // checked at create time (owner, grant, or shared-room membership).
   const requireRequester = (task, actor) => {
     if (!mayAct(task, actor)) throw forbidden('Only the requester may move their task')
+  }
+
+  // A decision on a task that names an issue or PR leaves one comment waiting for the Bot that owns
+  // the task: the Bot holds the connector and the one identity, the host holds no token (#1154). The
+  // body is composed here so the card and the comment cannot disagree about what was decided.
+  const decideName = actor => actor?.displayName || actor?.memberId || 'the owner'
+  const requestWriteBack = (task, status, note, actor) => {
+    if (task.target === undefined) return
+    const decider = decideName(actor)
+    task.writeBack = {
+      target: task.target.href,
+      at: task.updatedAt,
+      state: 'pending',
+      body: writeBackBody(task, status, note, decider),
+    }
   }
 
   // Owner, a matching grant, or a current human in the named room with that Bot.
@@ -248,6 +291,11 @@ export function install(rt) {
       if (note) task.note = note
       else delete task.note
     }
+    if (body.target !== undefined) {
+      const target = readTarget(body.target)
+      if (target === undefined) delete task.target
+      else task.target = target
+    }
     return { priority, progress }
   }
 
@@ -320,6 +368,24 @@ export function install(rt) {
     if (task.approvalId || task.inputApprovalIds?.length) throw stale('Approval is still required before resuming')
     transition(task, 'working', null, { questionId: task.inputRequest?.id, by: 'input answered' })
     task.inputRequest = { ...task.inputRequest, answer, answeredAt: task.updatedAt }
+  }
+
+  // The Bot reports how the comment a decision asked for went (#1154). One report per decision, no
+  // retry loop: a failure keeps its one line on the task so the card can name it, and the decision
+  // itself is already recorded and stays recorded.
+  rt.recordTaskPostResult = async function recordTaskPostResult(botId, result) {
+    const body = result ?? {}
+    const task = find(body.task ?? body.id)
+    if (task === undefined) throw stale(`no task ${String(body.task ?? body.id ?? '')}`)
+    if (task.ownerBotId !== botId) throw forbidden('Only the Bot that owns this task reports its comment')
+    if (task.writeBack?.state !== 'pending') throw stale('This task has no comment waiting to be posted')
+    const ok = body.ok === true
+    const error = oneLine(body.error, 300)
+    if (!ok && error === '') throw invalid('A comment that failed needs its reason')
+    task.writeBack = { ...task.writeBack, state: ok ? 'posted' : 'failed', ...(ok ? {} : { error }) }
+    task.updatedAt = stamp()
+    await save()
+    return view(task)
   }
 
   // The Bot's own list, written from the conversation. The caller is the Bot.
@@ -646,6 +712,7 @@ export function install(rt) {
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         requireRequester(task, actor)
         transition(task, 'accepted', actor)
+        requestWriteBack(task, 'accepted', undefined, actor)
         await save()
         return view(task)
       }
@@ -658,6 +725,7 @@ export function install(rt) {
         if (note === '') throw invalid('Send back needs a note for the Bot')
         transition(task, 'working', actor, { by: 'sent back' })
         task.followUp = { note, at: task.updatedAt }
+        requestWriteBack(task, 'working', note, actor)
         await save()
         return view(task)
       }

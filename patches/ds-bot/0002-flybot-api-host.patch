@@ -957,7 +957,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
  
  export const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] }
  export const GROUP_REF = { type: 'string', required: true, description: 'Exact group chat name from list_bots' }
-@@ -18,6 +24,21 @@
+@@ -18,6 +18,21 @@
  export function install(rt) {
    const { ctx, state } = rt
  
@@ -979,7 +979,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    const callerBot = (exec) => rt.botOf(rt.selfOf(exec.agent?.id))
    const callerRoom = (exec) => {
      const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
-@@ -27,39 +48,110 @@
+@@ -27,39 +27,110 @@
    const roomLine = (room, self) => {
      const members = room.members.map(rt.botOf).filter(Boolean)
        .map(bot => `${bot.name}${bot.id === room.admin ? ' (admin)' : ''}${bot.id === self ? ' (you)' : ''}`)
@@ -1097,7 +1097,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        ].join('\n')
      },
    }))
-@@ -86,7 +178,7 @@
+@@ -86,7 +86,7 @@
      name: 'message_bot',
      description: 'Send a message to another Bot on the team. If that Bot is working, it reads your message at its next step and can change course, then answers once that work is done; if it is idle, it starts on it right away. Its reply arrives later as a new message to you; with reply_to "user" it answers the user in its own chat instead.',
      parameters: {
@@ -1106,7 +1106,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        message: { type: 'string', required: true, description: 'Self-contained message; the other Bot cannot see this conversation' },
        reply_to: {
          type: 'string',
-@@ -105,7 +197,17 @@
+@@ -105,7 +105,17 @@
        const sender = callerBot(exec)
        if (sender === undefined) return 'Only Bots on the team can use message_bot.'
        const target = rt.findBot(args.to)
@@ -1125,7 +1125,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (target.id === sender.id) return 'You cannot message yourself.'
        const turn = rt.live.get(exec.agent?.id)
        const hop = Math.max(turn?.info?.hop ?? 0, ...(turn?.joined ?? []).map(joined => joined.info?.hop ?? 0))
-@@ -118,7 +220,11 @@
+@@ -118,7 +118,11 @@
        const toUser = args.reply_to === 'user'
        const working = rt.live.get(chat)?.turn !== undefined
        const steer = args.when !== 'queue' && !toUser
@@ -1138,7 +1138,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const sent = toUser
          ? `Delivered to ${target.name}. It will answer the user in its own chat; nothing comes back to you, so point the user to ${target.name}'s chat instead of relaying.`
          : working && steer
-@@ -153,7 +259,7 @@
+@@ -153,7 +153,7 @@
        const sender = callerBot(exec)
        if (sender === undefined || !rt.isMain(sender.id)) refuse('Only a Main Bot can stop other Bots.')
        const target = rt.findBot(args.bot)
@@ -1147,7 +1147,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (target.id === sender.id) refuse('You cannot stop yourself.')
        const { running } = activeSessions(target.id)
        if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
-@@ -162,21 +268,32 @@
+@@ -162,21 +162,32 @@
          agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
        }
        const why = String(args.reason ?? '').trim() || 'Stop what you are doing; the previous turn was ended on purpose. Acknowledge briefly.'
@@ -1183,7 +1183,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
      },
      output,
      async execute(args, exec) {
-@@ -186,8 +303,8 @@
+@@ -186,8 +186,8 @@
          const workDir = args.work_dir ? await rt.cleanWorkDir(args.work_dir) : undefined
          const name = String(args.name ?? '').trim()
          await rt.approveFolder(exec, { path: workDir, who: { en: `the new Bot ${name}`, zh: `新 Bot ${name} ` } })
@@ -1194,7 +1194,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        } catch (error) {
          return `Could not create the Bot: ${error.message}`
        }
-@@ -257,7 +374,7 @@
+@@ -257,7 +257,7 @@
      }
      return { bots, unknown }
    }
@@ -1203,7 +1203,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    const groupNames = self => visibleRooms(self).map(room => `"${room.name}"`).join(', ') || 'none'
    const pickRoom = (ref, self) => {
      const matches = rt.findRooms(ref).filter(room => visibleRooms(self).includes(room))
-@@ -395,12 +512,11 @@
+@@ -395,12 +395,11 @@
        if ((info?.hop ?? 0) >= MAX_HOPS) return 'This chain of Bot messages is already long. Stop here and report to the user instead.'
        const text = String(args.message ?? '').trim()
        if (text === '') return 'Write a message to post.'
@@ -1219,7 +1219,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        } catch (failure) {
          return `Could not post in "${room.name}": ${failure.message}`
        }
-@@ -445,6 +561,10 @@
+@@ -445,6 +445,10 @@
          .filter(option => option.label !== '')
          .slice(0, 6)
        if (options.length === 0) return 'Give at least one option.'
@@ -1230,7 +1230,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        // A hidden Bot-to-Bot turn shows none of its calls, so its card goes to the
        // composer dock, which takes questions without a call.
        const turn = rt.live.get(id)?.turn
-@@ -465,6 +585,77 @@
+@@ -465,6 +465,77 @@
      },
    }))
  
@@ -1308,7 +1308,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    // dsh's own question tool holds the turn open until the user answers, and every
    // message from another Bot or a group round queues behind it. Bot Sessions ask
    // through ask_user instead, so the tool is taken out of their tool list.
-@@ -525,7 +716,7 @@
+@@ -525,7 +525,7 @@
      name: 'save_capability',
      description: 'Create or update a shared MCP server, skill, or pack. Changes apply from your next message.',
      parameters: {
@@ -1317,7 +1317,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        kind: { type: 'string', required: true, enum: ['mcp', 'skill', 'pack'] },
        description: { type: 'string', description: 'What this capability provides' },
        transport: { type: 'string', enum: ['stdio', 'streamable-http'], description: 'How to reach an MCP server: a local command or an HTTP URL' },
-@@ -545,7 +736,7 @@
+@@ -545,7 +545,7 @@
        try {
          const item = await rt.capabilitySave(args, { botId: self })
          const approval = item.kind === 'mcp' && item.transport === 'stdio' && !item.approved
@@ -1326,7 +1326,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
            : ''
          return `Saved ${item.name}. Bots with it attached use the change from their next message.${approval}`
        } catch (error) { return error.message }
-@@ -587,7 +778,7 @@
+@@ -587,7 +587,7 @@
              : attached ? [attached] : []
            const approvals = members
              .filter(item => item.kind === 'mcp' && item.transport === 'stdio' && item.approved !== true)
@@ -1335,7 +1335,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
              .join('')
            return `${verb} ${args.name} ${args.bot ? `to ${result.bot}` : 'to yourself'}. Changes apply from ${result.bot}'s next message.${endpoint === 'attach' ? approvals : ''}`
          } catch (error) { return error.message }
-@@ -595,5 +786,74 @@
+@@ -595,5 +595,93 @@
      }))
    }
  
@@ -1343,6 +1343,13 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +  function formatTasks(tasks, { inGroup, withNext }) {
 +    const ordered = [...tasks].sort(compareForWork)
 +    const cues = []
++    // A decision the host recorded names the comment it needs (#1154): the Bot holds the connector,
++    // so the turn that reads this posts it and reports back through postResult.
++    for (const task of ordered) {
++      if (task.writeBack?.state !== 'pending') continue
++      cues.push(`Post ${task.id}: comment on ${task.writeBack.target}, then pass postResult {task: '${task.id}', ok: true} — or ok: false with the error. Body:
++${task.writeBack.body}`)
++    }
 +    for (const task of ordered) {
 +      if (task.waitingFor !== 'input' || !task.inputRequest?.question) continue
 +      cues.push(inGroup
@@ -1388,6 +1395,17 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +            assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the group admin, or a Main Bot in the group, may name another member.' },
 +            ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. In your own chat, call ask_user; in a group, ask in your reply.' },
 +            answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
++            target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },
++            postResult: {
++              type: 'object',
++              description: 'How the decision comment a task asked you to post went. Pass task (its id) and ok; when ok is false, pass the error. One report per decision, and no retrying on its own.',
++              properties: {
++                task: { type: 'string', description: 'The task id the comment belongs to.' },
++                ok: { type: 'boolean', description: 'Whether the comment was posted.' },
++                error: { type: 'string', description: 'Why it failed, one line. Required when ok is false.' },
++              },
++              additionalProperties: false,
++            },
 +          },
 +        },
 +      },
@@ -1399,6 +1417,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +      if (!rt.botOf(self)) return 'Only a Bot on the team can track tasks.'
 +      const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
 +      try {
++        if (args?.postResult !== undefined) await rt.recordTaskPostResult(self, args.postResult)
 +        const tasks = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
 +        if (!Array.isArray(tasks) || tasks.length === 0) return 'No tasks.'
 +        return formatTasks(tasks, { inGroup: Boolean(roomId), withNext: args?.tasks === undefined })

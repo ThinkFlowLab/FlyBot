@@ -632,3 +632,39 @@ test('a result card is accepted or sent back in place, with its evidence and the
   assert.equal(buttons(sentTree).some(button => textOf(button) === 'Accept'), false)
   assert.equal(byClass(sentTree, 'bt-inbox-evidence-link').length, 0)
 })
+
+// #1154: when a decision names the issue or PR it came from, the card says where the comment goes,
+// and a comment that could not be posted says so once, on the card — never in a log the user would
+// have to go find, and never as a second line per retry.
+test('a card names where its decision is written back, and one line when that failed (#1154)', () => {
+  const target = { owner: 'ThinkFlowLab', repo: 'FlyBot', number: 1154, href: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154' }
+  const href = 'https://github.com/ThinkFlowLab/FlyBot/issues/1154'
+  const shown = extra => draw({ ...cardOf('task:t1'), ...extra })
+
+  // A task without a target is exactly as it was: no line about a comment anywhere.
+  const plainCard = shown({})
+  assert.equal(byClass(plainCard, 'bt-inbox-target').length, 0)
+  assert.equal(byClass(plainCard, 'bt-inbox-writeback').length, 0)
+  assert.equal(textOf(plainCard).includes('Comment goes to'), false)
+
+  // With a target, one link that says where the comment lands.
+  const withTarget = shown({ task: task('t1', 'working', { target }) })
+  const [link] = byClass(withTarget, 'bt-inbox-target')
+  assert.equal(link.props.href, href)
+  assert.equal(link.props.className.split(' ').includes('bt-inbox-evidence-link'), true)
+  assert.equal(textOf(link), `Comment goes to ${'ThinkFlowLab/FlyBot/issues/1154'}`)
+  assert.equal(byClass(withTarget, 'bt-inbox-writeback').length, 0)
+
+  // Pending is not a failure yet: nothing to alarm about.
+  const pending = shown({ task: task('t1', 'working', { target, writeBack: { target: href, state: 'pending', body: 'Accepted: x' } }) })
+  assert.equal(byClass(pending, 'bt-inbox-writeback').length, 0)
+  const posted = shown({ task: task('t1', 'working', { target, writeBack: { target: href, state: 'posted' } }) })
+  assert.equal(byClass(posted, 'bt-inbox-writeback').length, 0)
+
+  // A failed comment is one alert line, naming the target and the reason.
+  const failed = shown({ task: task('t1', 'working', { target, writeBack: { target: href, state: 'failed', error: 'HTTP 403 from the connector' } }) })
+  const lines = byClass(failed, 'bt-inbox-writeback')
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].props.role, 'alert')
+  assert.equal(textOf(lines[0]), `Could not comment on ${href}: HTTP 403 from the connector`)
+})

@@ -18,12 +18,16 @@ const fingerprint = (tasks) => tasks.map(task => [
   task.waitingFor ?? '',
   task.note ?? '',
   task.title ?? '',
+  task.writeBack ? `${task.writeBack.state}:${task.writeBack.target}` : '',
 ].join('\u0000')).sort().join('\u0001')
 
 const cueFor = (task) => {
   const title = String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
   const priority = task.priority ?? 'normal'
-  return `Continue ${task.id} [${priority}] ${title}. Do this task now. Update it with track_tasks as it moves. Stop when it is done or waiting on an answer. Do not invent other work or start a group round.`
+  const post = task.writeBack?.state === 'pending'
+    ? ` Then post the decision comment on ${task.writeBack.target} with your GitHub connector and record it with track_tasks postResult {task: '${task.id}', ok: true}, or ok: false with the error.`
+    : ''
+  return `Continue ${task.id} [${priority}] ${title}. Do this task now. Update it with track_tasks as it moves. Stop when it is done or waiting on an answer. Do not invent other work or start a group round.${post}`
 }
 
 const messageText = (message) => (Array.isArray(message?.content) ? message.content : []).map(block => block?.text ?? '').join('\n')
@@ -50,12 +54,13 @@ export function install(rt) {
     if (!botId) return []
     const bot = rt.botOf(botId)
     if (!bot || bot.remote !== undefined) return []
-    return Object.values(rt.state.tasks ?? {}).filter(task =>
-      task.ownerBotId === botId
-      && task.source === 'conversation'
-      && task.kind !== 'group'
-      && task.waitingFor !== 'input'
-      && DRIVING.has(task.status))
+    return Object.values(rt.state.tasks ?? {}).filter((task) => {
+      if (task.ownerBotId !== botId || task.waitingFor === 'input') return false
+      // A decision waiting to be posted is work even when the task is accepted: the Bot holds the
+      // connector, so the comment goes out on its next turn (#1154).
+      if (task.writeBack?.state === 'pending') return true
+      return task.source === 'conversation' && task.kind !== 'group' && DRIVING.has(task.status)
+    })
   }
 
   const roundLive = (roomId) => {
