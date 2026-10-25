@@ -23,7 +23,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 - `core/src/client/flybot-slots.js` — client slot registry.
 - `core/src/client/flybot-registry.js` — plugin discovery/registration.
 - `core/types/flybot.d.ts` — public types.
-- Flybot unit tests (`flybot.test.js`, `flybot-client.test.js`, `flybot-feed.test.js`); `flybot-client.test.js` also pins the one name a mention wears on every surface — menu insert, bubble chip, sidebar preview, at-source row — and that two friends' same-named Bots stay apart while every alias still routes to its own handle (#967), the sidebar footer button (Connect apps opens Connectors), the account menu's Plugins row, the account menu's labels (Connect apps, Scheduled tasks opening Settings → Scheduled tasks, Settings, and the only classic Agent mode switch; #392-#394), and the one-line face-room row with its hover title (#304).
+- Flybot unit tests (`flybot.test.js`, `flybot-client.test.js`, `flybot-feed.test.js`); `flybot-client.test.js` also pins the one name a mention wears on every surface — menu insert, bubble chip, sidebar preview, at-source row — and that two friends' same-named Bots stay apart while every alias still routes to its own handle (#967), the sidebar footer button (Connect apps opens Connectors), the account menu's Plugins row, the account menu's labels (Connect apps, Scheduled tasks opening Settings → Scheduled tasks, Settings, and the only classic Agent mode switch; #392-#394), and a face-room row that keeps its full title on hover (#304) while the number-first title wraps (#1102).
 
 ## Does not own
 
