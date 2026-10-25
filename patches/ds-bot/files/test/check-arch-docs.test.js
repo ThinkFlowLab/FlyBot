@@ -49,3 +49,16 @@ test('invalid base ref fails closed', async () => {
   assert.throws(() => filesNeedDocs({ ref: bad }), /cannot diff against/);
   assert.throws(() => hasDocsNotNeededTrailer(bad), /cannot diff against/);
 });
+
+test('#1076: the refusal names both places the trailer has to appear', async () => {
+  // The gate reads `git log <base>..HEAD`; on a merge-queue entry that is the squashed pull request
+  // title and body, so a branch-only trailer is gone exactly when main is judged. The old text said
+  // "add a trailer" and sent the author to the commit they had just pushed.
+  const { failureLines } = await import('../scripts/check-arch-docs.mjs');
+  assert.equal(typeof failureLines, 'function', 'the refusal text is readable without running the gate');
+  const text = failureLines([{ file: 'plugins/social/test/social.test.js', subsystem: 'social', doc: join(tmpdir(), 'docs/subsystems/social.md') }]).join('\n');
+  assert.match(text, /pull request body/);
+  assert.match(text, /branch commit/);
+  assert.match(text, /squash/i);
+  assert.match(text, /Docs-not-needed:/);
+});

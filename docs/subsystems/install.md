@@ -31,7 +31,7 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 
 | File | Role |
 | --- | --- |
-| `core/scripts/check-arch-docs.mjs` | owned_paths ↔ docs gate. |
+| `core/scripts/check-arch-docs.mjs` | owned_paths ↔ docs gate. Its refusal names both places a `Docs-not-needed:` trailer has to appear — the pull request body and the branch commit — because the gate reads `git log <base>..HEAD` and, on a merge-queue entry, that range is the squashed body (#1076). |
 | `core/test/check-arch-docs.test.js` | Tests for the gate. |
 | `core/test/install-doctor.test.js` | Install doctor tests. |
 | `plugins/README.md` | Plugin list. |

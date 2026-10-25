@@ -299,7 +299,7 @@ and the `test` job never report there and the entry waits until the queue's time
   that is intended, and they must stay out of the required checks, or every entry waits until the queue's timeout.
 - The `arch-docs` step fetches `origin/main` and deepens until `git merge-base origin/main HEAD` works. Emulated on a
   one-commit shallow checkout of a merge-queue-shaped commit (local bare remote): it falls back to deepening and
-  `arch-docs: OK`. With a group size above 1, `arch-docs` sees the union of the grouped PRs; keep the group size at 1.
+  `arch-docs: OK`. With a group size above 1, `arch-docs` sees the union of the grouped PRs; keep the group size at 1. The trailer it looks for has to be in the pull request body as well as in the branch commit: on a queue entry the range it logs is the squashed body, and the refusal says so (#1076).
 - Observed since the queue was enabled: `merge_group` runs on `gh-readonly-queue/main/pr-<n>-<sha>` pass and the PR merges (e.g. #217 → `38c00b4`, #235 → `7a3ccb3`).
 
 **Read-only checks of the live repository (2026-10-15, rulesets re-read 2026-10-18; `gh api` GET with a maintainer login):**

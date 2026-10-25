@@ -123,6 +123,22 @@ export function filesNeedDocs({ ref = baseRef(), map = null } = {}) {
   return { ok: missing.length === 0, missing, files };
 }
 
+// #1076: the trailer this gate looks for is read from `git log <base>..HEAD`, and on a merge-queue
+// entry that range holds the squash of the pull request title and body — the branch commits are not in
+// it. So "add a trailer" sent people to the commit they had just pushed, and the entry went red again.
+// The refusal names both places, and says why the body counts.
+export function failureLines(missing, root = ROOT) {
+  const lines = ['arch-docs: FAIL — owned file(s) changed without subsystem doc update:'];
+  for (const m of missing) lines.push(`  ${m.file}  →  ${m.subsystem} (${relative(root, m.doc)})`);
+  lines.push('Fix it one of two ways:');
+  lines.push('  - update the subsystem doc in docs/subsystems/ in this pull request, or');
+  lines.push('  - add a line `Docs-not-needed: <why>` to the pull request body AND to the branch commit.');
+  lines.push('    The merge queue squashes the title and body into the commit it judges, so a trailer');
+  lines.push('    that lives only in a branch commit is gone exactly when main is judged');
+  lines.push('    (AGENTS.md → Docs-not-needed: why both places).');
+  return lines;
+}
+
 function main() {
   let result;
   try {
@@ -136,11 +152,7 @@ function main() {
     console.log(`arch-docs: OK (${files.length} changed file(s))`);
     process.exit(0);
   }
-  console.error('arch-docs: FAIL — owned file(s) changed without subsystem doc update:');
-  for (const m of missing) {
-    console.error(`  ${m.file}  →  ${m.subsystem} (${relative(ROOT, m.doc)})`);
-  }
-  console.error('Update the subsystem doc in docs/subsystems/ or add a "Docs-not-needed:" trailer.');
+  for (const line of failureLines(missing)) console.error(line);
   process.exit(1);
 }
 
