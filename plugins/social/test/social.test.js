@@ -9858,8 +9858,10 @@ test('#999: a code nobody is waiting under says so without claiming nobody uses 
   const box = tree.find(n => n.props['data-flybot'] === 'face-nobody')
   assert.ok(box)
   // #999: `nobody` only means the join answer held no other home — never that the number is unused. A code
-  // whose room already opened answers the same way, so the title must not assert nobody uses it.
-  assert.ok(tree.some(n => n.children.includes('Nobody is waiting under 111111.')), 'the title says nobody is waiting, not that nobody uses the number')
+  // whose room already opened answers the same way, so the copy must not assert nobody uses it.
+  // #1053: the primary line offers to start the room instead of leading with an empty-result failure.
+  assert.equal(tree.find(n => n.props['data-flybot'] === 'face-nobody-title').children.join(''), 'Start a new room with 111111')
+  assert.equal(tree.some(n => n.children?.includes?.('Nobody is waiting under 111111.')), false)
   assert.equal(tree.some(n => /nobody is using/i.test(JSON.stringify(n.children))), false, 'never claims nobody uses the number (#999)')
   // The late joiner is told the way in once the room has opened: an invite link.
   const hint = tree.find(n => n.props?.['data-flybot'] === 'face-nobody').children
@@ -9878,6 +9880,54 @@ test('#999: a code nobody is waiting under says so without claiming nobody uses 
   back.props.onClick({ target: back, currentTarget: back })
   assert.equal(closed.length, 1)
   assert.ok(calls.some(([endpoint, payload]) => endpoint === 'social/face-leave' && payload.faceRoomId === 'frm_1'))
+})
+
+// #1053: the first person on a fresh code is offered a room to start. The same `nobody` answer
+// also covers a number whose room already opened (#999), so the screen still names the invite
+// link and never claims the number is unused — it just does not lead with an empty-result failure.
+test('#1053: when nobody is waiting, the primary line offers to start the room', async () => {
+  const { DICTIONARY } = await import('../../../core/src/client/i18n.js')
+  const TITLE = 'Start a new room with {code}'
+  const HINT = 'No one is waiting under this number. If someone already opened the room, the number no longer works — ask them for an invite link.'
+  const START = 'Start a new room'
+  const calls = []
+  const { walk, pluginOf, sandbox } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const bots = [{ id: 'a', name: 'Chief', isMain: true }]
+  const held = { nobody: true, faceRoomId: 'frm_1', joinCode: '111111' }
+  const draw = () => walk(pluginOf(['nobody', bots, ['a'], '111111', false, null, [], held, 0]).FaceToFaceGroup({}))
+  const tree = draw()
+  const title = tree.find(n => n.props['data-flybot'] === 'face-nobody-title')
+  assert.equal(title.children.join(''), 'Start a new room with 111111')
+  assert.equal(tree.some(n => n.children?.includes?.('Nobody is waiting under 111111.')), false, 'the headline is not an empty-result failure')
+  const hint = tree.find(n => n.props['data-flybot'] === 'face-nobody-hint')
+  assert.match(hint.children.join(''), /invite link/)
+  assert.match(hint.children.join(''), /waiting/i)
+  assert.equal(tree.some(n => /nobody is using/i.test(JSON.stringify(n.children))), false, 'never claims nobody uses the number (#999)')
+  const box = tree.find(n => n.props['data-flybot'] === 'face-nobody')
+  assert.equal(box.props.role, undefined, 'the create prompt is not a live status')
+  assert.equal(box.props['data-tone'], undefined)
+  const foot = tree.find(n => n.props['data-flybot'] === 'face-nobody-foot')
+  const buttons = foot.children.filter(n => n?.type === 'button')
+  assert.equal(buttons[0].props['data-flybot'], 'face-nobody-start', 'Start is the first action')
+  assert.match(buttons[0].props.className, /fs-btn-primary/)
+  assert.equal(buttons[0].children.join(''), START)
+  assert.equal(buttons[1].props['data-flybot'], 'face-nobody-cancel')
+  assert.equal(buttons[1].children.join(''), 'Cancel')
+  await buttons[0].props.onClick()
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.filter(([endpoint]) => endpoint === 'social/face-join').map(([, payload]) => payload))), [{ code: '111111', botId: 'a', start: true }])
+  assert.equal(DICTIONARY.zh[TITLE], '用 {code} 开一个新房间')
+  assert.equal(DICTIONARY.zh[HINT], '这个号码下还没有人在等。如果已经有人开过这个房间，号码就不再有效——向他们要一条邀请链接。')
+  assert.equal(DICTIONARY.zh[START], '开一个新房间')
+
+  sandbox.__flybot__.t = (text, params) => {
+    const mapped = DICTIONARY.zh[text] ?? text
+    return String(mapped).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
+  }
+  const zh = draw()
+  assert.equal(zh.find(n => n.props['data-flybot'] === 'face-nobody-title').children.join(''), '用 111111 开一个新房间')
+  assert.equal(zh.find(n => n.props['data-flybot'] === 'face-nobody-start').children.join(''), '开一个新房间')
+  assert.equal(zh.find(n => n.props['data-flybot'] === 'face-nobody-cancel').children.join(''), '取消')
+  assert.match(zh.find(n => n.props['data-flybot'] === 'face-nobody-hint').children.join(''), /邀请链接/)
 })
 
 test('#458: Join answers a nobody result with the prompt and no room opens', async () => {

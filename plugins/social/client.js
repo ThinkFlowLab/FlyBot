@@ -319,6 +319,7 @@ window.__ModuleLoader__.load({
 .fs-wait-foot{display:flex;align-items:stretch;gap:8px;flex:none}
 .fs-wait-foot .fs-btn{height:36px}
 .fs-wait-foot .fs-btn-primary{flex:1 1 auto;width:auto;min-width:0}
+.fs-wait[data-flybot=face-nobody] .fs-name{white-space:normal;overflow:visible;text-overflow:clip}
 .fs-fail{padding:0}
 `
     function useStyles() {
@@ -960,6 +961,11 @@ window.__ModuleLoader__.load({
     // so a zh UI reads it in Chinese. An older host has none: the English stands, with {params} filled in.
     // #892: the entry, the dialog's title and its copy name both ways in (core's dictionary has the zh).
     const JOIN_OR_CREATE = 'Join or create by number or link'
+    // #1053: a fresh code's first step is starting the room. #999: the same answer also means a
+    // room with this number may already have opened, so the hint still points at an invite link.
+    const NOBODY_TITLE = 'Start a new room with {code}'
+    const NOBODY_HINT = 'No one is waiting under this number. If someone already opened the room, the number no longer works — ask them for an invite link.'
+    const START_NEW_ROOM = 'Start a new room'
     const JOIN_OR_CREATE_HINT = 'Enter a number, or paste a group invite link'
     const JOIN_OR_CREATE_ABOUT = 'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.'
     const LINK_PLACEHOLDER = 'Or paste a group invite link (https://…/r/…)'
@@ -1738,16 +1744,16 @@ window.__ModuleLoader__.load({
           h('div', { className: 'fs-dialog-head' },
             h('div', { className: 'fs-name', 'data-flybot': 'face-group-title' }, tr(JOIN_OR_CREATE)),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: dismiss }, tr('Close'))),
-          step === 'nobody' ? h('div', { className: 'fs-wait', 'data-flybot': 'face-nobody', role: 'status' },
+          step === 'nobody' ? h('div', { className: 'fs-wait', 'data-flybot': 'face-nobody' },
             // #999: `nobody` means the join answer held no other home, not that the number is unused —
-            // a number whose room already opened answers the same way, and the owner's Enter chat is
-            // what burns it. So the title claims only what we know, and the hint names the way in.
-            h('div', { className: 'fs-name' }, `Nobody is waiting under ${nobody}.`),
-            h('div', { className: 'fs-hint' }, 'If someone already opened the room with this number, the number stops working — ask them for an invite link. Otherwise check the number, or start a new room with it and wait for them.'),
+            // a number whose room already opened answers the same way. #1053: the primary line offers
+            // to start; the hint keeps the invite-link caveat so this does not read as a failed join.
+            h('div', { className: 'fs-name', 'data-flybot': 'face-nobody-title' }, tr(NOBODY_TITLE, { code: nobody })),
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-nobody-hint' }, tr(NOBODY_HINT)),
             status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null,
-            h('div', { className: 'fs-wait-foot' },
-              h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-nobody-cancel', disabled: busy, onClick: cancelNobody }, 'Cancel'),
-              h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-nobody-start', disabled: busy, onClick: () => join(null, { start: true }) }, 'Start a new room'))) : waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
+            h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-nobody-foot' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-nobody-start', disabled: busy, onClick: () => join(null, { start: true }) }, tr(START_NEW_ROOM)),
+              h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-nobody-cancel', disabled: busy, onClick: cancelNobody }, tr('Cancel')))) : waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
             h(FaceWaitCode, {
               code: faceWaitCode(room, code),
               qrAt: candidate ? (room.expiresAt || 'open') : null,
