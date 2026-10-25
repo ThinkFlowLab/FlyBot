@@ -32,10 +32,10 @@ suite is one of its columns, not the map's owner.
 - The live run uses a real key from the environment and a fresh isolated bench home
   **outside this checkout** (`$LIVE_E2E_HOME`, default `~/.cache/flybot-live-e2e/<name>`,
   never under `~/.dsh`). The runner fails closed on a mock key, a loopback endpoint
-  (except the usage tap with a real upstream), the user's own DSH home, or a bench home
-  (or `--evidence` directory) inside the checkout — those path guards compare canonical
-  real paths, so a relative value or a symlink cannot slip through. No retries hide
-  regressions.
+  (except the usage tap with a real upstream), the user's own DSH home, a bench home
+  inside this checkout, or an `--evidence` directory under `dev/live-e2e/` — those path
+  guards compare canonical real paths, so a relative value or a symlink cannot slip
+  through. No retries hide regressions.
 - When the key is absent altogether, `live-e2e.yml` skips the six steps that need it and
   warns instead of failing every night (#794). A skipped run proves nothing about the
   suite, and the run summary says exactly that; a failure inside the suite still fails.
