@@ -149,7 +149,7 @@ What counts as a reviewed tip, all of it:
    `Attestation: <40-character sha> role=<Bot>`. The sha is the whole tip. `role` is the `Written-by` name and is
    not an `Owner:` of the pull request. A `Verdict:` with no such line, a line after the blank, a short sha, or a
    role that is the Owner is the author's own GitHub identity and does not count. A conclusion from a different
-   GitHub login does not carry the line. `decide` parses it; a signature is the later slice of #644. The
+   GitHub login does not carry the line. `decide` parses it; a signature was the later slice of #644 and is shipped but not enabled (#1110, #1111). The
    reviewed-tip job, `enqueue-guard` and `merge-gate` call that one function.
 3. The conclusion format is fixed (#637): the **first line** is `Verdict: PASS at <sha>` (or `INC` / `REQUEST_CHANGES`), the second is the attribution (`Written-by: Reviewer`; a relay adds `Posted-by: Chief (proxy…)` on the third line, and the older prose `Written by: …` reads the same way), then the evidence — `Ran:` (or a `Ran …:` heading over a fenced block of `$ ` commands, #660–#663) with at least one command; `Not run:` naming any gap is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai). A body whose first line is not the verdict is no conclusion. The comment's `author_association` must be `OWNER`, `MEMBER` or `COLLABORATOR`, or the report must be that pull request's own author listed in `selfReview` (#928), or the login must be shown as a repo admin by the permission API. Org repositories do not report `OWNER`. A `CONTRIBUTOR` who is none of those counts for nothing, so they can neither pass a tip nor hold one. An association the API did not send is not assumed, and a failed permission lookup is not admin. The permission API is for an admin GitHub did not tie to the repository: a `CONTRIBUTOR` stamp on someone else's pull request, asked only for a Tip+Verdict conclusion by a login in `reviewers`. A `selfReview` login is skipped only on that author's own report, which is the #928 carve-out and needs no lookup — skipping every `selfReview` login would never call, because the shipped policy lists every reviewer there. That lookup does not recover the own-pull-request PASS; #926 and #928 already do. The two qualifications do not replace each other: `selfReview` answers only whether an author may review their own pull request and gives that login no right on anyone else’s, while admin is read only through the permission API and only for a login already in `reviewers`. Every other check is unchanged.
 4. The sha on that first line **is the head being judged**. A later commit moves the tip and the old PASS stops
@@ -162,19 +162,33 @@ What counts as a reviewed tip, all of it:
    list: every Bot writes as the shared `Birfy` account, so a list containing it would void the whole pipeline.
    `cursor[bot]`'s report at #940's tip is the case (`Correction from Reviewer`, [comment `6381646389`](https://github.com/ThinkFlowLab/FlyBot/pull/940#issuecomment-6381646389)).
 
-7. **The report is signed by the workstation it names** (#1110): `Signed-by:` + `Nonce:` + `Signature:`,
-   verified against `.github/agent/signers.json` for the full head being judged. A `Verdict:` that does not
-   verify is not a conclusion and stays out of the newest-wins scan — see [Signed conclusions](#signed-conclusions-1110)
-   below for the canonical string, the configuration errors and the cost.
+7. **The report can be signed by the workstation it names, and today it is not** (#1110, #1111):
+   `Signed-by:` + `Nonce:` + `Signature:` against `.github/agent/signers.json` for the full head being judged
+   is built and switched **off** — the policy has no `signers` roster and the signers file does not exist, so no
+   conclusion is asked for those lines and none is dropped as `unverified:`. See [Signed conclusions](#signed-conclusions-1110)
+   below: it documents dormant code, not what the gates do today.
 
 #### Signed conclusions (#1110)
 
-One shared GitHub identity makes `Written-by:` a claim, so since #1110 a conclusion also has to be
-**signed by the workstation it names**. Each reviewing workstation holds one
-Ed25519 private key in its own secret (`DSH_SECRET_VERDICT_KEY_<WORKSTATION>`); the public keys are in
-[`.github/agent/signers.json`](../.github/agent/signers.json), and the roster of workstations that must
-have one is the `signers` list in [`review-policy.json`](../.github/agent/review-policy.json). A report
-adds three lines under its attribution:
+One shared GitHub identity makes `Written-by:` a claim, and #1110 built the check that would prove it: a
+conclusion **signed by the workstation it names**. That check is in `main` and **not enabled** — no
+conclusion is signed today. Everything below describes the mechanism as written, so that the day the switch
+is turned on the behaviour is already documented; it is not what the gates do now.
+
+The switch is a pair: the roster of workstations that must sign is the `signers` list in
+[`review-policy.json`](../.github/agent/review-policy.json), and the public keys live in
+[`.github/agent/signers.json`](../.github/agent/signers.json). Today `review-policy.json` has no `signers`
+key at all — the code reads a missing or non-array value as an empty roster — and the signers file does not
+exist, so the verifier is never asked for a key and an unsigned `Verdict:` is judged exactly as it
+was before #1110. The owner decided on 2026-10-25 not to introduce per-workstation keys
+([#1111](https://github.com/ThinkFlowLab/FlyBot/issues/1111), closed `not planned`) — a decision, not a
+pending step. Three cheap gates stand in its place (a conclusion must name the **current** tip, one
+conclusion per tip, and `Attestation:` as a self-report), with one accepted residual risk: one shared
+`Birfy` identity still allows a forged `Verdict: PASS` from inside, and those gates catch stale-sha and
+replay accidents, not deliberate forgery.
+
+When it is switched on, each reviewing workstation holds one Ed25519 private key in its own secret
+(`DSH_SECRET_VERDICT_KEY_<WORKSTATION>`) and a report adds three lines under its attribution:
 
 ```text
 Signed-by: Reviewer
@@ -193,16 +207,17 @@ lifted onto a tip its author did not see.
 
 It is fail-closed and one cut. When the policy lists signing workstations, a `Verdict:` whose signature
 does not verify **is not a conclusion at all**: it does not pass, it does not join the newest-wins scan, and
-it does not refuse an older PASS — the summary lists it as `unverified:`. There is no unsigned fallback, so
-the honest cost is that an unsigned INC no longer holds a merge either; the keys therefore land before the
-gate does ([#1111](https://github.com/ThinkFlowLab/FlyBot/issues/1111)). A roster with a missing or unreadable
+it does not refuse an older PASS — the summary lists it as `unverified:`. There is no unsigned fallback in
+that mode, so the honest cost is that an unsigned INC no longer holds a merge either — which is exactly why
+the roster is still absent and was declined on 2026-10-25 ([#1111](https://github.com/ThinkFlowLab/FlyBot/issues/1111),
+`not planned`), and why the gate is inert rather than half-on. A roster with a missing or unreadable
 signers file, or a workstation whose key is missing or does not parse, is a **configuration error** and
 refuses every pull request: half of that pair is never read as "unsigned is fine". The signature is not a
 permission — the association, `writers`, `reviewers` and bot-account checks run exactly as before, and the
 conclusion never reached the reviewed-tip job at all: the signed lines sit in the header, where the author
 attestation (#644) also lives, so a body can carry both and the two refusals stay separate.
 
-A workstation signs with its own key, which never leaves its secret card:
+When it is enabled, a workstation signs with its own key, which never leaves its secret card:
 
 ```sh
 node .github/scripts/sign-verdict.mjs --repo ThinkFlowLab/FlyBot --pr 1132 --verdict PASS \
@@ -213,13 +228,13 @@ node .github/scripts/sign-verdict.mjs --repo ThinkFlowLab/FlyBot --pr 1132 --ver
 line, and a conclusion puts it on the second, under the fixed verdict line. `decide` refuses a report
 with no such line and, separately, one whose name is not in the policy's `writers`; Triage reports a
 write without one instead of editing it. The rule itself lives in AGENTS.md — one shared GitHub identity
-makes the line a self-report, so the gate guarantees presence, not truth (#633). Since #1110 the signature
-is what closes that gap: the line still claims, the key proves.
+makes the line a self-report, so the gate guarantees presence, not truth (#633). The signature above would
+close that gap — the line still claims, the key would prove — and it is not enabled (#1111 `not planned`).
 
 | File | Purpose |
 | --- | --- |
-| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627) — a roster, not a permission: `reviewers`/`selfReview` are the permission lists (#962); editing it is T3. `signers` lists the workstations that must have a public key (#1110) |
-| `.github/agent/signers.json` | one Ed25519 public key per signing workstation, base64url DER SPKI from `openssl pkey -pubout -outform DER` (#1110); private keys never enter the repository |
+| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627) — a roster, not a permission: `reviewers`/`selfReview` are the permission lists (#962); editing it is T3. `signers` lists the workstations that must have a public key (#1110); there is no such key in the file, which is what keeps signing off (#1111) |
+| `.github/agent/signers.json` | one Ed25519 public key per signing workstation, base64url DER SPKI from `openssl pkey -pubout -outform DER` (#1110); private keys never enter the repository. The file does not exist today: creating it together with a non-empty `signers` roster is what turns signing on (#1111) |
 | `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
 | `.github/scripts/verdict-signature.mjs` | the canonical string, the signature lines, `loadSigners` and `verifyReport` — one implementation for the gates, the signer and the tests (#1110) |
 | `.github/scripts/sign-verdict.mjs` | what a workstation runs to sign its own conclusion; reads its own secret, never prints a key (#1110) |
