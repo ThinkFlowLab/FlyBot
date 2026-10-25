@@ -86,6 +86,31 @@ export function lookBotForRemote(person, roster) {
   return { id: person?.id || 'remote', name, ...extra }
 }
 
+// The bot a mention draws. A local Bot is its roster record. A friend's Bot is the same
+// record the sidebar draws — its chat, or a face-room seat's color and avatar when the
+// seat carries them. The @ menu and the mention chip used to draw a stand-in that kept
+// that look only on `remote`, and lookOf does not read it, so the handle's seed (a green
+// moon for @chief.selfa1025.home) showed beside the stored blue whale (#1088).
+export function markBotForMention(bot, roster) {
+  if (!bot) return bot
+  if (!bot.remote) {
+    const stored = bot.id != null && bot.id !== '' ? roster?.byId?.[bot.id] : undefined
+    return stored && !stored.remote ? stored : bot
+  }
+  const nested = bot.remote !== true && typeof bot.remote === 'object' ? bot.remote : null
+  const handle = String(bot.handle || nested?.handle || nested?.remote?.handle || '').trim()
+  const color = typeof bot.color === 'string' && bot.color ? bot.color
+    : typeof nested?.color === 'string' && nested.color ? nested.color : undefined
+  const avatar = bot.avatar && typeof bot.avatar === 'object' ? bot.avatar
+    : nested?.avatar && typeof nested.avatar === 'object' ? nested.avatar : undefined
+  return lookBotForRemote({
+    handle,
+    displayName: nested?.displayName || nested?.name,
+    ...(color ? { color } : {}),
+    ...(avatar ? { avatar } : {}),
+  }, roster)
+}
+
 // A stored shape or color wins; then the seed (a remote Bot's handle, else its id).
 // With no Bot it is a black gumdrop.
 export const colorOf = bot => (isColor(bot?.color) ? bot.color : lookSeed(bot) !== undefined ? defaultColor(lookSeed(bot)) : 'black')

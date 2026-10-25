@@ -1,4 +1,4 @@
-import { lookOf, maskOf, DEFAULT_MASK } from './characters.js'
+import { lookAvoidingLocals, lookOf, maskOf, DEFAULT_MASK } from './characters.js'
 import { inkText, paintCss } from './inks.js'
 import { MENTION_ORIGIN } from './text.js'
 
@@ -26,7 +26,9 @@ export function mentionCss(bots) {
     const chip = key !== null && owner.get(key) === bot
       ? `[class*="_userRow"] [data-ref-chip="file"][title="@${String(bot.name).replace(/["\\]/g, '\\$&')}" i]`
       : ''
-    const look = lookOf(bot)
+    // The same decision BotMark makes, so a friend's anchor does not keep a raw look the
+    // sidebar has already stepped off (#1088). A local Bot still owns a shared @Name chip.
+    const look = bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot)
     const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`
     const mark = look.image
       ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}`

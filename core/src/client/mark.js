@@ -5,7 +5,7 @@ import { t } from './i18n.js'
 import { clusterOrder } from './cluster-order.js'
 import { rosterBot } from './sources.js'
 
-export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote } from './characters.js'
+export { colorOf, lookOf, lookKey, lookKeys, lookAvoidingLocals, remoteSeed, lookBotForRemote, markBotForMention } from './characters.js'
 
 // -------------------------------------------------------------------------
 // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.

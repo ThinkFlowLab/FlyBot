@@ -2707,7 +2707,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
  import { mentionSpans } from '../shared/mentions.js'
 -import { BotMark } from './mark.js'
-+import { BotMark, PersonMark } from './mark.js'
++import { BotMark, PersonMark, markBotForMention } from './mark.js'
  import { CheckIcon, CopyIcon } from './icons.js'
  import { dateLocale, t } from './i18n.js'
 +import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
@@ -2715,7 +2715,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
-@@ -28,10 +28,77 @@ export function contentParts(content) {
+@@ -28,10 +28,85 @@ export function contentParts(content) {
  }
  
  // In a group only its members are called; elsewhere a mention opens that Bot's chat.
@@ -2725,6 +2725,14 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +// people read (what the @ menu inserts now) and the handle the host routes on (what older lines
 +// carry), so both forms chip as the same mention. The click opens its chat when one exists.
 +const normMentionHandle = handle => String(handle ?? '').replace(/^@+/, '').toLowerCase()
++
++// The chip draws `draw` when a friend's stored look is not on this matching record.
++// The name, id and mention label stay the ones the room routes on (#1088).
++function withMentionLook(bot, roster) {
++  if (!bot?.remote) return bot
++  const draw = markBotForMention(bot, roster)
++  return draw && draw !== bot ? { ...bot, draw } : bot
++}
 +
 +function remoteMentionableBots(roster, chats = []) {
 +  const known = new Map()
@@ -2738,7 +2746,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  return all.flatMap((record) => {
 +    const handle = record.remote?.handle ?? record.handle
 +    const chat = (Array.isArray(chats) ? chats : []).find(bot => normMentionHandle(bot?.remote?.handle) === normMentionHandle(handle))
-+    const base = { id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: 'bot', remote: record, handle }
++    const base = withMentionLook({ id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: 'bot', remote: record, handle }, roster)
 +    return [{ ...base, name: String(handle).replace(/^@+/, '') }, { ...base, name: base.mentionLabel }]
 +  })
 +}
@@ -2753,7 +2761,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  const humans = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
 +    .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
 +  const remotes = (room?.participants ?? []).filter(p => p.remote && p.leftSeq === undefined)
-+    .map(p => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }))
++    .map(p => withMentionLook({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }, roster))
 +  return bots.concat(humans, remotes, remoteMentionableBots(roster, roster.bots))
 +}
 +
@@ -2771,7 +2779,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  const seats = all.filter(seat => !seat.left)
 +  const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend), ...all.filter(seat => seat.left)]
 +  const bots = ordered.flatMap((seat) => {
-+    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
++    const target = seat.local ?? withMentionLook({ id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }, roster)
 +    const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
 +    const mentionLabel = faceSeatLabel(seat)
 +    return faceAliases(record, seat.bot).map(name => ({ ...target, name, mentionLabel }))
@@ -2813,7 +2821,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 -    ? h('button', { key: index, type: 'button', className: 'bt-umention', title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
 -      h(BotMark, { bot: part.bot, size: 16 }), part.label)
 -    : h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))))
-+  const chip = part => [h(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`]
++  const chip = part => [h(BotMark, { bot: part.bot.draw ?? part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`]
 +  return userTextParts(text, bots, referenceLabels).map((part, index) => {
 +    if (!part.bot) return h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))
 +    const title = `@${part.bot.name}`

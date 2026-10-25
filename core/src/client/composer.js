@@ -1,7 +1,7 @@
 import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChatsIcon, ClockIcon, MicIcon, PaperclipIcon, PeopleIcon, PlusIcon, WaveIcon } from './icons.js'
-import { BotMark } from './mark.js'
+import { BotMark, markBotForMention } from './mark.js'
 import { useLinger } from './motion.js'
 import { t } from './i18n.js'
 
@@ -110,7 +110,7 @@ export function menuIcons(roster) {
   return (row) => {
     if (!row.bot) return PeopleIcon
     const id = row.bot.id
-    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => h(BotMark, { bot: roster.getSnapshot().byId[id] ?? row.bot, size }))
+    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => h(BotMark, { bot: markBotForMention(row.bot, roster.getSnapshot()), size }))
     return marks.get(id)
   }
 }

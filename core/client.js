@@ -1915,6 +1915,23 @@ function lookBotForRemote(person, roster) {
   if (handle) return { id: remoteSeed(handle), name, remote: { handle }, ...extra };
   return { id: person?.id || "remote", name, ...extra };
 }
+function markBotForMention(bot, roster) {
+  if (!bot) return bot;
+  if (!bot.remote) {
+    const stored = bot.id != null && bot.id !== "" ? roster?.byId?.[bot.id] : void 0;
+    return stored && !stored.remote ? stored : bot;
+  }
+  const nested = bot.remote !== true && typeof bot.remote === "object" ? bot.remote : null;
+  const handle = String(bot.handle || nested?.handle || nested?.remote?.handle || "").trim();
+  const color = typeof bot.color === "string" && bot.color ? bot.color : typeof nested?.color === "string" && nested.color ? nested.color : void 0;
+  const avatar = bot.avatar && typeof bot.avatar === "object" ? bot.avatar : nested?.avatar && typeof nested.avatar === "object" ? nested.avatar : void 0;
+  return lookBotForRemote({
+    handle,
+    displayName: nested?.displayName || nested?.name,
+    ...color ? { color } : {},
+    ...avatar ? { avatar } : {}
+  }, roster);
+}
 var colorOf = (bot) => isColor(bot?.color) ? bot.color : lookSeed(bot) !== void 0 ? defaultColor(lookSeed(bot)) : "black";
 function lookOf(bot) {
   const avatar = bot?.avatar ?? {};
@@ -3192,7 +3209,7 @@ function mentionCss(bots) {
     const anchor = `.bt-bubble a[href="${MENTION_ORIGIN}${bot.id}"]`;
     const key = chipKey(bot);
     const chip = key !== null && owner.get(key) === bot ? `[class*="_userRow"] [data-ref-chip="file"][title="@${String(bot.name).replace(/["\\]/g, "\\$&")}" i]` : "";
-    const look = lookOf(bot);
+    const look = bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot);
     const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`;
     const mark = look.image ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}` : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`;
     const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : "";
@@ -9334,7 +9351,7 @@ function menuIcons(roster) {
   return (row) => {
     if (!row.bot) return PeopleIcon;
     const id = row.bot.id;
-    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => (0, import_react16.createElement)(BotMark, { bot: roster.getSnapshot().byId[id] ?? row.bot, size }));
+    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => (0, import_react16.createElement)(BotMark, { bot: markBotForMention(row.bot, roster.getSnapshot()), size }));
     return marks.get(id);
   };
 }
@@ -17559,6 +17576,11 @@ function contentParts(content) {
   return { text: texts2.join("\n"), attachments, rest };
 }
 var normMentionHandle = (handle) => String(handle ?? "").replace(/^@+/, "").toLowerCase();
+function withMentionLook(bot, roster) {
+  if (!bot?.remote) return bot;
+  const draw = markBotForMention(bot, roster);
+  return draw && draw !== bot ? { ...bot, draw } : bot;
+}
 function remoteMentionableBots(roster, chats = []) {
   const known = /* @__PURE__ */ new Map();
   const add = (record) => {
@@ -17571,7 +17593,7 @@ function remoteMentionableBots(roster, chats = []) {
   return all.flatMap((record) => {
     const handle = record.remote?.handle ?? record.handle;
     const chat = (Array.isArray(chats) ? chats : []).find((bot) => normMentionHandle(bot?.remote?.handle) === normMentionHandle(handle));
-    const base = { id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: "bot", remote: record, handle };
+    const base = withMentionLook({ id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: "bot", remote: record, handle }, roster);
     return [{ ...base, name: String(handle).replace(/^@+/, "") }, { ...base, name: base.mentionLabel }];
   });
 }
@@ -17580,7 +17602,7 @@ function mentionableBots(roster, sessionId, { fromFriend = false } = {}) {
   if (room2?.origin === "face-to-face") return faceMentionables(room2, roster, fromFriend);
   const bots = room2 ? room2.members.map((id) => roster.byId[id]).filter(Boolean) : roster.byId[sessionId] ? roster.bots : [];
   const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0).map((p) => ({ id: p.id, name: p.displayName || p.id, kind: "human", role: p.role }));
-  const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }));
+  const remotes = (room2?.participants ?? []).filter((p) => p.remote && p.leftSeq === void 0).map((p) => withMentionLook({ id: p.handle || p.id, name: remoteBotTitle(p), kind: "bot", remote: p, mentionLabel: remoteBotTitle(p) }, roster));
   return bots.concat(humans, remotes, remoteMentionableBots(roster, roster.bots));
 }
 function faceMentionables(room2, roster, fromFriend) {
@@ -17589,7 +17611,7 @@ function faceMentionables(room2, roster, fromFriend) {
   const seats = all.filter((seat) => !seat.left);
   const ordered = [...seats.filter((seat) => seat.mine !== fromFriend), ...seats.filter((seat) => seat.mine === fromFriend), ...all.filter((seat) => seat.left)];
   const bots = ordered.flatMap((seat) => {
-    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: "bot", remote: seat.record };
+    const target = seat.local ?? withMentionLook({ id: seat.key, name: seat.bot, kind: "bot", remote: seat.record }, roster);
     const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person };
     const mentionLabel = faceSeatLabel(seat);
     return faceAliases(record, seat.bot).map((name) => ({ ...target, name, mentionLabel }));
@@ -17625,7 +17647,7 @@ function userTextParts(text, bots, referenceLabels = []) {
   return parts;
 }
 function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
-  const chip = (part) => [(0, import_react42.createElement)(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`];
+  const chip = (part) => [(0, import_react42.createElement)(BotMark, { bot: part.bot.draw ?? part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`];
   return userTextParts(text, bots, referenceLabels).map((part, index) => {
     if (!part.bot) return (0, import_react42.createElement)(import_react42.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references));
     const title = `@${part.bot.name}`;

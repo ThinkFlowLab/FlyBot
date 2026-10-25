@@ -1,7 +1,7 @@
 import { createElement as h, Fragment, useState } from 'react'
 import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
 import { mentionSpans } from '../shared/mentions.js'
-import { BotMark, PersonMark } from './mark.js'
+import { BotMark, PersonMark, markBotForMention } from './mark.js'
 import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
 import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
@@ -36,6 +36,14 @@ export function contentParts(content) {
 // carry), so both forms chip as the same mention. The click opens its chat when one exists.
 const normMentionHandle = handle => String(handle ?? '').replace(/^@+/, '').toLowerCase()
 
+// The chip draws `draw` when a friend's stored look is not on this matching record.
+// The name, id and mention label stay the ones the room routes on (#1088).
+function withMentionLook(bot, roster) {
+  if (!bot?.remote) return bot
+  const draw = markBotForMention(bot, roster)
+  return draw && draw !== bot ? { ...bot, draw } : bot
+}
+
 function remoteMentionableBots(roster, chats = []) {
   const known = new Map()
   const add = (record) => {
@@ -48,7 +56,7 @@ function remoteMentionableBots(roster, chats = []) {
   return all.flatMap((record) => {
     const handle = record.remote?.handle ?? record.handle
     const chat = (Array.isArray(chats) ? chats : []).find(bot => normMentionHandle(bot?.remote?.handle) === normMentionHandle(handle))
-    const base = { id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: 'bot', remote: record, handle }
+    const base = withMentionLook({ id: chat?.id, mentionLabel: remoteMentionLabel(record, all), kind: 'bot', remote: record, handle }, roster)
     return [{ ...base, name: String(handle).replace(/^@+/, '') }, { ...base, name: base.mentionLabel }]
   })
 }
@@ -61,7 +69,7 @@ export function mentionableBots(roster, sessionId, { fromFriend = false } = {}) 
   const humans = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
     .map(p => ({ id: p.id, name: p.displayName || p.id, kind: 'human', role: p.role }))
   const remotes = (room?.participants ?? []).filter(p => p.remote && p.leftSeq === undefined)
-    .map(p => ({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }))
+    .map(p => withMentionLook({ id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, mentionLabel: remoteBotTitle(p) }, roster))
   return bots.concat(humans, remotes, remoteMentionableBots(roster, roster.bots))
 }
 
@@ -79,7 +87,7 @@ function faceMentionables(room, roster, fromFriend) {
   const seats = all.filter(seat => !seat.left)
   const ordered = [...seats.filter(seat => seat.mine !== fromFriend), ...seats.filter(seat => seat.mine === fromFriend), ...all.filter(seat => seat.left)]
   const bots = ordered.flatMap((seat) => {
-    const target = seat.local ?? { id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }
+    const target = seat.local ?? withMentionLook({ id: seat.key, name: seat.bot, kind: 'bot', remote: seat.record }, roster)
     const record = { ...seat.record, ownerName: seat.record.ownerName || seat.person }
     const mentionLabel = faceSeatLabel(seat)
     return faceAliases(record, seat.bot).map(name => ({ ...target, name, mentionLabel }))
@@ -121,7 +129,7 @@ export function userTextParts(text, bots, referenceLabels = []) {
 }
 
 function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
-  const chip = part => [h(BotMark, { bot: part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`]
+  const chip = part => [h(BotMark, { bot: part.bot.draw ?? part.bot, size: 16 }), `@${part.bot.mentionLabel ?? part.label}`]
   return userTextParts(text, bots, referenceLabels).map((part, index) => {
     if (!part.bot) return h(Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, 'skill', references))
     const title = `@${part.bot.name}`
