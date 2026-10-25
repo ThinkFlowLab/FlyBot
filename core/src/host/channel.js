@@ -640,6 +640,9 @@ export function install(rt) {
         case 'task-answer-input':
           await rt.load()
           return ok(await rt.taskEndpoint(endpoint, body, actor))
+        case 'delivery-board':
+          await rt.load()
+          return ok(await rt.deliveryBoard(body))
         case 'share-brief':
           await rt.load()
           await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)

@@ -13,21 +13,23 @@ const bundle = await build({
   external: ['react', 'react-dom'],
 })
 const module = { exports: {} }
+// Preset state for the next useState calls; KanbanDialog's first hook is the view.
+const states = []
 runInNewContext(bundle.outputFiles[0].text, {
   module, exports: module.exports, setTimeout, clearTimeout, setInterval, clearInterval, Date, Promise,
   require: (name) => {
     const platform = {
       react: {
         createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
-        useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
-        useEffect: () => {}, useCallback: fn => fn,
+        useState: initial => [states.length > 0 ? states.shift() : (typeof initial === 'function' ? initial() : initial), () => {}],
+        useEffect: () => {}, useCallback: fn => fn, useRef: current => ({ current }),
       },
     }
     if (!(name in platform)) throw new Error(`no platform module ${name}`)
     return platform[name]
   },
 })
-const { BoardView, boardColumns, boardRail, canMoveTask, columnTree, shortId } = module.exports
+const { BoardView, KanbanDialog, boardColumns, boardRail, canMoveTask, columnTree, shortId } = module.exports
 
 const expand = (node) => {
   if (Array.isArray(node)) return node.flatMap(expand)
@@ -163,4 +165,25 @@ test('a group column nests subtasks under the overall task', () => {
   assert.match(textOf(progress), /Part of Ship it/)
   assert.match(textOf(progress), /Check it/)
   assert.match(textOf(notStarted), /Theirs/)
+})
+
+test('the Delivery view drops the Bot rail, while Tasks keeps it (#1173)', () => {
+  const actions = { closeBoard: () => {}, boardClose: () => {}, deliveryBoard: async () => ({ ok: false, reason: 'no-github' }) }
+  states.length = 0
+  const tasksView = expand(KanbanDialog({ roster, actions }))
+  const tabs = all(tasksView).filter(node => node.props?.role === 'tab')
+  assert.equal(tabs.map(node => node.props['data-view']).join('|'), 'tasks|delivery')
+  assert.equal(tabs.find(node => node.props['data-view'] === 'tasks').props['aria-selected'], 'true')
+  assert.equal(byClass(tasksView, 'bt-board-rail').length, 1)
+  assert.equal(all(tasksView).some(node => node.props?.['data-view'] === 'delivery' && node.props?.className === 'bt-del-body'), false)
+
+  states.push('delivery')
+  const deliveryView = expand(KanbanDialog({ roster, actions }))
+  // The rail is per-Bot; the delivery board is one per repository, so it must not carry one.
+  assert.equal(byClass(deliveryView, 'bt-board-rail').length, 0)
+  assert.equal(byClass(deliveryView, 'bt-board-body').length, 0)
+  assert.equal(all(deliveryView).some(node => node.props?.['data-view'] === 'delivery'), true)
+  assert.equal(all(deliveryView).find(node => node.props?.role === 'tab' && node.props['data-view'] === 'delivery').props['aria-selected'], 'true')
+  // No snapshot yet is the honest one-line empty state until the first read lands.
+  assert.match(textOf(deliveryView), /No snapshot yet/)
 })

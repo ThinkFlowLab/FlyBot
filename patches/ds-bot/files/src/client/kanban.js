@@ -5,6 +5,7 @@ import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { columnOf, priorityOf, progressOf } from '../shared/task-board.js'
 import { CloseIcon } from './icons.js'
 import { useEscape } from './overlay-hooks.js'
+import { DeliveryView, DELIVERY_CSS } from './delivery-view.js'
 import { t } from './i18n.js'
 
 const POLL_MS = 15_000
@@ -315,6 +316,9 @@ function scopeName(roster, scope) {
 }
 
 export function KanbanDialog({ roster, actions, leaving = false }) {
+  // Two views on one surface: the per-Bot task board (#1058) and the repository's delivery
+  // board (#1173). Delivery is repo-wide, so its rail would be a lie — it is not rendered.
+  const [view, setView] = useState('tasks')
   const rail = boardRail(roster)
   const [scope, setScope] = useState(() => (rail.bots[0] ? { kind: 'bot', botId: rail.bots[0].id } : rail.groups[0] ? { kind: 'group', roomId: rail.groups[0].id } : null))
   const [dragging, setDragging] = useState(null)
@@ -357,18 +361,25 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     h('div', { className: 'bt-scrim', onClick: close }),
     h('div', { className: 'bt-mem bt-board', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'bt-board-heading' },
       h('div', { className: 'bt-mem-head' },
-        h('h2', { id: 'bt-board-heading' }, t('Tasks')),
-        h('span', { className: 'bt-mem-status' }, name),
+        h('h2', { id: 'bt-board-heading' }, view === 'delivery' ? t('Delivery') : t('Tasks')),
+        h('div', { className: 'bt-board-views', role: 'tablist', 'aria-label': t('Board view') },
+          h('button', { type: 'button', role: 'tab', className: 'bt-soft bt-soft-sm', 'data-view': 'tasks', 'aria-selected': view === 'tasks' ? 'true' : 'false', onClick: () => setView('tasks') }, t('Tasks')),
+          h('button', { type: 'button', role: 'tab', className: 'bt-soft bt-soft-sm', 'data-view': 'delivery', 'aria-selected': view === 'delivery' ? 'true' : 'false', onClick: () => setView('delivery') }, t('Delivery'))),
+        view === 'tasks' ? h('span', { className: 'bt-mem-status' }, name) : null,
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close tasks'), autoFocus: true, onClick: close }, h(CloseIcon))),
-      h(BoardView, {
-        roster, tasks, rail, scope, counts, dragging, error, draft,
-        onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
-      })))
+      view === 'delivery'
+        ? h(DeliveryView, { actions })
+        : h(BoardView, {
+            roster, tasks, rail, scope, counts, dragging, error, draft,
+            onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
+          })))
 }
 
 export const KANBAN_CSS = `
 .bt-board-row{min-height:40px;padding:6px 8px;gap:10px}
+.bt-board-views{display:flex;gap:6px;align-items:center}
+.bt-board-views .bt-soft[aria-selected=true]{background:var(--bt-active,var(--bt-hover));color:var(--bt-ink)}
 .bt-board-mark{flex:none;width:36px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
 .bt-board-mark svg{width:18px;height:18px}
 .bt-board-label{flex:1 1 auto;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -428,4 +439,4 @@ export const KANBAN_CSS = `
   .bt-board-columns{flex-direction:column}
   .bt-board-column{min-width:0}
 }
-`
+` + DELIVERY_CSS

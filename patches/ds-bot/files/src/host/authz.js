@@ -398,7 +398,8 @@ export function install(rt) {
     // Anything not in the table and not a known auth/read endpoint is denied.
     if (NO_ACTOR_ALLOWED.has(ep) || ep.startsWith('auth-')) return ALLOW
     if (ep === 'state' || ep === 'models' || ep === 'efforts' || ep === 'repo-stars' || ep === 'update-check'
-      || ep === 'diagnostics' || ep === 'diagnostics-log' || ep === 'usage') return ALLOW
+      || ep === 'diagnostics' || ep === 'diagnostics-log' || ep === 'usage'
+      || ep === 'delivery-board') return ALLOW
 
     return deny('bot/not-found', `Unknown endpoint ${ep}`)
   }
