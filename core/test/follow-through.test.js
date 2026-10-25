@@ -93,6 +93,9 @@ const freshHome = (t) => {
   })
   return home
 }
+// The real clock, taken before any case mocks it: a wait has to outlive its round budget when the
+// work it waits on is real rather than a mocked delay (#1192).
+const realSetTimeout = setTimeout
 // The timers a case mocked, if any. A wait must advance that clock: `setImmediate` rounds alone can
 // never fire a mocked `setTimeout`, so a wall-clock deadline would decide a race the test controls (#821).
 let mockedTimers
@@ -117,7 +120,15 @@ const waitFor = async (check, rounds = 20000) => {
     while (!check() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, REAL_WAIT_STEP_MS))
     return check()
   }
-  for (let i = 0; i < rounds && !check(); i++) {
+  // Every round still ticks the mocked clock, because only a tick moves it — but a tick cannot rush
+  // the real work the relay chain does (`inflight.json`/`state.json` writes, the Session flush,
+  // resolving the Agent), and 20000 `setImmediate` turns are ~70 ms of real time. So the round count
+  // is a floor under the budget, not a deadline: keep waiting until the real clock's deadline too
+  // (#1192 — a loaded runner burned all 20000 rounds before the relay call landed and kicked #1190
+  // out of the merge queue). `Date.now()` is not frozen by `mock.timers.enable({ apis: ['setTimeout']
+  // })`, and this puts no `setTimeout` in front of the mocked clock (#821).
+  const deadline = Date.now() + REAL_WAIT_MS
+  for (let i = 0; !check() && (i < rounds || Date.now() < deadline); i++) {
     mockedTimers.tick(1)
     await new Promise(resolve => setImmediate(resolve))
   }
@@ -505,6 +516,17 @@ test('a real-clock wait outlives its round budget (#1012)', async () => {
   let later = false
   setTimeout(() => { later = true }, 50)
   assert.equal(await waitFor(() => later, 5), true)
+})
+
+test('a mocked-clock wait keeps a real-clock floor under its round budget (#1192)', async (t) => {
+  mockTimers(t)
+  // One round is a tick plus one `setImmediate` — microseconds — so a mocked wait given a small
+  // budget used to give up long before real work landed; a loaded runner then burned all 20000
+  // rounds while the relay chain was still writing `state.json`. 100 ms of real work is the
+  // smallest honest stand-in, and the mocked clock cannot advance it: the timer is the real one.
+  let landed = false
+  realSetTimeout(() => { landed = true }, 100)
+  assert.equal(await waitFor(() => landed, 1), true)
 })
 
 test('a written tool call is told apart from text about one', () => {
