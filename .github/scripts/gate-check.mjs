@@ -87,7 +87,9 @@ export function summaryOf({ decision, head, pr, entry } = {}) {
   if (decision?.exempt) lines.push(`- no PASS needed: ${decision.tier ? `computed tier ${decision.tier}` : 'a T0/T1 tier or a mechanical release pull request'} (AGENTS.md → Merge gates)`)
   if (decision?.mechanicalRelease) lines.push('- a mechanical release pull request: it carries no issue and no `agent-pr` by design')
   if (decision?.fork) lines.push('- the head lives in a fork: the issue reference and `agent-pr` rules are not asked of it')
-  if (decision?.verdict?.by) lines.push(`- newest conclusion at this tip: ${decision.verdict.verdict ?? 'PASS'} by ${decision.verdict.by}`)
+  // #1112: the summary names the comment the decision read, so a reader can go and look at the text it
+  // used instead of trusting the sentence. The full sha above it is the value that was judged.
+  if (decision?.verdict?.by) lines.push(`- newest conclusion at this tip: ${decision.verdict.verdict ?? 'PASS'} by ${decision.verdict.by} (${decision.verdict.kind ?? 'comment'} ${decision.verdict.id ?? 'without an id'}), naming ${decision.verdict.tip ?? 'no tip'}`)
   if (decision?.recordOnly) lines.push('- the newest conclusion at this head says "record only — do not merge"')
   if (!ok) lines.push('', 'What refuses it:', ...(decision?.reasons?.length ? decision.reasons.map((r) => `- ${r}`) : ['- no reason was recorded — treat this as a bug in the gate itself']))
   lines.push('', '_One decision, two readers: this check and `node .github/scripts/enqueue-guard.mjs --pr <n>` call the same function. Rules: [`AGENTS.md` → Merge gates](../../AGENTS.md#merge-gates). This check reads the repository and writes this one run; it never merges, labels or comments._')

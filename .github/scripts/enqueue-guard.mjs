@@ -59,13 +59,22 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   // #676: the association travels with the report, the way review-gate.mjs reads the same two APIs. Without
   // it every conclusion is refused as "not tied to this repository", so a PASS could never clear the guard.
   // #943: the account type travels too, for the same reason — a bot account writes no conclusion.
+  // #1112: each report carries the id GitHub gave it, so the summary can name the one the decision used.
+  // With one shared account the id is the only handle on a conclusion that is not a person or a word.
   const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
+    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ id: c.id, kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
+      .map((v) => ({ id: v.id, kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
   ]
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
+  // #1112: the head is read again after the comments and the diff. A push in the middle of this run
+  // would otherwise let the decision judge one head and print another — the shape in which a pull
+  // request that was PASSed once is pushed again and merges with no conclusion at the new tip. A
+  // moved head is refused rather than resolved: both reads are stale by the time the second lands.
+  const again = JSON.parse(gh('api', `repos/${repo}/pulls/${pr}`))
+  const moved = again.head?.sha
+  if (moved && moved !== head) throw new Error(`the head moved during this run (${short(head)} to ${short(moved)}); run it again and judge the head it prints`)
 
   // The live head is judged, never a cached one: a push that moved the tip voids the PASS the caller
   // believes it has, and `--sha` lets a caller insist on the head it read a moment ago.
@@ -85,7 +94,11 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
 export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prOption } = {}) {
   const { decision, pull, pr } = decidePull({ gh, env, repo: repoOption, pr: prOption })
   const labels = (pull.labels ?? []).map((l) => l.name)
-  console.log(`enqueue-guard: PR #${pr} head ${short(decision.head)}, labels [${labels.join(', ')}]`)
+  // #1112: the full 40-character sha, from the value the decision consumed. The short form let a reader
+  // compare it against a summary that named a different head and still look right.
+  console.log(`enqueue-guard: PR #${pr} head ${decision.head}, labels [${labels.join(', ')}]`)
+  const used = decision.verdict?.id ? `${decision.verdict.kind ?? 'comment'} ${decision.verdict.id}` : 'no conclusion'
+  console.log(`enqueue-guard: conclusion used: ${used}${decision.verdict?.by ? ` by ${decision.verdict.by}` : ''}${decision.verdict?.tip ? ` naming ${decision.verdict.tip}` : ''}`)
   console.log(decision.ok
     ? `enqueue-guard: ALLOW — ${decision.message}; ${decision.exempt ? `a ${decision.tier ?? 'T0/T1'} tier or a mechanical release PR (AGENTS.md 6)` : `${decision.verdict?.by}'s PASS names this tip`}`
     : `enqueue-guard: REFUSE — ${decision.message}`)

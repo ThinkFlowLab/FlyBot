@@ -121,7 +121,7 @@ export function recordOnlyAt(reports, head) {
   if (!target) return null
   const at = (reports ?? [])
     .map((r, i) => ({ r, i, parsed: parseReport(r.body) }))
-    .filter(({ parsed }) => parsed.verdict && parsed.tip && target.startsWith(parsed.tip))
+    .filter(({ parsed }) => parsed.verdict && parsed.tip && target === parsed.tip)
     .map((x) => ({ ...x, t: Date.parse(x.r.at ?? 0) || 0 }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
   const last = at.at(-1)

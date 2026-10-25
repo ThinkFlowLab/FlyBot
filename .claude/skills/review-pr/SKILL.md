@@ -12,7 +12,7 @@ This file stays thin: Verifier process only. On each tip review, re-read these f
 ## Establish the tip
 
 1. Confirm repo identity (`ThinkFlowLab/FlyBot` or the agreed fork) and the commit under review.
-2. Record **tip SHA** (`git rev-parse HEAD` or the PR head SHA). If the tip moves, re-run from scratch.
+2. Record **tip SHA** (`git rev-parse HEAD` or the PR head SHA) — all 40 characters. The gate compares the whole sha: a `Verdict: … at abaf938` names every head that starts that way, and the newest of them is the tip being judged, so a short sha never counts (#1112). If the tip moves, re-run from scratch.
 3. Load the **latest rules from `origin/main`** before each review: `git fetch origin && git show origin/main:<path>` for this skill, `docs/code-standards.md`, `AGENTS.md`, and every `docs/subsystems/` page the diff touches. Prefer the fetched text over a stale local copy. Do not restate those pages here.
 4. Read [LESSONS.md](../../../LESSONS.md) and the hard rules in [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 5. Inventory changed files vs the merge base. Do not treat author narrative as evidence.

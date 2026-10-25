@@ -257,8 +257,11 @@ test('#643: a quoted verdict later in the body does not overwrite the first line
 // report quoted in the body, used to move the tip, so `decide` dropped the INC as "about another
 // tip" and the PASS it refused stayed in force.
 test('#640: a quoted Tip SHA later in the body does not move the first line to another tip', () => {
+  // #1112 made a conclusion name the whole sha, so this fixture names the head it judges in full: the
+  // point of the case is which line names the tip, not how long the tip is.
+  const head = '1234567890abcdef000000000000000000000000'
   const body = [
-    'Verdict: INC at 1234567890abcdef',
+    `Verdict: INC at ${head}`,
     'Written by: Reviewer',
     '',
     'Ran: node --test .github/scripts/review-gate.test.mjs → 43 pass',
@@ -274,12 +277,11 @@ test('#640: a quoted Tip SHA later in the body does not move the first line to a
   ].join('\n')
   const parsed = parseReport(body)
   assert.equal(parsed.verdict, 'INC')
-  assert.equal(parsed.tip, '1234567890abcdef', 'the first line names the tip being judged')
+  assert.equal(parsed.tip, head, 'the first line names the tip being judged')
   assert.deepEqual(parsed.ran, ['node --test .github/scripts/review-gate.test.mjs → 43 pass'])
   assert.equal(parsed.hasNotRun, true)
 
   // And the whole point: the INC is not dropped, so it still refuses the merge.
-  const head = '1234567890abcdef000000000000000000000000'
   const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', body: report, at: when, association: 'MEMBER' })
   const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }
   const pass = ['Tip SHA: ' + head, 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: PASS'].join('\n')

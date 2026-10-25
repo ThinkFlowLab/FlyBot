@@ -36,8 +36,9 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [] } = {}) =>
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
-const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false } = {}) => {
+const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false } = {}) => {
   const calls = []
+  let pullReads = 0
   const gh = (...args) => {
     const path = args[args.length - 1]
     calls.push(path)
@@ -48,7 +49,11 @@ const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], 
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: head, repo: { full_name: headRepo } }, user: { login: author }, body, labels: labels.map((name) => ({ name })), draft, merged })
+    if (/\/pulls\/\d+$/.test(path)) {
+      // #1112 (c): a run reads the head twice, so the fixture can answer differently the second time.
+      const sha = heads ? heads[Math.min(pullReads++, heads.length - 1)] : head
+      return JSON.stringify({ head: { sha, repo: { full_name: headRepo } }, user: { login: author }, body, labels: labels.map((name) => ({ name })), draft, merged })
+    }
     // Anything else — `gh pr merge` above all — is the guard doing more than checking.
     throw new Error('fake gh: unexpected ' + path)
   }
@@ -598,4 +603,46 @@ test('#962: Docs is registered in writers; Owner: Docs passes and an unknown own
   const refused = run({ body: 'Owner: Somebody\nReviewer: Reviewer\nFixes #962\n', comments: [pass], policy: REAL_POLICY })
   assert.equal(refused.ok, false)
   assert.ok(refused.reasons.includes('Owner names "somebody", who is not a writers Bot name'), refused.reasons.join('; '))
+})
+
+
+// ---- #1112: the guard reported a PASS that had not been posted yet, and a re-push could go green again.
+// The three cases below are one per failure mode the issue names; each is red on the code before it.
+
+test('#1112: a 7-character prefix is not this tip, even though the head starts with it', () => {
+  // The guard went green at 05:09 on a conclusion naming a head that was PASSed at 05:12: a tip that is
+  // only a prefix matches every head that begins with it, and the newest one is the tip being judged.
+  const r = run({ comments: [comment(report({ tip: HEAD.slice(0, 7) }))] })
+  assert.equal(r.ok, false, 'a short tip names no head')
+  assert.match(r.reasons.join('; '), /7 characters/)
+})
+
+test('#1112: the summary names the comment id the decision used, and a later edit cannot change it', () => {
+  const reports = [{ id: 4242, user: { login: 'reviewer-agent' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'MEMBER' }]
+  const r = run({ comments: reports })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.verdict.id, 4242)
+  assert.equal(r.verdict.kind, 'comment')
+  // The decision holds its own copy: an edit after the read is not a second opinion.
+  reports[0].body = report({ verdict: 'INC' })
+  assert.equal(r.verdict.verdict, 'PASS')
+})
+
+test('#1112: the printed head is the decided head, all 40 characters, and it names the conclusion', () => {
+  const lines = []
+  const log = console.log
+  console.log = (...a) => lines.push(a.join(' '))
+  try {
+    run({ comments: [{ id: 77, user: { login: 'reviewer-agent' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'MEMBER' }] })
+  } finally { console.log = log }
+  assert.match(lines[0], new RegExp(`head ${HEAD},`), 'the head is printed whole, from the value judged')
+  assert.match(lines.join('\n'), /conclusion used: comment 77 by reviewer-agent naming [0-9a-f]{40}/)
+})
+
+test('#1112: a head that moves while the comments are read is refused, not judged', () => {
+  const later = 'c0ffee00'.repeat(5)
+  let thrown = null
+  try { run({ comments: [comment()], heads: [HEAD, later] }) } catch (e) { thrown = e }
+  assert.ok(thrown, 'the run refuses instead of judging a head nobody will merge')
+  assert.match(thrown.message, /head moved during this run/)
 })

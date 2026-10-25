@@ -206,11 +206,17 @@ export function decide({ head, author, reports, policy, admins } = {}) {
   for (const r of reports ?? []) {
     const parsed = parseReport(r.body)
     if (!parsed.tip && !parsed.verdict) continue // not a Verifier report
-    const entry = { login: r.login, verdict: parsed.verdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
+    const entry = { id: r.id, login: r.login, verdict: parsed.verdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
     judged.push(entry)
     if (!parsed.tip) { reasons.push(`${where(r)}: no Tip SHA`); continue }
-    if (!headSha.startsWith(parsed.tip)) {
-      reasons.push(`${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
+    // #1112: the comparison is the whole sha, not a prefix. A conclusion written `at abaf938` is a
+    // mention of one head among every head that starts that way, and one of them is the newest tip — the
+    // guard went green at 05:09 on a PASS naming the tip that was PASSed at 05:12 because a short tip
+    // matched it. A tip that is not 40 characters names no head here; the refusal says how long it was.
+    if (parsed.tip !== headSha) {
+      reasons.push(parsed.tip.length < 40
+        ? `${where(r)}: names ${parsed.tip.slice(0, SHORT)} (${parsed.tip.length} characters), not the full tip ${headSha} — a conclusion names the whole 40-character sha`
+        : `${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
       continue
     }
     if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
@@ -264,15 +270,15 @@ export function decide({ head, author, reports, policy, admins } = {}) {
     .map((e, i) => ({ e, i, t: Date.parse(e.at ?? 0) || 0 }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .at(-1).e
-  if (!last.counts) return { ok: false, verdict: last.verdict, by: null, tip: last.tip, reason: last.why, judged }
+  if (!last.counts) return { ok: false, verdict: last.verdict, by: null, tip: last.tip, id: last.id, kind: last.kind, reason: last.why, judged }
   const { parsed } = last
   if (last.verdict !== 'PASS') {
-    return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged }
+    return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged }
   }
   if (!parsed.ran.length) {
-    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS lists no command it ran`, judged }
+    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS lists no command it ran`, judged }
   }
-  return { ok: true, verdict: 'PASS', by: last.login, tip: last.tip, reason: `${last.login}'s PASS names this tip`, judged }
+  return { ok: true, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS names this tip`, judged }
 }
 
 export function render(result, { pr, head, author } = {}) {
