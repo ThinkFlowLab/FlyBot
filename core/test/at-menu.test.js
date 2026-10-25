@@ -142,7 +142,7 @@ test('#305: a face room offers each of its Bots once, named Bot (Person), and no
   // A friend's Bot already seated in the group is offered once, by its seat (#384).
   assert.deepEqual(mentionRows(group, 'face').filter(row => row.remote).map(row => row.remote.handle), ['@helper.other.home'])
   // That seat is still found by its handle, the second line of its row (#384).
-  assert.deepEqual(mentionRows(group, 'face', 'chief.selfa').map(row => row.text), ['@Chief (SelfA) '])
+  assert.deepEqual(mentionRows(group, 'face', 'chief.selfa').map(row => row.text), ['@Chief '])
 })
 
 test('#384: a friend\'s Bot with its own chat is offered once in a Bot\'s chat, by its handle, under its one name (owner)', async () => {
@@ -208,4 +208,34 @@ test('#305: "Everyone" in a group counts the Bots it reaches, seated friends\' B
   }
   assert.equal(await everyone(room([{ kind: 'human', id: 'ann', displayName: 'Ann' }])), '1 member')
   assert.equal(await everyone(room([{ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob' }])), '2 members')
+})
+
+test('#1141: a group @ inserts the seat name, never a .home handle or (Friend)', async () => {
+  const group = indexRoster({
+    bots: [{ id: 'chief', name: 'Chief', sessionId: 'room' }],
+    rooms: [{
+      id: 'room', name: '研发组', members: ['chief'],
+      participants: [
+        { kind: 'bot', id: 'chief', displayName: 'Chief' },
+        { kind: 'bot', remote: true, id: '@architect.flybot682b8a43.home', handle: '@architect.flybot682b8a43.home', displayName: '@architect.flybot682b8a43.home', ownerName: 'flybot682b8a43' },
+        { kind: 'bot', remote: true, id: 'backend-seat', handle: ' ', displayName: 'Backend' },
+      ],
+    }],
+  })
+  const rows = mentionRows(group, 'room')
+  assert.deepEqual(rows.map(row => row.text), ['@Chief ', '@architect ', '@Backend ', '@Everyone '])
+  assert.ok(rows.every(row => !row.text.includes('@@') && !/\.home/.test(row.text) && !/\(Friend\)/.test(row.text)))
+  const [bots] = atSources({
+    roster: { getSnapshot: () => group },
+    sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
+    launched: () => false,
+    iconFor: () => 'bot',
+  })
+  const listed = await bots.candidates({ sessionId: 'room' }, { query: '' })
+  const architect = listed.find(row => row.description === '@architect.flybot682b8a43.home')
+  assert.equal(architect.value, '@architect ')
+  assert.match(architect.name, /architect/i)
+  const backend = listed.find(row => row.value === '@Backend ')
+  assert.ok(backend)
+  assert.equal(backend.name, 'Backend (Friend)')
 })

@@ -138,6 +138,26 @@ export function remoteBotTitle(record) {
   return `${name} (${owner})`
 }
 
+// What a group @ inserts and what the room routes on (#1141). The menu may still show
+// remoteBotTitle ("Architect (flybot682b8a43)"); the token is the Bot's own name. A handle,
+// a ".home" address, or the placeholder owner "Friend" is not a call token — a handle falls
+// back to its first label (architect.flybot….home → architect).
+export function remoteCallName(record) {
+  const handle = String(record?.handle ?? '').replace(/^@+/, '').trim()
+  const bare = remoteBotName(record, '').replace(/^@+/, '').trim()
+  const unusable = (value) => {
+    const text = String(value ?? '').replace(/^@+/, '').trim()
+    if (!text || /^friend$/i.test(text)) return true
+    if (text.includes('@') || /\.home\b/i.test(text)) return true
+    if (handle && text.toLowerCase() === handle.toLowerCase()) return true
+    return false
+  }
+  if (!unusable(bare)) return bare
+  const slug = handle.split('.')[0]
+  if (slug && !unusable(slug)) return slug
+  return 'Bot'
+}
+
 // The owner part of that name, for a badge next to the Bot's own name.
 export function remoteOwnerBadge(record) {
   return ownerNameOf(record) || cleanPeerName(record?.handle, 'Friend')

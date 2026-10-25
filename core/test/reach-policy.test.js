@@ -267,22 +267,32 @@ test('#948: a room-only Bot may line the seat it shares a room with, and the roo
   assert.equal(left.action, 'deny', 'the seat it shares is the consent, and it is gone with the seat')
   assert.equal(left.reason, refused)
   assert.deepEqual(out, [])
-  // #948's scope is the face-to-face room, whose seats are admitted by a number or a link: a room of
-  // this home is opened and closed by its members, and that path keeps asking for a grant or an
-  // explicit roomId. Same pair, same handles, only the room's kind differs.
+  // #948's face-to-face room is the consent for a room-only identity. An ordinary group is too
+  // (#1141): the live seat is enough, and another Bot of that home who is not seated is not.
   live.rooms.g = {
     id: 'g', members: ['a2'], participants: [
       { kind: 'human', id: 'alice', role: 'admin', joinedSeq: 0 },
       { kind: 'bot', id: 'a2', role: 'member', joinedSeq: 0 },
-      { kind: 'bot', remote: true, handle: '@coder.bob.home', joinedSeq: 0 },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home', ownerHome: '@bob.home', joinedSeq: 0 },
     ],
   }
   const group = await fb.bot.send({ from: 'a2', to: seat, text: 'a room of this home' })
-  assert.equal(group.action, 'deny', 'only a face-to-face room is read here')
-  assert.equal(group.reason, refused)
-  assert.deepEqual(out, [])
+  assert.equal(group.action, 'allow', 'a live ordinary group is enough, with no Sharing grant')
+  assert.deepEqual(out, ['@coder.bob.home'])
+  out.length = 0
+  const sameHome = await fb.bot.send({ from: 'a2', to: { kind: 'remote', handle: '@writer.bob.home' }, text: 'same home, not seated' })
+  assert.equal(sameHome.action, 'deny', 'another Bot of that home is not the seat')
+  assert.equal(sameHome.reason, refused)
+  const homeLine = await fb.bot.send({ from: 'a2', to: { kind: 'remote', handle: '@bob.home' }, text: 'the friend home' })
+  assert.equal(homeLine.action, 'allow', 'a send to the seated home is that seat')
+  assert.deepEqual(out, ['@bob.home'])
   assert.equal(reach(live, { from: 'a2', to: seat, roomId: 'g' }).action, 'allow',
     'an explicit roomId still names its room, face-to-face or not')
+  live.rooms.g.participants[2].leftSeq = 4
+  out.length = 0
+  const leftGroup = await fb.bot.send({ from: 'a2', to: seat, text: 'after the group seat left' })
+  assert.equal(leftGroup.action, 'deny', 'leaving the group ends the consent')
+  assert.equal(leftGroup.reason, refused)
 })
 
 test('a held message is judged again when it is approved: revoke while it waited means refused', async (t) => {

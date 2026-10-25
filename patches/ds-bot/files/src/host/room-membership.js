@@ -34,7 +34,7 @@
 // of a friend's room that invited their granted Bot.
 
 import { randomBytes } from 'node:crypto'
-import { cleanPeerName, disambiguatedRemoteTitle, faceAliases, isChiefRecord, remoteBotName, remoteBotTitle, sharedRoomTitle } from '../shared/remote-label.js'
+import { cleanPeerName, disambiguatedRemoteTitle, faceAliases, isChiefRecord, remoteBotName, remoteBotTitle, remoteCallName, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
 import { HISTORY_MAX, HISTORY_TEXT, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
@@ -473,6 +473,7 @@ export function install(rt) {
       const aliases = [
         ...faceAliases(peer, bare || rosterName),
         remoteBotTitle(peer),
+        remoteCallName(peer),
         rosterName,
         peer.label,
         social.replace(/^@+/, ''),

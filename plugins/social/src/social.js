@@ -1086,7 +1086,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const dropped = declinedRemotes.size
       ? unfiltered.homes.map(entry => ({ ...entry, bots: (entry.bots ?? []).filter(bot => !declinedRemotes.has(norm(bot.handle))) }))
       : unfiltered.homes
-    remote = { homes: filterHiddenHomes(dropped, settings) }
+    // A home Bot Social no longer lists as a friend stays out of the picker (#666, #1141). A later
+    // list_friends that names it again clears the mark, and the next roster apply shows it.
+    const stillFriends = forgottenHomes.size
+      ? dropped.filter(entry => !forgottenHomes.has(norm(entry.home)))
+      : dropped
+    remote = { homes: filterHiddenHomes(stillFriends, settings) }
     // Hidden and home-level handles stay out of publish, so remote-chat sync marks those
     // sessions gone/hidden instead of putting them back in the picker and sidebar.
     return flybot.remote?.publish(listedRemoteBots()) ?? remote
@@ -1223,14 +1228,55 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   // The friendship is gone: drop the row now, so the list and the picker stop offering a Bot that can
   // no longer be reached instead of waiting out the roster TTL.
-  function forgetFriendHome(homeKey) {
+  // Homes Bot Social no longer lists as friends (#1141). A later send must not keep using the
+  // dead home as room reach, and the sidebar chat must not stay a forever "not friends" composer.
+  const forgottenHomes = new Set()
+  const homeIsForgotten = (handle) => {
+    const key = norm(handle)
+    if (!key) return false
+    return forgottenHomes.has(key) || forgottenHomes.has(homeOfPeer(key))
+  }
+  async function hideChatsOfHome(homeKey) {
+    const chats = flybot.remote?.chats?.list?.() ?? []
+    for (const chat of chats) {
+      const home = norm(chat.home || homeOfPeer(chat.handle || ''))
+      if (home !== homeKey || !chat.id) continue
+      await flybot.bot.update(chat.id, { hidden: true }).catch(error => warn('gone friend chat not hidden', error))
+    }
+  }
+  async function dropHomeFromRooms(homeKey) {
+    if (typeof flybot.rooms?.list !== 'function' || typeof flybot.rooms?.removeParticipant !== 'function') return
+    for (const room of flybot.rooms.list()) {
+      for (const participant of room.participants ?? []) {
+        if (!participant.remote || participant.leftSeq !== undefined || !participant.handle) continue
+        const home = norm(participant.ownerHome || '') || homeOfPeer(participant.handle)
+        if (home !== homeKey && homeOfPeer(participant.handle) !== homeKey) continue
+        try {
+          await flybot.rooms.removeParticipant(room.id, { kind: 'bot', id: participant.handle || participant.id, remote: true })
+        } catch (error) {
+          warn('gone friend not left from room', error)
+        }
+      }
+    }
+  }
+  async function forgetFriendHome(homeKey) {
     const key = norm(homeKey)
     if (!key) return
+    forgottenHomes.add(key)
+    // A roster fetch that started before this removal still holds the server's old list. Its
+    // grant refilter must not publish that home again after this drop (#666).
+    rosterApplied = ++rosterAsked
     forgetFriendStatus(key)
     const before = remote.homes.length + serverRoster.length
     remote = { homes: remote.homes.filter(entry => entry.home !== key) }
     serverRoster = serverRoster.filter(entry => entry.home !== key)
-    if (remote.homes.length + serverRoster.length !== before) flybot.remote?.publish?.(listedRemoteBots())
+    if (remote.homes.length + serverRoster.length !== before) {
+      const published = flybot.remote?.publish?.(listedRemoteBots())
+      if (published && typeof published.then === 'function') await published.catch(error => warn('gone friend roster not published', error))
+    }
+    await hideChatsOfHome(key)
+    await dropHomeFromRooms(key)
+    await leaveMissingRemotes()
   }
   // `list_friends` lists the active friendships of one identity: the home, and each member Bot that
   // has its own (a per-Bot invite, #420). No answer at all (an older server, a link that is down)
@@ -1253,10 +1299,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (!Array.isArray(answer?.friends)) continue
       answered = true
       const listed = answer.friends.some(item => (item?.status === undefined || item.status === 'active') && norm(item.peer?.handle) && homeOfPeer(item.peer.handle) === homeKey)
-      if (listed) { noteFriendStatus(cacheKey, true); return true }
+      if (listed) { forgottenHomes.delete(homeKey); noteFriendStatus(cacheKey, true); return true }
     }
     if (!answered) return true
-    forgetFriendHome(homeKey)
+    await forgetFriendHome(homeKey)
     noteFriendStatus(cacheKey, false)
     return false
   }
@@ -1553,10 +1599,20 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (coSeatMention(msg)) return undefined
       // #948: the room is resolved before the pair is judged: a ticket-claimed Bot holds a `roomOnly`
       // identity, which is not a person-grant, and the seat it shares a room with is off the roster.
+      // #1141: a live ordinary-group seat is enough for every co-member. A friendship that names only
+      // one local Bot (via) does not block the others who still sit in that room, and a send to the
+      // friend's home reaches the seat of that home. A stranger, and a seat that has left, do not.
+      const seat = typeof msg.from === 'string' ? liveCoSeat(msg.from, msg.target?.handle) : undefined
       const { bot, roomId } = await pairFor(msg)
+      if ((bot && homeIsForgotten(bot.home)) || homeIsForgotten(msg.target?.handle) || (seat && homeIsForgotten(seat.participant?.handle))) {
+        return { action: 'deny', reason: 'that friend is gone, so this chat is closed.' }
+      }
+      const friendHomeEntry = bot ? await friendEntry(bot.home) : undefined
+      const coveredSender = Boolean(bot) && covered(friendHomeEntry, msg.from)
+      if (seat && !coveredSender && (bot || seat.homeLevel)) return undefined
       if (bot === undefined) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
-      if (home && typeof msg.from === 'string' && !covered(await friendEntry(bot.home), msg.from)) {
-        return { action: 'deny', reason: `${flybot.bot.get(msg.from)?.name ?? 'this Bot'} is not friends with ${bot.home}: that friendship is with ${(await friendEntry(bot.home)).via.join(', ')} only` }
+      if (home && typeof msg.from === 'string' && !coveredSender) {
+        return { action: 'deny', reason: `${flybot.bot.get(msg.from)?.name ?? 'this Bot'} is not friends with ${bot.home}: that friendship is with ${(friendHomeEntry?.via ?? []).join(', ')} only` }
       }
       // A Bot's files are always shown to the user first, whatever auto-accept says;
       // files the user picked in the composer are the user's own send.
@@ -1697,12 +1753,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // that is the prod shared-group seat. A plain line is not a mention and does not come here.
   function liveCoSeat(fromBotId, handle) {
     const target = norm(handle)
-    if (!target || target === '@' || typeof fromBotId !== 'string' || typeof flybot.rooms?.list !== 'function') return undefined
+    if (!target || target === '@' || homeIsForgotten(target) || typeof fromBotId !== 'string' || typeof flybot.rooms?.list !== 'function') return undefined
+    const asHome = homeOfPeer(target) === target
     for (const room of flybot.rooms.list()) {
-      if (!room || room.origin === 'face-to-face' || !(room.members ?? []).includes(fromBotId)) continue
-      const participant = (room.participants ?? []).find(p => p.leftSeq === undefined && p.kind === 'bot' && p.remote === true
-        && norm(p.handle || p.id) === target)
-      if (participant) return { room, participant }
+      if (!room || room.origin === 'face-to-face' || room.hidden || !(room.members ?? []).includes(fromBotId)) continue
+      const live = (room.participants ?? []).filter(p => p.leftSeq === undefined && p.kind === 'bot' && p.remote === true && p.handle && !homeIsForgotten(p.handle))
+      const exact = live.find(p => norm(p.handle || p.id) === target)
+      if (exact) return { room, participant: exact }
+      if (!asHome) continue
+      const byHome = live.find(p => norm(p.ownerHome || '') === target || homeOfPeer(p.handle || p.id) === target)
+      if (byHome) return { room, participant: byHome, homeLevel: true }
     }
     return undefined
   }
@@ -1728,7 +1788,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const remoteId = room.origin === 'inbound-share' && room.sharedFrom?.remoteRoomId
       ? String(room.sharedFrom.remoteRoomId)
       : String(room.id)
-    const to = norm(msg.target.handle)
+    const to = norm(seat.participant?.handle || msg.target.handle)
     const seq = typeof flybot.rooms?.takeLineSeq === 'function' ? Number(await flybot.rooms.takeLineSeq(room.id)) : NaN
     if (!Number.isFinite(seq) || seq <= 0) throw new Error('that room has no line to send')
     const body = {
@@ -1753,7 +1813,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const name = flybot.bot.get(msg.from)?.name ?? 'This Bot'
       throw new Error(`${name} is not shared with that friend, so it cannot message their Bots. To allow it, share ${name} with them in its settings → Sharing.`)
     }
-    const to = norm(msg.target.handle)
+    const to = norm(seat.participant?.handle || msg.target.handle)
     const scope = shareScope(seat)
     const sent = await client.callTool('send_as_member', {
       from_bot_id: member.bot_id,
@@ -1812,7 +1872,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (mention) return sendCoSeatMention(msg, mention)
       const pair = ticketPair(msg)
       if (pair) return sendTicketShare(msg, pair)
+      const seat = typeof msg.from === 'string' ? liveCoSeat(msg.from, msg.target?.handle) : undefined
       const { bot, roomId } = await pairFor(msg)
+      // #1141: the sender is not the Bot the friendship names, but they still share the room.
+      // The line goes out as that room's envelope, which does not ask for the via grant.
+      const friend = bot ? await friendEntry(bot.home) : undefined
+      if (seat && !(bot && covered(friend, msg.from)) && (bot || seat.homeLevel)) return sendCoSeatMention(msg, seat)
       if (bot === undefined) throw new Error(`${msg.target.handle} is no longer reachable`)
       if (home) {
         // #948: the room is resolved before the member is: a `roomOnly` identity signs a send that
@@ -2062,6 +2127,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   async function sendChat({ handle, text }) {
     if (!home) throw new Error('Bot Social is not connected')
     const target = norm(handle)
+    if (homeIsForgotten(target)) throw new Error('that friend is gone, so this chat is closed.')
     const team = flybot.bot.list()
     // Only the Bots the friendship covers can sign; the one used before goes first.
     const entry = (await remoteBots()).homes.find(item => item.bots.some(bot => bot.handle === target))
@@ -2091,6 +2157,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         if (roomId && error && typeof error === 'object') error.roomScoped = true
         if (roomId || !/no_relationship|no active relationship/i.test(String(error?.message ?? error))) throw userFacingSendError(error, target)
       }
+    }
+    // #1141: the sidebar chat of a Bot this home shares a live group with, when no local Bot is
+    // the one the friendship names. The room line is the send; it is not "you are not friends".
+    const seatBot = team.find(bot => activeMember(bot.id) && liveCoSeat(bot.id, target))
+    const seat = seatBot ? liveCoSeat(seatBot.id, target) : undefined
+    if (seat) {
+      await sendCoSeatMention({ from: seatBot.id, target: { handle: target }, text }, seat)
+      return ''
     }
     throw userFacingSendError(lastError ?? new Error(`no Bot of yours is friends with ${target}`), target)
   }

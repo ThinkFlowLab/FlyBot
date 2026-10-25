@@ -5,7 +5,7 @@
 // rows stay beside them, because a source cannot be hidden for one Session (a face
 // room filters the session rows out of view: face-at-filter.js).
 import { mentionCandidates, remoteMentionRows } from './flybot-registry.js'
-import { cleanPeerName, friendBotTitle, ownerNameOf, remoteBotTitle, listedChatBots, seatOwnerName } from '../shared/remote-label.js'
+import { cleanPeerName, friendBotTitle, ownerNameOf, remoteBotTitle, remoteCallName, listedChatBots, seatOwnerName } from '../shared/remote-label.js'
 import { t } from './i18n.js'
 import { currentPart, relativeShort } from './text.js'
 
@@ -39,8 +39,12 @@ export function mentionRows(roster, sessionId, query = '') {
         // A remote seat already listed under its handle (a duplicate participant record) is offered once.
         ...uniqueBy(live.filter(p => p.remote), p => p.handle || p.id)
           .map(p => ({
-            id: p.handle || p.id, name: remoteBotTitle(p), kind: 'bot', remote: p, handle: p.handle,
-            ...(face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot')) } : {}),
+            id: p.handle || p.id,
+            // A face room inserts the disambiguated title. An ordinary group inserts the name the
+            // room routes on (#1141): never "@@handle.home (owner)" and never "(Friend)".
+            name: face ? remoteBotTitle(p) : remoteCallName(p),
+            kind: 'bot', remote: p, handle: p.handle,
+            label: face ? faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, 'Bot')) : remoteBotTitle(p),
           })),
       ]
     : listedChatBots(roster).filter(bot => bot.id !== here.self.id)

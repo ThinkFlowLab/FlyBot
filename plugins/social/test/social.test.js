@@ -1246,6 +1246,96 @@ test('a friendship scoped to one Bot: the roster shows only the granted Bots and
   assert.deepEqual(server.calls.filter(c => c.name === 'send_as_member').at(-1).args, { from_bot_id: chiefId, to: '@coder.bob.home', text: 'hello from chief' })
 })
 
+// #1141: 交付组. The friendship with Bob names only Writer. Chief sits in the same live group, so
+// Chief's reply is that group's line — not "that friendship is with Writer only". A sidebar line to
+// a co-seat who is not a friend is the same room line. After the home is gone, the chat is hidden
+// and a later send does not stay "you are not friends".
+test('#1141: a co-member reaches a shared-room Bot without being the friendship via, and a deleted home clears', async (t) => {
+  const rooms = {
+    delivery: {
+      id: 'delivery', name: '交付组', members: ['a', 'b'], admin: 'a', named: true, log: [], seq: 0, seen: {},
+      participants: [
+        { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', id: 'b', role: 'member', displayName: 'Writer', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 1, joinedAt: 1 },
+      ],
+    },
+  }
+  const { ctx, home, stop } = await team({ rooms })
+  t.after(stop)
+  const server = mockServer()
+  let clock = 1_000_000
+  server.tools.list_remote_bots = () => ({ homes: [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' }, bots: [{ bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder' }], scope: 'member', via: ['@writer.danyang.home'] }] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+    now: () => clock,
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot, '@bob.home')
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  // Chief is registered, but the friendship does not name Chief, and Chief's grant is not Bob.
+  await ctx.flybot.grants.set('a', [{ grantee: '@someone.else.home' }])
+  const sends = () => server.calls.filter(c => c.name === 'send_as_member')
+  const lineOf = call => JSON.parse(String(call.args.text).slice('FLYBOT-ROOM-SHARE\n'.length))
+
+  const reply = await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'chief in the group', role: 'reply', via: 'auto-reply' })
+  assert.equal(reply.action, 'allow', JSON.stringify(reply))
+  assert.doesNotMatch(reply.reason ?? '', /friendship is with/)
+  assert.equal(sends().at(-1).args.to, '@coder.bob.home')
+  assert.equal(lineOf(sends().at(-1)).op, 'line')
+  assert.equal(lineOf(sends().at(-1)).roomId, 'delivery')
+  assert.match(lineOf(sends().at(-1)).text, /chief in the group/)
+
+  const toHome = await ctx.flybot.bot.send({ from: 'a', to: '@bob.home', text: 'to the friend home', role: 'reply', via: 'auto-reply' })
+  assert.equal(toHome.action, 'allow', JSON.stringify(toHome))
+  assert.equal(sends().at(-1).args.to, '@coder.bob.home', 'the home send goes to the seat of that home')
+  assert.match(lineOf(sends().at(-1)).text, /to the friend home/)
+
+  const beforeWriter = sends().length
+  const writer = await ctx.flybot.bot.send({ from: 'b', to: '@coder.bob.home', text: 'writer is the friend', role: 'reply', via: 'auto-reply' })
+  assert.equal(writer.action, 'allow', JSON.stringify(writer))
+  assert.equal(sends().length, beforeWriter + 1)
+  assert.equal(sends().at(-1).args.text, 'writer is the friend', 'the Bot the friendship names still sends a 1:1')
+
+  const stranger = await ctx.flybot.bot.send({ from: 'a', to: '@stranger.evil.home', text: 'no', via: 'auto-reply' })
+  assert.equal(stranger.action, 'deny', JSON.stringify(stranger))
+  assert.match(stranger.reason, /not a Bot a friend shared with you|not shared with that friend/)
+
+  const plain = server.tools.send_as_member
+  server.tools.send_as_member = (args) => {
+    if (String(args.text).startsWith('FLYBOT-ROOM-SHARE\n')) return plain(args)
+    throw Object.assign(new Error('Bot Social send_as_member: no_relationship'), { code: 'no_relationship' })
+  }
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'from the sidebar' }), '')
+  const typed = sends().at(-1)
+  assert.equal(typed.args.to, '@coder.bob.home')
+  assert.match(typed.args.text, /from the sidebar/)
+  assert.equal(lineOf(typed).roomId, 'delivery')
+  server.tools.send_as_member = plain
+
+  await ctx.flybot.rooms.removeParticipant('delivery', { kind: 'bot', id: '@coder.bob.home', remote: true })
+  await ctx.flybot.grants.set('a', [{ grantee: '@bob.home' }])
+  const left = await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'after leaving', role: 'reply', via: 'auto-reply' })
+  assert.equal(left.action, 'deny', JSON.stringify(left))
+  assert.match(left.reason, /friendship is with/)
+
+  clock += 5_000
+  server.tools.list_friends = () => ({ friends: [] })
+  const gone = await ctx.flybot.bot.send({ from: 'b', to: '@coder.bob.home', text: 'bob deleted', role: 'reply', via: 'auto-reply' })
+  assert.equal(gone.action, 'deny', JSON.stringify(gone))
+  assert.match(gone.reason, /not a Bot a friend shared with you/)
+  const again = await ctx.flybot.bot.send({ from: 'b', to: '@coder.bob.home', text: 'still there?', role: 'reply', via: 'auto-reply' })
+  assert.equal(again.action, 'deny', JSON.stringify(again))
+  assert.match(again.reason, /that friend is gone/)
+  assert.doesNotMatch(again.reason, /not friends/)
+  const chat = ctx.flybot.remote.chats.list().find(bot => bot.handle === '@coder.bob.home')
+  if (chat) assert.equal(ctx.flybot.bot.get(chat.id).hidden, true, 'the dead friend chat is not left as a reject composer')
+  const room = ctx.flybot.rooms.list().find(item => item.id === 'delivery')
+  assert.equal((room.participants ?? []).some(p => p.handle === '@coder.bob.home' && p.leftSeq === undefined), false)
+})
+
 // A server that holds every send_as_member and lists the holds. `reasons` names what Bot Social
 // held it for: the plain approval requirement, or a finding of its own (a DLP category).
 function holdingServer({ reasons = ['mvp.all_outbound_requires_approval'], riskFlags = [], holdReason } = {}) {

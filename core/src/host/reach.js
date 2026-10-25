@@ -225,11 +225,21 @@ export function sharedRoom(state, botId, peer) {
   return room === undefined ? undefined : String(room.id)
 }
 
-// #1126: a mention of a Bot that already sits in a live local or inbound group with the sender.
-// The seat is the consent, so the mention does not also need a Sharing grant. A seat a group
-// invite admitted (`admittedBy: 'ticket'`) counts while it is still in the room: that is how a
-// local-group link seats the other home. Face-to-face stays on sharedRoom (it names a server
-// room). A plain line and message_bot do not come here — the caller passes `via`.
+// A live seat this sender still shares an ordinary group with (#1126, #1141). The exact seated
+// Bot matches, and so does a send addressed to that seat's home (`@flybot….home`) — not some other
+// Bot of the same home. The seat is the consent for every send, not only a user mention.
+function seatReaches(seat, peer) {
+  const key = handleKey(peer)
+  if (!key) return false
+  if (handleKey(seat.handle || seat.id) === key) return true
+  const home = handleKey(seat.ownerHome || seat.home || homeOfHandle(seat.handle || seat.id))
+  return home !== '' && home === key && homeOfHandle(key) === key
+}
+
+// #1126, #1141: a Bot that already sits in a live local or inbound group with the sender.
+// The seat is the consent, so the send does not also need a Sharing grant. A seat a group
+// invite admitted (`admittedBy: 'ticket'`) counts while it is still in the room. Face-to-face
+// stays on sharedRoom (it names a server room).
 export function mentionRoom(state, botId, peer) {
   if (typeof botId !== 'string' || state.bots?.[botId] === undefined) return undefined
   const key = handleKey(peer)
@@ -238,7 +248,7 @@ export function mentionRoom(state, botId, peer) {
     && candidate.origin !== 'face-to-face'
     && !candidate.hidden
     && (candidate.members ?? []).includes(botId)
-    && remotesInRoom(candidate).some(seat => handleKey(seat.handle || seat.id) === key))
+    && remotesInRoom(candidate).some(seat => seatReaches(seat, peer)))
   return room === undefined ? undefined : String(room.id)
 }
 
@@ -365,12 +375,15 @@ export function install(rt) {
     const named = msg.meta?.roomId ?? msg.roomId ?? msg.fromRoomId ?? msg.deliverArgs?.roomId ?? msg.deliverArgs?.fromRoomId
     // #1126: a user mention of a live local-group seat is judged under that room even when the send
     // names none. Any other via keeps asking for a grant or an explicit roomId.
-    const mentioned = named === undefined && msg.via === 'user-mention' && isRemoteRef(to) && !isRemoteRef(from)
+    // #1126, #1141: a live ordinary-group seat is the consent for this send even when the caller
+    // names no room. message_bot stays a 1:1: it still needs a grant (#1126). A face-to-face
+    // room stays on sharedRoom.
+    const coRoom = named === undefined && msg.via !== 'message_bot' && isRemoteRef(to) && !isRemoteRef(from)
       ? mentionRoom(state, from, to)
       : undefined
     // #948: a local Bot's line to a friend's Bot is judged under the room the two of them are still in,
     // even when the send names no room: that room is the consent, and the transport names it outbound.
-    const roomId = named ?? mentioned ?? (isRemoteRef(to) && !isRemoteRef(from) ? sharedRoom(state, from, to) : undefined)
+    const roomId = named ?? coRoom ?? (isRemoteRef(to) && !isRemoteRef(from) ? sharedRoom(state, from, to) : undefined)
     return reach(state, { from, to, roomId, scope: msg.meta?.scope })
   }
   rt.ticketPeers = () => ticketPeers(state)

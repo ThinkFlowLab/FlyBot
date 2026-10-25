@@ -1576,6 +1576,21 @@ function remoteBotTitle(record) {
   const name = remoteBotName(record, isChiefRecord(record) ? "Chief" : cleanPeerName(record?.handle, "Bot"));
   return `${name} (${owner})`;
 }
+function remoteCallName(record) {
+  const handle = String(record?.handle ?? "").replace(/^@+/, "").trim();
+  const bare2 = remoteBotName(record, "").replace(/^@+/, "").trim();
+  const unusable = (value) => {
+    const text = String(value ?? "").replace(/^@+/, "").trim();
+    if (!text || /^friend$/i.test(text)) return true;
+    if (text.includes("@") || /\.home\b/i.test(text)) return true;
+    if (handle && text.toLowerCase() === handle.toLowerCase()) return true;
+    return false;
+  };
+  if (!unusable(bare2)) return bare2;
+  const slug = handle.split(".")[0];
+  if (slug && !unusable(slug)) return slug;
+  return "Bot";
+}
 function remoteOwnerBadge(record) {
   return ownerNameOf(record) || cleanPeerName(record?.handle, "Friend");
 }
@@ -9759,11 +9774,13 @@ function mentionRows(roster, sessionId, query = "") {
     // A remote seat already listed under its handle (a duplicate participant record) is offered once.
     ...uniqueBy(live.filter((p) => p.remote), (p) => p.handle || p.id).map((p) => ({
       id: p.handle || p.id,
-      name: remoteBotTitle(p),
+      // A face room inserts the disambiguated title. An ordinary group inserts the name the
+      // room routes on (#1141): never "@@handle.home (owner)" and never "(Friend)".
+      name: face ? remoteBotTitle(p) : remoteCallName(p),
       kind: "bot",
       remote: p,
       handle: p.handle,
-      ...face ? { label: faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot")) } : {}
+      label: face ? faceLabel(ownerNameOf(p), cleanPeerName(p.displayName || p.name, "Bot")) : remoteBotTitle(p)
     }))
   ] : listedChatBots(roster).filter((bot) => bot.id !== here.self.id);
   const needle = query.trim().toLowerCase();
