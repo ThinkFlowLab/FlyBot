@@ -142,6 +142,11 @@ window.__ModuleLoader__.load({
 .fs-friend-remove .fs-leave-ask{display:flex;align-items:center;gap:6px}
 .fs-card .fs-hint{padding:0}
 .fs-line{display:flex;gap:6px;min-width:0;align-items:center}
+.fs-access-col{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;gap:1px}
+.fs-access-meta{display:flex;align-items:baseline;min-width:0;flex-wrap:wrap}
+.fs-access-meta .fs-sub,.fs-access-meta .fs-hint{min-width:0}
+.fs-leave-ask.fs-access-ask{flex-wrap:wrap;white-space:normal;justify-content:flex-end}
+.fs-leave-ask.fs-access-ask .fs-hint{flex:1 1 10em;white-space:normal}
 .fs-input{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;outline:none;text-overflow:ellipsis}
 .fs-input:focus{border-color:var(--bt-accent,#4d6bfe)}
 .fs-input[readonly]{background:var(--bt-tag-bg,rgba(20,20,20,.06));border-color:transparent}
@@ -3063,6 +3068,7 @@ window.__ModuleLoader__.load({
       const [view, setView] = useState(null)
       const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
+      const [asking, setAsking] = useState('')
       const load = async () => {
         if (!bot?.id) return
         try {
@@ -3090,6 +3096,7 @@ window.__ModuleLoader__.load({
           setView(await call('social/revoke-grant', { botId: bot.id, grantId: grant.id, ...((grant.grantIds ?? []).length > 1 ? { grantIds: grant.grantIds } : {}), relationshipId: grant.relationshipId, grantee: grant.grantee }))
           const next = await call('social/access', { botId: bot.id })
           setView(next)
+          setAsking('')
           // The roster cache is being rebuilt from here; a share list read that started before this
           // point saw the old roster, so it must not replace the list (#984).
           shareListEpoch += 1
@@ -3112,26 +3119,42 @@ window.__ModuleLoader__.load({
       // A room the grant rows already named must not come back under "This room only" (#955).
       const listedRoomIds = grants.flatMap(grant => roomList(grant.rooms).map(row => row.id))
       const roomOnlyUsage = roomHint('only', (view?.rooms ?? []).filter(room => room.origin === 'face-to-face'), listedRoomIds)
+      // The handle (or the home, when the row names no Bot) and "In use in N rooms" are inline
+      // siblings. React inserts no space between them, so the row paints `@handleIn use` (#1073).
+      const accessIdentity = (grant) => (
+        grant.handle && grant.handle !== grant.home ? grant.handle
+          : grant.home && grant.name && !String(grant.name).includes(grant.home) ? grant.home
+            : ''
+      )
+      // Revoke drops the share and the rooms that use it. Ask once, inline, as Leave does (#1073).
+      const revokeAsk = (grant) => {
+        const who = grant.name || grant.grantee || 'this person'
+        const n = roomList(grant.rooms).length
+        return n > 0
+          ? `Revoke ${who}? They lose this Bot in ${n} room${n === 1 ? '' : 's'}.`
+          : `Revoke ${who}? They lose this Bot.`
+      }
       return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
         h('div', { className: 'fs-name' }, 'People with access'),
         h('div', { className: 'fs-hint fs-face-note' }, ACCESS_NOTE),
         grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
         grants.map((grant) => {
           const grantUsage = roomHint('use', grant.rooms)
+          const identity = accessIdentity(grant)
           // Auto-send is one setting for the pair (this Bot → that person), so a friend whose two Bots
           // are two rows still gets one switch (#995), on the first of their rows.
           const autoKey = grant.person || grant.home
           const showAuto = Boolean(grant.home) && !autoShown.has(autoKey)
           if (showAuto) autoShown.add(autoKey)
-          return h('div', { key: grant.id || grant.grantee, className: 'fs-line', 'data-flybot': 'access-grant' },
-          h('div', { className: 'fs-col' },
+          const grantKey = grant.id || grant.grantee
+          const confirming = asking === grantKey
+          return h('div', { key: grantKey, className: 'fs-line', 'data-flybot': 'access-grant' },
+          h('div', { className: 'fs-col fs-access-col' },
             h('span', { className: 'fs-name' }, grant.name || grant.grantee),
-            grant.handle && grant.handle !== grant.home
-              ? h('span', { className: 'fs-sub' }, grant.handle)
-              : grant.home && grant.name && !String(grant.name).includes(grant.home)
-                ? h('span', { className: 'fs-sub' }, grant.home)
-                : null,
-            grantUsage ? h('span', { className: 'fs-hint', title: grantUsage.title }, grantUsage.text) : null),
+            identity || grantUsage ? h('span', { className: 'fs-access-meta', 'data-flybot': 'access-meta' },
+              identity ? h('span', { className: 'fs-sub' }, identity) : null,
+              identity && grantUsage ? ' · ' : null,
+              grantUsage ? h('span', { className: 'fs-hint', title: grantUsage.title }, grantUsage.text) : null) : null),
           showAuto ? h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
             h('input', {
               type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
@@ -3139,11 +3162,23 @@ window.__ModuleLoader__.load({
               onChange: e => { void toggleAutoSend(grant, e.target.checked) },
             }),
             'Auto-send') : null,
-          h('button', {
-            type: 'button', className: 'fs-btn', disabled: Boolean(busy),
-            'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
-            onClick: () => revoke(grant),
-          }, busy === grant.id ? 'Revoking…' : 'Revoke'))
+          confirming
+            ? h('span', { className: 'fs-leave-ask fs-access-ask', 'data-flybot': 'revoke-grant-confirm' },
+              h('span', { className: 'fs-hint' }, revokeAsk(grant)),
+              h('button', {
+                type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
+                'data-flybot': 'revoke-grant-yes', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
+                onClick: () => revoke(grant),
+              }, busy === grant.id ? 'Revoking…' : 'Revoke'),
+              h('button', {
+                type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
+                'data-flybot': 'revoke-grant-no', onClick: () => setAsking(''),
+              }, 'Keep'))
+            : h('button', {
+              type: 'button', className: 'fs-btn', disabled: Boolean(busy),
+              'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
+              onClick: () => setAsking(grantKey),
+            }, 'Revoke'))
         }),
         roomOnlyUsage ? h('div', { className: 'fs-hint', title: roomOnlyUsage.title }, roomOnlyUsage.text) : null,
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)

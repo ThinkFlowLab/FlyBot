@@ -4221,6 +4221,13 @@ test('Bot settings: Manage access lists grants and revokes one', async () => {
   const revoke = tree.find(n => n.props['data-flybot'] === 'revoke-grant')
   assert.ok(revoke)
   await revoke.props.onClick()
+  assert.equal(calls.some(([endpoint]) => endpoint === 'social/revoke-grant'), false, 'Revoke asks first (#1073)')
+  cursor = 0
+  const asked = walk(plugin.ManageAccess({ bot: { id: 'b', name: 'Writer' } }))
+  const yes = asked.find(n => n.props['data-flybot'] === 'revoke-grant-yes')
+  assert.ok(yes)
+  assert.match(accessRowText(asked.find(n => n.props['data-flybot'] === 'revoke-grant-confirm')), /Revoke Bob\? They lose this Bot in 1 room\./)
+  await yes.props.onClick()
   assert.ok(calls.some(([endpoint]) => endpoint === 'social/revoke-grant'))
 })
 
@@ -11342,6 +11349,7 @@ test('#984: a share-list read that straddled a revoke is dropped, not written', 
   const access = host.mount('ManageAccess', { bot: { id: 'b', name: 'Writer' } })
   await access.settle()
   await access.click('revoke-grant')
+  await access.click('revoke-grant-yes')
   await access.settle()
   pending.at(-1)({ friends: [] }) // answers with the roster the revoke just invalidated
   await share.settle()
@@ -11635,9 +11643,107 @@ test('#995: the access panel draws one Revoke per Bot, one Auto-send per person,
   const revokes = tree.filter(node => node.props['data-flybot'] === 'revoke-grant')
   assert.equal(revokes.length, 2)
   await revokes[1].props.onClick()
+  assert.equal(calls.find(([endpoint]) => endpoint === 'social/revoke-grant'), undefined, 'Revoke asks first (#1073)')
+  // The confirm is the same row: seed the ask on Writer and press Revoke again.
+  const asked = walk(pluginOf([payload, '', '', 'g-writer']).ManageAccess({ bot: { id: 'b', name: 'Chief' } }))
+  const yes = asked.find(node => node.props['data-flybot'] === 'revoke-grant-yes')
+  assert.ok(yes)
+  await yes.props.onClick()
   const sent = calls.find(([endpoint]) => endpoint === 'social/revoke-grant')
   assert.equal(sent[1].grantId, 'g-writer')
   assert.equal('grantIds' in sent[1], false, 'a one-grant row revokes that grant alone')
+})
+
+// #1073: the handle and "In use in N rooms" are sibling inline spans, so the row paints
+// `@handleIn use in N rooms`. The same line is the home when the row has no Bot handle.
+const accessRowText = (node) => {
+  if (node == null || node === false) return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  return (node.props?.children ?? node.children ?? []).map(accessRowText).join('')
+}
+
+test('#1073: People with access separates the handle from In use, and a home the same way', async () => {
+  const rooms = [{ id: 'r1', name: 'Loft' }, { id: 'r2', name: 'Lab' }, { id: 'r3', name: 'Yard' }]
+  const chief = {
+    id: 'g-chief', grantIds: ['g-chief'], grantee: '@selfa1025.home', name: 'Chief (SelfA1025)',
+    home: '@selfa1025.home', handle: '@chief.selfa1025.home', person: 'SelfA1025', autoSend: false, rooms,
+  }
+  const bob = {
+    id: 'g-bob', grantIds: ['g-bob'], grantee: '@bob.home', name: 'Bob', home: '@bob.home',
+    person: 'Bob', autoSend: false, rooms: [{ id: 'war', name: 'War' }],
+  }
+  const quiet = {
+    id: 'g-quiet', grantIds: ['g-quiet'], grantee: '@bob.home', name: 'Quiet (Bob)',
+    home: '@bob.home', handle: '@quiet.bob.home', person: 'Bob', autoSend: false, rooms: [],
+  }
+  const host = sharingHost(async (endpoint) => (
+    endpoint === 'social/access' ? { botId: 'b', botName: 'Chief', grants: [chief, bob, quiet], rooms: [] } : {}
+  ))
+  const panel = host.mount('ManageAccess', { bot: { id: 'b', name: 'Chief' } })
+  await panel.settle()
+  const row = (needle) => {
+    const found = panel.nodes().filter(node => node.props?.['data-flybot'] === 'access-grant').map(accessRowText).find(text => text.includes(needle))
+    assert.ok(found, `no access row contains ${needle}`)
+    return found
+  }
+  const chiefRow = row('@chief.selfa1025.home')
+  assert.match(chiefRow, /@chief\.selfa1025\.home · In use in 3 rooms: Loft, Lab, Yard/)
+  assert.doesNotMatch(chiefRow, /homeIn use/)
+  const bobRow = row('@bob.home')
+  assert.match(bobRow, /@bob\.home · In use in 1 room: War/)
+  assert.doesNotMatch(bobRow, /homeIn use/)
+  const quietRow = row('@quiet.bob.home')
+  assert.match(quietRow, /@quiet\.bob\.home/)
+  assert.doesNotMatch(quietRow, /@quiet\.bob\.home ·/, 'a row with no rooms grows no separator')
+  assert.doesNotMatch(quietRow, /In use/)
+})
+
+test('#1073: Revoke asks before it runs, and Keep leaves the grant', async () => {
+  const calls = []
+  const rooms = [{ id: 'r1', name: 'Loft' }, { id: 'r2', name: 'Lab' }, { id: 'r3', name: 'Yard' }]
+  let grants = [{
+    id: 'g-chief', grantIds: ['g-chief'], grantee: '@selfa1025.home', name: 'Chief (SelfA1025)',
+    home: '@selfa1025.home', handle: '@chief.selfa1025.home', person: 'SelfA1025', autoSend: false,
+    relationshipId: 'r1', rooms,
+  }, {
+    id: 'g-writer', grantIds: ['g-writer'], grantee: '@bob.home', name: 'Writer (Bob)',
+    home: '@bob.home', handle: '@writer.bob.home', person: 'Bob', autoSend: false, rooms: [],
+  }]
+  const host = sharingHost(async (endpoint, body) => {
+    calls.push([endpoint, body])
+    if (endpoint === 'social/access') return { botId: 'b', botName: 'Chief', grants, rooms: [] }
+    if (endpoint === 'social/revoke-grant') {
+      grants = grants.filter(row => row.id !== body.grantId)
+      return { botId: 'b', revoked: body.grantId, grants }
+    }
+    return {}
+  })
+  const panel = host.mount('ManageAccess', { bot: { id: 'b', name: 'Chief' } })
+  await panel.settle()
+  assert.equal(panel.has('revoke-grant-confirm'), false)
+  const revoked = () => calls.filter(([endpoint]) => endpoint === 'social/revoke-grant')
+  await panel.click('revoke-grant')
+  assert.equal(revoked().length, 0, 'the first Revoke does not call')
+  assert.ok(panel.has('revoke-grant-confirm'))
+  assert.match(panel.text(), /Revoke Chief \(SelfA1025\)\? They lose this Bot in 3 rooms\./)
+  await panel.click('revoke-grant-no')
+  assert.equal(panel.has('revoke-grant-confirm'), false)
+  assert.equal(revoked().length, 0, 'Keep leaves the grant')
+  assert.equal(panel.nodes().filter(node => node.props?.['data-flybot'] === 'revoke-grant').length, 2)
+  // The second row has no rooms: the question still asks, and it does not invent a room count.
+  const buttons = panel.nodes().filter(node => node.type === 'button' && node.props?.['data-flybot'] === 'revoke-grant')
+  await buttons[1].props.onClick()
+  assert.equal(revoked().length, 0)
+  assert.match(panel.text(), /Revoke Writer \(Bob\)\? They lose this Bot\./)
+  assert.doesNotMatch(panel.text(), /Revoke Writer \(Bob\)\? They lose this Bot in/)
+  await panel.click('revoke-grant-no')
+  await panel.click('revoke-grant')
+  await panel.click('revoke-grant-yes')
+  await panel.settle()
+  assert.equal(revoked().length, 1)
+  assert.equal(revoked()[0][1].grantId, 'g-chief')
+  assert.equal('grantIds' in revoked()[0][1], false, 'a one-grant row revokes that grant alone')
+  assert.equal(panel.nodes().filter(node => node.props?.['data-flybot'] === 'access-grant').length, 1, 'the other Bot stays')
 })
 
 // #994: on this deployment `grant_bot_to_friend` answers with the grant id and the status only — no `friend`,
