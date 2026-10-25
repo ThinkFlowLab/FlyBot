@@ -254,6 +254,21 @@ test('a Fixes reference with no space before the hash still counts', () => {
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
 
+// A slice pull request references its parent issue without closing it (#644 / #1148).
+for (const ref of ['Related #644', 'Related ThinkFlowLab/FlyBot#1', 'Part of #644', 'Part of ThinkFlowLab/FlyBot#1']) {
+  test(`a "${ref}" reference is an issue reference`, () => {
+    const gh = fakeGh({ body: HEADERS + ref + '\n\nthe detail', labels: ['agent-pr'], files: [HOST_FILE], comments: [comment()] })
+    const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+    assert.equal(r.ok, true, r.reasons.join('; '))
+  })
+}
+
+test('a body with no Fixes, Closes, Related or Part of reference is still refused', () => {
+  const r = run({ body: 'Relates to the dock work.\n\nthe detail', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /no issue reference in the pull request body/)
+})
+
 // The number alone is not a reference: `Fixes 801` names no issue in either repository.
 test('a Fixes line without the hash is not an issue reference', () => {
   const r = run({ body: 'Fixes 801\n\nthe detail', comments: [comment()] })

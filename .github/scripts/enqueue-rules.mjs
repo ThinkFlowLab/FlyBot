@@ -27,7 +27,7 @@ const RECORD_ONLY = /^[\s>*+-]*(?:record only\s*[—–-]+\s*do not (?:merge|que
 // report, not this regex's job.
 // The rules only hold where the branch is ours: a fork is exempt, because we cannot push to its head
 // and the owner keeps their own workflow there (#711/#713).
-const ISSUE_REF = /^[\s>#-]*(?:fixes|closes)\s*(?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#\d+/im
+const ISSUE_REF = /^[\s>#-]*(?:fixes|closes|related|part\s+of)\s*(?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#\d+/im
 // #943: the body says who owns the pull request and who reviews it. `Owner:`/`Reviewer:` were a
 // sentence in AGENTS.md that nothing read: #940 went from opened to merged in about seven minutes with
 // the largest diff of the day, and its body carried neither line.
@@ -139,7 +139,7 @@ export function guard({ pr, head, labels, body, mechanicalRelease, fork, draft, 
   // their own workflow there (#711/#713). `result.exempt` cannot stand in for either: it is true for T0/T1
   // as well, and routine work still names its issue.
   if (!mechanicalRelease && !fork) {
-    if (!ISSUE_REF.test(String(body ?? ''))) reasons.push('no issue reference in the pull request body: add "Fixes #<n>" or "Fixes owner/repo#<n>"')
+    if (!ISSUE_REF.test(String(body ?? ''))) reasons.push('no issue reference in the pull request body: add "Fixes #<n>" or "Fixes owner/repo#<n>" (or "Related #<n>" / "Part of #<n>" to reference it without closing)')
     if (!labelNames(labels).includes('agent-pr')) reasons.push('missing label: agent-pr')
     // #943: only a request to enter the queue. A draft is not entering it, and a merged pull request is
     // never re-judged: this check runs again on every comment (enqueue-guard.yml), so without the second
