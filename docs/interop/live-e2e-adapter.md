@@ -53,10 +53,13 @@ Rules an adapter must hold:
 
 ## Outcome contract
 
-`pass | assertion_failed | provider_failed | infra_failed | budget_exceeded`, exit codes
-0–4, one structured report per run (`flybot-live-e2e/1`): run id, revision, runtime and
+`pass | assertion_failed | provider_failed | infra_failed | budget_exceeded | tampered`, exit
+codes 0–5, one structured report per run (`flybot-live-e2e/1`): run id, revision, runtime and
 model config, resolved endpoint (non-loopback, key not the mock's — fail closed
 otherwise), absolute ISO-8601 timestamps with offset plus human times in the run's zone
 (Asia/Shanghai), monotonic per-check durations, token/cache usage, and the sanitizer
 verdict over the uploaded evidence. Budgets default to 180 s per check, 250K tokens per
-run; a budget stop is reported as `budget_exceeded`, never retried.
+run; a budget stop is reported as `budget_exceeded`, never retried. `tampered` (exit 5)
+is the last word (#398): the grader's hash list changed between the start and the end of the
+run, so the evidence is invalid whatever the checks said, and the report carries
+`integrity.changed` beside `integrity.grader`.

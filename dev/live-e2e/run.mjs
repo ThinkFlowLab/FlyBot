@@ -9,7 +9,11 @@
 //        [--harness <deepseek-harness checkout>] [--tap <llm-tap.jsonl>]
 //        [--evidence <dir>] [--tz Asia/Shanghai]
 //
-// Exit codes: 0 pass, 1 assertion_failed, 2 provider_failed, 3 infra_failed, 4 budget_exceeded.
+// The bench home is the directory `bench.mjs` used (`$LIVE_E2E_HOME`, default
+// ~/.cache/flybot-live-e2e/<name>) and may not be inside this checkout (#398).
+//
+// Exit codes: 0 pass, 1 assertion_failed, 2 provider_failed, 3 infra_failed, 4 budget_exceeded,
+// 5 tampered (the grader or its fixtures moved during the run, #398).
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -18,7 +22,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { runScenarios } from './scenarios.mjs'
-import { budgetsFrom, buildReport, guardRun, OUTCOMES, providerFailures, summaryLines, usageOf } from './report.mjs'
+import { budgetsFrom, buildReport, guardRun, integrityOutcome, OUTCOMES, providerFailures, summaryLines, usageOf } from './report.mjs'
+import { changedPaths, canonicalPath, treeManifest } from './integrity.mjs'
 import { scanTree } from './sanitize.mjs'
 import { openFlyBotWeb } from './adapter.mjs'
 
@@ -33,14 +38,17 @@ const { values: args, positionals } = parseArgs({
     tz: { type: 'string', default: process.env.TZ || 'Asia/Shanghai' },
   },
 })
-const [HOME, PORT] = positionals
-if (!HOME || !PORT) {
+const [HOME_TEXT, PORT] = positionals
+if (!HOME_TEXT || !PORT) {
   console.error('usage: node dev/live-e2e/run.mjs <bench-home> <web-port> [--model ref] [--harness dir] [--tap file] [--evidence dir] [--tz zone]')
   process.exit(OUTCOMES.infra_failed)
 }
+// Absolute, real paths: the guards compare them, so a relative home or a symlinked parent must not
+// read as somewhere else than the directory the bench will actually use.
+const HOME = canonicalPath(HOME_TEXT)
 
 const budgets = budgetsFrom(process.env)
-const evidence = args.evidence ?? join(HOME, 'evidence')
+const evidence = canonicalPath(args.evidence ?? join(HOME, 'evidence'))
 const startedAt = new Date()
 const runId = randomUUID()
 const revision = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
@@ -72,7 +80,7 @@ const stoppedEarly = (outcome, problems) => {
 
 // Guards first: never open a browser — or write anything — against a bench that should
 // not exist, so a guard failure prints and exits without touching the passed home.
-const guard = guardRun({ apiKey: process.env.DEEPSEEK_API_KEY, baseUrl: process.env.DEEPSEEK_BASE_URL, tapUpstream: process.env.LIVE_E2E_TAP_UPSTREAM, home: HOME, userHome: homedir() })
+const guard = guardRun({ apiKey: process.env.DEEPSEEK_API_KEY, baseUrl: process.env.DEEPSEEK_BASE_URL, tapUpstream: process.env.LIVE_E2E_TAP_UPSTREAM, home: HOME, userHome: homedir(), repoRoot: ROOT, evidence })
 if (guard.problems.length > 0) {
   console.error(guard.problems.join('\n'))
   console.error(`outcome infra_failed (exit ${OUTCOMES.infra_failed})`)
@@ -81,6 +89,10 @@ if (guard.problems.length > 0) {
 const harness = args.harness ?? process.env.DSH_HARNESS ?? join(ROOT, 'deepseek-harness')
 if (!existsSync(harness)) conclude(stoppedEarly('infra_failed', [`no deepseek-harness checkout at ${harness}; pass --harness or set DSH_HARNESS`]))
 mkdirSync(evidence, { recursive: true })
+
+// #398: the grader as it stands before the first turn. The same walk runs again before the report
+// is written; a difference is not a warning, it invalidates the run whatever the checks said.
+const graderBefore = treeManifest(ROOT, ['dev/live-e2e'])
 
 let adapter
 try {
@@ -141,7 +153,20 @@ if (findings.length > 0) {
   report.exitCode = OUTCOMES.infra_failed
   report.sanitizerFindings = findings
 }
+
+// The tamper check has the last word (#398): a run whose grader moved is not a pass and not a
+// clean bundle, whatever the checks said. The manifest goes in the report so a later edit of the
+// evidence is visible against the tree it was produced from.
+const graderAfter = treeManifest(ROOT, ['dev/live-e2e'])
+const changed = changedPaths(graderBefore, graderAfter)
+const final = integrityOutcome({ outcome: report.outcome, findings, changed })
+report.integrity = { grader: graderAfter, changed }
+if (final.outcome !== report.outcome) {
+  report.outcome = final.outcome
+  report.exitCode = OUTCOMES[final.outcome]
+  report.stoppedBecause = final.stoppedBecause
+}
 writeReport(report)
-if (findings.length === 0) writeFileSync(join(evidence, 'sanitized.txt'), `run ${runId} sanitized at ${new Date().toISOString()}\n`)
+if (final.clean) writeFileSync(join(evidence, 'sanitized.txt'), `run ${runId} sanitized at ${new Date().toISOString()}\n`)
 console.log(summaryLines(report).join('\n'))
 process.exit(report.exitCode)

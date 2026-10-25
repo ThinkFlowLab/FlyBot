@@ -137,7 +137,7 @@ test('the sanitizer catches login URLs, cookies and the key itself — and never
 
 test('outcome names map to distinct exit codes', () => {
   const codes = Object.values(OUTCOMES)
-  assert.deepEqual([...new Set(codes)].sort(), [0, 1, 2, 3, 4])
+  assert.deepEqual([...new Set(codes)].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5])
 })
 
 test('task wording stays intact for the reload check', () => {

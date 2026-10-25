@@ -5,16 +5,17 @@
 //
 //   node dev/live-e2e/bench.mjs <name> <web-port> [start|stop|reset|status]
 //
-// Data lives in <repo>/.dsh-test-<name> (never under ~/.dsh; `reset` wipes the Bot team
-// and Sessions before starting). Environment: DEEPSEEK_API_KEY (required; fails loudly
-// when missing or the mock's), DEEPSEEK_BASE_URL (optional; defaults to the official
-// endpoint — point it at dev/llm-tap.mjs to record per-call usage), DSH_HARNESS (a
+// Data lives outside this checkout — `$LIVE_E2E_HOME`, else ~/.cache/flybot-live-e2e/<name> (never
+// under ~/.dsh; `reset` wipes the Bot team and Sessions before starting). A home inside the
+// checkout is refused: that workspace would hold the grader (#398). Environment: DEEPSEEK_API_KEY
+// (required; fails loudly when missing or the mock's), DEEPSEEK_BASE_URL (optional; defaults to the
+// official endpoint — point it at dev/llm-tap.mjs to record per-call usage), DSH_HARNESS (a
 // deepseek-harness checkout with its dependencies installed).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { benchHome } from './integrity.mjs'
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const [NAME, PORT_TEXT, ACTION = 'start'] = process.argv.slice(2)
@@ -24,8 +25,8 @@ const WEB_PORT = Number(PORT_TEXT)
 if (!Number.isInteger(WEB_PORT) || WEB_PORT <= 0) die(`not a port: ${PORT_TEXT}`)
 if (WEB_PORT === 3080) die('port 3080 belongs to the real service')
 
-const HOME_DIR = join(ROOT, `.dsh-test-${NAME}`)
-if (HOME_DIR === homedir() || HOME_DIR.startsWith(`${homedir()}/.dsh`)) die(`refusing to use ${HOME_DIR}: the bench never touches the user's own DSH data`)
+const { home: HOME_DIR, problem: homeProblem } = benchHome({ name: NAME, root: ROOT })
+if (homeProblem) die(`${homeProblem}\n(the bench home must be outside ${ROOT}; export LIVE_E2E_HOME to choose it)`)
 
 const apiKey = process.env.DEEPSEEK_API_KEY ?? ''
 if (!apiKey || apiKey === 'mock-key' || apiKey.length < 16) die('DEEPSEEK_API_KEY is missing, too short, or the mock\'s; a real key is required (never printed)')

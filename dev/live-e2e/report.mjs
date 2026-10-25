@@ -1,3 +1,6 @@
+import { join } from "node:path"
+import { canonicalPath, isInside } from "./integrity.mjs"
+
 // The outcome contract and the report assembly for the #204 live runner. Pure code,
 // covered keyless by test/report.test.mjs.
 //
@@ -7,7 +10,9 @@
 //   provider_failed (exit 2)   the model endpoint rejected or failed a call (401/429/5xx)
 //   infra_failed (exit 3)      bench, browser, secret or guard failures; never reported as a pass
 //   budget_exceeded (exit 4)   a check or the token cap ran out; never retried silently
-export const OUTCOMES = { pass: 0, assertion_failed: 1, provider_failed: 2, infra_failed: 3, budget_exceeded: 4 }
+//   tampered (exit 5)          the grader or its fixtures changed during the run (#398): the
+//                              run is invalid, never a pass, whatever the checks said
+export const OUTCOMES = { pass: 0, assertion_failed: 1, provider_failed: 2, infra_failed: 3, budget_exceeded: 4, tampered: 5 }
 
 export const DEFAULT_BUDGETS = { checkMs: 180_000, quietMs: 6_000, maxTokens: 250_000 }
 
@@ -26,7 +31,7 @@ export function budgetsFrom(env) {
 // Fail-closed checks on the run's inputs. A loopback base URL is the mock bench (or the
 // usage tap, which names the real upstream in LIVE_E2E_TAP_UPSTREAM); anything else
 // without a key, or with the mock's key, is refused rather than run.
-export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome }) {
+export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoot, evidence, cwd }) {
   const problems = []
   if (!apiKey || apiKey === 'mock-key' || apiKey.length < 16) problems.push('DEEPSEEK_API_KEY is missing, too short, or the mock key')
   let host = 'api.deepseek.com'
@@ -48,10 +53,38 @@ export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome }) {
       problems.push(`DEEPSEEK_BASE_URL is loopback (${host}); the live suite never runs against the mock`)
     }
   }
-  if (home && userHome && (home === userHome || home.startsWith(`${userHome}/.dsh`))) {
-    problems.push(`the bench home ${home} is inside the user's own DSH data`)
+  // Both path guards compare canonical paths: a relative `--home`, a symlinked `$HOME` or a
+  // differently-cased existing segment must not make a directory read as somewhere it is not.
+  if (home && userHome) {
+    const own = canonicalPath(home, cwd)
+    const user = canonicalPath(userHome, cwd)
+    if (own === user || isInside(own, join(user, '.dsh'), cwd)) problems.push(`the bench home ${home} is inside the user's own DSH data`)
+  }
+  // #398: the Bot under test may write nothing the run is judged on. A bench home inside this
+  // checkout hands it the grader, the fixtures and the evidence directory, and the runner cannot
+  // take a workspace away once the bench starts — so the run does not start.
+  if (home && repoRoot && isInside(home, repoRoot, cwd)) {
+    problems.push(`the bench home ${home} is inside the checkout ${repoRoot}: the Bot under test would hold the grader`)
+  }
+  // The runner writes the report into the evidence directory; hashing the grader while writing the
+  // evidence into it would record the run's own writes as tampering, so that shape is refused too.
+  if (evidence && repoRoot && isInside(evidence, join(repoRoot, 'dev/live-e2e'), cwd)) {
+    problems.push(`the evidence directory ${evidence} is inside the grader ${join(repoRoot, 'dev/live-e2e')}: the run would record its own writes as tampering`)
   }
   return { problems, endpoint: { host, origin, viaTap: loopback } }
+}
+
+// The run's last word (#398). Whatever the checks and the evidence scanner said, a grader that
+// moved during the run makes the whole run invalid — the report must not read as a pass, and the
+// evidence bundle must not carry a sanitized stamp. Pure, so the rule is testable without a browser.
+export function integrityOutcome({ outcome, findings = [], changed = [] }) {
+  if (changed.length === 0) return { outcome, changed, stoppedBecause: undefined, clean: findings.length === 0 }
+  return {
+    outcome: 'tampered',
+    changed,
+    stoppedBecause: `the grader changed during the run: ${changed.join(', ')}`,
+    clean: false,
+  }
 }
 
 // The provider's health since a mark: llm-tap writes one line per call, and a failed

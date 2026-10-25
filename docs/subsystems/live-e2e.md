@@ -21,7 +21,7 @@ suite is one of its columns, not the map's owner.
 
 - `dev/live-e2e/`: the fixture and scenario/assertion modules, the FlyBot web adapter,
   the real-model bench launcher, the runner (guards, budgets, report, evidence
-  sanitizer) and the keyless fake-adapter tests.
+  sanitizer, grader hash) and the keyless fake-adapter tests.
 - `scripts/lint-live-e2e.mjs`: lint using core's installed harness tooling.
 
 ## Invariants
@@ -30,9 +30,12 @@ suite is one of its columns, not the map's owner.
   it is covered keyless (`npm run test:live-e2e`, part of `verify`) through a fake
   adapter. The live command itself is never part of `verify`.
 - The live run uses a real key from the environment and a fresh isolated bench home
-  (`.dsh-test-*`, never under `~/.dsh`). The runner fails closed on a mock key, a
-  loopback endpoint (except the usage tap with a real upstream), or the user's own
-  DSH home. No retries hide regressions.
+  **outside this checkout** (`$LIVE_E2E_HOME`, default `~/.cache/flybot-live-e2e/<name>`,
+  never under `~/.dsh`). The runner fails closed on a mock key, a loopback endpoint
+  (except the usage tap with a real upstream), the user's own DSH home, or a bench home
+  (or `--evidence` directory) inside the checkout — those path guards compare canonical
+  real paths, so a relative value or a symlink cannot slip through. No retries hide
+  regressions.
 - When the key is absent altogether, `live-e2e.yml` skips the six steps that need it and
   warns instead of failing every night (#794). A skipped run proves nothing about the
   suite, and the run summary says exactly that; a failure inside the suite still fails.
@@ -40,3 +43,11 @@ suite is one of its columns, not the map's owner.
   benches never gain a real key.
 - Evidence is an explicit allow-list that passed the sanitizer (no `token=` URLs, no
   key material, no cookies); a sanitizer finding is an infra failure, never a pass.
+- The grader is hashed before the first turn and again before the report (#398): a change
+  under `dev/live-e2e/` ends the run as `tampered` (exit 5), with no sanitized stamp and the
+  changed paths in `report.json`. A bench home inside this checkout is refused before the
+  bench starts, because that workspace would hold the grader, and so is an `--evidence`
+  directory under `dev/live-e2e/` (that run would hash its own report writes as tampering).
+  Reads are **not** restricted by anything here — DSH's sandbox modes confine file effects,
+  not reads — so read isolation is the deployment's job; `dev/live-e2e/README.md` carries the
+  path-by-path table.

@@ -113,13 +113,18 @@ jobs:
       - name: Start the usage tap
         if: steps.preflight.outputs.key == 'true'
         run: |
-          mkdir -p ".dsh-test-$BENCH"
-          setsid node core/dev/llm-tap.mjs "$TAP_PORT" https://api.deepseek.com ".dsh-test-$BENCH/tap.jsonl" \
-            </dev/null >".dsh-test-$BENCH/tap.out" 2>&1 & echo $! >".dsh-test-$BENCH/tap.pid"
+          # The bench home lives outside the checkout (#398): a workspace inside the repository
+          # would hand the grader to the Bot under test. bench.mjs and run.mjs read the same
+          # variable, and the default is the same on both sides.
+          LIVE_E2E_HOME="$HOME/.cache/flybot-live-e2e/$BENCH"
+          echo "LIVE_E2E_HOME=$LIVE_E2E_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$LIVE_E2E_HOME"
+          setsid node core/dev/llm-tap.mjs "$TAP_PORT" https://api.deepseek.com "$LIVE_E2E_HOME/tap.jsonl" \
+            </dev/null >"$LIVE_E2E_HOME/tap.out" 2>&1 & echo $! >"$LIVE_E2E_HOME/tap.pid"
           i=0
           until (exec 3<>"/dev/tcp/127.0.0.1/$TAP_PORT") 2>/dev/null; do
             i=$((i + 1))
-            [ $i -ge 30 ] && { echo "::error::the usage tap did not start"; cat ".dsh-test-$BENCH/tap.out"; exit 1; }
+            [ $i -ge 30 ] && { echo "::error::the usage tap did not start"; cat "$LIVE_E2E_HOME/tap.out"; exit 1; }
             sleep 1
           done
       - name: Start the real-model bench
@@ -137,19 +142,19 @@ jobs:
           DEEPSEEK_BASE_URL: http://127.0.0.1:8898/anthropic
           LIVE_E2E_TAP_UPSTREAM: https://api.deepseek.com
         run: |
-          node dev/live-e2e/run.mjs ".dsh-test-$BENCH" "$WEB_PORT" \
+          node dev/live-e2e/run.mjs "$LIVE_E2E_HOME" "$WEB_PORT" \
             --model "$MODEL" --harness deepseek-harness \
-            --tap ".dsh-test-$BENCH/tap.jsonl" --evidence evidence --tz Asia/Shanghai
+            --tap "$LIVE_E2E_HOME/tap.jsonl" --evidence evidence --tz Asia/Shanghai
       - name: Stop the bench and the tap
         if: always() && steps.preflight.outputs.key == 'true'
         run: |
           node dev/live-e2e/bench.mjs "$BENCH" "$WEB_PORT" stop || true
-          if [ -f ".dsh-test-$BENCH/tap.pid" ]; then
-            kill -TERM "-$(cat ".dsh-test-$BENCH/tap.pid")" 2>/dev/null || true
+          if [ -f "$LIVE_E2E_HOME/tap.pid" ]; then
+            kill -TERM "-$(cat "$LIVE_E2E_HOME/tap.pid")" 2>/dev/null || true
           fi
       - name: Sanitized web log (diagnostics only, never uploaded raw)
         if: failure()
-        run: tail -80 ".dsh-test-$BENCH/web.log" | grep -v 'token=' || true
+        run: tail -80 "$LIVE_E2E_HOME/web.log" | grep -v 'token=' || true
       # Fail closed twice: the runner writes evidence/sanitized.txt only after a clean
       # scan, and the upload requires that stamp. A bundle the sanitizer flagged (or one
       # from a run that never reached the scan) never becomes a public artifact.
