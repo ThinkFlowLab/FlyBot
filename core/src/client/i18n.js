@@ -29,6 +29,8 @@ const ZH = {
   '6-digit room number': '6 位房间号',
   'Pick a Bot first.': '请先选一个 Bot。',
   'Enter all 6 digits.': '请输入完整的 6 位数字。',
+  // #1052: visible under the field when the number is not empty and not six digits.
+  'Enter 6 digits': '请输入 6 位数字',
   'Join with link': '用链接加入',
   'Scan a code': '扫码',
   'Join group': '加入群',

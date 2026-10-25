@@ -1720,7 +1720,10 @@ window.__ModuleLoader__.load({
       const preview = invite?.preview ?? null
       const candidate = room?.status === 'candidate'
       const waiting = step === 'waiting' && room
-      const digitsTyped = String(code).replace(/\D/g, '').length === 6
+      const digitCount = String(code).replace(/\D/g, '').length
+      const digitsTyped = digitCount === 6
+      // #1052: the helper is for a started number only. Empty stays quiet; six digits clear it.
+      const digitsPartial = digitCount > 0 && !digitsTyped
       const nobody = step === 'nobody' ? faceWaitCode(room, code) : ''
       return h('div', {
         className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': tr(JOIN_OR_CREATE),
@@ -1792,6 +1795,9 @@ window.__ModuleLoader__.load({
                 disabled: busy || !selected.length || !digitsTyped,
                 title: !selected.length ? tr('Pick a Bot first.') : digitsTyped ? undefined : tr('Enter all 6 digits.'),
               }, tr('Join'))),
+            digitsPartial ? h('div', {
+              className: 'fs-hint', 'data-flybot': 'face-join-digits', role: 'status',
+            }, tr('Enter 6 digits')) : null,
             h('div', { className: 'fs-link-row', 'data-flybot': 'face-link-join' },
               h('input', {
                 className: 'fs-link-input', value: invite.link, type: 'url', autoComplete: 'off', spellCheck: false,

@@ -3607,6 +3607,46 @@ test('#306/#458: Join is enabled once a Bot is picked and all 6 digits are in; t
   assert.deepEqual(JSON.parse(JSON.stringify(statuses)), [{ tone: 'error', text: 'Enter a 6-digit number.' }])
 })
 
+test('#1052: a partial room number shows Enter 6 digits and keeps Join disabled', async () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const bots = [{ id: 'a', name: 'Chief', isMain: true }]
+  const view = (code, selected = ['a']) => walk(pluginOf(['setup', bots, selected, code]).FaceToFaceGroup({}))
+  const helper = (tree) => tree.find(n => n.props['data-flybot'] === 'face-join-digits')
+  const join = (tree) => tree.find(n => n.type === 'button' && n.props.type === 'submit')
+  const text = (node) => (node?.children ?? []).map(child => (typeof child === 'string' ? child : '')).join('')
+
+  const five = view('58291')
+  assert.equal(text(helper(five)), 'Enter 6 digits')
+  assert.equal(join(five).props.disabled, true)
+  assert.equal(five.find(n => n.type === 'input' && n.props.className === 'fs-digits').props.placeholder, '6 digits')
+  assert.ok(five.some(n => n.props['data-flybot'] === 'face-link-join'), 'the invite-link field stays on the same screen')
+
+  const one = view('5')
+  assert.equal(text(helper(one)), 'Enter 6 digits')
+  assert.equal(join(one).props.disabled, true)
+
+  // Digits are what count: letters in a forced state are not a six-digit code.
+  const mixed = view('12ab')
+  assert.equal(text(helper(mixed)), 'Enter 6 digits')
+  assert.equal(join(mixed).props.disabled, true)
+
+  const empty = view('')
+  assert.equal(helper(empty), undefined, 'an empty field stays quiet')
+  assert.equal(join(empty).props.disabled, true)
+
+  const six = view('582913')
+  assert.equal(helper(six), undefined, 'six digits clear the helper')
+  assert.equal(join(six).props.disabled, false)
+
+  const unpicked = view('58291', [])
+  assert.equal(text(helper(unpicked)), 'Enter 6 digits')
+  assert.equal(join(unpicked).props.disabled, true)
+  assert.ok(unpicked.some(n => n.props['data-flybot'] === 'face-join-pick'))
+
+  const { DICTIONARY } = await import('../../../core/src/client/i18n.js')
+  assert.equal(DICTIONARY.zh['Enter 6 digits'], '请输入 6 位数字')
+})
+
 test('#306: the waiting dialog asks before Leave, lands on the main Bot, and the panel draws no second waiting card', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })

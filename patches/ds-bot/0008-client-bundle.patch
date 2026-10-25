@@ -3,7 +3,7 @@ FlyBot patch 0008-client-bundle on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gener
 diff --git a/client.js b/client.js
 --- a/client.js
 +++ b/client.js
-@@ -49,6 +49,48 @@
+@@ -49,6 +49,50 @@
    "Unread activity": "有未读",
    Search: "搜索",
    "New chat": "新对话",
@@ -24,6 +24,8 @@ diff --git a/client.js b/client.js
 +  "6-digit room number": "6 位房间号",
 +  "Pick a Bot first.": "请先选一个 Bot。",
 +  "Enter all 6 digits.": "请输入完整的 6 位数字。",
++  // #1052: visible under the field when the number is not empty and not six digits.
++  "Enter 6 digits": "请输入 6 位数字",
 +  "Join with link": "用链接加入",
 +  "Scan a code": "扫码",
 +  "Join group": "加入群",
