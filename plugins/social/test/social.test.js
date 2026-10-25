@@ -13569,3 +13569,174 @@ test('#1024: a pending friendship does not lend its id to the grant', async (t) 
   })
   assert.deepEqual(granted.map(a => a.friend_bot_id), ['pb-coder'], 'only the active friendship')
 })
+
+// #1128: B removes a Bot from its home; A's relationship with it stays `active`, so the row is still
+// drawn. A click used to print "Shared Chief with selftestb2." over a grant that names a Bot nothing can
+// receive. The row is now judged against the roster the panel already reads (no extra round trip), so a
+// Bot the other home still lists is still shared — the fix never guesses a removal.
+test('#1128: a share to a Bot the other home still lists goes through as before', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  // The roster's own answer: @bob.home lists x2 @writer.bob.home, so the row is not a removed Bot.
+  const server = mockServer()
+  const granted = []
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [{ relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'x2', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+  server.tools.grant_bot_to_friend = (a) => {
+    granted.push(a)
+    return { grant_id: 'gr_1', status: 'active', friend: { handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  assert.equal(listing.friends.length, 1)
+  assert.equal(listing.friends[0].removed, undefined, 'a Bot the other home still lists is not marked removed')
+  const shared = (await call('flybot/social/share-with-friend', {
+    botId: chief.id, home: '@bob.home', peerBotId: 'x2', friendHandle: '@writer.bob.home', friendName: 'Writer (Bob)',
+  })).value
+  assert.equal(shared.status, 'active')
+  assert.equal(granted.length, 1, 'the share went through')
+  assert.equal(granted[0].friend_bot_id, 'x2')
+})
+
+// #1128: the home is still listed, but the Bot the relationship names is gone from its roster — the friend
+// removed it there. The row says so instead of reporting a share, and the host refuses the grant from the
+// same cached roster, so an old row cannot post a grant that reaches nobody.
+test('#1128: a Bot the other home no longer lists is not shared, and the row says why', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [{ relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  // The home is on the roster and lists another Bot, but not the one the relationship names.
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r-writer',
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder' }],
+    }],
+  })
+  server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+  server.tools.grant_bot_to_friend = (a) => {
+    granted.push(a)
+    return { grant_id: 'gr_1', status: 'active' }
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+  const row = listing.friends.find(f => f.peerBotId === 'pb-writer')
+  assert.ok(row, 'the relationship is still active, so the row is still drawn')
+  assert.equal(row.removed, true, 'the row is marked as removed from that home')
+  assert.match(row.reason, /removed from that home/, 'the row carries the reason it cannot be shared')
+  const result = await call('flybot/social/share-with-friend', {
+    botId: chief.id, home: '@bob.home', peerBotId: 'pb-writer', friendHandle: '@writer.bob.home', friendName: 'Writer (Bob)',
+  })
+  assert.equal(result.ok, false, 'the share is refused, not reported as done')
+  assert.match(String(result.error?.message || result.error), /removed from that home, so there is nothing there to share with/)
+  // The client branches on the code, so the code is part of the API contract, not just the sentence (#1139).
+  assert.equal(result.error?.code, 'bot/removed-bot', 'the refusal carries a real code, not bot/refused')
+  assert.equal(granted.length, 0, 'no grant is sent to a Bot that is gone')
+})
+
+// #1128: the row keeps its place in the panel with the reason and a disabled button. A click that reaches
+// it anyway (an old row, a keyboard focus) says why instead of posting a share.
+test('#1128: a row for a Bot the other home removed is shown with the reason and cannot be shared', async () => {
+  const calls = []
+  const friends = [
+    { home: '@bob.home', handle: '@coder.bob.home', name: 'Coder (Bob)', peerBotId: 'pb-coder' },
+    { home: '@bob.home', handle: '@writer.bob.home', name: 'Writer (Bob)', peerBotId: 'pb-writer', removed: true, reason: 'Writer (Bob) was removed from that home. Sharing with it cannot reach anyone.' },
+  ]
+  const { plugin, all, text, setters } = clientPlugin([friends, '', null], {
+    call: async (endpoint, payload) => {
+      calls.push([endpoint, payload])
+      if (endpoint === 'social/share-friends') return { botId: payload.botId, friends }
+      if (endpoint === 'social/share-with-friend') return { message: 'Shared Writer with Writer (Bob).', status: 'active' }
+      return {}
+    },
+  })
+  const nodes = all(plugin.ShareWithFriend({ bot: { id: 'b', name: 'Writer' } }))
+  assert.equal(nodes.filter(n => n.props?.['data-flybot'] === 'share-friend-row').length, 2, 'the removed row stays visible')
+  const removed = nodes.find(n => n.props?.['data-flybot'] === 'share-friend-removed')
+  assert.ok(removed, 'the row says why it cannot be shared')
+  assert.match(text(removed), /was removed from that home/)
+  const buttons = nodes.filter(n => n.props?.['data-flybot'] === 'share-friend')
+  assert.equal(buttons[1].props.disabled, true, 'the removed row cannot be shared')
+  assert.equal(buttons[0].props.disabled, false, 'the row beside it still works')
+  // A click that arrives anyway says why instead of going quiet, and never posts the grant.
+  await buttons[1].props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(calls.some(([endpoint]) => endpoint === 'social/share-with-friend'), false, 'no grant was requested')
+  const note = setters.map(([, value]) => value).find(value => value && typeof value === 'object' && /removed from that home/.test(String(value.text)))
+  assert.ok(note, 'a click that arrives anyway says why')
+  assert.equal(note.tone, 'error')
+})
+
+// #1128: the fix must never guess a removal. Each of the three inputs that only look like evidence —
+// the roster read failing, a home listed with no Bots, a Bot whose handle is there under another id —
+// has to leave the row shareable, because marking it removed disables Share and makes the host refuse
+// with bot_removed: a worse bug than the one this fixes. One test per input, so the knife on each guard
+// reds exactly one of them (Reviewer2 on #1139).
+for (const [name, tools, expectation] of [
+  ['the roster read fails', () => { throw new Error('roster down') }, 'a failed roster read is not evidence'],
+  ['the home is listed with no Bots', () => ({ homes: [{ relationship_id: 'r-writer', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [] }] }), 'an empty roster is not evidence'],
+  ['the Bot is listed under a different id', () => ({ homes: [{ relationship_id: 'r-writer', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ bot_id: 'x9', handle: '@writer.bob.home', display_name: 'Writer' }] }] }), 'a handle hit is still a hit'],
+]) {
+  test(`#1128: shares as before when ${name} — the row is not marked removed`, async (t) => {
+    const { ctx, home, call, stop } = await team()
+    t.after(stop)
+    const server = mockServer()
+    const granted = []
+    server.tools.list_friends = () => ({
+      bot: { handle: '@danyang.home' },
+      friends: [{ relationship_id: 'r-writer', status: 'active', peer: { bot_id: 'pb-writer', handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }],
+      pending_incoming: [],
+      pending_outgoing: [],
+    })
+    server.tools.list_remote_bots = tools
+    server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+    server.tools.grant_bot_to_friend = (a) => {
+      granted.push(a)
+      return { grant_id: 'gr_1', status: 'active', friend: { handle: '@writer.bob.home', display_name: 'Writer', owner_display_name: 'Bob' } }
+    }
+    const social = await startSocial(ctx.flybot, {
+      server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+      fetch: server.fetch, inboxPollMs: 0,
+    })
+    t.after(() => social.dispose())
+    await settle()
+    const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+    await call('flybot/social/create-invite', { botId: chief.id })
+    const listing = (await call('flybot/social/share-friends', { botId: chief.id })).value
+    const row = listing.friends.find(f => f.peerBotId === 'pb-writer')
+    assert.ok(row, 'the relationship is active, so the row is drawn')
+    assert.equal(row.removed, undefined, expectation)
+    assert.equal(row.reason, undefined, 'no reason line without evidence')
+    const shared = (await call('flybot/social/share-with-friend', {
+      botId: chief.id, home: '@bob.home', peerBotId: 'pb-writer', friendHandle: '@writer.bob.home', friendName: 'Writer (Bob)',
+    })).value
+    assert.equal(shared.status, 'active', 'the share went through instead of refusing on a guess')
+    assert.equal(granted.length, 1, 'exactly one grant was sent')
+  })
+}

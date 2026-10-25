@@ -3464,6 +3464,8 @@ window.__ModuleLoader__.load({
       // its busy flag, and what a fallback refresh removes. A friend without a Bot id keys on the person.
       const friendKey = friend => friend?.peerBotId || friend?.handle || friend?.home || friend?.ownerId || 'share'
       const share = async (friend) => {
+        // #1128: the button is disabled; a click that still arrives says why instead of posting a grant.
+        if (friend.removed === true) { setNote({ tone: 'error', text: friend.reason || 'That Bot was removed from that home.' }); return }
         setBusy(friendKey(friend))
         setNote(null)
         try {
@@ -3471,6 +3473,9 @@ window.__ModuleLoader__.load({
             botId: bot.id,
             home: friend.home,
             ...(friend.peerBotId ? { friendBotId: friend.peerBotId } : {}),
+            // #1128: the row's handle goes with the click, so the host can tell "this Bot is gone from
+            // that home" (absent from the roster under both names) from an ordinary share.
+            ...(friend.handle ? { friendHandle: friend.handle } : {}),
             // #994: the receipt says who got it; the label the row already shows goes with the click.
             ...(friend.name ? { friendName: friend.name } : {}),
             ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
@@ -3498,11 +3503,16 @@ window.__ModuleLoader__.load({
             h('span', { className: 'fs-name' }, friend.name || friend.handle || friend.home),
             friend.handle || friend.home
               ? h('span', { className: 'fs-sub' }, friend.handle || friend.home)
+              : null,
+            friend.removed === true
+              ? h('span', { className: 'fs-sub', 'data-flybot': 'share-friend-removed' }, friend.reason || 'That Bot was removed from that home.')
               : null),
           h('button', {
             type: 'button',
             className: 'fs-btn fs-btn-sm',
-            disabled: busy === friendKey(friend),
+            // #1128: a row whose Bot the friend's home no longer lists stays visible, with the reason, and
+            // is not clickable: the grant would reach nobody.
+            disabled: busy === friendKey(friend) || friend.removed === true,
             'data-flybot': 'share-friend',
             'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
             onClick: () => { void share(friend) },

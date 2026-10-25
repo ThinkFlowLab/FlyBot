@@ -3118,6 +3118,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // #500: friends who do not yet have this Bot — for Sharing → "Share with a friend".
   // Uses the active friendships (list_friends) so a friend we invited (and who has not
   // shared anything back) still appears. Homes already in People with access are omitted.
+  // #1128: the row names a Bot the friend's home no longer has — they removed it there — so a grant
+  // would name a Bot nothing can receive while the panel still printed "Shared …". The evidence is the
+  // roster this panel already reads (\`list_remote_bots\`): the Bot is absent from a home the cache holds,
+  // under both names we know (its Bot id and its handle). A home the cache does not hold, or a roster
+  // with no ids, is not evidence, so nothing here refuses on a guess.
+  function removedOnRoster(roster, homeKey, { peerId, handle } = {}) {
+    // Both names, or no answer: one id alone cannot be told from an older server that numbered its Bots
+    // differently, so a click without the row's handle is shared as before rather than refused.
+    if (!homeKey || !peerId || !handle) return false
+    const entry = (roster?.homes ?? []).find(item => item.home === norm(homeKey))
+    if (!entry) return false
+    const bots = entry.bots ?? []
+    if (!bots.length) return false
+    if (peerId && bots.some(bot => bot.botId && String(bot.botId) === String(peerId))) return false
+    if (handle && bots.some(bot => bot.handle && norm(bot.handle) === norm(handle))) return false
+    return true
+  }
+
   async function shareFriendsForBot(botId) {
     if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
@@ -3149,6 +3167,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       grantsByHome.set(key, entry)
     }
     const overview = await friendsOverview()
+    // #1128: what the friends' homes list right now; \`remoteBots()\` is the panel's own cached read, so a
+    // warm cache is no round trip and a cold one is the fetch the panel needed anyway.
+    const roster = await remoteBots().catch(error => { warn('roster not read for the share list', error); return null })
+    const rowGone = (homeKey, item) => removedOnRoster(roster, homeKey, { peerId: item.peerBotId, handle: item.handle })
     const friends = []
     const seen = new Set()
     for (const item of overview.friends ?? []) {
@@ -3171,9 +3193,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const label = botName && ownerName ? `${botName} (${ownerName})` : botName || ownerName
         || String(homeKey).replace(/^@/, '').replace(/\.home$/i, '')
         || homeKey
+      // One roster read for the whole list, and only when a row has a Bot to look up: it is the same
+      // cached lookup the roster draws from, so an ordinary share costs no round trip (#1128).
+      const gone = rowGone(homeKey, item)
       friends.push({
         home: homeKey,
         name: label,
+        ...(gone ? { removed: true, reason: `${label || 'That Bot'} was removed from that home. Sharing with it cannot reach anyone.` } : {}),
         ...(item.handle ? { handle: item.handle } : {}),
         ...(item.peerBotId ? { peerBotId: item.peerBotId } : {}),
         ...(item.ownerId ? { ownerId: item.ownerId } : {}),
@@ -3220,7 +3246,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
 
   // #500: grant this Bot to an existing friend (Bot Social grant_bot_to_friend). Does not
   // replace invite links. After a successful share, People with access re-syncs this Bot.
-  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId, friendBotId, peerBotId, friendName } = {}) => {
+  disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId, friendBotId, peerBotId, friendName, friendHandle } = {}) => {
     if (!home) throw new Error('Bot Social is not connected: there is no FlyBot home yet')
     const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
     if (!bot) throw new Error('Choose one of your Bots to share')
@@ -3232,6 +3258,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // never listed for a friend.
     const peerId = friendBotId || peerBotId
     if (!homeKey && !oid && !peerId) throw new Error('Choose a friend to share with')
+    // #1128: a Bot the friend's home no longer lists cannot receive this grant. Refuse instead of printing
+    // a success line over a grant nothing can use, and name what happened rather than "try again".
+    if (peerId) {
+      const roster = await remoteBots().catch(error => { warn('roster not read before sharing', error); return null })
+      if (removedOnRoster(roster, homeKey, { peerId, handle: friendHandle })) {
+        const who = cleanText(friendName) || 'That Bot'
+        throw Object.assign(new Error(`${who} was removed from that home, so there is nothing there to share with. Ask them to add it back, then share again.`), { code: 'bot/removed-bot' })
+      }
+    }
     if (typeof api.grantBotToFriend !== 'function') {
       throw Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
     }
