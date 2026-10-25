@@ -301,35 +301,66 @@ export function inboxAnswer(actions, card, choice) {
   return undefined
 }
 
+// One slot per card. A roster, work or clock poll re-renders the card; a fresh object
+// each time would drop the text and the toggled options before Submit (#1140).
+const answerSlots = new Map()
+const answerSlot = (id) => {
+  let slot = answerSlots.get(id)
+  if (slot === undefined) {
+    slot = { text: '', picked: [] }
+    answerSlots.set(id, slot)
+  }
+  return slot
+}
+
 // Options and a short answer, drawn inside the card so a click answers here.
-function answerFields(card, busy, onAnswer) {
+function AnswerFields({ card, busy, onAnswer }) {
+  const [, redraw] = useState(0)
   const question = card.kind === 'question'
   const taskInput = card.kind === 'task' && card.status === 'input' && typeof card.task?.inputRequest?.id === 'string'
   if (!question && !taskInput) return null
-  const draft = { text: '' }
-  const sendText = () => {
-    const text = draft.text.trim()
-    if (text === '' || busy) return
-    if (question) onAnswer(card, { selected: [], custom: text })
-    else onAnswer(card, text)
-  }
+  const slot = answerSlot(card.id)
+  const multi = question && card.question?.multiSelect === true
   const options = question && Array.isArray(card.question?.options) ? card.question.options : []
+  const send = () => {
+    if (busy) return
+    const custom = slot.text.trim()
+    if (question) {
+      const selected = multi ? slot.picked.filter(label => label !== '') : []
+      if (selected.length === 0 && custom === '') return
+      onAnswer(card, { selected, custom })
+      return
+    }
+    if (custom === '') return
+    onAnswer(card, custom)
+  }
+  const choose = (label) => {
+    if (busy) return
+    // One choice sends at once. Several toggle, and Submit sends the set (#1140).
+    if (!multi) {
+      onAnswer(card, { selected: [label], custom: '' })
+      return
+    }
+    slot.picked = slot.picked.includes(label) ? slot.picked.filter(item => item !== label) : [...slot.picked, label]
+    redraw(count => count + 1)
+  }
   return h('span', { className: 'bt-inbox-answer' },
     ...options.map((option, index) => h('button', {
       key: `${option.label}-${index}`, type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy,
-      onClick: () => { if (!busy) onAnswer(card, { selected: [option.label], custom: '' }) },
+      'aria-pressed': multi ? slot.picked.includes(option.label) : undefined,
+      onClick: () => choose(option.label),
     }, option.label)),
     h('input', {
-      type: 'text', className: 'bt-inbox-answer-text', defaultValue: '', disabled: busy,
+      type: 'text', className: 'bt-inbox-answer-text', value: slot.text, disabled: busy,
       'aria-label': t('Your own answer'), placeholder: t('Type your own answer'),
-      onChange: event => { draft.text = String(event.target?.value ?? '') },
+      onChange: (event) => { slot.text = String(event.target?.value ?? ''); redraw(count => count + 1) },
       onKeyDown: (event) => {
-        if (event.key !== 'Enter' || event.shiftKey) return
+        if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
         event.preventDefault()
-        sendText()
+        send()
       },
     }),
-    h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: sendText }, t('Submit')))
+    h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: send }, t('Submit')))
 }
 
 // The Inbox row at the top of the sidebar (owner decision 2026-10-20, option a).
@@ -376,7 +407,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
       card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, card.reason) : null,
       card.activity ? h('span', { className: 'bt-inbox-activity', title: card.activity }, t('Latest: {text}', { text: card.activity })) : null,
       card.hint ? h('span', { className: 'bt-inbox-hint' }, card.hint) : null,
-      answerFields(card, busy, onAnswer),
+      h(AnswerFields, { card, busy, onAnswer }),
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),
     h('span', { className: 'bt-inbox-actions' },
       answerable ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'reject') }, t('Reject')) : null,
@@ -495,6 +526,7 @@ export const INBOX_CSS = `
 .bt-inbox-answer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
 .bt-inbox-answer-text{flex:1 1 140px;min-width:0;height:28px;padding:0 8px;border:.5px solid var(--bt-line-2);border-radius:8px;background:transparent;color:var(--bt-ink);font:inherit;font-size:12px}
 .bt-inbox-answer .bt-send,.bt-inbox-answer .bt-soft{height:28px;font-size:12px}
+.bt-inbox-answer button[aria-pressed=true]{background:var(--bt-active);color:var(--bt-ink)}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 .bt-inbox-actions .bt-send{height:28px;font-size:12px}
 `

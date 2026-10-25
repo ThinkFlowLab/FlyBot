@@ -5398,7 +5398,7 @@ diff --git a/client.js b/client.js
        )
      )
    ), host);
-@@ -4731,49 +6980,1382 @@
+@@ -4731,49 +6980,1409 @@
    return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
  }
  
@@ -5951,18 +5951,44 @@ diff --git a/client.js b/client.js
 +  }
 +  return void 0;
 +}
-+function answerFields(card, busy, onAnswer) {
++var answerSlots = /* @__PURE__ */ new Map();
++var answerSlot = (id) => {
++  let slot = answerSlots.get(id);
++  if (slot === void 0) {
++    slot = { text: "", picked: [] };
++    answerSlots.set(id, slot);
++  }
++  return slot;
++};
++function AnswerFields({ card, busy, onAnswer }) {
++  const [, redraw] = (0, import_react13.useState)(0);
 +  const question = card.kind === "question";
 +  const taskInput = card.kind === "task" && card.status === "input" && typeof card.task?.inputRequest?.id === "string";
 +  if (!question && !taskInput) return null;
-+  const draft = { text: "" };
-+  const sendText = () => {
-+    const text = draft.text.trim();
-+    if (text === "" || busy) return;
-+    if (question) onAnswer(card, { selected: [], custom: text });
-+    else onAnswer(card, text);
-+  };
++  const slot = answerSlot(card.id);
++  const multi = question && card.question?.multiSelect === true;
 +  const options = question && Array.isArray(card.question?.options) ? card.question.options : [];
++  const send = () => {
++    if (busy) return;
++    const custom = slot.text.trim();
++    if (question) {
++      const selected = multi ? slot.picked.filter((label) => label !== "") : [];
++      if (selected.length === 0 && custom === "") return;
++      onAnswer(card, { selected, custom });
++      return;
++    }
++    if (custom === "") return;
++    onAnswer(card, custom);
++  };
++  const choose = (label) => {
++    if (busy) return;
++    if (!multi) {
++      onAnswer(card, { selected: [label], custom: "" });
++      return;
++    }
++    slot.picked = slot.picked.includes(label) ? slot.picked.filter((item) => item !== label) : [...slot.picked, label];
++    redraw((count) => count + 1);
++  };
 +  return (0, import_react13.createElement)(
 +    "span",
 +    { className: "bt-inbox-answer" },
@@ -5971,27 +5997,27 @@ diff --git a/client.js b/client.js
 +      type: "button",
 +      className: "bt-soft bt-soft-sm",
 +      disabled: busy,
-+      onClick: () => {
-+        if (!busy) onAnswer(card, { selected: [option.label], custom: "" });
-+      }
++      "aria-pressed": multi ? slot.picked.includes(option.label) : void 0,
++      onClick: () => choose(option.label)
 +    }, option.label)),
 +    (0, import_react13.createElement)("input", {
 +      type: "text",
 +      className: "bt-inbox-answer-text",
-+      defaultValue: "",
++      value: slot.text,
 +      disabled: busy,
 +      "aria-label": t("Your own answer"),
 +      placeholder: t("Type your own answer"),
 +      onChange: (event) => {
-+        draft.text = String(event.target?.value ?? "");
++        slot.text = String(event.target?.value ?? "");
++        redraw((count) => count + 1);
 +      },
 +      onKeyDown: (event) => {
-+        if (event.key !== "Enter" || event.shiftKey) return;
++        if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
 +        event.preventDefault();
-+        sendText();
++        send();
 +      }
 +    }),
-+    (0, import_react13.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy, onClick: sendText }, t("Submit"))
++    (0, import_react13.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy, onClick: send }, t("Submit"))
 +  );
 +}
 +function InboxRow({ wide, useRoster, useWork, useUi, actions }) {
@@ -6049,7 +6075,7 @@ diff --git a/client.js b/client.js
 +      card.reason ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
 +      card.activity ? (0, import_react13.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
 +      card.hint ? (0, import_react13.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
-+      answerFields(card, busy, onAnswer),
++      (0, import_react13.createElement)(AnswerFields, { card, busy, onAnswer }),
 +      error ? (0, import_react13.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
 +    ),
 +    (0, import_react13.createElement)(
@@ -6186,6 +6212,7 @@ diff --git a/client.js b/client.js
 +.bt-inbox-answer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
 +.bt-inbox-answer-text{flex:1 1 140px;min-width:0;height:28px;padding:0 8px;border:.5px solid var(--bt-line-2);border-radius:8px;background:transparent;color:var(--bt-ink);font:inherit;font-size:12px}
 +.bt-inbox-answer .bt-send,.bt-inbox-answer .bt-soft{height:28px;font-size:12px}
++.bt-inbox-answer button[aria-pressed=true]{background:var(--bt-active);color:var(--bt-ink)}
 +.bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 +.bt-inbox-actions .bt-send{height:28px;font-size:12px}
 +`;

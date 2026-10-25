@@ -33,7 +33,7 @@ const { inboxModel, needsCount, InboxCard, InboxDialog, InboxRow, GROUPS, STATUS
 const plain = value => JSON.parse(JSON.stringify(value))
 
 // Draws the inbox's own components; Bot marks and icons stay as elements.
-const OWN = new Set(['InboxCard', 'Status'])
+const OWN = new Set(['InboxCard', 'Status', 'AnswerFields'])
 const expand = (node) => {
   if (Array.isArray(node)) return node.flatMap(expand)
   if (node === null || typeof node !== 'object') return node
@@ -523,4 +523,46 @@ test('an ask_user card and a listed policy approval are answered in the inbox, a
   assert.equal(cleared.needs.some(card => card.id === 'question:q-group'), false)
   assert.equal(cleared.needs.some(card => card.id === 'approval:a1'), false)
   assert.equal(cleared.needs.some(card => card.id === 'task:t-ask'), false)
+})
+
+// A clock or roster poll draws the card again. The typed answer has to still be there.
+test('a short answer survives a re-render, and a multi-select toggles until Submit (#1140)', () => {
+  const asked = {
+    ...roster,
+    questions: {
+      s1: { id: 'q-keep', question: 'Which note?', options: [{ label: 'draft' }], askedAt: NOW },
+      s2: { id: 'q-multi', question: 'Which checks?', options: [{ label: 'lint' }, { label: 'tests' }], multiSelect: true, askedAt: NOW, botId: 'b2' },
+    },
+  }
+  const pending = inboxModel({ roster: asked, work, tasks, sessions, now: NOW })
+  const keep = pending.needs.find(card => card.id === 'question:q-keep')
+  const multi = pending.needs.find(card => card.id === 'question:q-multi')
+  const log = []
+  const onAnswer = (card, choice) => { log.push([card.id, choice]) }
+  const enter = (composing) => ({ key: 'Enter', shiftKey: false, nativeEvent: { isComposing: composing }, preventDefault() {} })
+
+  const typed = draw(keep, { onAnswer })
+  const field = all(typed).find(node => node.props?.className === 'bt-inbox-answer-text')
+  field.props.onChange({ target: { value: '  ship the note  ' } })
+  field.props.onKeyDown(enter(true))
+  assert.equal(log.length, 0)
+  // The next draw is the poll: useNow, the roster or the work snapshot.
+  const again = draw(keep, { onAnswer, now: NOW + 30_000 })
+  const kept = all(again).find(node => node.props?.className === 'bt-inbox-answer-text')
+  assert.equal(kept.props.value, '  ship the note  ')
+  kept.props.onKeyDown(enter(false))
+  assert.deepEqual(plain(log), [['question:q-keep', { selected: [], custom: 'ship the note' }]])
+
+  const first = draw(multi, { onAnswer })
+  buttons(first).find(button => textOf(button) === 'lint').props.onClick()
+  buttons(first).find(button => textOf(button) === 'tests').props.onClick()
+  assert.equal(log.length, 1)
+  const toggled = draw(multi, { onAnswer, now: NOW + 60_000 })
+  const pressed = buttons(toggled).filter(button => button.props['aria-pressed'] === true).map(textOf)
+  assert.deepEqual(pressed.sort(), ['lint', 'tests'])
+  buttons(toggled).find(button => textOf(button) === 'lint').props.onClick()
+  const after = draw(multi, { onAnswer })
+  assert.deepEqual(buttons(after).filter(button => button.props['aria-pressed'] === true).map(textOf), ['tests'])
+  buttons(after).find(button => textOf(button) === 'Submit').props.onClick()
+  assert.deepEqual(plain(log.at(-1)), ['question:q-multi', { selected: ['tests'], custom: '' }])
 })
