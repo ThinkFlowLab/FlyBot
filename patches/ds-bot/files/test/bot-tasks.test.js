@@ -381,6 +381,13 @@ test('the board asks the owning Bot for the comment a decision needs, and takes 
       writeBack: { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154', at: at - 3000, state: 'pending', body: 'Accepted: Cannot write this one' },
       actors: [{ status: 'accepted', at: at - 3000, memberId: 'owner-1' }],
     },
+    'task-expired': {
+      id: 'task-expired', status: 'accepted', createdAt: at - 200_000, updatedAt: at - 90_000_000,
+      requesterId: 'owner-1', ownerBotId: 's', title: 'Posted a day late', source: 'conversation', origin: {},
+      target: { owner: 'ThinkFlowLab', repo: 'FlyBot', number: 1154, href: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154' },
+      writeBack: { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1154', at: at - 90_000_000, state: 'unconfirmed', wakes: 2, body: 'Accepted: Posted a day late' },
+      actors: [{ status: 'accepted', at: at - 90_000_000, memberId: 'owner-1' }],
+    },
     'task-plain': {
       id: 'task-plain', status: 'accepted', createdAt: at - 60_000, updatedAt: at - 2000,
       requesterId: 'owner-1', ownerBotId: 's', title: 'Nothing to write back', source: 'conversation', origin: {},
@@ -417,4 +424,13 @@ test('the board asks the owning Bot for the comment a decision needs, and takes 
   const again = await app.track("s", { postResult: { task: "task-write-back", ok: true } })
   assert.match(again, /no comment waiting/)
   assert.equal(again.includes("Post task-write-back:"), false)
+
+  // #1172: a record the drive gave up on is no longer offered, but a comment posted on a later turn
+  // still clears the card — the record must not keep saying it could not be confirmed.
+  assert.equal(listed.includes('Post task-expired:'), false, 'an unconfirmed comment is not work any more')
+  await app.track("s", { postResult: { task: "task-expired", ok: true } })
+  const late = JSON.parse(readFileSync(app.statePath, "utf8")).tasks["task-expired"]
+  assert.equal(late.writeBack.state, "posted")
+  assert.equal(late.writeBack.wakes, 2, "the count stays with the record")
+  assert.equal(late.status, "accepted")
 })

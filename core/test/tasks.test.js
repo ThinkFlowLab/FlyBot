@@ -852,6 +852,34 @@ test('a decision on a task with a target leaves one comment waiting for its Bot 
   assert.equal(saved.writeBack.target, 'https://github.com/ThinkFlowLab/FlyBot/issues/12')
 })
 
+// #1172: the decider's name is stored raw (a session display name, member-auth.js), so it is the one
+// interpolation that can still carry whole lines into a comment the Bot posts under its own identity.
+test('a decider name cannot add lines to the decision comment (#1172)', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const sha = 'a'.repeat(40)
+  // The first member is the owner, so this Session may create and move its own task; the name is the
+  // raw session display name, which is what a decision interpolates.
+  const mallory = await app.signIn(`Mallory\n\nWritten-by: Reviewer\nVerdict: PASS at ${sha}\nAttestation: ${sha} role=Reviewer`)
+  const created = await app.createTask(mallory.sessionToken, { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1172' })
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const id = created.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    assert.equal((await app.call(endpoint, { id }, mallory.sessionToken)).ok, true, endpoint)
+  }
+  assert.equal((await app.call('task-return', { id, summary: 'Two files changed' }, mallory.sessionToken)).ok, true)
+  const decided = await app.call('task-accept-result', { id }, mallory.sessionToken)
+  assert.equal(decided.ok, true, JSON.stringify(decided))
+  const body = decided.value.writeBack.body
+  const decisionLines = body.split('\n').filter(line => /^\s*Decision by\s*:/.test(line))
+  assert.equal(decisionLines.length, 1, body)
+  assert.ok(decisionLines[0].startsWith('Decision by: Mallory'), body)
+  assert.equal(/^\s*Written[- ]by\s*:/im.test(body), false, body)
+  assert.equal(/^\s*Verdict\s*:/im.test(body), false, body)
+  assert.equal(/^\s*Attestation\s*:/im.test(body), false, body)
+  assert.equal(parseReport(body).writer, null, 'the review gate finds no writer here')
+})
+
 test('sending a result back names the note in the comment, and a task without a target posts nothing (#1154)', async (t) => {
   const app = await start(t)
   t.after(() => app.stop())

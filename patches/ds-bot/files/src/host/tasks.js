@@ -151,7 +151,7 @@ export function install(rt) {
   // A decision on a task that names an issue or PR leaves one comment waiting for the Bot that owns
   // the task: the Bot holds the connector and the one identity, the host holds no token (#1154). The
   // body is composed here so the card and the comment cannot disagree about what was decided.
-  const decideName = actor => actor?.displayName || actor?.memberId || 'the owner'
+  const decideName = actor => oneLine(actor?.displayName || actor?.memberId || 'the owner', 200)
   const requestWriteBack = (task, status, note, actor) => {
     if (task.target === undefined) return
     const decider = decideName(actor)
@@ -377,13 +377,15 @@ export function install(rt) {
 
   // The Bot reports how the comment a decision asked for went (#1154). One report per decision, no
   // retry loop: a failure keeps its one line on the task so the card can name it, and the decision
-  // itself is already recorded and stays recorded.
+  // itself is already recorded and stays recorded. A record the drive has given up on is still taken
+  // (#1172): a comment posted on a later turn must not keep the card saying it could not be confirmed.
   rt.recordTaskPostResult = async function recordTaskPostResult(botId, result) {
     const body = result ?? {}
     const task = find(body.task ?? body.id)
     if (task === undefined) throw stale(`no task ${String(body.task ?? body.id ?? '')}`)
     if (task.ownerBotId !== botId) throw forbidden('Only the Bot that owns this task reports its comment')
-    if (task.writeBack?.state !== 'pending') throw stale('This task has no comment waiting to be posted')
+    const waiting = task.writeBack?.state
+    if (waiting !== 'pending' && waiting !== 'unconfirmed') throw stale('This task has no comment waiting to be posted')
     const ok = body.ok === true
     const error = oneLine(body.error, 300)
     if (!ok && error === '') throw invalid('A comment that failed needs its reason')

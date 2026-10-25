@@ -9,6 +9,11 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { TASK_DRIVE_BACKOFF_MS, WRITE_BACK_EXPIRY_MS, WRITE_BACK_WAKES } from '../src/host/task-drive.js'
+
+// #1172: the two numbers are the owner's decision (two wakes, one day), so the cases below use the
+// literals and these lines pin the constants — a wrong constant must red, not move the expectation.
+const DAY = 24 * 60 * 60 * 1000
+const WAKES = 2
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -444,6 +449,7 @@ test('a decision waiting to be posted wakes the Bot even after the task is decid
 // #1172: a Bot that never posts used to be woken about the comment on every backoff cycle, for ever.
 // Two wakes is the first and one reminder; after that the record stops counting as work.
 test('a pending decision stops reminding after two wakes (#1172)', async (t) => {
+  assert.equal(WRITE_BACK_WAKES, WAKES, 'the reminder cap is two wakes')
   const app = await start(t)
   let now = 1_000_000
   app.ctx.taskDrive.now = () => now
@@ -476,6 +482,7 @@ test('a pending decision stops reminding after two wakes (#1172)', async (t) => 
 
 // #1172: a day without a report is the end of it. The record says `unconfirmed` instead of waking.
 test('a comment nobody posted turns unconfirmed after a day, and opens no turn (#1172)', async (t) => {
+  assert.equal(WRITE_BACK_EXPIRY_MS, DAY, 'a record gives up after a day')
   const app = await start(t)
   let now = 2_000_000
   app.ctx.taskDrive.now = () => now
@@ -490,13 +497,13 @@ test('a comment nobody posted turns unconfirmed after a day, and opens no turn (
   task.writeBack = { target: href, at, state: 'pending', body: 'Accepted: Ship the fix' }
   writeFileSync(join(app.home, 'state.json'), JSON.stringify(app.rt.state))
 
-  now = at + WRITE_BACK_EXPIRY_MS - 1
+  now = at + DAY - 1
   await app.ctx.taskDrive.consider()
   assert.equal(app.calls('s').length, 2, 'inside the day the comment is still work')
   assert.equal(app.rt.state.tasks[id].writeBack.state, 'pending')
 
   await app.finishWake('s')
-  now = at + WRITE_BACK_EXPIRY_MS
+  now = at + DAY
   await app.ctx.taskDrive.consider()
   assert.equal(app.calls('s').length, 2, 'an unconfirmed record is no longer work')
   const saved = JSON.parse(readFileSync(join(app.home, 'state.json'), 'utf8')).tasks[id]
@@ -514,7 +521,7 @@ test('the reminder cap never silences the task own work (#1172)', async (t) => {
   await app.finishWake('s')
 
   const task = app.rt.state.tasks[id]
-  task.writeBack = { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1172', at: now, state: 'pending', wakes: WRITE_BACK_WAKES, body: 'Accepted: Ship the fix' }
+  task.writeBack = { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1172', at: now, state: 'pending', wakes: WAKES, body: 'Accepted: Ship the fix' }
   writeFileSync(join(app.home, 'state.json'), JSON.stringify(app.rt.state))
 
   now += TASK_DRIVE_BACKOFF_MS[0]
