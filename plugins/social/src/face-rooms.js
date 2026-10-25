@@ -655,6 +655,22 @@ export function rememberEvent(seen, eventId) {
   return next.length > SEEN_KEPT ? next.slice(-SEEN_KEPT) : next
 }
 
+// An event the server hands back without an id still needs a key of its own (#1045): `seen` is the only
+// thing that stops a re-sent event from being applied twice, and the id was what carried it. Without a
+// key a line comes back on the next poll and the room ends up with the same sentence twice — the second
+// copy often seconds later, after both people have left. The fallback names the line itself, so it is
+// stable across polls and cannot collide with a real id (the prefix is ours).
+export function faceEventKey(event) {
+  const id = String(event?.event_id || event?.eventId || '')
+  if (id) return id
+  const viewed = viewFaceEvent(event)
+  if (!viewed) return ''
+  const from = viewed.from?.handle || viewed.member?.handle || ''
+  const text = viewed.untrustedText ?? viewed.text ?? ''
+  if (!from && !text) return ''
+  return `unkeyed:${viewed.type}|${from}|${viewed.createdAt ?? ''}|${text}`
+}
+
 const normHandle = (handle) => {
   const raw = typeof handle === 'object' && handle !== null ? (handle.handle ?? handle.home ?? '') : handle
   const body = String(raw ?? '').trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 120)

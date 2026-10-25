@@ -7572,6 +7572,40 @@ test('typed_by_owner (face room): a stamped line is the person; an envelope with
   void ctx
 })
 
+test('#1045: a room line the server sends without an event id is posted once, not again on the next poll', async (t) => {
+  const server = attestingFaceServer()
+  // The report's shape: the message event carries no `event_id` (joined/started/left all do), so the home
+  // cannot track it by id and the next poll is handed the same line again. This fetch keeps serving it —
+  // wrapped before the plugin is built, since the client keeps the function it was given.
+  const inner = server.fetch
+  server.fetch = async (url, init) => {
+    const res = await inner(url, init)
+    const body = server.face?.rooms?.get('frm_123456')
+    if (body && init?.method === 'GET' && String(url).includes('/v1/face-rooms/frm_123456')) {
+      const data = await res.json()
+      const unkeyed = body.events.filter(event => !event.event_id)
+      return new Response(JSON.stringify({ ...data, events: [...(data.events ?? []), ...unkeyed] }), { status: res.status })
+    }
+    return res
+  }
+  const posted = []
+  const { call } = await faceFixture(t, server, (scoped) => {
+    const remote = scoped.rooms.postRemote?.bind(scoped.rooms)
+    scoped.rooms.postRemote = (id, line) => { posted.push(line); return remote?.(id, line) }
+  })
+  server.face.rooms.get('frm_123456').events.push({
+    type: 'room.message',
+    from: { handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" },
+    trust: 'peer_untrusted', untrusted_content: { text: 'this line has no id' },
+  })
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(posted.map(line => line.text), ['this line has no id'], 'the first poll posts the line once')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(posted.map(line => line.text), ['this line has no id'], 'the same line handed back without an id is not posted again')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(posted.length, 1, 'and not on a third poll either')
+})
+
 test('cross-home @ (#287): a friend\'s attested line calls my Bot by the label they see; bare names that clash and unattested lines call none', async (t) => {
   const server = attestingFaceServer()
   const { call, sources, room } = await faceFixture(t, server)

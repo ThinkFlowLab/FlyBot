@@ -16,6 +16,7 @@ import {
   viewMe,
   renderFaceEvent,
   rememberEvent,
+  faceEventKey,
   platformJoinText,
   platformLeaveText,
   platformStartedText,
@@ -268,6 +269,17 @@ test('event rendering: join, leave, start, and inbox names', () => {
   assert.match(started.text, /no longer valid/)
   const seen = rememberEvent(rememberEvent([], 'fev_j'), 'fev_j')
   assert.deepEqual(seen, ['fev_j'])
+})
+
+test('#1045: an event without an id still gets a key, and the key names the line itself', () => {
+  const event = { type: 'room.message', from: { handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob' }, untrusted_content: { text: 'hi' }, created_at: '2026-10-25T01:00:34.242Z' }
+  assert.equal(faceEventKey(event), 'unkeyed:room.message|@chief.bob.home|2026-10-25T01:00:34.242Z|hi')
+  assert.equal(faceEventKey({ ...event }), faceEventKey(event), 'the same line keys the same on every poll')
+  assert.equal(faceEventKey({ ...event, event_id: 'fev_9' }), 'fev_9', 'a real id wins')
+  assert.equal(faceEventKey({ type: 'room.message' }), '', 'nothing to name the line by: no key, not a shared one')
+  const seen = rememberEvent([], faceEventKey(event))
+  assert.deepEqual(seen, ['unkeyed:room.message|@chief.bob.home|2026-10-25T01:00:34.242Z|hi'])
+  assert.deepEqual(rememberEvent(seen, faceEventKey(event)), seen, 'and the second poll does not remember it twice')
 })
 
 test('roomOnlyForJoin is the default; a person-grant is the exception', () => {

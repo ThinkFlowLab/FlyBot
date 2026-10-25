@@ -40,6 +40,7 @@ import {
   mapFaceError,
   mapRegisterError,
   renderFaceEvent,
+  faceEventKey,
   rememberEvent,
   FaceRoomError,
   alreadyLeftFace,
@@ -3574,10 +3575,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         || seen.includes(`join-text:${body}`)
     }
     for (const event of snapshot.events ?? []) {
-      if (event.eventId && seen.includes(event.eventId)) continue
+      // Keyed by id, or by the line itself when the server sent none: an unkeyed event is applied once
+      // and then skipped, instead of being appended to the room again on every poll (#1045).
+      const eventKey = faceEventKey(event)
+      if (eventKey && seen.includes(eventKey)) continue
       const line = renderFaceEvent(event, { attested })
       if (!line) continue
-      seen = rememberEvent(seen, event.eventId)
+      seen = rememberEvent(seen, eventKey)
       if (line.system) {
         if (line.kind === 'joined') {
           const handle = norm(event.member?.handle)
