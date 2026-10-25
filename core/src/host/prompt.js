@@ -22,6 +22,7 @@ const TEAM_RULES = [
   '- web_search results say which search backend answered. If web_search fails, never guess URLs or present pages you remember as search results: use a browser tool if you have one, otherwise tell the user that search is unavailable and the reason it gave.',
   '- Your conversations are long-lived. When one grows long, either its older messages are condensed in place into a summary you wrote (a "[Checkpoint N]" message), or it moves on to a fresh part that opens with a handoff note you wrote and your latest messages (a "[Handoff · part N]" message). What leaves your working context stays saved. When you need the exact earlier wording or a detail the summary or note does not show in full (a full path, a figure, every item of a complete list or a final summary), call read_own_chat with words to look for, or with part N to read the note that closed an earlier part; never fill such a detail in from memory. Each line it returns starts with an anchor such as [part 2 #1234 · 10-08 14:22]; pass the anchor as around to read what was said around it.',
   '- Reply in the user\'s language.',
+  '- You keep your own task list with track_tasks. When the user gives you work, or a group hands you work, record it there (a short title, column not-started / in-progress / done, how far along from 0 to 100, and a priority) and update that same task as it moves. Do not record work nobody asked for. Call track_tasks with no tasks to read the list.',
 ].join('\n')
 
 const MAIN_RULES = [

@@ -1,6 +1,7 @@
 // Team tools: the roster, bot-to-bot messages, group chat settings and posts, and the
 // question card. Group rounds and reading chats are in groups.js.
 import { randomUUID } from 'node:crypto'
+import { columnOf } from '../shared/task-board.js'
 import { defineTool } from './tool-schema.js'
 import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_MODES, SOURCE_KIND } from './constants.js'
 import { unquote } from './text.js'
@@ -758,6 +759,44 @@ export function install(rt) {
       },
     }))
   }
+
+  ctx.tools.register(defineTool({
+    name: 'track_tasks',
+    description: 'Read or update your own task list. Call it when the user gives you work, or when a task starts, moves, or finishes, so the board stays current. Omit tasks to read the list. Pass tasks to create or update: match an id you already have, or the title of a task you are still tracking. Each task has a title, a column (not-started, in-progress, done), a progress percent from 0 to 100, a priority (low, normal, high, urgent) and a short note. In a group the task is tracked for that group.',
+    parameters: {
+      tasks: {
+        type: 'array',
+        description: 'Tasks to create or update. Omit to read your list.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string', description: 'Existing task id. Omit to match an open task by title, or to create one.' },
+            title: { type: 'string', description: 'Short name of the work. Required when creating.' },
+            column: { type: 'string', enum: ['not-started', 'in-progress', 'done'], description: 'Board column.' },
+            progress: { type: 'integer', description: 'How far along, from 0 to 100.' },
+            priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'How urgent the task is.' },
+            note: { type: 'string', description: 'One line on where the task stands.' },
+            group: { type: 'string', description: 'Group chat name this task belongs to. In a group, the current group is used when this is omitted.' },
+          },
+        },
+      },
+    },
+    output,
+    async execute(args, exec) {
+      await rt.load()
+      const self = rt.selfOf(exec.agent?.id)
+      if (!rt.botOf(self)) return 'Only a Bot on the team can track tasks.'
+      const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
+      try {
+        const tasks = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
+        if (!Array.isArray(tasks) || tasks.length === 0) return 'No tasks.'
+        return tasks.map(task => `- ${task.id} [${columnOf(task)} ${task.progress ?? 0}% ${task.priority ?? 'normal'}] ${task.title}`).join('\n')
+      } catch (error) {
+        return error?.message ?? String(error)
+      }
+    },
+  }))
 
   Object.assign(rt, { pickRoom, hideBlockingQuestion })
 }

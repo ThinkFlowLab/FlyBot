@@ -620,6 +620,7 @@ export function install(rt) {
           return ok(true)
         case 'tasks':
         case 'task-create':
+        case 'task-update':
         case 'task-accept':
         case 'task-start':
         case 'task-return':

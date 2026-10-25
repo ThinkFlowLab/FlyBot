@@ -171,6 +171,14 @@ These endpoints do not prompt, deliver a clarification, resume an agent or grant
 execution/tool permissions. Automatic exchange wiring, runtime-scoped observation
 credentials and team mode remain separate work under #55/#198.
 
+### Bot task board (#1058)
+
+Each Bot's work sits on the same `state.tasks` records. A column is read from the status (`open`/`claimed` not started, `working`/`blocked`/`result-ready` in progress, `accepted`/`cancelled`/`failed` done) by `src/shared/task-board.js`. `task-update` sets `priority` (`urgent`/`high`/`normal`/`low`), `progress` (0–100), `note` and a column; a column walks the existing states forward (`open` → `claimed` → `working` → `result-ready` → `accepted`) and refuses a reverse move or a blocked wait. The requester or the Bot's owner may update. Anyone else, including a group admin, may not.
+
+`track_tasks` is the conversation path. The calling Bot creates or updates only its own tasks (`source: 'conversation'`, `requesterId` the Bot's owner, `origin.sessionId` the turn, `origin.roomId` the group when the turn is in one). The same title in the same group updates the open task instead of adding another. The prompt tells the Bot to record work the user or a group actually handed it.
+
+`tasks` without a filter returns tasks the actor requested or whose Bot they own, including a descendant (`createdBy`) they do not themselves own. `tasks { botId }` is that Bot's list under the same rule. `tasks { roomId }` is the group view: a current human admin, or the owner of `room.admin`, sees tasks member Bots tagged with that group, and nobody else does. A plain list does not include another Bot's group tasks. Names come back as `ownerBotName` only. Tests: `core/test/bot-tasks.test.js`.
+
 ### Work view step (#546)
 
 `work.bots[id]` (`turns.js` `workView`) carries `step`: what the newest running call acts on, from its arguments (`command`, `cmd`, `pattern`, `query`, `url`, `file_path`, `path`, else `description`), whitespace collapsed and capped at 80 characters. It is in the owner-only Bot view (`authz.js` `ownedLive` picks the actor's own Bots), not in `work.rooms`, which other members of a shared group read. It goes with the call's result and the turn's end. Covered by `core/test/group-status.test.js`.

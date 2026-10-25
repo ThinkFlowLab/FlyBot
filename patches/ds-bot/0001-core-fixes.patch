@@ -815,7 +815,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,37 @@ const ZH = {
+@@ -360,9 +360,60 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -846,6 +846,29 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Latest: {text}': '最新：{text}',
 +  '{count} tool calls': '{count} 次工具调用',
 +  'Untitled task': '未命名任务',
++  // Bot task board (#1058)
++  Tasks: '任务',
++  'Close tasks': '关闭任务',
++  'Task board': '任务板',
++  'Not started': '未开始',
++  'Groups you admin': '你管理的群',
++  'No tasks yet.': '还没有任务。',
++  'Nothing in this column.': '这一列是空的。',
++  Highest: '最高',
++  High: '较高',
++  Low: '较低',
++  Claimed: '已认领',
++  Blocked: '受阻',
++  Start: '开始',
++  Complete: '完成',
++  'Start task': '开始任务',
++  'Complete task': '完成任务',
++  'Add task': '添加任务',
++  'Task title': '任务标题',
++  Progress: '进度',
++  Group: '群',
++  '{percent}%': '{percent}%',
++  '{done}/{total}': '{done}/{total}',
 +  'for {time}': '已 {time}',
 +  'just started': '刚开始',
 +  'Open {name}': '打开 {name}',
@@ -3371,7 +3394,7 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -4,30 +4,35 @@
+@@ -4,30 +4,36 @@
  const TEAM_RULES = [
    '## How your Bot team works',
    '- Every Bot is its own long-lived conversation with the user, with its own memory and computer.',
@@ -3394,6 +3417,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
    '- web_search results say which search backend answered. If web_search fails, never guess URLs or present pages you remember as search results: use a browser tool if you have one, otherwise tell the user that search is unavailable and the reason it gave.',
    '- Your conversations are long-lived. When one grows long, either its older messages are condensed in place into a summary you wrote (a "[Checkpoint N]" message), or it moves on to a fresh part that opens with a handoff note you wrote and your latest messages (a "[Handoff · part N]" message). What leaves your working context stays saved. When you need the exact earlier wording or a detail the summary or note does not show in full (a full path, a figure, every item of a complete list or a final summary), call read_own_chat with words to look for, or with part N to read the note that closed an earlier part; never fill such a detail in from memory. Each line it returns starts with an anchor such as [part 2 #1234 · 10-08 14:22]; pass the anchor as around to read what was said around it.',
    '- Reply in the user\'s language.',
++  '- You keep your own task list with track_tasks. When the user gives you work, or a group hands you work, record it there (a short title, column not-started / in-progress / done, how far along from 0 to 100, and a priority) and update that same task as it moves. Do not record work nobody asked for. Call track_tasks with no tasks to read the list.',
  ].join('\n')
  
  const MAIN_RULES = [
@@ -7086,9 +7110,11 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -61,6 +61,8 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -60,7 +60,10 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+     'tool delete_capability',
      'tool attach_capability',
      'tool detach_capability',
++    'tool track_tasks',
      'effect ds-bot: chat index',
 +    'effect ds-bot: group chat section',
 +    'prompt bot-room 10150',

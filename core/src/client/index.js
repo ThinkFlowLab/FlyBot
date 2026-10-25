@@ -30,6 +30,7 @@ import { FOLDER_CSS } from './folder-menu.js'
 import { USAGE_CSS } from './usage-page.js'
 import { SCHEDULE_CSS } from './schedules.js'
 import { INBOX_CSS } from './inbox.js'
+import { KANBAN_CSS } from './kanban.js'
 import { MOBILE_CSS } from './mobile.js'
 import { PANE_MIN_WIDTH_CSS } from './panes.js'
 import { STORAGE, migrateStorage } from './storage.js'
@@ -485,8 +486,10 @@ export function apply(ctx) {
     openMemory: (botId) => { ui.set(state => ({ ...state, memory: botId, menu: null, palette: null })) },
     closeMemory: () => { ui.set(state => (state.memory ? { ...state, memory: null } : state)) },
     // The Agent inbox (#349) opens over the conversation; Open on a card closes it first.
-    openInbox: () => { ui.set(state => ({ ...state, inbox: true, menu: null, palette: null, newChat: null })) },
+    openInbox: () => { ui.set(state => ({ ...state, inbox: true, board: null, menu: null, palette: null, newChat: null })) },
     closeInbox: () => { ui.set(state => (state.inbox ? { ...state, inbox: null } : state)) },
+    openBoard: () => { ui.set(state => ({ ...state, board: true, inbox: null, menu: null, palette: null, newChat: null })) },
+    closeBoard: () => { ui.set(state => (state.board ? { ...state, board: null } : state)) },
     openConnectors: () => { ui.set(state => ({ ...state, settings: { page: 'connectors', id: null }, menu: null, palette: null, newChat: null })) },
     // Agent mode hands the surface back to the shell; everything open on the Bot
     // surface closes first so nothing stale reopens on the way back.
@@ -494,7 +497,7 @@ export function apply(ctx) {
       if (mode !== 'bot' && mode !== 'agent') return
       if (surface.getSnapshot().mode === mode) return
       if (mode === 'agent') {
-        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, toast: null }))
+        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
       }
       writeMode(mode)
       surface.set(state => ({ ...state, mode }))
@@ -596,7 +599,9 @@ export function apply(ctx) {
     approveCapability: name => after(call('capability-approve', { name })),
     setBotConnector: (botId, connector, enabled) => after(call('bot-connectors', { botId, connector, enabled })),
     setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
-    tasks: () => call('tasks'),
+    tasks: (payload) => call('tasks', payload ?? {}),
+    taskUpdate: (payload) => call('task-update', payload),
+    taskCreate: (payload) => call('task-create', payload),
     schedules: () => call('schedules'),
     scheduleCreate: task => call('schedule-create', task),
     scheduleUpdate: task => call('schedule-update', task),
@@ -851,6 +856,7 @@ export function apply(ctx) {
     installCompiledStyles(USAGE_CSS, 'usage'),
     installCompiledStyles(SCHEDULE_CSS, 'schedules'),
     installCompiledStyles(INBOX_CSS, 'inbox'),
+    installCompiledStyles(KANBAN_CSS, 'kanban'),
     installCompiledStyles(FEEDBACK_CSS, 'feedback'),
     installCompiledStyles(ABOUT_CSS, 'about'),
     installCompiledStyles(FLYBOT_CSS, 'flybot'),

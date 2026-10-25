@@ -273,7 +273,7 @@ test('task endpoints are an explicit allow-list, not a task-* prefix', async (t)
   await rt.load()
   const sessionA = await redeemOwner(rt)
   const actorA = await rt.authenticate(sessionA.sessionToken)
-  for (const ep of ['tasks', 'task-create', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-cancel']) {
+  for (const ep of ['tasks', 'task-create', 'task-update', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-cancel']) {
     assert.equal(rt.authorize(actorA, ep, {}).ok, true, ep)
   }
   const unknown = rt.authorize(actorA, 'task-explode', {})
