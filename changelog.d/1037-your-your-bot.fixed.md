@@ -1,0 +1,1 @@
+The Add friend result no longer stacks a second "Your" on a Bot whose owner already named it that way — a Bot called `Your Bot` reads as "Your Bot is shared back, so they can reach you too." instead of "Your Your Bot …" ([#1037](https://github.com/ThinkFlowLab/FlyBot/issues/1037)).

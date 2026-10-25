@@ -5868,6 +5868,8 @@ test('#496: the panel shows an already-had Bot as neutral text, a restored one a
     [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Chief' }, 'info', 'Your Chief is shared back, so they can reach you too.'],
     // #1026: a server that sends no name keeps the generic fallback, never a doubled "Your Your Bot".
     [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true }, 'info', 'Your Bot is shared back, so they can reach you too.'],
+    // #1037: an owner who already named their Bot "Your Bot" keeps that one "Your", not two.
+    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Your Bot' }, 'info', 'Your Bot is shared back, so they can reach you too.'],
     [{ alreadyHave: true, status: 'active', restored: [] }, 'info', "You already have this friend's Bot."],
     [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [{ handle: '@chief.selfa1233.home', name: 'Chief', owner: 'SelfA1233' }] }, 'ok', 'Chief (SelfA1233) is back in your list.'],
   ]) {
@@ -6859,6 +6861,8 @@ test('#343 / #499: an accepted invite shows its result, then the panel closes on
     [{ status: 'active', inviterName: 'Alice', sharedBack: true, sharedBackBotName: 'Chief' }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*Your Chief is shared back, so they can reach you too\.$/, false],
     // #1026: no name from the server falls back to "Your Bot" on this line too.
     [{ status: 'active', inviterName: 'Alice', sharedBack: true }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*Your Bot is shared back, so they can reach you too\.$/, false],
+    // #1037: the same on the new-friend line: a name that already reads "Your …" is not prefixed again.
+    [{ status: 'active', inviterName: 'Alice', sharedBack: true, sharedBackBotName: 'Your Bot' }, /^Joined Alice's invite, but their Bot hasn't loaded yet.*(?<!Your )Your Bot is shared back, so they can reach you too\.$/, false],
     [{ status: 'active', inviterName: 'Alice' }, /^Joined Alice's invite, but their Bot hasn't loaded yet/, false],
     [{ status: 'pending_target', inviterName: 'Alice' }, /^Request sent to Alice/, false],
   ]) {
@@ -6905,6 +6909,11 @@ test('#1026: both homes run a Bot called Chief, so the shared-back line says whi
     assert.doesNotMatch(text, /Your Your/, `the fallback is not stacked on itself: ${text}`)
   }
   assert.notEqual(reaccept, fresh, 'the two acceptances do not read as one sentence')
+  // #1037: an owner may already have named the Bot "Your Chief" — that name is ours already, so it is
+  // printed as it is; prefixing it again is where "Your Your Chief" came from.
+  const namedOurs = await say({ alreadyHave: true, status: 'active', botName: 'Your Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Your Chief' })
+  assert.match(namedOurs, /Your Chief is shared back, so they can reach you too\./, namedOurs)
+  assert.doesNotMatch(namedOurs, /Your Your/, namedOurs)
 })
 
 test('#499: typing in the paste box clears a failed accept\'s error, not a result; Enter accepts', () => {

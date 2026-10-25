@@ -27,8 +27,12 @@ window.__ModuleLoader__.load({
     const botWithOwner = (name, owner) => (name && owner && owner !== name ? `${name} (${owner})` : name || '')
     // The Bot the accept shares back is ours, and both homes can run a Bot with the same name (#1026): a bare
     // `Chief is shared back` reads as the friend's Chief being shared twice. A server that names none keeps the
-    // generic noun rather than stacking a second "Your" on it.
-    const sharedBackLine = name => `${name ? `Your ${name}` : 'Your Bot'} is shared back, so they can reach you too.`
+    // generic noun. A name the owner already gave as "Your …" is ours already — prefixing it again is where
+    // "Your Your Bot" came from (#1037).
+    const sharedBackLine = name => {
+      const ours = !name ? 'Your Bot' : /^your\b/i.test(name) ? name : `Your ${name}`
+      return `${ours} is shared back, so they can reach you too.`
+    }
     // One row per person must stay one readable line (#955): the access card used to join every room a share
     // is used in, so a long-lived share printed 15 rooms / 362 characters inside a settings row. The hint names
     // at most three rooms, says how many are left, and keeps every name in the tooltip.
