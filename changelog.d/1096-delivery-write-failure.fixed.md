@@ -1,0 +1,1 @@
+A message no longer disappears when the team's next write fails. The friend-line mark and the exchange record are written before the message is handed to the Bot, so a failed write (another window took the team over, or the disk refused) used to drop the whole line; now it is logged once and the message still arrives (#1096).

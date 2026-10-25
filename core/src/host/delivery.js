@@ -102,6 +102,14 @@ export function install(rt) {
   // line it has not shown yet arrived (its row turns unread), and the senders seen so far, kept apart
   // from the roster, tell the first line from a sender. A group line is the group's, not the Bot's.
   const CONTACTS_KEPT = 200
+  // #1096: both writes below land before the agent has the line, so a failed write must not decide
+  // the delivery — rethrowing would drop a message that exists nowhere else. Say it once and go on.
+  const recordOrWarn = async (what, write) => {
+    try { return await write() } catch (error) {
+      rt.warn?.('ds-bot: delivery: %s was not recorded: %s', what, error)
+      return undefined
+    }
+  }
   const noteFriendLine = async (to, sessionId, roomId, handle) => {
     if (to === undefined || roomId || (sessionId !== undefined && sessionId !== rt.chatOf(to.id))) return false
     const key = String(handle)
@@ -109,7 +117,7 @@ export function install(rt) {
     let first = false
     // A change made outside a request: `mutate` adopts what the other host left before the
     // change, so the Bot record is re-resolved inside the callback, never used from before it.
-    await rt.mutate(() => {
+    await recordOrWarn(`the first line from ${key}`, () => rt.mutate(() => {
       const bot = state.bots[to.id]
       if (bot === undefined) return
       const contacts = (state.remoteContacts ??= {})[bot.id] ??= {}
@@ -120,7 +128,7 @@ export function install(rt) {
         if (keys.length > CONTACTS_KEPT) for (const old of keys.slice(0, keys.length - CONTACTS_KEPT)) delete contacts[old]
       }
       bot.friendLineAt = now
-    })
+    }))
     return first
   }
 
@@ -202,7 +210,7 @@ export function install(rt) {
     }
     if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !resent) {
       const exchange = { id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) }
-      await rt.mutate(() => { state.exchanges.push(exchange) })
+      await recordOrWarn(`the ${role} exchange`, () => rt.mutate(() => { state.exchanges.push(exchange) }))
     }
     await rt.ensureCapabilities(targetSessionId)
     const agent = await resolveAgent(targetSessionId)

@@ -1005,7 +1005,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      if (deferred) return `[Message from ${fromName} · you read it during your last task; answer it now]`
      if (retried && role !== 'room') return '[Your last reply wrote a tool call as text, so nothing ran]'
      if (resumed && role === 'resume') return '[DeepSeek Harness restarted while you were working]'
-@@ -22,15 +22,74 @@ export function install(rt) {
+@@ -22,15 +22,82 @@ export function install(rt) {
      if (role === 'stopped') return `[Stopped by ${fromName}]`
      if (role === 'room') return `[Group chat "${roomName}" · ${note}]`
      if (role === 'report') return `[Group chat "${roomName}" · replies to your post]`
@@ -1032,6 +1032,14 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +  // line it has not shown yet arrived (its row turns unread), and the senders seen so far, kept apart
 +  // from the roster, tell the first line from a sender. A group line is the group's, not the Bot's.
 +  const CONTACTS_KEPT = 200
++  // #1096: both writes below land before the agent has the line, so a failed write must not decide
++  // the delivery — rethrowing would drop a message that exists nowhere else. Say it once and go on.
++  const recordOrWarn = async (what, write) => {
++    try { return await write() } catch (error) {
++      rt.warn?.('ds-bot: delivery: %s was not recorded: %s', what, error)
++      return undefined
++    }
++  }
 +  const noteFriendLine = async (to, sessionId, roomId, handle) => {
 +    if (to === undefined || roomId || (sessionId !== undefined && sessionId !== rt.chatOf(to.id))) return false
 +    const key = String(handle)
@@ -1039,7 +1047,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +    let first = false
 +    // A change made outside a request: `mutate` adopts what the other host left before the
 +    // change, so the Bot record is re-resolved inside the callback, never used from before it.
-+    await rt.mutate(() => {
++    await recordOrWarn(`the first line from ${key}`, () => rt.mutate(() => {
 +      const bot = state.bots[to.id]
 +      if (bot === undefined) return
 +      const contacts = (state.remoteContacts ??= {})[bot.id] ??= {}
@@ -1050,7 +1058,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +        if (keys.length > CONTACTS_KEPT) for (const old of keys.slice(0, keys.length - CONTACTS_KEPT)) delete contacts[old]
 +      }
 +      bot.friendLineAt = now
-+    })
++    }))
 +    return first
 +  }
 +
@@ -1134,7 +1142,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 -      state.exchanges.push({ id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) })
 -      void rt.save().catch(() => {})
 +      const exchange = { id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) }
-+      await rt.mutate(() => { state.exchanges.push(exchange) })
++      await recordOrWarn(`the ${role} exchange`, () => rt.mutate(() => { state.exchanges.push(exchange) }))
      }
 -    const targetSessionId = sessionId ?? rt.chatOf(toId)
      await rt.ensureCapabilities(targetSessionId)
