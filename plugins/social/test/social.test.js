@@ -8027,6 +8027,35 @@ test('#1045: a room line the server sends without an event id is posted once, no
   assert.equal(posted.length, 1, 'and not on a third poll either')
 })
 
+test('#1063: two lines the server stamped in the same second are two lines, not one', async (t) => {
+  const server = attestingFaceServer()
+  const posted = []
+  const { call } = await faceFixture(t, server, (scoped) => {
+    const remote = scoped.rooms.postRemote?.bind(scoped.rooms)
+    scoped.rooms.postRemote = (id, line) => { posted.push(line); return remote?.(id, line) }
+  })
+  const body = server.face.rooms.get('frm_123456')
+  // The server stamps `created_at` in whole seconds and these lines carry no `event_id`: sender, text and
+  // stamp are identical, so a key built from them alone names one line twice and the second one is lost.
+  // Each event's own cursor is what tells the two apart.
+  for (let i = 0; i < 2; i += 1) {
+    body.event_cursor += 1
+    body.events.push({
+      event_cursor: body.event_cursor,
+      type: 'room.message',
+      from: { handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" },
+      trust: 'peer_untrusted',
+      untrusted_content: { text: 'same words' },
+      created_at: '2026-10-25T01:00:34Z',
+    })
+  }
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(posted.map(line => line.text), ['same words', 'same words'], 'both lines land')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(posted.length, 2, 'and a later poll does not post them again')
+})
+
+
 test('cross-home @ (#287): a friend\'s attested line calls my Bot by the label they see; bare names that clash and unattested lines call none', async (t) => {
   const server = attestingFaceServer()
   const { call, sources, room } = await faceFixture(t, server)

@@ -676,7 +676,13 @@ export function rememberEvent(seen, eventId) {
 // key a line comes back on the next poll and the room ends up with the same sentence twice — the second
 // copy often seconds later, after both people have left. The fallback names the line itself, so it is
 // stable across polls and cannot collide with a real id (the prefix is ours).
-export function faceEventKey(event) {
+//
+// `position` is where the caller read the event in its snapshot (#1063). A server that stamps
+// `created_at` in whole seconds names two identical lines from one sender inside the same second the same
+// way, so the second one was dropped as a repeat of the first. The event's own cursor separates them; a
+// server that stamps neither an id nor a cursor is read by its position instead. A line shown twice is
+// cheaper than a line lost, so the tie-breaker comes before merging them.
+export function faceEventKey(event, position) {
   const id = String(event?.event_id || event?.eventId || '')
   if (id) return id
   const viewed = viewFaceEvent(event)
@@ -684,12 +690,15 @@ export function faceEventKey(event) {
   const from = viewed.from?.handle || viewed.member?.handle || ''
   const text = viewed.untrustedText ?? viewed.text ?? ''
   if (!from && !text) return ''
+  const place = viewed.eventCursor
+    ? `c${viewed.eventCursor}`
+    : (Number.isInteger(position) && position >= 0 ? `p${position}` : '')
   // The key names the line, but it never *is* the line: `seen` is persisted in the owner's settings, so on
   // a server that sends no ids it must not become a copy of the conversation (#1062). A bounded digest
   // carries the body: one FNV-1a pass (prime 0x01000193) and one Murmur3-style finalizer mix (constant
   // 0x85ebca6b plus a xor-shift) — ours, and stable across runs, with no time or counter in them, so the
   // same line handed back by a later poll keys the same or the duplicate comes back (#1077).
-  return `unkeyed:${viewed.type}|${from}|${viewed.createdAt ?? ''}|${lineDigest(text)}`
+  return `unkeyed:${place ? `${place}|` : ''}${viewed.type}|${from}|${viewed.createdAt ?? ''}|${lineDigest(text)}`
 }
 
 function lineDigest(text) {

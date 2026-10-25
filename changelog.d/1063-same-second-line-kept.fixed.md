@@ -1,0 +1,1 @@
+Two identical lines from one person inside the same second in a face room now both appear: a line the server stamps in whole seconds is told apart by its own cursor (or, without one, by its place in the snapshot) instead of being read as the same line twice, so the second one is no longer dropped ([#1063](https://github.com/ThinkFlowLab/FlyBot/issues/1063)).

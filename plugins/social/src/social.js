@@ -3886,10 +3886,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       return (room?.log ?? []).some(line => (line.kind === 'joined' || line.kind === 'notice') && line.text === body)
         || seen.includes(`join-text:${body}`)
     }
-    for (const event of snapshot.events ?? []) {
+    for (const [position, event] of (snapshot.events ?? []).entries()) {
       // Keyed by id, or by the line itself when the server sent none: an unkeyed event is applied once
-      // and then skipped, instead of being appended to the room again on every poll (#1045).
-      const eventKey = faceEventKey(event)
+      // and then skipped, instead of being appended to the room again on every poll (#1045). The position
+      // is the last resort for a server that stamps neither an id nor a cursor (#1063).
+      const eventKey = faceEventKey(event, position)
       if (eventKey && seen.includes(eventKey)) continue
       const line = renderFaceEvent(event, { attested })
       if (!line) continue

@@ -322,6 +322,27 @@ test('#1062: two lines from one sender key apart, and one line keys the same whe
   assert.equal(faceEventKey(reread), key, 'a clock reading in the key would have drifted by now')
 })
 
+test('#1063: two identical lines from one sender inside one second key apart by their cursor', () => {
+  // Whole seconds: the granularity the risk is about. The text, the sender and the stamp are the same, so
+  // only the event's own cursor tells these two lines apart.
+  const at = '2026-10-25T01:00:34Z'
+  const event = { type: 'room.message', from: { handle: '@chief.bob.home' }, untrusted_content: { text: 'hi' }, created_at: at }
+  const first = faceEventKey({ ...event, event_cursor: 12 })
+  const second = faceEventKey({ ...event, event_cursor: 13 })
+  assert.notEqual(first, second, 'the same sentence in the same second is two lines when the cursor differs')
+  assert.match(first, /^unkeyed:c12\|room\.message\|@chief\.bob\.home\|2026-10-25T01:00:34Z\|/)
+  assert.equal(faceEventKey({ ...event, event_cursor: 12 }), first, 'while the same event still keys the same on every poll')
+  assert.equal(faceEventKey({ ...event, event_id: 'fev_9', event_cursor: 12 }), 'fev_9', 'a real id still wins')
+})
+
+test('#1063: with neither an id nor a cursor the snapshot position keeps two lines apart', () => {
+  const event = { type: 'room.message', from: { handle: '@chief.bob.home' }, untrusted_content: { text: 'hi' }, created_at: '2026-10-25T01:00:34Z' }
+  assert.notEqual(faceEventKey(event, 0), faceEventKey(event, 1), 'the same line read twice in one snapshot is two lines')
+  assert.equal(faceEventKey(event, 0), faceEventKey({ ...event }, 0), 'and the event at its own position keys the same')
+  assert.match(faceEventKey(event, 0), /^unkeyed:p0\|room\.message\|/)
+  assert.match(faceEventKey(event), /^unkeyed:room\.message\|/, 'a caller that passes no position keeps the line-only key it had')
+})
+
 test('roomOnlyForJoin is the default; a person-grant is the exception', () => {
   assert.equal(roomOnlyForJoin(), true)
   assert.equal(roomOnlyForJoin({ id: 'writer' }), true)
