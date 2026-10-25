@@ -7481,6 +7481,43 @@ test('#1001: removing one of a friend\'s Bots says which link keeps the friend',
   assert.match(aloneText, /Your own Bots stay shared\. Bob can share it again\./)
 })
 
+test('#1033: the details slot hands the roster to the removal question', () => {
+  const { entries, walk, pluginOf } = loadSocialClient(async (endpoint) => (endpoint === 'social/settings' ? { autoAccept: {} } : {}))
+  const chief = { name: 'Chief', remote: { handle: '@chief.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  const writer = { name: 'Writer', remote: { handle: '@writer.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  const plugin = pluginOf([false, false, false, true, ''])
+  plugin.apply({})
+  // Mount through the component the plugin registers for flybot.bot.details, not FriendChatSettings
+  // directly: that indirection is what let a dropped `roster` stay green (#1033).
+  const slot = entries.find(([name]) => name === 'flybot.bot.details')
+  assert.equal(slot?.[1]?.component, plugin.BotSocialDetails, 'BotSocialDetails is what flybot.bot.details mounts')
+  const tree = walk(slot[1].component({
+    bot: chief,
+    actions: {},
+    roster: { remoteBots: [{ ...chief.remote, name: 'Chief' }, { ...writer.remote, name: 'Writer' }] },
+  }))
+  const confirm = tree.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm')
+  const text = confirm.children.flatMap(c => c.children ?? [c]).join(' ')
+  assert.match(text, /Remove Chief \(Bob\) from your list\? Bob stays a friend: still shared through Writer\./)
+})
+
+test('#1033: only the same home\'s Bot is named as the link that keeps the friend', () => {
+  const { walk, pluginOf } = loadSocialClient(async (endpoint) => (endpoint === 'social/settings' ? { autoAccept: {} } : {}))
+  const chief = { name: 'Chief', remote: { handle: '@chief.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  const sibling = { name: 'Writer', remote: { handle: '@writer.bob.home', home: '@bob.home', homeName: 'Bob' } }
+  // Another friend's Bot, same display name, on a different home: naming it would promise a link that
+  // does not keep this friend, and the copy would read worse the more friends share a Bot name.
+  const stranger = { name: 'Writer', remote: { handle: '@writer.carol.home', home: '@carol.home', homeName: 'Carol' } }
+  const tree = walk(pluginOf([false, false, false, true, '']).FriendChatSettings({
+    bot: chief,
+    roster: { remoteBots: [{ ...chief.remote, name: 'Chief' }, { ...sibling.remote, name: 'Writer' }, { ...stranger.remote, name: 'Writer' }] },
+  }))
+  const confirm = tree.find(n => n.props['data-flybot'] === 'remove-friend-bot-confirm')
+  const text = confirm.children.flatMap(c => c.children ?? [c]).join(' ')
+  assert.match(text, /Bob stays a friend: still shared through Writer\./)
+  assert.equal((text.match(/Writer/g) ?? []).length, 1, "the other friend's Bot is not named")
+})
+
 test('#138: join success copy names the person and the Bot', () => {
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(src, /shared \$\{shared\} with you/)
