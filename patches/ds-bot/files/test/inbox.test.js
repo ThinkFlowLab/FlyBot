@@ -387,7 +387,7 @@ test('a question asked about work handed out from a group is a Needs you card th
     questions: {
       // The group's own card, as tools.js stores it (state.questions[room.id]).
       r1: { id: 'q1', header: 'Flint', question: 'Which branch?', detail: 'Two branches look the same', options: [{ label: 'main' }], askedAt: NOW - 1000, botId: 'b2' },
-      // A card in a Bot's own chat is answered there and stays out of the inbox.
+      // A card in the Bot's own chat is answered from the inbox too (#1140).
       s1: { id: 'q2', question: 'Own card', options: [{ label: 'Yes' }], askedAt: NOW, botId: 'b1' },
       // Someone else's Bot and a deleted group leave no card.
       r9: { id: 'q3', question: 'Gone', askedAt: NOW, botId: 'b3' },
@@ -410,7 +410,117 @@ test('a question asked about work handed out from a group is a Needs you card th
   assert.equal(rows.length, 1)
   assert.equal(rows[0].props['data-status'], 'input')
   assert.equal(textOf(draw(card)).includes('Which branch?'), true)
-  assert.equal(withQuestion.needs.some(entry => entry.id === 'question:q2'), false)
+  const ownCard = withQuestion.needs.find(entry => entry.id === 'question:q2')
+  assert.equal(ownCard?.chat, 'b1')
+  assert.equal(ownCard?.sessionId, 's1')
   assert.equal(withQuestion.needs.some(entry => entry.id === 'question:q3'), false)
   assert.equal(withQuestion.needs.some(entry => entry.id === 'question:q4'), false)
+})
+
+// #1140: a Needs you / 等你回答 row is answered in the inbox. Open on that row was the
+// only control, and it landed in a group that does not hold the card.
+test('an ask_user card and a listed policy approval are answered in the inbox, and that clears them (#1140)', async () => {
+  const asked = {
+    ...roster,
+    bots: roster.bots.map(bot => bot.id === 'b2' ? { ...bot, sessionId: 's2' } : bot),
+    questions: {
+      // The card lives in Flint's own chat. The task below was handed out from Ops.
+      s2: { id: 'q-own', question: 'Which branch?', detail: 'Two branches look the same', options: [{ label: 'dev' }, { label: 'main' }], allowCustom: true, askedAt: NOW - 500 },
+      // A group card stays answerable here too, not only by opening Ops.
+      r1: { id: 'q-group', header: 'Flint', question: 'Ship it?', options: [{ label: 'yes' }], allowCustom: true, askedAt: NOW - 400, botId: 'b2' },
+    },
+  }
+  asked.byId = Object.fromEntries(asked.bots.map(bot => [bot.id, bot]))
+  const waiting = [
+    ...tasks,
+    task('t-ask', 'blocked', {
+      waitingFor: 'input',
+      inputRequest: { id: 'input-1', question: 'Which branch?' },
+      origin: { roomId: 'r1', sessionId: 'member-session' },
+      ownerBotId: 'b2',
+    }),
+  ]
+  const localWork = { ...work, approvals: work.approvals.map(entry => ({ ...entry })) }
+  const pending = inboxModel({ roster: asked, work: localWork, tasks: waiting, sessions, now: NOW })
+  const own = pending.needs.find(card => card.id === 'question:q-own')
+  const group = pending.needs.find(card => card.id === 'question:q-group')
+  const taskCard = pending.needs.find(card => card.id === 'task:t-ask')
+  assert.ok(own)
+  assert.equal(own.status, 'input')
+  assert.equal(own.chat, 'b2')
+  assert.equal(own.sessionId, 's2')
+  assert.notEqual(own.chat, 'r1')
+  // The task names Ops, but the ask_user card is in the Bot's own chat: Open follows the card.
+  assert.equal(taskCard.chat, 'b2')
+  assert.equal(group.chat, 'r1')
+
+  const log = []
+  const actions = {
+    closeInbox() {},
+    openSession(id) { log.push(['open', id]) },
+    answerQuestion(sessionId, questionId, answer) {
+      log.push(['answer-question', sessionId, questionId, answer])
+      delete asked.questions[sessionId]
+      return Promise.resolve(true)
+    },
+    answerApproval(id, choice) {
+      log.push(['answer-approval', id, choice])
+      localWork.approvals = localWork.approvals.filter(entry => entry.id !== id)
+      return Promise.resolve(true)
+    },
+    answerTaskInput(id, questionId, answer) {
+      log.push(['answer-task', id, questionId, answer])
+      const row = waiting.find(entry => entry.id === id)
+      row.status = 'working'
+      delete row.waitingFor
+      return Promise.resolve(true)
+    },
+    tasks: () => Promise.resolve(waiting),
+  }
+  const { inboxAnswer } = module.exports
+  const onAnswer = (card, choice) => {
+    log.push([card.id, choice])
+    return inboxAnswer(actions, card, choice)
+  }
+  const ownTree = draw(own, { onAnswer })
+  const labels = plain(buttons(ownTree).map(textOf))
+  assert.ok(labels.includes('dev'))
+  assert.ok(labels.includes('main'))
+  assert.ok(labels.includes('Submit'))
+  assert.ok(labels.includes('Open'))
+  buttons(ownTree).find(button => textOf(button) === 'dev').props.onClick()
+  assert.ok(log.some(entry => entry[0] === 'question:q-own' && entry[1]?.selected?.[0] === 'dev' && entry[1].custom === ''))
+  const field = all(ownTree).find(node => node.props?.className === 'bt-inbox-answer-text')
+  assert.equal(field.props['aria-label'], 'Your own answer')
+  field.props.onChange({ target: { value: '  the release branch  ' } })
+  buttons(ownTree).find(button => textOf(button) === 'Submit').props.onClick()
+  assert.ok(log.some(entry => entry[0] === 'answer-question' && entry[1] === 's2' && entry[2] === 'q-own' && entry[3].custom === 'the release branch'))
+
+  const taskTree = draw(taskCard, { onAnswer })
+  const taskField = all(taskTree).find(node => node.props?.className === 'bt-inbox-answer-text')
+  taskField.props.onChange({ target: { value: 'dev' } })
+  buttons(taskTree).find(button => textOf(button) === 'Submit').props.onClick()
+  assert.ok(log.some(entry => entry[0] === 'answer-task' && entry[1] === 't-ask' && entry[2] === 'input-1' && entry[3] === 'dev'))
+
+  const tree = InboxDialog({ roster: asked, useWork: pick => pick(localWork), useSessions: pick => pick(sessions), actions })
+  const groupCard = cardsIn(tree).find(node => node.props.card.id === 'question:q-group')
+  const groupTree = expand(groupCard)
+  buttons(groupTree).find(button => textOf(button) === 'yes').props.onClick()
+  const approvalCard = cardsIn(tree).find(node => node.props.card.id === 'approval:a1')
+  approvalCard.props.onAnswer(approvalCard.props.card, 'allow')
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(plain(log.filter(entry => entry[0] === 'answer-question' && entry[2] === 'q-group')), [['answer-question', 'r1', 'q-group', { selected: ['yes'], custom: '' }]])
+  assert.deepEqual(log.filter(entry => entry[0] === 'answer-approval'), [['answer-approval', 'a1', 'allow']])
+  assert.deepEqual(log.filter(entry => entry[0] === 'open'), [])
+
+  const { visibleNeeds } = module.exports
+  const settled = visibleNeeds(pending, { 'question:q-own': true, 'question:q-group': true, 'approval:a1': true, 'task:t-ask': true })
+  for (const id of ['question:q-own', 'question:q-group', 'approval:a1', 'task:t-ask']) {
+    assert.equal(settled.needs.some(card => card.id === id), false, id)
+  }
+  const cleared = inboxModel({ roster: asked, work: localWork, tasks: waiting, sessions, now: NOW })
+  assert.equal(cleared.needs.some(card => card.id === 'question:q-own'), false)
+  assert.equal(cleared.needs.some(card => card.id === 'question:q-group'), false)
+  assert.equal(cleared.needs.some(card => card.id === 'approval:a1'), false)
+  assert.equal(cleared.needs.some(card => card.id === 'task:t-ask'), false)
 })

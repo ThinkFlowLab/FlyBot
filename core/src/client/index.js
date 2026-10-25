@@ -581,6 +581,7 @@ export function apply(ctx) {
     updateRoom: (id, patch) => after(call('update-room', { id, ...patch })),
     send: (sessionId, text) => after(call('send', { sessionId: partFor(sessionId), text })),
     answerQuestion: (sessionId, questionId, answer) => after(call('answer-question', { sessionId: partFor(sessionId), questionId, answer })),
+    answerTaskInput: (id, questionId, answer) => after(call('task-answer-input', { id, questionId, answer })),
     dismissQuestion: sessionId => after(call('dismiss-question', { sessionId })),
     answerApproval: (id, choice) => after(call('approval-answer', { id, choice })),
     removeStandingApproval: (scope, id, kind) => after(call('standing-approval-remove', { scope, id, kind })),

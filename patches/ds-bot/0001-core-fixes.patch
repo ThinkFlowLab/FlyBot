@@ -986,6 +986,10 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
+@@ -480,2 +787,3 @@
+   Submit: '提交',
++  Answered: '已回答',
+   'Choose all that apply': '可多选',
 @@ -485,7 +793,7 @@
    'Your answer': '你的回答',
  

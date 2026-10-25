@@ -786,6 +786,7 @@ const ZH = {
   Selected: '已选',
   Skip: '跳过',
   Submit: '提交',
+  Answered: '已回答',
   'Choose all that apply': '可多选',
   'Dismiss question': '关闭问题',
   Dismiss: '关闭',

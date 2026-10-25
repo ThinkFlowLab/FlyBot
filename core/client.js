@@ -841,6 +841,7 @@ var ZH = {
   Selected: "已选",
   Skip: "跳过",
   Submit: "提交",
+  Answered: "已回答",
   "Choose all that apply": "可多选",
   "Dismiss question": "关闭问题",
   Dismiss: "关闭",
@@ -7319,6 +7320,15 @@ var roomName = (roster, id) => roster.roomsById?.[id]?.name;
 var placeOf = (roster, roomId) => roomId && roomName(roster, roomId) ? t("in {name}", { name: roomName(roster, roomId) }) : "";
 var lastWhy = (task) => [...task.actors ?? []].reverse().find((entry) => typeof entry.why === "string" && entry.why !== "")?.why ?? "";
 var chatOfTask = (task) => task.origin?.roomId ?? task.origin?.sessionId ?? task.ownerBotId;
+var ownAskChat = (roster, bot, text) => {
+  if (bot === void 0 || typeof text !== "string" || text === "") return void 0;
+  for (const [key, question] of Object.entries(roster.questions ?? {})) {
+    if (question == null || typeof question !== "object" || roster.roomsById?.[key]) continue;
+    if (question.question !== text) continue;
+    if (key === bot.id || key === currentPart(bot)) return bot.id;
+  }
+  return void 0;
+};
 var placeKey = (botId, roomId) => `${botId}|${roomId ?? ""}`;
 var partOf = (roster, chat) => roster.roomsById?.[chat] || !roster.byId?.[chat] ? chat : currentPart(roster.byId[chat]);
 var runningIn = (work, botId, roomId) => roomId === void 0 ? work.bots?.[botId]?.roomId === void 0 ? work.bots?.[botId] : void 0 : (work.rooms?.[roomId] ?? []).find((entry) => entry.botId === botId) ?? (work.bots?.[botId]?.roomId === roomId ? work.bots[botId] : void 0);
@@ -7370,21 +7380,24 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
     });
   }
   for (const [key, question] of Object.entries(roster.questions ?? {})) {
+    if (question == null || typeof question !== "object") continue;
     const room2 = roster.roomsById?.[key];
-    const bot = ownBot(roster, question?.botId);
-    if (room2 === void 0 || bot === void 0) continue;
-    waitingAt.add(`${bot.id}|${room2.id}`);
+    const bot = room2 ? ownBot(roster, question.botId) : (roster.bots ?? []).find((candidate) => ownBot(roster, candidate.id) && (candidate.id === key || currentPart(candidate) === key));
+    if (bot === void 0) continue;
+    waitingAt.add(room2 ? `${bot.id}|${room2.id}` : `${bot.id}|`);
     needs.push({
       id: `question:${question.id ?? key}`,
       kind: "question",
       status: "input",
       bot,
-      room: room2,
+      ...room2 ? { room: room2 } : {},
       at: question.askedAt,
       title: question.question ?? "",
       reason: question.detail ?? "",
-      place: placeOf(roster, key),
-      chat: key,
+      place: room2 ? placeOf(roster, key) : "",
+      chat: room2 ? key : bot.id,
+      sessionId: key,
+      question,
       ...people(roster, bot.id)
     });
   }
@@ -7455,6 +7468,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   for (const task of tasks) {
     const bot = ownBot(roster, task.ownerBotId);
     if (bot === void 0) continue;
+    const askedIn2 = task.waitingFor === "input" ? ownAskChat(roster, bot, task.inputRequest?.question) : void 0;
     const card = {
       id: `task:${task.id}`,
       kind: "task",
@@ -7462,7 +7476,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
       at: task.updatedAt,
       title: task.title || t("Untitled task"),
       place: placeOf(roster, task.origin?.roomId),
-      chat: chatOfTask(task),
+      chat: askedIn2 ?? chatOfTask(task),
       task,
       ...people(roster, task.workBotId ?? bot.id)
     };
@@ -7493,6 +7507,71 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 }
 var needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length;
+function visibleNeeds(model, answered) {
+  return { ...model, needs: model.needs.filter((card) => !answered?.[card.id]) };
+}
+function inboxAnswer(actions, card, choice) {
+  if (card?.kind === "question") {
+    const reply = choice !== null && typeof choice === "object" ? choice : {};
+    const selected = Array.isArray(reply.selected) ? reply.selected.filter((item) => typeof item === "string" && item !== "") : [];
+    const custom = typeof reply.custom === "string" ? reply.custom.trim() : "";
+    if (selected.length === 0 && custom === "") return void 0;
+    return Promise.resolve(actions.answerQuestion(card.sessionId, card.question.id, { selected, custom }));
+  }
+  if (card?.kind === "task" && card.status === "input") {
+    const text = typeof choice === "string" ? choice.trim() : "";
+    const questionId = card.task?.inputRequest?.id;
+    if (text === "" || typeof questionId !== "string") return void 0;
+    return Promise.resolve(actions.answerTaskInput(card.task.id, questionId, text));
+  }
+  if (card?.kind === "approval" && card.approval?.answerable === true) {
+    return Promise.resolve(actions.answerApproval(card.approval.id, choice));
+  }
+  return void 0;
+}
+function answerFields(card, busy, onAnswer) {
+  const question = card.kind === "question";
+  const taskInput = card.kind === "task" && card.status === "input" && typeof card.task?.inputRequest?.id === "string";
+  if (!question && !taskInput) return null;
+  const draft = { text: "" };
+  const sendText = () => {
+    const text = draft.text.trim();
+    if (text === "" || busy) return;
+    if (question) onAnswer(card, { selected: [], custom: text });
+    else onAnswer(card, text);
+  };
+  const options = question && Array.isArray(card.question?.options) ? card.question.options : [];
+  return (0, import_react13.createElement)(
+    "span",
+    { className: "bt-inbox-answer" },
+    ...options.map((option, index) => (0, import_react13.createElement)("button", {
+      key: `${option.label}-${index}`,
+      type: "button",
+      className: "bt-soft bt-soft-sm",
+      disabled: busy,
+      onClick: () => {
+        if (!busy) onAnswer(card, { selected: [option.label], custom: "" });
+      }
+    }, option.label)),
+    (0, import_react13.createElement)("input", {
+      type: "text",
+      className: "bt-inbox-answer-text",
+      defaultValue: "",
+      disabled: busy,
+      "aria-label": t("Your own answer"),
+      placeholder: t("Type your own answer"),
+      onChange: (event) => {
+        draft.text = String(event.target?.value ?? "");
+      },
+      onKeyDown: (event) => {
+        if (event.key !== "Enter" || event.shiftKey) return;
+        event.preventDefault();
+        sendText();
+      }
+    }),
+    (0, import_react13.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy, onClick: sendText }, t("Submit"))
+  );
+}
 function InboxRow({ wide, useRoster, useWork, useUi, actions }) {
   const roster = useRoster((value) => value);
   const work = useWork ? useWork((value) => value) : {};
@@ -7548,6 +7627,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
       card.reason ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
       card.activity ? (0, import_react13.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
       card.hint ? (0, import_react13.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
+      answerFields(card, busy, onAnswer),
       error ? (0, import_react13.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
     ),
     (0, import_react13.createElement)(
@@ -7585,14 +7665,19 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
     return () => clearTimeout(timer);
   }, [feedback]);
   const model = inboxModel({ roster, work, tasks, sessions, now });
-  const groups = { ...model, needs: model.needs.filter((card) => !answered[card.id]) };
+  const groups = visibleNeeds(model, answered);
   const answer = (card, choice) => {
     setBusy(card.id);
     setErrors((value) => ({ ...value, [card.id]: "" }));
-    void Promise.resolve(actions.answerApproval(card.approval.id, choice)).then(() => {
-      setAnswered((value) => ({ ...value, [card.id]: choice }));
+    const pending = inboxAnswer(actions, card, choice);
+    if (pending === void 0) {
+      setBusy("");
+      return;
+    }
+    void Promise.resolve(pending).then(() => {
+      setAnswered((value) => ({ ...value, [card.id]: true }));
       const name = card.bot?.name ?? "";
-      setFeedback(choice === "allow" ? t("Allowed once for {name}", { name }) : choice === "always-bot" ? t("Always allowed for {name}", { name }) : choice === "always-room" ? t("Always allowed in this group") : t("Rejected for {name}", { name }));
+      setFeedback(card.kind === "approval" ? choice === "allow" ? t("Allowed once for {name}", { name }) : choice === "always-bot" ? t("Always allowed for {name}", { name }) : choice === "always-room" ? t("Always allowed in this group") : t("Rejected for {name}", { name }) : t("Answered"));
     }, (failure) => setErrors((value) => ({ ...value, [card.id]: hostText(failure?.message ?? String(failure)) }))).finally(() => setBusy(""));
   };
   const open = (card) => {
@@ -7676,6 +7761,9 @@ var INBOX_CSS = `
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
+.bt-inbox-answer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.bt-inbox-answer-text{flex:1 1 140px;min-width:0;height:28px;padding:0 8px;border:.5px solid var(--bt-line-2);border-radius:8px;background:transparent;color:var(--bt-ink);font:inherit;font-size:12px}
+.bt-inbox-answer .bt-send,.bt-inbox-answer .bt-soft{height:28px;font-size:12px}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 .bt-inbox-actions .bt-send{height:28px;font-size:12px}
 `;
@@ -18733,6 +18821,7 @@ function apply(ctx) {
     updateRoom: (id, patch) => after(call("update-room", { id, ...patch })),
     send: (sessionId, text) => after(call("send", { sessionId: partFor(sessionId), text })),
     answerQuestion: (sessionId, questionId, answer) => after(call("answer-question", { sessionId: partFor(sessionId), questionId, answer })),
+    answerTaskInput: (id, questionId, answer) => after(call("task-answer-input", { id, questionId, answer })),
     dismissQuestion: (sessionId) => after(call("dismiss-question", { sessionId })),
     answerApproval: (id, choice) => after(call("approval-answer", { id, choice })),
     removeStandingApproval: (scope, id, kind) => after(call("standing-approval-remove", { scope, id, kind })),

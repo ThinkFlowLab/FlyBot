@@ -3,9 +3,10 @@
 // only from data the client already has: the work snapshot's approvals and running
 // turns, the held-message counts on chats, the Bot chats' last activity and the task
 // records (src/host/tasks.js), and the ended turns the finish/fail notifications use
-// (work.ended, #353) for failed turns (#471). A tool approval is answered with the
-// same answer the group chat's card gives (actions.answerApproval); everything else,
-// and every Bot-sent message, is approved in its chat, so its card only has Open.
+// (work.ended, #353) for failed turns (#471). A tool approval the inbox can answer uses
+// the same answer the group chat's card gives (actions.answerApproval). An ask_user card,
+// in a group or in the Bot's own chat, and a task waiting on an answer are answered
+// here too (#1140). A held Bot message is still approved in its chat, so that card only has Open.
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { BotAvatar, RoomAvatar } from './mark.js'
 import { CloseIcon } from './icons.js'
@@ -96,6 +97,16 @@ const roomName = (roster, id) => roster.roomsById?.[id]?.name
 const placeOf = (roster, roomId) => (roomId && roomName(roster, roomId) ? t('in {name}', { name: roomName(roster, roomId) }) : '')
 const lastWhy = task => [...(task.actors ?? [])].reverse().find(entry => typeof entry.why === 'string' && entry.why !== '')?.why ?? ''
 const chatOfTask = task => task.origin?.roomId ?? task.origin?.sessionId ?? task.ownerBotId
+// The Bot's own chat, when that session is where this ask_user card actually sits.
+const ownAskChat = (roster, bot, text) => {
+  if (bot === undefined || typeof text !== 'string' || text === '') return undefined
+  for (const [key, question] of Object.entries(roster.questions ?? {})) {
+    if (question == null || typeof question !== 'object' || roster.roomsById?.[key]) continue
+    if (question.question !== text) continue
+    if (key === bot.id || key === currentPart(bot)) return bot.id
+  }
+  return undefined
+}
 const placeKey = (botId, roomId) => `${botId}|${roomId ?? ''}`
 // The Session a card's chat reads from: a group's own, a Bot's current part, else the id itself.
 const partOf = (roster, chat) => (roster.roomsById?.[chat] || !roster.byId?.[chat] ? chat : currentPart(roster.byId[chat]))
@@ -156,17 +167,21 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
       chat: approval.roomId ?? bot.id, approval, ...people(roster, bot.id),
     })
   }
-  // A question a Bot asks about work handed out from a group sits in that group's composer
-  // dock (#550), so its answer is given there; it needs me like an approval does (#552).
+  // ask_user cards (#1140). A group card sits on the room (#550). A card in the Bot's own
+  // chat is keyed by that session, and Open must land there — a task handed out from a
+  // group does not make the group the place the card is.
   for (const [key, question] of Object.entries(roster.questions ?? {})) {
+    if (question == null || typeof question !== 'object') continue
     const room = roster.roomsById?.[key]
-    const bot = ownBot(roster, question?.botId)
-    if (room === undefined || bot === undefined) continue
-    waitingAt.add(`${bot.id}|${room.id}`)
+    const bot = room
+      ? ownBot(roster, question.botId)
+      : (roster.bots ?? []).find(candidate => ownBot(roster, candidate.id) && (candidate.id === key || currentPart(candidate) === key))
+    if (bot === undefined) continue
+    waitingAt.add(room ? `${bot.id}|${room.id}` : `${bot.id}|`)
     needs.push({
-      id: `question:${question.id ?? key}`, kind: 'question', status: 'input', bot, room, at: question.askedAt,
+      id: `question:${question.id ?? key}`, kind: 'question', status: 'input', bot, ...(room ? { room } : {}), at: question.askedAt,
       title: question.question ?? '', reason: question.detail ?? '',
-      place: placeOf(roster, key), chat: key, ...people(roster, bot.id),
+      place: room ? placeOf(roster, key) : '', chat: room ? key : bot.id, sessionId: key, question, ...people(roster, bot.id),
     })
   }
   // Messages a Bot wants to send wait for me in their chat; they are approved there (#349 decision).
@@ -222,9 +237,10 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
   for (const task of tasks) {
     const bot = ownBot(roster, task.ownerBotId)
     if (bot === undefined) continue
+    const askedIn = task.waitingFor === 'input' ? ownAskChat(roster, bot, task.inputRequest?.question) : undefined
     const card = {
       id: `task:${task.id}`, kind: 'task', bot, at: task.updatedAt, title: task.title || t('Untitled task'),
-      place: placeOf(roster, task.origin?.roomId), chat: chatOfTask(task), task, ...people(roster, task.workBotId ?? bot.id),
+      place: placeOf(roster, task.origin?.roomId), chat: askedIn ?? chatOfTask(task), task, ...people(roster, task.workBotId ?? bot.id),
     }
     if (task.status === 'failed') { if (fresh(task.updatedAt)) needs.push({ ...card, status: 'failed', reason: lastWhy(task) }) }
     else if (task.status === 'result-ready') needs.push({ ...card, status: 'result', reason: task.result?.summary ?? '' })
@@ -256,6 +272,65 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
 
 // The row's badge: how many cards need me. The Done list needs no Session list for this.
 export const needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length
+
+// Cards the owner already answered leave the Needs you list. The dialog keeps that
+// set until the next roster poll drops the underlying record.
+export function visibleNeeds(model, answered) {
+  return { ...model, needs: model.needs.filter(card => !answered?.[card.id]) }
+}
+
+// One inbox action clears one pending item: an ask_user card, a task waiting on
+// an answer, or a policy approval the inbox already lists (#1140).
+export function inboxAnswer(actions, card, choice) {
+  if (card?.kind === 'question') {
+    const reply = choice !== null && typeof choice === 'object' ? choice : {}
+    const selected = Array.isArray(reply.selected) ? reply.selected.filter(item => typeof item === 'string' && item !== '') : []
+    const custom = typeof reply.custom === 'string' ? reply.custom.trim() : ''
+    if (selected.length === 0 && custom === '') return undefined
+    return Promise.resolve(actions.answerQuestion(card.sessionId, card.question.id, { selected, custom }))
+  }
+  if (card?.kind === 'task' && card.status === 'input') {
+    const text = typeof choice === 'string' ? choice.trim() : ''
+    const questionId = card.task?.inputRequest?.id
+    if (text === '' || typeof questionId !== 'string') return undefined
+    return Promise.resolve(actions.answerTaskInput(card.task.id, questionId, text))
+  }
+  if (card?.kind === 'approval' && card.approval?.answerable === true) {
+    return Promise.resolve(actions.answerApproval(card.approval.id, choice))
+  }
+  return undefined
+}
+
+// Options and a short answer, drawn inside the card so a click answers here.
+function answerFields(card, busy, onAnswer) {
+  const question = card.kind === 'question'
+  const taskInput = card.kind === 'task' && card.status === 'input' && typeof card.task?.inputRequest?.id === 'string'
+  if (!question && !taskInput) return null
+  const draft = { text: '' }
+  const sendText = () => {
+    const text = draft.text.trim()
+    if (text === '' || busy) return
+    if (question) onAnswer(card, { selected: [], custom: text })
+    else onAnswer(card, text)
+  }
+  const options = question && Array.isArray(card.question?.options) ? card.question.options : []
+  return h('span', { className: 'bt-inbox-answer' },
+    ...options.map((option, index) => h('button', {
+      key: `${option.label}-${index}`, type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy,
+      onClick: () => { if (!busy) onAnswer(card, { selected: [option.label], custom: '' }) },
+    }, option.label)),
+    h('input', {
+      type: 'text', className: 'bt-inbox-answer-text', defaultValue: '', disabled: busy,
+      'aria-label': t('Your own answer'), placeholder: t('Type your own answer'),
+      onChange: event => { draft.text = String(event.target?.value ?? '') },
+      onKeyDown: (event) => {
+        if (event.key !== 'Enter' || event.shiftKey) return
+        event.preventDefault()
+        sendText()
+      },
+    }),
+    h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: sendText }, t('Submit')))
+}
 
 // The Inbox row at the top of the sidebar (owner decision 2026-10-20, option a).
 export function InboxRow({ wide, useRoster, useWork, useUi, actions }) {
@@ -301,6 +376,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
       card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, card.reason) : null,
       card.activity ? h('span', { className: 'bt-inbox-activity', title: card.activity }, t('Latest: {text}', { text: card.activity })) : null,
       card.hint ? h('span', { className: 'bt-inbox-hint' }, card.hint) : null,
+      answerFields(card, busy, onAnswer),
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),
     h('span', { className: 'bt-inbox-actions' },
       answerable ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'reject') }, t('Reject')) : null,
@@ -336,17 +412,24 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
     return () => clearTimeout(timer)
   }, [feedback])
   const model = inboxModel({ roster, work, tasks, sessions, now })
-  const groups = { ...model, needs: model.needs.filter(card => !answered[card.id]) }
+  const groups = visibleNeeds(model, answered)
   const answer = (card, choice) => {
     setBusy(card.id)
     setErrors(value => ({ ...value, [card.id]: '' }))
-    void Promise.resolve(actions.answerApproval(card.approval.id, choice))
+    const pending = inboxAnswer(actions, card, choice)
+    if (pending === undefined) {
+      setBusy('')
+      return
+    }
+    void Promise.resolve(pending)
       .then(() => {
-        setAnswered(value => ({ ...value, [card.id]: choice }))
+        setAnswered(value => ({ ...value, [card.id]: true }))
         const name = card.bot?.name ?? ''
-        setFeedback(choice === 'allow' ? t('Allowed once for {name}', { name })
-          : choice === 'always-bot' ? t('Always allowed for {name}', { name })
-            : choice === 'always-room' ? t('Always allowed in this group') : t('Rejected for {name}', { name }))
+        setFeedback(card.kind === 'approval'
+          ? (choice === 'allow' ? t('Allowed once for {name}', { name })
+            : choice === 'always-bot' ? t('Always allowed for {name}', { name })
+              : choice === 'always-room' ? t('Always allowed in this group') : t('Rejected for {name}', { name }))
+          : t('Answered'))
       }, failure => setErrors(value => ({ ...value, [card.id]: hostText(failure?.message ?? String(failure)) })))
       .finally(() => setBusy(''))
   }
@@ -409,6 +492,9 @@ export const INBOX_CSS = `
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
+.bt-inbox-answer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.bt-inbox-answer-text{flex:1 1 140px;min-width:0;height:28px;padding:0 8px;border:.5px solid var(--bt-line-2);border-radius:8px;background:transparent;color:var(--bt-ink);font:inherit;font-size:12px}
+.bt-inbox-answer .bt-send,.bt-inbox-answer .bt-soft{height:28px;font-size:12px}
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 .bt-inbox-actions .bt-send{height:28px;font-size:12px}
 `

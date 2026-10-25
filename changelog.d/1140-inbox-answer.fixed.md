@@ -1,0 +1,1 @@
+Needs you rows in the Inbox can be answered there. An ask_user card shows its options and a short answer, a task that is waiting on input takes a short answer, and a listed tool approval still clears with Allow once or Reject, so Open is not the only way through a group that has no card (#1140).
