@@ -36,7 +36,7 @@
 import { randomBytes } from 'node:crypto'
 import { cleanPeerName, disambiguatedRemoteTitle, faceAliases, isChiefRecord, remoteBotName, remoteBotTitle, remoteCallName, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
-import { HISTORY_MAX, HISTORY_TEXT, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
+import { HISTORY_MAX, HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted, unwrapUntrusted } from './delivery.js'
 import { hasAnyGrant, mayShareRoom } from './reach.js'
@@ -976,13 +976,19 @@ export function install(rt) {
   async function sendShareTo(room, remote, payload, via, sender, scope) {
     const from = sender ?? shareSpeaker(room)
     if (!from || !rt.flybotSend) return undefined
+    const text = encodeRoomShare(payload)
+    // Bot Social answers `payload.text (1-4000 chars) required` and drops the share (#1161).
+    if (text.length < 1 || text.length > ROOM_SHARE_TEXT_MAX) {
+      rt.warn?.('ds-bot: room share not sent to %s: payload.text (1-4000 chars) required', remote.handle || remote.id)
+      return undefined
+    }
     try {
       // The answer says whether the send went out, is held for the owner, or was refused (#825 D):
       // a held or refused reply has to become one line in the room instead of nothing.
       return await rt.flybotSend({
         from,
         to: remote.handle || remote.id,
-        text: encodeRoomShare(payload),
+        text,
         role: 'request',
         via,
         meta: { roomId: room.id, seq: payload.seq, share: payload.op, ...(scope ? { scope } : {}) },
@@ -1835,7 +1841,9 @@ export function install(rt) {
   // stays under that budget. Seat them (`force` or one room) still reads at once. A `rate_limited`
   // or `locked_out` answer pauses the quiet reads for the server's retry, at least a minute and at
   // most the budget window. The clock is only moved after a preview that answered, so a network
-  // error is tried again on the next tick.
+  // error is tried again on the next tick. Prod (u-682b8a) logged the preview as
+  // `Too many attempts. Try again in 10 minutes.` and then previewed again on every poll, so that
+  // 10 minutes never elapsed and the claim was never read.
   const CLAIM_READ_GAP_MS = 60_000
   const CLAIM_READ_PAUSE_MAX_MS = 10 * 60 * 1000
   let claimReadAt = null
@@ -1852,13 +1860,19 @@ export function install(rt) {
     }
     return waiting
   }
-  const pauseClaimReads = (error, now) => {
-    const code = error?.code
-    if (code !== 'rate_limited' && code !== 'locked_out') return false
-    const seconds = Number(error.retryAfter ?? error.retry_after)
-    const wait = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : CLAIM_READ_GAP_MS
-    claimReadPauseUntil = now + Math.min(CLAIM_READ_PAUSE_MAX_MS, Math.max(CLAIM_READ_GAP_MS, wait))
-    return true
+  // `retryAfter` is seconds when the client kept it. The sentence the host logged
+  // (`Try again in 10 minutes.`) is the same fact when only the message arrives.
+  const attemptLimitMs = (error) => {
+    const code = String(error?.code ?? '')
+    const message = String(error?.message ?? error ?? '')
+    if (code !== 'rate_limited' && code !== 'locked_out' && !/too many attempts/i.test(message)) return 0
+    const seconds = Number(error?.retryAfter ?? error?.retry_after)
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000
+    const minutes = message.match(/(\d+)\s+minutes?/i)
+    if (minutes) return Number(minutes[1]) * 60 * 1000
+    const secs = message.match(/(\d+)\s+seconds?/i)
+    if (secs) return Number(secs[1]) * 1000
+    return CLAIM_READ_PAUSE_MAX_MS
   }
   rt.seatOpenClaims = async function seatOpenClaims({ roomId, force = false, now = Date.now() } = {}) {
     if (typeof rt.roomInviteServer?.verify !== 'function') return { seated: [], waiting: [] }
@@ -1891,9 +1905,11 @@ export function install(rt) {
       try {
         claim = await rt.roomInviteServer.verify(invite.ticket)
       } catch (error) {
-        pauseClaimReads(error, now)
+        const wait = attemptLimitMs(error)
+        if (wait > 0) claimReadPauseUntil = now + Math.min(CLAIM_READ_PAUSE_MAX_MS, Math.max(CLAIM_READ_GAP_MS, wait))
         rt.warn?.('ds-bot: a room link claim was not read: %s', error)
         if (invite.waiting) waiting.push({ roomId: room.id, ticket: invite.ticket, reason: invite.waiting.reason, bots: invite.waiting.bots ?? [] })
+        if (wait > 0) break
         continue
       }
       claimReadAt = now

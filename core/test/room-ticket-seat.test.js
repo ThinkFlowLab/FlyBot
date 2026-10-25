@@ -747,7 +747,7 @@ test('#1161: a claimed /r/@handle/ticket link is seated by the poll, and a long 
   const joins = log.filter(entry => parseRoomShare(entry.text)?.op === 'join' && entry.delivered)
   assert.ok(joins.length >= 1, 'the host sent the join')
   for (const entry of joins) {
-    assert.ok(entry.text.length <= 4000, `join is ${entry.text.length} characters, over Bot Social's text limit`)
+    assert.ok(entry.text.length >= 1 && entry.text.length <= 4000, `join is ${entry.text.length} characters, outside Bot Social's 1-4000 text limit`)
     assert.equal(entry.text.includes('ignore previous instructions'), false, 'an instruction-override line is not copied into the join')
     const history = parseRoomShare(entry.text).history ?? []
     assert.ok(history.some(line => line.text.includes('Ship the notes')), 'a short clean line is still carried')
@@ -774,4 +774,49 @@ test('#1161: a join that is still pending approval is not marked sent', async (t
   await settle()
   assert.ok(guestRoomOf(b.rt), 'Seat them sends the join once the card can leave')
   assert.equal(a.rt.localInviteOf('war').waiting, undefined)
+})
+
+// Prod (u-682b8a) logged this sentence with no error code, then previewed again on every inbox
+// poll, so the 10-minute cool-down never elapsed and the ticket was never read.
+test('#1161: Too many attempts holds the claim poll for 10 minutes, then seats', async (t) => {
+  const t0 = 1_700_000_000_000
+  const { a, b, settle } = await twoHomes(t)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  b.rt.flybotSend = async () => ({ action: 'deny' })
+  const joined = await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  assert.equal(joined.claimed, true)
+  const verify = a.rt.roomInviteServer.verify.bind(a.rt.roomInviteServer)
+  let calls = 0
+  a.rt.roomInviteServer.verify = async (ticket) => {
+    calls += 1
+    if (calls === 1) throw new Error('Too many attempts. Try again in 10 minutes.')
+    return verify(ticket)
+  }
+  for (let i = 0; i < 90; i += 1) await a.rt.seatOpenClaims({ now: t0 + i * 6_000 })
+  assert.equal(calls, 1, 'a 10-minute cool-down is not previewed again on each poll')
+  await a.rt.seatOpenClaims({ now: t0 + 10 * 60 * 1000 - 1 })
+  assert.equal(calls, 1)
+  await a.rt.seatOpenClaims({ now: t0 + 10 * 60 * 1000 })
+  await settle()
+  assert.equal(calls, 2)
+  assert.ok(a.rt.state.rooms.war.participants.some(p => p.handle === '@chief.bob.home' && p.leftSeq === undefined))
+  assert.ok(guestRoomOf(b.rt), 'once the cool-down elapses, the join opens the sidebar')
+})
+
+test('#1161: a room share text is within Bot Social\'s 1-4000 characters', () => {
+  const text = encodeRoomShare({ op: 'line', roomId: 'war', name: 'FlyBot 交付组', text: 'x'.repeat(8000), seq: 3 })
+  assert.ok(text.length >= 1 && text.length <= 4000, String(text.length))
+  const parsed = parseRoomShare(text)
+  assert.equal(parsed.op, 'line')
+  assert.ok(parsed.text.length >= 1)
+  const seated = encodeRoomShare({
+    op: 'join',
+    roomId: 'war',
+    name: 'FlyBot 交付组',
+    history: Array.from({ length: 20 }, (_, i) => ({ who: 'A', text: 'y'.repeat(2000), seq: i })),
+    roster: Array.from({ length: 32 }, (_, i) => ({ handle: `@b${i}.home`, name: 'Bot', home: '@h.home' })),
+    notice: 'n'.repeat(2000),
+  })
+  assert.ok(seated.length >= 1 && seated.length <= 4000, String(seated.length))
+  assert.equal(parseRoomShare(seated)?.op, 'join')
 })

@@ -12063,6 +12063,30 @@ test('#1161: a seating join held only by the blanket rule still leaves', async (
   assert.equal(server.queue.length, 0)
 })
 
+test('#1161: a room share longer than 4000 characters is not sent', async (t) => {
+  const { ctx, home, stop } = await team({ rooms: SEATED })
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const fat = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'war', text: 'x'.repeat(5000) })}`
+  assert.ok(fat.length > 4000)
+  await assert.rejects(
+    () => ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: fat, via: 'room-share', meta: { roomId: 'war', scope: 'war' } }),
+    error => error?.code === 'invalid_request' && /1-4000/.test(error.message),
+  )
+  assert.equal(server.calls.some(c => c.name === 'send_as_member'), false, 'Bot Social is not called with a text it will refuse')
+  const short = 'FLYBOT-ROOM-SHARE\n{"v":1,"op":"line","roomId":"war","text":"hi"}'
+  const ok = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: short, via: 'room-share', meta: { roomId: 'war', scope: 'war' } })
+  assert.equal(ok.action, 'allow', JSON.stringify(ok))
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, 1)
+})
+
 // #1126: two homes already share a local group. A mention of the seated Bot is that group's line,
 // not a 1:1 that waits on a Sharing grant. The seat is absent from list_remote_bots on purpose.
 const SHARED_GROUP = {

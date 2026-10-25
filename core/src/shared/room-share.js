@@ -71,6 +71,35 @@ function fitJoin(body) {
   }
 }
 
+// Bot Social rejects send_as_member text outside 1–4000 characters (`payload.text (1-4000 chars) required`).
+// A join is fitted above; a line's own text is the other way an envelope crosses that line (#1161).
+function fitTransport(body) {
+  if (body.op === 'join') fitJoin(body)
+  const wire = () => `${ROOM_SHARE_MARK}\n${JSON.stringify(body)}`
+  if (typeof body.text === 'string') {
+    while (body.text.length > 0 && wire().length > ROOM_SHARE_TEXT_MAX) {
+      const extra = Math.max(1, wire().length - ROOM_SHARE_TEXT_MAX)
+      body.text = body.text.slice(0, Math.max(0, body.text.length - extra))
+    }
+    if (!body.text) delete body.text
+  }
+  for (const key of ['history', 'calls', 'bots', 'roster', 'notice']) {
+    if (wire().length <= ROOM_SHARE_TEXT_MAX) break
+    delete body[key]
+  }
+  let out = wire()
+  if (out.length > ROOM_SHARE_TEXT_MAX || out.length < 1) {
+    out = `${ROOM_SHARE_MARK}\n${JSON.stringify({
+      v: 1,
+      op: body.op,
+      ...(body.roomId ? { roomId: String(body.roomId).slice(0, 64) } : {}),
+      ...(body.ticket ? { ticket: body.ticket } : {}),
+      seq: body.seq || 0,
+    })}`
+  }
+  return out
+}
+
 // #904: a handle is unique only inside its home, so an entry carries the home it belongs to: two homes
 // can keep Bots with the same local name, and a guest has to tell them apart when it attributes a line.
 // The receiving side verifies against the transport's home; this field is for identity, not for trust.
@@ -151,8 +180,7 @@ export function encodeRoomShare(payload = {}) {
   if (body.op === 'join' && Array.isArray(payload.history)) {
     body.history = payload.history.map(historyLine).filter(Boolean).slice(-HISTORY_MAX)
   }
-  if (body.op === 'join') fitJoin(body)
-  return `${ROOM_SHARE_MARK}\n${JSON.stringify(body)}`
+  return fitTransport(body)
 }
 
 // #852: a link invitation for a room that lives in FlyBot itself. No server knows this ticket: the

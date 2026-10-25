@@ -1855,7 +1855,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const member = activeMember(msg.from)
     if (!member) throw new Error(`${flybot.bot.get(msg.from)?.name ?? 'This Bot'} has no Bot Social identity yet`)
     const to = norm(msg.target.handle)
-    const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to, text: msg.text, room_id: pair.scope })
+    const text = String(msg.text ?? '')
+    // The same refusal the host logged: `payload.text (1-4000 chars) required` (#1161).
+    if (text.length < 1 || text.length > 4000) {
+      throw Object.assign(new Error('payload.text (1-4000 chars) required'), { code: 'invalid_request' })
+    }
+    const sent = await client.callTool('send_as_member', { from_bot_id: member.bot_id, to, text, room_id: pair.scope })
       .catch((error) => { if (isPaused(error)) notePaused(to, error); throw error })
     clearPaused(to)
     if (sent?.message?.status === 'pending_approval') {
