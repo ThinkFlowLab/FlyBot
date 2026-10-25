@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import fsp from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
@@ -591,6 +593,38 @@ const untilMounted = async (mounts, count) => {
   }
 }
 
+// #1081: the save that drops an older version's address and the mount that follows it are two
+// start-up paths, and the read below came after the mount but before that write landed on a slow
+// runner. Delay every state.json write here on purpose, so this case always exercises the wait
+// instead of passing whenever the write happens to be faster than the mount.
+const SLOW_WRITE_MS = 400
+function slowStateWrites(t) {
+  const real = fsp.rename
+  fsp.rename = async (from, to) => {
+    if (String(to).endsWith('state.json')) await new Promise(resolve => setTimeout(resolve, SLOW_WRITE_MS))
+    return real(from, to)
+  }
+  syncBuiltinESMExports()
+  t.after(() => { fsp.rename = real; syncBuiltinESMExports() })
+}
+
+// Wait for the observable state, never a fixed sleep: the file is written whole and read whole,
+// so one more read is the same question one turn later. A deadline fails with what the file
+// still says, and with the store's own read-only lines when it dropped the write (#1081).
+async function untilFile(file, done, what, warns = () => []) {
+  const end = Date.now() + 3000
+  let text = readFileSync(file, 'utf8')
+  while (!done(text)) {
+    if (Date.now() > end) {
+      const said = warns().filter(line => /not saving the Bot team|open in another dsh|has closed/.test(line))
+      throw new Error(`until: ${what} did not land within 3 s; state.json still says ${text.slice(0, 300)}${said.length > 0 ? `; the store said: ${said.join(' | ')}` : ''}`)
+    }
+    await new Promise(resolve => setTimeout(resolve, 20))
+    text = readFileSync(file, 'utf8')
+  }
+  return text
+}
+
 test('composioSessionFind asks Composio for the address by id, with the key only in the header, and trusts only https on the API host', async () => {
   const key = composioKey()
   const api = 'https://composio.test/api/v3.1/'
@@ -629,13 +663,16 @@ test('an address saved by an older version is dropped from state.json at start, 
   old.connectors.composio.session.url = 'https://composio.test/tool_router/trs_1/mcp?legacy=LEGACYCREDENTIAL'
   writeFileSync(file, JSON.stringify(old))
 
+  slowStateWrites(t)
   const second = setup({ home })
   t.after(() => second.ctx.dispose())
+  const warns = []
+  second.ctx.logger.warn = (...args) => { warns.push(args.join(' ')) }
   await untilMounted(second.mounts, 1)
   assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
   assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
   assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
-  const text = readFileSync(file, 'utf8')
+  const text = await untilFile(file, value => !value.includes('LEGACYCREDENTIAL'), 'the legacy session address to be dropped', () => warns)
   assert.ok(!text.includes('LEGACYCREDENTIAL'))
   assert.ok(!text.includes('composio.test/tool_router'))
   assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
