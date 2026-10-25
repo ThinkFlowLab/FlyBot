@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople, PersonMark } from './src/client/mark.js'",
+    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople, RoomAvatar, PersonMark } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,7 +25,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople, PersonMark } = module.exports
+const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople, RoomAvatar, PersonMark } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
@@ -150,6 +150,70 @@ test('room avatars include live remote face-to-face members', () => {
   assert.equal(onlyRemote.length, 1)
   assert.equal(onlyRemote[0].remote.handle, '@bot.friend.home')
   assert.notEqual(onlyRemote[0].id, undefined)
+})
+
+const flatNodes = (node, out = []) => {
+  if (node === null || node === undefined || typeof node === 'string' || typeof node === 'number') return out
+  if (Array.isArray(node)) { node.forEach(child => flatNodes(child, out)); return out }
+  out.push(node)
+  flatNodes(node.props?.children, out)
+  return out
+}
+
+test('#1089: a face room with only the local Chief shows that Chief, not the grey you circle', () => {
+  const chief = { id: 'a', name: 'Chief', color: 'deepseek', avatar: { shape: 'whale' } }
+  const roster = { byId: { a: chief }, bots: [chief] }
+  const alone = {
+    origin: 'face-to-face',
+    members: ['a'],
+    participants: [{ kind: 'bot', id: 'a', handle: '@chief.me.home' }],
+  }
+  // Alone, and again while a peer has no handle yet: the icon is the local Chief.
+  const people = roomAvatarPeople(alone, roster)
+  assert.equal(people.length, 1)
+  assert.equal(people[0].id, 'a')
+  assert.equal(people[0].color, 'deepseek')
+  assert.equal(people[0].avatar.shape, 'whale')
+  const pendingPeer = roomAvatarPeople({
+    origin: 'face-to-face',
+    members: ['a'],
+    participants: [
+      { kind: 'bot', id: 'a', handle: '@chief.me.home' },
+      { kind: 'bot', remote: true, displayName: 'Coder' },
+    ],
+  }, roster)
+  assert.equal(pendingPeer.length, 1)
+  assert.equal(pendingPeer[0].id, 'a')
+  // The seat can land in participants before room.members is copied.
+  const seated = roomAvatarPeople({
+    origin: 'face-to-face',
+    members: [],
+    participants: [{ kind: 'bot', id: 'a', handle: '@chief.me.home', displayName: 'Chief' }],
+  }, roster)
+  assert.equal(seated.length, 1)
+  assert.equal(seated[0].avatar.shape, 'whale')
+  const header = flatNodes(RoomAvatar({ room: alone, roster, size: 24 }))
+  assert.equal(header.some(node => node.props?.className === 'bt-cluster-you'), false)
+  const mark = header.find(node => node.props?.bot?.id === 'a')
+  assert.ok(mark)
+  assert.equal(mark.props.bot.color, 'deepseek')
+  assert.equal(mark.props.bot.avatar.shape, 'whale')
+  // A one-member group chat is still that Bot plus you. A seated peer drops the circle.
+  const group = roomAvatarPeople({ members: ['a'], participants: [] }, roster)
+  assert.equal(group[0].id, 'a')
+  assert.equal(group[1], null)
+  const both = roomAvatarPeople({
+    origin: 'face-to-face',
+    members: ['a'],
+    participants: [
+      { kind: 'bot', id: 'a', handle: '@chief.me.home' },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home', displayName: 'Coder' },
+    ],
+  }, roster)
+  assert.equal(both.some(bot => bot === null), false)
+  assert.equal(both.length, 2)
+  assert.equal(both[0].id, 'a')
+  assert.equal(both[1].remote.handle, '@coder.bob.home')
 })
 
 test('handles equal modulo @ and case share one look; a stored look still wins', () => {

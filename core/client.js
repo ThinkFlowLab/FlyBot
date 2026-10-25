@@ -2570,7 +2570,7 @@ function roomAvatarPeople(room2, roster) {
       avatar: p.avatar
     }, roster));
   }
-  if (members.length === 1 && remotes.length === 0) return [members[0], null];
+  if (room2?.origin !== "face-to-face" && members.length === 1 && remotes.length === 0) return [members[0], null];
   return [...members, ...remotes];
 }
 function RoomAvatar({ room: room2, roster, size = 36 }) {

@@ -191,7 +191,10 @@ export function roomAvatarPeople(room, roster) {
       avatar: p.avatar,
     }, roster))
   }
-  if (members.length === 1 && remotes.length === 0) return [members[0], null]
+  // A one-member group chat is that Bot plus you. A face room's icon is the
+  // Bots who joined: the local Chief alone is that Chief, not a grey circle
+  // drawn over it (#1089). A peer with no handle yet is not seated.
+  if (room?.origin !== 'face-to-face' && members.length === 1 && remotes.length === 0) return [members[0], null]
   return [...members, ...remotes]
 }
 

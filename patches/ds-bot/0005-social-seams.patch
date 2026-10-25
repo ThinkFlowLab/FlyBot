@@ -174,7 +174,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  export function AdminStar() {
    return h('span', { className: 'bt-admin-star', role: 'img', 'aria-label': t('Admin') }, h(StarIcon, { size: 7 }))
  }
-@@ -130,10 +130,43 @@ function clusterSeats(count, frame) {
+@@ -130,10 +130,46 @@ function clusterSeats(count, frame) {
    return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]]
  }
  
@@ -209,7 +209,10 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 +      avatar: p.avatar,
 +    }, roster))
 +  }
-+  if (members.length === 1 && remotes.length === 0) return [members[0], null]
++  // A one-member group chat is that Bot plus you. A face room's icon is the
++  // Bots who joined: the local Chief alone is that Chief, not a grey circle
++  // drawn over it (#1089). A peer with no handle yet is not seated.
++  if (room?.origin !== 'face-to-face' && members.length === 1 && remotes.length === 0) return [members[0], null]
 +  return [...members, ...remotes]
 +}
 +

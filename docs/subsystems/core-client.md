@@ -78,7 +78,7 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 ### Room avatars in face-to-face chats
 
-- `RoomAvatar` (`src/client/mark.js` `roomAvatarPeople`) seats current local `room.members` and live remote `participants` (handle-seeded via `lookBotForRemote`). A face-to-face room with only remotes no longer falls back to the grey placeholder in the sidebar row or chat header. `roomAvatarPeople` still returns locals first, then remotes, and a one-member group is still `[member, you]`. `RoomAvatar` paints `clusterOrder` (`src/client/cluster-order.js`): with no remote the order is unchanged; with four or fewer seats the remotes are drawn first and the locals last, so a friend's look does not cover the local Bot; past four, locals stay in the visible seats (#963).
+- `RoomAvatar` (`src/client/mark.js` `roomAvatarPeople`) seats current local `room.members` and live remote `participants` (handle-seeded via `lookBotForRemote`). A face-to-face room with only remotes no longer falls back to the grey placeholder in the sidebar row or chat header. A face room whose only seated Bot is the local one — alone, or while a peer has no handle yet — is that Bot alone, so the header, sidebar and details icon show the local Chief's look instead of the grey `you` circle (#1089). `roomAvatarPeople` still returns locals first, then remotes, and a one-member group chat is still `[member, you]`. `RoomAvatar` paints `clusterOrder` (`src/client/cluster-order.js`): with no remote the order is unchanged; with four or fewer seats the remotes are drawn first and the locals last, so a friend's look does not cover the local Bot; past four, locals stay in the visible seats (#963).
 
 ### Room remote bubbles unwrap the fence
 
