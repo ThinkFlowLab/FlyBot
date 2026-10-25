@@ -8055,6 +8055,41 @@ test('#1063: two lines the server stamped in the same second are two lines, not 
   assert.equal(posted.length, 2, 'and a later poll does not post them again')
 })
 
+test('#1143: with neither an id nor a cursor, two identical lines in one snapshot are two lines', async (t) => {
+  const server = attestingFaceServer()
+  const posted = []
+  // Two byte-identical lines: same sender, same whole-second stamp, same text — and neither an `event_id`
+  // nor an `event_cursor` on either. Only their place in the snapshot tells them apart, so a poll that
+  // stops passing that place to `faceEventKey` reads them as one line and drops the second.
+  const lines = [0, 1].map(() => ({
+    type: 'room.message',
+    from: { handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false, label: "Bob's Chief" },
+    trust: 'peer_untrusted',
+    untrusted_content: { text: 'same words' },
+    created_at: '2026-10-25T01:00:34Z',
+  }))
+  const inner = server.fetch
+  let serve = false
+  server.fetch = async (url, init) => {
+    const res = await inner(url, init)
+    if (serve && init?.method === 'GET' && String(url).includes('/v1/face-rooms/frm_123456')) {
+      const data = await res.json()
+      // The same snapshot on every poll: the server hands back what it already sent.
+      return new Response(JSON.stringify({ ...data, events: [...(data.events ?? []), ...lines] }), { status: res.status })
+    }
+    return res
+  }
+  const { call } = await faceFixture(t, server, (scoped) => {
+    const remote = scoped.rooms.postRemote?.bind(scoped.rooms)
+    scoped.rooms.postRemote = (id, line) => { posted.push(line); return remote?.(id, line) }
+  })
+  serve = true
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.deepEqual(posted.map(line => line.text), ['same words', 'same words'], 'both lines land')
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(posted.length, 2, 'and the same snapshot handed back again adds neither')
+})
+
 
 test('cross-home @ (#287): a friend\'s attested line calls my Bot by the label they see; bare names that clash and unattested lines call none', async (t) => {
   const server = attestingFaceServer()
