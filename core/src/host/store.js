@@ -377,14 +377,24 @@ export function install(rt) {
     for (const room of stale) void rt.retitleRoom(room)
   })()
 
+  // The one takeover line, printed from either entry point: refresh() when a reading host
+  // follows the file, save() when a stale read-only window writes (#1041). It names the host
+  // that let go, so "this window wrote over someone else's state.json" can be traced from the
+  // log afterwards.
+  const announceTakeover = (previous) => {
+    const where = previous.pid ? `pid ${previous.pid}${previous.host ? ` on ${previous.host}` : ''}` : 'unknown process'
+    warn('ds-bot: the other dsh has closed; this one now saves the Bot team (was %s)', where)
+  }
+
   // A reading host follows the file and takes over once the other host has gone.
   const refresh = async () => {
     await load()
     const hadHolder = holder !== undefined
     if (hadHolder) {
+      const previous = holder
       claimLock()
       if (holder === undefined) {
-        warn('ds-bot: the other dsh has closed; this one now saves the Bot team')
+        announceTakeover(previous)
         warnedReadOnly = false
         adopt(await readFileState())
         return
@@ -432,8 +442,12 @@ export function install(rt) {
   // (#1027). Taking over adopts nothing by itself: whoever called save() may already have
   // changed `state`, and adopt() replaces it whole (#1032).
   const takeover = () => {
+    const previous = holder
     claimLock()
     if (holder !== undefined) return false
+    // The same line refresh() prints (#1041). A stale window that writes over the file the
+    // other host left has no other trace, so the takeover is announced here too.
+    if (previous !== undefined) announceTakeover(previous)
     warnedReadOnly = false
     return true
   }

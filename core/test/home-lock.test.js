@@ -249,6 +249,33 @@ test('#1032: mutate() adopts what the other host left before the change, so both
   assert.equal((await call('state', {})).value.readOnly, null)
 })
 
+test('#1041: a save() that takes over the lock says so once, naming the host it took it from', async (t) => {
+  const home = tempHome(t)
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const call = start(t, home)
+  // rt.warn reaches ctx.logger.warn at call time (src/host/diagnostics.js), so replacing it
+  // after start() still catches every line the store prints.
+  const said = []
+  call.ctx.logger.warn = (format, line) => { said.push(format === '%s' ? line : `${format} ${line}`) }
+  const takeovers = () => said.filter(line => /the other dsh has closed/.test(line))
+
+  assert.match((await call('state', {})).value.readOnly, /open in another dsh/)
+  assert.equal(takeovers().length, 0)
+
+  // The other host closes and this window has not read since: a write no request drives
+  // takes the free lock, and says so once with the host that let go.
+  rmSync(join(home, 'state.lock'))
+  await call.rt.save()
+  assert.equal(takeovers().length, 1)
+  assert.match(takeovers()[0], new RegExp(`was pid ${process.ppid} on ${hostname()}`))
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).revision, 8)
+
+  // A window that already holds the lock writes without announcing a takeover.
+  await call.rt.save()
+  assert.equal(takeovers().length, 1)
+})
+
 test('read-only host (#14): FlyBot queries answer, plugin reads answer, writes and polling stop', async (t) => {
   const home = tempHome(t)
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
