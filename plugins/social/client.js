@@ -2787,12 +2787,30 @@ window.__ModuleLoader__.load({
       const [adding, setAdding] = useState(false)
       const [faceOpen, setFaceOpen] = useState(false)
       const [shareRequests, setShareRequests] = useState([])
-      const keepShareRequests = value => setShareRequests(Array.isArray(value?.shareRequests) ? value.shareRequests : [])
+      const [acceptNotices, setAcceptNotices] = useState([])
+      // null until the first status answer: a reload must not toast notices that were already there (#1054).
+      const seenAccept = useRef(null)
+      const applyStatus = (value) => {
+        setShareRequests(Array.isArray(value?.shareRequests) ? value.shareRequests : [])
+        const next = Array.isArray(value?.acceptNotices) ? value.acceptNotices : []
+        setAcceptNotices(next)
+        if (seenAccept.current === null) {
+          seenAccept.current = new Set(next.map(item => item?.id).filter(Boolean))
+          return
+        }
+        for (const item of next) {
+          if (!item?.id || seenAccept.current.has(item.id)) continue
+          seenAccept.current.add(item.id)
+          if (typeof actions?.notify === 'function') actions.notify(acceptNoticeSentence(item))
+        }
+      }
       const loadApprovals = () => call('social/status', {}).then((value) => {
         setError('')
-        keepShareRequests(value)
+        applyStatus(value)
       }, e => setError(errorText(e)))
-      const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(keepShareRequests, e => setError(errorText(e)))
+      const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
+      const dismissAccept = item => call('social/accept-notice-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
+      const askShareBack = item => call('social/ask-share-back', { botId: item.botId, to: item.from, noticeId: item.id }).then(applyStatus, e => setError(errorText(e)))
       useEffect(() => {
         loadApprovals()
         if (typeof setInterval !== 'function') return undefined
@@ -2813,10 +2831,35 @@ window.__ModuleLoader__.load({
       }
       return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
+        h(AcceptNotices, { items: acceptNotices, onAsk: askShareBack, onDismiss: dismissAccept }),
         h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest }),
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
         adding ? h(AddFriend, { actions, remoteChats, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
         faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, onClose: () => setFaceOpen(false) }) : null)
+    }
+
+    // Someone accepted an invite to one of my Bots (#1054). One-way stays; this card is the inviter's
+    // feedback and the one step that asks them to share a Bot back. Asking does not grant anything.
+    function acceptNoticeSentence(item) {
+      const who = item?.owner ? `${item.name} (${item.owner})` : (item?.name || 'A friend')
+      const bot = item?.botName || 'your Bot'
+      return `${who} accepted your invite. They can message ${bot}. You cannot message them until they share a Bot with you.`
+    }
+    function AcceptNotices({ items, onAsk, onDismiss } = {}) {
+      if (!Array.isArray(items) || items.length === 0) return null
+      return h('div', { className: 'fs-share-requests', 'data-flybot': 'accept-notices' },
+        items.map((item) => h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'accept-notice' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-text' }, acceptNoticeSentence(item)),
+          item.asked ? h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-asked' }, 'You asked them to share a Bot.') : null,
+          h('div', { className: 'fs-line' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'accept-notice-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+            h('button', {
+              type: 'button',
+              className: 'fs-btn fs-btn-sm fs-btn-primary',
+              'data-flybot': 'accept-notice-ask',
+              disabled: item.asked === true,
+              onClick: () => { if (!item.asked) onAsk?.(item) },
+            }, 'Ask them to share a Bot')))))
     }
 
     // "Share this Bot?" (#336): a friend's Bot tried to start a chat with one of my Bots that is not
@@ -3698,6 +3741,8 @@ window.__ModuleLoader__.load({
       BotSocialDetails,
       SocialServerSettings,
       AddFriend,
+      AcceptNotices,
+      FriendsBots,
       ShareRequests,
       PendingApprovals,
       ChatApproval,

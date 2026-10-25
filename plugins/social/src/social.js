@@ -427,6 +427,7 @@ export const SOCIAL_UI_ENDPOINTS = [
   'social/hide-remote',
   'social/access', 'social/revoke-grant',
   'social/share-friends', 'social/share-with-friend',
+  'social/accept-notice-dismiss', 'social/ask-share-back',
 ]
 
 export function registerUnavailable(service, reason) {
@@ -960,6 +961,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const key = norm(bot.handle)
       if (!key || key === '@') continue
       if (outgoing.has(key)) continue
+      // A reply-only Bot joined our invite; seeding it inbound would show a friend row (#1054).
+      if (bot.replyOnly === true) continue
       if (settings.roomBots?.[key]) continue
       settings.inboundBots[key] = true
     }
@@ -973,6 +976,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // A Bot someone shared with us (we joined their invite) always shows, even though the
     // talk-through grant on our own Bot names it as grantee (#178).
     if (settings.inboundBots?.[key]) return true
+    // One-way accept (#1054): their Bot is listed reply_only, so it is not a friend row.
+    // reply_only false is them sharing a Bot back, which shows even while our outgoing grant
+    // still names them. A server that omits the field keeps the outgoing-hides rule below.
+    if (bot.replyOnly === true) return false
+    if (bot.replyOnly === false) return true
     // Otherwise outgoing grants win: the Bot that joined our invite is not granted back (#138 / #161).
     if (outgoingPeerHandles().has(key)) return false
     if (settings.inboundBots?.[bot.home]) return true
@@ -985,6 +993,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       ...bot,
       ...(bot.peer && typeof bot.peer === 'object' ? bot.peer : {}),
     })
+    const replyOnly = bot.reply_only ?? bot.replyOnly
     return {
       handle: norm(bot.handle),
       name: cleanText(bot.display_name, norm(bot.handle)),
@@ -992,6 +1001,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       remote: true,
       ...(bot.grant_id || bot.grantId ? { grantId: String(bot.grant_id || bot.grantId) } : {}),
       ...(bot.bot_id ? { botId: String(bot.bot_id) } : {}),
+      ...(typeof replyOnly === 'boolean' ? { replyOnly } : {}),
       ...look,
     }
   }
@@ -1004,7 +1014,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         name: cleanText(entry.home.display_name),
         owner: cleanText(entry.home.owner_display_name),
         ...(homeLook.color ? { color: homeLook.color } : {}),
-        bots: (entry.bots ?? []).map(bot => mapRemoteBot(bot, homeHandle)).filter(bot => !isHomeLevelHandle(bot.handle, homeHandle)),
+        bots: (entry.bots ?? []).map(bot => {
+          const mapped = mapRemoteBot(bot, homeHandle)
+          // Names for a reply-only Bot too: it never becomes a friend row, and the accept notice
+          // still has to name who joined (#1054).
+          rememberPeer(mapped.handle, { bot: mapped.name, owner: cleanText(entry.home.owner_display_name) })
+          return mapped
+        }).filter(bot => !isHomeLevelHandle(bot.handle, homeHandle)),
         // The friendship covers only these local members (an invite made for one Bot, or joined
         // as one Bot); empty when it covers this whole home. Only they can talk to this friend.
         via: (entry.via ?? []).map(norm),
@@ -1084,6 +1100,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         }
         serverRoster = mapped
         rosterFetched = true
+        const openNotices = settings.acceptNotices.filter(isOpenAcceptNotice)
+        if (openNotices.length !== settings.acceptNotices.length) {
+          settings.acceptNotices = openNotices
+          saveSettings()
+        }
         forgetDeclinedIfGone(mapped)
         backfillInboundFromRoster(mapped)
         unfiltered = { homes: mapped.map(entry => ({ ...entry, bots: entry.bots.filter(bot => keepGrantedRemote(bot) && !isWithheld(bot)) })) }
@@ -1381,6 +1402,22 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // id/grantee/name/relationshipId/roomId, so a per-Bot row cannot read the Bot's own name back from it
   // (#995); the sync that just listed the grants fills this instead.
   const botNames = new Map()
+  // Display names from list_remote_bots, including Bots we do not show (reply-only joiners, #1054).
+  const peerNames = new Map()
+  function rememberPeer(handle, record) {
+    if (!handle) return
+    const prev = peerNames.get(handle) ?? {}
+    const next = {
+      ...(record.bot || prev.bot ? { bot: record.bot || prev.bot } : {}),
+      ...(record.owner || prev.owner ? { owner: record.owner || prev.owner } : {}),
+    }
+    peerNames.set(handle, next)
+    const known = botNames.get(handle) ?? {}
+    botNames.set(handle, {
+      ...(known.bot || next.bot ? { bot: known.bot || next.bot } : {}),
+      ...(known.owner || next.owner ? { owner: known.owner || next.owner } : {}),
+    })
+  }
   // `only`: one Bot's grants (an open People with access refreshes just that Bot). `roster`: the
   // friends' homes to classify talk-through grants against, when they are newer than `remote`.
   // Resolves true only when every Bot's grants were listed and stored; a failure is warned, not thrown.
@@ -1394,8 +1431,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     })
     await mapPool(bots, GRANT_CONCURRENCY, async (bot) => {
       const member = memberOf(bot.id)
+      const epoch = grantEpoch(bot.id)
       try {
-        const epoch = grantEpoch(bot.id)
         const listed = await api.listGrants({ botId: member.bot_id })
         // A revoke of this Bot's grants started or ran while this list was in flight: the list may
         // still name a grant it deletes, and writing it would bring the person back. Skip, and report
@@ -1411,7 +1448,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (botName || ownerName) botNames.set(handle, { ...(botName ? { bot: botName } : {}), ...(ownerName ? { owner: ownerName } : {}) })
         }
         const roomScoped = (flybot.grants.of?.(bot.id) ?? []).filter(grant => grant.roomId)
-        const people = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
+        const listedPeople = listed.filter(grant => !grant.roomId && !isTalkThroughGrant(member, grant, roster ?? remote.homes)).map(grant => {
           const view = grantPersonView(grant)
           // Core normGrantee cannot match decorated non-@ values; persist a canonical @handle.
           const canonical = view.member || view.home || memberHandleOf(grant.grantee)
@@ -1425,11 +1462,24 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
             ...(grant.relationshipId ? { relationshipId: grant.relationshipId } : {}),
           }
         }).filter(Boolean)
+        // The join event can name the acceptor before list_bot_grants does, and a list that stays
+        // empty must not wipe that row while the accept notice is still open (#1054). A list that
+        // already has the grant is left as one row.
+        const people = mergeAcceptFallbacks(bot, listedPeople)
         await flybot.grants.set(bot.id, [...people, ...roomScoped])
         confirmedShares.set(bot.id, new Set(listed.filter(grant => grant.replyOnly === false && grant.id).map(grant => grant.id)))
       } catch (error) {
         ok = false
         warn(`${bot.name} grants not synced`, error)
+        // A failed list must not drop the acceptor the join event already named (#1054). A revoke
+        // in flight still wins: that list may be about to delete the row.
+        if (revoking.get(bot.id) || grantEpoch(bot.id) !== epoch) return
+        const current = flybot.grants.of?.(bot.id) ?? []
+        const keptRooms = current.filter(grant => grant.roomId)
+        const keptPeople = current.filter(grant => !grant.roomId)
+        const next = mergeAcceptFallbacks(bot, keptPeople)
+        if (next.length === keptPeople.length) return
+        await flybot.grants.set(bot.id, [...next, ...keptRooms]).catch(writeError => warn(`${bot.name} accept row not stored`, writeError))
       }
     })
     return ok
@@ -1976,6 +2026,149 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // granted here, no typed reply acts on it (#349), and the Bot never answers on its own.
   // One card per sender and Bot; the event carries no peer content, and names are cleaned.
   settings.shareRequests = Array.isArray(settings.shareRequests) ? settings.shareRequests : []
+  // Someone accepted an invite to one of my Bots (#1054). One-way stays: their Bot is not a friend
+  // row. The notice is how the inviter sees it, and People with access keeps a row from it when the
+  // grant list omits them. Nothing here grants the other way.
+  settings.acceptNotices = Array.isArray(settings.acceptNotices) ? settings.acceptNotices : []
+  const ACCEPT_NOTICES_KEPT = 20
+  const ASK_SHARE_BACK = 'I would like to message you too. Share one of your Bots with me when you can.'
+  function peerSharedBack(handle) {
+    const key = norm(handle)
+    if (!key) return false
+    return serverRoster.some(entry => (entry.bots ?? []).some(bot => bot.handle === key && bot.replyOnly === false))
+  }
+  const isOpenAcceptNotice = item => Boolean(item && flybot.bot.get(item.botId)) && !peerSharedBack(item.from)
+  function acceptNotices() {
+    // Filter only. social/status is served by a read-only host too; remoteBots persists the drop
+    // once the roster shows they shared a Bot back.
+    return settings.acceptNotices.filter(isOpenAcceptNotice).map(item => {
+      const named = botNames.get(item.from) ?? peerNames.get(item.from) ?? {}
+      const name = cleanText(named.bot || item.name, item.from)
+      const owner = cleanText(named.owner || item.owner)
+      return {
+        id: item.id,
+        botId: item.botId,
+        botName: flybot.bot.get(item.botId)?.name ?? '',
+        from: item.from,
+        name,
+        ...(owner ? { owner } : {}),
+        ...(item.home ? { home: item.home } : {}),
+        ...(item.grantId ? { grantId: item.grantId } : {}),
+        ...(item.relationshipId ? { relationshipId: item.relationshipId } : {}),
+        ...(item.peerBotId ? { peerBotId: item.peerBotId } : {}),
+        asked: item.asked === true,
+        at: item.at,
+      }
+    })
+  }
+  function noteInviteAccept(local, event) {
+    const ours = norm(memberOf(local.id)?.handle)
+    if (!ours) return
+    const grants = Array.isArray(event.grants) ? event.grants : []
+    let changed = false
+    for (const grant of grants) {
+      if (grant?.reply_only === true || grant?.replyOnly === true) continue
+      const granted = norm(grant?.granted_bot?.handle ?? grant?.granted_bot)
+      if (granted !== ours) continue
+      const from = norm(grant?.grantee_bot?.handle ?? grant?.grantee_bot)
+      if (!from || from === '@') continue
+      const relationshipId = event.relationship_id ? String(event.relationship_id) : ''
+      const grantId = String(grant.grant_id || grant.id || `${local.id}:${relationshipId || from}`)
+      const id = `${local.id}:${relationshipId || grantId}`
+      const named = peerNames.get(from) ?? {}
+      const prev = settings.acceptNotices.find(item => item.id === id)
+      const notice = {
+        id,
+        botId: local.id,
+        grantId,
+        from,
+        ...(grant.grantee_bot?.bot_id ? { peerBotId: String(grant.grantee_bot.bot_id) } : {}),
+        name: cleanText(named.bot, from),
+        ...(cleanText(named.owner) ? { owner: cleanText(named.owner) } : {}),
+        home: personHomeOf(from),
+        ...(relationshipId ? { relationshipId } : {}),
+        at: typeof event.created_at === 'string' ? event.created_at : new Date(now()).toISOString(),
+        ...(prev?.asked ? { asked: true } : {}),
+      }
+      settings.acceptNotices = [...settings.acceptNotices.filter(item => item.id !== id && isOpenAcceptNotice(item)), notice].slice(-ACCEPT_NOTICES_KEPT)
+      changed = true
+    }
+    if (changed) saveSettings()
+  }
+  // Grants to show for an open accept notice the grant list did not return (#1054).
+  function mergeAcceptFallbacks(bot, people) {
+    const next = [...people]
+    for (const extra of acceptFallbackGrants(bot)) {
+      const handle = norm(extra.member || extra.grantee)
+      if (next.some(row => row.id === extra.id || norm(row.member || row.grantee) === handle)) continue
+      next.push(extra)
+    }
+    return next
+  }
+  function acceptFallbackGrants(bot) {
+    return settings.acceptNotices.filter(item => item.botId === bot.id && isOpenAcceptNotice(item)).map(item => {
+      const named = botNames.get(item.from) ?? peerNames.get(item.from) ?? {}
+      const botName = cleanText(named.bot, '')
+      const owner = cleanText(named.owner, '')
+      const label = botName ? (owner && owner !== botName ? `${botName} (${owner})` : botName) : item.from
+      return {
+        id: item.grantId || item.id,
+        grantee: item.from,
+        name: label,
+        ...(item.home ? { home: item.home } : {}),
+        member: item.from,
+        ...(item.relationshipId ? { relationshipId: item.relationshipId } : {}),
+      }
+    })
+  }
+  function dropAcceptNotices({ id, botId, from, grantId } = {}) {
+    const before = settings.acceptNotices.length
+    const handle = from ? norm(from) : ''
+    settings.acceptNotices = settings.acceptNotices.filter(item => {
+      if (id && item.id === String(id)) return false
+      if (grantId && item.grantId === String(grantId) && (!botId || item.botId === botId)) return false
+      if (botId && handle && item.botId === botId && item.from === handle) return false
+      return isOpenAcceptNotice(item)
+    })
+    if (settings.acceptNotices.length !== before) saveSettings()
+  }
+  function markAcceptAsked(id, botId, from) {
+    const handle = norm(from)
+    let changed = false
+    for (const item of settings.acceptNotices) {
+      const match = (id && item.id === String(id)) || (item.botId === botId && item.from === handle)
+      if (!match || item.asked) continue
+      item.asked = true
+      changed = true
+    }
+    if (changed) saveSettings()
+  }
+  disposers.push(flybot.api.handle('social/accept-notice-dismiss', async ({ id } = {}) => {
+    dropAcceptNotices({ id: String(id ?? '') })
+    return { acceptNotices: acceptNotices() }
+  }))
+  disposers.push(flybot.api.handle('social/ask-share-back', async ({ botId, to, noticeId } = {}) => {
+    const bot = typeof botId === 'string' && botId ? flybot.bot.get(botId) : undefined
+    if (!bot) throw new Error('Choose one of your Bots')
+    const member = await register(bot, { forInvite: true })
+    if (!member) throw new Error(`${bot.name} has no Bot Social identity yet`)
+    const target = norm(to)
+    if (!target || target === '@') throw new Error('which Bot?')
+    await remoteBots({ fresh: true }).catch(error => warn('roster not read before asking to share', error))
+    if (peerSharedBack(target)) {
+      dropAcceptNotices({ botId: bot.id, from: target, id: noticeId })
+      return { shared: true, acceptNotices: acceptNotices() }
+    }
+    try {
+      await client.callTool('send_as_member', { from_bot_id: member.bot_id, to: target, text: ASK_SHARE_BACK })
+    } catch (error) {
+      if (!isNotShared(error)) throw userFacingSendError(error, target)
+      markAcceptAsked(noticeId, bot.id, target)
+      return { asked: true, acceptNotices: acceptNotices() }
+    }
+    dropAcceptNotices({ botId: bot.id, from: target, id: noticeId })
+    return { shared: true, acceptNotices: acceptNotices() }
+  }))
   function noteShareRequest(local, event) {
     const from = event.from?.handle ? norm(event.from.handle) : ''
     if (!from || from === '@') return
@@ -2072,7 +2265,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // is judged with it. A failed sync leaves it to the retry below.
         if ((event.event_type === 'relationship.changed' && event.status === 'active') || (event.event_type === 'grant.changed' && event.status === 'granted')) {
           if (event.event_type === 'relationship.changed') forgetFriendStatus()
-          if (!seen.has(event.event_id)) await syncOutgoingGrants({ only: local.id }).catch(error => warn('grants not synced', error))
+          if (!seen.has(event.event_id)) {
+            // Record the accept before the grant sync. A list that omits the grant, or a sync that
+            // fails, still leaves the inviter a notice, and the sync keeps that person in People
+            // with access (#1054). An event with no grants does not clear notices already kept.
+            if (event.event_type === 'relationship.changed') noteInviteAccept(local, event)
+            await syncOutgoingGrants({ only: local.id }).catch(error => warn('grants not synced', error))
+          }
           done()
           continue
         }
@@ -2347,6 +2546,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // Each Bot's face-room Auto-send (#457).
       faceAutoSend: Object.fromEntries(flybot.bot.list().map(bot => [bot.id, autoApproveFaceRooms || faceAutoOf(bot.id)])),
       shareRequests: shareRequests(),
+      acceptNotices: acceptNotices(),
     }
   }
   disposers.push(flybot.api.handle('social/status', socialStatus, { read: true }))
@@ -2724,6 +2924,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     })
     const next = current.filter(grant => grant !== target && grant.id !== (grantId || target?.id))
     if (typeof flybot.grants?.set === 'function') await flybot.grants.set(bot.id, next)
+    if (target) dropAcceptNotices({ botId: bot.id, grantId: target.id, from: target.grantee })
     const invited = memberOf(bot.id)?.handle
     void flybot.rooms?.leaveInbound?.({ localBotId: bot.id, handle: invited, grantee: target?.grantee }).catch(error => warn('inbound rooms not left after revoke', error))
     return { botId: bot.id, revoked: grantId || target?.id || relationshipId, grants: flybot.grants?.of?.(bot.id) ?? next }

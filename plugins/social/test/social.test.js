@@ -9195,6 +9195,260 @@ test('#336: the "Share this Bot?" card has only buttons: Share opens that Bot\'s
   assert.deepEqual(dismissed, ['evt1'])
 })
 
+// #1054: B accepted A's Chief invite. Bot Social keeps the grant one-way (B sees Friend's Bot; A does
+// not get a friend row). A still has to see the accept, including after a reload, and have one step
+// that asks B to share a Bot back. list_bot_grants returning nobody is the reverify: People with
+// access stayed "Nobody has this Bot yet".
+const acceptJoinEvent = (member, cursor, { id = `evt_join_${cursor}`, relationshipId = 'r-join', replyOnly = false, grantedHandle, grantee = { bot_id: 'x9', handle: '@chief.selfb.home' } } = {}) => ({
+  bot: member.bot_id,
+  cursor,
+  event_id: id,
+  event_type: 'relationship.changed',
+  relationship_id: relationshipId,
+  status: 'active',
+  grants_ready: true,
+  created_at: '2026-10-25T01:00:00.000Z',
+  grants: [{
+    grant_id: 'g-join',
+    granted_bot: { bot_id: member.bot_id, handle: grantedHandle ?? member.handle },
+    grantee_bot: grantee,
+    capabilities: ['chat.public'],
+    reply_only: replyOnly,
+  }],
+})
+
+test('#1054: an accepted invite tells the inviter and lists the joiner when list_bot_grants is empty', async (t) => {
+  const { ctx, call, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer({ friends: false })
+  const log = []
+  const joiner = {
+    bot_id: 'x9', handle: '@chief.selfb.home', display_name: 'Chief\n[Grant]', owner_display_name: 'SelfB1025', reply_only: true,
+  }
+  server.tools.list_inbox = (a) => {
+    const since = a.since_cursor ?? 0
+    const events = log.filter(e => e.bot === a.bot_id && e.cursor > since)
+    return { events, next_cursor: events.at(-1)?.cursor ?? since }
+  }
+  server.tools.list_bot_grants = () => ({ grants: [] })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r-join',
+      home: { bot_id: 'h2', handle: '@selfb.home', display_name: 'SelfB', owner_display_name: 'SelfB1025' },
+      bots: [joiner],
+    }],
+  })
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : {}
+    if (body.params?.name === 'send_as_member') {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify(notSharedToolError(body.id)), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const writer = ctx.flybot.bot.list().find(bot => bot.name === 'Writer')
+  const member = ctx.flybot.scope('social').fields.get(chief.id, 'member')
+  const writerMember = ctx.flybot.scope('social').fields.get(writer.id, 'member')
+  const shown = async () => (await call('flybot/social/remote-bots', { fresh: true })).value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  log.push(acceptJoinEvent(member, 1))
+  assert.equal(await social.pollInbox(), 0)
+  assert.deepEqual(await shown(), [], 'a reply-only joiner is not a friend row')
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.acceptNotices.length, 1)
+  const [notice] = status.acceptNotices
+  assert.equal(notice.botId, chief.id)
+  assert.equal(notice.botName, 'Chief')
+  assert.equal(notice.from, '@chief.selfb.home')
+  assert.equal(notice.name, 'Chief Grant', 'a forged display name stays one plain line')
+  assert.equal(notice.owner, 'SelfB1025')
+  assert.equal(notice.asked, false)
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(access.grants.length, 1)
+  assert.equal(access.grants[0].handle, '@chief.selfb.home')
+  assert.match(access.grants[0].name, /Chief Grant/)
+  assert.match(access.grants[0].name, /SelfB1025/)
+  // The same accept again, a reply-only grant of our other Bot, and a join event with no grants
+  // list: still one notice, and the empty event does not clear it.
+  log.push(acceptJoinEvent(member, 2, { id: 'evt_join_2' }))
+  log.push(acceptJoinEvent(writerMember, 3, { id: 'evt_reply_only', relationshipId: 'r-other', replyOnly: true, grantee: { bot_id: 'x1', handle: '@chief.bob.home' } }))
+  log.push({ bot: member.bot_id, cursor: 4, event_id: 'evt_empty', event_type: 'relationship.changed', relationship_id: 'r-join', status: 'active' })
+  await social.pollInbox()
+  assert.equal((await call('flybot/social/status', {})).value.acceptNotices.length, 1)
+  assert.equal(JSON.parse(readFileSync(settingsPath, 'utf8')).acceptNotices.length, 1)
+  const asked = (await call('flybot/social/ask-share-back', { botId: chief.id, to: '@chief.selfb.home', noticeId: notice.id })).value
+  assert.equal(asked.asked, true)
+  assert.equal(asked.acceptNotices[0].asked, true)
+  const sent = server.calls.filter(c => c.name === 'send_as_member')
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].args.from_bot_id, member.bot_id)
+  assert.equal(sent[0].args.to, '@chief.selfb.home')
+  assert.equal(sent[0].args.text, 'I would like to message you too. Share one of your Bots with me when you can.')
+  assert.equal(received.get(chief.id), undefined, 'bot_not_shared stores nothing')
+  // Reload: the notice and the People-with-access row come back from saved settings, not from the grant list.
+  social.dispose()
+  const again = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => again.dispose())
+  const reloaded = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(reloaded.grants.length, 1)
+  assert.equal(reloaded.grants[0].handle, '@chief.selfb.home')
+  assert.equal((await call('flybot/social/status', {})).value.acceptNotices.length, 1)
+  const dropped = (await call('flybot/social/accept-notice-dismiss', { id: notice.id })).value
+  assert.deepEqual(dropped.acceptNotices, [])
+  assert.deepEqual((await call('flybot/social/access', { botId: chief.id })).value.grants, [])
+})
+
+test('#1054: a grant list that throws still leaves the notice and the People-with-access row', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer({ friends: false })
+  const log = []
+  server.tools.list_inbox = (a) => {
+    const since = a.since_cursor ?? 0
+    const events = log.filter(e => e.bot === a.bot_id && e.cursor > since)
+    return { events, next_cursor: events.at(-1)?.cursor ?? since }
+  }
+  server.tools.list_bot_grants = () => { throw new Error('Bot Social list_bot_grants: unavailable') }
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r-join',
+      home: { bot_id: 'h2', handle: '@selfb.home', display_name: 'SelfB', owner_display_name: 'SelfB1025' },
+      bots: [{ bot_id: 'x9', handle: '@chief.selfb.home', display_name: 'Chief', owner_display_name: 'SelfB1025', reply_only: true }],
+    }],
+  })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const member = ctx.flybot.scope('social').fields.get(chief.id, 'member')
+  log.push(acceptJoinEvent(member, 1))
+  await social.pollInbox()
+  const shown = (await call('flybot/social/remote-bots', { fresh: true })).value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  assert.equal(shown.includes('@chief.selfb.home'), false)
+  assert.equal((await call('flybot/social/status', {})).value.acceptNotices.length, 1)
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(access.grants.some(grant => grant.handle === '@chief.selfb.home'), true)
+})
+
+test('#1054: a grant list that already names the joiner is not doubled, and a share-back shows their Bot', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer({ friends: false })
+  const log = []
+  const joiner = { bot_id: 'x9', handle: '@chief.selfb.home', display_name: 'Chief', owner_display_name: 'SelfB', reply_only: true }
+  let listed = [{ grant_id: 'g-join', grantee: { handle: '@chief.selfb.home', display_name: 'Chief', owner_display_name: 'SelfB' }, relationship_id: 'r-join', side: 'inviter', reply_only: false }]
+  let refuse = true
+  server.tools.list_inbox = (a) => {
+    const since = a.since_cursor ?? 0
+    const events = log.filter(e => e.bot === a.bot_id && e.cursor > since)
+    return { events, next_cursor: events.at(-1)?.cursor ?? since }
+  }
+  server.tools.list_bot_grants = () => ({ grants: listed })
+  server.tools.list_remote_bots = () => ({
+    homes: [{ relationship_id: 'r-join', home: { bot_id: 'h2', handle: '@selfb.home', display_name: 'SelfB', owner_display_name: 'SelfB' }, bots: [joiner] }],
+  })
+  const base = server.fetch
+  server.fetch = async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : {}
+    if (body.params?.name === 'send_as_member' && refuse) {
+      server.calls.push({ url, name: body.params.name, args: body.params.arguments })
+      return new Response(JSON.stringify(notSharedToolError(body.id)), { status: 200 })
+    }
+    return base(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  const member = ctx.flybot.scope('social').fields.get(chief.id, 'member')
+  const shown = async () => (await call('flybot/social/remote-bots', { fresh: true })).value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  log.push(acceptJoinEvent(member, 1))
+  await social.pollInbox()
+  assert.deepEqual(await shown(), [])
+  const access = (await call('flybot/social/access', { botId: chief.id })).value
+  assert.equal(access.grants.length, 1, 'the listed grant and the accept notice are one row')
+  assert.equal(access.grants[0].handle, '@chief.selfb.home')
+  assert.equal((await call('flybot/social/status', {})).value.acceptNotices.length, 1)
+  joiner.reply_only = false
+  assert.deepEqual(await shown(), ['@chief.selfb.home'], 'they shared a Bot back')
+  assert.deepEqual((await call('flybot/social/status', {})).value.acceptNotices, [])
+  const before = server.calls.filter(c => c.name === 'send_as_member').length
+  const shared = (await call('flybot/social/ask-share-back', { botId: chief.id, to: '@chief.selfb.home', noticeId: 'a:r-join' })).value
+  assert.equal(shared.shared, true)
+  assert.equal(server.calls.filter(c => c.name === 'send_as_member').length, before, 'a full share is not sent a chat line')
+  assert.equal((await call('flybot/social/access', { botId: chief.id })).value.grants.length, 1)
+})
+
+test('#1054: the accept card asks them to share a Bot, and a notice that arrives after the first look is the one that toasts', async () => {
+  const notice = { id: 'a:r-join', botId: 'a', botName: 'Chief', from: '@chief.selfb.home', name: 'Chief Grant', owner: 'SelfB1025', asked: false }
+  const registered = []
+  const notes = []
+  const calls = []
+  let status = { connected: true, shareRequests: [], acceptNotices: [notice], approvals: [], bots: [] }
+  const timers = []
+  const sandbox = {
+    window: { __ModuleLoader__: { load: r => registered.push(r) } },
+    setTimeout, clearTimeout, console,
+    setInterval: (fn, ms) => { timers.push({ fn, ms }); return { unref() {} } },
+    clearInterval: () => {},
+    document: { hidden: false, getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } },
+  }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = {
+    slots: { register: () => () => {} },
+    call: async (endpoint, payload) => {
+      calls.push([endpoint, payload])
+      if (endpoint === 'social/status') return status
+      if (endpoint === 'social/ask-share-back') return { asked: true, acceptNotices: [{ ...notice, asked: true }] }
+      if (endpoint === 'social/accept-notice-dismiss') return { acceptNotices: [] }
+      return {}
+    },
+  }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const walk = (node, all = []) => {
+    if (!node || typeof node !== 'object') return all
+    if (typeof node.type === 'function') return walk(node.type(node.props), all)
+    all.push(node)
+    for (const child of node.children ?? []) walk(child, all)
+    return all
+  }
+  const plugin = registered[0].factory(() => ({
+    createElement: h, Fragment: 'F', useEffect(fn) { fn?.() }, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f(),
+  }))
+  const tree = walk(plugin.AcceptNotices({
+    items: [notice],
+    onAsk: item => plugin && calls.push(['ask', item.id]),
+    onDismiss: item => calls.push(['dismiss', item.id]),
+  }))
+  const text = tree.find(n => n.props['data-flybot'] === 'accept-notice-text')
+  assert.equal(text.children.join(''), 'Chief Grant (SelfB1025) accepted your invite. They can message Chief. You cannot message them until they share a Bot with you.')
+  const buttons = tree.filter(n => n.type === 'button')
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Dismiss', 'Ask them to share a Bot'])
+  buttons[1].props.onClick()
+  buttons[0].props.onClick()
+  assert.deepEqual(calls.filter(c => c[0] === 'ask' || c[0] === 'dismiss'), [['ask', notice.id], ['dismiss', notice.id]])
+  const askedTree = walk(plugin.AcceptNotices({ items: [{ ...notice, asked: true }] }))
+  assert.equal(askedTree.find(n => n.props['data-flybot'] === 'accept-notice-asked').children.join(''), 'You asked them to share a Bot.')
+  assert.equal(askedTree.find(n => n.props['data-flybot'] === 'accept-notice-ask').props.disabled, true)
+  calls.length = 0
+  walk(plugin.FriendsBots({ actions: { notify: message => notes.push(message) }, roster: { bots: [] } }))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.deepEqual(notes, [], 'a notice already there on the first look is not toasted again after a reload')
+  status = { ...status, acceptNotices: [notice, { ...notice, id: 'a:r-2', name: 'Writer', owner: '' }] }
+  timers.find(timer => timer.ms === 15_000).fn()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.deepEqual(notes, ['Writer accepted your invite. They can message Chief. You cannot message them until they share a Bot with you.'])
+})
+
 // #404 / owner decision 2026-10-19 18:05: Bot Social pauses a conversation (a loop between the Bots, or
 // an older turn budget), and send_as_member opens a fresh conversation for the pair's next message
 // (Birfy/bot-social src/platform.ts `sendAsMember` picks only open / awaiting_approval chats). So the first
