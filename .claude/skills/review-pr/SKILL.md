@@ -40,7 +40,6 @@ Always include:
 Verdict: PASS | FAIL | INC at <full 40-character sha>
 Written-by: Reviewer
 Posted-by: <who actually posted it, when the writer could not post it themselves>
-Attestation: <full 40-character sha> role=Reviewer
 
 Ran:
   - <command> → pass|fail
@@ -49,12 +48,18 @@ Not run:
   - <check> — reason
 ```
 
+When the GitHub login posting the conclusion is the pull request author, add this line in that header, before the blank above `Ran:` (#644). A conclusion from a different GitHub login omits it:
+
+```text
+Attestation: <full 40-character sha> role=Reviewer
+```
+
 The first line is the whole conclusion (#637): nothing may come before it, because the gates read the
 first line and treat any other shape as no conclusion. The sha is the whole 40 characters (#1112). The `Written-by:` line is the attribution every write carries (#627): it names a Bot from the policy's
 `writers`, the gates refuse a report without it, and it is a self-report, not proof — see
 [AGENTS.md](../../../AGENTS.md#every-state-changing-write-says-who-wrote-it-627), which is the single source.
 
-`Attestation:` is required when the GitHub login posting the conclusion is the pull request author (#644, first slice). It stays in the header, before the blank line above `Ran:`. `role` is the `Written-by` name and is not an `Owner:` of the pull request. A conclusion posted by a different GitHub login omits the line. The gate parses the line; it does not check a signature.
+`role` is the `Written-by` name and is not an `Owner:` of the pull request. The gate parses the line; it does not check a signature.
 
 What the gates read as evidence (`review-gate.mjs` `parseReport`; #660–#663 refused at the queue for
 the first point):

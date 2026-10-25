@@ -750,7 +750,7 @@ test('#644: a header attestation at the full tip, for a role that is not the Own
     author: 'Birfy',
     reports: [comment('Birfy', fixedPass({ attest: `${HEAD} role=Reviewer` }))],
     policy: attestPolicy,
-    body: 'Owner: Dev\nReviewer: Reviewer\nFixes #644\n',
+    body: 'Owner: Dev\nReviewer: Reviewer\nRelated #644\n',
   })
   assert.equal(fromBody.ok, true, fromBody.reason)
 })

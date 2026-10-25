@@ -219,7 +219,8 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const policy = loadPolicy(policyPath)
   const result = judge({ labels, files, head, author, reports, policy, gh, repo, expectedHead: arg('--sha'), mode, body: pull.body })
   // #960 (B): `enqueue-guard` is not a required context today, so `merge-gate` is the only gate on a
-  // queue entry — and `judge` reads neither the body nor the labels. The fallback runs the guard's own
+  // queue entry. `judge` passes the pull request body into `decide` so an author-login PASS is checked
+  // against `Owner:` (#644). It does not apply the body rules itself: the fallback runs the guard's own
   // `guard()` over the same pull request, so a body with no `Owner:`/`Reviewer:`, no `Fixes #<n>`, or no
   // `agent-pr` is refused here too, instead of merging under a green check. It answers only for the
   // queue: the `pull_request` run is a report and never fails (#639).
