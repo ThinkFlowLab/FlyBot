@@ -689,6 +689,7 @@ var ZH = {
   "Sent back: {note}": "已退回：{note}",
   "Comment goes to {target}": "评论写到 {target}",
   "Could not comment on {target}: {error}": "无法在 {target} 上留言：{error}",
+  "Could not confirm the comment on {target} went out": "无法确认 {target} 上的留言是否发出",
   // Bot task board (#1058)
   Tasks: "任务",
   "Close tasks": "关闭任务",
@@ -7718,6 +7719,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
   const sentBack = card.kind === "task" && card.status === "task" ? card.task?.followUp?.note : void 0;
   const target = card.kind === "task" ? card.task?.target?.href : void 0;
   const writeBack = card.kind === "task" && card.task?.writeBack?.state === "failed" ? card.task.writeBack : void 0;
+  const unconfirmed = card.kind === "task" && card.task?.writeBack?.state === "unconfirmed" ? card.task.writeBack : void 0;
   return (0, import_react13.createElement)(
     "div",
     { className: "bt-inbox-card", role: "group", "aria-label": `${t(STATUSES[card.status].label)}: ${card.title}`, "data-status": card.status },
@@ -7753,6 +7755,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
         title: target
       }, t("Comment goes to {target}", { target: target.replace(/^https:\/\/github\.com\//, "") }))) : null,
       writeBack ? (0, import_react13.createElement)("span", { className: "bt-inbox-writeback", role: "alert", title: writeBack.error }, t("Could not comment on {target}: {error}", { target: writeBack.target, error: writeBack.error })) : null,
+      unconfirmed ? (0, import_react13.createElement)("span", { className: "bt-inbox-writeback", title: unconfirmed.target }, t("Could not confirm the comment on {target} went out", { target: unconfirmed.target })) : null,
       (0, import_react13.createElement)(AnswerFields, { card, busy, onAnswer }),
       (0, import_react13.createElement)(ResultActions, { card, busy, onAnswer }),
       error ? (0, import_react13.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null

@@ -95,13 +95,18 @@ const readTarget = (value) => {
   throw invalid('A target is a GitHub issue or pull request: https://github.com/owner/repo/issues/12 or owner/repo#12')
 }
 const WRITE_BACK_SUMMARY = 1500
+// The line `review-gate.mjs` reads as author attribution (#627); a decision comment is not a
+// conclusion, so no line of it may look like one, not even one quoted from a note or a summary.
+const WRITER_LINE = /^\s*Written[- ]by\s*:/i
+const withoutWriterLines = value => String(value ?? '').split(/\r?\n/).filter(line => !WRITER_LINE.test(line)).join('\n')
 // The comment a decision posts. It records a task decision, so it must not read like a review
-// verdict: no `Verdict:` line, no PASS/INC, and `Written-by:` names who decided (#627, #1154).
+// verdict: no `Verdict:` line, no PASS/INC, and its decision line is `Decision by:` — the decision and
+// the review attribution are two fields, never one name for both (#1154, #1172).
 const writeBackBody = (task, status, note, decider) => {
-  const lines = [status === 'accepted' ? `Accepted: ${oneLine(task.title, 200)}` : `Sent back: ${oneLine(note, 500)}`]
-  const summary = oneLine(task.result?.summary ?? '', WRITE_BACK_SUMMARY)
+  const lines = [status === 'accepted' ? `Accepted: ${oneLine(task.title, 200)}` : `Sent back: ${oneLine(withoutWriterLines(note), 500)}`]
+  const summary = oneLine(withoutWriterLines(task.result?.summary ?? ''), WRITE_BACK_SUMMARY)
   if (summary !== '') lines.push('', summary)
-  lines.push('', `Decided in FlyBot by ${decider}.`, '', `Written-by: ${decider}`)
+  lines.push('', `Decided in FlyBot by ${decider}.`, '', `Decision by: ${decider}`)
   return lines.join('\n')
 }
 const readOptionalLine = (value, name) => {

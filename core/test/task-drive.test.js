@@ -3,12 +3,12 @@
 // an answer, a turn already open, and a wake that did not move the board do not
 // start another one. An overall group card is the plan, not a turn.
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { TASK_DRIVE_BACKOFF_MS } from '../src/host/task-drive.js'
+import { TASK_DRIVE_BACKOFF_MS, WRITE_BACK_EXPIRY_MS, WRITE_BACK_WAKES } from '../src/host/task-drive.js'
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -439,4 +439,86 @@ test('a decision waiting to be posted wakes the Bot even after the task is decid
   assert.equal(app.calls('s').length, 2, 'a decided task with a comment to post is still work')
   assert.match(app.text('s'), /Then post the decision comment on https:\/\/github\.com\/ThinkFlowLab\/FlyBot\/issues\/1154/)
   assert.match(app.text('s'), /postResult \{task: 'task-[0-9a-f]+', ok: true\}/)
+})
+
+// #1172: a Bot that never posts used to be woken about the comment on every backoff cycle, for ever.
+// Two wakes is the first and one reminder; after that the record stops counting as work.
+test('a pending decision stops reminding after two wakes (#1172)', async (t) => {
+  const app = await start(t)
+  let now = 1_000_000
+  app.ctx.taskDrive.now = () => now
+  const body = await app.track('s', { tasks: [{ title: 'Ship the fix', priority: 'high' }] })
+  const id = app.idOf(body, 'Ship the fix')
+  await app.finishWake('s')
+
+  const href = 'https://github.com/ThinkFlowLab/FlyBot/issues/1172'
+  const task = app.rt.state.tasks[id]
+  task.status = 'accepted'
+  task.writeBack = { target: href, at: now, state: 'pending', body: 'Accepted: Ship the fix' }
+  writeFileSync(join(app.home, 'state.json'), JSON.stringify(app.rt.state))
+
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 2, 'the first wake about the comment')
+  assert.equal(app.rt.state.tasks[id].writeBack.wakes, 1, 'only a delivered wake is counted')
+
+  await app.finishWake('s')
+  now += TASK_DRIVE_BACKOFF_MS[0]
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 3, 'one reminder')
+  assert.equal(app.rt.state.tasks[id].writeBack.wakes, 2)
+
+  await app.finishWake('s')
+  now += TASK_DRIVE_BACKOFF_MS[TASK_DRIVE_BACKOFF_MS.length - 1]
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 3, 'the cap ends the reminder instead of waking for ever')
+  assert.equal(app.rt.state.tasks[id].writeBack.state, 'pending', 'the reminder stopped, the decision still stands')
+})
+
+// #1172: a day without a report is the end of it. The record says `unconfirmed` instead of waking.
+test('a comment nobody posted turns unconfirmed after a day, and opens no turn (#1172)', async (t) => {
+  const app = await start(t)
+  let now = 2_000_000
+  app.ctx.taskDrive.now = () => now
+  const body = await app.track('s', { tasks: [{ title: 'Ship the fix', priority: 'high' }] })
+  const id = app.idOf(body, 'Ship the fix')
+  await app.finishWake('s')
+
+  const href = 'https://github.com/ThinkFlowLab/FlyBot/issues/1172'
+  const at = now
+  const task = app.rt.state.tasks[id]
+  task.status = 'accepted'
+  task.writeBack = { target: href, at, state: 'pending', body: 'Accepted: Ship the fix' }
+  writeFileSync(join(app.home, 'state.json'), JSON.stringify(app.rt.state))
+
+  now = at + WRITE_BACK_EXPIRY_MS - 1
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 2, 'inside the day the comment is still work')
+  assert.equal(app.rt.state.tasks[id].writeBack.state, 'pending')
+
+  await app.finishWake('s')
+  now = at + WRITE_BACK_EXPIRY_MS
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 2, 'an unconfirmed record is no longer work')
+  const saved = JSON.parse(readFileSync(join(app.home, 'state.json'), 'utf8')).tasks[id]
+  assert.equal(saved.writeBack.state, 'unconfirmed', 'the record says the comment was never confirmed')
+  assert.equal(saved.writeBack.target, href, 'the target stays, so the card can name it')
+})
+
+// #1172: the cap belongs to the comment reminder. A task that is also real work still wakes.
+test('the reminder cap never silences the task own work (#1172)', async (t) => {
+  const app = await start(t)
+  let now = 3_000_000
+  app.ctx.taskDrive.now = () => now
+  const body = await app.track('s', { tasks: [{ title: 'Ship the fix', column: 'in-progress', progress: 40 }] })
+  const id = app.idOf(body, 'Ship the fix')
+  await app.finishWake('s')
+
+  const task = app.rt.state.tasks[id]
+  task.writeBack = { target: 'https://github.com/ThinkFlowLab/FlyBot/issues/1172', at: now, state: 'pending', wakes: WRITE_BACK_WAKES, body: 'Accepted: Ship the fix' }
+  writeFileSync(join(app.home, 'state.json'), JSON.stringify(app.rt.state))
+
+  now += TASK_DRIVE_BACKOFF_MS[0]
+  await app.ctx.taskDrive.consider()
+  assert.equal(app.calls('s').length, 2, 'a working task wakes even with the comment reminder used up')
+  assert.match(app.calls('s')[1].content.map(block => block.text).join('\n'), new RegExp(`Continue ${id} \\[normal\\] Ship the fix`))
 })

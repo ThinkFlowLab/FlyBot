@@ -667,4 +667,11 @@ test('a card names where its decision is written back, and one line when that fa
   assert.equal(lines.length, 1)
   assert.equal(lines[0].props.role, 'alert')
   assert.equal(textOf(lines[0]), `Could not comment on ${href}: HTTP 403 from the connector`)
+
+  // #1172: a comment nobody posted within a day says so in its own line, and it is not an error.
+  const unconfirmed = shown({ task: task('t1', 'working', { target, writeBack: { target: href, state: 'unconfirmed' } }) })
+  const quiet = byClass(unconfirmed, 'bt-inbox-writeback')
+  assert.equal(quiet.length, 1)
+  assert.equal(quiet[0].props.role, undefined, 'only a failed comment is an alert')
+  assert.equal(textOf(quiet[0]), `Could not confirm the comment on ${href} went out`)
 })

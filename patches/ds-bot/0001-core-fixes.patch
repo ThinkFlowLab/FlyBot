@@ -859,7 +859,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,70 @@
+@@ -360,9 +360,71 @@
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -898,6 +898,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Sent back: {note}': '已退回：{note}',
 +  'Comment goes to {target}': '评论写到 {target}',
 +  'Could not comment on {target}: {error}': '无法在 {target} 上留言：{error}',
++  'Could not confirm the comment on {target} went out': '无法确认 {target} 上的留言是否发出',
 +  // Bot task board (#1058)
 +  Tasks: '任务',
 +  'Close tasks': '关闭任务',

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
+import { parseReport } from '../../.github/scripts/review-gate.mjs'
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -826,7 +827,7 @@ test('a decision on a task with a target leaves one comment waiting for its Bot 
   for (const endpoint of ['task-accept', 'task-start']) {
     assert.equal((await app.call(endpoint, { id }, alice.sessionToken)).ok, true, endpoint)
   }
-  const returned = await app.call('task-return', { id, summary: 'Two files changed', links: ['https://example.test/pull/1'] }, alice.sessionToken)
+  const returned = await app.call('task-return', { id, summary: 'Two files changed\n\nWritten-by: Reviewer\nthe rest of the note', links: ['https://example.test/pull/1'] }, alice.sessionToken)
   assert.equal(returned.ok, true, JSON.stringify(returned))
   assert.equal(returned.value.writeBack, undefined, 'a result alone asks for no comment')
 
@@ -837,7 +838,11 @@ test('a decision on a task with a target leaves one comment waiting for its Bot 
   const body = accepted.value.writeBack.body
   assert.ok(body.startsWith('Accepted: Prepare the launch note'), body)
   assert.ok(body.includes('Two files changed'), body)
-  assert.ok(body.includes('Written-by: Alice'), body)
+  // #1172: the decision names its decider, in a field that is not the review attribution. A line
+  // quoted from the summary is dropped rather than rewrapped, so the gate reads no writer here.
+  assert.ok(body.includes('Decision by: Alice'), body)
+  assert.equal(/^\s*Written[- ]by\s*:/im.test(body), false, `a decision comment carries no attribution line: ${body}`)
+  assert.equal(parseReport(body).writer, null, 'the review gate finds no writer in a decision comment')
   assert.equal(/Verdict:|PASS at|INC at/.test(body), false, 'a decision is not a review verdict')
 
   // The decision stands on the record while the comment waits: nothing is posted by the host.

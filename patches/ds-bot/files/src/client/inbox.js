@@ -445,9 +445,11 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
   const evidence = card.kind === 'task' && card.status === 'result' ? (card.task?.result?.links ?? []) : []
   const sentBack = card.kind === 'task' && card.status === 'task' ? card.task?.followUp?.note : undefined
   // Where a decision is written back (#1154): the issue or PR the task came from is on the card, and
-  // a comment that could not be posted says so once, on the card, instead of staying in a log.
+  // a comment that could not be posted says so once, on the card, instead of staying in a log. A
+  // comment nobody posted within a day is `unconfirmed` (#1172): its own quiet line, not an error.
   const target = card.kind === 'task' ? card.task?.target?.href : undefined
   const writeBack = card.kind === 'task' && card.task?.writeBack?.state === 'failed' ? card.task.writeBack : undefined
+  const unconfirmed = card.kind === 'task' && card.task?.writeBack?.state === 'unconfirmed' ? card.task.writeBack : undefined
   return h('div', { className: 'bt-inbox-card', role: 'group', 'aria-label': `${t(STATUSES[card.status].label)}: ${card.title}`, 'data-status': card.status },
     h('span', { className: 'bt-inbox-ava' }, card.bot ? h(BotAvatar, { bot: card.bot, size: 28, badge: false, live: false }) : card.room ? h(RoomAvatar, { room: card.room, roster, size: 28 }) : null),
     h('span', { className: 'bt-inbox-copy' },
@@ -467,6 +469,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
         href: target, target: '_blank', rel: 'noreferrer noopener', className: 'bt-inbox-evidence-link bt-inbox-target', title: target,
       }, t('Comment goes to {target}', { target: target.replace(/^https:\/\/github\.com\//, '') }))) : null,
       writeBack ? h('span', { className: 'bt-inbox-writeback', role: 'alert', title: writeBack.error }, t('Could not comment on {target}: {error}', { target: writeBack.target, error: writeBack.error })) : null,
+      unconfirmed ? h('span', { className: 'bt-inbox-writeback', title: unconfirmed.target }, t('Could not confirm the comment on {target} went out', { target: unconfirmed.target })) : null,
       h(AnswerFields, { card, busy, onAnswer }),
       h(ResultActions, { card, busy, onAnswer }),
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),

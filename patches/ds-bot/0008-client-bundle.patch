@@ -397,7 +397,7 @@ diff --git a/client.js b/client.js
    "You have {version}.": "当前版本 {version}。",
    "The update did not finish: {reason}": "更新没有完成：{reason}",
    "What's new": "更新说明",
-@@ -420,8 +420,69 @@
+@@ -420,8 +420,70 @@
    "DSH update": "DSH 更新",
    "DSH {version}": "DSH {version}",
    "Restart DSH to start using DSH {version}.": "重启 DSH 后开始使用 DSH {version}。",
@@ -435,6 +435,7 @@ diff --git a/client.js b/client.js
 +  "Sent back: {note}": "已退回：{note}",
 +  "Comment goes to {target}": "评论写到 {target}",
 +  "Could not comment on {target}: {error}": "无法在 {target} 上留言：{error}",
++  "Could not confirm the comment on {target} went out": "无法确认 {target} 上的留言是否发出",
 +  // Bot task board (#1058)
 +  Tasks: "任务",
 +  "Close tasks": "关闭任务",
@@ -5429,7 +5430,7 @@ diff --git a/client.js b/client.js
        )
      )
    ), host);
-@@ -4731,49 +4731,1489 @@
+@@ -4731,49 +4731,1491 @@
    return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
  }
  
@@ -6144,6 +6145,7 @@ diff --git a/client.js b/client.js
 +  const sentBack = card.kind === "task" && card.status === "task" ? card.task?.followUp?.note : void 0;
 +  const target = card.kind === "task" ? card.task?.target?.href : void 0;
 +  const writeBack = card.kind === "task" && card.task?.writeBack?.state === "failed" ? card.task.writeBack : void 0;
++  const unconfirmed = card.kind === "task" && card.task?.writeBack?.state === "unconfirmed" ? card.task.writeBack : void 0;
 +  return (0, import_react13.createElement)(
 +    "div",
 +    { className: "bt-inbox-card", role: "group", "aria-label": `${t(STATUSES[card.status].label)}: ${card.title}`, "data-status": card.status },
@@ -6179,6 +6181,7 @@ diff --git a/client.js b/client.js
 +        title: target
 +      }, t("Comment goes to {target}", { target: target.replace(/^https:\/\/github\.com\//, "") }))) : null,
 +      writeBack ? (0, import_react13.createElement)("span", { className: "bt-inbox-writeback", role: "alert", title: writeBack.error }, t("Could not comment on {target}: {error}", { target: writeBack.target, error: writeBack.error })) : null,
++      unconfirmed ? (0, import_react13.createElement)("span", { className: "bt-inbox-writeback", title: unconfirmed.target }, t("Could not confirm the comment on {target} went out", { target: unconfirmed.target })) : null,
 +      (0, import_react13.createElement)(AnswerFields, { card, busy, onAnswer }),
 +      (0, import_react13.createElement)(ResultActions, { card, busy, onAnswer }),
 +      error ? (0, import_react13.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null

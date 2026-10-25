@@ -8,6 +8,12 @@ import { compareForWork } from '../shared/task-board.js'
 // so a wake that did not move the board waits before the next one.
 export const TASK_DRIVE_BACKOFF_MS = [30_000, 120_000, 600_000, 1_800_000]
 
+// A decision whose comment nobody posts would otherwise wake its Bot on every backoff cycle, for
+// ever: two wakes (the first, then one reminder), and after a day the record says `unconfirmed`
+// instead of counting as work (#1172).
+export const WRITE_BACK_WAKES = 2
+export const WRITE_BACK_EXPIRY_MS = 24 * 60 * 60 * 1000
+
 const DRIVING = new Set(['open', 'claimed', 'working'])
 
 const fingerprint = (tasks) => tasks.map(task => [
@@ -57,8 +63,10 @@ export function install(rt) {
     return Object.values(rt.state.tasks ?? {}).filter((task) => {
       if (task.ownerBotId !== botId || task.waitingFor === 'input') return false
       // A decision waiting to be posted is work even when the task is accepted: the Bot holds the
-      // connector, so the comment goes out on its next turn (#1154).
-      if (task.writeBack?.state === 'pending') return true
+      // connector, so the comment goes out on its next turn (#1154). The reminder stops after two
+      // wakes (#1172) — a Bot that never posts must not be woken for ever. The status path below is
+      // not capped: the cap silences the reminder, never the task's own work.
+      if (task.writeBack?.state === 'pending' && (task.writeBack.wakes ?? 0) < WRITE_BACK_WAKES) return true
       return task.source === 'conversation' && task.kind !== 'group' && DRIVING.has(task.status)
     })
   }
@@ -140,8 +148,36 @@ export function install(rt) {
     held.delete(sessionId)
   }
 
+  // Only a wake that actually left for a pending decision counts (#1172): a hold that never delivered
+  // the reminder must not spend the Bot's two wakes. The count lives on the record so it survives a
+  // restart, and the save is best effort — a lost count costs one reminder, never a turn.
+  const noteWake = async (task) => {
+    const back = task.writeBack
+    if (back?.state !== 'pending') return
+    task.writeBack = { ...back, wakes: (back.wakes ?? 0) + 1 }
+    await rt.save().catch(error => rt.warn('ds-bot: the decision wake count was not saved: %s', error))
+  }
+
+  // A comment nobody posted stops being work after a day (#1172). The record turns `unconfirmed`
+  // before the drive builds its list, so the same pass already stops counting it; the decision itself
+  // stays recorded and the card says why the comment is missing. One save for the whole pass.
+  const expireWriteBacks = async () => {
+    let changed = false
+    for (const task of Object.values(rt.state.tasks ?? {})) {
+      const back = task.writeBack
+      if (back?.state !== 'pending') continue
+      const at = Number(back.at)
+      if (!Number.isFinite(at) || clock.now() - at < WRITE_BACK_EXPIRY_MS) continue
+      task.writeBack = { ...back, state: 'unconfirmed' }
+      changed = true
+    }
+    if (changed) await rt.save().catch(error => rt.warn('ds-bot: the expired decision was not saved: %s', error))
+    return changed
+  }
+
   async function driveOnce() {
     await rt.load()
+    await expireWriteBacks()
     const sessions = Array.from(inflight.keys())
     for (const sessionId of sessions) await releaseStale(sessionId)
     const byBot = new Map()
@@ -186,6 +222,7 @@ export function install(rt) {
       inflight.set(sessionId, { fingerprint: fp, started: false })
       try {
         await rt.deliver({ toId: botId, sessionId, role: 'task', text: cueFor(next) })
+        await noteWake(next)
       } catch (error) {
         inflight.delete(sessionId)
         rt.warn('ds-bot: task drive could not wake %s: %s', botId, error)

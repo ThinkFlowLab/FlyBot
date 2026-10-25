@@ -630,6 +630,7 @@ const ZH = {
   'Sent back: {note}': '已退回：{note}',
   'Comment goes to {target}': '评论写到 {target}',
   'Could not comment on {target}: {error}': '无法在 {target} 上留言：{error}',
+  'Could not confirm the comment on {target} went out': '无法确认 {target} 上的留言是否发出',
   // Bot task board (#1058)
   Tasks: '任务',
   'Close tasks': '关闭任务',
