@@ -1,7 +1,8 @@
 import { createElement as h, useEffect, useState } from 'react'
 import { isMainOf } from './sources.js'
 import { PlusIcon, ChevronRightIcon } from './icons.js'
-import { AdminStar, BotAvatar, BotMark, PersonMark, RoomAvatar, lookBotForRemote } from './mark.js'
+import { AdminStar, BotAvatar, BotMark, PersonMark, RoomAvatar, lookAvoidingLocals, lookBotForRemote, lookKey, lookOf } from './mark.js'
+import { setLocalBots } from './characters.js'
 import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { FolderMenu } from './folder-menu.js'
@@ -22,6 +23,48 @@ export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode 
 import { faceSeats, faceSeatLabel, facePeople, facePersonLabel } from './face-seats.js'
 
 export { faceSeats, faceSeatLabel, facePeople }
+export { setLocalBots, lookKey }
+
+// The Bot a member row draws. A local seat is the roster record the sidebar uses. A friend's
+// seat is the chat record, with the face-room look winning, the same way a transcript mark is
+// chosen. Two homes named SelfA… and SelfB… share an initial; the row must not.
+export function faceSeatBot(seat, roster) {
+  if (!seat) return undefined
+  const record = seat.record && typeof seat.record === 'object' ? seat.record : {}
+  const extra = {}
+  if (typeof record.color === 'string' && record.color) extra.color = record.color
+  if (record.avatar && typeof record.avatar === 'object') extra.avatar = record.avatar
+  if (seat.local && !seat.local.remote) return Object.keys(extra).length ? { ...seat.local, ...extra } : seat.local
+  const handle = typeof record.handle === 'string' && record.handle.trim()
+    ? record.handle
+    : (typeof seat.key === 'string' && seat.key.startsWith('@') ? seat.key : '')
+  return lookBotForRemote({
+    handle,
+    displayName: record.displayName || seat.bot,
+    name: seat.bot,
+    label: record.label,
+    id: record.id || seat.key,
+    ...extra,
+  }, roster)
+}
+
+// The picture BotMark paints for that Bot: a friend's look steps off a same-named local Bot.
+export function faceMemberLook(bot) {
+  if (!bot) return undefined
+  return bot.remote ? lookAvoidingLocals(bot) : lookOf(bot)
+}
+
+function faceMarks(person, roster, size) {
+  const marks = []
+  for (const seat of person?.seats ?? []) {
+    const bot = faceSeatBot(seat, roster)
+    if (!bot) continue
+    marks.push(h(BotMark, { key: seat.key, bot, size, live: false }))
+  }
+  // No seat to draw is the silhouette, never an empty disc (#1089).
+  if (marks.length === 0) return [h(PersonMark, { key: 'person', size, name: person?.name })]
+  return marks
+}
 
 // A face room says what it counts, people and Bots, not an ambiguous "2 members" (#306).
 export function faceRoomCount(room, roster) {
@@ -38,7 +81,7 @@ export const isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(s
 
 // One row per person (#457): "Ann (you) · Chief, Researcher", my own Bots each opening its chat.
 // `lead`: the room lead's handle (#476), marked on its Bot.
-export function FacePersonRow({ person, onOpenBot, lead, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
+export function FacePersonRow({ person, onOpenBot, lead, roster, className = 'bt-set-row bt-bs-row bt-gs-member', size = 26 }) {
   const bots = person.seats.flatMap((seat, index) => {
     const name = seat.local && onOpenBot
       ? h('button', { key: seat.key, type: 'button', className: 'bt-face-bot', title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot)
@@ -48,7 +91,7 @@ export function FacePersonRow({ person, onOpenBot, lead, className = 'bt-set-row
   })
   return h('div', { className, role: 'listitem', 'data-flybot': 'face-person', 'data-mine': person.mine || undefined },
     h('span', { className: 'bt-gs-who bt-face-person' },
-      h(PersonMark, { size, name: person.name }),
+      h('span', { className: 'bt-face-marks', 'data-flybot': 'face-person-avatars' }, faceMarks(person, roster, size)),
       h('span', { className: 'bt-face-person-text' },
         h('span', { className: 'bt-row-title' }, facePersonLabel(person)),
         h('span', { className: 'bt-face-bots' }, bots))))
@@ -168,7 +211,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
         h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
     face ? h(Card, { title: t('Members · {count}', { count: people.length }) },
-      people.map(person => h(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room.face?.lead?.handle }))) : null,
+      people.map(person => h(FacePersonRow, { key: person.key, person, roster, onOpenBot: openBot, lead: room.face?.lead?.handle }))) : null,
     face ? null : h(Card, { title: t('Members · {count}', { count: members.length + humans.length + remotes.length }) },
       humans.map((person) => h('div', { key: person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
         h('span', { className: 'bt-gs-who' },
@@ -295,6 +338,8 @@ export const GROUP_SETTINGS_CSS = `
 .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-gs-who:hover .bt-row-title{text-decoration:underline;text-underline-offset:2px}
 .bt-gs-add{gap:8px;color:var(--bt-ink-2)}
+.bt-face-marks{display:inline-flex;flex:none;align-items:center;gap:2px}
+.bt-face-marks>.bt-mark{flex:none}
 .bt-face-person{cursor:default}
 .bt-face-person:hover .bt-row-title{text-decoration:none}
 .bt-face-person-text{display:flex;flex-direction:column;min-width:0}

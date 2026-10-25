@@ -12018,6 +12018,37 @@ var ROOM_MODES = [
   ["everyone", "Everyone", "Every member answers in turn, admin first."]
 ];
 var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
+function faceSeatBot(seat, roster) {
+  if (!seat) return void 0;
+  const record = seat.record && typeof seat.record === "object" ? seat.record : {};
+  const extra = {};
+  if (typeof record.color === "string" && record.color) extra.color = record.color;
+  if (record.avatar && typeof record.avatar === "object") extra.avatar = record.avatar;
+  if (seat.local && !seat.local.remote) return Object.keys(extra).length ? { ...seat.local, ...extra } : seat.local;
+  const handle = typeof record.handle === "string" && record.handle.trim() ? record.handle : typeof seat.key === "string" && seat.key.startsWith("@") ? seat.key : "";
+  return lookBotForRemote({
+    handle,
+    displayName: record.displayName || seat.bot,
+    name: seat.bot,
+    label: record.label,
+    id: record.id || seat.key,
+    ...extra
+  }, roster);
+}
+function faceMemberLook(bot) {
+  if (!bot) return void 0;
+  return bot.remote ? lookAvoidingLocals(bot) : lookOf(bot);
+}
+function faceMarks(person, roster, size) {
+  const marks = [];
+  for (const seat of person?.seats ?? []) {
+    const bot = faceSeatBot(seat, roster);
+    if (!bot) continue;
+    marks.push((0, import_react26.createElement)(BotMark, { key: seat.key, bot, size, live: false }));
+  }
+  if (marks.length === 0) return [(0, import_react26.createElement)(PersonMark, { key: "person", size, name: person?.name })];
+  return marks;
+}
 function faceRoomCount(room2, roster) {
   const people2 = facePeople(room2, roster).length;
   const seats = faceSeats(room2, roster).length;
@@ -12027,7 +12058,7 @@ function faceRoomCount(room2, roster) {
 }
 var handleKey = (handle) => String(handle ?? "").trim().replace(/^@+/, "").toLowerCase();
 var isLeadSeat = (seat, lead) => Boolean(handleKey(lead) && handleKey(seat.record?.handle) === handleKey(lead));
-function FacePersonRow({ person, onOpenBot, lead, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
+function FacePersonRow({ person, onOpenBot, lead, roster, className = "bt-set-row bt-bs-row bt-gs-member", size = 26 }) {
   const bots = person.seats.flatMap((seat, index) => {
     const name = seat.local && onOpenBot ? (0, import_react26.createElement)("button", { key: seat.key, type: "button", className: "bt-face-bot", title: t("Open {name}'s chat", { name: seat.bot }), onClick: () => onOpenBot(seat.local.id) }, seat.bot) : (0, import_react26.createElement)("span", { key: seat.key, className: "bt-face-bot", title: seat.record?.handle || void 0 }, seat.bot);
     const marked = isLeadSeat(seat, lead) ? [name, (0, import_react26.createElement)("span", { key: `${seat.key}-lead`, className: "bt-tag", "data-flybot": "face-lead-tag" }, t("Lead"))] : [name];
@@ -12039,7 +12070,7 @@ function FacePersonRow({ person, onOpenBot, lead, className = "bt-set-row bt-bs-
     (0, import_react26.createElement)(
       "span",
       { className: "bt-gs-who bt-face-person" },
-      (0, import_react26.createElement)(PersonMark, { size, name: person.name }),
+      (0, import_react26.createElement)("span", { className: "bt-face-marks", "data-flybot": "face-person-avatars" }, faceMarks(person, roster, size)),
       (0, import_react26.createElement)(
         "span",
         { className: "bt-face-person-text" },
@@ -12209,7 +12240,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
     face ? (0, import_react26.createElement)(
       Card,
       { title: t("Members · {count}", { count: people2.length }) },
-      people2.map((person) => (0, import_react26.createElement)(FacePersonRow, { key: person.key, person, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
+      people2.map((person) => (0, import_react26.createElement)(FacePersonRow, { key: person.key, person, roster, onOpenBot: openBot, lead: room2.face?.lead?.handle }))
     ) : null,
     face ? null : (0, import_react26.createElement)(
       Card,
@@ -12406,6 +12437,8 @@ var GROUP_SETTINGS_CSS = `
 .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-gs-who:hover .bt-row-title{text-decoration:underline;text-underline-offset:2px}
 .bt-gs-add{gap:8px;color:var(--bt-ink-2)}
+.bt-face-marks{display:inline-flex;flex:none;align-items:center;gap:2px}
+.bt-face-marks>.bt-mark{flex:none}
 .bt-face-person{cursor:default}
 .bt-face-person:hover .bt-row-title{text-decoration:none}
 .bt-face-person-text{display:flex;flex-direction:column;min-width:0}
@@ -15747,6 +15780,7 @@ function FaceMembers({ room: room2, roster, actions }) {
     (0, import_react38.createElement)("div", { className: "bt-members", role: "list" }, people2.map((person) => (0, import_react38.createElement)(FacePersonRow, {
       key: person.key,
       person,
+      roster,
       className: "bt-member",
       onOpenBot: (id) => actions.openSession(id),
       lead: room2.face?.lead?.handle

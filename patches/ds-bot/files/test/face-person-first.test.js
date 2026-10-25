@@ -73,13 +73,14 @@ test('one entry per person, mine first, "(you)" only on the person, count = peop
   assert.equal(roomSubtitle(roster.roomsById.r, roster), '2 people · 3 Bots')
 
   const opened = []
-  const row = expand(FacePersonRow({ person: people[1], onOpenBot: id => opened.push(id) }), ['PersonMark'])
+  const row = expand(FacePersonRow({ person: people[1], roster, onOpenBot: id => opened.push(id) }), ['BotMark'])
   assert.equal(row.props['data-flybot'], 'face-person')
-  assert.equal(find(row, n => String(n.props?.className ?? '').split(' ').includes('bt-person-mark')).length, 1, 'a person mark, not a Bot avatar')
+  assert.equal(find(row, n => typeof n.props?.['data-shape'] === 'string').length, 2, 'each Bot the person brought, not one shared initial')
+  assert.equal(find(row, n => n.props?.['data-initial']).length, 0)
   const words = node => text(find(node, n => n.props?.className === 'bt-face-person-text')[0])
   assert.match(words(row), /^SelfA0056Chief, Researcher$/)
   assert.equal(find(row, n => n.type === 'button').length, 0, "another person's Bots are not my chats")
-  const mine = expand(FacePersonRow({ person: people[0], onOpenBot: id => opened.push(id) }), ['PersonMark'])
+  const mine = expand(FacePersonRow({ person: people[0], roster, onOpenBot: id => opened.push(id) }), ['BotMark'])
   assert.equal(mine.props['data-mine'], true)
   assert.match(words(mine), /^SelfB0056 \(you\)Chief$/)
   find(mine, n => n.type === 'button')[0].props.onClick()

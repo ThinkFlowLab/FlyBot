@@ -159,7 +159,7 @@ function FaceMembers({ room, roster, actions }) {
     h(FaceLead, { room, roster, pick }),
     h('div', { className: 'bt-section-title' }, t('Members · {count}', { count: people.length })),
     h('div', { className: 'bt-members', role: 'list' }, people.map(person => h(FacePersonRow, {
-      key: person.key, person, className: 'bt-member', onOpenBot: id => actions.openSession(id), lead: room.face?.lead?.handle,
+      key: person.key, person, roster, className: 'bt-member', onOpenBot: id => actions.openSession(id), lead: room.face?.lead?.handle,
     }))))
 }
 
