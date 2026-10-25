@@ -633,6 +633,7 @@ export function install(rt) {
         case 'task-start':
         case 'task-return':
         case 'task-accept-result':
+        case 'task-send-back':
         case 'task-cancel':
         case 'task-wait-input':
         case 'task-answer-input':

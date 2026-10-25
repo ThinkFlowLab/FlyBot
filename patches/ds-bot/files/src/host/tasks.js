@@ -27,7 +27,7 @@ const TRANSITIONS = {
   claimed: ['working', 'cancelled', 'failed'],
   working: ['blocked', 'result-ready', 'cancelled', 'failed'],
   blocked: ['working', 'cancelled', 'failed'],
-  'result-ready': ['accepted', 'cancelled'],
+  'result-ready': ['accepted', 'working', 'cancelled'],
   accepted: [],
   cancelled: [],
   failed: [],
@@ -57,6 +57,21 @@ const readProgress = (value) => {
 }
 const oneLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
 const readTitle = value => oneLine(value, 300)
+// Evidence a result carries (#401): links only, http(s), a handful, so a card can point at the diff, the
+// file or the test run without the record becoming a transcript.
+const LINKS_MAX = 5
+const readLinks = (value) => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw invalid('Result links must be a list')
+  const links = []
+  for (const item of value) {
+    const link = oneLine(item, 300)
+    if (!/^https?:\/\//i.test(link) || links.includes(link)) continue
+    links.push(link)
+    if (links.length === LINKS_MAX) break
+  }
+  return links
+}
 const readNote = (value) => {
   if (value === undefined || value === null) return undefined
   return oneLine(value, 300)
@@ -594,8 +609,10 @@ export function install(rt) {
         const task = find(body.id)
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         requireRequester(task, actor)
+        // Read the evidence before the transition so a malformed write leaves the task where it is.
+        const links = readLinks(body.links)
         transition(task, 'result-ready', actor)
-        task.result = { kind: 'summary', summary: String(body.summary ?? '').slice(0, 2000) }
+        task.result = { kind: 'summary', summary: String(body.summary ?? '').slice(0, 2000), ...(links.length ? { links } : {}) }
         await save()
         return view(task)
       }
@@ -629,6 +646,18 @@ export function install(rt) {
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         requireRequester(task, actor)
         transition(task, 'accepted', actor)
+        await save()
+        return view(task)
+      }
+      case 'task-send-back': {
+        const task = find(body.id)
+        if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
+        requireRequester(task, actor)
+        if (task.status !== 'result-ready') throw stale('Only a result waiting for the requester can be sent back')
+        const note = oneLine(body.note, 500)
+        if (note === '') throw invalid('Send back needs a note for the Bot')
+        transition(task, 'working', actor, { by: 'sent back' })
+        task.followUp = { note, at: task.updatedAt }
         await save()
         return view(task)
       }

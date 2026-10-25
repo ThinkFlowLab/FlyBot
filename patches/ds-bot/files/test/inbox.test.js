@@ -33,7 +33,7 @@ const { inboxModel, needsCount, InboxCard, InboxDialog, InboxRow, GROUPS, STATUS
 const plain = value => JSON.parse(JSON.stringify(value))
 
 // Draws the inbox's own components; Bot marks and icons stay as elements.
-const OWN = new Set(['InboxCard', 'Status', 'AnswerFields'])
+const OWN = new Set(['InboxCard', 'Status', 'AnswerFields', 'ResultActions'])
 const expand = (node) => {
   if (Array.isArray(node)) return node.flatMap(expand)
   if (node === null || typeof node !== 'object') return node
@@ -565,4 +565,70 @@ test('a short answer survives a re-render, and a multi-select toggles until Subm
   assert.deepEqual(buttons(after).filter(button => button.props['aria-pressed'] === true).map(textOf), ['tests'])
   buttons(after).find(button => textOf(button) === 'Submit').props.onClick()
   assert.deepEqual(plain(log.at(-1)), ['question:q-multi', { selected: ['tests'], custom: '' }])
+})
+
+// #401: Done is the acceptance surface. A finished result is accepted there, or sent back with a
+// note that returns the same task to the Bot, and the card shows the evidence the result came with.
+test('a result card is accepted or sent back in place, with its evidence and the note (#401)', async () => {
+  const flint = { ...roster.bots[1], model: 'DeepSeek-V4.1' }
+  const own = { ...roster, bots: [flint], rooms: [] }
+  own.byId = { b2: flint }
+  own.roomsById = {}
+  const listed = [
+    task('t-res', 'result-ready', { result: { summary: 'Draft is ready', links: ['https://example.test/pull/12', 'https://example.test/run/3'] } }),
+    task('t-sent', 'working', { followUp: { note: 'the second file is missing', at: NOW - 30_000 } }),
+  ]
+  const pending = inboxModel({ roster: own, work: {}, tasks: listed, sessions, now: NOW })
+  const result = pending.needs.find(card => card.id === 'task:t-res')
+  assert.equal(result.status, 'result')
+  assert.equal(result.reason, 'Draft is ready')
+
+  const log = []
+  const onAnswer = (card, choice) => { log.push([card.id, choice]) }
+  const tree = draw(result, { onAnswer })
+  const labels = plain(buttons(tree).map(textOf))
+  assert.ok(labels.includes('Accept'))
+  assert.ok(labels.includes('Send back'))
+  assert.deepEqual(byClass(tree, 'bt-inbox-evidence-link').map(node => node.props.href), ['https://example.test/pull/12', 'https://example.test/run/3'])
+  assert.ok(textOf(tree).includes('DeepSeek-V4.1'))
+
+  // The box opens in place, and the next draw — a roster or clock poll — still has it open.
+  buttons(tree).find(button => textOf(button) === 'Send back').props.onClick()
+  const opened = draw(result, { onAnswer })
+  const field = byClass(opened, 'bt-inbox-answer-text').at(-1)
+  assert.equal(field.props['aria-label'], 'What should change')
+  // An empty note is not an instruction.
+  buttons(opened).find(button => textOf(button) === 'Send it back').props.onClick()
+  assert.deepEqual(log, [])
+  field.props.onChange({ target: { value: '  the second file is missing  ' } })
+  const typed = draw(result, { onAnswer })
+  const kept = byClass(typed, 'bt-inbox-answer-text').at(-1)
+  assert.equal(kept.props.value, '  the second file is missing  ')
+  buttons(typed).find(button => textOf(button) === 'Send it back').props.onClick()
+  assert.deepEqual(plain(log), [['task:t-res', { note: 'the second file is missing' }]])
+
+  const accepted = draw(result, { onAnswer })
+  buttons(accepted).find(button => textOf(button) === 'Accept').props.onClick()
+  assert.deepEqual(plain(log.at(-1)), ['task:t-res', 'accept'])
+
+  // The same two choices reach the host through the client's own actions.
+  const calls = []
+  const actions = {
+    acceptTaskResult: id => { calls.push(['accept', id]) },
+    sendBackTask: (id, note) => { calls.push(['send-back', id, note]) },
+  }
+  const { inboxAnswer } = module.exports
+  await inboxAnswer(actions, result, 'accept')
+  await inboxAnswer(actions, result, { note: '  redo the run  ' })
+  await inboxAnswer(actions, result, { note: '   ' })
+  await inboxAnswer(actions, result, null)
+  assert.deepEqual(plain(calls), [['accept', 't-res'], ['send-back', 't-res', 'redo the run']])
+
+  // A task that was sent back says why, and offers no Accept for the result behind it.
+  const sent = pending.progress.find(card => card.id === 'task:t-sent')
+  assert.equal(sent.status, 'task')
+  const sentTree = draw(sent, { onAnswer })
+  assert.ok(textOf(sentTree).includes('Sent back: the second file is missing'))
+  assert.equal(buttons(sentTree).some(button => textOf(button) === 'Accept'), false)
+  assert.equal(byClass(sentTree, 'bt-inbox-evidence-link').length, 0)
 })

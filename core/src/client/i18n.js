@@ -618,6 +618,12 @@ const ZH = {
   'Latest: {text}': '最新：{text}',
   '{count} tool calls': '{count} 次工具调用',
   'Untitled task': '未命名任务',
+  // Accepting a result in Done (#401)
+  Accept: '接受',
+  'Send back': '退回',
+  'Send it back': '退回给 Bot',
+  'What should change': '需要改什么',
+  'Sent back: {note}': '已退回：{note}',
   // Bot task board (#1058)
   Tasks: '任务',
   'Close tasks': '关闭任务',

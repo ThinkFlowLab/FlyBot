@@ -295,6 +295,12 @@ export function inboxAnswer(actions, card, choice) {
     if (text === '' || typeof questionId !== 'string') return undefined
     return Promise.resolve(actions.answerTaskInput(card.task.id, questionId, text))
   }
+  if (card?.kind === 'task' && card.status === 'result') {
+    if (choice === 'accept') return Promise.resolve(actions.acceptTaskResult(card.task.id))
+    const note = choice !== null && typeof choice === 'object' ? String(choice.note ?? '').trim() : ''
+    if (note === '') return undefined
+    return Promise.resolve(actions.sendBackTask(card.task.id, note))
+  }
   if (card?.kind === 'approval' && card.approval?.answerable === true) {
     return Promise.resolve(actions.answerApproval(card.approval.id, choice))
   }
@@ -311,6 +317,45 @@ const answerSlot = (id) => {
     answerSlots.set(id, slot)
   }
   return slot
+}
+
+// The Done list is the acceptance surface (#401): a result card is accepted here, or sent back with a
+// note that returns the same task to the Bot. The box opens in place, and the note survives a roster poll
+// because the slot is keyed by the card, like the answer slot above (#1140).
+const resultSlots = new Map()
+const resultSlot = (id) => {
+  let slot = resultSlots.get(id)
+  if (slot === undefined) {
+    slot = { open: false, text: '' }
+    resultSlots.set(id, slot)
+  }
+  return slot
+}
+
+function ResultActions({ card, busy, onAnswer }) {
+  const [, redraw] = useState(0)
+  if (!(card.kind === 'task' && card.status === 'result')) return null
+  const slot = resultSlot(card.id)
+  const send = () => {
+    const note = slot.text.trim()
+    if (busy || note === '') return
+    onAnswer(card, { note })
+  }
+  return h('span', { className: 'bt-inbox-result' },
+    slot.open ? h('input', {
+      type: 'text', className: 'bt-inbox-answer-text', value: slot.text, disabled: busy,
+      'aria-label': t('What should change'), placeholder: t('What should change'),
+      onChange: (event) => { slot.text = String(event.target?.value ?? ''); redraw(count => count + 1) },
+      onKeyDown: (event) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+        event.preventDefault()
+        send()
+      },
+    }) : null,
+    slot.open
+      ? h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: send }, t('Send it back'))
+      : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { slot.open = true; redraw(count => count + 1) } }, t('Send back')),
+    h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'accept') }, t('Accept')))
 }
 
 // Options and a short answer, drawn inside the card so a click answers here.
@@ -394,8 +439,11 @@ function whenText(card, now) {
 
 export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
   const who = card.bot ? card.bot.name : card.room?.name ?? ''
-  const meta = [who, card.place, whenText(card, now)].filter(Boolean).join(' · ')
+  const produced = card.kind === 'task' && card.status === 'result' ? [card.bot?.model] : []
+  const meta = [who, ...produced, card.place, whenText(card, now)].filter(Boolean).join(' · ')
   const answerable = card.kind === 'approval' && card.approval?.answerable === true
+  const evidence = card.kind === 'task' && card.status === 'result' ? (card.task?.result?.links ?? []) : []
+  const sentBack = card.kind === 'task' && card.status === 'task' ? card.task?.followUp?.note : undefined
   return h('div', { className: 'bt-inbox-card', role: 'group', 'aria-label': `${t(STATUSES[card.status].label)}: ${card.title}`, 'data-status': card.status },
     h('span', { className: 'bt-inbox-ava' }, card.bot ? h(BotAvatar, { bot: card.bot, size: 28, badge: false, live: false }) : card.room ? h(RoomAvatar, { room: card.room, roster, size: 28 }) : null),
     h('span', { className: 'bt-inbox-copy' },
@@ -407,7 +455,12 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
       card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, card.reason) : null,
       card.activity ? h('span', { className: 'bt-inbox-activity', title: card.activity }, t('Latest: {text}', { text: card.activity })) : null,
       card.hint ? h('span', { className: 'bt-inbox-hint' }, card.hint) : null,
+      evidence.length > 0 ? h('span', { className: 'bt-inbox-evidence' }, ...evidence.map((href, index) => h('a', {
+        key: `${href}-${index}`, href, target: '_blank', rel: 'noreferrer noopener', className: 'bt-inbox-evidence-link', title: href,
+      }, href))) : null,
+      sentBack ? h('span', { className: 'bt-inbox-reason', title: sentBack }, t('Sent back: {note}', { note: sentBack })) : null,
       h(AnswerFields, { card, busy, onAnswer }),
+      h(ResultActions, { card, busy, onAnswer }),
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),
     h('span', { className: 'bt-inbox-actions' },
       answerable ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'reject') }, t('Reject')) : null,
@@ -523,6 +576,11 @@ export const INBOX_CSS = `
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
+.bt-inbox-evidence{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;line-height:16px}
+.bt-inbox-evidence-link{color:var(--bt-blue,#3a7afe);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bt-inbox-evidence-link:hover{text-decoration:underline}
+.bt-inbox-result{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.bt-inbox-result .bt-send,.bt-inbox-result .bt-soft{height:28px;font-size:12px}
 .bt-inbox-answer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
 .bt-inbox-answer-text{flex:1 1 140px;min-width:0;height:28px;padding:0 8px;border:.5px solid var(--bt-line-2);border-radius:8px;background:transparent;color:var(--bt-ink);font:inherit;font-size:12px}
 .bt-inbox-answer .bt-send,.bt-inbox-answer .bt-soft{height:28px;font-size:12px}

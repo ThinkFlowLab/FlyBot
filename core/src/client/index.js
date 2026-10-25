@@ -582,6 +582,10 @@ export function apply(ctx) {
     send: (sessionId, text) => after(call('send', { sessionId: partFor(sessionId), text })),
     answerQuestion: (sessionId, questionId, answer) => after(call('answer-question', { sessionId: partFor(sessionId), questionId, answer })),
     answerTaskInput: (id, questionId, answer) => after(call('task-answer-input', { id, questionId, answer })),
+    // The Done list is the acceptance surface (#401): a result is accepted, or sent back with a note
+    // that returns the same task to the Bot.
+    acceptTaskResult: id => after(call('task-accept-result', { id })),
+    sendBackTask: (id, note) => after(call('task-send-back', { id, note })),
     dismissQuestion: sessionId => after(call('dismiss-question', { sessionId })),
     answerApproval: (id, choice) => after(call('approval-answer', { id, choice })),
     removeStandingApproval: (scope, id, kind) => after(call('standing-approval-remove', { scope, id, kind })),

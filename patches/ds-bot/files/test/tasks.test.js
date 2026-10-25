@@ -701,3 +701,103 @@ test('approval rejection and Bot deletion end input waits; late answers cannot r
     assert.equal(late.error.code, 'bot/stale')
   }
 })
+
+// #401: the Done list is the acceptance surface. A result names its evidence as links, so the
+// card can point at the diff or the run without the record becoming a transcript — and the
+// requester who is not satisfied sends the same task back with a note instead of accepting it.
+test('a returned result carries at most five http(s) links, deduped and in order (#401)', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const created = await app.createTask(alice.sessionToken)
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const id = created.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    assert.equal((await app.call(endpoint, { id }, alice.sessionToken)).ok, true, endpoint)
+  }
+  const links = [
+    'https://example.test/pull/1',
+    '  http://example.test/run/2  ',
+    'https://example.test/pull/1',
+    'javascript:alert(1)',
+    '',
+    'not a link',
+    'https://example.test/a',
+    'https://example.test/b',
+    'https://example.test/c',
+    'https://example.test/d',
+  ]
+  const returned = await app.call('task-return', { id, summary: 'Two files changed', links }, alice.sessionToken)
+  assert.equal(returned.ok, true, JSON.stringify(returned))
+  assert.deepEqual(returned.value.result.links, [
+    'https://example.test/pull/1',
+    'http://example.test/run/2',
+    'https://example.test/a',
+    'https://example.test/b',
+    'https://example.test/c',
+  ])
+  const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[id]
+  assert.deepEqual(saved.result.links, returned.value.result.links)
+  const work = async () => {
+    const fresh = await app.createTask(alice.sessionToken, { title: 'Second go' })
+    assert.equal(fresh.ok, true, JSON.stringify(fresh))
+    for (const endpoint of ['task-accept', 'task-start']) {
+      assert.equal((await app.call(endpoint, { id: fresh.value.id }, alice.sessionToken)).ok, true, endpoint)
+    }
+    return fresh.value.id
+  }
+  // No links at all is a result without evidence, not a broken write.
+  const bare = await app.call('task-return', { id: await work(), summary: 'Returned without links' }, alice.sessionToken)
+  assert.equal(bare.ok, true, JSON.stringify(bare))
+  assert.equal(bare.value.result.links, undefined)
+  // Anything that is not a list is refused before the record moves.
+  const pending = await work()
+  const wrong = await app.call('task-return', { id: pending, summary: 'x', links: 'https://example.test/only' }, alice.sessionToken)
+  assert.equal(wrong.ok, false, JSON.stringify(wrong))
+  assert.equal(wrong.error.code, 'bot/invalid')
+  assert.equal((await statusOf(app.call, alice.sessionToken, pending)).status, 'working')
+})
+
+test('the requester sends a result back with a note and the same task returns to the Bot (#401)', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const bob = await app.signIn('Bob', alice.sessionToken)
+  const returned = await returnTask(app.call, app.createTask, alice.sessionToken)
+  // A note is the instruction; without one the task stays where it is.
+  for (const note of ['', '   ', undefined]) {
+    const refused = await app.call('task-send-back', { id: returned.id, note }, alice.sessionToken)
+    assert.equal(refused.ok, false, JSON.stringify(refused))
+    assert.equal(refused.error.code, 'bot/invalid')
+    assert.equal((await statusOf(app.call, alice.sessionToken, returned.id)).status, 'result-ready')
+  }
+  // Not the requester: refused, and a forged body claim does not help.
+  const foreign = await app.call('task-send-back', { id: returned.id, note: 'redo it', requesterId: alice.memberId }, bob.sessionToken)
+  assert.equal(foreign.ok, false, JSON.stringify(foreign))
+  assert.equal(foreign.error.code, 'bot/forbidden')
+  assert.equal((await statusOf(app.call, alice.sessionToken, returned.id)).status, 'result-ready')
+  const sentBack = await app.call('task-send-back', { id: returned.id, note: '  the second file is missing  ' }, alice.sessionToken)
+  assert.equal(sentBack.ok, true, JSON.stringify(sentBack))
+  assert.equal(sentBack.value.id, returned.id)
+  assert.equal(sentBack.value.status, 'working')
+  assert.equal(sentBack.value.followUp.note, 'the second file is missing')
+  assert.equal(sentBack.value.actors.at(-1).status, 'working')
+  assert.equal(sentBack.value.actors.at(-1).by, 'sent back')
+  assert.equal(sentBack.value.actors.at(-1).memberId, alice.memberId)
+  // Sending it back twice is not a second decision on the same result.
+  const again = await app.call('task-send-back', { id: returned.id, note: 'and again' }, alice.sessionToken)
+  assert.equal(again.ok, false, JSON.stringify(again))
+  assert.equal(again.error.code, 'bot/stale')
+  // The Bot works the same task and returns it again; the requester can then accept it.
+  const redone = await app.call('task-return', { id: returned.id, summary: 'The second file is there now', links: ['https://example.test/pull/7'] }, alice.sessionToken)
+  assert.equal(redone.ok, true, JSON.stringify(redone))
+  assert.equal(redone.value.status, 'result-ready')
+  assert.deepEqual(redone.value.result.links, ['https://example.test/pull/7'])
+  const accepted = await app.call('task-accept-result', { id: returned.id }, alice.sessionToken)
+  assert.equal(accepted.ok, true, JSON.stringify(accepted))
+  assert.equal(accepted.value.status, 'accepted')
+  // One task record, moved — never a second task for the second attempt.
+  const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks
+  assert.deepEqual(Object.values(saved).map(task => task.id), [returned.id])
+  assert.equal(saved[returned.id].followUp.note, 'the second file is missing')
+})

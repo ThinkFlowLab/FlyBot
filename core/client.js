@@ -677,6 +677,12 @@ var ZH = {
   "Latest: {text}": "最新：{text}",
   "{count} tool calls": "{count} 次工具调用",
   "Untitled task": "未命名任务",
+  // Accepting a result in Done (#401)
+  Accept: "接受",
+  "Send back": "退回",
+  "Send it back": "退回给 Bot",
+  "What should change": "需要改什么",
+  "Sent back: {note}": "已退回：{note}",
   // Bot task board (#1058)
   Tasks: "任务",
   "Close tasks": "关闭任务",
@@ -7539,6 +7545,12 @@ function inboxAnswer(actions, card, choice) {
     if (text === "" || typeof questionId !== "string") return void 0;
     return Promise.resolve(actions.answerTaskInput(card.task.id, questionId, text));
   }
+  if (card?.kind === "task" && card.status === "result") {
+    if (choice === "accept") return Promise.resolve(actions.acceptTaskResult(card.task.id));
+    const note = choice !== null && typeof choice === "object" ? String(choice.note ?? "").trim() : "";
+    if (note === "") return void 0;
+    return Promise.resolve(actions.sendBackTask(card.task.id, note));
+  }
   if (card?.kind === "approval" && card.approval?.answerable === true) {
     return Promise.resolve(actions.answerApproval(card.approval.id, choice));
   }
@@ -7553,6 +7565,51 @@ var answerSlot = (id) => {
   }
   return slot;
 };
+var resultSlots = /* @__PURE__ */ new Map();
+var resultSlot = (id) => {
+  let slot = resultSlots.get(id);
+  if (slot === void 0) {
+    slot = { open: false, text: "" };
+    resultSlots.set(id, slot);
+  }
+  return slot;
+};
+function ResultActions({ card, busy, onAnswer }) {
+  const [, redraw] = (0, import_react13.useState)(0);
+  if (!(card.kind === "task" && card.status === "result")) return null;
+  const slot = resultSlot(card.id);
+  const send = () => {
+    const note = slot.text.trim();
+    if (busy || note === "") return;
+    onAnswer(card, { note });
+  };
+  return (0, import_react13.createElement)(
+    "span",
+    { className: "bt-inbox-result" },
+    slot.open ? (0, import_react13.createElement)("input", {
+      type: "text",
+      className: "bt-inbox-answer-text",
+      value: slot.text,
+      disabled: busy,
+      "aria-label": t("What should change"),
+      placeholder: t("What should change"),
+      onChange: (event) => {
+        slot.text = String(event.target?.value ?? "");
+        redraw((count) => count + 1);
+      },
+      onKeyDown: (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        send();
+      }
+    }) : null,
+    slot.open ? (0, import_react13.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy, onClick: send }, t("Send it back")) : (0, import_react13.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
+      slot.open = true;
+      redraw((count) => count + 1);
+    } }, t("Send back")),
+    (0, import_react13.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy, onClick: () => onAnswer(card, "accept") }, t("Accept"))
+  );
+}
 function AnswerFields({ card, busy, onAnswer }) {
   const [, redraw] = (0, import_react13.useState)(0);
   const question = card.kind === "question";
@@ -7648,8 +7705,11 @@ function whenText(card, now) {
 }
 function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
   const who = card.bot ? card.bot.name : card.room?.name ?? "";
-  const meta = [who, card.place, whenText(card, now)].filter(Boolean).join(" · ");
+  const produced = card.kind === "task" && card.status === "result" ? [card.bot?.model] : [];
+  const meta = [who, ...produced, card.place, whenText(card, now)].filter(Boolean).join(" · ");
   const answerable = card.kind === "approval" && card.approval?.answerable === true;
+  const evidence = card.kind === "task" && card.status === "result" ? card.task?.result?.links ?? [] : [];
+  const sentBack = card.kind === "task" && card.status === "task" ? card.task?.followUp?.note : void 0;
   return (0, import_react13.createElement)(
     "div",
     { className: "bt-inbox-card", role: "group", "aria-label": `${t(STATUSES[card.status].label)}: ${card.title}`, "data-status": card.status },
@@ -7668,7 +7728,17 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
       card.reason ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
       card.activity ? (0, import_react13.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
       card.hint ? (0, import_react13.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
+      evidence.length > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-evidence" }, ...evidence.map((href, index) => (0, import_react13.createElement)("a", {
+        key: `${href}-${index}`,
+        href,
+        target: "_blank",
+        rel: "noreferrer noopener",
+        className: "bt-inbox-evidence-link",
+        title: href
+      }, href))) : null,
+      sentBack ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: sentBack }, t("Sent back: {note}", { note: sentBack })) : null,
       (0, import_react13.createElement)(AnswerFields, { card, busy, onAnswer }),
+      (0, import_react13.createElement)(ResultActions, { card, busy, onAnswer }),
       error ? (0, import_react13.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
     ),
     (0, import_react13.createElement)(
@@ -7802,6 +7872,11 @@ var INBOX_CSS = `
 .bt-inbox-calls{font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .bt-inbox-activity{color:var(--bt-ink-3)}
 .bt-inbox-error{font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
+.bt-inbox-evidence{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;line-height:16px}
+.bt-inbox-evidence-link{color:var(--bt-blue,#3a7afe);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bt-inbox-evidence-link:hover{text-decoration:underline}
+.bt-inbox-result{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.bt-inbox-result .bt-send,.bt-inbox-result .bt-soft{height:28px;font-size:12px}
 .bt-inbox-answer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
 .bt-inbox-answer-text{flex:1 1 140px;min-width:0;height:28px;padding:0 8px;border:.5px solid var(--bt-line-2);border-radius:8px;background:transparent;color:var(--bt-ink);font:inherit;font-size:12px}
 .bt-inbox-answer .bt-send,.bt-inbox-answer .bt-soft{height:28px;font-size:12px}
@@ -18866,6 +18941,10 @@ function apply(ctx) {
     send: (sessionId, text) => after(call("send", { sessionId: partFor(sessionId), text })),
     answerQuestion: (sessionId, questionId, answer) => after(call("answer-question", { sessionId: partFor(sessionId), questionId, answer })),
     answerTaskInput: (id, questionId, answer) => after(call("task-answer-input", { id, questionId, answer })),
+    // The Done list is the acceptance surface (#401): a result is accepted, or sent back with a note
+    // that returns the same task to the Bot.
+    acceptTaskResult: (id) => after(call("task-accept-result", { id })),
+    sendBackTask: (id, note) => after(call("task-send-back", { id, note })),
     dismissQuestion: (sessionId) => after(call("dismiss-question", { sessionId })),
     answerApproval: (id, choice) => after(call("approval-answer", { id, choice })),
     removeStandingApproval: (scope, id, kind) => after(call("standing-approval-remove", { scope, id, kind })),
