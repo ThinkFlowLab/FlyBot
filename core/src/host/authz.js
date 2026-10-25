@@ -50,7 +50,7 @@ const BOT_TARGETED = new Set([
 const ROOM_TARGETED = new Set(['update-room', 'delete-room', 'room-progress', 'create-room', 'room-history', 'room-post',
   // #876: the room's own link. Reading it is a member's read; minting and withdrawing hand out
   // or kill a way in, so they follow the room's admin rule.
-  'room-invite', 'room-invite-mint', 'room-invite-revoke'])
+  'room-invite', 'room-invite-mint', 'room-invite-revoke', 'room-invite-seat'])
 
 // Endpoints whose body names a Session.
 const SESSION_TARGETED = new Set(['earlier', 'send', 'answer-question', 'dismiss-question', 'approval-answer', 'exchange'])
@@ -343,7 +343,7 @@ export function install(rt) {
         const me = currentParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)
         return roomOwnedBy(actor, id) || roomMemberOf(actor, id) || me?.role === 'admin' ? ALLOW : deny('bot/forbidden', 'You are not a member of that room')
       }
-      if (ep === 'room-invite-mint' || ep === 'room-invite-revoke') {
+      if (ep === 'room-invite-mint' || ep === 'room-invite-revoke' || ep === 'room-invite-seat') {
         const id = body?.id ?? body?.roomId
         if (roomOwnedBy(actor, id)) return ALLOW
         const room = state.rooms?.[id]

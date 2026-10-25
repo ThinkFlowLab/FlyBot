@@ -1164,12 +1164,18 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [copied, setCopied] = useState(false)
       const [, setTick] = useState(0)
+      const [pending, setPending] = useState(null)
       // The newest open link is the one shown; the others still work until withdrawn (no deadline).
       const openOf = value => (Array.isArray(value?.invites) ? value.invites.filter(item => item?.url) : [])
+      const waitingOf = value => {
+        const open = openOf(value)
+        return open.find(item => item?.waiting?.reason)?.waiting ?? (value?.invite?.waiting?.reason ? value.invite.waiting : null)
+      }
       const take = (value) => {
         const shown = value?.invite?.url ? value.invite : null
         setInvite(shown)
         setOthers(openOf(value).filter(item => item.ticket !== shown?.ticket).length)
+        setPending(waitingOf(value))
       }
       // How many open links there are besides the one on screen (none shown: all of them).
       // A count that cannot be read keeps the one on screen: the mint or withdraw itself already landed.
@@ -1177,6 +1183,7 @@ window.__ModuleLoader__.load({
         let value
         try { value = await host('room-invite', { roomId }) } catch { return }
         setOthers(openOf(value).filter(item => item.ticket !== shownTicket).length)
+        setPending(waitingOf(value))
       }
       useEffect(() => {
         if (!roomId) return undefined
@@ -1211,8 +1218,22 @@ window.__ModuleLoader__.load({
         await host('room-invite-revoke', { roomId })
         setInvite(null)
         setOthers(0)
+        setPending(null)
         setNote({ tone: 'hint', text: tr('Every unused link was withdrawn.') })
       })
+      const seat = () => run(async () => {
+        take(await host('room-invite-seat', { roomId }))
+      })
+      const waitingText = (item) => {
+        if (item?.reason === 'not-addable') {
+          const names = (Array.isArray(item.bots) ? item.bots : []).filter(Boolean).join(', ')
+          return names
+            ? tr('{names} cannot be shown to someone who joins by link. Share them (Bot settings → Sharing) or remove them from the group, then seat the guest.', { names })
+            : tr('A Bot in this group cannot be shown to someone who joins by link. Share that Bot or remove it, then seat the guest.')
+        }
+        if (item?.reason === 'held') return tr('A guest is in the group, but telling their FlyBot is waiting for your approval.')
+        return tr('A guest is in the group, but their FlyBot has not opened it yet. Seat them again.')
+      }
       const copy = async () => {
         const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
         try {
@@ -1251,6 +1272,9 @@ window.__ModuleLoader__.load({
               : tr('Works until you withdraw it.')),
             h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke', disabled: busy, onClick: revoke }, tr('Withdraw link')))
           : null,
+        pending ? h('div', { className: 'fs-invite-waiting' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-waiting', role: 'status' }, waitingText(pending)),
+          h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-seat', disabled: busy, onClick: seat }, tr('Seat them'))) : null,
         // Earlier links have no deadline either: say they still work, and let the owner end them all.
         others > 0
           ? h('div', { className: 'fs-invite-others', 'data-flybot': 'room-invite-others' },
@@ -1689,6 +1713,21 @@ window.__ModuleLoader__.load({
           const result = await host('room-invite-ask', { link: text, accept: true, bots: selected })
           if (result?.refused) {
             setInvite({ link: text, status: { tone: 'error', text: localRefusal(result.refused) } })
+            return
+          }
+          // A claim is what the other home seats from (#1064). A knock that never left, and no claim
+          // behind it, did not ask anyone — saying it did is how a guest stays on this sentence.
+          const sent = result?.sent
+          if (result?.claimed !== true && (sent === 'deny' || sent === 'hold')) {
+            setInvite({
+              link: text,
+              status: {
+                tone: 'error',
+                text: sent === 'hold'
+                  ? 'This FlyBot has not approved the request yet, so their group has not been asked.'
+                  : 'Their FlyBot was not asked. Check the link and try again.',
+              },
+            })
             return
           }
           const name = invite.preview?.name && invite.preview.name !== 'A group on another FlyBot' ? `"${invite.preview.name}"` : 'the group'

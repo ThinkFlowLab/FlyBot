@@ -32,13 +32,15 @@ diff --git a/src/client/api.js b/src/client/api.js
 diff --git a/src/client/composer.js b/src/client/composer.js
 --- a/src/client/composer.js
 +++ b/src/client/composer.js
-@@ -2,5 +2,5 @@
+@@ -1,7 +1,7 @@
+ import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
  import { createPortal } from 'react-dom'
  import { ChatsIcon, ClockIcon, MicIcon, PaperclipIcon, PeopleIcon, PlusIcon, WaveIcon } from './icons.js'
 -import { BotMark } from './mark.js'
 +import { BotMark, markBotForMention } from './mark.js'
  import { useLinger } from './motion.js'
  import { t } from './i18n.js'
+ 
 @@ -53,6 +53,20 @@ export function useDictation(onText) {
    return { listening, note, start, stop }
  }
@@ -60,11 +62,7 @@ diff --git a/src/client/composer.js b/src/client/composer.js
  export function ComposerVoice({ sessionId, inputActions, actions, useUi }) {
    const dictation = useDictation((text, final) => {
      if (final && inputActions) inputActions.insertText(text, inputActions.captureInsertion())
-@@ -92,11 +92,11 @@
- // Character marks for the "@" menu rows. Each Bot keeps one component, so the menu
- // does not remount its mark on every keystroke.
- export function menuIcons(roster) {
-   const marks = new Map()
+@@ -96,7 +96,7 @@ export function menuIcons(roster) {
    return (row) => {
      if (!row.bot) return PeopleIcon
      const id = row.bot.id

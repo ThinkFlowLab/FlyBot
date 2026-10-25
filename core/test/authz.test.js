@@ -105,7 +105,7 @@ test('owner cannot touch another owner Bot or room', async (t) => {
   }
 
   // #876: a room's link is a member's read, and minting or withdrawing it is the room admin's call.
-  for (const ep of ['room-invite', 'room-invite-mint', 'room-invite-revoke']) {
+  for (const ep of ['room-invite', 'room-invite-mint', 'room-invite-revoke', 'room-invite-seat']) {
     assert.equal(rt.authorize(actorA, ep, { id: 'ra' }).ok, true, ep)
     const gate = rt.authorize(actorA, ep, { id: 'rb' })
     assert.equal(gate.ok, false, ep)

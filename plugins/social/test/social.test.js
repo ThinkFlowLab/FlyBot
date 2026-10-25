@@ -288,6 +288,26 @@ test('#90: an ungranted Bot (Chief included) is not registered or polled; invite
   assert.deepEqual(received.get('b') ?? [], [])
 })
 
+test('#1064: the inbox poll seats open room-link claims', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let calls = 0
+  // scope() builds a fresh service, so the stub has to be on the one createSocial keeps.
+  const scope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = scope(name)
+    if (name === 'social') scoped.rooms.seatOpenClaims = async () => { calls += 1; return { seated: [], waiting: [] } }
+    return scoped
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await social.pollInbox()
+  assert.equal(calls, 1, 'a poll reads claims even when no Bot inbox is read')
+  await social.pollInbox()
+  assert.equal(calls, 2)
+})
+
 test('#848: registration keeps the owner-level name and home the share envelope carries', async (t) => {
   const { ctx, stop } = await team()
   t.after(stop)
@@ -11230,6 +11250,39 @@ test('#876: each refusal of a group link is its own sentence, never "not an invi
   assert.equal(late.last().status.text, 'That link has expired. Ask for a new one.')
 })
 
+test('#1064: Join does not say the group was asked when nothing was claimed', async () => {
+  const denied = localLinkDialog(async (endpoint) => {
+    if (endpoint === 'room-invite-preview') return { preview: { handle: '@chief.alice.home', ticket: 'AbCdEfGhIjKlMnOpQrStUv' } }
+    if (endpoint === 'room-invite-ask') return { sent: 'deny' }
+    return {}
+  })
+  denied.render().find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
+  await settleUi()
+  assert.equal(denied.last().preview?.name, 'A group on another FlyBot')
+  denied.render().find(n => n.props['data-flybot'] === 'face-link-preview-join').props.onClick()
+  await settleUi()
+  assert.equal(denied.last().status.tone, 'error')
+  assert.equal(denied.last().status.text, 'Their FlyBot was not asked. Check the link and try again.')
+  assert.doesNotMatch(denied.last().status.text, /Asked to join/)
+
+  const held = localLinkDialog(async (endpoint) => (endpoint === 'room-invite-ask' ? { sent: 'hold' } : {}), { link: LOCAL_URL, status: null, preview: { name: 'Trip plan', local: true, link: LOCAL_URL } })
+  held.render().find(n => n.props['data-flybot'] === 'face-link-preview-join').props.onClick()
+  await settleUi()
+  assert.equal(held.last().status.tone, 'error')
+  assert.equal(held.last().status.text, 'This FlyBot has not approved the request yet, so their group has not been asked.')
+  assert.doesNotMatch(held.last().status.text, /Asked to join/)
+
+  // A claim is what the other home seats from, even when the knock itself was refused.
+  const claimed = localLinkDialog(async (endpoint) => (endpoint === 'room-invite-ask'
+    ? { sent: 'deny', claimed: true, bots: ['@chief.bob.home'] }
+    : { preview: { name: 'Trip plan', lead: 'Chief', owner: 'Alice' } }))
+  claimed.render().find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
+  await settleUi()
+  claimed.render().find(n => n.props['data-flybot'] === 'face-link-preview-join').props.onClick()
+  await settleUi()
+  assert.match(claimed.last().status.text, /^Asked to join "Trip plan"/)
+})
+
 // The Members-card row with a React stand-in that keeps every useState by its call order.
 function memberInviteRow(host) {
   const hostCalls = []
@@ -11314,6 +11367,33 @@ test('#892: earlier links still work, so the row says how many and can withdraw 
   assert.equal(row.byHook(tree, 'room-invite-others'), undefined)
   assert.equal(row.byHook(tree, 'room-invite-qr'), undefined)
   assert.equal(row.text(tree, 'room-invite-note'), 'Every unused link was withdrawn.')
+})
+
+test('#1064: a pending claim is named on the Members card and Seat them asks the host', async () => {
+  const url = 'https://social.example.com/r/@chief.alice.home/AbCdEfGhIjKlMnOpQrStUv'
+  const ticket = 'AbCdEfGhIjKlMnOpQrStUv'
+  const waiting = { reason: 'not-addable', bots: ['Private'] }
+  const open = { ticket, handle: '@chief.alice.home', url, expiresAt: null, server: true, waiting }
+  const clear = { ...open, waiting: undefined }
+  let seated = false
+  const row = memberInviteRow(async (endpoint) => {
+    if (endpoint === 'room-invite-mint') return { invite: clear }
+    if (endpoint === 'room-invite-seat') {
+      seated = true
+      return { invite: clear, invites: [clear] }
+    }
+    if (endpoint === 'room-invite') return { invite: seated ? clear : open, invites: [seated ? clear : open] }
+    return {}
+  })
+  await row.byHook(row.draw(), 'room-invite-mint').props.onClick()
+  let tree = row.draw()
+  assert.match(row.text(tree, 'room-invite-waiting'), /Private/)
+  assert.match(row.text(tree, 'room-invite-waiting'), /cannot be shown/)
+  assert.equal(row.byHook(tree, 'room-invite-seat').children.join(''), 'Seat them')
+  await row.byHook(tree, 'room-invite-seat').props.onClick()
+  assert.deepEqual(plain(row.hostCalls.find(([endpoint]) => endpoint === 'room-invite-seat')), ['room-invite-seat', { roomId: 'r1' }])
+  tree = row.draw()
+  assert.equal(row.byHook(tree, 'room-invite-waiting'), undefined, 'a finished claim leaves the card')
 })
 
 test('#892: the dialog names both ways in: a number entered together, or a group invite link or its QR', () => {

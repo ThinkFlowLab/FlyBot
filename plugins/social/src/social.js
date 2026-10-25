@@ -2230,6 +2230,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   async function pollOnce() {
     void syncLocalLooks().catch(error => warn('looks not synced', error))
+    // #1064: a guest's claim is the seat, not the knock. Read open links even when the Bot the
+    // link knocks on is room-only and this loop never opens its inbox.
+    if (typeof flybot.rooms?.seatOpenClaims === 'function') {
+      await flybot.rooms.seatOpenClaims().catch(error => warn('a room link claim was not seated', error))
+    }
     const targets = home
       ? flybot.bot.list().filter(bot => activeMember(bot.id)).map(bot => ({ local: bot, botId: memberOf(bot.id).bot_id }))
       : [{ local: (config.localBot ? flybot.bot.find(config.localBot) : undefined) ?? flybot.bot.list().find(bot => bot.isMain), botId: config.botId }]

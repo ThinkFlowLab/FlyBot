@@ -604,3 +604,96 @@ test('#899: a link minted on a room-only Bot is promoted when the host wires the
   asked.length = 0
   assert.deepEqual(await a.rt.identifyInviteBots(), [], 'a withdrawn link that seated nobody wakes nothing')
 })
+
+test('#1064: a claim seats the guest when the accepting knock never arrives', async (t) => {
+  const { server, a, b, log, settle } = await twoHomes(t)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  const guestSend = b.rt.flybotSend
+  const held = []
+  b.rt.flybotSend = async (msg) => { held.push(msg); return { action: 'deny' } }
+  const joined = await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b', 'helper-b'] }, { memberId: 'owner-1' })
+  assert.equal(joined.claimed, true, 'the ticket was claimed at the server')
+  assert.equal(joined.sent, 'deny', 'the accepting knock did not leave')
+  await settle()
+  const seats = () => a.rt.state.rooms.war.participants.filter(p => p.remote === true && p.leftSeq === undefined)
+  assert.equal(seats().length, 0, 'a knock that never arrives seats nobody')
+  assert.equal(guestRoomOf(b.rt), undefined, 'the guest has no sidebar room yet')
+  assert.equal(held.length, 1, 'the knock was attempted')
+  assert.equal(log.some(m => parseRoomShare(m.text)?.op === 'ask'), false, 'the denied knock was not delivered')
+
+  assert.equal(typeof a.rt.seatOpenClaims, 'function', 'the host reads open claims without waiting for the knock')
+  await a.rt.seatOpenClaims()
+  await settle()
+  assert.deepEqual(seats().map(p => p.handle).sort(), ['@chief.bob.home', '@helper.bob.home'])
+  assert.ok(seats().every(p => p.admittedBy === 'ticket' && p.ticket === invite.ticket && p.hostBotId === 'chief-a'))
+  const mirror = guestRoomOf(b.rt)
+  assert.ok(mirror && !mirror.hidden, 'the joins opened the group on the guest')
+  assert.equal(Object.values(b.rt.state.rooms).filter(r => r.origin === 'inbound-share').length, 1)
+  assert.deepEqual(mirror.participants.filter(p => p.leftSeq === undefined && p.kind === 'bot').map(p => p.id).sort(), ['@chief.alice.home', '@writer.alice.home', 'chief-b', 'helper-b'])
+  assert.equal(mirror.sharedFrom.ticket, invite.ticket)
+  assert.equal(mirror.sharedFrom.remoteRoomId, 'war')
+
+  const joins = () => log.filter(m => parseRoomShare(m.text)?.op === 'join' && m.from === 'chief-a')
+  const joinCount = joins().length
+  assert.ok(joinCount >= 2, 'each seated Bot is told')
+  await a.rt.seatOpenClaims()
+  await settle()
+  assert.equal(seats().length, 2, 'a second read does not add a seat')
+  assert.equal(joins().length, joinCount, 'a seat already told is not told again')
+  assert.equal(Object.values(b.rt.state.rooms).filter(r => r.origin === 'inbound-share').length, 1)
+
+  b.rt.flybotSend = guestSend
+  const line = await a.rt.postRoomMessage('war', { text: 'Ship on Friday?', authorId: 'owner-1', authorKind: 'human', displayName: 'Alice' })
+  await a.rt.fanoutRoomLine(a.rt.state.rooms.war, line)
+  await settle()
+  assert.ok(mirror.log.some(entry => String(entry.text).includes('Ship on Friday?')), 'the host line arrived')
+  await b.rt.fanoutRoomLine(mirror, { who: 'Helper', botId: 'helper-b', authorId: 'helper-b', authorKind: 'bot', text: 'Friday works.', seq: (mirror.seq ?? 0) + 1 })
+  await settle()
+  assert.ok(a.rt.state.rooms.war.log.some(entry => String(entry.text).includes('Friday works.')), 'the guest line landed in the host room')
+
+  const late = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  b.rt.flybotSend = async () => ({ action: 'deny' })
+  const second = await b.rt.askLocalInvite(late.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  assert.equal(second.claimed, true)
+  server.tickets.get(late.ticket).roomId = 'other'
+  await a.rt.seatOpenClaims()
+  await settle()
+  assert.equal(seats().length, 2, 'a claim that names another room seats nobody')
+
+  const verify = a.rt.roomInviteServer.verify
+  a.rt.roomInviteServer.verify = undefined
+  assert.deepEqual(await a.rt.seatOpenClaims(), { seated: [], waiting: [] })
+  a.rt.roomInviteServer.verify = verify
+  assert.equal(seats().length, 2, 'no claim was dropped')
+})
+
+test('#1064: a room that cannot be shown keeps a pending claim the host can finish', async (t) => {
+  const { a, b, settle } = await twoHomes(t)
+  a.rt.state.members['owner-2'] = { id: 'owner-2', createdAt: 1 }
+  a.rt.state.bots['other-a'] = { id: 'other-a', sessionId: 'other-a', name: 'Private', instructions: '', createdAt: 3, ownerId: 'owner-2' }
+  const war = a.rt.state.rooms.war
+  war.members = [...war.members, 'other-a']
+  war.participants = [...war.participants, { kind: 'bot', id: 'other-a', role: 'member', displayName: 'Private', joinedSeq: 0, joinedAt: 1 }]
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  b.rt.flybotSend = async () => ({ action: 'deny' })
+  const joined = await b.rt.askLocalInvite(invite.url, { accept: true, bots: ['chief-b'] }, { memberId: 'owner-1' })
+  assert.equal(joined.claimed, true)
+  assert.equal(typeof a.rt.seatOpenClaims, 'function')
+  const blocked = await a.rt.seatOpenClaims()
+  const seats = () => war.participants.filter(p => p.remote === true && p.leftSeq === undefined)
+  assert.equal(seats().length, 0, 'a room that cannot be shown seats nobody')
+  assert.equal(blocked.waiting?.[0]?.reason, 'not-addable')
+  const view = a.rt.localInviteOf('war')
+  assert.equal(view.waiting.reason, 'not-addable')
+  assert.ok(view.waiting.bots.includes('Private'), 'the host is told which Bot blocks the seat')
+  assert.equal(guestRoomOf(b.rt), undefined)
+
+  war.members = war.members.filter(id => id !== 'other-a')
+  war.participants = war.participants.filter(p => p.id !== 'other-a')
+  const done = await a.rt.seatOpenClaims({ roomId: 'war', force: true })
+  await settle()
+  assert.deepEqual(seats().map(p => p.handle), ['@chief.bob.home'])
+  assert.deepEqual(done.waiting, [])
+  assert.equal(a.rt.localInviteOf('war').waiting, undefined)
+  assert.ok(guestRoomOf(b.rt), 'once the room can be shown, the guest sidebar opens')
+})

@@ -1255,17 +1255,18 @@ export function install(rt) {
   // Membership notice: the add/remove click is the owner's consent, so this does not wait
   // for a chat line. Bot Social is 1:1; the envelope is the group record the other FlyBot sees.
   rt.notifyRoomShare = async function notifyRoomShare(room, { op = 'join', handle } = {}) {
-    if (!room || isFaceRoom(room) || room.origin === 'inbound-share') return
+    if (!room || isFaceRoom(room) || room.origin === 'inbound-share') return []
     const wanted = handle ? String(handle) : undefined
     const remotes = (op === 'leave' ? (room.participants ?? []) : currentParticipants(room))
       .filter(p => isRemoteParticipant(p) && (!wanted || p.handle === wanted || p.id === wanted))
-    if (remotes.length === 0) return
+    if (remotes.length === 0) return []
     const from = shareInviter(room)
+    const results = []
     for (const remote of remotes) {
       if (isTicketSeat(remote)) {
         const seat = seatSender(room, remote)
-        if (!seat) continue
-        await sendShareTo(room, remote, {
+        if (!seat) { results.push(undefined); continue }
+        results.push(await sendShareTo(room, remote, {
           op,
           roomId: room.id,
           name: room.name,
@@ -1274,11 +1275,11 @@ export function install(rt) {
           ticket: remote.ticket,
           ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '', history: shareHistory(room) } : {}),
           ...seat.from,
-        }, 'room-share', seat.botId, room.id)
+        }, 'room-share', seat.botId, room.id))
         continue
       }
       if (op !== 'leave' && !publishedRemoteOf(state, remote.handle)) continue
-      await sendShareTo(room, remote, {
+      results.push(await sendShareTo(room, remote, {
         op,
         roomId: room.id,
         name: room.name,
@@ -1286,8 +1287,9 @@ export function install(rt) {
         seq: room.seq ?? 0,
         ...(op === 'join' ? { roster: roomRoster(room), notice: room.notice || '', history: shareHistory(room) } : {}),
         ...from,
-      }, 'room-share')
+      }, 'room-share'))
     }
+    return results
   }
 
   // #852, #878, #884: the link invitations for a room that lives here. A room keeps a list of tickets
@@ -1334,6 +1336,8 @@ export function install(rt) {
       ...(invite.server === true ? { server: true } : {}),
       ...(seatedBy(invite) ? { joined: Object.keys(homesOf(invite)).length } : {}),
       ...(invite.withdrawnAt ? { withdrawn: true } : {}),
+      // #1064: a claim the poll could not finish. Local Bot names only — a guest handle is not shown.
+      ...(invite.waiting?.reason ? { waiting: { reason: String(invite.waiting.reason), bots: (Array.isArray(invite.waiting.bots) ? invite.waiting.bots : []).map(name => cleanPeerName(name, '')).filter(Boolean).slice(0, TICKET_SEATS_MAX) } } : {}),
     }
   }
 
@@ -1686,40 +1690,24 @@ export function install(rt) {
     return { handled: true, room, accepted: true }
   }
 
-  // #884: the accepting knock on a ticket Bot Social minted. The knock is a request, never the
-  // authority: the claim is read back from the server with this home's own credential, and the seats
-  // are the Bots it names — all of them or none. Each way it can fail has its own reason.
-  async function seatByTicket(room, invite, data, event) {
-    const asker = String(event.fromHandle ?? '')
-    if (typeof rt.roomInviteServer?.verify !== 'function') return { handled: true, refused: 'lookup-failed' }
-    let claim
-    try {
-      claim = await rt.roomInviteServer.verify(invite.ticket)
-    } catch (error) {
-      const why = refusalOf(String(error?.code ?? ''))
-      return { handled: true, refused: why === 'unknown' ? 'revoked' : why }
-    }
-    if (!claim || String(claim.roomId ?? '') !== room.id) return { handled: true, refused: 'wrong-room' }
-    // A link admits every home it is given to (Bot Social #65): the minter reads each home's claim, and
-    // the knock is answered from the one whose Bots include the asker. An older server names one claimer.
-    const claims = Array.isArray(claim.claimers) ? claim.claimers : claim.claimer ? [claim.claimer] : []
-    const botsOf = c => (Array.isArray(c?.bots) ? c.bots : []).map(String).filter(handle => handle.startsWith('@'))
-    if (!claims.some(c => botsOf(c).length > 0)) return { handled: true, refused: 'unclaimed' }
-    const mine = claims.find(c => botsOf(c).includes(asker))
-    const seats = botsOf(mine)
+  const botsOfClaim = c => (Array.isArray(c?.bots) ? c.bots : []).map(String).filter(handle => handle.startsWith('@'))
+
+  // Seat one home's claim, all of its Bots or none. The claim was already read back from the server.
+  async function admitClaim(room, invite, mine, asker) {
+    const seats = botsOfClaim(mine)
     const home = typeof mine?.home === 'string' ? mine.home : undefined
-    // The Bot that knocked must be one a claim brought, from the home that claimed it.
-    if (!mine || (home && event.fromHome && event.fromHome !== home)) return { handled: true, refused: 'claimed-elsewhere' }
-    if (seats.length > TICKET_SEATS_MAX) return { handled: true, refused: 'too-many' }
+    if (seats.length > TICKET_SEATS_MAX) return { refused: 'too-many' }
     const names = new Map((Array.isArray(mine?.members) ? mine.members : []).map(m => [String(m?.handle ?? ''), m]))
     const result = await withRoomLock(async () => {
       materialize(room)
       // A Bot of this room that may not be shown outside would be read by the stranger: refuse rather
       // than seat a room whose lines could not all go out.
       const blocked = unsharable(room).filter(p => p.id !== invite.botId)
-      if (blocked.length > 0) return { refused: 'not-addable' }
+      if (blocked.length > 0) return { refused: 'not-addable', bots: blocked.map(p => state.bots?.[p.id]?.name).filter(name => typeof name === 'string' && name) }
       const fresh = seats.filter(handle => !currentParticipants(room).some(p => p.remote === true && (p.handle === handle || p.id === handle)))
       const at = Date.now()
+      const homesBefore = JSON.stringify(homesOf(invite))
+      const legacy = invite.acceptedBy !== undefined || invite.seats !== undefined
       invite.homes = { ...homesOf(invite), [home ?? asker]: seats }
       delete invite.acceptedBy
       delete invite.seats
@@ -1749,13 +1737,140 @@ export function install(rt) {
         })
       }
       syncMembers(room)
-      await rt.save?.()
+      // A poll reads this again every few seconds: a claim that is already seated must not rewrite the team.
+      if (fresh.length > 0 || legacy || homesBefore !== JSON.stringify(homesOf(invite))) await rt.save?.()
       return { fresh }
     })
-    if (result.refused) return { handled: true, refused: result.refused }
+    if (result.refused) return { refused: result.refused, bots: result.bots }
+    return { seats, fresh: result.fresh }
+  }
+
+  // #884: the accepting knock on a ticket Bot Social minted. The knock is a request, never the
+  // authority: the claim is read back from the server with this home's own credential, and the seats
+  // are the Bots it names — all of them or none. Each way it can fail has its own reason.
+  async function seatByTicket(room, invite, data, event) {
+    const asker = String(event.fromHandle ?? '')
+    if (typeof rt.roomInviteServer?.verify !== 'function') return { handled: true, refused: 'lookup-failed' }
+    let claim
+    try {
+      claim = await rt.roomInviteServer.verify(invite.ticket)
+    } catch (error) {
+      const why = refusalOf(String(error?.code ?? ''))
+      return { handled: true, refused: why === 'unknown' ? 'revoked' : why }
+    }
+    if (!claim || String(claim.roomId ?? '') !== room.id) return { handled: true, refused: 'wrong-room' }
+    // A link admits every home it is given to (Bot Social #65): the minter reads each home's claim, and
+    // the knock is answered from the one whose Bots include the asker. An older server names one claimer.
+    const claims = Array.isArray(claim.claimers) ? claim.claimers : claim.claimer ? [claim.claimer] : []
+    if (!claims.some(c => botsOfClaim(c).length > 0)) return { handled: true, refused: 'unclaimed' }
+    const mine = claims.find(c => botsOfClaim(c).includes(asker))
+    const home = typeof mine?.home === 'string' ? mine.home : undefined
+    // The Bot that knocked must be one a claim brought, from the home that claimed it.
+    if (!mine || (home && event.fromHome && event.fromHome !== home)) return { handled: true, refused: 'claimed-elsewhere' }
+    const admitted = await admitClaim(room, invite, mine, asker)
+    if (admitted.refused) return { handled: true, refused: admitted.refused }
     // Every seat hears the join, a retry included (the reply was lost): no second seat is made.
-    for (const handle of seats) await rt.notifyRoomShare?.(room, { op: 'join', handle })
-    return { handled: true, room, accepted: true, seats }
+    // A send that left is remembered so the claim poll does not send it again.
+    const told = new Set(Array.isArray(invite.told) ? invite.told : [])
+    const held = new Set(Array.isArray(invite.held) ? invite.held : [])
+    for (const handle of admitted.seats) {
+      const sent = (await rt.notifyRoomShare?.(room, { op: 'join', handle }))?.[0]
+      const action = sent?.action
+      if (action === 'allow' || action === 'sent') { told.add(handle); held.delete(handle) }
+      else if (action === 'hold') held.add(handle)
+    }
+    invite.told = [...told]
+    if (held.size > 0) invite.held = [...held]
+    else delete invite.held
+    await rt.save?.()
+    return { handled: true, room, accepted: true, seats: admitted.seats }
+  }
+
+  // Tell a seated handle once. `allow` / `sent` is delivered; `hold` is already on a card, so it is
+  // not sent again; a refusal is retried a few times and then left for the owner to finish.
+  async function tellSeats(room, invite, handles, { force = false } = {}) {
+    if (force) {
+      delete invite.tellTries
+      delete invite.held
+    }
+    const told = new Set(Array.isArray(invite.told) ? invite.told : [])
+    const held = new Set(force ? [] : (Array.isArray(invite.held) ? invite.held : []))
+    let outcome = 'told'
+    for (const handle of handles) {
+      if (told.has(handle)) continue
+      if (held.has(handle)) { outcome = 'held'; continue }
+      const tries = invite.tellTries?.[handle] ?? 0
+      if (!force && tries >= 3) { outcome = 'not-delivered'; continue }
+      invite.tellTries = { ...(invite.tellTries ?? {}), [handle]: tries + 1 }
+      const sent = (await rt.notifyRoomShare?.(room, { op: 'join', handle }))?.[0]
+      const action = sent?.action
+      if (action === 'allow' || action === 'sent') {
+        told.add(handle)
+        held.delete(handle)
+        const rest = { ...(invite.tellTries ?? {}) }
+        delete rest[handle]
+        invite.tellTries = rest
+      } else if (action === 'hold') {
+        held.add(handle)
+        outcome = 'held'
+      } else outcome = 'not-delivered'
+    }
+    invite.told = [...told]
+    if (held.size > 0) invite.held = [...held]
+    else delete invite.held
+    if (invite.tellTries && Object.keys(invite.tellTries).length === 0) delete invite.tellTries
+    return outcome
+  }
+
+  // #1064: a guest's Join claims the ticket at Bot Social and then knocks. The knock is a request,
+  // and it can be refused, held, or never read (a room-only Bot is not polled). The claim is the
+  // authority either way: read every open server link and seat the homes it names. A room that
+  // cannot be shown, or a notice that does not leave, stays on the link as `waiting` for the owner.
+  rt.seatOpenClaims = async function seatOpenClaims({ roomId, force = false } = {}) {
+    if (typeof rt.roomInviteServer?.verify !== 'function') return { seated: [], waiting: [] }
+    const wanted = roomId === undefined || roomId === null || roomId === '' ? undefined : String(roomId)
+    const rooms = wanted ? [rt.roomOf(wanted)].filter(Boolean) : Object.values(state.rooms || {})
+    const seated = []
+    const waiting = []
+    for (const room of rooms) {
+      if (!room || room.origin === 'inbound-share' || isFaceRoom(room)) continue
+      for (const invite of invitesOf(room)) {
+        if (invite.server !== true || !openInvite(invite)) continue
+        let claim
+        try {
+          claim = await rt.roomInviteServer.verify(invite.ticket)
+        } catch (error) {
+          rt.warn?.('ds-bot: a room link claim was not read: %s', error)
+          continue
+        }
+        if (!claim || String(claim.roomId ?? '') !== room.id) continue
+        const claims = (Array.isArray(claim.claimers) ? claim.claimers : claim.claimer ? [claim.claimer] : []).filter(c => botsOfClaim(c).length > 0)
+        const mark = () => JSON.stringify({ waiting: invite.waiting ?? null, told: invite.told ?? null, held: invite.held ?? null, tries: invite.tellTries ?? null })
+        const before = mark()
+        let blocked = null
+        if (claims.length === 0) {
+          if (invite.waiting) delete invite.waiting
+        } else for (const mine of claims) {
+          const admitted = await admitClaim(room, invite, mine, botsOfClaim(mine)[0])
+          if (admitted.refused === 'not-addable') {
+            blocked = { reason: 'not-addable', bots: admitted.bots ?? [] }
+            continue
+          }
+          if (admitted.refused) continue
+          seated.push(...(admitted.fresh ?? []))
+          const outcome = await tellSeats(room, invite, admitted.seats ?? [], { force })
+          if (outcome === 'not-delivered') blocked = blocked ?? { reason: 'not-delivered', bots: [] }
+          else if (outcome === 'held') blocked = blocked ?? { reason: 'held', bots: [] }
+        }
+        if (claims.length > 0) {
+          if (blocked) invite.waiting = { reason: blocked.reason, bots: blocked.bots, at: invite.waiting?.at ?? Date.now() }
+          else if (invite.waiting) delete invite.waiting
+        }
+        if (mark() !== before) await rt.save?.()
+        if (invite.waiting) waiting.push({ roomId: room.id, ticket: invite.ticket, reason: invite.waiting.reason, bots: invite.waiting.bots ?? [] })
+      }
+    }
+    return { seated, waiting }
   }
 
   // A line or a leave that a remote seat sent into a room of this home (#884). The seat must be current

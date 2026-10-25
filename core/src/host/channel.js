@@ -412,6 +412,14 @@ export function install(rt) {
           const bots = Array.isArray(body.bots) ? body.bots.filter(id => typeof id === 'string').slice(0, 8) : undefined
           return ok(await rt.askLocalInvite(String(body.link ?? body.url ?? ''), { accept: body.accept === true, ...(bots ? { bots } : {}) }, actor))
         }
+        // #1064: the owner finishes a claim the poll could not (a Bot that cannot be shown, a notice
+        // that did not leave). Same read as the poll, with the retries reset.
+        case 'room-invite-seat': {
+          await rt.load()
+          const roomId = String(body.roomId ?? body.id ?? '')
+          const seated = await rt.seatOpenClaims({ roomId, force: true })
+          return ok({ ...seated, invite: rt.localInviteOf(roomId) ?? null, invites: rt.localInvitesOf(roomId) })
+        }
         case 'folders':
         case 'folder-pick':
         case 'folder-list':

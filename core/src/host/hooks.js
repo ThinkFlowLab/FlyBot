@@ -1151,6 +1151,8 @@ export function install(rt) {
       // transport lets a room share through to exactly these, under `scope`, and to nobody else off
       // the roster.
       ticketPeers: () => rt.ticketPeers?.() ?? [],
+      // #1064: seat homes that claimed an open server link, without waiting for their knock.
+      seatOpenClaims: (opts) => rt.seatOpenClaims?.(opts) ?? Promise.resolve({ seated: [], waiting: [] }),
     },
     remote: {
       publish: list => remoteMembers.publish(plugin, list),

@@ -1,0 +1,1 @@
+A group invite link seats the guest's Bots when they claim it, even if the accepting knock never arrives, and the group opens in the guest's sidebar. A claim the host cannot finish is named on the group's Members card ([#1064](https://github.com/ThinkFlowLab/FlyBot/issues/1064)).
