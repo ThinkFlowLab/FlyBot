@@ -686,8 +686,9 @@ export function faceEventKey(event) {
   if (!from && !text) return ''
   // The key names the line, but it never *is* the line: `seen` is persisted in the owner's settings, so on
   // a server that sends no ids it must not become a copy of the conversation (#1062). A bounded digest
-  // carries the body; the two FNV-1a passes are ours and stable across runs, with no time or counter in
-  // them — the same line handed back by a later poll has to key the same, or the duplicate comes back.
+  // carries the body: one FNV-1a pass (prime 0x01000193) and one Murmur3-style finalizer mix (constant
+  // 0x85ebca6b plus a xor-shift) — ours, and stable across runs, with no time or counter in them, so the
+  // same line handed back by a later poll keys the same or the duplicate comes back (#1077).
   return `unkeyed:${viewed.type}|${from}|${viewed.createdAt ?? ''}|${lineDigest(text)}`
 }
 
