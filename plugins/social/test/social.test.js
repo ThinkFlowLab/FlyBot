@@ -11678,3 +11678,58 @@ test('#1000: an older server that cannot grant back never fails the accept', asy
   assert.equal(joined.value.regranted, true)
   assert.equal(joined.value.sharedBack, undefined)
 })
+
+// #1025: the sync `restoreAcceptedInviteGrant` runs right after the grant is what puts the row on People
+// with access at once. Deleting that one line leaves the suite green, because the panel syncs on its own
+// (`social.js:2611`) — a test that only opens the panel cannot tell whether the accept synced. Pin the
+// sequence instead: the accept itself reads that Bot's grant list, right after the grant, before the
+// panel is ever opened (#1008 is the same shape).
+test('#1025: the re-accept reads that Bot\'s grants itself, before the panel is opened', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.grant_bot_to_friend = a => { granted.push(a); return { grant_id: 'g-back', status: 'active' } }
+  server.tools.list_bot_grants = () => ({ grants: granted.length ? [{ id: 'g-back', grantee: '@chief.bob.home', name: 'Chief (@chief.bob.home)', relationship_id: 'r1' }] : [] })
+  const wrapped = async (url, init = {}) => {
+    if (/\/v1\/invites\/[^/]+$/.test(String(url)) && (init.method ?? 'GET') === 'GET') {
+      return new Response(JSON.stringify({ code: 'LIVE1', status: 'active', inviter: { bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief', owner_display_name: 'Bob' } }), { status: 200 })
+    }
+    const body = String(url).endsWith('/mcp') && init.body ? JSON.parse(init.body) : undefined
+    if (body?.params?.name === 'join_invite') {
+      const text = JSON.stringify({ code: 'relationship_exists', message: 'you are already connected to this Bot (or a request is pending)', relationship_id: 'r1' })
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text }] } }), { status: 200 })
+    }
+    return server.fetch(url, init)
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json'), server: 'https://s', token: 'owner-token', fetch: wrapped }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: wrapped }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await call('flybot/social/remote-bots', { fresh: true })
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  // Only the re-accept is under test: drop the reads the setup already made.
+  server.calls.length = 0
+  const exists = (await call('flybot/social/join-invite', { code: 'https://s/i/LIVE1' })).value
+  assert.equal(exists.alreadyHave, true)
+  assert.equal(exists.sharedBack, true)
+  assert.equal(granted.length, 1, 'the accept granted the joining Bot back')
+  const names = server.calls.map(entry => entry.name)
+  // The accept ends by refreshing the roster, and that refresh syncs every Bot's grants anyway — so the
+  // row on People with access cannot tell whether the accept ran its own sync. Take the sequence instead:
+  // between the grant and that refresh there is one sync, and it is scoped to the Bot just granted.
+  const grantAt = names.indexOf('grant_bot_to_friend')
+  assert.notEqual(grantAt, -1, 'the accept granted the joining Bot back')
+  const refreshAt = names.indexOf('list_remote_bots', grantAt)
+  assert.notEqual(refreshAt, -1, 'the accept refreshes the roster after the grant')
+  const syncedAt = names.indexOf('list_bot_grants', grantAt)
+  assert.ok(syncedAt > grantAt && syncedAt < refreshAt, 'the grant is synced before the roster refresh, not left to it')
+  assert.equal(names.slice(grantAt + 1, refreshAt).filter(name => name === 'list_bot_grants').length, 1, 'one sync, not several')
+  assert.equal(server.calls[syncedAt].args.bot_id, granted[0].bot_id, 'synced for the Bot it granted, never the home')
+  // What the user sees: the row is on the store the panel renders by the time the accept returns.
+  const stored = ctx.flybot.grants.of(chief.id).filter(grant => !grant.roomId)
+  assert.deepEqual(stored.map(grant => grant.grantee), ['@chief.bob.home'])
+})
