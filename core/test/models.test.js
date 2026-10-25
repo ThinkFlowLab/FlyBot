@@ -144,6 +144,74 @@ test('a Bot model applies its thinking level, and only re-selects on a change', 
   assert.equal(bot.appliedEffort, undefined)
 })
 
+// The next request uses whatever selectModel last installed. A Session we cannot
+// read stays out of this, which is what the #289 settled early-return relies on.
+function routesOf(rt, headers) {
+  rt.resolveAgent = async (id) => ({
+    session: { requestHeader: () => (headers.has(id) ? { config: { ...headers.get(id) } } : undefined) },
+  })
+  const select = rt.ctx.sessionController.selectModel
+  rt.ctx.sessionController.selectModel = async (request) => {
+    const result = await select(request)
+    headers.set(request.sessionId, { provider: request.provider, model: request.model })
+    return result
+  }
+}
+
+test('a settled record still re-selects a group Session left on another provider (#1127)', async () => {
+  const next = 'opencsitool/DeepSeek-V4.1-Flash-1017'
+  const { rt, selected } = bench({ providers: { 'deepseek-official': ['deepseek-flash'], opencsitool: ['DeepSeek-V4.1-Flash-1017'] } })
+  const headers = new Map([
+    ['g1', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+    ['g2', { provider: 'opencsitool', model: 'DeepSeek-V4.1-Flash-1017' }],
+    ['b1', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+    ['stranger', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+  ])
+  routesOf(rt, headers)
+  rt.groupSessionsOf = () => ['g1', 'g2']
+  const bot = { id: 'b1', name: 'Data', model: next, appliedModel: next }
+  await rt.applyModel(bot)
+  assert.deepEqual(headers.get('g1'), { provider: 'opencsitool', model: 'DeepSeek-V4.1-Flash-1017' })
+  assert.deepEqual(selected.filter(item => item.startsWith('g1:')), ['g1:opencsitool/DeepSeek-V4.1-Flash-1017'])
+  // Already on the Bot's model: not selected again. The own chat and a stranger Session stay put.
+  assert.equal(selected.some(item => item.startsWith('g2:')), false)
+  assert.equal(selected.some(item => item.startsWith('b1:')), false)
+  assert.equal(selected.some(item => item.startsWith('stranger:')), false)
+  assert.deepEqual(headers.get('b1'), { provider: 'deepseek-official', model: 'deepseek-flash' })
+  assert.deepEqual(headers.get('stranger'), { provider: 'deepseek-official', model: 'deepseek-flash' })
+  assert.equal('modelStale' in bot, false)
+  const before = selected.length
+  await rt.applyModel(bot)
+  assert.equal(selected.length, before)
+})
+
+test('force-apply re-selects every group Session even when the record already matches (#1127)', async () => {
+  const next = 'opencsitool/DeepSeek-V4.1-Flash-1017'
+  const { rt, selected } = bench({ providers: { 'deepseek-official': ['deepseek-flash'], opencsitool: ['DeepSeek-V4.1-Flash-1017'] } })
+  rt.groupSessionsOf = () => ['g1']
+  const bot = { id: 'b1', name: 'Data', model: next, appliedModel: next }
+  await rt.applyModel(bot, { force: true })
+  assert.deepEqual(selected.filter(item => item.startsWith('g1:')), ['g1:opencsitool/DeepSeek-V4.1-Flash-1017'])
+  assert.ok(selected.some(item => item.startsWith('b1:')))
+})
+
+test('a drifted group Session that refuses the model marks the Bot stale (#1127)', async () => {
+  const next = 'opencsitool/DeepSeek-V4.1-Flash-1017'
+  const { rt } = bench({ providers: { 'deepseek-official': ['deepseek-flash'], opencsitool: ['DeepSeek-V4.1-Flash-1017'] } })
+  const headers = new Map([['g1', { provider: 'deepseek-official', model: 'deepseek-flash' }]])
+  routesOf(rt, headers)
+  const select = rt.ctx.sessionController.selectModel
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (request.sessionId === 'g1') throw new Error('no adapter')
+    return select(request)
+  }
+  rt.groupSessionsOf = () => ['g1']
+  const bot = { id: 'b1', name: 'Data', model: next, appliedModel: next }
+  await rt.applyModel(bot)
+  assert.equal(bot.modelStale, true)
+  assert.equal(bot.appliedModel, next)
+})
+
 test('a group Session that did not take the model keeps the Bot stale and is retried (#289)', async () => {
   const { rt, selected } = bench()
   let failing = true

@@ -168,13 +168,67 @@ export function install(rt) {
 
   const sameSelection = (a, b) => a.provider === b.provider && a.model === b.model && a.reasoningEffort === b.reasoningEffort
 
+  // The provider/model the Session last requested, or null when it has not requested.
+  // undefined means the route cannot be read, so the record is left alone (#289).
+  async function liveRoute(sessionId) {
+    if (typeof rt.resolveAgent !== 'function') return undefined
+    let agent
+    try {
+      agent = await rt.resolveAgent(sessionId)
+    } catch {
+      // A Session that cannot be opened has no route to compare.
+      return undefined
+    }
+    const read = agent?.session?.requestHeader
+    if (typeof read !== 'function') return undefined
+    let header
+    try {
+      header = read()
+    } catch {
+      // A header that cannot be read is not evidence of a sticky route.
+      return undefined
+    }
+    const config = header?.config
+    if (!config?.provider || !config?.model) return null
+    return { provider: config.provider, model: config.model }
+  }
+
+  // The record can say the model is applied while a group Session still requests the
+  // previous provider (#1127). Re-select that Session. A Session we cannot read is
+  // skipped, so a settled Bot is not selected again on every refresh (#289).
+  async function rebindSessionModel(bot, sessionId) {
+    const ref = await desiredModel(bot)
+    if (ref === undefined || sessionId === undefined) return
+    const live = await liveRoute(sessionId)
+    if (live === undefined) return
+    const route = splitRef(ref)
+    if (live !== null && live.provider === route.provider && live.model === route.model) return
+    const effort = await desiredEffort(bot, ref)
+    try {
+      await selectSessionModel(sessionId, { ...route, ...(effort === undefined ? {} : { reasoningEffort: effort }) })
+    } catch (error) {
+      bot.modelStale = true
+      rt.warn('ds-bot: model for %s in a group not applied: %s', bot.name, error)
+      await rt.save?.()
+    }
+  }
+
+  async function rebindGroupSessions(bot) {
+    for (const sessionId of rt.groupSessionsOf(bot.id)) await rebindSessionModel(bot, sessionId)
+  }
+
   // `force` re-selects even when the record says it is applied: the composer's own
   // model picker can move the Session without telling this plugin.
   async function applyModel(bot, { force = false } = {}) {
     const ref = await desiredModel(bot)
     if (ref === undefined) return ref
     const effort = await desiredEffort(bot, ref)
-    if (!force && !bot.modelStale && bot.appliedModel === ref && (bot.appliedEffort ?? undefined) === effort) return ref
+    // The own chat stays as recorded. Group Sessions still on another route are
+    // re-selected here, and again before their next turn (#1127).
+    if (!force && !bot.modelStale && bot.appliedModel === ref && (bot.appliedEffort ?? undefined) === effort) {
+      await rebindGroupSessions(bot)
+      return ref
+    }
     const route = { ...splitRef(ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) }
     await selectSessionModel(rt.chatOf(bot.id), route)
     // A group Session that did not take the model keeps the Bot "stale", so the next apply (a model
@@ -274,6 +328,6 @@ export function install(rt) {
     testModel,
     catalog, cachedCatalog: () => catalogCache.value, cachedDefault: () => pickDefault(catalogCache.value),
     defaultRef, defaultModel, resolveModel, desiredModel, reasoningOf, resolveEffort, desiredEffort,
-    selectSessionModel, applyModel, waitForModel, syncModels,
+    selectSessionModel, applyModel, rebindSessionModel, waitForModel, syncModels,
   })
 }

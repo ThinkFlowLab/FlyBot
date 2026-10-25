@@ -453,6 +453,27 @@ diff --git a/src/host/parts.js b/src/host/parts.js
  // The user's answer to an ask_user card. The message carries the question with the
  // answer, so the answer still makes sense after a checkpoint drops the card.
  export function questionReply(question, answer) {
+@@ -121,6 +121,20 @@ export function canonicalHeadings(note, names) {
+   return lines.join('\n')
+ }
+ 
++// The model a fresh part starts on. The Bot's own model wins. The previous request
++// is only a fallback when the Bot has none, so a sticky group route is not copied
++// onto the next part (#1127).
++export function freshPartModel(header, desiredRef) {
++  if (desiredRef !== undefined) return { ref: desiredRef }
++  if (header?.provider && header?.model) {
++    return {
++      ref: `${header.provider}/${header.model}`,
++      ...(header.reasoningEffort === undefined ? {} : { effort: header.reasoningEffort }),
++    }
++  }
++  return undefined
++}
++
+ export function install(rt) {
+   const { ctx, config, state } = rt
+ 
 @@ -149,21 +149,44 @@ export function install(rt) {
    // A broken provider adapter must not crash every turn; estimate from the
    // derived messages instead, with one warning.
@@ -607,7 +628,23 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      }
    }
  
-@@ -775,6 +775,32 @@ export function install(rt) {
+@@ -765,16 +765,43 @@ export function install(rt) {
+     const dir = rt.workDirOf(job)
+     const intended = dir !== undefined && await rt.isFolder(dir) ? dir : rt.teamFolder()
+     const freshId = await rt.createSession(room ? `${bot.name} · ${room.name}` : bot.name, { dir })
+-    const route = session.requestHeader()?.config
+-    const ref = route?.provider && route?.model ? `${route.provider}/${route.model}` : await rt.desiredModel(bot)
+-    if (ref !== undefined) {
+-      const effort = route?.reasoningEffort ?? await rt.desiredEffort(bot, ref)
+-      await rt.selectSessionModel(freshId, { ...splitRef(ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) })
++    // The Bot's model wins over the previous request. Copying that header is what
++    // kept a group Session on a provider the Bot had already left (#1127).
++    const picked = freshPartModel(session.requestHeader()?.config, await rt.desiredModel(bot))
++    if (picked !== undefined) {
++      const effort = picked.effort ?? await rt.desiredEffort(bot, picked.ref)
++      await rt.selectSessionModel(freshId, { ...splitRef(picked.ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) })
+         .catch(error => rt.warn('ds-bot: model for the fresh part of %s not applied: %s', bot.name, error))
+     }
      await rt.applyPermission(bot, freshId)
        .catch(error => rt.warn('ds-bot: permission for the fresh part of %s not applied: %s', bot.name, error))
      const segment = { sessionId: agent.id, endedAt: Date.now(), ...(tokens !== undefined ? { tokens } : {}), ...noted }
@@ -665,12 +702,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 +      restore()
 +      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
 +      throw error
-     }
--    const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
--    freshParts.set(freshId, estimateTokens(text))
--    fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
--    await ctx.sessions.flush(fresh.session)
--    // Then what the old part held: the stopped turn's input, then whatever waited.
++    }
 +    let folder
 +    try {
 +      await rt.ensureCapabilities(freshId)
@@ -692,7 +724,12 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 +      await rt.save().catch(() => { /* the in-memory state is the old part; a failed rollback save is the worst case */ })
 +      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
 +      throw error
-+    }
+     }
+-    const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
+-    freshParts.set(freshId, estimateTokens(text))
+-    fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
+-    await ctx.sessions.flush(fresh.session)
+-    // Then what the old part held: the stopped turn's input, then whatever waited.
 +    // The earlier part may not be archived while this move still holds its tasks (#896), so
 +    // the switch keeps the promise and waits for it before archiving; the handoff goes on now.
 +    job.scheduleMove = rt.moveSchedules(agent.id, freshId)

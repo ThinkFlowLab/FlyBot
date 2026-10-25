@@ -10,7 +10,9 @@ export function createDshRoomParticipant(rt) {
     const known = room.sessions[member.id]
     if (known !== undefined) {
       // A failed model selection left this Bot stale (#289): try again before it speaks.
+      // A record that already matches can still hide a sticky route (#1127).
       if (member.modelStale) await rt.applyModel(member).catch(error => rt.warn('ds-bot: model for %s in %s not repaired: %s', member.name, room.name, error))
+      else await rt.rebindSessionModel?.(member, known)
       await rt.ensureCapabilities(known)
       return { id: known, created: false }
     }

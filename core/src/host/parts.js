@@ -122,6 +122,20 @@ export function canonicalHeadings(note, names) {
   return lines.join('\n')
 }
 
+// The model a fresh part starts on. The Bot's own model wins. The previous request
+// is only a fallback when the Bot has none, so a sticky group route is not copied
+// onto the next part (#1127).
+export function freshPartModel(header, desiredRef) {
+  if (desiredRef !== undefined) return { ref: desiredRef }
+  if (header?.provider && header?.model) {
+    return {
+      ref: `${header.provider}/${header.model}`,
+      ...(header.reasoningEffort === undefined ? {} : { effort: header.reasoningEffort }),
+    }
+  }
+  return undefined
+}
+
 export function install(rt) {
   const { ctx, config, state } = rt
 
@@ -813,11 +827,12 @@ export function install(rt) {
     const dir = rt.workDirOf(job)
     const intended = dir !== undefined && await rt.isFolder(dir) ? dir : rt.teamFolder()
     const freshId = await rt.createSession(room ? `${bot.name} · ${room.name}` : bot.name, { dir })
-    const route = session.requestHeader()?.config
-    const ref = route?.provider && route?.model ? `${route.provider}/${route.model}` : await rt.desiredModel(bot)
-    if (ref !== undefined) {
-      const effort = route?.reasoningEffort ?? await rt.desiredEffort(bot, ref)
-      await rt.selectSessionModel(freshId, { ...splitRef(ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) })
+    // The Bot's model wins over the previous request. Copying that header is what
+    // kept a group Session on a provider the Bot had already left (#1127).
+    const picked = freshPartModel(session.requestHeader()?.config, await rt.desiredModel(bot))
+    if (picked !== undefined) {
+      const effort = picked.effort ?? await rt.desiredEffort(bot, picked.ref)
+      await rt.selectSessionModel(freshId, { ...splitRef(picked.ref), ...(effort === undefined ? {} : { reasoningEffort: effort }) })
         .catch(error => rt.warn('ds-bot: model for the fresh part of %s not applied: %s', bot.name, error))
     }
     await rt.applyPermission(bot, freshId)

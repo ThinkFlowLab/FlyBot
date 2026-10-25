@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { getEventListeners } from 'node:events'
 import { createDshRoomParticipant } from '../src/host/room-participant.js'
+import { install as installModels } from '../src/host/models.js'
 import { ROOM_WORK_GRACE_MS } from '../src/host/constants.js'
 
 function fixture(t) {
@@ -30,6 +31,66 @@ function fixture(t) {
   const waiter = () => [...rt.roomWaiters.values()][0]
   return { rt, driver, room, member, calls, controller, started, run, waiter }
 }
+
+test('a stale Bot still repairs through applyModel before it speaks (#289)', async (t) => {
+  const { rt, driver, room, member, calls } = fixture(t)
+  room.sessions = { writer: 's1' }
+  member.modelStale = true
+  rt.applyModel = async (bot) => { calls.push(['apply', bot.id]); delete bot.modelStale }
+  rt.rebindSessionModel = async () => { calls.push(['rebind']) }
+  assert.deepEqual(await driver.open({ room, member }), { id: 's1', created: false })
+  assert.deepEqual(calls.filter(call => call[0] === 'apply' || call[0] === 'rebind'), [['apply', 'writer']])
+})
+
+test('opening an existing group session re-selects a route the record already calls applied (#1127)', async (t) => {
+  const next = 'opencsitool/DeepSeek-V4.1-Flash-1017'
+  const headers = new Map([
+    ['g1', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+    ['own', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+    ['stranger', { provider: 'deepseek-official', model: 'deepseek-flash' }],
+  ])
+  const selected = []
+  let current = { provider: 'deepseek-official', model: 'deepseek-flash' }
+  const ctx = {
+    llm: {
+      listProviders: () => [{ id: 'deepseek-official' }, { id: 'opencsitool' }],
+      listModels: async (id) => [{ id: id === 'opencsitool' ? 'DeepSeek-V4.1-Flash-1017' : 'deepseek-flash' }],
+      resolveModelInfo: async () => ({}),
+    },
+    get: () => ({ currentSelection: () => ({ ...current }), saveSelection: async (nextSelection) => { current = { ...nextSelection } } }),
+    sessionController: {
+      selectModel: async (request) => {
+        selected.push(request)
+        headers.set(request.sessionId, { provider: request.provider, model: request.model })
+      },
+    },
+  }
+  const member = { id: 'data', name: 'Data', model: next, appliedModel: next }
+  const room = { id: 'ops', name: '研发组', seen: {}, sessions: { data: 'g1' } }
+  const rt = {
+    ctx, state: { bots: { data: member } }, warn() {}, save: async () => {},
+    chatOf: () => 'own', groupSessionsOf: () => ['g1'],
+    resolveAgent: async (id) => ({ session: { requestHeader: () => (headers.has(id) ? { config: { ...headers.get(id) } } : undefined) } }),
+    live: new Map(), groupOwners: new Map(), roomWaiters: new Map(),
+    createSession: async () => { throw new Error('the session already exists') },
+    ensureCapabilities: async () => {}, applyPermission: async () => {},
+    workDirOf: () => '/fixture',
+  }
+  installModels(rt)
+  const driver = createDshRoomParticipant(rt)
+  t.after(() => {})
+  assert.deepEqual(await driver.open({ room, member }), { id: 'g1', created: false })
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0].sessionId, 'g1')
+  assert.equal(selected[0].provider, 'opencsitool')
+  assert.equal(selected[0].model, 'DeepSeek-V4.1-Flash-1017')
+  assert.deepEqual(headers.get('g1'), { provider: 'opencsitool', model: 'DeepSeek-V4.1-Flash-1017' })
+  assert.equal(headers.get('own').provider, 'deepseek-official', 'the own chat is not re-selected from a group open')
+  assert.equal(headers.get('stranger').provider, 'deepseek-official', 'a session that is not this Bot\'s group session stays')
+  assert.equal('modelStale' in member, false)
+  await driver.open({ room, member })
+  assert.equal(selected.length, 1, 'a session already on the Bot\'s model is not selected again')
+})
 
 test('DSH participant opens isolated room sessions and reuses persisted links', async t => {
   const { rt, driver, room, member, calls } = fixture(t)
