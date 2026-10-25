@@ -6,6 +6,10 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+### Changed
+
+- The enqueue guard accepts `Related #<n>` / `Part of #<n>` as issue references, which name the issue without closing it ([#1160](https://github.com/ThinkFlowLab/FlyBot/pull/1160)).
+
 ## [0.2.7] - 2026-10-25
 
 ### Added
