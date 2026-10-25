@@ -84,7 +84,7 @@ function setup(services = {}, team = TEAM) {
 test('without the schedule service the page says so and creating is refused', async (t) => {
   const { ctx, home, call } = setup()
   t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
-  assert.deepEqual((await call('schedules', {})).value, { available: false, tasks: [] })
+  assert.deepEqual((await call('schedules', {})).value, { available: false, tasks: [], quietHours: { on: false } })
   const refused = await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' } })
   assert.equal(refused.ok, false)
   assert.match(refused.error.message, /Automation tasks are off/)

@@ -181,7 +181,9 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const [error, setError] = useState('')
   const timing = () => {
     if (kind === 'cron') return { kind: 'keep' }
-    if (kind === 'at') return { kind, at: new Date(at).toISOString() }
+    // A once task is an instant; the host reads its wall clock in this zone when quiet
+    // hours are on (#1166). The others carry their zone with the time itself.
+    if (kind === 'at') return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone }
     if (kind === 'every') return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
     // An edited task keeps its own time zone; a new one takes this browser's.
     return { kind, time, timeZone: first.timeZone, ...(kind === 'weekly' ? { weekdays } : {}) }
@@ -249,6 +251,49 @@ function AutomationOff({ actions }) {
     h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
 }
 
+// Quiet hours (#1166): a window checked when a task is created or edited, never a mute —
+// nothing here runs at delivery time. A repeat or cron task can still fire inside it, and
+// the card says so instead of claiming a silence FlyBot cannot keep.
+function QuietHoursCard({ view, actions }) {
+  const quiet = view.quietHours ?? { on: false }
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [from, setFrom] = useState(quiet.from ?? '22:00')
+  const [to, setTo] = useState(quiet.to ?? '07:00')
+  const unchecked = view.tasks.some(task => task.kind === 'every' || task.kind === 'cron')
+  const save = (next) => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false }
+    void Promise.resolve(actions.setPrefs({ quietHours: next }))
+      .then(() => publish({ ...view, quietHours: shown }), (failure) => setError(hostText(failure?.message ?? String(failure))))
+      .finally(() => setBusy(false))
+  }
+  return h('section', { className: 'bt-set-section' },
+    h('h3', null, t('Quiet hours')),
+    h('div', { className: 'bt-set-card' },
+      h('div', { className: 'bt-set-row bt-bs-row' },
+        h('span', { className: 'bt-set-copy' },
+          h('span', { className: 'bt-bs-label' }, quiet.on ? t('On, {from}–{to}', { from: quiet.from, to: quiet.to }) : t('Off')),
+          h('span', { className: 'bt-set-hint' }, t('A new or edited task cannot be due inside the window. It never mutes a task that already exists.'))),
+        h('button', {
+          type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'aria-pressed': quiet.on,
+          onClick: () => save(quiet.on ? { on: false } : { on: true, from, to }),
+        }, quiet.on ? t('Turn off') : t('Turn on'))),
+      quiet.on ? h('div', { className: 'bt-set-row bt-bs-row' },
+        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Window'))),
+        h('div', { className: 'bt-task-when' },
+          h('input', { className: 'bt-input bt-task-time', type: 'time', value: from, 'aria-label': t('Quiet hours start'), disabled: busy, onChange: event => setFrom(event.target.value) }),
+          h('span', { className: 'bt-task-every' }, '–'),
+          h('input', { className: 'bt-input bt-task-time', type: 'time', value: to, 'aria-label': t('Quiet hours end'), disabled: busy, onChange: event => setTo(event.target.value) }),
+          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => save({ on: true, from, to }) }, t('Save window')))) : null,
+      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
+      quiet.on && unchecked
+        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.')))
+        : null))
+}
+
 export function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions)
   const [adding, setAdding] = useState(Boolean(start))
@@ -262,6 +307,7 @@ export function SchedulesPage({ roster, actions, start }) {
     ...roster.rooms.map(room => [room.id, h(RoomAvatar, { room, roster, size: 18 }), room.name, view.tasks.filter(task => task.botId === undefined && task.roomId === room.id)]),
   ].filter(([, , , tasks]) => tasks.length > 0)
   return [
+    h(QuietHoursCard, { key: 'quiet', view, actions }),
     adding
       ? h(TaskForm, { key: 'form', roster, actions, start, onDone: shown, onCancel: () => setAdding(false) })
       : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => { setEditing(null); setAdding(true) } }, h(PlusIcon), t('New task'))),

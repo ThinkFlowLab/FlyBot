@@ -154,3 +154,64 @@ test('a row says how its last run went; only a failed run offers Retry, which ru
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['retry', 'chat-b1', 's1']])
 })
+
+// Quiet hours (#1166): a window checked when a task is created or edited, not a mute.
+const QUIET = { on: true, from: '22:00', to: '07:00' }
+
+test('with quiet hours off the page says Off and offers to turn them on (#1166)', () => {
+  seeded.push({ available: true, tasks: [], quietHours: { on: false } })
+  const page = render(SchedulesPage({ roster: ROSTER, actions: spy(), start: null }))
+  const lines = text(page)
+  assert.ok(lines.includes('Off'), lines.join('|'))
+  assert.ok(lines.includes('Turn on'))
+  assert.ok(!lines.some(line => /^On, /.test(line)))
+  assert.ok(!lines.some(line => /still run inside quiet hours/.test(line)))
+  assert.ok(lines.includes('A new or edited task cannot be due inside the window. It never mutes a task that already exists.'))
+})
+
+test('with quiet hours on the page shows the window, and a repeat task says it is not checked (#1166)', () => {
+  seeded.push({ available: true, tasks: [{ ...ACTIVE, kind: 'every', everySeconds: 3600 }], quietHours: QUIET, quietUnchecked: true })
+  const page = render(SchedulesPage({ roster: ROSTER, actions: spy(), start: null }))
+  const lines = text(page)
+  assert.ok(lines.includes('On, 22:00–07:00'), lines.join('|'))
+  assert.ok(lines.includes('Turn off'))
+  assert.equal(all(page).filter(node => node.type === 'input' && node.props.type === 'time').length, 2, 'the window has a start and an end')
+  const hint = lines.find(line => /still run inside quiet hours/.test(line))
+  assert.ok(hint, 'the marker is rendered, not kept silently')
+  assert.ok(!lines.some(line => /suppressed count|Suppressed: \d+/i.test(line)), 'no suppression count: that half is DSH\'s')
+})
+
+test('turning quiet hours on saves the default window as the settings write (#1166)', async () => {
+  const sent = []
+  const actions = { ...spy(), setPrefs: async (prefs) => { sent.push(prefs); return {} } }
+  seeded.push({ available: true, tasks: [], quietHours: { on: false } })
+  const page = render(SchedulesPage({ roster: ROSTER, actions, start: null }))
+  const on = buttonsOf(page).find(button => text(button).includes('Turn on'))
+  assert.ok(on)
+  on.props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ quietHours: { on: true, from: '22:00', to: '07:00' } }])
+})
+
+test('a once task sends its zone, so the host reads its wall clock (#1166)', async () => {
+  const sent = []
+  const actions = { ...spy(), scheduleUpdate: async (task) => { sent.push(task); return OFF } }
+  const once = { ...ACTIVE, kind: 'at', scheduledAt: '2030-01-02T07:05:00.000Z' }
+  seeded.push({ available: true, tasks: [once], quietHours: QUIET }, once)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  const form = all(card).find(node => node.type === 'form')
+  form.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  const [when] = JSON.parse(JSON.stringify(sent)).map(task => task.when)
+  assert.equal(when.kind, 'at')
+  assert.equal(typeof when.timeZone, 'string')
+  assert.notEqual(when.timeZone, '')
+})
+
+test('the quiet-hours copy has Chinese entries, including the refusal with the window end (#1166)', () => {
+  const source = readFileSync(new URL('../src/client/i18n.js', import.meta.url), 'utf8')
+  assert.match(source, /'Quiet hours': '安静时段'/)
+  assert.match(source, /'Quiet hours start': '安静时段开始'/)
+  assert.match(source, /Quiet hours are on until \(\\d\\d:\\d\\d\)/)
+  assert.match(source, /安静时段到 \$1 结束/)
+})

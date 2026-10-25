@@ -24,6 +24,7 @@
 // A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 import { defineTool } from './tool-schema.js'
 import { textOf } from './text.js'
 import { output } from './tools.js'
@@ -173,6 +174,27 @@ export function install(rt) {
   const sessionFor = owner => (owner.botId !== undefined ? rt.chatOf(owner.botId) : owner.roomId)
   const ensureService = () => { if (service === null) throw invalid('Automation tasks are off in DSH') }
 
+  // Team quiet hours (#1166): a window the user set, checked when a task is created or
+  // edited. It never mutes anything — a task that already fires inside the window keeps
+  // firing, because DSH has no hook before a delivery (docs/subsystems/core-host.md).
+  const quietNow = () => quietHoursOf(state.prefs)
+  // The wall clock a create request's timing picks, or null when FlyBot must not guess it:
+  // a repeat rule's next fire is DSH's to compute (`service.catalog()` answers only for a
+  // stored task), so `every` and `cron` are let through and the view says so.
+  const quietClockOf = (timing, zone) => {
+    if (timing.at !== undefined) return clockIn(zone, timing.at)
+    if (timing.daily !== undefined) return String(timing.daily.time).slice(0, 5)
+    if (timing.weekly !== undefined) return String(timing.weekly.time).slice(0, 5)
+    return null
+  }
+  const refuseDuringQuietHours = (timing, zone) => {
+    const quiet = quietNow()
+    if (quiet.on !== true) return
+    const clock = quietClockOf(timing, zone)
+    if (clock === null || !inQuietHours(quiet, clock)) return
+    throw quietError(`Quiet hours are on until ${quiet.to}. Pick a time outside ${quiet.from}–${quiet.to}.`)
+  }
+
   // Each task's last run, by its DSH id: { at, result, reason?, messageId?, missed? }.
   const runs = () => {
     if (state.scheduleRuns === null || typeof state.scheduleRuns !== 'object' || Array.isArray(state.scheduleRuns)) state.scheduleRuns = {}
@@ -282,7 +304,8 @@ export function install(rt) {
   const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
 
   async function schedulesView() {
-    if (service === null) return { available: false, tasks: [] }
+    const quietHours = quietNow()
+    if (service === null) return { available: false, tasks: [], quietHours }
     // The page asks every 30 seconds, so a missed run shows without waiting for the timer.
     await checkMissed().catch(error => rt.warn('ds-bot: checking scheduled tasks failed: %s', error?.message ?? error))
     const tasks = []
@@ -298,7 +321,10 @@ export function install(rt) {
       const lastRun = lastRunOf({ id: entry.id })
       tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
-    return { available: true, tasks }
+    // #1166: a repeat rule can still fire inside the window — the page says so instead of
+    // claiming a silence FlyBot cannot keep.
+    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
+    return { available: true, tasks, quietHours, ...(unchecked ? { quietUnchecked: true } : {}) }
   }
 
   // Edit: a paused task stays paused with its new content; an active one is updated in
@@ -314,6 +340,7 @@ export function install(rt) {
     const held = pausedEntry(sessionId, id)
     if (held !== undefined) {
       const timing = keep ? timingPart(requestOf(held.record) ?? {}) : selectorOf(body.when)
+      if (!keep) refuseDuringQuietHours(timing, body.when?.timeZone)
       paused()[id] = { ...held, sessionId: content.sessionId, record: { title: content.title, prompt: content.prompt, ...timingOf(timing) } }
       await rt.save()
       return schedulesView()
@@ -325,6 +352,7 @@ export function install(rt) {
     const stored = requestOf(record)
     if (stored === null) throw invalid('This task cannot be edited here')
     const timing = keep ? timingPart(stored) : selectorOf(body.when)
+    if (!keep) refuseDuringQuietHours(timing, body.when?.timeZone)
     if (active !== undefined && content.sessionId === sessionId && typeof service.update === 'function') {
       const same = JSON.stringify(timingPart(stored)) === JSON.stringify(timing)
       const result = await service.update({ sessionId, id, expected: active, title: content.title, prompt: content.prompt, ...(same ? {} : { change: changeOf(timing) }) })
@@ -469,7 +497,9 @@ export function install(rt) {
     async 'schedule-create'(body) {
       ensureService()
       const { sessionId, title, prompt } = contentOf(body)
-      await service.create(sessionId, { title, prompt, ...selectorOf(body.when) })
+      const timing = selectorOf(body.when)
+      refuseDuringQuietHours(timing, body.when?.timeZone)
+      await service.create(sessionId, { title, prompt, ...timing })
       return schedulesView()
     },
     'schedule-update': body => updateSchedule(body),

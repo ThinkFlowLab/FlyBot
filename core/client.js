@@ -1208,6 +1208,17 @@ var ZH = {
   "Switch on Automation tasks on the Plugins page.": "在「插件」页面打开「自动化任务」。",
   "Open Plugins": "打开「插件」页面",
   "New task": "新建任务",
+  "Quiet hours": "安静时段",
+  "On, {from}–{to}": "开着，{from}–{to}",
+  Off: "关着",
+  Window: "时段",
+  "Turn on": "打开",
+  "Turn off": "关掉",
+  "Save window": "保存时段",
+  "Quiet hours start": "安静时段开始",
+  "Quiet hours end": "安静时段结束",
+  "A new or edited task cannot be due inside the window. It never mutes a task that already exists.": "新建或修改的任务不能落在时段内。已经存在的任务不会被静音。",
+  "A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.": "「每 N 分钟」和 cron 任务仍可能在安静时段内运行：下一次运行时间是 DSH 算的。这里如实说明，不假装已经静音。",
   "No scheduled tasks yet.": "还没有定时任务。",
   "No scheduled tasks yet. Add one": "还没有定时任务，去添加",
   "Automation tasks are off in DSH": "DSH 的「自动化任务」没有打开",
@@ -1218,6 +1229,9 @@ var ZH = {
   "Pick a date and time": "选一个日期和时间",
   "Pick a time in the future": "选一个将来的时间",
   "Pick a time of day": "选一个时间",
+  "Quiet hours must be on or off": "安静时段要么开、要么关",
+  "Quiet hours need a start and an end time": "安静时段需要开始和结束时间",
+  "Quiet hours need two different times": "安静时段的开始和结束不能是同一个时间",
   "Pick at least one day": "至少选一天",
   "Repeat every 1 minute to 7 days": "重复间隔要在 1 分钟到 7 天之间",
   "Pick when it runs": "选择什么时候运行",
@@ -1255,6 +1269,7 @@ var HOST_ERRORS = [
   [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, "只有你、主 Bot 或「$1」的管理员可以修改"],
   [/^A key must have at least (\d+) characters$/, "密钥至少 $1 个字符"],
   [/^A key can have at most (\d+) characters$/, "密钥最多 $1 个字符"],
+  [/^Quiet hours are on until (\d\d:\d\d)\. Pick a time outside (\d\d:\d\d)–(\d\d:\d\d)\.$/, "安静时段到 $1 结束。请选 $2–$3 之外的时间。"],
   [/^(.+) is not saved yet$/, "$1 还没有保存"],
   [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, "$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。"],
   [/^The Bot team file (.+) could not be read \((.+)\)\. FlyBot does not change it; fix or move the file and reload\.$/, "$1 里的 Bot 团队文件读不出来（$2）。FlyBot 不会改它；修好或移走文件后刷新。"],
@@ -11284,7 +11299,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const [error, setError] = (0, import_react22.useState)("");
   const timing = () => {
     if (kind === "cron") return { kind: "keep" };
-    if (kind === "at") return { kind, at: new Date(at).toISOString() };
+    if (kind === "at") return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone };
     if (kind === "every") return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
     return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
   };
@@ -11392,6 +11407,62 @@ function AutomationOff({ actions }) {
     (0, import_react22.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
   );
 }
+function QuietHoursCard({ view, actions }) {
+  const quiet = view.quietHours ?? { on: false };
+  const [busy, setBusy] = (0, import_react22.useState)(false);
+  const [error, setError] = (0, import_react22.useState)("");
+  const [from, setFrom] = (0, import_react22.useState)(quiet.from ?? "22:00");
+  const [to, setTo] = (0, import_react22.useState)(quiet.to ?? "07:00");
+  const unchecked = view.tasks.some((task) => task.kind === "every" || task.kind === "cron");
+  const save = (next) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false };
+    void Promise.resolve(actions.setPrefs({ quietHours: next })).then(() => publish({ ...view, quietHours: shown }), (failure) => setError(hostText(failure?.message ?? String(failure)))).finally(() => setBusy(false));
+  };
+  return (0, import_react22.createElement)(
+    "section",
+    { className: "bt-set-section" },
+    (0, import_react22.createElement)("h3", null, t("Quiet hours")),
+    (0, import_react22.createElement)(
+      "div",
+      { className: "bt-set-card" },
+      (0, import_react22.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react22.createElement)(
+          "span",
+          { className: "bt-set-copy" },
+          (0, import_react22.createElement)("span", { className: "bt-bs-label" }, quiet.on ? t("On, {from}–{to}", { from: quiet.from, to: quiet.to }) : t("Off")),
+          (0, import_react22.createElement)("span", { className: "bt-set-hint" }, t("A new or edited task cannot be due inside the window. It never mutes a task that already exists."))
+        ),
+        (0, import_react22.createElement)("button", {
+          type: "button",
+          className: "bt-soft bt-soft-sm",
+          disabled: busy,
+          "aria-pressed": quiet.on,
+          onClick: () => save(quiet.on ? { on: false } : { on: true, from, to })
+        }, quiet.on ? t("Turn off") : t("Turn on"))
+      ),
+      quiet.on ? (0, import_react22.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react22.createElement)("span", { className: "bt-set-copy" }, (0, import_react22.createElement)("span", { className: "bt-bs-label" }, t("Window"))),
+        (0, import_react22.createElement)(
+          "div",
+          { className: "bt-task-when" },
+          (0, import_react22.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: from, "aria-label": t("Quiet hours start"), disabled: busy, onChange: (event) => setFrom(event.target.value) }),
+          (0, import_react22.createElement)("span", { className: "bt-task-every" }, "–"),
+          (0, import_react22.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: to, "aria-label": t("Quiet hours end"), disabled: busy, onChange: (event) => setTo(event.target.value) }),
+          (0, import_react22.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => save({ on: true, from, to }) }, t("Save window"))
+        )
+      ) : null,
+      error ? (0, import_react22.createElement)("div", { className: "bt-set-row" }, (0, import_react22.createElement)("span", { className: "bt-danger bt-set-hint" }, error)) : null,
+      quiet.on && unchecked ? (0, import_react22.createElement)("div", { className: "bt-set-row" }, (0, import_react22.createElement)("span", { className: "bt-set-hint" }, t("A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep."))) : null
+    )
+  );
+}
 function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions);
   const [adding, setAdding] = (0, import_react22.useState)(Boolean(start));
@@ -11412,6 +11483,7 @@ function SchedulesPage({ roster, actions, start }) {
     ...roster.rooms.map((room2) => [room2.id, (0, import_react22.createElement)(RoomAvatar, { room: room2, roster, size: 18 }), room2.name, view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id)])
   ].filter(([, , , tasks]) => tasks.length > 0);
   return [
+    (0, import_react22.createElement)(QuietHoursCard, { key: "quiet", view, actions }),
     adding ? (0, import_react22.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react22.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react22.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
       setEditing(null);
       setAdding(true);

@@ -5,6 +5,7 @@ import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { questionReply } from './parts.js'
 import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 import { isFaceRoom } from './room-membership.js'
+import { readQuietHours } from '../shared/quiet-hours.js'
 import { faceMentions } from './face-mentions.js'
 import { unwrapUntrusted } from './delivery.js'
 
@@ -266,6 +267,13 @@ export function install(rt) {
       }
       if (Object.keys(notify).length > 0) state.prefs.notify = notify
       else delete state.prefs.notify
+    }
+    // Team quiet hours (#1166): off is the absence of the record, and an invalid window is
+    // refused here, never stored as "always quiet".
+    if (body.quietHours !== undefined) {
+      const quiet = readQuietHours(body.quietHours, state.prefs.quietHours)
+      if (quiet === undefined) delete state.prefs.quietHours
+      else state.prefs.quietHours = quiet
     }
     return rt.save()
   }

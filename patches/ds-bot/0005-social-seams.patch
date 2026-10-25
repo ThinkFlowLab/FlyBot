@@ -137,6 +137,7 @@ diff --git a/src/client/characters.js b/src/client/characters.js
  // Registered shapes join the characters: `body(paint)` returns SVG markup in a
  // `size` box and `eyes` lists the two capsules.
  export const SHAPES = {}
+
 diff --git a/src/client/mark.js b/src/client/mark.js
 --- a/src/client/mark.js
 +++ b/src/client/mark.js
@@ -264,10 +265,11 @@ diff --git a/src/client/mark.js b/src/client/mark.js
    const seat = (bot, seatSize, key) => (bot
      ? h(BotMark, { key, bot, size: seatSize })
      : h('span', { key, className: 'bt-cluster-you', style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } }))
+
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
-@@ -1,10 +1,19 @@
+@@ -1,10 +1,20 @@
  // Client channel: the team view the browser renders, and the POST /api/bot endpoints.
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -275,6 +277,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  import { questionReply } from './parts.js'
  import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 +import { isFaceRoom } from './room-membership.js'
++import { readQuietHours } from '../shared/quiet-hours.js'
 +import { faceMentions } from './face-mentions.js'
 +import { unwrapUntrusted } from './delivery.js'
  
@@ -287,7 +290,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,32 +21,146 @@ export function install(rt) {
+@@ -21,32 +31,146 @@
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -443,7 +446,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
      agents: Object.values(state.agents),
      // Key names and who may use them; values never leave the host.
-@@ -54,7 +54,8 @@ export function install(rt) {
+@@ -54,7 +178,8 @@
      capabilities: rt.capabilityLibraryView(),
      secretRequests: state.secretRequests ?? {},
      colors: [...COLORS, ...EXTRA_COLORS],
@@ -453,7 +456,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,49 @@ export function install(rt) {
+@@ -65,22 +190,49 @@
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -514,7 +517,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,57 @@ export function install(rt) {
+@@ -97,28 +249,64 @@
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -536,6 +539,13 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      }
 +      if (Object.keys(notify).length > 0) state.prefs.notify = notify
 +      else delete state.prefs.notify
++    }
++    // Team quiet hours (#1166): off is the absence of the record, and an invalid window is
++    // refused here, never stored as "always quiet".
++    if (body.quietHours !== undefined) {
++      const quiet = readQuietHours(body.quietHours, state.prefs.quietHours)
++      if (quiet === undefined) delete state.prefs.quietHours
++      else state.prefs.quietHours = quiet
 +    }
      return rt.save()
    }
@@ -576,7 +586,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -141,7 +141,7 @@ export function install(rt) {
+@@ -141,7 +329,7 @@
            return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
          case 'create-bot': {
            await rt.bootstrap()
@@ -585,7 +595,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(bot)
          }
          case 'update-bot':
-@@ -150,18 +150,23 @@ export function install(rt) {
+@@ -150,18 +338,23 @@
          case 'delete-bot':
            await rt.load()
            await rt.deleteBot(body.id)
@@ -613,7 +623,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(room)
          }
          case 'update-room': {
-@@ -171,12 +171,70 @@ export function install(rt) {
+@@ -171,12 +364,70 @@
              notice: body.notice,
              mode: body.mode,
              admin: body.admin,
@@ -686,7 +696,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          }
          case 'folders':
          case 'folder-pick':
-@@ -203,17 +203,19 @@ export function install(rt) {
+@@ -203,17 +454,19 @@
          case 'remove-agent':
            await rt.load()
            await rt.removeAgent(body.agentId)
@@ -709,7 +719,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'stop-member-work':
            return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
          case 'dismiss-question':
-@@ -231,6 +231,9 @@ export function install(rt) {
+@@ -231,6 +484,9 @@
            await rt.load()
            return ok(await rt.secretEndpoint(endpoint, body))
          case 'connector-connect':
@@ -719,7 +729,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -241,11 +241,22 @@ export function install(rt) {
+@@ -241,11 +497,22 @@
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -743,7 +753,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'memory-view':
          case 'memory-ask':
          case 'memory-forget':
-@@ -258,8 +258,17 @@ export function install(rt) {
+@@ -258,8 +525,17 @@
            const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
            const question = state.questions[sessionId]
            if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
@@ -761,7 +771,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            // Claim the question before queueing so a second answer is refused.
            delete state.questions[sessionId]
            try {
-@@ -278,9 +278,49 @@ export function install(rt) {
+@@ -278,9 +554,49 @@
            const text = String(body.text ?? '').trim()
            if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
            await rt.load()
@@ -811,7 +821,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,117 @@ export function install(rt) {
+@@ -319,32 +635,117 @@
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -902,7 +912,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      void rt.load()
      return () => {}
    }, 'ds-bot: load state')
- }
++}
 +
 +// Registers the exact Fetch route, surviving a hot reload. When the plugin manager reloads
 +// ds-bot in a running DSH, the new instance can start before the old one is disposed; the
@@ -933,7 +943,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +    clearTimeout(timer)
 +    dispose?.()
 +  }
-+}
+ }
+
 diff --git a/src/host/delivery.js b/src/host/delivery.js
 --- a/src/host/delivery.js
 +++ b/src/host/delivery.js
@@ -1168,6 +1179,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
        source,
      })
      if (steer) agent.steer(message)
+
 diff --git a/test/rounds.test.js b/test/rounds.test.js
 --- a/test/rounds.test.js
 +++ b/test/rounds.test.js
