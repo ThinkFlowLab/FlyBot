@@ -28,6 +28,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { isMechanicalRelease, judge } from './merge-gate.mjs'
 import { loadPolicy } from './review-gate.mjs'
+import { loadSigners } from './verdict-signature.mjs'
 import { guard, recordOnlyAt, short } from './enqueue-rules.mjs'
 
 // The rule bodies moved to enqueue-rules.mjs (#960); re-exported here because this is the module the
@@ -82,7 +83,9 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   // believes it has, and `--sha` lets a caller insist on the head it read a moment ago.
   // `judge` asks `adminsFor` when this tier needs a PASS.
   const policy = loadPolicy(policyPath)
-  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, gh, repo, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue', body: pull.body })
+  // #1110: the same keys `merge-gate` reads, so the check and the printed command cannot disagree.
+  const signers = loadSigners({ policy, path: arg('--signers') || env.VERDICT_SIGNERS || fileURLToPath(new URL('../agent/signers.json', import.meta.url)) })
+  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, gh, repo, pr, signers, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue', body: pull.body })
   const mechanicalRelease = isMechanicalRelease(files.map((f) => f.filename))
   // The branch this repository owns, not a contributor's: `head.repo` is null when the fork was deleted,
   // which is not ours either. Both sides are lower-cased because the repository name in the API paths is

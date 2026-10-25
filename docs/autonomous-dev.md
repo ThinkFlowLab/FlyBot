@@ -162,17 +162,69 @@ What counts as a reviewed tip, all of it:
    list: every Bot writes as the shared `Birfy` account, so a list containing it would void the whole pipeline.
    `cursor[bot]`'s report at #940's tip is the case (`Correction from Reviewer`, [comment `6381646389`](https://github.com/ThinkFlowLab/FlyBot/pull/940#issuecomment-6381646389)).
 
+7. **The report is signed by the workstation it names** (#1110): `Signed-by:` + `Nonce:` + `Signature:`,
+   verified against `.github/agent/signers.json` for the full head being judged. A `Verdict:` that does not
+   verify is not a conclusion and stays out of the newest-wins scan — see [Signed conclusions](#signed-conclusions-1110)
+   below for the canonical string, the configuration errors and the cost.
+
+#### Signed conclusions (#1110)
+
+One shared GitHub identity makes `Written-by:` a claim, so since #1110 a conclusion also has to be
+**signed by the workstation it names**. Each reviewing workstation holds one
+Ed25519 private key in its own secret (`DSH_SECRET_VERDICT_KEY_<WORKSTATION>`); the public keys are in
+[`.github/agent/signers.json`](../.github/agent/signers.json), and the roster of workstations that must
+have one is the `signers` list in [`review-policy.json`](../.github/agent/review-policy.json). A report
+adds three lines under its attribution:
+
+```text
+Signed-by: Reviewer
+Nonce: 3f8c1a9e5b2d4706
+Signature: <base64url Ed25519 over the canonical string>
+```
+
+The signed string is `FBV1|<owner>/<repo>#<pr>@<VERDICT>@<full 40-character head>@<workstation>@<nonce>`
+([`verdict-signature.mjs`](../.github/scripts/verdict-signature.mjs) `canonical`). Every field closes one
+replay: the repository and pull request number stop a report moving to another pull request, exactly 40
+characters of sha stop it moving to another tip (a 7-character sha is a prefix of many heads, #1112), the
+verdict stops an INC being replayed as a PASS, the workstation stops one workstation's signature reading as
+another's, and the nonce stops the same signed text standing as a second conclusion. A short sha on the
+`Verdict:` line is **not** signed: the gate fills in the head it is judging, so a signature can never be
+lifted onto a tip its author did not see.
+
+It is fail-closed and one cut. When the policy lists signing workstations, a `Verdict:` whose signature
+does not verify **is not a conclusion at all**: it does not pass, it does not join the newest-wins scan, and
+it does not refuse an older PASS — the summary lists it as `unverified:`. There is no unsigned fallback, so
+the honest cost is that an unsigned INC no longer holds a merge either; the keys therefore land before the
+gate does ([#1111](https://github.com/ThinkFlowLab/FlyBot/issues/1111)). A roster with a missing or unreadable
+signers file, or a workstation whose key is missing or does not parse, is a **configuration error** and
+refuses every pull request: half of that pair is never read as "unsigned is fine". The signature is not a
+permission — the association, `writers`, `reviewers` and bot-account checks run exactly as before, and the
+conclusion never reached the reviewed-tip job at all: the signed lines sit in the header, where the author
+attestation (#644) also lives, so a body can carry both and the two refusals stay separate.
+
+A workstation signs with its own key, which never leaves its secret card:
+
+```sh
+node .github/scripts/sign-verdict.mjs --repo ThinkFlowLab/FlyBot --pr 1132 --verdict PASS \
+  --workstation Reviewer --head <full 40-character head>
+```
+
 **Attribution (#627).** Every state-changing write says who wrote it: `Written-by: <Bot>` is its first
 line, and a conclusion puts it on the second, under the fixed verdict line. `decide` refuses a report
 with no such line and, separately, one whose name is not in the policy's `writers`; Triage reports a
 write without one instead of editing it. The rule itself lives in AGENTS.md — one shared GitHub identity
-makes the line a self-report, so the gate guarantees presence, not truth (#633).
+makes the line a self-report, so the gate guarantees presence, not truth (#633). Since #1110 the signature
+is what closes that gap: the line still claims, the key proves.
 
 | File | Purpose |
 | --- | --- |
-| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627) — a roster, not a permission: `reviewers`/`selfReview` are the permission lists (#962); editing it is T3 |
+| `.github/agent/review-policy.json` | the logins whose PASS counts, `selfReview`, the authors who may PASS their own PR, and `writers`, the Bot names a `Written-by:` line may carry (#627) — a roster, not a permission: `reviewers`/`selfReview` are the permission lists (#962); editing it is T3. `signers` lists the workstations that must have a public key (#1110) |
+| `.github/agent/signers.json` | one Ed25519 public key per signing workstation, base64url DER SPKI from `openssl pkey -pubout -outform DER` (#1110); private keys never enter the repository |
 | `.github/scripts/review-gate.mjs` | the rule above, for one pull request at a time |
+| `.github/scripts/verdict-signature.mjs` | the canonical string, the signature lines, `loadSigners` and `verifyReport` — one implementation for the gates, the signer and the tests (#1110) |
+| `.github/scripts/sign-verdict.mjs` | what a workstation runs to sign its own conclusion; reads its own secret, never prints a key (#1110) |
 | `.github/scripts/review-gate.test.mjs` | stale tip, self-review (allowed only for a `selfReview` author, and only with an `Attestation:` line when that login is the author, #644), unlisted login, FAIL after PASS, missing `Ran:` (a missing `Not run:` no longer refuses), a missing `Written-by:` line and one naming an unlisted writer (#627), a `selfReview` login counting only on its own pull request (#928), a `selfReview` admin on someone else's pull request (permission API, `CONTRIBUTOR` stamp), a `CONTRIBUTOR` who is neither still refused, and the workflow's shape |
+| `.github/scripts/verdict-signature.test.mjs` | a real signature counting, a missing `Signed-by:`/`Signature:`/`Nonce:`, another workstation's private key, a replay onto another tip and one with another nonce, a signed and an unsigned INC, the configuration errors, a bot account with a valid signature (#943 survives), the author attestation and the signature staying separate refusals (#1148 + #1110), and the four impersonated PASSes from #1094/#1095/#1108/#1115 read as unverified (#1110) |
 | `.github/workflows/review-gate.yml` | reports it in the job summary; `continue-on-error`, never required |
 
 Run it by hand (read-only API calls with your `gh` login):

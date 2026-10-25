@@ -36,6 +36,7 @@
 import { readFileSync, appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { SIGNERS_PATH, loadSigners, verifyReport } from './verdict-signature.mjs'
 
 const SHORT = 12
 // #676: a conclusion is read only from someone GitHub ties to this repository. The fail-closed rule
@@ -253,10 +254,31 @@ const where = (r) => `${r.kind === 'review' ? 'review' : 'comment'} by ${r.login
 const isBotAccount = (r) => String(r.type ?? '').toLowerCase() === 'bot' || /\[bot\]$/i.test(login(r))
 const botKind = (r) => (String(r.type ?? '').toLowerCase() === 'bot' ? 'account type Bot' : 'login ends with [bot]')
 
+// #1110: what the policy asks of a signature, and the one refusal a broken configuration produces. The
+// roster lives in the policy, the public keys live in `signers.json`, and both must be present together:
+// half of that pair is not a reason to read unsigned reports, it is a reason to refuse every pull request
+// until it is repaired.
+function signingState({ policy, signers, pr }) {
+  const roster = Array.isArray(policy?.signers) ? policy.signers.map((name) => String(name).trim()).filter(Boolean) : []
+  if (!roster.length) return { enforced: false, error: null }
+  if (!signers || signers.error === undefined) {
+    return { enforced: false, error: `.github/agent/review-policy.json lists ${roster.length} signing workstation(s) (${roster.join(', ')}), but ${SIGNERS_PATH} was not loaded: the gate refuses rather than reading unsigned reports` }
+  }
+  if (signers.error) return { enforced: false, error: signers.error }
+  if (!String(pr ?? '').trim()) {
+    return { enforced: false, error: 'a signed verdict names the pull request number it belongs to, and this run asked about no pull request' }
+  }
+  return { enforced: true, required: roster, keys: signers.keys, error: null }
+}
+
 // reports: [{ login, body, at, kind, id }] from the comments and review bodies of one PR.
 // `body` is the pull request body (live entry points pass it). `owners` is that list already parsed;
 // either one makes the Owner check possible. Neither one refuses an author-login conclusion.
-export function decide({ head, author, reports, policy, admins, body, owners } = {}) {
+// `signers`: the loaded `.github/agent/signers.json` (`loadSigners`). When the policy's `signers` roster
+// is non-empty every conclusion must verify against it (#1110); an unverified one is not a conclusion and
+// never joins the newest-wins scan, so it can neither pass nor veto. `repo` and `pr` are signed into the
+// report, so a signature cannot move to another pull request or another tip.
+export function decide({ head, author, reports, policy, admins, body, owners, repo, pr, signers } = {}) {
   const headSha = String(head ?? '').toLowerCase()
   const authorLogin = String(author ?? '').toLowerCase()
   const ownersKnown = owners !== undefined || body !== undefined
@@ -268,6 +290,12 @@ export function decide({ head, author, reports, policy, admins, body, owners } =
   const reasons = [] // reports that do not name this tip at all
   const judged = []
   const atTip = [] // conclusions that name this tip, valid or not, in the order the API returned them
+  const unverified = [] // conclusions this tip carries whose signature does not verify: not read at all
+  // #1110: the roster in `review-policy.json` is the switch. A roster with no loaded signers file, or a
+  // file that cannot be read or is missing a workstation's key, is a configuration error — the gate
+  // refuses rather than falling back to unsigned reports, which is the hole this closes.
+  const signing = signingState({ policy, signers, pr })
+  if (signing.error) return { ok: false, verdict: null, by: null, tip: null, reason: signing.error, judged, unverified }
 
   for (const r of reports ?? []) {
     const parsed = parseReport(r.body)
@@ -292,6 +320,19 @@ export function decide({ head, author, reports, policy, admins, body, owners } =
       entry.why = `${where(r)}: written by a bot account (${botKind(r)}), so it is not a conclusion`
       reasons.push(entry.why)
       continue
+    }
+    // #1110, before anything below can read it: a conclusion whose signature does not verify is not a
+    // conclusion. It stays out of `atTip`, so it neither passes nor refuses an older PASS, and the summary
+    // lists it as unverified. Reading it here — before the association, writer and reviewers checks — is
+    // what makes the rule one cut rather than one more refusal stacked on the old path.
+    if (signing.enforced) {
+      const signed = verifyReport({ repo, pr, head: headSha, verdict: parsed.verdict, writer: parsed.writer, body: r.body, signers: signing })
+      if (!signed.ok) {
+        entry.why = `${where(r)}: unverified — ${signed.reason}`
+        unverified.push(entry)
+        continue
+      }
+      entry.workstation = signed.workstation
     }
     const association = String(r.association ?? '').toUpperCase()
     // #928 (owner decision 2026-10-24): a login the policy lists in `selfReview` may be a CONTRIBUTOR
@@ -330,10 +371,10 @@ export function decide({ head, author, reports, policy, admins, body, owners } =
     entry.counts = true
   }
 
-  if (!reviewers.size) return { ok: false, verdict: null, by: null, tip: null, reason: 'no reviewer is listed in .github/agent/review-policy.json', judged }
+  if (!reviewers.size) return { ok: false, verdict: null, by: null, tip: null, reason: 'no reviewer is listed in .github/agent/review-policy.json', judged, unverified }
   if (!atTip.length) {
     const reason = reasons.length ? reasons.join('; ') : `no Verifier report names the tip ${headSha.slice(0, SHORT)}`
-    return { ok: false, verdict: null, by: null, tip: null, reason, judged }
+    return { ok: false, verdict: null, by: null, tip: null, reason, judged, unverified }
   }
 
   // The newest word at this tip decides, and that includes a conclusion the checks refused: an invalid
@@ -343,15 +384,15 @@ export function decide({ head, author, reports, policy, admins, body, owners } =
     .map((e, i) => ({ e, i, t: Date.parse(e.at ?? 0) || 0 }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .at(-1).e
-  if (!last.counts) return { ok: false, verdict: last.verdict, by: null, tip: last.tip, id: last.id, kind: last.kind, reason: last.why, judged }
+  if (!last.counts) return { ok: false, verdict: last.verdict, by: null, tip: last.tip, id: last.id, kind: last.kind, reason: last.why, judged, unverified }
   const { parsed } = last
   if (last.verdict !== 'PASS') {
-    return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged }
+    return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged, unverified }
   }
   if (!parsed.ran.length) {
-    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS lists no command it ran`, judged }
+    return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS lists no command it ran`, judged, unverified }
   }
-  return { ok: true, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS names this tip`, judged }
+  return { ok: true, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS names this tip`, judged, unverified }
 }
 
 export function render(result, { pr, head, author } = {}) {
@@ -364,6 +405,13 @@ export function render(result, { pr, head, author } = {}) {
     '',
     `Pull request #${pr}, author ${author}, head \`${String(head).slice(0, SHORT)}\`.`,
   ]
+  // #1110: a conclusion this tip carries and the gate could not verify is named here, so a reader never
+  // wonders why a PASS that is visibly on the pull request is not the one being reported.
+  const unverifiedReports = result.unverified ?? []
+  if (unverifiedReports.length) {
+    out.push('', 'Unverified — not read as conclusions:')
+    for (const e of unverifiedReports.slice(0, 10)) out.push(`- unverified: ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${(e.tip ?? 'no tip').slice(0, SHORT)} — ${String(e.why ?? '').replace(/^[^:]+: unverified — /, '')}`)
+  }
   const seen = result.judged.filter((e) => e.counts || e.verdict)
   if (seen.length) out.push('', 'Verifier reports read:', ...seen.slice(0, 10).map((e) => `- ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${(e.tip ?? 'no tip').slice(0, SHORT)}, written-by ${e.writer ?? 'nothing'}${e.counts ? '' : ' (not counted)'}`))
   out.push('', '_Report only (Phase 1): this does not block, label, approve or merge anything. Rules: `.github/agent/review-policy.json`; see [`docs/autonomous-dev.md`](../../docs/autonomous-dev.md)._')
@@ -402,7 +450,11 @@ function main() {
   ]
 
   const policy = loadPolicy(policyPath)
-  const result = decide({ head, author, reports, policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }) })
+  // #1110: the keys come from the same checkout the policy does, so a pull request that edits either file
+  // changes only what its own run reads. `loadSigners` is fail-closed on its own; `decide` refuses when the
+  // policy lists a roster and this is missing.
+  const signers = loadSigners({ policy, path: arg('--signers') || process.env.VERDICT_SIGNERS || fileURLToPath(new URL('../agent/signers.json', import.meta.url)) })
+  const result = decide({ head, author, reports, policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')

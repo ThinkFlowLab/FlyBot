@@ -39,6 +39,9 @@ Always include:
 ```text
 Verdict: PASS | FAIL | INC at <full 40-character sha>
 Written-by: Reviewer
+Signed-by: Reviewer
+Nonce: <16 hex characters, one per report>
+Signature: <base64url, from `.github/scripts/sign-verdict.mjs`>
 Posted-by: <who actually posted it, when the writer could not post it themselves>
 
 Ran:
@@ -60,6 +63,21 @@ first line and treat any other shape as no conclusion. The sha is the whole 40 c
 [AGENTS.md](../../../AGENTS.md#every-state-changing-write-says-who-wrote-it-627), which is the single source.
 
 `role` is the `Written-by` name and is not an `Owner:` of the pull request. The gate parses the line; it does not check a signature.
+
+The three signature lines are what turns the attribution into proof (#1110): the gate verifies
+`Signature:` against your workstation's public key in `.github/agent/signers.json`, over
+`FBV1|<owner>/<repo>#<pr>@<VERDICT>@<full 40-char head>@<workstation>@<nonce>`. `Signed-by:` must name the
+same Bot as `Written-by:`, the nonce must be fresh for this report, and the head must be the **full** sha
+you judged — a short sha on the `Verdict:` line is fine, but it is not what you sign, so copy the 40
+characters. A `Verdict:` that does not verify is not a conclusion at all: it cannot pass and it cannot hold a
+merge, and the gate summary lists it as `unverified:`. The signature and the attestation are separate
+refusals: write both when the posting login is the pull request author. Sign with your own key, which stays
+in your secret card:
+
+```sh
+node .github/scripts/sign-verdict.mjs --repo ThinkFlowLab/FlyBot --pr <n> --verdict PASS \
+  --workstation Reviewer --head <full 40-char head>
+```
 
 What the gates read as evidence (`review-gate.mjs` `parseReport`; #660–#663 refused at the queue for
 the first point):

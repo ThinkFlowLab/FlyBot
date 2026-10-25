@@ -25,6 +25,7 @@ import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { adminsFor, decide, loadPolicy } from './review-gate.mjs'
+import { loadSigners } from './verdict-signature.mjs'
 import { createGate, loadRules } from './risk-gate.mjs'
 import { guard } from './enqueue-rules.mjs'
 
@@ -100,7 +101,7 @@ const short = (s) => String(s ?? '').slice(0, SHORT)
 // expectedHead: optional, a head the caller insists on (`--sha` on a hand run); a different live head
 // refuses. The queue's base sha is never a head: a merge_group entry passes none here (see
 // prFromHeadRef). reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins, gh, repo, body, owners } = {}) {
+export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins, gh, repo, body, owners, pr, signers } = {}) {
   const reasons = []
   const target = String(head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -120,7 +121,7 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   // A tier that needs no PASS also needs no permission lookup.
   const verdict = exempt
     ? { ok: true, verdict: null, by: null, exempt: true }
-    : decide({ head: target, author, reports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }) })
+    : decide({ head: target, author, reports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
@@ -150,6 +151,11 @@ export function render(result, { pr, labels } = {}) {
     '',
     `Pull request #${pr}, head \`${result.head}\`, labels: ${(labels ?? []).join(', ') || '(none)'}.`,
   ]
+  // #1110: a conclusion whose signature does not verify is named, never silently dropped.
+  const unverified = result.verdict?.unverified ?? []
+  if (unverified.length) {
+    out.push('', 'Unverified — not read as conclusions:', ...unverified.slice(-5).map((e) => `- unverified: ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${short(e.tip ?? 'no tip')} — ${String(e.why ?? '').replace(/^[^:]+: unverified — /, '')}`))
+  }
   const seen = (result.verdict?.judged ?? []).filter((e) => e.counts || e.verdict)
   if (seen.length) out.push('', 'Conclusive texts read (newest last):', ...seen.slice(-5).map((e) => `- ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${short(e.tip ?? 'no tip')}${e.counts ? '' : ' (not counted)'}`))
   out.push('', '_Rules: [`AGENTS.md` → Merge gates](../../AGENTS.md#merge-gates). This check refuses the entry; it never labels, comments, approves or merges._')
@@ -217,7 +223,10 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // base copy of risk-gate.mjs (see exemptFromPass).
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
   const policy = loadPolicy(policyPath)
-  const result = judge({ labels, files, head, author, reports, policy, gh, repo, expectedHead: arg('--sha'), mode, body: pull.body })
+  // #1110: one load per run, from the same checkout the policy came from (the workflow checks out the base
+  // branch, so a pull request cannot edit the keys it is judged by).
+  const signers = loadSigners({ policy, path: arg('--signers') || env.VERDICT_SIGNERS || fileURLToPath(new URL('../agent/signers.json', import.meta.url)) })
+  const result = judge({ labels, files, head, author, reports, policy, gh, repo, pr, signers, expectedHead: arg('--sha'), mode, body: pull.body })
   // #960 (B): `enqueue-guard` is not a required context today, so `merge-gate` is the only gate on a
   // queue entry. `judge` passes the pull request body into `decide` so an author-login PASS is checked
   // against `Owner:` (#644). It does not apply the body rules itself: the fallback runs the guard's own
