@@ -12076,6 +12076,42 @@ test('#1118: a lagged list still clears that room line on the next poll with Aut
   assert.equal((await call('flybot/social/status', {})).value.approvals.length, 0)
 })
 
+// #1118 review: the lagged poll used to skip a face row because it has no `to.handle`. Dropping that
+// check let `clearLaggedRoomHolds` approve any `policy` row whose text starts with the room-share
+// marker. A face-room line is `face_room_message` and the wire text is the Bot's own words. Face
+// Auto-send still refuses `policy`; the status poll must too.
+test('#1118: a lagged poll does not clear a face-room policy hold', async (t) => {
+  const marker = 'FLYBOT-ROOM-SHARE\nthe deploy token rotated'
+  const envelope = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'session-e2439f82', name: 'FlyBot delivery', text: 'the deploy token rotated', seq: 1 })}`
+  const cases = [
+    { why: 'the review probe: marker plus the bot text, no recipient', message: { payload: { text: marker } } },
+    { why: 'a real room envelope as the bot text', message: { payload: { text: envelope } } },
+    { why: 'a face row that names a handle is still not a shared-group line', message: { to: { handle: '@coder.bob.home', display_name: 'Coder' }, payload: { text: marker } } },
+    { why: 'the bot text alone, with no marker', message: { payload: { text: 'the deploy token rotated' } } },
+    { why: 'another face outbound kind still waits on policy', kind: 'face_room_invite', message: { payload: { text: envelope } } },
+  ]
+  for (const item of cases) {
+    const { ctx, call, stop } = await team()
+    t.after(stop)
+    const server = holdingServer({ holdReason: 'policy' })
+    server.queue.push({
+      approval_id: 'apr-face-policy', kind: item.kind ?? 'face_room_message', status: 'pending', sender_kind: 'bot', bot_id: 'm1',
+      hold_reason: 'policy', reasons: ['mvp.all_outbound_requires_approval'],
+      message: item.message,
+    })
+    const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+    t.after(() => social.dispose())
+    await grantTeam(ctx.flybot)
+    await social.registerAll()
+    await social.pendingApprovals({ fresh: true })
+    assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, item.why)
+    assert.equal(server.queue.length, 1, item.why)
+    await call('flybot/social/status', {})
+    assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, `${item.why}: status does not approve it`)
+    assert.equal(server.queue.length, 1, item.why)
+  }
+})
+
 test('#882: an envelope carrying an attachment is not cleared even on a clean blanket hold', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)

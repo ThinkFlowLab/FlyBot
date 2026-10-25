@@ -3366,14 +3366,18 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   const roomPolicyClearing = new Set()
   // The send path clears an ordinary group line when the list already has the row. A list that
   // lagged leaves the card (#766); the next poll finishes that one clear. The room is the consent,
-  // so this does not ask whether pair Auto-send is on (#1118). Blanket holds stay on the send path,
-  // so a file the approval row does not mention is not decided here (#882).
+  // so this does not ask whether pair Auto-send is on (#1118). Only a shared-group
+  // `outbound_message` whose text is a real room-share envelope: a face-room line is
+  // `face_room_message` and the wire text is the Bot's own words, which can start with the same
+  // marker. Face Auto-send still refuses a `policy` hold, and this poll must too (#457). Blanket
+  // holds stay on the send path, so a file the approval row does not mention is not decided here (#882).
   async function clearLaggedRoomHolds(raw) {
     const cleared = new Set()
     for (const item of raw) {
+      if (item?.kind !== 'outbound_message') continue
       const payload = item?.message?.payload
       const text = typeof payload === 'string' ? payload : payload?.text
-      if (typeof text !== 'string' || !text.startsWith('FLYBOT-ROOM-SHARE\n')) continue
+      if (!roomShareEnvelope(text)) continue
       if (Array.isArray(item?.message?.attachments) && item.message.attachments.length > 0) continue
       if (!roomPolicyClears(item)) continue
       const id = String(item.approval_id ?? item.id ?? '')
