@@ -988,6 +988,8 @@ export function install(rt) {
         meta: { roomId: room.id, seq: payload.seq, share: payload.op, ...(scope ? { scope } : {}) },
       })
     } catch (error) {
+      // Still on the owner's card (#1161). `allow` would record the seat as told and never retry.
+      if (error?.code === 'pending_approval') return { action: 'hold' }
       rt.warn?.('ds-bot: room share not sent to %s: %s', remote.handle || remote.id, error)
       return undefined
     }
@@ -1827,49 +1829,100 @@ export function install(rt) {
   // and it can be refused, held, or never read (a room-only Bot is not polled). The claim is the
   // authority either way: read every open server link and seat the homes it names. A room that
   // cannot be shown, or a notice that does not leave, stays on the link as `waiting` for the owner.
-  rt.seatOpenClaims = async function seatOpenClaims({ roomId, force = false } = {}) {
-    if (typeof rt.roomInviteServer?.verify !== 'function') return { seated: [], waiting: [] }
-    const wanted = roomId === undefined || roomId === null || roomId === '' ? undefined : String(roomId)
-    const rooms = wanted ? [rt.roomOf(wanted)].filter(Boolean) : Object.values(state.rooms || {})
-    const seated = []
+  // #1161: Bot Social counts each preview against the same address budget as a face-code attempt
+  // (20 in 10 minutes). The inbox poll used to preview every open link on every tick, so a home
+  // that stayed open could never see the next claim. One open link per quiet read, a minute apart,
+  // stays under that budget. Seat them (`force` or one room) still reads at once. A `rate_limited`
+  // or `locked_out` answer pauses the quiet reads for the server's retry, at least a minute and at
+  // most the budget window. The clock is only moved after a preview that answered, so a network
+  // error is tried again on the next tick.
+  const CLAIM_READ_GAP_MS = 60_000
+  const CLAIM_READ_PAUSE_MAX_MS = 10 * 60 * 1000
+  let claimReadAt = null
+  let claimReadPauseUntil = 0
+  let claimReadCursor = 0
+  const claimWaiting = (rooms) => {
     const waiting = []
     for (const room of rooms) {
       if (!room || room.origin === 'inbound-share' || isFaceRoom(room)) continue
       for (const invite of invitesOf(room)) {
+        if (invite.server !== true || !openInvite(invite) || !invite.waiting) continue
+        waiting.push({ roomId: room.id, ticket: invite.ticket, reason: invite.waiting.reason, bots: invite.waiting.bots ?? [] })
+      }
+    }
+    return waiting
+  }
+  const pauseClaimReads = (error, now) => {
+    const code = error?.code
+    if (code !== 'rate_limited' && code !== 'locked_out') return false
+    const seconds = Number(error.retryAfter ?? error.retry_after)
+    const wait = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : CLAIM_READ_GAP_MS
+    claimReadPauseUntil = now + Math.min(CLAIM_READ_PAUSE_MAX_MS, Math.max(CLAIM_READ_GAP_MS, wait))
+    return true
+  }
+  rt.seatOpenClaims = async function seatOpenClaims({ roomId, force = false, now = Date.now() } = {}) {
+    if (typeof rt.roomInviteServer?.verify !== 'function') return { seated: [], waiting: [] }
+    const wanted = roomId === undefined || roomId === null || roomId === '' ? undefined : String(roomId)
+    const rooms = wanted ? [rt.roomOf(wanted)].filter(Boolean) : Object.values(state.rooms || {})
+    const polling = !force && wanted === undefined
+    if (polling && (now < claimReadPauseUntil || (claimReadAt !== null && now - claimReadAt < CLAIM_READ_GAP_MS))) {
+      return { seated: [], waiting: claimWaiting(rooms) }
+    }
+    const open = []
+    for (const room of rooms) {
+      if (!room || room.origin === 'inbound-share' || isFaceRoom(room)) continue
+      for (const invite of invitesOf(room)) {
         if (invite.server !== true || !openInvite(invite)) continue
-        let claim
-        try {
-          claim = await rt.roomInviteServer.verify(invite.ticket)
-        } catch (error) {
-          rt.warn?.('ds-bot: a room link claim was not read: %s', error)
+        open.push({ room, invite })
+      }
+    }
+    let batch = open
+    let cursor = claimReadCursor
+    if (polling) {
+      if (open.length === 0) return { seated: [], waiting: [] }
+      cursor = claimReadCursor % open.length
+      batch = [open[cursor]]
+    }
+    const seated = []
+    const seen = new Set(batch.map(item => item.invite.ticket))
+    const waiting = claimWaiting(rooms).filter(item => !seen.has(item.ticket))
+    for (const { room, invite } of batch) {
+      let claim
+      try {
+        claim = await rt.roomInviteServer.verify(invite.ticket)
+      } catch (error) {
+        pauseClaimReads(error, now)
+        rt.warn?.('ds-bot: a room link claim was not read: %s', error)
+        if (invite.waiting) waiting.push({ roomId: room.id, ticket: invite.ticket, reason: invite.waiting.reason, bots: invite.waiting.bots ?? [] })
+        continue
+      }
+      claimReadAt = now
+      if (polling) claimReadCursor = (cursor + 1) % open.length
+      if (!claim || String(claim.roomId ?? '') !== room.id) continue
+      const claims = (Array.isArray(claim.claimers) ? claim.claimers : claim.claimer ? [claim.claimer] : []).filter(c => botsOfClaim(c).length > 0)
+      const mark = () => JSON.stringify({ waiting: invite.waiting ?? null, told: invite.told ?? null, held: invite.held ?? null, tries: invite.tellTries ?? null })
+      const before = mark()
+      let blocked = null
+      if (claims.length === 0) {
+        if (invite.waiting) delete invite.waiting
+      } else for (const mine of claims) {
+        const admitted = await admitClaim(room, invite, mine, botsOfClaim(mine)[0])
+        if (admitted.refused === 'not-addable') {
+          blocked = { reason: 'not-addable', bots: admitted.bots ?? [] }
           continue
         }
-        if (!claim || String(claim.roomId ?? '') !== room.id) continue
-        const claims = (Array.isArray(claim.claimers) ? claim.claimers : claim.claimer ? [claim.claimer] : []).filter(c => botsOfClaim(c).length > 0)
-        const mark = () => JSON.stringify({ waiting: invite.waiting ?? null, told: invite.told ?? null, held: invite.held ?? null, tries: invite.tellTries ?? null })
-        const before = mark()
-        let blocked = null
-        if (claims.length === 0) {
-          if (invite.waiting) delete invite.waiting
-        } else for (const mine of claims) {
-          const admitted = await admitClaim(room, invite, mine, botsOfClaim(mine)[0])
-          if (admitted.refused === 'not-addable') {
-            blocked = { reason: 'not-addable', bots: admitted.bots ?? [] }
-            continue
-          }
-          if (admitted.refused) continue
-          seated.push(...(admitted.fresh ?? []))
-          const outcome = await tellSeats(room, invite, admitted.seats ?? [], { force })
-          if (outcome === 'not-delivered') blocked = blocked ?? { reason: 'not-delivered', bots: [] }
-          else if (outcome === 'held') blocked = blocked ?? { reason: 'held', bots: [] }
-        }
-        if (claims.length > 0) {
-          if (blocked) invite.waiting = { reason: blocked.reason, bots: blocked.bots, at: invite.waiting?.at ?? Date.now() }
-          else if (invite.waiting) delete invite.waiting
-        }
-        if (mark() !== before) await rt.save?.()
-        if (invite.waiting) waiting.push({ roomId: room.id, ticket: invite.ticket, reason: invite.waiting.reason, bots: invite.waiting.bots ?? [] })
+        if (admitted.refused) continue
+        seated.push(...(admitted.fresh ?? []))
+        const outcome = await tellSeats(room, invite, admitted.seats ?? [], { force })
+        if (outcome === 'not-delivered') blocked = blocked ?? { reason: 'not-delivered', bots: [] }
+        else if (outcome === 'held') blocked = blocked ?? { reason: 'held', bots: [] }
       }
+      if (claims.length > 0) {
+        if (blocked) invite.waiting = { reason: blocked.reason, bots: blocked.bots, at: invite.waiting?.at ?? Date.now() }
+        else if (invite.waiting) delete invite.waiting
+      }
+      if (mark() !== before) await rt.save?.()
+      if (invite.waiting) waiting.push({ roomId: room.id, ticket: invite.ticket, reason: invite.waiting.reason, bots: invite.waiting.bots ?? [] })
     }
     return { seated, waiting }
   }
