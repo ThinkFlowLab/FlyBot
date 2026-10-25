@@ -1,42 +1,33 @@
 # Token spend per Bot turn
 
-**合成样本 / 非线上账本.** This page is a synthetic DeepSeek sample on hk2, not a live production ledger. Do not use it for [#796](https://github.com/ThinkFlowLab/FlyBot/issues/796) savings acceptance against the 2026-10-23 live ledger. It changes nothing that is sent to a model: no prompt, notice, roster, memory or tool-output edit.
+**本机账本 / this host's live ledger.** Every number below comes from the usage ledger this host writes (`/data/dsh/bot/usage.sqlite`), window `2026-10-24T06:51:39.655Z .. 2026-10-25T09:37:59.208Z`. It changes nothing that is sent to a model: no prompt, notice, roster, memory or tool-output edit. It is **not** a rebaseline of the [2026-10-23 page](2026-10-23-token-spend.md) — the 2026-10-23 page's window ends on 10-23, before this one starts, so no saving, rise or fall is claimed ([Comparison](#comparison-with-the-2026-10-23-page)).
 
 The numbers below are the JSON from one run of `core/dev/token-report.mjs` on the snapshot named in Sample. No cell is estimated.
 
 ## Run
 
-- Label: 合成样本 / 非线上账本
-- Host: hk2 (`infermatrix-hk2-hsliu`), isolated `DSH_HOME=/home/hsliu/experiments/2026-10-25-796-synth/dsh`
-- Snapshot directory: `/home/hsliu/experiments/2026-10-25-796-synth/snapshot/`
-- FlyBot: `origin/main` @ `44f3e97d5bf531c7fa0475587ef7c275d7d7f599`
-- DSH: `639ed015397290b3745d163aafe02ffee4aa3f84` (0.2.0-rc.2)
-- Provider: DeepSeek (`llm-deepseek`)
-- Model: `deepseek-official/deepseek-flash`
-- Team: Chief (Main), Dev, Reviewer; room `交付组`
-- Sessions / billed calls: 3 sessions, 11 billed calls (Chief 5, Dev 3, Reviewer 3)
-- Wall clock of the settled model turns: about 2.3 minutes (operator note for the run, not a ledger column)
-
-### Fixed task set
-
-1. Pick the model for Chief; create Dev and Reviewer; create room `交付组`.
-2. DM Chief to list the team; DM Dev a 3-bullet `hello()` plan; DM Reviewer a 2-sentence review.
-3. Group status ask (settled; no extra billed rows).
-4. DM Chief a one-line summary.
-5. Extra multi-turn growth: Chief ×2, Dev ×2, Reviewer ×2, Chief ×1 wrap-up.
+- Label: 本机账本 / this host's live ledger
+- Host: this workspace host; `DSH_HOME=/data/dsh`, ledger `/data/dsh/bot/usage.sqlite`
+- Snapshot: all three files (`usage.sqlite`, `-wal`, `-shm`) copied into `/tmp/token-report/` at 2026-10-25T09:40:23Z before reading; every number below is from that copy, so the live writer cannot move a cell mid-report
+- FlyBot: `origin/main` @ `44f3e97d5bf531c7fa0475587ef7c275d7d7f599` (the tree the reader ran from)
+- DSH: 0.2.0-rc.2 harness
+- Providers: `opencsitool` / `DeepSeek-V4.1-Flash-1017` (499 calls), `volc` / `deepseek-v4-1-flash-economy-261017` (13 calls)
+- Bots with calls: 14
+- Sessions / billed calls: 40 sessions, 512 calls (373 `memory` rows, 139 `compaction` rows)
+- No fixed task set: this is every billed call the team's own rounds produced in the window, not a scripted run. That is also why it cannot be compared call-for-call with the 2026-10-23 page.
 
 ## Sample
 
 | Item | Value | Source |
 | --- | --- | --- |
-| Ledger snapshot | `/home/hsliu/experiments/2026-10-25-796-synth/snapshot/usage.sqlite` | ledger |
-| Window | 2026-10-25T09:25:30.251Z .. 2026-10-25T09:27:55.691Z | derived: earliest session first .. latest session last |
-| Billed attempts | 11 | ledger |
-| Sessions with calls | 3 | ledger |
-| Bots with calls | 3 (Chief, Dev, Reviewer) | ledger |
+| Ledger snapshot | `/tmp/token-report/usage.sqlite` (copied from `/data/dsh/bot/usage.sqlite`) | ledger |
+| Window | 2026-10-24T06:51:39.655Z .. 2026-10-25T09:37:59.208Z | derived: earliest first .. latest last among the Sessions in the JSON |
+| Billed attempts | 512 | ledger |
+| Sessions with calls | 40 | ledger |
+| Bots with calls | 14 (Reviewer, Dev2, Dev, Dev3, Dev4, Triage, SelfTest, Reviewer2, Chief, Release, Architect, Data, Backend, Frontend) | ledger |
 | Cache writes | 0 | ledger |
 
-The JSON `from` and `to` are null: the reader took the whole snapshot. The window row is the earliest `first` and the latest `last` among the three sessions in that JSON. Reading a live ledger twice can diverge while a Bot is still writing; this page was filled from the snapshot file above.
+`--from 2026-10-24T01:50:56` (Asia/Shanghai, = `2026-10-23T17:50:56Z`) was passed to match the 2026-10-23 page's cut. The ledger has no call before `2026-10-24T06:51:39.655Z`, so the Window row names the first observed call, not the flag. The window ends at the latest call in the snapshot.
 
 ## Method
 
@@ -49,7 +40,9 @@ Growth is measured inside one Session, between consecutive calls, and only withi
 Cache-read share is printed to one decimal the way `token-report.mjs` formats it (`(share * 100).toFixed(1)`).
 
 ```sh
-node core/dev/token-report.mjs --db /home/hsliu/experiments/2026-10-25-796-synth/snapshot/usage.sqlite --tz Asia/Shanghai --json
+cp "$DSH_HOME"/bot/usage.sqlite* /tmp/token-report/
+cd core && node --experimental-sqlite dev/token-report.mjs \
+  --db /tmp/token-report/usage.sqlite --tz Asia/Shanghai --from 2026-10-24T01:50:56 --top 10
 ```
 
 A missing `--db` is an error that names the path, never an empty table: an empty report is what a broken path looks like.
@@ -58,13 +51,13 @@ A missing `--db` is an error that names the path, never an empty table: an empty
 
 | Measure | Value | Source |
 | --- | --- | --- |
-| Calls | 11 | ledger |
-| Fresh input | 3,745 | ledger |
-| Cache read | 5,760 | ledger |
+| Calls | 512 | ledger |
+| Fresh input | 2,799,817 | ledger |
+| Cache read | 17,900,416 | ledger |
 | Cache write | 0 | ledger |
-| Output | 55 | ledger |
-| Prompt | 9,505 | derived: fresh input + cache read + cache write |
-| Cache read share of prompt | 60.6% | derived: cache read / prompt |
+| Output | 1,028,512 | ledger |
+| Prompt | 20,700,233 | derived: fresh input + cache read + cache write |
+| Cache read share of prompt | 86.5% | derived: cache read / prompt |
 
 ## 2. Per Bot
 
@@ -72,66 +65,92 @@ Sorted by prompt. `fresh input` is what was billed as input, not the prompt.
 
 | Bot | Calls | Fresh input | Cache read | Cache write | Output | Prompt | Cache read share | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Chief | 5 | 1,551 | 2,688 | 0 | 25 | 4,239 | 63.4% | ledger |
-| Dev | 3 | 1,205 | 1,536 | 0 | 15 | 2,741 | 56.0% | ledger |
-| Reviewer | 3 | 989 | 1,536 | 0 | 15 | 2,525 | 60.8% | ledger |
+| Reviewer | 60 | 278,429 | 3,462,656 | 0 | 110,959 | 3,741,085 | 92.6% | ledger |
+| Dev2 | 71 | 342,097 | 2,775,680 | 0 | 179,829 | 3,117,777 | 89.0% | ledger |
+| Dev | 61 | 378,535 | 2,607,104 | 0 | 147,027 | 2,985,639 | 87.3% | ledger |
+| Dev3 | 49 | 281,843 | 2,212,736 | 0 | 90,152 | 2,494,579 | 88.7% | ledger |
+| Dev4 | 46 | 278,079 | 2,051,072 | 0 | 86,068 | 2,329,151 | 88.1% | ledger |
+| Triage | 55 | 252,014 | 1,644,416 | 0 | 102,934 | 1,896,430 | 86.7% | ledger |
+| SelfTest | 41 | 281,686 | 1,281,664 | 0 | 74,571 | 1,563,350 | 82.0% | ledger |
+| Reviewer2 | 54 | 312,244 | 1,133,440 | 0 | 146,870 | 1,445,684 | 78.4% | ledger |
+| Chief | 37 | 154,163 | 497,536 | 0 | 23,293 | 651,699 | 76.3% | ledger |
+| Release | 27 | 216,887 | 219,776 | 0 | 66,462 | 436,663 | 50.3% | ledger |
+| Architect | 6 | 10,155 | 10,240 | 0 | 204 | 20,395 | 50.2% | ledger |
+| Data | 3 | 6,686 | 4,096 | 0 | 83 | 10,782 | 38.0% | ledger |
+| Backend | 1 | 3,513 | 0 | 0 | 22 | 3,513 | 0.0% | ledger |
+| Frontend | 1 | 3,486 | 0 | 0 | 38 | 3,486 | 0.0% | ledger |
 
 Cache read share on this table is `derived: cache read / prompt`, printed to one decimal. The source cell `ledger` names the stored columns on the same row.
 
 ## 3. Per-call prompt
 
-Over all 11 attempts: p50 **857**, p90 **926**, p99 **984**, max 984.
+Over all 512 attempts: p50 **14,446**, p90 **215,677**, p99 **250,455**, max 254,350.
 
 | Statistic | Prompt tokens per call | Source |
 | --- | --- | --- |
-| p50 | 857 | ledger |
-| p90 | 926 | ledger |
-| p99 | 984 | ledger |
-| max | 984 | ledger |
+| p50 | 14,446 | ledger |
+| p90 | 215,677 | ledger |
+| p99 | 250,455 | ledger |
+| max | 254,350 | ledger |
 
 ## 4. Top Sessions by prompt
 
-A Session is a part of one Bot's conversation. The JSON default `top` is 10; this snapshot has 3 sessions, so the table is the whole sample.
+A Session is a part of one Bot's conversation. `--top 10` is why this table is the ten largest of the 40; the other 30 Sessions are inside §1's totals.
 
 | Session | Bot | Calls | Prompt | Fresh input | Cache read | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| session-31ca8073-7ae7-456c-90dc-8b4ad1d4ada9 | Chief | 5 | 4,239 | 1,551 | 2,688 | ledger |
-| session-bfda7fc5-7b1b-4ba0-88d1-6bf9ef8611c2 | Dev | 3 | 2,741 | 1,205 | 1,536 | ledger |
-| session-ae191a24-2ece-4ea3-acfe-65339445db41 | Reviewer | 3 | 2,525 | 989 | 1,536 | ledger |
+| session-93a0c5df-f868-4e53-9355-3c4de83558d8 | Dev3 | 16 | 1,880,031 | 56,927 | 1,823,104 | ledger |
+| session-2413164c-97a8-4b25-90c9-493d473567a1 | Dev2 | 13 | 1,387,238 | 46,694 | 1,340,544 | ledger |
+| session-ca773597-05e3-46ac-bd16-6fbf752479d7 | Reviewer | 12 | 1,206,284 | 27,788 | 1,178,496 | ledger |
+| session-db2b73be-2390-48e0-86d4-294bcb20214c | Dev2 | 8 | 968,194 | 28,802 | 939,392 | ledger |
+| session-871f0ec1-3729-476a-89ce-fd195363b946 | Dev | 8 | 950,157 | 26,509 | 923,648 | ledger |
+| session-901eefb6-cd02-4992-a861-28e9c3ee4d72 | Dev2 | 50 | 762,345 | 266,601 | 495,744 | ledger |
+| session-9b6da835-e554-45c4-a020-23f50082f3d5 | Dev4 | 6 | 745,658 | 24,250 | 721,408 | ledger |
+| session-f42ca099-9e25-46f8-a517-147f38b6bd92 | Reviewer2 | 48 | 742,717 | 291,133 | 451,584 | ledger |
+| session-16faf06b-00ba-4be5-88ed-2dc6c9870af4 | Dev4 | 6 | 731,564 | 21,932 | 709,632 | ledger |
+| session-d1512a81-8d1c-4a98-82fc-c2cfecf9c725 | Reviewer | 6 | 729,099 | 20,875 | 708,224 | ledger |
 
 ## 5. Per day
 
-Days are in `Asia/Shanghai` (`--tz`). The snapshot has one local day.
+Days are in `Asia/Shanghai` (`--tz`). The window holds two local days.
 
 | Day | Calls | Fresh input | Cache read | Cache write | Output | Prompt | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-25 | 11 | 3,745 | 5,760 | 0 | 55 | 9,505 | ledger |
+| 2026-10-24 | 337 | 1,782,103 | 11,105,280 | 0 | 743,831 | 12,887,383 | ledger |
+| 2026-10-25 | 175 | 1,017,714 | 6,795,136 | 0 | 284,681 | 7,812,850 | ledger |
 
 ## 6. Prompt growth per Session
 
-Across every Session, between comparable calls: 7 deltas, median **34** tokens, p90 **95**, with 1 compaction or new-part boundary excluded (`resets`).
+Across every Session, between comparable calls: 344 deltas, median **248** tokens, p90 **217,589**, with 128 compaction or new-part boundaries excluded (`resets`).
 
 | Measure | Deltas | Median delta | p90 delta | Source |
 | --- | --- | --- | --- | --- |
-| All Sessions, comparable calls | 7 | 34 | 95 | derived: consecutive turn prompts in one Session, split where the prompt falls |
-| Compaction boundaries excluded | 1 | not applicable | not applicable | derived: a prompt smaller than the previous call in the same Session |
+| All Sessions, comparable calls | 344 | 248 | 217,589 | derived: consecutive turn prompts in one Session, split where the prompt falls |
+| Compaction boundaries excluded | 128 | not applicable | not applicable | derived: a prompt smaller than the previous call in the same Session |
 
-The per-Session curve. The JSON default `growth` is 5; this snapshot has 3 sessions.
+The five Sessions in §4, one line each. `--growth 5` is why this table is five and not all 40.
 
 | Session | Bot | Calls | Deltas | Median delta | p90 delta | Resets | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| session-31ca8073-7ae7-456c-90dc-8b4ad1d4ada9 | Chief | 5 | 3 | 23 | 61 | 1 | derived: consecutive turn prompts in one Session |
-| session-bfda7fc5-7b1b-4ba0-88d1-6bf9ef8611c2 | Dev | 3 | 2 | 58 | 95 | 0 | derived: consecutive turn prompts in one Session |
-| session-ae191a24-2ece-4ea3-acfe-65339445db41 | Reviewer | 3 | 2 | 33 | 34 | 0 | derived: consecutive turn prompts in one Session |
+| session-93a0c5df-f868-4e53-9355-3c4de83558d8 | Dev3 | 16 | 8 | 212,841 | 248,787 | 7 | derived: consecutive turn prompts in one Session |
+| session-2413164c-97a8-4b25-90c9-493d473567a1 | Dev2 | 13 | 6 | 211,589 | 244,796 | 6 | derived: consecutive turn prompts in one Session |
+| session-ca773597-05e3-46ac-bd16-6fbf752479d7 | Reviewer | 12 | 7 | 230,217 | 249,870 | 4 | derived: consecutive turn prompts in one Session |
+| session-db2b73be-2390-48e0-86d4-294bcb20214c | Dev2 | 8 | 4 | 219,597 | 244,560 | 3 | derived: consecutive turn prompts in one Session |
+| session-871f0ec1-3729-476a-89ce-fd195363b946 | Dev | 8 | 4 | 221,238 | 237,899 | 3 | derived: consecutive turn prompts in one Session |
 
-## Prompt shape (structure only / not comparable to the 2026-10-23 live ledger)
+## Comparison with the 2026-10-23 page
 
-This section names the prompt shape that landed after the [2026-10-23 live report](2026-10-23-token-spend.md). It is structure only. There is no delta, no percent change, and no rise or fall against that live ledger. A synthetic sample and that live ledger are not the same measurement, and this page does not accept a saving for [#796](https://github.com/ThinkFlowLab/FlyBot/issues/796).
+The five measures the two pages share. **Every delta is `not comparable`**, and no percent change is printed.
 
-- `9fe5c261` (2026-10-23 17:42:26Z, [#897](https://github.com/ThinkFlowLab/FlyBot/pull/897), fixes #894). A member's group Session keeps the group's fixed rules in the standing system-prompt section `bot-room` (order 10150): the members line or the face roster, `@Name` calls, the notice, the admin note or the face lead / member note, the face routing rule, and the reply rule. DSH renders that section on every model step and re-projects it after a checkpoint or in a new part. A turn carries the round (earlier lines, this round, references, who is working, speaking order, position), a short routing note on a routed face line, and a one-line reply cue. When the notice changed since that member's last turn, the turn says so in one line. Own chats and the relay Session render no section.
-- `9f4aa524` (2026-10-23 17:50:56Z, [#898](https://github.com/ThinkFlowLab/FlyBot/pull/898), fixes #895). A tree coordinator's system prompt no longer carries the child-load block (`Child load right now — …`). Renames, roles and other fixed notes still refresh the tree block, and an unchanged block is not rewritten. The coordinator rule says, in fixed words, to call `list_children` before sending a part that more than one child fits, and to prefer an idle or working child to a busy one. `loadLine` remains a helper; the prompt does not call it.
+| Measure | 2026-10-23 | 2026-10-25 (this page) | Delta |
+| --- | --- | --- | --- |
+| Billed calls | 16,407 | 512 | not comparable |
+| p50 prompt per call | 129,242 | 14,446 | not comparable |
+| p90 prompt per call | 210,628 | 215,677 | not comparable |
+| p99 prompt per call | 244,885 | 250,455 | not comparable |
+| Cache read share of prompt | 96.4% | 86.5% | not comparable |
 
-The run recorded FlyBot `origin/main` at `44f3e97d5bf531c7fa0475587ef7c275d7d7f599`. This page does not diff that tree against the 10-23 measurement, and it does not copy the mock-model character counts from those two pull requests.
+Why, in one place: the two windows do not overlap — the 2026-10-23 page ends at `2026-10-23T17:50:56Z`, and this window's first call is `2026-10-24T06:51:39.655Z`. On this host the p50 of the two windows differs by an order of magnitude (129,242 → 14,446) while p90 and p99 barely move (210,628/244,885 → 215,677/250,455). That shape is a different blend of calls, not fewer tokens per turn: this window is mostly grown team calls with a small tail of first-of-run calls, while the 10-23 page was read on another host with another team mix. Subtracting the two would print a fake saving, so the Delta cell says `not comparable` and no number is given. [`#796`](https://github.com/ThinkFlowLab/FlyBot/issues/796) savings acceptance stays open and is not claimed by these figures.
 
 ## 7. Composition: fixed overhead / history / tool results / task
 
@@ -155,21 +174,21 @@ node core/dev/llm-tap.mjs <port> <upstream base URL> /tmp/tap.jsonl /tmp/bodies
 #    Each variant is a real provider call; the ledger reports its prompt.
 ```
 
-Where this sample's prompt sits among fixed overhead, history, tool results and the task is not known from the ledger JSON.
+Where this window's prompt sits among fixed overhead, history, tool results and the task is not known from the ledger JSON.
 
 ## What this report does not say
 
-- It is a synthetic sample (合成样本 / 非线上账本), not a live production ledger and not a rebaseline of the 2026-10-23 host ledger.
-- It does not compare rises or falls with the 2026-10-23 live numbers. No delta and no percent change against that report is stated.
+- It is this host's own ledger, not a rebaseline: no delta and no percent change against the 2026-10-23 page is stated, and the Comparison rows say `not comparable` with the reason.
 - It proposes no saving. [#796](https://github.com/ThinkFlowLab/FlyBot/issues/796) savings acceptance stays open and is not claimed by these figures.
-- It does not compare models or providers beyond naming the one route this sample used: DeepSeek (`llm-deepseek`), model `deepseek-official/deepseek-flash`.
+- It does not compare models or providers; it names the two routes the ledger recorded (`opencsitool` / `DeepSeek-V4.1-Flash-1017`, `volc` / `deepseek-v4-1-flash-economy-261017`) and no per-route split.
 - Cache read tokens are counted at face value, as the ledger stores them. Their price is not applied: the ledger has no cost column.
 - It does not adopt the mock-model character counts recorded on #897 and #898.
 
 ## Provenance
 
-- `ledger` — a column of the synthetic hk2 snapshot, summed or listed here.
+- `ledger` — a column of the ledger snapshot, summed or listed here.
 - `derived: <formula>` — computed from that snapshot by the formula named in the row. Cache-read shares use one decimal, as `token-report.mjs` prints them. `not applicable` on the compaction-boundary row is the method: a reset is a boundary, not a delta.
+- `not comparable` — a cell in the Comparison table where the two windows do not measure the same thing; the reason is in the last column, never a number.
 - `not measured` — no number exists for it in this sample; the row says what would produce one.
 
-Every row of every table above carries its provenance in the last cell. `core/test/token-report.test.js` checks that rule on `docs/reports/2026-10-23-token-spend.md`. This file uses the same last-column vocabulary (`ledger`, `derived: …`, `not measured`).
+Every row of every table above carries its provenance in the last cell. `core/test/token-report.test.js` checks that rule on `docs/reports/2026-10-23-token-spend.md`. This file uses the same last-column vocabulary (`ledger`, `derived: …`, `not comparable`, `not measured`).
