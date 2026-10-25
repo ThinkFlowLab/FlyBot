@@ -4462,7 +4462,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // counts: a probe that did not answer is not a "no" and takes no line, and a server that cannot
         // stamp at all reads the envelope as the person's line, so its labels still call the Bot.
         if (legacy && outbound.human && typed.supported) {
-          const lost = mentions.filter(handle => typeof handle === 'string' && handle.startsWith('@'))
+          // Only a friend's seat can lose the call: a local Bot named in the text is called by this room
+          // itself (core `openingSpeakers`), attested or as the envelope, so its call is not lost.
+          const seats = new Set((room.participants ?? []).filter(item => item.remote === true).map(item => norm(item.handle)))
+          const lost = [...new Set(mentions.map(handle => (typeof handle === 'string' ? norm(handle) : '')).filter(handle => handle && seats.has(handle)))]
           if (lost.length > 0) flybot.rooms.postNotice?.(room.id, `No call went out for ${lost.join(', ')}: this connector token may not attest typed lines, so the other home reads this line as a Bot's.`)
         }
         if (sent?.status === 'pending_approval') {
